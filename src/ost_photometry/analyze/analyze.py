@@ -60,7 +60,8 @@ from photutils.background import Background2D, MedianBackground
 
 import multiprocessing as mp
 
-from . import aux, calib, trans, plot, correlate, subtraction
+from . import aux, calib, trans, plot, correlate
+# from . import subtraction
 
 from .. import style, checks, terminal_output, calibration_data
 
