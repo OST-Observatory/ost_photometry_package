@@ -10,15 +10,10 @@ from . import terminal_output
 ####                        Routines & definitions                      ####
 ############################################################################
 
-def get_img_types(software):
+def get_img_types():
     '''
         Get image type designator: The terms that are used to identify bias,
         darks, flats, etc. in the image Headers.
-
-        Parameters
-        ----------
-        software            : `string`
-            String that characterizes the imaging software.
 
         Returns
         -------
@@ -33,10 +28,7 @@ def get_img_types(software):
         'light':['Light Frame', 'Light', 'LIGHT'],
         }
 
-    if 'MaxIm DL' in software:
-        return default_img_type
-    else:
-        return default_img_type
+    return default_img_type
 
 
 def camera_info(camera):

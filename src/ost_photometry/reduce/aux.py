@@ -436,29 +436,31 @@ def check_filter_keywords(path, image_type):
     if not ifc.files:
         return file_path
 
-    #   Get and check imaging software
-    #   (set() allows to return only unique values)
-    imaging_soft = get_imaging_soft(ifc)
-    if len(imaging_soft) > 1:
-        terminal_output.print_terminal(
-            imaging_soft,
-            string="Images are taken with multiple software versions: {}. "\
-                "The pipeline cannot account for that, but will try anyway...",
-            indent=2,
-            style_name='WARNING',
-            )
+    ##   Get and check imaging software
+    #imaging_soft = get_imaging_soft(ifc)
+    #if len(imaging_soft) > 1:
+        #terminal_output.print_terminal(
+            #imaging_soft,
+            #string="Images are taken with multiple software versions: {}. "\
+                #"The pipeline cannot account for that, but will try anyway...",
+            #indent=2,
+            #style_name='WARNING',
+            #)
 
     #   Get image types corresponding to the imaging software
-    img_type = calibration_data.get_img_types(list(imaging_soft)[0])
+    #img_type = calibration_data.get_img_types(list(imaging_soft)[0])
+    img_type = calibration_data.get_img_types()
     image_type = img_type[image_type]
 
     #   Find all images that have the correct image type
-    good = ifc.files_filtered(imagetyp=image_type)
+    good = []
+    for type_img in image_type:
+        good.append(list(ifc.files_filtered(imagetyp=type_img)))
 
     #   Compare the results (image collection vs 'good') to find
     #   those images with a wrong image type
     list1 = list(ifc.files)
-    list2 = list(good)
+    list2 = good
     res = [x for x in list1 + list2 if x not in list1 or x not in list2]
 
     if res:
@@ -480,7 +482,7 @@ def sanitize_image_types(file_path, image_type):
         ----------
         file_path           : `pathlib.Path`
 
-        image_type          : `string`
+        image_type          : `string` or `list`
             Expected image type
     '''
     #   Set path
@@ -492,7 +494,10 @@ def sanitize_image_types(file_path, image_type):
     ifc = ccdp.ImageFileCollection(file_path)
 
     for img, fname in ifc.ccds(ccd_kwargs={'unit':'adu'}, return_fname=True):
-        img.meta['imagetyp'] = image_type
+        if isinstance(image_type, list):
+            img.meta['imagetyp'] = image_type[0]
+        else:
+            img.meta['imagetyp'] = image_type
 
         img.write(path / fname)
 

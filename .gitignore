@@ -4,3 +4,4 @@
 # described in https://git-scm.com/docs/gitignore
 
 dist
+__pycache__

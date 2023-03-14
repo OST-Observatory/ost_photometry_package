@@ -206,20 +206,20 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
     ifc = ccdp.ImageFileCollection(file_path)
 
     #   Get image types and check imaging software
-    imaging_soft = aux.get_imaging_soft(ifc)
-    if len(imaging_soft) > 1:
-        terminal_output.print_terminal(
-            imaging_soft,
-            string="Images are taken with multiple software versions: {}. "\
-                "The pipeline cannot account for that, but will try anyway...",
-            indent=2,
-            style_name='WARNING',
-            )
+    #imaging_soft = aux.get_imaging_soft(ifc)
+    #if len(imaging_soft) > 1:
+        #terminal_output.print_terminal(
+            #imaging_soft,
+            #string="Images are taken with multiple software versions: {}. "\
+                #"The pipeline cannot account for that, but will try anyway...",
+            #indent=2,
+            #style_name='WARNING',
+            #)
     if img_type is None:
-        img_type = calibration_data.get_img_types(list(imaging_soft)[0])
+        #img_type = calibration_data.get_img_types(list(imaging_soft)[0])
+        img_type = calibration_data.get_img_types()
 
     #   Except if image collection is empty
-    #if len(ifc.files) == 0:
     if not ifc.files:
         raise RuntimeError(
             f'{style.bcolors.FAIL}No images found -> EXIT\n'
