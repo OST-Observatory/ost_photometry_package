@@ -587,7 +587,7 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
         multi_start     : `float`, optional
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
-            Default is ``7``.
+            Default is ``5``.
 
         method         : `string`, optional
             Finder method DAO or IRAF
