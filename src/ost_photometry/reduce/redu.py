@@ -1993,6 +1993,7 @@ def shift_stack_aa(path, outdir, image_type):
             p, (pos_img, pos_img_reff) = aa.find_transform(
                 img_ccd,
                 reff_ccd,
+                max_control_points=100,
                 detection_sigma=3.0,
                 )
 
