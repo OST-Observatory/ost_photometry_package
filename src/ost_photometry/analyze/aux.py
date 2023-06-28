@@ -1379,10 +1379,12 @@ def find_filt(filt_list, in_dict, filt, camera, verbose=False, indent=2):
     return None, None, None
 
 
-def check_variable(filename, filetype, filt_1, filt_2, cali, ISOcolumntype,
-                   ISOcolumn):
+def check_variable(filename, filetype, filt_1, filt_2, cali,
+                   ISOcolumntype, ISOcolumn):
     '''
-        Check variables and set defaults
+        Check variables and set defaults for CMDs and isochrone plots
+
+        This function exists for backwards compatibility.
 
         Parameters
         ----------
@@ -1407,6 +1409,42 @@ def check_variable(filename, filetype, filt_1, filt_2, cali, ISOcolumntype,
 
         ISOcolumn           : `dictionary`
             Keys = filter - Values = column
+    '''
+
+    filename, filetype = check_variable_apparent_cmd(
+        filename,
+        filetype,
+        filt_1,
+        filt_2,
+        cali,
+        )
+
+    check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn)
+
+    return filename, filetype
+
+
+def check_variable_apparent_cmd(filename, filetype, filt_1, filt_2, cali):
+    '''
+        Check variables and set defaults for CMDs and isochrone plots
+
+        Parameters
+        ----------
+        filename            : `string`
+            Specified file name - can also be empty -> set default
+
+
+        filetype            : `string`
+            Specified file type - can also be empty -> set default
+
+        filt_1              : `string`
+            First filter
+
+        filt_2              : `string`
+            Second filter
+
+        cali                : `dictionary`
+            Keys = filter - Values = zero points
     '''
     #   Set figure type
     if filename == "?" or filename =="":
@@ -1436,8 +1474,6 @@ def check_variable(filename, filetype, filt_1, filt_2, cali, ISOcolumntype,
             )
         filetype = 'pdf'
 
-    return filename, filetype
-
     #   Check if calibration parameter is consistent with the number of
     #   filter
     if len(filt_2) != len(cali):
@@ -1458,6 +1494,27 @@ def check_variable(filename, filetype, filt_1, filt_2, cali, ISOcolumntype,
             )
             sys.exit()
 
+    return filename, filetype
+
+
+def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
+    '''
+        Check variables and set defaults for CMDs and isochrone plots
+
+        Parameters
+        ----------
+        filt_1              : `string`
+            First filter
+
+        filt_2              : `string`
+            Second filter
+
+        ISOcolumntype       : `dictionary`
+            Keys = filter - Values = type
+
+        ISOcolumn           : `dictionary`
+            Keys = filter - Values = column
+    '''
     #   Check if the column declaration for the isochrones fits to the
     #   specified filter
     for fil in filt_2:
