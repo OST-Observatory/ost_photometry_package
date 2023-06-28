@@ -78,7 +78,7 @@ def comp_img(outdir, o_image, c_image):
 
 def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
             label='Identified stars', label_2='Identified stars (set 2)',
-            rts=None, mode=None, nameobj='', condense=False):
+            rts=None, mode=None, nameobj=None, condense=False):
     '''
         Plot star maps  -> overlays of the determined star positions on FITS
                         -> supports different versions
@@ -123,7 +123,7 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
 
         nameobj         : `string`, optional
             Name of the object
-            Default is ````
+            Default is ``None``
 
         condense        : `boolean`, optional
             If True pass the console output to the calling function.
@@ -180,16 +180,16 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
     fig = plt.figure(figsize=(20,9))
 
     #   Set title of the complete plot
-    if rts is not None:
-        fig.suptitle(
-            'Star map ('+str(band)+' band, '+rts+') - '+nameobj,
-            fontsize=20,
-            )
+    if rts is None and nameobj is None:
+        sub_titel = f'Star map ({band} band)'
+    elif rts is None:
+        sub_titel = f'Star map ({band} band) - {nameobj}'
+    elif nameobj is None:
+        sub_titel = f'Star map ({band} band, {rts})'
     else:
-        fig.suptitle(
-            'Star map ('+str(band)+' band) - '+nameobj,
-            fontsize=20,
-            )
+        sub_titel = f'Star map ({band} band, {rts}) - {nameobj}'
+
+    fig.suptitle(sub_titel, fontsize=20)
 
     #   Set up normalization for the image
     norm = ImageNormalize(image, interval=ZScaleInterval())
@@ -382,7 +382,7 @@ def plot_apertures(outdir, image, aperture, annulus_aperture, string):
 
 
 def plot_cutouts(outdir, stars, string, condense=False, max_plot_stars=25,
-                 nameobj='', indent=2):
+                 nameobj=None, indent=2):
     '''
         Plot the cutouts of the stars used to estimated the ePSF
 
@@ -407,7 +407,7 @@ def plot_cutouts(outdir, stars, string, condense=False, max_plot_stars=25,
 
         nameobj         : `string`, optional
             Name of the object
-            Default is ````.
+            Default is ``None``.
 
         indent          : `integer`, optional
             Indentation for the console output lines.
@@ -444,11 +444,11 @@ def plot_cutouts(outdir, stars, string, condense=False, max_plot_stars=25,
                         wspace=None, hspace=0.25)
 
     #   Set title of the complete plot
-    fig.suptitle(
-        'Cutouts of the '+str(n_cutouts)+' faintest stars ('
-        +str(string)+') - '+nameobj,
-        fontsize=20,
-        )
+    if nameobj is None:
+        sub_titel = f'Cutouts of the {n_cutouts} faintest stars ({string})'
+    else:
+        sub_titel = f'Cutouts of the {n_cutouts} faintest stars ({string}) - {nameobj}'
+    fig.suptitle(sub_titel, fontsize=20)
 
     ax = ax.ravel()                             # flatten the image?
 
@@ -471,7 +471,7 @@ def plot_cutouts(outdir, stars, string, condense=False, max_plot_stars=25,
         return outstr
 
 
-def plot_epsf(outdir, epsf, condense=False, nameobj='', indent=1):
+def plot_epsf(outdir, epsf, condense=False, nameobj=None, indent=1):
     '''
         Plot the ePSF image of all filters
 
@@ -489,7 +489,7 @@ def plot_epsf(outdir, epsf, condense=False, nameobj='', indent=1):
 
         nameobj         : `string`, optional
             Name of the object
-            Default is ````.
+            Default is ``None``.
 
         indent          : `integer`, optional
             Indentation for the console output lines
@@ -521,7 +521,10 @@ def plot_epsf(outdir, epsf, condense=False, nameobj='', indent=1):
 
 
     #   Set title of the complete plot
-    fig.suptitle('ePSF ('+nameobj+')', fontsize=20)
+    if nameobj is None:
+        fig.suptitle('ePSF', fontsize=20)
+    else:
+        fig.suptitle(f'ePSF ({nameobj})', fontsize=20)
 
     #   Plot individual subplots
     for i, (band, eps) in enumerate(epsf.items()):
@@ -572,7 +575,7 @@ def plot_epsf(outdir, epsf, condense=False, nameobj='', indent=1):
 
 
 def plot_residual(name, image_orig, residual_image, outdir,
-                  condense=False, nameobj='', indent=1):
+                  condense=False, nameobj=None, indent=1):
     '''
         Plot the original and the residual image
 
@@ -596,7 +599,7 @@ def plot_residual(name, image_orig, residual_image, outdir,
 
         nameobj         : `string`, optional
             Name of the object
-            Default is ````.
+            Default is ``None``.
 
         indent          : `integer`, optional
             Indentation for the console output lines
@@ -636,7 +639,10 @@ def plot_residual(name, image_orig, residual_image, outdir,
         )
 
     #   Set title of the complete plot
-    fig.suptitle(name+' ('+nameobj+')', fontsize=20)
+    if nameobj is None:
+        fig.suptitle(name, fontsize=20)
+    else:
+        fig.suptitle(f'{name} ({nameobj})', fontsize=20)
 
     i = 1
     for band, image in image_orig.items():
@@ -722,7 +728,7 @@ def plot_residual(name, image_orig, residual_image, outdir,
 
 
 def plot_mags(mag1, name1, mag2, name2, rts, outdir, err1=None, err2=None,
-              nameobj='', fit=None):
+              nameobj=None, fit=None):
     '''
         Plot magnitudes
 
@@ -756,7 +762,7 @@ def plot_mags(mag1, name1, mag2, name2, rts, outdir, err1=None, err2=None,
 
         nameobj     : `string`, optional
             Name of the object
-            Default is ````
+            Default is ``None``
 
         fit             : ` astropy.modeling.fitting` instance, optional
             Fit to plot
@@ -766,7 +772,7 @@ def plot_mags(mag1, name1, mag2, name2, rts, outdir, err1=None, err2=None,
               err2=err2, nameobj=nameobj, fit=fit)
 
 
-def sigma_plot(bv, mags, bands, band, nr, outdir, nameobj='', fit=None):
+def sigma_plot(bv, mags, bands, band, nr, outdir, nameobj=None, fit=None):
     '''
         Illustrate sigma clipping of magnitudes
 
@@ -792,7 +798,7 @@ def sigma_plot(bv, mags, bands, band, nr, outdir, nameobj='', fit=None):
 
         nameobj     : `string`, optional
             Name of the object
-            Default is ````.
+            Default is ``None``.
 
         fit             : ` astropy.modeling.fitting` instance, optional
             Fit to plot
@@ -815,10 +821,11 @@ def sigma_plot(bv, mags, bands, band, nr, outdir, nameobj='', fit=None):
     fig = plt.figure(figsize=(8,8))
 
     #   Set title
-    fig.suptitle(
-        'Sigma clipped magnitudes -- star: '+str(nr)+' ('+nameobj+')',
-        fontsize=20,
-        )
+    if nameobj is None:
+        sub_titel = f'Sigma clipped magnitudes -- star: {nr}'
+    else:
+        sub_titel = f'Sigma clipped magnitudes -- star: {nr} ({nameobj})'
+    fig.suptitle(sub_titel, fontsize=20)
 
     #   Plot data
     plt.plot(mags,bv,color='blue',marker='.',linestyle='none')
@@ -848,7 +855,7 @@ def sigma_plot(bv, mags, bands, band, nr, outdir, nameobj='', fit=None):
 
 
 def light_curve_jd(ts, data_column, err_column, outdir, error_bars=True,
-                   nameobj=''):
+                   nameobj=None):
     '''
         Plot the light curve over Julian Date
 
@@ -872,7 +879,7 @@ def light_curve_jd(ts, data_column, err_column, outdir, error_bars=True,
 
         nameobj     : `string`, optional
             Name of the object
-            Default is ````.
+            Default is ``None``.
     '''
     #   Check output directories
     checks.check_out(
@@ -890,7 +897,10 @@ def light_curve_jd(ts, data_column, err_column, outdir, error_bars=True,
     plt.grid(True)
 
     #   Set title
-    fig.suptitle(f'Light curve - {nameobj}', fontsize=30)
+    if nameobj is None:
+        fig.suptitle(f'Light curve', fontsize=30)
+    else:
+        fig.suptitle(f'Light curve - {nameobj}', fontsize=30)
 
     #   Plot data with or without error bars
     if not error_bars:
@@ -946,7 +956,7 @@ def light_curve_jd(ts, data_column, err_column, outdir, error_bars=True,
 
 
 def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
-                     period, binn=None, error_bars=True, nameobj=''):
+                     period, binn=None, error_bars=True, nameobj=None):
     '''
         Plot a folded light curve
 
@@ -980,7 +990,7 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
 
         nameobj     : `string`, optional
             Name of the object
-            Default is ````.
+            Default is ``None``.
     '''
     #   Check output directories
     checks.check_out(
@@ -1001,7 +1011,10 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
     fig = plt.figure(figsize=(20,9))
 
     #   Set title
-    fig.suptitle('Folded light curve - '+nameobj, fontsize=30)
+    if nameobj is None:
+        fig.suptitle('Folded light curve', fontsize=30)
+    else:
+        fig.suptitle(f'Folded light curve - {nameobj}', fontsize=30)
 
     #   Calculate binned lightcurve
     if binn is not None:
@@ -1090,7 +1103,7 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
 
 def plot_transform(outdir, color1, color2, color_lit, fit_var, a, b, b_err,
                    fit_func, airmass, filt=None, color_lit_err=None,
-                   fit_var_err=None, nameobj=''):
+                   fit_var_err=None, nameobj=None):
     '''
         Make the plots to determine the calibration factors for the
         magnitude transformation
@@ -1143,7 +1156,7 @@ def plot_transform(outdir, color1, color2, color_lit, fit_var, a, b, b_err,
 
         nameobj         : `string`
             Name of the object
-            Default is ````.
+            Default is ``None``.
     '''
     #   Check output directories
     checks.check_out(
@@ -1159,27 +1172,34 @@ def plot_transform(outdir, color1, color2, color_lit, fit_var, a, b, b_err,
     airmass = round(airmass,2)
     if filt == None:
         #   coeff  = 1./b
-        titel  = 'Color transform ('+color1.lower()+'-'+color2.lower()\
-                 +' vs. '+color1+'-'+color2+') - '+nameobj\
-                 +' (X = '+str(airmass)+')'
-        ylabel = color1.lower()+'-'+color2.lower()+' [mag]'
-        path   = outdir+'/trans_plots/'+color1.lower()+color2.lower()\
-                 +'_'+color1+color2+'.pdf'
-        plabel = 'slope = '+str(b)+', T'+color1.lower()+color2.lower()\
-                 +' = '+str(1./b)+' +/- '+str(b_err)
+        if nameobj is None:
+            titel  = f'Color transform ({color1.lower()}-{color2.lower()}'\
+                    +f' vs. {color1}-{color2}) (X = {airmass})'
+        else:
+            titel  = f'Color transform ({color1.lower()}-{color2.lower()}'\
+                    +f' vs. {color1}-{color2}) - {nameobj} (X = {airmass})'
+        ylabel = f'{color1.lower()}-{color2.lower()} [mag]'
+        path   = f'{outdir}/trans_plots/{color1.lower()+color2.lower()}'\
+                 +f'_{color1+color2}.pdf'
+        plabel = f'slope = {b}, T{color1.lower()}{color2.lower()}'\
+                 +f' = {1./b} +/- {b_err}'
     else:
         #   coeff  = b
-        titel  = filt+color1.lower()+color2.lower()\
-                 +'-mag transform ('+filt+'-'+filt.lower()\
-                 +' vs. '+color1+'-'+color2+') - '+nameobj\
-                 +' (X = '+str(airmass)+')'
-        ylabel = filt+'-'+filt.lower()+' [mag]'
-        path   = outdir+'/trans_plots/'+filt+filt.lower()\
-                 +'_'+color1+color2+'.pdf'
-        plabel = 'slope = '+str(b)+', C'+filt.lower()+'_'\
-                 +color1.lower()+color2.lower()+' = '+str(b)\
-                 +' +/- '+str(b_err)
-    xlabel = color1+'-'+color2+' [mag]'
+        if nameobj is None:
+            titel  = f'{filt}{color1.lower()}{color2.lower()}'\
+                    +f'-mag transform ({filt}-{filt.lower()}'\
+                    +f' vs. {color1}-{color2}) (X = {airmass})'
+        else:
+            titel  = f'{filt}{color1.lower()}{color2.lower()}'\
+                    +f'-mag transform ({filt}-{filt.lower()}'\
+                    +f' vs. {color1}-{color2}) - {nameobj}'\
+                    +f' (X = {airmass})'
+        ylabel = f'{filt}-{filt.lower()} [mag]'
+        path   = f'{outdir}/trans_plots/{filt}{filt.lower()}'\
+                 +f'_{color1}{color2}.pdf'
+        plabel = f'slope = {b}, C{filt.lower()}_'\
+                 +f'{color1.lower()}{color2.lower()} = {b} +/- {b_err}'
+    xlabel = f'{color1}-{color2} [mag]'
 
     #   Make plot
     fig = plt.figure(figsize=(20,9))
@@ -2283,7 +2303,7 @@ def D3_scatter(xs, ys, zs, outdir, color=None, name_x='', name_y='',
 
 
 def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
-            nameobj='', fit=None):
+            nameobj=None, fit=None):
     '''
         Plot magnitudes
 
@@ -2317,7 +2337,7 @@ def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
 
         nameobj     : `string`, optional
             Name of the object
-            Default is ````
+            Default is ``None``
 
         fit             : ` astropy.modeling.fitting` instance, optional
             Fit to plot
@@ -2333,8 +2353,12 @@ def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
     fig = plt.figure(figsize=(8,8))
 
     #   Set title
+    if nameobj is None:
+        sub_titel = f'{name1} vs. {name2}:'
+    else:
+        sub_titel = f'{name1} vs. {name2} ({nameobj}):'
     fig.suptitle(
-        name1+' vs. '+name2+' ('+nameobj+'):',
+        sub_titel,
         fontsize=20,
         )
 
