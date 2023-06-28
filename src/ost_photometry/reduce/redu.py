@@ -39,8 +39,8 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
                 shift_method='skimage', stack=True, estimate_fwhm=False,
                 shift_all=False, tolerance=0.5, stack_method='average',
                 target=None, find_wcs=True, wcs_method='astrometry',
-                wcs_all=False, rm_outliers_shift=True, filter_window_shift=8,
-                threshold_shift=10., debug=False):
+                wcs_all=False, force_wcs_determ=False, rm_outliers_shift=True,
+                filter_window_shift=8, threshold_shift=10., debug=False):
     '''
         Main reduction routine: Creates master images for bias, darks,
                                 flats, reduces the science images and trims
@@ -174,6 +174,11 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
         wcs_all             : `boolean`, optional
             If `True` the WCS will be calculated for each image
             individually.
+            Default is ``False``.
+
+        force_wcs_determ    : `boolean`, optional
+            If ``True`` a new WCS determination will be calculated even if
+            a WCS is already present in the FITS Header.
             Default is ``False``.
 
         rm_outliers_shift   : `boolean`, optional
@@ -476,6 +481,7 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
                 out_path / 'cut',
                 out_path / 'cut',
                 method=wcs_method,
+                force_wcs_determ=force_wcs_determ,
                 )
         else:
             aux.find_wcs(
@@ -483,6 +489,7 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
                 out_path / 'cut',
                 ref_id=ref_img,
                 method=wcs_method,
+                force_wcs_determ=force_wcs_determ,
                 )
 
     if estimate_fwhm:

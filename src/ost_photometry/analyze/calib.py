@@ -540,8 +540,8 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0.,18.5),
 
     if not calib_tbl:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo calibration star with {band} "
-            f"magnitude found. -> EXIT {style.bcolors.ENDC}"
+            f"{style.bcolors.FAIL} \nNo calibration star with {band_list} "
+            f"magnitudes found. -> EXIT {style.bcolors.ENDC}"
             )
     terminal_output.print_terminal(
         len(calib_tbl),
