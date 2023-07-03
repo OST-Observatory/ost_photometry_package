@@ -18,6 +18,7 @@ import ccdproc as ccdp
 
 from astropy.stats import mad_std
 from astropy.nddata import CCDData, StdDevUncertainty
+from astropy.time import Time
 import astropy.units as u
 
 import astroalign as aa
@@ -38,9 +39,10 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
                 bias_enforce=False, verbose=False, addmask=True,
                 shift_method='skimage', stack=True, estimate_fwhm=False,
                 shift_all=False, tolerance=0.5, stack_method='average',
-                target=None, find_wcs=True, wcs_method='astrometry',
-                wcs_all=False, force_wcs_determ=False, rm_outliers_shift=True,
-                filter_window_shift=8, threshold_shift=10., debug=False):
+                dtype_stack=None, target=None, find_wcs=True,
+                wcs_method='astrometry', wcs_all=False, force_wcs_determ=False,
+                rm_outliers_shift=True, filter_window_shift=8,
+                threshold_shift=10., debug=False):
     '''
         Main reduction routine: Creates master images for bias, darks,
                                 flats, reduces the science images and trims
@@ -157,6 +159,10 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
             Method used for combining the images.
             Possibilities: ``median`` or ``average`` or ``sum``
             Default is ``average`.
+
+        dtype_stack         : str or numpy.dtype, optional
+            dtype that should be used while combining the images.
+            Default is ''None'' -> None is equivalent to float64
 
         target              : `string` or ``None``, optional
             Name of the target. Used for file selection.
@@ -471,26 +477,17 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
             debug=debug,
             )
 
-    if find_wcs:
+    if find_wcs and wcs_all:
         ###
         #   Determine WCS and add it to all images
         #
         terminal_output.print_terminal(string="Determine WCS ...", indent=1)
-        if wcs_all:
-            aux.find_wcs_all_imgs(
-                out_path / 'cut',
-                out_path / 'cut',
-                method=wcs_method,
-                force_wcs_determ=force_wcs_determ,
-                )
-        else:
-            aux.find_wcs(
-                out_path / 'cut',
-                out_path / 'cut',
-                ref_id=ref_img,
-                method=wcs_method,
-                force_wcs_determ=force_wcs_determ,
-                )
+        aux.find_wcs_all_imgs(
+            out_path / 'cut',
+            out_path / 'cut',
+            method=wcs_method,
+            force_wcs_determ=force_wcs_determ,
+            )
 
     if estimate_fwhm:
         ###
@@ -516,8 +513,23 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
             out_path,
             img_type['light'],
             method=stack_method,
+            dtype=dtype_stack,
             debug=debug,
         )
+
+        if find_wcs and not wcs_all:
+            ###
+            #   Determine WCS and add it to all images
+            #
+            terminal_output.print_terminal(string="Determine WCS ...", indent=1)
+
+            aux.find_wcs_all_imgs(
+                out_path,
+                out_path,
+                force_wcs_determ=force_wcs_determ,
+                method=wcs_method,
+                combined=True,
+                )
 
         if not shift_all:
             if shift_method == 'aa_true':
@@ -2038,7 +2050,8 @@ def shift_stack_aa(path, outdir, image_type):
         img_out.write(outdir / file_name, overwrite=True)
 
 
-def stack_img(path, outdir, image_type, method='average', debug=False):
+def stack_img(path, outdir, image_type, method='average', dtype=None,
+              new_target_name=None, debug=False):
     '''
         Combine images
 
@@ -2058,6 +2071,15 @@ def stack_img(path, outdir, image_type, method='average', debug=False):
             Method used for combining the images.
             Possibilities: ``median`` or ``average`` or ``sum``
             Default is ``average`.
+
+        dtype           : str or numpy.dtype, optional
+            dtype that should be used while combining the images.
+            Default is ''None'' -> None is equivalent to float64
+
+        new_target_name : str or None, optional
+            Name of the target. If not None, this target name will be written
+            to the FITS header.
+            Default is ``None``.
 
         debug           : `boolean`, optional
             If `True` the intermediate files of the data reduction will not
@@ -2102,14 +2124,15 @@ def stack_img(path, outdir, image_type, method='average', debug=False):
             sigma_clip_func=np.ma.median,
             signma_clip_dev_func=mad_std,
             mem_limit=15e9,
+            dtype=dytpe,
             )
 
-        #   Add Header keyword to mark the file as combined
-        combined_img.meta['COMBINED'] = True
-        nimg                          = len(to_combine)
-        combined_img.meta['N-IMAGES'] = nimg
-        combined_img.meta['EXPTIME']  = nimg * combined_img.meta['EXPTIME']
-        combined_img.meta['EXPOSURE'] = combined_img.meta['EXPTIME']
+        #   Update Header keywords
+        aux.update_header_information(
+            combined_img,
+            len(to_combine),
+            new_target_name,
+            )
 
         #   Define name and write file to disk
         file_name = 'combined_filter_{}.fit'.format(
@@ -2117,7 +2140,7 @@ def stack_img(path, outdir, image_type, method='average', debug=False):
             )
         combined_img.write(out_path / file_name, overwrite=True)
 
-    #   Remove reduced dark files if they exist
+    #   Remove individual reduced images
     if not debug:
         shutil.rmtree(file_path, ignore_errors=True)
 
