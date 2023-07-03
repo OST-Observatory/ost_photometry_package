@@ -18,7 +18,6 @@ import ccdproc as ccdp
 
 from astropy.stats import mad_std
 from astropy.nddata import CCDData, StdDevUncertainty
-from astropy.time import Time
 import astropy.units as u
 
 import astroalign as aa
@@ -529,6 +528,7 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
                 force_wcs_determ=force_wcs_determ,
                 method=wcs_method,
                 combined=True,
+                img_type=img_type['light'],
                 )
 
         if not shift_all:
@@ -2124,7 +2124,7 @@ def stack_img(path, outdir, image_type, method='average', dtype=None,
             sigma_clip_func=np.ma.median,
             signma_clip_dev_func=mad_std,
             mem_limit=15e9,
-            dtype=dytpe,
+            dtype=dtype,
             )
 
         #   Update Header keywords
