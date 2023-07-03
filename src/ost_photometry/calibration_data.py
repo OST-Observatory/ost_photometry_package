@@ -124,6 +124,26 @@ valid_calibs = [['U','V'], ['B','V'], ['V','R'], ['V','I']]
 
 
 ###
+#   Filter denomination vs. filter systems
+filter_sytems = {
+    'U':'bessell',
+    'B':'bessell',
+    'V':'bessell',
+    'R':'bessell',
+    'I':'bessell',
+    'u`':'sdssu',
+    'g`':'sdssg',
+    'r`':'sdssr',
+    'i`':'sdssi',
+    'z-s`':'sdssz',
+    'y`':'sdssy',
+    # 'Blue':
+    # 'Green':
+    # 'Red':
+    }
+
+
+###
 #   Magnitude calibration parameters
 #   (Need to be ordered by date. Newest needs to be first.)
 #

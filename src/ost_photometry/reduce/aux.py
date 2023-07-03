@@ -2077,7 +2077,13 @@ def find_wcs(input_dir, output_dir, ref_id=0, force_wcs_determ=False,
     #   Determine WCS
     #
     if not cal_wcs or force_wcs_determ:
-        w = find_wcs_distinguish(reff_img, method=method, indent=indent)
+        w = find_wcs_distinguish(
+            reff_img,
+            method=method,
+            x=x,
+            y=y,
+            indent=indent,
+            )
 
         ###
         #   Add WCS to images
@@ -2092,7 +2098,8 @@ def find_wcs(input_dir, output_dir, ref_id=0, force_wcs_determ=False,
 
 
 def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
-                      method='astrometry', x=None, y=None, indent=2):
+                      method='astrometry', x=None, y=None, combined=False,
+                      indent=2):
     '''
         Determine the WCS of each image individually.
 
@@ -2118,6 +2125,10 @@ def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
             Pixel coordinates of the objects
             Default is ``None``.
 
+        combined            : `boolean`, optional
+            Filter for images that have a 'combined' fits header keyword.
+            Default is ``False``.
+
         indent              : `integer`, optional
             Indentation for the console output lines
             Default is ``2``.
@@ -2132,6 +2143,8 @@ def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
     #   Set up image collection for the images
     ifc = ccdp.ImageFileCollection(file_path)
 
+    if combined:
+        ifc = ifc.filter(combined=combined)
 
     ###
     #   Derive WCS
@@ -2151,7 +2164,13 @@ def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
         cal_wcs = base_aux.check_wcs_exists(img)
 
         if not cal_wcs or force_wcs_determ:
-            w = find_wcs_distinguish(img, method=method, indent=indent)
+            w = find_wcs_distinguish(
+                img,
+                method=method,
+                x=x,
+                y=y,
+                indent=indent,
+                )
 
             #   Add WCS to image (not necessary for ASTAP method)
             if method in ['astrometry', 'twirl']:
@@ -2247,3 +2266,95 @@ def find_wcs_distinguish(img, method='astrometry', x=None, y=None,
             )
 
     return w
+
+
+def update_header_information(img, nimg=1, new_target_name=None):
+    '''
+        Updates Header information. Adds among other Header keywords required
+        for the GRANDMA project.
+
+        Parameters
+        ----------
+        img                 : `image.class`
+            Image class with all image specific properties
+
+        nimg                : `integer`, optional
+            Number of stacked images
+            Default is ``1``.
+
+        new_target_name : str or None, optional
+            Name of the target. If not None, this target name will be written
+            to the FITS header.
+            Default is ``None``.
+    '''
+    #   Add Header keyword to mark the file as stacked
+    if nimg > 1:
+        img.meta['COMBINED'] = True
+        img.meta['N-IMAGES'] = nimg
+        img.meta['EXPTIME']  = nimg * img.meta['EXPTIME']
+
+        #  GRANDMA
+        img.meta['STACK'] = 1
+
+    #  GRANDMA
+    img.meta['EXPOSURE'] = img.meta['EXPTIME']
+
+    #   Add MJD of start and center of the observation
+    try:
+        jd = img.meta['JD']
+        mjd = jd - 2400000.5
+        img.meta['MJD_STAR'] = mjd
+
+        mjd_mid = mjd + img.meta['EXPTIME'] / 48
+        img.meta['MJD_MID'] = mjd_mid
+
+        img.meta['DATE-MID'] = Time(mjd_mid, format='mjd').fits
+
+    except Exception as e:
+        terminal_output.print_terminal(
+            # indent=indent,
+            string=f"MJD could not be added to the header:\n {e}",
+            style_name='WARNING',
+            )
+
+    #   Add observation date using a second keyword (GRANDMA)
+    try:
+        obs_date = img.meta['DATE-OBS']
+        img.meta['OBSDATE'] = obs_date
+
+    except Exception as e:
+        terminal_output.print_terminal(
+            # indent=indent,
+            string=f"OBSDATE could not be added to the header:\n {e}",
+            style_name='WARNING',
+            )
+
+    #   Add gain using a second keyword (GRANDMA)
+    gain = img.meta['EGAIN']
+    img.meta['GAIN'] = gain
+
+    #   Add target name using a second keyword
+    if new_target_name is not None:
+        img.meta['OBJECT'] = new_target_name
+        #   GRANDMA
+        img.meta['TARGET'] = new_target_name
+    else:
+        #   GRANDMA
+        target = img.meta['OBJECT']
+        img.meta['TARGET'] = target
+
+    #   Username and instrument string (GRANDMA)
+    img.meta['USERNAME'] = 'OST'
+    img.meta['INSTRU'] = 'CDK'
+
+    #   Add filter system to the Header
+    filt = img.meta['FILTER']
+    try:
+        filter_system = calibration_data.filter_sytems[filt]
+        img.meta['FILTER-S'] = filter_system
+    except Exception as e:
+        terminal_output.print_terminal(
+            # indent=indent,
+            string=f"Filter system could not be determined:\n {e}",
+            style_name='WARNING',
+            )
