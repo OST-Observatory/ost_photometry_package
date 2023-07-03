@@ -1476,8 +1476,8 @@ def check_variable_apparent_cmd(filename, filetype, filt_1, filt_2, cali):
 
     #   Check if calibration parameter is consistent with the number of
     #   filter
-    if len(filt_2) != len(cali):
-        if len(filt_2) > len(cali):
+    if len(filt_2) + len(filt_1) != len(cali):
+        if len(filt_2) + len(filt_1) > len(cali):
             terminal_output.print_terminal(
                 indent=1,
                 string="[Error] More filter ('filt_2') specified than zero"\
