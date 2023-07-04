@@ -125,6 +125,39 @@ def get_instruments(ifc):
     return instruments
 
 
+def get_instruments_readoutmode(ifc):
+    '''
+        Extract information regarding the instruments and readout mode.
+        Currently the instrument and readout mode need to be unique. If several
+        instruments are detected, the first will be used. An exception will be
+        raised in case multiple readout modes are detected.
+
+        Parameters
+        ----------
+        ifc             : `ccdproc.ImageFileCollection`
+            Image file collection with all images
+
+        Returns
+        -------
+        instruments           : `set`
+            List of instruments
+
+        redout_mode           : `string`
+
+    '''
+    #   Except if no files are found
+    if not ifc.files:
+        raise RuntimeError(
+            f'{style.bcolors.FAIL}No images found -> EXIT\n'
+            f'\t=> Check paths to the images!{style.bcolors.ENDC}'
+            )
+
+    #   Get instruments (set() allows to return only unique values)
+    instruments = set(ifc.summary['instrume'])
+
+    return instruments, redout_mode
+
+
 def get_imaging_soft(ifc):
     '''
         Extract imaging software version.
