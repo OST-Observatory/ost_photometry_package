@@ -72,9 +72,10 @@ def camera_info(camera, redout_mode, gain_setting=None):
                 extrapolate=False,
                 )
             gain = spline(gain_setting)
-        except:
+        except Exception as e:
             terminal_output.print_terminal(
-                string="The true gain factor could not be determined. " \
+                string="The true gain factor could not be determined... \n" \
+                       f"{e}\n" \
                        "Use default value: 1.292.",
                 indent=1,
                 style_name='WARNING'

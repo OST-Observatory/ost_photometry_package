@@ -183,7 +183,7 @@ def get_instrument_infos(ifc):
     #   Get the instrument in case of QHY cameras
     if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
         #   Get image dimensions and binning
-        xdims = set(ifc.summary['NAXIS1'])
+        xdims = set(ifc.summary['naxis1'])
         if len(xdims) > 1:
             raise RuntimeError(
                 f'{style.bcolors.FAIL}Multiple image dimensions detected.\n'
@@ -191,7 +191,7 @@ def get_instrument_infos(ifc):
                 )
         xdim = list(xdims)[0]
 
-        ydims = set(ifc.summary['NAXIS2'])
+        ydims = set(ifc.summary['naxis2'])
         if len(ydims) > 1:
             raise RuntimeError(
                 f'{style.bcolors.FAIL}Multiple image dimensions detected.\n'
@@ -199,7 +199,7 @@ def get_instrument_infos(ifc):
                 )
         ydim = list(ydims)[0]
 
-        xbins = set(ifc.summary['XBINNING'])
+        xbins = set(ifc.summary['xbinning'])
         if len(xbins) > 1:
             raise RuntimeError(
                 f'{style.bcolors.FAIL}Multiple binning values detected.\n'
@@ -207,7 +207,7 @@ def get_instrument_infos(ifc):
                 )
         xbin = list(xbins)[0]
 
-        ybins = set(ifc.summary['YBINNING'])
+        ybins = set(ifc.summary['ybinning'])
         if len(ybins) > 1:
             raise RuntimeError(
                 f'{style.bcolors.FAIL}Multiple binning values detected.\n'
@@ -231,13 +231,13 @@ def get_instrument_infos(ifc):
 
 
     #   Get readout mode
-    redout_modes = set(ifc.summary['READOUTM'])
+    redout_modes = set(ifc.summary['readoutm'])
     if not redout_modes:
         redout_mode = 'Extend Fullwell 2CMS'
     elif len(redout_modes) == 1:
         redout_mode = list(redout_modes)[0]
 
-        if redout_mode in ['FAST', 'SLOW']:
+        if redout_mode in ['Fast', 'Slow']:
             redout_mode = 'Extend Fullwell 2CMS'
     else:
         raise RuntimeError(
@@ -247,7 +247,7 @@ def get_instrument_infos(ifc):
 
 
     #   Get gain setting
-    gain_settings = set(ifc.summary['GAIN'])
+    gain_settings = set(ifc.summary['gain'])
     if len(gain_settings) > 1:
         raise RuntimeError(
             f'{style.bcolors.FAIL}Multiple gain values detected.\n'
@@ -257,7 +257,7 @@ def get_instrument_infos(ifc):
 
 
     #   Get bit setting
-    bit_pixs = set(ifc.summary['BITPIX'])
+    bit_pixs = set(ifc.summary['bitpix'])
     if len(bit_pixs) > 1:
         raise RuntimeError(
             f'{style.bcolors.FAIL}Multiple bit values detected.\n'
@@ -2456,9 +2456,9 @@ def update_header_information(img, nimg=1, new_target_name=None):
     try:
         jd = img.meta['JD']
         mjd = jd - 2400000.5
-        img.meta['MJD_STAR'] = mjd
+        img.meta['MJD_STA'] = mjd
 
-        mjd_mid = mjd + img.meta['EXPTIME'] / 48
+        mjd_mid = mjd + img.meta['EXPTIME'] / 172800
         img.meta['MJD_MID'] = mjd_mid
 
         img.meta['DATE-MID'] = Time(mjd_mid, format='mjd').fits
