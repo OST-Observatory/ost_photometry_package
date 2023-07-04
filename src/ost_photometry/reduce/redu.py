@@ -278,22 +278,20 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
     ###
     #   Check instrument
     #
-    instruments = aux.get_instruments(ifc)
-    if len(instruments) > 1:
-        terminal_output.print_terminal(
-            instruments,
-            string="Images are taken with several instruments: {}. "\
-                "The pipeline cannot account for that, but will try anyway...",
-            indent=2,
-            style_name='WARNING',
-            )
+    instrument, redout_mode, gain_setting, bit_pix = aux.get_instrument_infos(
+        ifc
+        )
 
 
     ###
     #   Get camera specific parameters
     #
     if (readnoise is None or gain is None or dr is None or satlevel is None):
-        camera_info = calibration_data.camera_info(list(instruments)[0])
+        camera_info = calibration_data.camera_info(
+            instrument,
+            redout_mode,
+            gain_setting,
+            )
         if readnoise == None:
             readnoise = camera_info[0]
         if gain == None:
@@ -301,7 +299,7 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
         if dr == None:
             dr = camera_info[2]
         if satlevel == None:
-            satlevel = camera_info[3]
+            satlevel = pow(2, bit_pix) - 1
 
 
     ###
@@ -478,7 +476,7 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
 
     if find_wcs and wcs_all:
         ###
-        #   Determine WCS and add it to all images
+        #   Determine WCS and add it to all reduced images
         #
         terminal_output.print_terminal(string="Determine WCS ...", indent=1)
         aux.find_wcs_all_imgs(
@@ -518,7 +516,7 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
 
         if find_wcs and not wcs_all:
             ###
-            #   Determine WCS and add it to all images
+            #   Determine WCS and add it to the stacked images
             #
             terminal_output.print_terminal(string="Determine WCS ...", indent=1)
 

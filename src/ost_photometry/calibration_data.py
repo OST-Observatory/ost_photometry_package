@@ -4,6 +4,8 @@
 
 from astropy.time import Time
 
+import scipy.interpolate as interpolate
+
 from . import terminal_output
 
 ############################################################################
@@ -31,7 +33,7 @@ def get_img_types():
     return default_img_type
 
 
-def camera_info(camera):
+def camera_info(camera, redout_mode, gain_setting=None):
     '''
         Camera specific parameters
 
@@ -39,27 +41,50 @@ def camera_info(camera):
         ----------
         camera          : `string`
             Camera or camera type used to obtain the data
+
+        redout_mode     : `string`
+            Mode used to readout the data from the camera chip.
+
+        gain_setting    : `integer` or `None`, optional
+            Gain used in the camera setting for cameras such as the QHYs.
+            This is not the system gain, but it can be calculated from this
+            value. See below.
+            Default is ``None``.
     '''
     #   STF8300
     if camera in ['SBIG STF-8300 CCD Camera']:
         readnoise = 9.3
         gain      = None
         dark_rate = {0:0.18, -10:0.04, -15.8:0.02}
-        satlevel  = 65535.
         d = 17.96
         h = 13.52
+
     #   QHY600M:
-    elif camera in [
-        'QHYCCD-Cameras-Capture',
-        'QHYCCD-Cameras2-Capture',
-        'QHY600M',
-        ]:
+    elif camera in ['QHY600M']:
         readnoise = 7.904
-        gain      = 1.292
+
+        try:
+            gain_fit_parameters = gain_fits['QHY600M'][redout_mode]
+            spline = interpolate.BSpline(
+                gain_fit_parameters['t'],
+                gain_fit_parameters['c'],
+                gain_fit_parameters['k'],
+                extrapolate=False,
+                )
+            gain = spline(gain_setting)
+        except:
+            terminal_output.print_terminal(
+                string="The true gain factor could not be determined. " \
+                       "Use default value: 1.292.",
+                indent=1,
+                style_name='WARNING'
+                )
+            gain = 1.292
+
         dark_rate = {-20:0.0022, -10:0.0046}
-        satlevel  = 65535.
         d = 32.00
         h = 24.00
+
     else:
         #   Default: modern CMOS camera assumption
         terminal_output.print_terminal(
@@ -70,11 +95,10 @@ def camera_info(camera):
         readnoise = 7.
         gain      = 1.
         dark_rate = {-20:0.0025, -10:0.005}
-        satlevel  = 65535.
         d = 32.00
         h = 24.00
 
-    return readnoise, gain, dark_rate, satlevel, d, h
+    return readnoise, gain, dark_rate, d, h
 
 
 def get_chip_dimensions(instrument):
@@ -228,11 +252,7 @@ Tcs_qhy600m_20220420 = {
         'k_2_err':5.0955e-06,
         'type':'airmass',
         #   QHY600M
-        'camera':[
-            'QHY600M',
-            'QHYCCD-Cameras-Capture',
-            'QHYCCD-Cameras2-Capture',
-            ],
+        'camera':['QHY600M'],
     },
     'V':{
         'Filter 1':'B',
@@ -249,11 +269,7 @@ Tcs_qhy600m_20220420 = {
         'k_2_err':5.0477e-06,
         'type':'airmass',
         #   QHY600M
-        'camera':[
-            'QHY600M',
-            'QHYCCD-Cameras-Capture',
-            'QHYCCD-Cameras2-Capture',
-            ],
+        'camera':['QHY600M'],
     },
 }
 Tcs_qhy600m_20080101 = {
@@ -272,11 +288,7 @@ Tcs_qhy600m_20080101 = {
         'k_2_err':0.0034039,
         'type':'airmass',
         #   QHY600M
-        'camera':[
-            'QHY600M',
-            'QHYCCD-Cameras-Capture',
-            'QHYCCD-Cameras2-Capture',
-            ],
+        'camera':['QHY600M'],
     },
     'V':{
         'Filter 1':'B',
@@ -293,25 +305,21 @@ Tcs_qhy600m_20080101 = {
         'k_2_err':0.0031892,
         'type':'airmass',
         #   QHY600M
-        'camera':[
-            'QHY600M',
-            'QHYCCD-Cameras-Capture',
-            'QHYCCD-Cameras2-Capture',
-            ],
+        'camera':['QHY600M'],
     },
 }
 
 Tcs = {
     '2022-04-20T00:00:00':{
         #   QHY600M
-        'QHYCCD-Cameras-Capture':Tcs_qhy600m_20220420,
-        'QHYCCD-Cameras2-Capture':Tcs_qhy600m_20220420,
+        # 'QHYCCD-Cameras-Capture':Tcs_qhy600m_20220420,
+        # 'QHYCCD-Cameras2-Capture':Tcs_qhy600m_20220420,
         'QHY600M':Tcs_qhy600m_20220420,
     },
     '2008-01-01T00:00:00':{
         #   QHY600M
-        'QHYCCD-Cameras-Capture': Tcs_qhy600m_20080101,
-        'QHYCCD-Cameras2-Capture':Tcs_qhy600m_20080101,
+        # 'QHYCCD-Cameras-Capture': Tcs_qhy600m_20080101,
+        # 'QHYCCD-Cameras2-Capture':Tcs_qhy600m_20080101,
         'QHY600M':Tcs_qhy600m_20080101,
     },
 }

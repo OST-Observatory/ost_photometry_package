@@ -126,12 +126,13 @@ def get_instruments(ifc):
     return instruments
 
 
-def get_instruments_readoutmode(ifc):
+def get_instrument_infos(ifc):
     '''
         Extract information regarding the instruments and readout mode.
-        Currently the instrument and readout mode need to be unique. If several
-        instruments are detected, the first will be used. An exception will be
-        raised in case multiple readout modes are detected.
+        Currently the instrument and readout mode need to be unique. An
+        exception will be raised in case multiple readout modes or
+        instruments are detected.
+        -> TODO: make vector with instruments and readout modes
 
         Parameters
         ----------
@@ -144,7 +145,15 @@ def get_instruments_readoutmode(ifc):
             List of instruments
 
         redout_mode           : `string`
+            Mode used to readout the data from the camera chip.
 
+        gain_setting          : `integer` or `None`
+            Gain used in the camera setting for cameras such as the QHYs.
+            This is not the system gain, but it can be calculated from this
+            value. See below.
+
+        bit_pix                 : `integer`
+            Bit value of each pixel
     '''
     #   Except if no files are found
     if not ifc.files:
@@ -156,7 +165,107 @@ def get_instruments_readoutmode(ifc):
     #   Get instruments (set() allows to return only unique values)
     instruments = set(ifc.summary['instrume'])
 
-    return instruments, redout_mode
+    if len(instruments) > 1:
+        raise RuntimeError(
+            f'{style.bcolors.FAIL}Multiple instruments detected.\n'
+            f'This is currently not supported -> EXIT \n{style.bcolors.ENDC}'
+            )
+        # terminal_output.print_terminal(
+        #     instruments,
+        #     string="Images are taken with several instruments: {}. "\
+        #         "The pipeline cannot account for that, but will try anyway...",
+        #     indent=2,
+        #     style_name='WARNING',
+        #     )
+
+    instrument = list(instruments)[0]
+
+    #   Get the instrument in case of QHY cameras
+    if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
+        #   Get image dimensions and binning
+        xdims = set(ifc.summary['NAXIS1'])
+        if len(xdims) > 1:
+            raise RuntimeError(
+                f'{style.bcolors.FAIL}Multiple image dimensions detected.\n'
+                f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+                )
+        xdim = list(xdims)[0]
+
+        ydims = set(ifc.summary['NAXIS2'])
+        if len(ydims) > 1:
+            raise RuntimeError(
+                f'{style.bcolors.FAIL}Multiple image dimensions detected.\n'
+                f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+                )
+        ydim = list(ydims)[0]
+
+        xbins = set(ifc.summary['XBINNING'])
+        if len(xbins) > 1:
+            raise RuntimeError(
+                f'{style.bcolors.FAIL}Multiple binning values detected.\n'
+                f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+                )
+        xbin = list(xbins)[0]
+
+        ybins = set(ifc.summary['YBINNING'])
+        if len(ybins) > 1:
+            raise RuntimeError(
+                f'{style.bcolors.FAIL}Multiple binning values detected.\n'
+                f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+                )
+        ybin = list(ybins)[0]
+
+        #   Physical chip dimensions in pixel
+        xdim_phy = xdim * xbin
+        ydim_phy = ydim * ybin
+
+        #   Set instrument
+        if xdim_phy == 9576 and ydim_phy == 6388:
+            instrument = 'QHY600M'
+        elif xdim_phy == 6280 and ydim_phy == 4210:
+            instrument = 'QHY268M'
+        elif xdim_phy == 3864 and ydim_phy == 2180:
+            instrument = 'QHY485C'
+        else:
+            instrument = ''
+
+
+    #   Get readout mode
+    redout_modes = set(ifc.summary['READOUTM'])
+    if not redout_modes:
+        redout_mode = 'Extend Fullwell 2CMS'
+    elif len(redout_modes) == 1:
+        redout_mode = list(redout_modes)[0]
+
+        if redout_mode in ['FAST', 'SLOW']:
+            redout_mode = 'Extend Fullwell 2CMS'
+    else:
+        raise RuntimeError(
+            f'{style.bcolors.FAIL}Multiple readout modes detected.\n'
+            f'This is currently not supported -> EXIT \n{style.bcolors.ENDC}'
+            )
+
+
+    #   Get gain setting
+    gain_settings = set(ifc.summary['GAIN'])
+    if len(gain_settings) > 1:
+        raise RuntimeError(
+            f'{style.bcolors.FAIL}Multiple gain values detected.\n'
+            f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+            )
+    gain_setting = list(gain_settings)[0]
+
+
+    #   Get bit setting
+    bit_pixs = set(ifc.summary['BITPIX'])
+    if len(bit_pixs) > 1:
+        raise RuntimeError(
+            f'{style.bcolors.FAIL}Multiple bit values detected.\n'
+            f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+            )
+    bit_pix = list(bit_pixs)[0]
+
+    return instrument, redout_mode, gain_setting, bit_pix
 
 
 def get_imaging_soft(ifc):
@@ -2135,7 +2244,8 @@ def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
                       method='astrometry', x=None, y=None, combined=False,
                       img_type=None, indent=2):
     '''
-        Determine the WCS of each image individually.
+        Determine the WCS of each image individually. Images can be filtered
+        based on image type and the 'combined' keyword.
 
         Parameters
         ----------

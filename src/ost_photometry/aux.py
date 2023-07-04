@@ -104,9 +104,6 @@ def cal_fov(image, indent=2, verbose=True):
     #   Convert ra & dec to degrees
     coord_fov = SkyCoord(ra, dec, unit=(u.hourangle, u.deg), frame="icrs")
 
-    #   Set instrument
-    instrument = header.get('INSTRUME', '')
-
     #   Number of pixels
     npixX = header.get('NAXIS1', 0)
     npixY = header.get('NAXIS2', 0)
@@ -122,11 +119,33 @@ def cal_fov(image, indent=2, verbose=True):
             f"the image is 0 {style.bcolors.ENDC}"
             )
 
+    #   Get binning
+    binX = header.get('YBINNING', 1)
+    binY = header.get('YBINNING', 1)
+
+    #   Set instrument
+    instrument = header.get('INSTRUME', '')
+
+    if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
+        #   Physical chip dimensions in pixel
+        xdim_phy = npixX * binX
+        ydim_phy = npixY * binY
+
+        #   Set instrument
+        if xdim_phy == 9576 and ydim_phy == 6388:
+            instrument = 'QHY600M'
+        elif xdim_phy == 6280 and ydim_phy == 4210:
+            instrument = 'QHY268M'
+        elif xdim_phy == 3864 and ydim_phy == 2180:
+            instrument = 'QHY485C'
+        else:
+            instrument = ''
+
     #   Calculate chip size in mm
     if 'XPIXSZ' in header:
         pixwidth = header['XPIXSZ']
-        d = npixX*pixwidth/1000
-        h = npixY*pixwidth/1000
+        d = npixX * pixwidth / 1000
+        h = npixY * pixwidth / 1000
     else:
         d, h = calibration_data.get_chip_dimensions(instrument)
 
