@@ -18,6 +18,7 @@ from astropy.nddata import CCDData, StdDevUncertainty
 import astropy.units as u
 from astropy.stats import sigma_clipped_stats
 from astropy.table import Table
+from astropy.time import Time
 
 from photutils.detection import DAOStarFinder
 from photutils.psf import extract_stars
@@ -2132,7 +2133,7 @@ def find_wcs(input_dir, output_dir, ref_id=0, force_wcs_determ=False,
 
 def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
                       method='astrometry', x=None, y=None, combined=False,
-                      indent=2):
+                      img_type=None, indent=2):
     '''
         Determine the WCS of each image individually.
 
@@ -2162,6 +2163,10 @@ def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
             Filter for images that have a 'combined' fits header keyword.
             Default is ``False``.
 
+        img_type        : `string` or `None`, optional
+            Image type to select. Possibilities: bias, dark, flat, light
+            Default is ``None``.
+
         indent              : `integer`, optional
             Indentation for the console output lines
             Default is ``2``.
@@ -2174,7 +2179,12 @@ def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
     checks.check_out(output_dir)
 
     #   Set up image collection for the images
+    #   and filter according to requirements
     ifc = ccdp.ImageFileCollection(file_path)
+
+    if img_type is not None:
+        true_img_type = get_image_type(ifc, img_type)
+        ifc = ifc.filter(imagetyp=true_img_type)
 
     if combined:
         ifc = ifc.filter(combined=combined)
