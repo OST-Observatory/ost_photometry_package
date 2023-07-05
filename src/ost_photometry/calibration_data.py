@@ -82,7 +82,6 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
                 style_name='WARNING'
                 )
             readnoise = 7.904
-        print('readnoise', readnoise)
 
         try:
             gain_fit_parameters = gain_qhy[camera][redout_mode]

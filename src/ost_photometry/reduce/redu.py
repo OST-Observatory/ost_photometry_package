@@ -281,8 +281,12 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
     ###
     #   Get camera specific parameters
     #
-    img_para = aux.get_instrument_infos(ifc, temp_tolerence)
-    instrument, redout_mode, gain_setting, bit_pix, temperature = *img_para
+    img_parameters = aux.get_instrument_infos(ifc, temp_tolerence)
+    instrument = img_parameters[0]
+    redout_mode = img_parameters[1]
+    gain_setting = img_parameters[2]
+    bit_pix = img_parameters[3]
+    temperature = img_parameters[4]
 
     if (readnoise is None or gain is None or dr is None or satlevel is None):
         camera_info = calibration_data.camera_info(
