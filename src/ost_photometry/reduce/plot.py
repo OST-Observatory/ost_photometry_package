@@ -5,6 +5,7 @@
 import numpy as np
 
 from scipy import stats
+import scipy.interpolate as interpolate
 
 from matplotlib import pyplot as plt
 
@@ -120,15 +121,8 @@ def plot_dark_with_distributions(img, rn, dark_rate, outdir, n_images=1,
 
     bins = h[1]
 
-    #   Dark rate is dictionary of different values for different
-    #   temperatures
-    #   Get value for the entry closes to the exposure time
-    dr_temp = list(dark_rate.keys())
-    delta_temp = np.array(dr_temp) - exposure
-    id_min = np.argmin(delta_temp)
-
     #   Expected mean of the dark
-    expected_mean_dark = list(dark_rate.values())[id_min] * exposure / gain
+    expected_mean_dark = dark_rate * exposure / gain
 
     #   Plot Poisson
     if show_poisson:

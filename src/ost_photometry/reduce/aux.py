@@ -126,7 +126,7 @@ def get_instruments(ifc):
     return instruments
 
 
-def get_instrument_infos(ifc):
+def get_instrument_infos(ifc, temp_tolerence):
     '''
         Extract information regarding the instruments and readout mode.
         Currently the instrument and readout mode need to be unique. An
@@ -138,6 +138,10 @@ def get_instrument_infos(ifc):
         ----------
         ifc             : `ccdproc.ImageFileCollection`
             Image file collection with all images
+
+        temp_tolerence      : `float`, optional
+            The images are required to have the temperature. This value
+            specifies the temperature difference that is acceptable.
 
         Returns
         -------
@@ -154,6 +158,9 @@ def get_instrument_infos(ifc):
 
         bit_pix                 : `integer`
             Bit value of each pixel
+
+        temperature             : `float`
+            Temperature of the images
     '''
     #   Except if no files are found
     if not ifc.files:
@@ -265,7 +272,20 @@ def get_instrument_infos(ifc):
             )
     bit_pix = list(bit_pixs)[0]
 
-    return instrument, redout_mode, gain_setting, bit_pix
+
+    #   Get image temperature
+    temperatures = set(ifc.summary['ccd-temp'])
+    temp_list = list(temperatures)
+    temp_range = max(temp_list) - min(temp_list)
+    if temp_range > temp_tolerence:
+        raise RuntimeError(
+            f'{style.bcolors.FAIL}Significant difference detected between '
+            f'the images: {temp_range}\n'
+            f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+            )
+    temperature = np.median(temp_list)
+
+    return instrument, redout_mode, gain_setting, bit_pix, temperature
 
 
 def get_imaging_soft(ifc):

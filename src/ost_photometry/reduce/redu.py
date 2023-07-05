@@ -41,7 +41,7 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
                 dtype_stack=None, target=None, find_wcs=True,
                 wcs_method='astrometry', wcs_all=False, force_wcs_determ=False,
                 rm_outliers_shift=True, filter_window_shift=8,
-                threshold_shift=10., debug=False):
+                threshold_shift=10., temp_tolerence=5, debug=False):
     '''
         Main reduction routine: Creates master images for bias, darks,
                                 flats, reduces the science images and trims
@@ -72,9 +72,8 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
             The read noise (e-) of the camera chip.
             Default is ``None``.
 
-        dr                  : `dictionary(float:float)`, optional
-            Temperature dependent dark rate in e-/pix/s:
-            key = temperature, value = dark rate
+        dr                  : `float`, optional
+            Dark rate in e-/pix/s:
             Default is ``None``.
 
         cosmics             : `boolean`, optional
@@ -199,6 +198,10 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
             considered to be an outlier.
             Default is ``10.``.
 
+        temp_tolerence      : `float`, optional
+            The images are required to have the temperature. This value
+            specifies the temperature difference that is acceptable.
+
         debug               : `boolean`, optional
             If `True` the intermediate files of the data reduction will not
             be removed.
@@ -276,21 +279,17 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
 
 
     ###
-    #   Check instrument
-    #
-    instrument, redout_mode, gain_setting, bit_pix = aux.get_instrument_infos(
-        ifc
-        )
-
-
-    ###
     #   Get camera specific parameters
     #
+    img_para = aux.get_instrument_infos(ifc, temp_tolerence)
+    instrument, redout_mode, gain_setting, bit_pix, temperature = *img_para
+
     if (readnoise is None or gain is None or dr is None or satlevel is None):
         camera_info = calibration_data.camera_info(
             instrument,
             redout_mode,
-            gain_setting,
+            temperature,
+            gain_setting=gain_setting,
             )
         if readnoise == None:
             readnoise = camera_info[0]
@@ -845,9 +844,6 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr={0:0.1},
 
     #   Get exposure times (set allows to return only unique values)
     dark_times = set(ifc.summary['exptime'][dark_mask])
-
-    #   Larges exposure time
-    max_expo = np.max(dark_times)
 
     #   Loop over exposure times
     dark_type = aux.get_image_type(ifc, image_type, image_class='dark')
