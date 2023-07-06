@@ -2041,6 +2041,9 @@ def shift_stack_aa(path, outdir, image_type):
         #   Get filter
         filt = img_out.meta['filter']
 
+        img_out.meta['trimmed'] = True
+        img_out.meta.remove('combined')
+
         #   Define name and write trimmed image to disk
         file_name = 'combined_trimmed_filter_{}.fit'.format(
             filt.replace("''", "p")

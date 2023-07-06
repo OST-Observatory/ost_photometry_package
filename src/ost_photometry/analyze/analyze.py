@@ -3949,13 +3949,13 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
             )
 
         ###
-        #   Check paths
+        #   Check input paths
         #
         checks.check_file(img_paths[filt])
 
 
         #   Initialize image ensemble object
-        img_container.ensembles[filt] = image_ensemble(
+        img_container.ensembles[filt] = current_ensemble = image_ensemble(
             filt,
             name,
             img_paths[filt],
@@ -3967,20 +3967,35 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
         ###
         #   Find the WCS solution for the image
         #
-        aux.find_wcs(
-            img_container.ensembles[filt],
-            ref_id=0,
-            method=wcs_method,
-            force_wcs_determ=force_wcs_determ,
-            indent=3,
-            )
-
+        try:
+            aux.find_wcs(
+                current_ensemble,
+                ref_id=0,
+                method=wcs_method,
+                force_wcs_determ=force_wcs_determ,
+                indent=3,
+                )
+        except Exception as e:
+            for f in filter_list:
+                wcs = getattr(img_container.ensembles[f], 'wcs', None)
+                if wcs is not None:
+                    current_ensemble.set_wcs(wcs)
+                    terminal_output.print_terminal(
+                        string=f"WCS could not be determined for filter {filt}"
+                               f"The WCS of filter {f} will be used instead."
+                               f"This could lead to problems...",
+                        indent=1,
+                        style_name='WARNING',
+                        )
+                    break
+            else:
+                raise RuntimeError('')
 
         ###
         #   Main extraction
         #
         main_extract(
-            img_container.ensembles[filt].image_list[0],
+            current_ensemble.image_list[0],
             sigma_psf[filt],
             sigma_bkg=sigma_bkg,
             multi_start=multi_start,
@@ -4011,9 +4026,9 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
 
         #   Add stellar positions to ensemble class
         #   TODO: Shift this into main extract
-        photo = img_container.ensembles[filt].image_list[0].photometry
-        img_container.ensembles[filt].x_s = photo['x_fit']
-        img_container.ensembles[filt].y_s = photo['y_fit']
+        photo = current_ensemble.image_list[0].photometry
+        current_ensemble.x_s = photo['x_fit']
+        current_ensemble.y_s = photo['y_fit']
 
 
     if photometry == 'PSF':
