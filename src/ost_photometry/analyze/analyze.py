@@ -3723,7 +3723,7 @@ def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             {str(image.pd)+'-'+image.filt:image.residual_image},
             image.outpath.name,
             nameobj=image.objname,
-            indent='      ',
+            indent=2,
             )
 
     elif photometry == 'APER':
