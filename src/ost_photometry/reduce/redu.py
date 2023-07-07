@@ -2035,6 +2035,7 @@ def shift_stack_aa(path, outdir, image_type):
                 mask=footprint,
                 meta=img_ccd.meta,
                 unit=img_ccd.unit,
+                wcs=img_ccd.wcs,
                 uncertainty=StdDevUncertainty(img_uncert),
                 )
 

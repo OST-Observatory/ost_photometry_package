@@ -83,7 +83,7 @@ class image_container:
         self.__dict__.update(kwargs)
 
         #   Check for right ascension and declination
-        ra  =  kwargs.get('ra', None)
+        ra  = kwargs.get('ra', None)
         dec = kwargs.get('dec', None)
         if ra is not None:
             self.ra  = Angle(ra, unit='hour').degree

@@ -2001,6 +2001,12 @@ def derive_limiting_mag(img_container, filt_list, ref_img, indent=1):
             string="Mean of the 10 faintest objects: {}",
             )
 
+    print(x)
+    mask = np.zero((image.get_shape()), dtype=bool)
+    mask[x,y] = True
+
+    print(mask)
+
 
 def rm_edge_objects(table, data, border=10, condense=False, indent=3):
     '''
