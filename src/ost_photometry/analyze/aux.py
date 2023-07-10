@@ -27,6 +27,8 @@ from astropy import wcs
 from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
 
+from photutils.utils import ImageDepth
+
 from regions import (
     RectangleSkyRegion,
     RectanglePixelRegion,
@@ -45,7 +47,7 @@ import scipy.optimize as optimization
 
 from .. import aux as base_aux
 
-from .. import checks, style, terminal_output
+from .. import checks, style, terminal_output, calibration_data
 
 from . import plot
 
@@ -1877,7 +1879,8 @@ def add_median_table(img_ensemble, meanb=False):
     img_ensemble.results = _tbl.group_by('x_fit')
 
 
-def derive_limiting_mag(img_container, filt_list, ref_img, indent=1):
+def derive_limiting_mag(img_container, filt_list, ref_img, , r_limit=4.,
+                        r_unit='arcsec', indent=1):
     '''
         Determine limiting magnitude
 
@@ -1892,6 +1895,14 @@ def derive_limiting_mag(img_container, filt_list, ref_img, indent=1):
             ID of the reference image
             Default is ``0``.
 
+        r_limit                 : `float`, optional
+            Radius of the aperture used to derive the limiting magnitude
+            Default is ``4``.
+
+        r_unit                  : `string`, optional
+            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+            Default is ``arcsec``.
+
         indent          : `integer`, optional
             Indentation for the console output lines
             Default is ``1``.
@@ -1899,37 +1910,8 @@ def derive_limiting_mag(img_container, filt_list, ref_img, indent=1):
     #   Get image ensembles
     img_ensembles = img_container.ensembles
 
-    #   Get type of the magnitude arrays
-    #   Possibilities: unumpy.uarray & numpy structured ndarray
-    unc = getattr(img_container, 'unc', True)
-
     #   Get calibrated magnitudes
-    cali_mags = getattr(img_container, 'cali', None)
-    if unc:
-        if (cali_mags is None or
-            np.all(unumpy.nominal_values(cali_mags) == 0.)):
-                #   If array with magnitude transformation is not available
-                #   or if it is empty get the array without magnitude
-                #   transformation
-                cali_mags = getattr(img_container, 'noT', None)
-                if cali_mags is not None:
-                    #   Get only the magnitude values
-                    cali_mags = unumpy.nominal_values(cali_mags)
-        else:
-            #   Get only the magnitude values
-            cali_mags = unumpy.nominal_values(cali_mags)
-
-    #   numpy structured ndarray type:
-    else:
-        if (cali_mags is None or np.all(cali_mags['mag'] == 0.)):
-            #   If array with magnitude transformation is not available
-            #   or if it is empty get the array without magnitude
-            #   transformation
-            cali_mags = getattr(img_container, 'noT', None)
-            if cali_mags is not None:
-                cali_mags = cali_mags['mag']
-        else:
-            cali_mags = cali_mags['mag']
+    cali_mags = img_container.get_calibrated_magnitudes()
 
     #   Get magnitudes of reference image
     for i, filt in enumerate(filt_list):
@@ -1991,21 +1973,65 @@ def derive_limiting_mag(img_container, filt_list, ref_img, indent=1):
             string="Determine limiting magnitude for filter: {}",
             )
         terminal_output.print_terminal(
-            np.median(tbl_mag['mags'][-10:]),
             indent=indent*2,
+            string="Based on detected objects:",
+            )
+        terminal_output.print_terminal(
+            np.median(tbl_mag['mags'][-10:]),
+            indent=indent*3,
             string="Median of the 10 faintest objects: {}",
             )
         terminal_output.print_terminal(
             np.mean(tbl_mag['mags'][-10:]),
-            indent=indent*2,
+            indent=indent*3 ,
             string="Mean of the 10 faintest objects: {}",
             )
 
-    print(x)
-    mask = np.zero((image.get_shape()), dtype=bool)
-    mask[x,y] = True
+        #   Convert object positions to pixel index values
+        index_x = np.rint(x).astype(int)
+        index_y = np.rint(y).astype(int)
 
-    print(mask)
+        #   Convert object positions to mask
+        mask = np.zeros(image.get_shape(), dtype=bool)
+        mask[index_y, index_x] = True
+
+        #   Set radius for the apertures
+        radius = r_limit
+        if r_unit == 'arcsec':
+            radius = radius / image.pixscale
+
+        #   Setup ImageDepth object from the photutils package
+        depth = ImageDepth(
+            radius,
+            nsigma=5.0,
+            napers=500,
+            niters=2,
+            overlap=False,
+            # seed=123,
+            zeropoint=np.median(image.ZP_clip),
+            progress_bar=False,
+            )
+
+        #   Plot sky apertures
+        p = mp.Process(
+            target=plot_limiting_mag_sky_apertures,
+            args=(img_data, mask, depth),
+            )
+        p.start()
+
+        #   Derive limits
+        limits = depth(image.get_data(), mask)
+
+        #   Print results
+        terminal_output.print_terminal(
+            indent=indent*2,
+            string="Based on the ImageDepth (photutils) routine:",
+            )
+        terminal_output.print_terminal(
+            limits[1],
+            indent=indent*3,
+            string="500 apertures, 5 sigma, 2 iterations: {}",
+            )
 
 
 def rm_edge_objects(table, data, border=10, condense=False, indent=3):
@@ -2651,18 +2677,6 @@ def save_mags_ascii(container, tbl, trans=False, ID='', rts='',
     if photo_type != '':
         photo_type = '_'+photo_type
 
-    #   Define output formats for the table columns
-    formats = {
-        'x': '%12.2f',
-        'y': '%12.2f',
-        "B [mag]": '%12.3f',
-        "B_err [mag]": '%12.3f',
-        "V [mag]": '%12.3f',
-        "V_err [mag]": '%12.3f',
-        "B-V [mag]": '%12.3f',
-        "B-V_err [mag]": '%12.3f',
-        }
-
     #   Check if ``container`` object contains already entries
     #   for file names/paths. If not add dictionary.
     photo_filepath = getattr(container, 'photo_filepath', None)
@@ -2683,6 +2697,30 @@ def save_mags_ascii(container, tbl, trans=False, ID='', rts='',
     #   Add to object
     if doadd:
         container.photo_filepath[out_path] = trans
+
+
+    ###
+    #   Define output formats for the table columns
+    #
+    #   Get column names
+    colnames = tbl.colnames
+
+    #   Set default
+    for colname in colnames:
+        tbl[colname].info.format = '{:12.3f}'
+
+    #   Reset for x and y column
+    formats = {
+        'x': '{:12.2f}',
+        'y': '{:12.2f}',
+        # "B [mag]": '%12.3f',
+        # "B_err [mag]": '%12.3f',
+        # "V [mag]": '%12.3f',
+        # "V_err [mag]": '%12.3f',
+        # "B-V [mag]": '%12.3f',
+        # "B-V_err [mag]": '%12.3f',
+        }
+
 
     #   Write file
     tbl.write(
@@ -2823,3 +2861,126 @@ def postprocess_results(img_container, filter_list, ID='', photo_type='',
             )
 
         first = False
+
+
+def convert_magnitudes_internal_wrapper(img_container, target_filter_system):
+    '''
+        Gets astropy table with  magnitudes from image container and
+        calls then the magnitude conversion.
+
+        Parameters
+        ----------
+        img_container           : `image.container`
+            Container object with image ensemble objects for each filter
+
+        target_filter_system    : `string`
+            Photometric system the magnitudes should be converted to
+    '''
+    # #   Get calibrated magnitudes
+    # cali_mags = img_container.get_calibrated_magnitudes()
+
+    #   Get astropy tables with magnitudes
+    tbl_transformed = getattr(img_container, 'table_mags_transformed', None)
+    tbl_not_transformed = getattr(
+        img_container,
+        'table_mags_not_transformed',
+        None,
+        )
+
+    #   Convert magnitudes
+    if tbl_transformed is not None:
+        convert_magnitudes(tbl_transformed, target_filter_system)
+    if tbl_not_transformed is not None:
+        convert_magnitudes(tbl_not_transformed, target_filter_system)
+
+
+
+def convert_magnitudes(tbl, conert_to):
+    '''
+        Convert magnitudes from one system to another
+
+        Parameters
+        ----------
+        tbl                 : `astropy.table.Table`
+            Table with magnitudes
+
+        target_filter_system    : `string`
+            Photometric system the magnitudes should be converted to
+    '''
+    #   Get column names
+    colnames = tbl.colnames
+
+    #   Checks
+    if target_filter_system is not in ['SDSS', 'AB', 'BESSELL']:
+        terminal_output.print_terminal(
+            target_filter_system,
+            string='Magnitude conversion not possible.Unfortunately, ' \
+                    'there is currently no conversion formula for this ' \
+                    'photometric system: {}.',
+            style_name='WARNING',
+            )
+
+    #   Select magnitudes and errors and corresponding filter
+    collected_mags = {}
+    collected_err = {}
+    available_filter = []
+
+
+    for colname in colnames:
+        for filt in ['U', 'B', 'V', 'R', 'I', 'u', 'g', 'r', 'i', 'z']:
+            if filt in colname and '_err' in colname:
+                collected_err[filt] = tbl[colname].value
+            elif filt in colname:
+                collected_mags[filt] = tbl[colname].value
+                available_filter.append(filt)
+
+    data_dict = {}
+    for filt in available_filter:
+        data_dict[filt] = unumpy.uarray(
+            collected_mags[filt],
+            collected_err[filt]
+            )
+    # import copy
+    # available_filter = copy.deepcopy(filter_to_convert)
+
+    if target_filter_system == 'AB':
+        print('Will be available soon...')
+
+    elif target_filter_system == 'SDSS':
+        calib_functions = calibration_data \
+            .filter_system_conversions['SDSS']['Jordi_et_al_2005']
+
+        g = filter_system_conversions['g'](**data_dict)
+        if g is not None:
+            data_dict['g'] = g
+
+        u = filter_system_conversions['u'](**data_dict)
+        if u is not None:
+            data_dict['u'] = u
+
+        r = filter_system_conversions['r'](**data_dict)
+        if r is not None:
+            data_dict['r'] = r
+
+        i = filter_system_conversions['i'](**data_dict)
+        if i is not None:
+            data_dict['i'] = i
+
+        z = filter_system_conversions['z'](**data_dict)
+        if z is not None:
+            data_dict['z'] = z
+
+        print('g\n')
+        print(g)
+        print('r\n')
+        print(r)
+
+    elif target_filter_system == 'BESSELL':
+        print('Will be available soon...')
+
+
+
+
+
+
+

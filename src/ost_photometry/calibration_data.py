@@ -4,6 +4,8 @@
 
 from astropy.time import Time
 
+from uncertainties import ufloat
+
 import scipy.interpolate as interpolate
 
 from . import terminal_output
@@ -566,16 +568,144 @@ filter_sytems = {
     'V':'bessell',
     'R':'bessell',
     'I':'bessell',
-    'u`':'sdssu',
-    'g`':'sdssg',
-    'r`':'sdssr',
-    'i`':'sdssi',
-    'z-s`':'sdssz',
-    'y`':'sdssy',
+    'u`':'sdss',
+    'g`':'sdss',
+    'r`':'sdss',
+    'i`':'sdss',
+    'z-s`':'sdss',
+    'y`':'sdss',
     # 'Blue':
     # 'Green':
     # 'Red':
     }
+
+
+###
+#   Conversions between filter systems
+#
+filter_system_conversions = {
+    'SDSS': {
+        'Jordi_et_al_2005': {
+            'g': Jordi_g,
+            'u': Jordi_u,
+            'r': Jordi_r,
+            'i': Jordi_i,
+            'z': Jordi_z,
+            }
+        }
+    }
+
+
+###
+#   Filter system conversion functions
+#
+def Jordi_u{**kwargs}:
+    if all(filt in kwargs for filt in ['U', 'B', 'V', 'g']):
+        U = kwargs.get("U")
+        B = kwargs.get("B")
+        V = kwargs.get("V")
+        g = kwargs.get("g")
+
+        return ufloat(0.750, 0.050)*(U-B) + ufloat(0.770, 0.070)*(B-V) \
+                                        + ufloat(0.720, 0.040) + g
+    return None
+
+def Jordi_g(**kwargs):
+    if all(filt in kwargs for filt in ['B', 'V']):
+        B = kwargs.get("B")
+        V = kwargs.get("V")
+
+        return ufloat(0.630, 0.002)*(B-V) - ufloat(0.124, 0.002) + V
+
+    if all(filt in kwargs for filt in ['V', 'R', 'r']):
+        V = kwargs.get("V")
+        R = kwargs.get("R")
+        r = kwargs.get("r")
+
+        return ufloat(1.646, 0.008)*(V-R) - ufloat(0.139, 0.004) + r
+
+    if all(filt in kwargs for filt in ['V', 'I', 'i']):
+        V = kwargs.get("V")
+        I = kwargs.get("I")
+        i = kwargs.get("i")
+
+        if V-I <= 1.8:
+            return ufloat(1.481, 0.004)*(V-I) - ufloat(0.536, 0.004) + i
+        else:
+            return ufloat(0.83, 0.01)*(V-I) + ufloat(0.60, 0.03) + i
+
+    return None
+
+def Jordi_r(**kwargs):
+    if all(filt in kwargs for filt in ['I', 'R']):
+        I = kwargs.get("I")
+        R = kwargs.get("R")
+
+        if V-R <= 0.93:
+            return ufloat(0.267, 0.005)*(V-R) + ufloat(0.088, 0.003) + R
+        else:
+            return ufloat(0.77, 0.04)*(V-R) - ufloat(0.37, 0.04)
+
+    if all(filt in kwargs for filt in ['V', 'R', 'g']):
+        V = kwargs.get("V")
+        R = kwargs.get("R")
+        g = kwargs.get("g")
+
+        return g - ufloat(1.646, 0.008)*(V-R) + ufloat(0.139, 0.004)
+
+    if all(filt in kwargs for filt in ['I', 'R', 'i']):
+        I = kwargs.get("I")
+        R = kwargs.get("R")
+        i = kwargs.get("i")
+
+        return ufloat(1.007, 0.005)*(R-I) - ufloat(0.236, 0.003) + i
+
+    if all(filt in kwargs for filt in ['I', 'R', 'z']):
+        I = kwargs.get("I")
+        R = kwargs.get("R")
+        z = kwargs.get("z")
+
+        return ufloat(1.584, 0.008)*(R-I) - ufloat(0.386, 0.005) + z
+
+    return None
+
+def Jordi_i(**kwargs):
+    if all(filt in kwargs for filt in ['V', 'I']):
+        V = kwargs.get("V")
+        I = kwargs.get("I")
+
+        return ufloat(0.247, 0.003)*(R-I) + ufloat(0.329, 0.002) + I
+
+    if all(filt in kwargs for filt in ['V', 'I', 'g']):
+        V = kwargs.get("V")
+        I = kwargs.get("I")
+        g = kwargs.get("g")
+
+        if V-I <= 1.8:
+            return g - ufloat(1.481, 0.004)*(V-I) + ufloat(0.536, 0.004)
+        else:
+            return g - ufloat(0.83, 0.01)*(V-I) - ufloat(0.60, 0.03)
+
+    if all(filt in kwargs for filt in ['I', 'R', 'r']):
+        I = kwargs.get("I")
+        R = kwargs.get("R")
+        r = kwargs.get("r")
+
+        return r - ufloat(1.007, 0.005)*(R-I) + ufloat(0.236, 0.003)
+
+    return None
+
+
+def Jordi_z(**kwargs):
+    if all(filt in kwargs for filt in ['I', 'R', 'r']):
+        I = kwargs.get("I")
+        R = kwargs.get("R")
+        r = kwargs.get("r")
+
+        return r - ufloat(1.584, 0.008)*(R-I) + ufloat(0.386, 0.005)
+
+    return None
+
 
 
 ###

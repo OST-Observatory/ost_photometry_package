@@ -170,6 +170,42 @@ class image_container:
 
         return ensembles
 
+    #   Get calibrated magnitudes as numpy.ndarray
+    def get_calibrated_magnitudes(self):
+        #   Get type of the magnitude arrays
+        #   Possibilities: unumpy.uarray & numpy structured ndarray
+        unc = getattr(self, 'unc', True)
+
+        #   Get calibrated magnitudes
+        cali_mags = getattr(self, 'cali', None)
+        if unc:
+            if (cali_mags is None or
+                np.all(unumpy.nominal_values(cali_mags) == 0.)):
+                    #   If array with magnitude transformation is not available
+                    #   or if it is empty get the array without magnitude
+                    #   transformation
+                    cali_mags = getattr(self, 'noT', None)
+                    if cali_mags is not None:
+                        #   Get only the magnitude values
+                        cali_mags = unumpy.nominal_values(cali_mags)
+            else:
+                #   Get only the magnitude values
+                cali_mags = unumpy.nominal_values(cali_mags)
+
+        #   numpy structured ndarray type:
+        else:
+            if (cali_mags is None or np.all(cali_mags['mag'] == 0.)):
+                #   If array with magnitude transformation is not available
+                #   or if it is empty get the array without magnitude
+                #   transformation
+                cali_mags = getattr(self, 'noT', None)
+                if cali_mags is not None:
+                    cali_mags = cali_mags['mag']
+            else:
+                cali_mags = cali_mags['mag']
+
+        return cali_mags
+
 
 class image_ensemble:
     '''
@@ -3893,7 +3929,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
 
         r_unit          : `string`, optional
             Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
-            Default is ``pixel``.
+            Default is ``arcsec``.
 
         strict_eps      ; `boolean`, optional
             If True a stringent test of the ePSF conditions is applied.
@@ -4497,7 +4533,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
                         region=False, radius=600, data_cluster=False,
                         pm_median=False, max_distance_cluster=6.,
                         find_cluster_para_set=1, correl_method='astropy',
-                        seplimit=2.*u.arcsec):
+                        seplimit=2.*u.arcsec, r_limit=4., r_unit='arcsec'):
     '''
         Correlate photometric extraction results from 2 images and calibrate
         the magnitudes.
@@ -4551,39 +4587,39 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
             Magnitude range
             Default is ``(0.,18.5)``.
 
-        Tcs             : `dictionary`, optional
+        Tcs                     : `dictionary`, optional
             Calibration coefficients for the magnitude transformation
             Default is ``None``.
 
-        derive_Tcs      : `boolean`, optional
+        derive_Tcs              : `boolean`, optional
             If True the magnitude transformation coefficients will be
             calculated from the current data even if calibration coefficients
             are available in the data base.
             Default is ``False``
 
-        plot_sigma      : `boolean', optional
+        plot_sigma              : `boolean', optional
             If True sigma clipped magnitudes will be plotted.
             Default is ``False``.
 
-        photo_type      : `string`, optional
+        photo_type              : `string`, optional
             Applied extraction method. Posibilities: ePSF or APER`
             Default is ``''``.
 
-        region          : `boolean`, optional
+        region                  : `boolean`, optional
             If True the extracted objects will be filtered such that only
             objects with ``radius`` will be returned.
             Default is ``False``.
 
-        radius          : `float`, optional
+        radius                  : `float`, optional
             Radius around the object in arcsec.
             Default is ``600``.
 
-        data_cluster    : `boolean`, optional
+        data_cluster            : `boolean`, optional
             If True cluster in the Gaia distance and proper motion data
             will be identified.
             Default is ``False``.
 
-        pm_median       : `boolean`, optional
+        pm_median               : `boolean`, optional
             If True only the objects that are close to the median
             proper motion will be returned.
             Default is ``False``.
@@ -4598,15 +4634,23 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
             Parameter set used to identify the star cluster in proper
             motion and distance data.
 
-        correl_method       : `string`, optional
+        correl_method           : `string`, optional
             Correlation method to be used to find the common objects on
             the images.
             Possibilities: ``astropy``, ``own``
             Default is ``astropy``.
 
-        seplimit            : `astropy.units`, optional
+        seplimit                : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
+
+        r_limit                 : `float`, optional
+            Radius of the aperture used to derive the limiting magnitude
+            Default is ``4``.
+
+        r_unit                  : `string`, optional
+            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+            Default is ``arcsec``.
     '''
     ###
     #   Correlate the stellar positions from the different filter
@@ -4661,6 +4705,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     ###
     #   Restrict results to specific areas of the image and filter by means
     #   of proper motion and distance using Gaia
+    #
     aux.postprocess_results(
         img_container,
         filter_list,
@@ -4677,7 +4722,18 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     ###
     #   Determine limiting magnitudes
     #
-    aux.derive_limiting_mag(img_container, filter_list, ref_img)
+    aux.derive_limiting_mag(
+        img_container,
+        filter_list,
+        ref_img,
+        r_limit=r_limit,
+        r_unit=r_unit,
+        )
+
+    ###
+    #   Test
+    #
+    convert_magnitudes_internal_wrapper(img_container, 'SDSS')
 
 
 def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,

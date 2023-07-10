@@ -2399,3 +2399,60 @@ def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
         format='pdf',
                )
     plt.close()
+
+
+def plot_limiting_mag_sky_apertures(img_data, mask, depth):
+    '''
+        Plot the sky apertures that are used to estimate the limiting magnitude
+
+        Parameters
+        ----------
+        img_data            : `numpy.ndarray`
+            Image data
+
+        mask                : `numpy.ndarray`
+            Mask showing the position of detected objects
+
+        depth               : `photutils.utils.ImageDepth`
+            Object used to derive the limiting magnitude
+    '''
+    #   Check output directories
+    checks.check_out(
+        outdir,
+        os.path.join(outdir, 'limiting_mag'),
+        )
+
+    #   Plot magnitudes
+    fig =  plt.subplots(nrows=1, ncols=2, figsize=(9, 3))
+
+    #   Set titel
+    ax[0].set_title('Data with blank apertures')
+    ax[1].set_title('Mask with blank apertures')
+
+    #   Normalize the image data and plot
+    norm = simple_norm(data, 'sqrt', percent=99.)
+    ax[0].imshow(data, norm=norm)
+
+    #   Plot mask with object positions
+    ax[1].imshow(mask, interpolation='none')
+
+    #   Plot apertures used to derive limiting magnitude
+    color = 'orange'
+    depth.apertures[0].plot(ax[0], color=color)
+    depth.apertures[0].plot(ax[1], color=color)
+
+    plt.subplots_adjust(
+        left=0.05,
+        right=0.98,
+        bottom=0.05,
+        top=0.95,
+        wspace=0.15,
+        )
+
+    #   Save plot
+    plt.savefig(
+        outdir+'/limiting_mag/limiting_mag_sky_regions.pdf',
+        bbox_inches='tight',
+        format='pdf',
+               )
+    plt.close()

@@ -1644,18 +1644,25 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
     if not checks.check_unumpy_array(cali):
         cali = cali['mag']
 
+    #   If transformation is available
     if np.any(cali != 0.):
-        #   If transformation is available
+        #   Make astropy table
+        table_mags_transformed = aux.mk_mag_table(
+            ind,
+            x,
+            y,
+            img_container.cali,
+            filter_list,
+            id_tuple_trans,
+            )
+
+        #   Add table to container
+        img_container.table_mags_transformed = table_mags_transformed
+
+        #   Save to file
         aux.save_mags_ascii(
             img_container,
-            aux.mk_mag_table(
-                ind,
-                x,
-                y,
-                img_container.cali,
-                filter_list,
-                id_tuple_trans,
-                ),
+            table_mags_transformed,
             trans=True,
             ID=ID,
             photo_type=photo_type,
@@ -1668,16 +1675,24 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
             )
 
     #   Without transformation
+
+    #   Make astropy table
+    table_mags_not_transformed = aux.mk_mag_table(
+        ind,
+        x,
+        y,
+        img_container.noT,
+        filter_list,
+        id_tuple_notrans,
+        )
+
+    #   Add table to container
+    img_container.table_mags_not_transformed = table_mags_not_transformed
+
+    #   Save to file
     aux.save_mags_ascii(
         img_container,
-        aux.mk_mag_table(
-            ind,
-            x,
-            y,
-            img_container.noT,
-            filter_list,
-            id_tuple_notrans,
-            ),
+        table_mags_not_transformed,
         trans=False,
         ID=ID,
         photo_type=photo_type,
