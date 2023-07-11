@@ -1664,7 +1664,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
             img_container,
             table_mags_transformed,
             trans=True,
-            ID=ID,
+            id_object=ID,
             photo_type=photo_type,
             )
     else:
@@ -1694,7 +1694,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
         img_container,
         table_mags_not_transformed,
         trans=False,
-        ID=ID,
+        id_object=ID,
         photo_type=photo_type,
         )
 

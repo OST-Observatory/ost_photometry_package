@@ -2742,7 +2742,8 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
                         region=False, radius=600, data_cluster=False,
                         pm_median=False, n_clusters=10,
                         max_distance_cluster=6., find_cluster_para_set=1,
-                        convert_mags=False, target_filter_system='SDSS'):
+                        convert_mags=False, target_filter_system='SDSS',
+                        tbl_list=None):
     """
         Restrict results to specific areas of the image and filter by means
         of proper motion and distance using Gaia
@@ -2806,6 +2807,12 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
         target_filter_system    : `string`, optional
             Photometric system the magnitudes should be converted to
             Default is ``SDSS``.
+
+        tbl_list                : `[astropy.table.Table]` or None, optional
+            List with Tables containing magnitudes etc. If None are provided,
+            the tables will be read from the image container.
+            Default is ``None``.
+
     """
     #   Do nothing if no post process method were defined
     if not region and not pm_median and not data_cluster and not convert_mags:
@@ -2818,10 +2825,12 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
     # paths = img_container.photo_filepath
 
     #   Get astropy tables with positions and magnitudes
-    tbl_list = [
-        (getattr(img_container, 'table_mags_transformed', None), True),
-        (getattr(img_container, 'table_mags_not_transformed', None), False),
-        ]
+    if tbl_list is None or not tbl_list:
+        tbl_list = [
+            (getattr(img_container, 'table_mags_transformed', None), True),
+            (getattr(img_container, 'table_mags_not_transformed', None), False),
+            ]
+
     #   Loop over all Tables
     mask_region = None
     img_id_cluster = None
@@ -2830,11 +2839,6 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
     img_id_pm = None
     mask_pm = None
     for (tbl, trans) in tbl_list:
-    # for path, trans in paths.items():
-        #   Read Table
-        # tbl = Table.read(path, format='ascii')
-
-
         ###
         #   Postprocess data
         #
