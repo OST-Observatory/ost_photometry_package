@@ -1,4 +1,3 @@
-
 ############################################################################
 ####                            Libraries                               ####
 ############################################################################
@@ -8,8 +7,6 @@ import sys
 import numpy as np
 
 from uncertainties import unumpy
-
-from pathlib import Path
 
 import pandas as pd
 
@@ -30,16 +27,14 @@ from astroquery.vizier import Vizier
 from photutils.utils import ImageDepth
 
 from regions import (
-    RectangleSkyRegion,
-    RectanglePixelRegion,
+    # RectangleSkyRegion,
+    # RectanglePixelRegion,
     PixCoord,
     CirclePixelRegion,
     Regions,
-    )
+)
 
 from sklearn.cluster import SpectralClustering
-
-import twirl
 
 import multiprocessing as mp
 
@@ -55,8 +50,9 @@ from . import plot
 ####                        Routines & definitions                      ####
 ############################################################################
 
+
 def err_prop(*args):
-    '''
+    """
         Calculate error propagation
 
         Parameters
@@ -66,18 +62,18 @@ def err_prop(*args):
 
         Returns
         -------
-        u           : `float`
+        sum_error   : `float`
             Summed up error
-    '''
-    u = 0
+    """
+    sum_error = 0
     #   Adding up the errors
     for x in args:
-        u = np.sqrt(np.square(u) + np.square(x))
-    return u
+        sum_error = np.sqrt(np.square(u) + np.square(x))
+    return sum_error
 
 
 def mk_cmd_table(ind_sort, x, y, mags, list_bands):
-    '''
+    """
         Create and export the CMD
 
         Parameters
@@ -101,7 +97,7 @@ def mk_cmd_table(ind_sort, x, y, mags, list_bands):
         -------
         tbl_cmd         : `astropy.table.Table`
             Table with CMD data
-    '''
+    """
     #   Number of filter
     nfilter = len(list_bands)
 
@@ -120,8 +116,8 @@ def mk_cmd_table(ind_sort, x, y, mags, list_bands):
             np.intc(ind_sort),
             x,
             y,
-            ]
-        )
+        ]
+    )
 
     #   Set name of the magnitude field
     if 'med' in mags.dtype.names:
@@ -137,23 +133,23 @@ def mk_cmd_table(ind_sort, x, y, mags, list_bands):
                     [
                         mags[name_mag][i],
                         mags['err'][i],
-                        ],
+                    ],
                     names=[
-                        list_bands[i]+' [mag]',
-                        list_bands[i]+'_err [mag]',
-                        ]
-                    )
+                        list_bands[i] + ' [mag]',
+                        list_bands[i] + '_err [mag]',
+                    ]
+                )
             else:
                 tbl_cmd.add_column(
                     mags[name_mag][i],
-                    name=list_bands[i]+' [mag]'
-                    )
+                    name=list_bands[i] + ' [mag]'
+                )
 
             if i != 0:
                 tbl_cmd.add_column(
-                    mags[name_mag][i-1] - mags[name_mag][i],
-                    name=list_bands[i-1]+'-'+list_bands[i]+' [mag]'
-                    )
+                    mags[name_mag][i - 1] - mags[name_mag][i],
+                    name=list_bands[i - 1] + '-' + list_bands[i] + ' [mag]'
+                )
         else:
             for j in range(0, nimg):
                 if nimg == 1:
@@ -162,38 +158,37 @@ def mk_cmd_table(ind_sort, x, y, mags, list_bands):
                             [
                                 mags[name_mag][i][j],
                                 mags['err'][i][j],
-                                ],
+                            ],
                             names=[
-                                list_bands[i]+' [mag]',
-                                list_bands[i]+'_err [mag]',
-                                ]
-                            )
+                                list_bands[i] + ' [mag]',
+                                list_bands[i] + '_err [mag]',
+                            ]
+                        )
                         if i != 0:
                             tbl_cmd.add_columns(
                                 [
-                                    mags[name_mag][i-1][j]-mags[name_mag][i][j],
+                                    mags[name_mag][i - 1][j] - mags[name_mag][i][j],
                                     err_prop(
-                                        mags['err'][i-1][j],
+                                        mags['err'][i - 1][j],
                                         mags['err'][i][j],
-                                        ),
-                                    ],
+                                    ),
+                                ],
                                 names=[
-                                    list_bands[i-1]+'-'+list_bands[i]+' [mag]',
-                                    list_bands[i-1]+'-'\
-                                        +list_bands[i]+'_err [mag]',
-                                    ]
-                                )
+                                    f'{list_bands[i - 1]}-{list_bands[i]} [mag]',
+                                    f'{list_bands[i - 1]}-{list_bands[i]}_err [mag]',
+                                ]
+                            )
                     else:
                         tbl_cmd.add_column(
                             mags[name_mag][i][j],
-                            name=list_bands[i]+' [mag]'
-                            )
+                            name=list_bands[i] + ' [mag]'
+                        )
 
                         if i != 0:
                             tbl_cmd.add_column(
-                                mags[name_mag][i-1][j] - mags[name_mag][i][j],
-                                name=list_bands[i-1]+'-'+list_bands[i]+' [mag]'
-                                )
+                                mags[name_mag][i - 1][j] - mags[name_mag][i][j],
+                                name=list_bands[i - 1] + '-' + list_bands[i] + ' [mag]'
+                            )
 
                 else:
                     if 'err' in mags.dtype.names:
@@ -201,57 +196,57 @@ def mk_cmd_table(ind_sort, x, y, mags, list_bands):
                             [
                                 mags[name_mag][i][j],
                                 mags['err'][i][j],
-                                ],
+                            ],
                             names=[
-                                list_bands[i]+' [mag] ('+str(j)+')',
-                                list_bands[i]+'_err [mag] ('+str(j)+')',
-                                ]
-                            )
+                                list_bands[i] + ' [mag] (' + str(j) + ')',
+                                list_bands[i] + '_err [mag] (' + str(j) + ')',
+                            ]
+                        )
                         if i != 0:
                             tbl_cmd.add_columns(
                                 [
-                                    mags[name_mag][i-1][j]-mags[name_mag][i][j],
+                                    mags[name_mag][i - 1][j] - mags[name_mag][i][j],
                                     err_prop(
-                                        mags['err'][i-1][j],
+                                        mags['err'][i - 1][j],
                                         mags['err'][i][j],
-                                        ),
-                                    ],
+                                    ),
+                                ],
                                 names=[
-                                    list_bands[i-1]+'-'+list_bands[i]\
-                                        +' [mag] ('+str(j)+')',
-                                    list_bands[i-1]+'-'+list_bands[i]\
-                                        +'_err [mag] ('+str(j)+')',
-                                    ]
-                                )
+                                    list_bands[i - 1] + '-' + list_bands[i] \
+                                    + ' [mag] (' + str(j) + ')',
+                                    list_bands[i - 1] + '-' + list_bands[i] \
+                                    + '_err [mag] (' + str(j) + ')',
+                                ]
+                            )
 
                     else:
                         tbl_cmd.add_column(
                             mags[name_mag][i][j],
-                            name=list_bands[i]+' [mag] ('+str(j)+')'
-                            )
+                            name=list_bands[i] + ' [mag] (' + str(j) + ')'
+                        )
                         if i != 0:
                             tbl_cmd.add_column(
-                                mags[name_mag][i-1][j] - mags[name_mag][i][j],
-                                name=list_bands[i-1]+'-'+list_bands[i]\
-                                        +' [mag] ('+str(j)+')'
-                                )
+                                mags[name_mag][i - 1][j] - mags[name_mag][i][j],
+                                name=list_bands[i - 1] + '-' + list_bands[i] \
+                                     + ' [mag] (' + str(j) + ')'
+                            )
 
     #   Sort CMD table
     if nimg == 1:
-        tbl_cmd = tbl_cmd.group_by(list_bands[0]+' [mag]')
+        tbl_cmd = tbl_cmd.group_by(list_bands[0] + ' [mag]')
     else:
-        tbl_cmd = tbl_cmd.group_by(list_bands[0]+' [mag] (0)')
+        tbl_cmd = tbl_cmd.group_by(list_bands[0] + ' [mag] (0)')
 
     return tbl_cmd
 
 
 def mk_mag_table(*args, **kwargs):
-    '''
+    """
         Create and export astropy table with object positions and magnitudes
 
         Distinguishes between different input magnitude array types.
         Possibilities: unumpy.uarray & numpy structured ndarray
-    '''
+    """
     #   Get type of the magnitude arrays
     unc = checks.check_unumpy_array(args[3])
 
@@ -262,7 +257,7 @@ def mk_mag_table(*args, **kwargs):
 
 
 def mk_mag_table_str(ind_sort, x, y, mags, list_bands, id_tupels):
-    '''
+    """
         Create and export astropy table with object positions and magnitudes
         Input magnitude array is expected to be a numpy structured array.
 
@@ -292,73 +287,70 @@ def mk_mag_table_str(ind_sort, x, y, mags, list_bands, id_tupels):
         -------
         tbl_cmd         : `astropy.table.Table`
             Table with CMD data
-    '''
+    """
     #   Number of filter
-    nfilter    = len(list_bands)
+    nfilter = len(list_bands)
 
     # Make CMD table
     tbl_cmd = Table(
-        names=['i','x', 'y',],
+        names=['i', 'x', 'y', ],
         data=[
             np.intc(ind_sort),
             x,
             y,
-            ]
-        )
+        ]
+    )
 
     #   Set name of the magnitude field
     name_mag = 'mag'
 
-    #   Add magnitude columns to CMD table
+    #   Add magnitude columns to table
     for ids in id_tupels:
         if 'err' in mags.dtype.names:
             tbl_cmd.add_columns(
                 [
-                    mags[name_mag][ids[0]][ids[1]],
-                    mags['err'][ids[0]][ids[1]],
-                    ],
+                    mags[name_mag][ids[0]][ids[1]] * u.mag,
+                    mags['err'][ids[0]][ids[1]] * u.mag,
+                ],
                 names=[
-                    list_bands[ids[0]]+' [mag] ('+str(ids[1])+')',
-                    list_bands[ids[0]]+'_err [mag] ('+str(ids[1])+')',
-                    ]
-                )
+                    f'{list_bands[ids[0]]} ({ids[1]})',
+                    f'{list_bands[ids[0]]}_err ({ids[1]})',
+                ]
+            )
             if len(id_tupels) == 4:
                 tbl_cmd.add_columns(
                     [
-                    mags[name_mag][ids[2]][ids[3]]\
-                        - mags[name_mag][ids[0]][ids[1]],
-                    err_prop(
-                        mags['err'][ids[2]][ids[3]],
-                        mags['err'][ids[0]][ids[1]],
-                        ),
+                        (mags[name_mag][ids[2]][ids[3]]
+                            - mags[name_mag][ids[0]][ids[1]]) * u.mag,
+                        err_prop(
+                            mags['err'][ids[2]][ids[3]],
+                            mags['err'][ids[0]][ids[1]],
+                        ) * u.mag,
                     ],
                     names=[
-                        list_bands[ids[2]]+'-'+list_bands[ids[0]]\
-                            +' [mag] ('+str(ids[1])+')',
-                        list_bands[ids[2]]+'-'+list_bands[ids[0]]\
-                            +'_err [mag] ('+str(ids[1])+')',
-                        ]
-                    )
+                        f'{list_bands[ids[2]]}-{list_bands[ids[0]]} ({ids[1]})',
+                        f'{list_bands[ids[2]]}-{list_bands[ids[0]]}_err ({ids[1]})',
+                    ]
+                )
 
         else:
             tbl_cmd.add_column(
-                mags[name_mag][ids[0]][ids[1]],
-                name=list_bands[ids[0]]+' [mag] ('+str(ids[1])+')'
-                )
+                mags[name_mag][ids[0]][ids[1]] * u.mag,
+                name=f'{list_bands[ids[0]]} ({ids[1]})'
+            )
             tbl_cmd.add_column(
-                mags[name_mag][ids[2]][ids[3]]-mags[name_mag][ids[0]][ids[1]],
-                name=list_bands[ids[2]]+'-'+list_bands[ids[0]]\
-                        +' [mag] ('+str(ids[1])+')'
-                )
+                (mags[name_mag][ids[2]][ids[3]] - mags[name_mag][ids[0]][ids[1]]) * u.mag,
+                name=f'{list_bands[ids[2]]}-{list_bands[ids[0]]} ({ids[1]})'
+            )
 
-    #   Sort CMD table
-    tbl_cmd = tbl_cmd.group_by(list_bands[0]+' [mag] (0)')
+    #   Sort table
+    tbl_cmd = tbl_cmd.group_by(f'{list_bands[0]} (0)')
 
     return tbl_cmd
 
 
 def mk_mag_table_unc(ind_sort, x, y, mags, list_bands, id_tupels):
-    '''
+    """
         Create and export astropy table with object positions and magnitudes
         Input magnitude array is expected to be a unumpy uarray.
 
@@ -388,58 +380,55 @@ def mk_mag_table_unc(ind_sort, x, y, mags, list_bands, id_tupels):
         -------
         tbl_cmd         : `astropy.table.Table`
             Table with CMD data
-    '''
+    """
     #   Number of filter
-    nfilter    = len(list_bands)
+    nfilter = len(list_bands)
 
     # Make CMD table
     tbl_cmd = Table(
-        names=['i','x', 'y',],
+        names=['i', 'x', 'y', ],
         data=[
             np.intc(ind_sort),
             x,
             y,
-            ]
-        )
+        ]
+    )
 
-    #   Add magnitude columns to CMD table
+    #   Add magnitude columns to table
     for ids in id_tupels:
         tbl_cmd.add_columns(
             [
-                unumpy.nominal_values(mags[ids[0]][ids[1]]),
-                unumpy.std_devs(mags[ids[0]][ids[1]]),
-                ],
+                unumpy.nominal_values(mags[ids[0]][ids[1]]) * u.mag,
+                unumpy.std_devs(mags[ids[0]][ids[1]]) * u.mag,
+            ],
             names=[
-                list_bands[ids[0]]+' [mag] ('+str(ids[1])+')',
-                list_bands[ids[0]]+'_err [mag] ('+str(ids[1])+')',
-                ]
-            )
+                f'{list_bands[ids[0]]} ({ids[1]})',
+                f'{list_bands[ids[0]]}_err ({ids[1]})',
+            ]
+        )
         if len(id_tupels) == 4:
             color = mags[ids[2]][ids[3]] - mags[ids[0]][ids[1]]
             tbl_cmd.add_columns(
                 [
-                    unumpy.nominal_values(color),
-                    unumpy.std_devs(color),
+                    unumpy.nominal_values(color) * u.mag,
+                    unumpy.std_devs(color) * u.mag,
                 ],
                 names=[
-                    list_bands[ids[2]]+'-'+list_bands[ids[0]]\
-                        +' [mag] ('+str(ids[1])+')',
-                    list_bands[ids[2]]+'-'+list_bands[ids[0]]\
-                        +'_err [mag] ('+str(ids[1])+')',
-                    ]
-                )
+                    f'{list_bands[ids[2]]}-{list_bands[ids[0]]} ({ids[1]})',
+                    f'{list_bands[ids[2]]}-{list_bands[ids[0]]}_err ({ids[1]})',
+                ]
+            )
 
-
-    #   Sort CMD table
+    #   Sort table
     tbl_cmd = tbl_cmd.group_by(
-        list_bands[id_tupels[0][0]]+' [mag] ('+str(id_tupels[0][1])+')'
-        )
+        f'{list_bands[id_tupels[0][0]]} ({id_tupels[0][1]})'
+    )
 
     return tbl_cmd
 
 
 def mk_cmd_table_u(ind_sort, x, y, mags, list_bands):
-    '''
+    """
         Create and export the CMD
 
         Parameters
@@ -463,9 +452,9 @@ def mk_cmd_table_u(ind_sort, x, y, mags, list_bands):
         -------
         tbl_cmd         : `astropy.table.Table`
             Table with CMD data
-    '''
+    """
     #   Number of filter
-    nfilter    = len(list_bands)
+    nfilter = len(list_bands)
 
     #   Dimensions of magnitude array & number of images
     shape = mags.shape
@@ -477,96 +466,92 @@ def mk_cmd_table_u(ind_sort, x, y, mags, list_bands):
 
     # Make CMD table
     tbl_cmd = Table(
-        names=['i','x', 'y',],
+        names=['i', 'x', 'y', ],
         data=[
             np.intc(ind_sort),
             x,
             y,
-            ]
-        )
+        ]
+    )
 
     #   Add magnitude columns to CMD table
     for i in range(0, nfilter):
         if dim == 2:
             tbl_cmd.add_columns(
                 [
-                    unumpy.nominal_values(mags)[i],
-                    unumpy.std_devs(mags)[i],
-                    ],
+                    unumpy.nominal_values(mags)[i] * u.mag,
+                    unumpy.std_devs(mags)[i] * u.mag,
+                ],
                 names=[
-                    list_bands[i]+' [mag]',
-                    list_bands[i]+'_err [mag]',
-                    ]
-                )
+                    f'{list_bands[i]}',
+                    f'{list_bands[i]}_err',
+                ]
+            )
 
             if i != 0:
                 tbl_cmd.add_column(
-                    unumpy.nominal_values(mags[i-1] - mags[i]),
-                    name=list_bands[i-1]+'-'+list_bands[i]+' [mag]'
-                    )
+                    unumpy.nominal_values(mags[i - 1] - mags[i]) * u.mag,
+                    name=f'{list_bands[i - 1]}-{list_bands[i]}'
+                )
         else:
             for j in range(0, nimg):
                 if nimg == 1:
                     tbl_cmd.add_columns(
                         [
-                            unumpy.nominal_values(mags)[i][j],
-                            unumpy.std_devs(mags)[i][j],
-                            ],
+                            unumpy.nominal_values(mags)[i][j] * u.mag,
+                            unumpy.std_devs(mags)[i][j] * u.mag,
+                        ],
                         names=[
-                            list_bands[i]+' [mag]',
-                            list_bands[i]+'_err [mag]',
-                            ]
-                        )
+                            f'{list_bands[i]}',
+                            f'{list_bands[i]}_err',
+                        ]
+                    )
                     if i != 0:
                         tbl_cmd.add_columns(
                             [
-                                unumpy.nominal_values(mags[i-1][j]-mags[i][j]),
-                                unumpy.std_devs(mags[i-1][j]-mags[i][j]),
-                                ],
+                                unumpy.nominal_values(mags[i - 1][j] - mags[i][j]) * u.mag,
+                                unumpy.std_devs(mags[i - 1][j] - mags[i][j]) * u.mag,
+                            ],
                             names=[
-                                list_bands[i-1]+'-'+list_bands[i]+' [mag]',
-                                list_bands[i-1]+'-'\
-                                    +list_bands[i]+'_err [mag]',
-                                ]
-                            )
+                                f'{list_bands[i - 1]}-{list_bands[i]}',
+                                f'{list_bands[i - 1]}-{list_bands[i]}_err',
+                            ]
+                        )
                 else:
                     tbl_cmd.add_columns(
                         [
-                            unumpy.nominal_values(mags[i][j]),
-                            unumpy.std_devs(mags[i][j]),
-                            ],
+                            unumpy.nominal_values(mags[i][j]) * u.mag,
+                            unumpy.std_devs(mags[i][j]) * u.mag,
+                        ],
                         names=[
-                            list_bands[i]+' [mag] ('+str(j)+')',
-                            list_bands[i]+'_err [mag] ('+str(j)+')',
-                            ]
-                        )
+                            f'{list_bands[i]} ({j}) ',
+                            f'{list_bands[i]}_err ({j})',
+                        ]
+                    )
                     if i != 0:
                         tbl_cmd.add_columns(
                             [
-                                unumpy.nominal_values(mags[i-1][j]-mags[i][j]),
-                                unumpy.std_devs(mags[i-1][j]-mags[i][j]),
-                                ],
+                                unumpy.nominal_values(mags[i - 1][j] - mags[i][j]) * u.mag,
+                                unumpy.std_devs(mags[i - 1][j] - mags[i][j]) * u.mag,
+                            ],
                             names=[
-                                list_bands[i-1]+'-'+list_bands[i]\
-                                    +' [mag] ('+str(j)+')',
-                                list_bands[i-1]+'-'+list_bands[i]\
-                                    +'_err [mag] ('+str(j)+')',
-                                ]
-                            )
-
+                                f'{list_bands[i - 1]}-{list_bands[i]} ({j})',
+                                f'{list_bands[i - 1]}-{list_bands[i]}_err ({j})',
+                            ]
+                        )
 
     #   Sort CMD table
     if nimg == 1:
-        tbl_cmd = tbl_cmd.group_by(list_bands[0]+' [mag]')
+        tbl_cmd = tbl_cmd.group_by(f'{list_bands[0]}')
     else:
-        tbl_cmd = tbl_cmd.group_by(list_bands[0]+' [mag] (0)')
+        tbl_cmd = tbl_cmd.group_by(f'{list_bands[0]} (0)')
 
     return tbl_cmd
 
 
 def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
              path_cos=None, x=None, y=None, force_wcs_determ=False, indent=2):
-    '''
+    """
         Meta function for finding image WCS
 
         Parameters
@@ -604,7 +589,7 @@ def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
         indent          : `integer`, optional
             Indentation for the console output lines
             Default is ``2``.
-    '''
+    """
     if ref_id is not None:
         #   Image
         img = image_ensemble.image_list[ref_id]
@@ -621,14 +606,14 @@ def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
                         rmcos=rmcos,
                         path_cos=path_cos,
                         indent=indent,
-                        )
                     )
+                )
 
             #   Calculate WCS -> ASTAP program
             elif method == 'astap':
                 image_ensemble.set_wcs(
                     base_aux.find_wcs_astap(img, indent=indent)
-                    )
+                )
 
             #   Calculate WCS -> twirl libary
             elif method == 'twirl':
@@ -636,17 +621,17 @@ def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
                     raise RuntimeError(
                         f"{style.bcolors.FAIL} \nException in find_wcs(): '"
                         f"\n'x' or 'y' is None -> Exit {style.bcolors.ENDC}"
-                        )
+                    )
                 image_ensemble.set_wcs(
                     base_aux.find_wcs_twirl(img, x, y, indent=indent)
-                    )
+                )
             #   Raise exception
             else:
                 raise RuntimeError(
                     f"{style.bcolors.FAIL} \nException in find_wcs(): '"
                     f"\nWCS method not known -> Supplied method was {method}"
                     f"{style.bcolors.ENDC}"
-                    )
+                )
         else:
             image_ensemble.set_wcs(extract_wcs(wcs_file))
     else:
@@ -662,7 +647,7 @@ def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
                         rmcos=rmcos,
                         path_cos=path_cos,
                         indent=indent,
-                        )
+                    )
 
                 #   Calculate WCS -> ASTAP program
                 elif method == 'astap':
@@ -675,7 +660,7 @@ def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
                             f"{style.bcolors.FAIL} \nException in "
                             "find_wcs(): ' \n'x' or 'y' is None -> Exit"
                             f"{style.bcolors.ENDC}"
-                            )
+                        )
                     w = base_aux.find_wcs_twirl(img, x, y, indent=indent)
 
                 #   Raise exception
@@ -684,7 +669,7 @@ def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
                         f"{style.bcolors.FAIL} \nException in find_wcs(): '"
                         "\nWCS method not known -> Supplied method was "
                         f"{method} {style.bcolors.ENDC}"
-                        )
+                    )
             else:
                 w = wcs.WCS(fits.open(img.path)[0].header)
 
@@ -723,7 +708,7 @@ def extract_wcs(wcs_path, image_wcs=None, rmcos=False, filters=None):
                     f"{style.bcolors.FAIL} \nException in extract_wcs(): '"
                     "\n'rmcos=True' buit no 'filters' given -> Exit"
                     f"{style.bcolors.ENDC}"
-                    )
+                )
             basename = f'img_cut_{filters[0]}_lacosmic'
         else:
             basename = image_wcs.split('/')[-1].split('.')[0]
@@ -762,24 +747,24 @@ def mk_ts(obs_time, cali_mags, filt, objID):
     """
     #   Extract magnitudes of the object 'objID' depending on array dtype
     if checks.check_unumpy_array(cali_mags):
-        umags = cali_mags[:,objID]
+        umags = cali_mags[:, objID]
         mags_obj = unumpy.nominal_values(umags)
         errs_obj = unumpy.std_devs(umags)
 
     else:
         try:
-            mags_obj = cali_mags['mag'][:,objID]
-            errs_obj = cali_mags['err'][:,objID]
+            mags_obj = cali_mags['mag'][:, objID]
+            errs_obj = cali_mags['err'][:, objID]
         except KeyError:
-            mags_obj = cali_mags['flux'][:,objID]
-            errs_obj = cali_mags['err'][:,objID]
+            mags_obj = cali_mags['flux'][:, objID]
+            errs_obj = cali_mags['err'][:, objID]
 
     #   Create mask for time series to remove images without entries
     mask = np.isin(
         mags_obj,
         [0.],
         invert=True
-        )
+    )
 
     #   Remove images without entries
     mags_obj = mags_obj[mask]
@@ -787,12 +772,12 @@ def mk_ts(obs_time, cali_mags, filt, objID):
 
     # Make time series and use reshape to get a justified array
     ts = TimeSeries(
-            time=obs_time,
-            data={
-                filt: mags_obj.reshape(mags_obj.size,) * u.mag,
-                filt+'_err': errs_obj.reshape(errs_obj.size,) * u.mag,
-                }
-            )
+        time=obs_time,
+        data={
+            filt: mags_obj.reshape(mags_obj.size, ) * u.mag,
+            filt + '_err': errs_obj.reshape(errs_obj.size, ) * u.mag,
+        }
+    )
     return ts
 
 
@@ -800,7 +785,7 @@ def lin_func(x, a, b):
     """
         Linear function
     """
-    return a + b*x
+    return a + b * x
 
 
 def fit_curve(fit_func, x, y, x0, sigma):
@@ -846,8 +831,8 @@ def fit_curve(fit_func, x, y, x0, sigma):
         para, coma = optimization.curve_fit(fit_func, x, y, x0, sigma)
     a = para[0]
     b = para[1]
-    a_err = coma[0,0]
-    b_err = coma[1,1]
+    a_err = coma[0, 0]
+    b_err = coma[1, 1]
 
     return a, a_err, b, b_err
 
@@ -885,7 +870,7 @@ def fit_data_oneD(x, y, order):
                 model,
                 unumpy.nominal_values(x),
                 unumpy.nominal_values(y),
-                )
+            )
     else:
         if np.all(x == 0.):
             fit_poly = None
@@ -894,13 +879,13 @@ def fit_data_oneD(x, y, order):
                 model,
                 x,
                 y,
-                )
+            )
 
     return fit_poly
 
 
 def prepare_arrays(img_container, nfilter, count):
-    '''
+    """
         Prepare arrays for magnitude calibration
 
         Parameters
@@ -913,7 +898,7 @@ def prepare_arrays(img_container, nfilter, count):
 
         count           : `integer`
             Number of stars
-    '''
+    """
     #   Get image ensembles
     img_ensembles = img_container.ensembles
 
@@ -931,16 +916,16 @@ def prepare_arrays(img_container, nfilter, count):
     #   Define magnitude arrays
     if unc:
         cali = unumpy.uarray(
-            np.zeros((nfilter,nimg_max,count)),
-            np.zeros((nfilter,nimg_max,count))
-            )
+            np.zeros((nfilter, nimg_max, count)),
+            np.zeros((nfilter, nimg_max, count))
+        )
     else:
         #   Define arrays
         cali = np.zeros(nfilter, dtype=[('mag', 'f8', (nimg_max, count)),
                                         ('std', 'f8', (nimg_max, count)),
                                         ('err', 'f8', (nimg_max, count)),
-                                    ]
-            )
+                                        ]
+                        )
 
     img_container.cali = cali
     img_container.noT = np.copy(cali)
@@ -953,24 +938,24 @@ def prepare_arrays(img_container, nfilter, count):
             nfilter,
             dtype=[('flux', 'f8', (nimg_max, count)),
                    ('err', 'f8', (nimg_max, count)),
-                  ]
-            )
+                   ]
+        )
 
 
 def cal_mag(*args, **kwargs):
-    '''
+    """
         Wrapper function: distinguish between astropy table
                           and pandas data frame
-    '''
+    """
     if base_aux.np_vs_df(args[0]):
         return mag_df(*args, **kwargs)
     else:
         return mag_arr(*args, **kwargs)
 
 
-#@timeis
+# @timeis
 def mag_arr(flux_arr):
-    '''
+    """
         Calculate magnitudes from flux
 
         Parameters
@@ -984,7 +969,7 @@ def mag_arr(flux_arr):
         mags            : `numpy.ndarray`
             Numpy structured array containing magnitudes and corresponding
             errors
-    '''
+    """
     #   Get dimensions
     shape = flux_arr['flux_fit'].shape
     if len(shape) == 1:
@@ -1001,13 +986,13 @@ def mag_arr(flux_arr):
         mags = np.zeros(
             nimg,
             dtype=[('mag', 'f8', (nobj)), ('err', 'f8', (nobj))],
-            )
+        )
 
     else:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nDimension of the flux array > 2. This "
             f"is not supported. -> Exit {style.bcolors.ENDC}"
-            )
+        )
 
     ###
     #   Calculate magnitudes
@@ -1016,7 +1001,6 @@ def mag_arr(flux_arr):
     flux = flux_arr['flux_fit']
     #   Calculate magnitudes
     mags['mag'] = -2.5 * np.log10(flux)
-
 
     ###
     #   Calculate magnitudes and error
@@ -1050,7 +1034,7 @@ def mag_u_arr(flux):
         raise ValueError(
             f"{style.bcolors.FAIL} \nDimension of the flux array > 2. This "
             f"is not supported. -> Exit {style.bcolors.ENDC}"
-            )
+        )
 
     #   Calculate magnitudes
     mags = -2.5 * unumpy.log10(flux)
@@ -1058,9 +1042,9 @@ def mag_u_arr(flux):
     return mags
 
 
-#@timeis
+# @timeis
 def mag_df(flux_df, flux_id='flux_fit', unc_id='flux_unc'):
-    '''
+    """
         Calculate magnitudes from flux
 
         Parameters
@@ -1072,7 +1056,7 @@ def mag_df(flux_df, flux_id='flux_fit', unc_id='flux_unc'):
             Name for the flux column
             Default is ``flux_fit``.
 
-        flux_unc        : `string`, optional
+        unc_id          : `string`, optional
             Name for the flux uncertainty column
             Default is ``flux_unc``.
 
@@ -1080,11 +1064,11 @@ def mag_df(flux_df, flux_id='flux_fit', unc_id='flux_unc'):
         -------
         flux_df         : `pandas.DataFrame`
             Magnitudes and orresponding uncertainties
-    '''
+    """
     #   Extract flux and flux uncertainty
-    flux          = flux_df[flux_id]
-    flux_err      = flux_df[unc_id]
-    flux_err      = np.absolute(flux_err)
+    flux = flux_df[flux_id]
+    flux_err = flux_df[unc_id]
+    flux_err = np.absolute(flux_err)
 
     #   Calculate magnitudes
     df_temp = -2.5 * np.log10(flux)
@@ -1103,7 +1087,7 @@ def mag_df(flux_df, flux_id='flux_fit', unc_id='flux_unc'):
         raise Exception(
             f"{style.bcolors.FAIL} \nInput object is neither a Pandas Series "
             f"nor Dataframe -> EXIT {style.bcolors.ENDC}"
-            )
+        )
 
     #   Add magnitudes to input data frame
     flux_df = pd.concat([flux_df, df_temp], axis=1)
@@ -1114,7 +1098,7 @@ def mag_df(flux_df, flux_id='flux_fit', unc_id='flux_unc'):
         flux_err < flux,
         flux - flux_err,
         1E-20
-        )
+    )
 
     #   Calculate Errors
     mag_err = 1.0857 * flux_err / flux
@@ -1125,11 +1109,11 @@ def mag_df(flux_df, flux_id='flux_fit', unc_id='flux_unc'):
         index = pd.MultiIndex.from_product([['err'], df_columns])
 
         #   Convert numpy array to data frame
-        err_df  = pd.DataFrame(
+        err_df = pd.DataFrame(
             mag_err,
             index=flux_df.index,
             columns=index,
-            )
+        )
     else:
         #   Convert numpy array to data frame
         err_df = pd.DataFrame({'err': mag_err}, index=flux_df.index)
@@ -1141,7 +1125,7 @@ def mag_df(flux_df, flux_id='flux_fit', unc_id='flux_unc'):
 
 
 def mk_posi_tbl(img_container, ensemble_IDs):
-    '''
+    """
         Make position tables
 
         Parameters
@@ -1156,7 +1140,7 @@ def mk_posi_tbl(img_container, ensemble_IDs):
         -------
         tbl_xy          : `dictionary` of `astropy.table.Table` objects
             X and Y position in pixel among other data
-    '''
+    """
     #   Get image ensembles
     ensembles = img_container.ensembles
 
@@ -1185,15 +1169,15 @@ def mk_posi_tbl(img_container, ensemble_IDs):
 
         #   Fill astropy table
         tbl_xy[ID] = Table(
-            names=['id','xcentroid', 'ycentroid', 'mag'],
+            names=['id', 'xcentroid', 'ycentroid', 'mag'],
             data=[np.intc(ids), xs, ys, mags]
-            )
+        )
 
     return tbl_xy
 
 
 def mk_posi_tbl_ensem(ensemble):
-    '''
+    """
         Make position tables
 
         Parameters
@@ -1205,7 +1189,7 @@ def mk_posi_tbl_ensem(ensemble):
         -------
         tbl_xy          : `dictionary` of `astropy.table.Table` objects
             X and Y position in pixel among other data
-    '''
+    """
     #   Define astropy table
     tbl_xy = {}
 
@@ -1225,15 +1209,15 @@ def mk_posi_tbl_ensem(ensemble):
 
         #   Fill astropy table
         tbl_xy[img.pd] = Table(
-            names=['id','xcentroid', 'ycentroid', 'mag'],
+            names=['id', 'xcentroid', 'ycentroid', 'mag'],
             data=[np.intc(ids), xs, ys, mags]
-            )
+        )
 
     return tbl_xy
 
 
 def mk_posi_tbl_pd(ind_sort, img_IDs, x, y, mags):
-    '''
+    """
         Make position tables
 
         Parameters
@@ -1257,7 +1241,7 @@ def mk_posi_tbl_pd(ind_sort, img_IDs, x, y, mags):
         -------
         tbl_xy          : `astropy.table.Table`
             X and Y position in pixel among other data
-    '''
+    """
     #   Drop level > 0, if column levels > 1
     if mags.columns.nlevels > 1:
         cols = mags.columns.droplevel(1)
@@ -1273,7 +1257,7 @@ def mk_posi_tbl_pd(ind_sort, img_IDs, x, y, mags):
         raise Exception(
             f"{style.bcolors.FAIL} \nMagnitude column not recognize in 'mags' "
             f"DataFrame -> EXIT {style.bcolors.ENDC}"
-            )
+        )
 
     tbl_xy = {}
     for j, img_ID in enumerate(img_IDs):
@@ -1282,15 +1266,15 @@ def mk_posi_tbl_pd(ind_sort, img_IDs, x, y, mags):
 
         img_ID = str(img_ID)
         tbl_xy[img_ID] = Table(
-            names=['id','xcentroid', 'ycentroid', 'mag'],
+            names=['id', 'xcentroid', 'ycentroid', 'mag'],
             data=[np.intc(ind_sort), x, y, mags[mask][col_name]]
-            )
+        )
 
     return tbl_xy
 
 
 def find_filt(filt_list, in_dict, filt, camera, verbose=False, indent=2):
-    '''
+    """
         Find the position of the filter from the dictionary 'filt'
         in the dictionary 'in_dict' with reference to 'filt_list'
 
@@ -1329,7 +1313,7 @@ def find_filt(filt_list, in_dict, filt, camera, verbose=False, indent=2):
 
                         : `integer`
             ID of filter 2
-    '''
+    """
     #   Initialize list of bools
     cam_bools = []
 
@@ -1359,11 +1343,11 @@ def find_filt(filt_list, in_dict, filt, camera, verbose=False, indent=2):
                                 f2,
                                 filt_list,
                                 indent=indent,
-                                string='Magnitude transformation coefficients'\
-                                    ' do not apply. Wrong filter combination:'\
-                                    ' {} & {} vs. {}',
+                                string='Magnitude transformation coefficients' \
+                                       ' do not apply. Wrong filter combination:' \
+                                       ' {} & {} vs. {}',
                                 style_name='WARNING',
-                                )
+                            )
 
             cam_bools.append(True)
         else:
@@ -1374,17 +1358,17 @@ def find_filt(filt_list, in_dict, filt, camera, verbose=False, indent=2):
             camera,
             indent=indent,
             string='Determined camera {} not consistent with the' \
-            +' one given in the dictionary with the transformation' \
-            +' coefficients.',
+                   + ' one given in the dictionary with the transformation' \
+                   + ' coefficients.',
             style_name='WARNING',
-            )
+        )
 
     return None, None, None
 
 
 def check_variable(filename, filetype, filt_1, filt_2, cali,
                    ISOcolumntype, ISOcolumn):
-    '''
+    """
         Check variables and set defaults for CMDs and isochrone plots
 
         This function exists for backwards compatibility.
@@ -1412,7 +1396,7 @@ def check_variable(filename, filetype, filt_1, filt_2, cali,
 
         ISOcolumn           : `dictionary`
             Keys = filter - Values = column
-    '''
+    """
 
     filename, filetype = check_variable_apparent_cmd(
         filename,
@@ -1420,7 +1404,7 @@ def check_variable(filename, filetype, filt_1, filt_2, cali,
         filt_1,
         filt_2,
         cali,
-        )
+    )
 
     check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn)
 
@@ -1428,7 +1412,7 @@ def check_variable(filename, filetype, filt_1, filt_2, cali,
 
 
 def check_variable_apparent_cmd(filename, filetype, filt_1, filt_2, cali):
-    '''
+    """
         Check variables and set defaults for CMDs and isochrone plots
 
         Parameters
@@ -1448,14 +1432,14 @@ def check_variable_apparent_cmd(filename, filetype, filt_1, filt_2, cali):
 
         cali                : `dictionary`
             Keys = filter - Values = zero points
-    '''
+    """
     #   Set figure type
-    if filename == "?" or filename =="":
+    if filename == "?" or filename == "":
         terminal_output.print_terminal(
             indent=1,
             string='[Warning] No filename given, us default (cmd)',
             style_name='WARNING',
-            )
+        )
         filename = 'cmd'
 
     if filetype == '?' or filetype == '':
@@ -1463,18 +1447,18 @@ def check_variable_apparent_cmd(filename, filetype, filt_1, filt_2, cali):
             indent=1,
             string='[Warning] No filetype given, use default (pdf)',
             style_name='WARNING',
-            )
-        filetype ='pdf'
+        )
+        filetype = 'pdf'
 
     #   Check if file type is valid and set default
     filetype_list = ['pdf', 'png', 'eps', 'ps', 'svg']
     if filetype not in filetype_list:
         terminal_output.print_terminal(
             indent=1,
-            string='[Warning] Unknown filetype given, use default instead '\
-                  +'(pdf)',
+            string='[Warning] Unknown filetype given, use default instead ' \
+                   + '(pdf)',
             style_name='WARNING',
-            )
+        )
         filetype = 'pdf'
 
     #   Check if calibration parameter is consistent with the number of
@@ -1483,16 +1467,16 @@ def check_variable_apparent_cmd(filename, filetype, filt_1, filt_2, cali):
         if len(filt_2) + len(filt_1) > len(cali):
             terminal_output.print_terminal(
                 indent=1,
-                string="[Error] More filter ('filt_2') specified than zero"\
-                +" points ('cali')",
+                string="[Error] More filter ('filt_2') specified than zero" \
+                       + " points ('cali')",
                 style_name='WARNING',
             )
             sys.exit()
         else:
             terminal_output.print_terminal(
                 indent=1,
-                string="[Error] More zero points ('cali') specified than "\
-                +"filter ('filt_2')",
+                string="[Error] More zero points ('cali') specified than " \
+                       + "filter ('filt_2')",
                 style_name='WARNING',
             )
             sys.exit()
@@ -1501,7 +1485,7 @@ def check_variable_apparent_cmd(filename, filetype, filt_1, filt_2, cali):
 
 
 def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
-    '''
+    """
         Check variables and set defaults for CMDs and isochrone plots
 
         Parameters
@@ -1517,7 +1501,7 @@ def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
 
         ISOcolumn           : `dictionary`
             Keys = filter - Values = column
-    '''
+    """
     #   Check if the column declaration for the isochrones fits to the
     #   specified filter
     for fil in filt_2:
@@ -1525,8 +1509,8 @@ def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
             terminal_output.print_terminal(
                 fil,
                 indent=1,
-                string="[Error] No entry for filter {:d} specified in"\
-                +" 'ISOcolumntype'",
+                string="[Error] No entry for filter {:d} specified in" \
+                       + " 'ISOcolumntype'",
                 style_name='WARNING',
             )
             sys.exit()
@@ -1534,8 +1518,8 @@ def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
             terminal_output.print_terminal(
                 fil,
                 indent=1,
-                string="[Error] No entry for filter {:d} specified in"\
-                +" 'ISOcolumn'",
+                string="[Error] No entry for filter {:d} specified in" \
+                       + " 'ISOcolumn'",
                 style_name='WARNING',
             )
             sys.exit()
@@ -1543,18 +1527,19 @@ def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
         terminal_output.print_terminal(
             filt_1,
             indent=1,
-            string="[Error] No entry for filter {:d} specified in"\
-                    +" 'ISOcolumn'",
+            string="[Error] No entry for filter {:d} specified in" \
+                   + " 'ISOcolumn'",
             style_name='WARNING',
         )
         sys.exit()
 
 
 class Executor:
-    '''
+    """
         Class that handels the multiprocessing, using apply_async.
         -> allows for easy catch of exceptions
-    '''
+    """
+
     def __init__(self, process_num):
         #   Init multiprocessing pool
         self.pool = mp.Pool(process_num)
@@ -1563,17 +1548,17 @@ class Executor:
         self.err = None
 
     def collect_results(self, result):
-        '''
+        """
             Uses apply_async's callback to setup up a separate Queue
             for each process
-        '''
+        """
         #   Catch all results
         self.res.append(result)
 
     def callback_error(self, e):
-        '''
+        """
             Handles axceptions by apply_async's error callback
-        '''
+        """
         #   Termninate pool
         self.pool.terminate()
         #   Raise exceptions
@@ -1581,23 +1566,23 @@ class Executor:
         raise e
 
     def schedule(self, function, args, kwargs):
-        '''
+        """
             Call to apply_async
-        '''
+        """
         self.pool.apply_async(function, args, kwargs,
                               callback=self.collect_results,
                               error_callback=self.callback_error)
 
     def wait(self):
-        '''
+        """
             Close pool and wait for completion
-        '''
+        """
         self.pool.close()
         self.pool.join()
 
 
 def mk_ds9_region(x, y, r, filename, wcs):
-    '''
+    """
         Make and write a ds9 region file
 
         Parameters
@@ -1616,7 +1601,7 @@ def mk_ds9_region(x, y, r, filename, wcs):
 
         wcs             : `astropy.wcs.WCS`
             WCS infos
-    '''
+    """
     #   Create the region
     c_regs = []
 
@@ -1641,7 +1626,7 @@ def prepare_and_plot_starmap(image, condense=False, tbl=None,
                              x_name='x_fit', y_name='y_fit', rts_pre='img',
                              label='Stars with photometric extractions',
                              add_image_id=True):
-    '''
+    """
         Prepare table for star map and plot star map
 
         Parameters
@@ -1676,10 +1661,10 @@ def prepare_and_plot_starmap(image, condense=False, tbl=None,
         add_image_id    : `boolean`, optional
             If ``True`` the image ID will be added to the file name.
             Default is ``True``.
-    '''
+    """
     #   Get table, data, filter, & object name
     if tbl is None:
-        tbl  = image.photometry
+        tbl = image.photometry
     data = image.get_data()
     filt = image.filt
     name = image.objname
@@ -1688,12 +1673,12 @@ def prepare_and_plot_starmap(image, condense=False, tbl=None,
     nstars = len(tbl)
     tbl_xy = Table(
         names=['id', 'xcentroid', 'ycentroid'],
-        data=[np.arange(0,nstars), tbl[x_name], tbl[y_name]],
-        )
+        data=[np.arange(0, nstars), tbl[x_name], tbl[y_name]],
+    )
 
     #   Prepare string for file name
     if add_image_id:
-        rts_pre += '-'+str(image.pd)
+        rts_pre += '-' + str(image.pd)
 
     #   Plot star map
     out_str = plot.starmap(
@@ -1705,13 +1690,13 @@ def prepare_and_plot_starmap(image, condense=False, tbl=None,
         rts=rts_pre,
         nameobj=name,
         condense=condense,
-        )
+    )
     if condense:
         return out_str
 
 
 def prepare_and_plot_starmap_final(img_container, filt_list):
-    '''
+    """
         Prepare table for star map and plot star map
 
         Parameters
@@ -1721,23 +1706,23 @@ def prepare_and_plot_starmap_final(img_container, filt_list):
 
         filt_list       : `list` of `strings`
             List with filter names
-    '''
+    """
     terminal_output.print_terminal(
-            indent=1,
-            string="Plot star maps with positions from the final "\
-                  +"correlation",
-            )
+        indent=1,
+        string="Plot star maps with positions from the final " \
+               + "correlation",
+    )
     #   Make position table
     tbl_xy_final = mk_posi_tbl(
         img_container,
         filt_list,
-        )
+    )
 
     for filt in filt_list:
         if filt == filt_list[0]:
-            rts = str(filt_list[1])+'_final'
+            rts = str(filt_list[1]) + '_final'
         else:
-            rts = str(filt_list[0])+'_final'
+            rts = str(filt_list[0]) + '_final'
 
         #   Get reference image
         image = img_container.ensembles[filt].ref_img
@@ -1750,21 +1735,21 @@ def prepare_and_plot_starmap_final(img_container, filt_list):
                 image.get_data(),
                 filt,
                 tbl_xy_final[filt],
-                ),
+            ),
             kwargs={
-                'rts':rts,
-                'label':'Stars identified in '+str(filt_list[0])
-                +' and '+str(filt_list[1])+' filter',
-                'nameobj':image.objname,
-                }
-            )
+                'rts': rts,
+                'label': 'Stars identified in ' + str(filt_list[0])
+                         + ' and ' + str(filt_list[1]) + ' filter',
+                'nameobj': image.objname,
+            }
+        )
         p.start()
     terminal_output.print_terminal()
 
 
 def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
                                      plot_test=True):
-    '''
+    """
         Prepare table for star map and plot star map
 
         Parameters
@@ -1784,11 +1769,11 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
             If True only the masterplot for the reference image will
             be created.
             Default is ``True``.
-    '''
+    """
     terminal_output.print_terminal(
         indent=1,
         string="Plot star map with the objects identified on all images",
-        )
+    )
 
     #   Get image IDs, IDs of the objects, and pixel coordinates
     img_ids = img_ensemble.get_image_ids()
@@ -1800,7 +1785,7 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
     tbl_xy_calib = Table(
         names=['xcentroid', 'ycentroid'],
         data=[[calib_xs], [calib_ys]]
-        )
+    )
 
     #   Make the plot using multiprocessing
     for j, ID in enumerate(img_ids):
@@ -1813,21 +1798,21 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
                 img_ensemble.image_list[j].get_data(),
                 img_ensemble.filt,
                 tbl_xy_final[ID],
-                ),
+            ),
             kwargs={
-                'tbl_2':tbl_xy_calib,
-                'rts':key+'_final',
-                'label':'Stars identified in all images',
-                'label_2':'Calibration stars',
-                'nameobj':img_ensemble.objname,
-                }
-            )
+                'tbl_2': tbl_xy_calib,
+                'rts': key + '_final',
+                'label': 'Stars identified in all images',
+                'label_2': 'Calibration stars',
+                'nameobj': img_ensemble.objname,
+            }
+        )
         p.start()
         terminal_output.print_terminal()
 
 
 def add_median_table(img_ensemble, meanb=False):
-    '''
+    """
         Calculate flux median or flux mean and add it to a new table
 
         Parameters
@@ -1839,7 +1824,7 @@ def add_median_table(img_ensemble, meanb=False):
         meanb               : `boolean`
             If True the mean instead of the median flux will be added to the
             table.
-    '''
+    """
     #   Get flux:
     try:
         flux = img_ensemble.flux_es['flux_fit']
@@ -1858,8 +1843,7 @@ def add_median_table(img_ensemble, meanb=False):
         flux,
         sigma=1.5,
         axis=0,
-        )
-
+    )
 
     ###
     #   Make new table to add the median of the flux
@@ -1867,14 +1851,14 @@ def add_median_table(img_ensemble, meanb=False):
     #   New table
     if meanb:
         _tbl = Table(
-            names=['x_fit', 'y_fit', 'flux_fit', 'flux_unc',],
-            data=[xs, ys, mean, std,]
-            )
+            names=['x_fit', 'y_fit', 'flux_fit', 'flux_unc', ],
+            data=[xs, ys, mean, std, ]
+        )
     else:
         _tbl = Table(
-            names=['x_fit', 'y_fit', 'flux_fit', 'flux_unc',],
-            data=[xs, ys, median, std,]
-            )
+            names=['x_fit', 'y_fit', 'flux_fit', 'flux_unc', ],
+            data=[xs, ys, median, std, ]
+        )
 
     #   Add to the overall dictionary
     img_ensemble.results = _tbl.group_by('x_fit')
@@ -1882,7 +1866,7 @@ def add_median_table(img_ensemble, meanb=False):
 
 def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
                         r_unit='arcsec', indent=1):
-    '''
+    """
         Determine limiting magnitude
 
         Parameters
@@ -1907,7 +1891,7 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
         indent          : `integer`, optional
             Indentation for the console output lines
             Default is ``1``.
-    '''
+    """
     #   Get image ensembles
     img_ensembles = img_container.ensembles
 
@@ -1922,12 +1906,12 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
         #   Get object indices and X & Y pixel positions
         try:
             ind = ensemble.id_es
-            x   = ensemble.x_es
-            y   = ensemble.y_es
+            x = ensemble.x_es
+            y = ensemble.y_es
         except:
             ind = ensemble.id_s
-            x   = ensemble.x_s
-            y   = ensemble.y_s
+            x = ensemble.x_s
+            y = ensemble.y_s
 
         #   Get reference image
         image = ensemble.image_list[ref_img]
@@ -1936,9 +1920,9 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
 
         #   Make astropy table
         tbl_mag = Table(
-            names=['xcentroid', 'ycentroid','mags'],
+            names=['xcentroid', 'ycentroid', 'mags'],
             data=[x, y, mag_arr]
-            )
+        )
         tbl_mag = tbl_mag.group_by('mags')
 
         #   Remove implausible dark results
@@ -1947,7 +1931,7 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
 
         #   Plot star map
         if ref_img != '':
-            rts = 'mags_'+str(ref_img)
+            rts = 'mags_' + str(ref_img)
         else:
             rts = 'mags'
         p = mp.Process(
@@ -1957,14 +1941,14 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
                 image.get_data(),
                 filt,
                 tbl_mag[:][-10:],
-                ),
+            ),
             kwargs={
-                'label':'10 faintest stars',
-                'rts':rts,
-                'mode':'mags',
-                'nameobj':image.objname,
-                }
-            )
+                'label': '10 faintest stars',
+                'rts': rts,
+                'mode': 'mags',
+                'nameobj': image.objname,
+            }
+        )
         p.start()
 
         #   Print result
@@ -1972,21 +1956,21 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
             filt,
             indent=indent,
             string="Determine limiting magnitude for filter: {}",
-            )
+        )
         terminal_output.print_terminal(
-            indent=indent*2,
+            indent=indent * 2,
             string="Based on detected objects:",
-            )
+        )
         terminal_output.print_terminal(
             np.median(tbl_mag['mags'][-10:]),
-            indent=indent*3,
+            indent=indent * 3,
             string="Median of the 10 faintest objects: {}",
-            )
+        )
         terminal_output.print_terminal(
             np.mean(tbl_mag['mags'][-10:]),
-            indent=indent*3 ,
+            indent=indent * 3,
             string="Mean of the 10 faintest objects: {}",
-            )
+        )
 
         #   Convert object positions to pixel index values
         index_x = np.rint(x).astype(int)
@@ -2011,7 +1995,7 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
             # seed=123,
             zeropoint=np.median(image.ZP_clip),
             progress_bar=False,
-            )
+        )
 
         #   Derive limits
         limits = depth(image.get_data(), mask)
@@ -2020,23 +2004,23 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
         p = mp.Process(
             target=plot.plot_limiting_mag_sky_apertures,
             args=(image.outpath.name, image.get_data(), mask, depth),
-            )
+        )
         p.start()
 
         #   Print results
         terminal_output.print_terminal(
-            indent=indent*2,
+            indent=indent * 2,
             string="Based on the ImageDepth (photutils) routine:",
-            )
+        )
         terminal_output.print_terminal(
             limits[1],
-            indent=indent*3,
+            indent=indent * 3,
             string="500 apertures, 5 sigma, 2 iterations: {}",
-            )
+        )
 
 
 def rm_edge_objects(table, data, border=10, condense=False, indent=3):
-    '''
+    """
         Remove detected objects that are too close to the image edges
 
         Parameters
@@ -2060,7 +2044,7 @@ def rm_edge_objects(table, data, border=10, condense=False, indent=3):
         indent              : `integer`, optional
             Indentation for the console output lines
             Default is ``3``.
-    '''
+    """
     #   Border range
     hsize = border + 1
 
@@ -2069,16 +2053,16 @@ def rm_edge_objects(table, data, border=10, condense=False, indent=3):
     y = table['y_fit'].value
 
     #   Calculate mask of objects to be removed
-    mask = ((x > hsize) & (x < (data.shape[1] -1 - hsize)) &
-            (y > hsize) & (y < (data.shape[0] -1 - hsize)))
+    mask = ((x > hsize) & (x < (data.shape[1] - 1 - hsize)) &
+            (y > hsize) & (y < (data.shape[0] - 1 - hsize)))
 
     outstr = terminal_output.print_terminal(
         np.count_nonzero(np.invert(mask)),
         indent=indent,
-        string='{} objects removed because they are too close to the '\
-              +'image edges',
+        string='{} objects removed because they are too close to the ' \
+               + 'image edges',
         condense=condense,
-        )
+    )
     if condense:
         return table[mask], outstr
     else:
@@ -2088,7 +2072,7 @@ def rm_edge_objects(table, data, border=10, condense=False, indent=3):
 def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
                             Gmag_limit=20, seplimit=1., sigma=3.,
                             maxiters_sigma=3):
-    '''
+    """
         Select a sub set of the objects that are close to the median
         proper motion
 
@@ -2121,7 +2105,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         maxiters_sigma      : `integer`, optional
             Maximal number of iteration of the sigma clipping.
             Default is ``3``.
-    '''
+    """
     #   Get wcs
     w = ensemble.wcs
 
@@ -2134,8 +2118,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         coords[1],
         unit=(u.degree, u.degree),
         frame="icrs"
-        )
-
+    )
 
     ###
     #   Get Gaia data from Vizier
@@ -2152,43 +2135,42 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         'pmDE',
         'e_pmDE',
         'RUWE',
-        ]
+    ]
 
     #   Define astroquery instance
     v = Vizier(
         columns=columns,
         row_limit=1e6,
         catalog=catalog,
-        column_filters={'Gmag':'<'+str(Gmag_limit)},
-        )
+        column_filters={'Gmag': '<' + str(Gmag_limit)},
+    )
 
     #   Get data from the corresponding catalog for the objects in the FOV
     result = v.query_region(
         ensemble.coord,
-        radius=ensemble.fov*u.arcmin,
-        )
+        radius=ensemble.fov * u.arcmin,
+    )
 
     #   Create SkyCoord object with coordinates of all Gaia objects
     coords_calib = SkyCoord(
-            result[0]['RA_ICRS'],
-            result[0]['DE_ICRS'],
-            unit=(u.degree, u.degree),
-            frame="icrs"
-            )
+        result[0]['RA_ICRS'],
+        result[0]['DE_ICRS'],
+        unit=(u.degree, u.degree),
+        frame="icrs"
+    )
 
     ###
     #   Correlate own objects with Gaia objects
     #
     #   Set maximal separation between objects
-    seplimit = seplimit*u.arcsec
+    seplimit = seplimit * u.arcsec
 
     #   Correlate data
     id_img, id_calib, d2ds, d3ds = matching.search_around_sky(
         coords_img,
         coords_calib,
         seplimit,
-        )
-
+    )
 
     ###
     #   Sigma clipping of the proper motion values
@@ -2199,7 +2181,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
     pmRA = result[0]['pmRA'][id_calib]
 
     #   Parallax
-    parallax = result[0]['Plx'][id_calib].data/1000*u.arcsec
+    parallax = result[0]['Plx'][id_calib].data / 1000 * u.arcsec
 
     #   Distance
     distance = parallax.to_value(u.kpc, equivalencies=u.parallax())
@@ -2209,12 +2191,12 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         pmDE,
         sigma=sigma,
         maxiters=maxiters_sigma,
-        )
+    )
     sigma_clip_RA = sigma_clip(
         pmRA,
         sigma=sigma,
         maxiters=maxiters_sigma,
-        )
+    )
 
     #   Create mask from sigma clipping
     mask = sigma_clip_RA.mask | sigma_clip_DE.mask
@@ -2230,7 +2212,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         result_cut['RA_ICRS'],
         result_cut['DE_ICRS'],
         0,
-        )
+    )
 
     #   Get image
     image = ensemble.ref_img
@@ -2241,7 +2223,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         tbl=Table(names=['x_fit', 'y_fit'], data=[x_obj, y_obj]),
         rts_pre='img-pmGaia-',
         label='Stars selected according to proper motion',
-        )
+    )
 
     #   2D and 3D plot of the proper motion and the distance
     plot.comp_scatter(
@@ -2252,7 +2234,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         '_pm_',
         image.outpath.name,
         oneTOone=False,
-        )
+    )
     plot.D3_scatter(
         [pmRA],
         [pmDE],
@@ -2261,14 +2243,14 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
-        )
+    )
 
     #   Apply mask
     return tbl[id_img][mask]
 
 
 def region_selection(ensemble, coord, tbl, radius=600.):
-    '''
+    """
         Select a sub set of the objects that are close to the median
         proper motion
 
@@ -2295,7 +2277,7 @@ def region_selection(ensemble, coord, tbl, radius=600.):
 
         mask                : `boolean numpy.ndarray`
             Mask that needs to be applied to the table.
-    '''
+    """
     #   Get wcs
     w = ensemble.wcs
 
@@ -2308,7 +2290,7 @@ def region_selection(ensemble, coord, tbl, radius=600.):
         coords[1],
         unit=(u.degree, u.degree),
         frame="icrs"
-        )
+    )
 
     #   Calculate separation between the coordinates defined in ``coord``
     #   the objects in ``tbl``
@@ -2326,7 +2308,7 @@ def region_selection(ensemble, coord, tbl, radius=600.):
         tbl=Table(names=['x_fit', 'y_fit'], data=[tbl['x'], tbl['y']]),
         rts_pre='img-selection-',
         label='Stars selected within {}'.format(radius),
-        )
+    )
 
     return tbl, mask
 
@@ -2334,7 +2316,7 @@ def region_selection(ensemble, coord, tbl, radius=600.):
 def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
                  seplimit=1., max_distance=6., n_clusters=10,
                  random_state=2, n_neighbors=4, parameter_set=1):
-    '''
+    """
         Identify cluster in data
 
         Parameters
@@ -2394,7 +2376,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
             Mask that identifies cluster members according to the user
             input.
 
-    '''
+    """
     #   Get wcs
     w = ensemble.wcs
 
@@ -2407,11 +2389,10 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         coords[1],
         unit=(u.degree, u.degree),
         frame="icrs"
-        )
+    )
 
     #   Get reference image
     image = ensemble.ref_img
-
 
     ###
     #   Get Gaia data from Vizier
@@ -2428,21 +2409,21 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         'pmDE',
         'e_pmDE',
         'RUWE',
-        ]
+    ]
 
     #   Define astroquery instance
     v = Vizier(
         columns=columns,
         row_limit=1e6,
         catalog=catalog,
-        column_filters={'Gmag': '<'+str(Gmag_limit)},
-        )
+        column_filters={'Gmag': '<' + str(Gmag_limit)},
+    )
 
     #   Get data from the corresponding catalog for the objects in the FOV
     result = v.query_region(
         ensemble.coord,
-        radius=ensemble.fov*u.arcmin,
-        )[0]
+        radius=ensemble.fov * u.arcmin,
+    )[0]
 
     #   Restrict proper motion to Simbad value plus some margin
     customSimbad = Simbad()
@@ -2453,33 +2434,31 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
     pmde = result_simbad['PMDEC'].value[0]
     if pmra != '--' and pmde != '--':
         pm_m = 3.
-        mask_DE = (result['pmDE'] <= pmde-pm_m) | (result['pmDE'] >= pmde+pm_m)
-        mask_RA = (result['pmRA'] <= pmra-pm_m) | (result['pmRA'] >= pmra+pm_m)
+        mask_DE = (result['pmDE'] <= pmde - pm_m) | (result['pmDE'] >= pmde + pm_m)
+        mask_RA = (result['pmRA'] <= pmra - pm_m) | (result['pmRA'] >= pmra + pm_m)
         mask = np.invert(mask_DE | mask_RA)
         result = result[mask]
 
     #   Create SkyCoord object with coordinates of all Gaia objects
     coords_calib = SkyCoord(
-            result['RA_ICRS'],
-            result['DE_ICRS'],
-            unit=(u.degree, u.degree),
-            frame="icrs"
-            )
-
+        result['RA_ICRS'],
+        result['DE_ICRS'],
+        unit=(u.degree, u.degree),
+        frame="icrs"
+    )
 
     ###
     #   Correlate own objects with Gaia objects
     #
     #   Set maximal separation between objects
-    seplimit = seplimit*u.arcsec
+    seplimit = seplimit * u.arcsec
 
     #   Correlate data
     id_img, id_calib, d2ds, d3ds = matching.search_around_sky(
         coords_img,
         coords_calib,
         seplimit,
-        )
-
+    )
 
     ###
     #   Find cluster in proper motion and distance data
@@ -2490,7 +2469,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
     pmRA = result['pmRA'][id_calib]
 
     #   Parallax
-    parallax = result['Plx'][id_calib].data/1000*u.arcsec
+    parallax = result['Plx'][id_calib].data / 1000 * u.arcsec
 
     #   Distance
     distance = parallax.to_value(u.kpc, equivalencies=u.parallax())
@@ -2518,28 +2497,28 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         n_clusters = 2
         random_state = 25
         n_neighbors = 20
-        affinity='nearest_neighbors'
+        affinity = 'nearest_neighbors'
     elif parameter_set == 2:
         n_clusters = 10
         random_state = 2
         n_neighbors = 4
-        affinity='nearest_neighbors'
+        affinity = 'nearest_neighbors'
     elif parameter_set == 3:
         n_clusters = 2
         random_state = 25
         n_neighbors = 20
-        affinity='rbf'
+        affinity = 'rbf'
     else:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nNo valid parameter set defined: "
             f"Possibilities are 1, 2, or 3. {style.bcolors.ENDC}"
         )
-    spectral_cluster_model= SpectralClustering(
-        #eigen_solver='lobpcg',
+    spectral_cluster_model = SpectralClustering(
+        # eigen_solver='lobpcg',
         n_clusters=n_clusters,
         random_state=random_state,
-        #gamma=2.,
-        #gamma=5.,
+        # gamma=2.,
+        # gamma=5.,
         n_neighbors=n_neighbors,
         affinity=affinity,
     )
@@ -2547,7 +2526,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
     #   Find "cluster" in the data
     pd_result['cluster'] = spectral_cluster_model.fit_predict(
         pd_result[['pmDE', 'pmRA', 'distance']],
-        )
+    )
 
     #   3D plot of the proper motion and the distance
     #   -> select the star cluster by eye
@@ -2564,20 +2543,20 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         pmDE_group,
         distance_group,
         image.outpath.name,
-        #color=np.unique(pd_result['cluster']),
+        # color=np.unique(pd_result['cluster']),
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
         string='_3D_cluster_',
         pmra=pmra,
         pmde=pmde,
-        )
+    )
     plot.D3_scatter(
         pmRA_group,
         pmDE_group,
         distance_group,
         image.outpath.name,
-        #color=np.unique(pd_result['cluster']),
+        # color=np.unique(pd_result['cluster']),
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
@@ -2585,38 +2564,37 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         pmra=pmra,
         pmde=pmde,
         display=True,
-        )
+    )
 
-    #plot.D3_scatter(
-        #[pd_result['pmRA']],
-        #[pd_result['pmDE']],
-        #[pd_result['distance']],
-        #image.outpath.name,
-        #color=[pd_result['cluster']],
-        #name_x='pm_RA * cos(DEC) (mas/yr)',
-        #name_y='pm_DEC (mas/yr)',
-        #name_z='d (kpc)',
-        #string='_3D_cluster_',
-        #)
+    # plot.D3_scatter(
+    # [pd_result['pmRA']],
+    # [pd_result['pmDE']],
+    # [pd_result['distance']],
+    # image.outpath.name,
+    # color=[pd_result['cluster']],
+    # name_x='pm_RA * cos(DEC) (mas/yr)',
+    # name_y='pm_DEC (mas/yr)',
+    # name_z='d (kpc)',
+    # string='_3D_cluster_',
+    # )
 
     #   Get user input
     cluster_id, timedOut = timedInput(
-            style.bcolors.OKBLUE+
-            "   Which one is the correct cluster (id)? "
-            +style.bcolors.ENDC,
-            timeout=300,
-            )
+        style.bcolors.OKBLUE +
+        "   Which one is the correct cluster (id)? "
+        + style.bcolors.ENDC,
+        timeout=300,
+    )
     if timedOut or cluster_id == '':
         cluster_id = 0
     else:
         cluster_id = int(cluster_id)
 
     #   Calculated mask according to user input
-    cluster_mask = pd_result['cluster']==cluster_id
+    cluster_mask = pd_result['cluster'] == cluster_id
 
     #   Apply correlation results and masks to the input table
     tbl = tbl[id_img][mask][cluster_mask.values]
-
 
     ###
     #   Make star map
@@ -2629,7 +2607,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         rts_pre='img-pmGaia-distance-cluster',
         label='Cluster members based on proper motion and distance',
         add_image_id=False,
-        )
+    )
 
     #   Return table
     return tbl, id_img, mask, cluster_mask.values
@@ -2675,7 +2653,7 @@ def save_mags_ascii(container, tbl, trans=False, id_object=None, rts='',
     checks.check_out(
         outdir,
         outdir / 'tables',
-        )
+    )
 
     #   Define file name specifier
     if id_object is not None:
@@ -2683,7 +2661,7 @@ def save_mags_ascii(container, tbl, trans=False, id_object=None, rts='',
     else:
         id_object = ''
     if photo_type != '':
-        photo_type = '_'+photo_type
+        photo_type = '_' + photo_type
 
     #   Check if ``container`` object contains already entries
     #   for file names/paths. If not add dictionary.
@@ -2706,7 +2684,6 @@ def save_mags_ascii(container, tbl, trans=False, id_object=None, rts='',
     if doadd:
         container.photo_filepath[out_path] = trans
 
-
     ###
     #   Define output formats for the table columns
     #
@@ -2727,7 +2704,7 @@ def save_mags_ascii(container, tbl, trans=False, id_object=None, rts='',
         # "V_err [mag]": '%12.3f',
         # "B-V [mag]": '%12.3f',
         # "B-V_err [mag]": '%12.3f',
-        }
+    }
 
     #   Write file
     tbl.write(
@@ -2735,7 +2712,7 @@ def save_mags_ascii(container, tbl, trans=False, id_object=None, rts='',
         format='ascii',
         overwrite=True,
         formats=formats,
-        )
+    )
 
 
 def postprocess_results(img_container, filter_list, id_object=None, photo_type='',
@@ -2829,7 +2806,7 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
         tbl_list = [
             (getattr(img_container, 'table_mags_transformed', None), True),
             (getattr(img_container, 'table_mags_not_transformed', None), False),
-            ]
+        ]
 
     #   Loop over all Tables
     mask_region = None
@@ -2852,7 +2829,7 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
                     img_container.coord,
                     tbl,
                     radius=radius
-                    )
+                )
             else:
                 tbl = tbl[mask_region]
 
@@ -2865,7 +2842,7 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
                     n_clusters=n_clusters,
                     max_distance=max_distance_cluster,
                     parameter_set=find_cluster_para_set,
-                    )
+                )
             else:
                 tbl = tbl[img_id_cluster][mask_cluster][mask_objects]
 
@@ -2875,7 +2852,7 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
                 tbl, img_id_pm, mask_pm = proper_motion_selection(
                     img_ensembles[filter_list[0]],
                     tbl,
-                    )
+                )
             else:
                 tbl = tbl[img_id_pm][mask_pm]
 
@@ -2894,7 +2871,7 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
             rts='_selection',
             photo_type=photo_type,
             doadd=False,
-            )
+        )
 
 
 def convert_magnitudes_internal_wrapper(img_container, target_filter_system):
@@ -2919,14 +2896,13 @@ def convert_magnitudes_internal_wrapper(img_container, target_filter_system):
         img_container,
         'table_mags_not_transformed',
         None,
-        )
+    )
 
     #   Convert magnitudes
     if tbl_transformed is not None:
         convert_magnitudes(tbl_transformed, target_filter_system)
     if tbl_not_transformed is not None:
         convert_magnitudes(tbl_not_transformed, target_filter_system)
-
 
 
 def convert_magnitudes(tbl: Table, target_filter_system: str) -> None:
@@ -2952,7 +2928,7 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> None:
                    'there is currently no conversion formula for this '
                    'photometric system: {}.',
             style_name='WARNING',
-            )
+        )
 
     #   Select magnitudes and errors and corresponding filter
     collected_mags = {}
@@ -2969,12 +2945,12 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> None:
                 available_filter.append(filt)
 
     data_dict = {}
-    print (available_filter)
+    print(available_filter)
     for filt in available_filter:
         data_dict[filt] = unumpy.uarray(
             collected_mags[filt],
             collected_err[filt]
-            )
+        )
     # import copy
     # available_filter = copy.deepcopy(filter_to_convert)
 
@@ -3005,6 +2981,22 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> None:
         if z is not None:
             data_dict['z'] = z
 
+        # tbl_cmd.add_columns(
+        #     [
+        #         mags[name_mag][i - 1][j] - mags[name_mag][i][j],
+        #         err_prop(
+        #             mags['err'][i - 1][j],
+        #             mags['err'][i][j],
+        #         ),
+        #     ],
+        #     names=[
+        #         list_bands[i - 1] + '-' + list_bands[i] \
+        #         + ' [mag] (' + str(j) + ')',
+        #         list_bands[i - 1] + '-' + list_bands[i] \
+        #         + '_err [mag] (' + str(j) + ')',
+        #     ]
+        # )
+
         print('g')
         print(g)
         print()
@@ -3013,10 +3005,3 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> None:
 
     elif target_filter_system == 'BESSELL':
         print('Will be available soon...')
-
-
-
-
-
-
-
