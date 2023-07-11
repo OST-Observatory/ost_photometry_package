@@ -46,6 +46,7 @@ from .. import checks, style, terminal_output, calibration_data
 
 from . import plot
 
+
 ############################################################################
 ####                        Routines & definitions                      ####
 ############################################################################
@@ -321,7 +322,7 @@ def mk_mag_table_str(ind_sort, x, y, mags, list_bands, id_tupels):
                 tbl_cmd.add_columns(
                     [
                         (mags[name_mag][ids[2]][ids[3]]
-                            - mags[name_mag][ids[0]][ids[1]]) * u.mag,
+                         - mags[name_mag][ids[0]][ids[1]]) * u.mag,
                         err_prop(
                             mags['err'][ids[2]][ids[3]],
                             mags['err'][ids[0]][ids[1]],
@@ -2931,77 +2932,132 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> None:
         )
 
     #   Select magnitudes and errors and corresponding filter
-    collected_mags = {}
-    collected_err = {}
-    available_filter = []
+    # collected_mags = {}
+    # collected_err = {}
+    # available_filter = []
+    available_image_ids = []
+    available_filter_image_error = []
 
+    #   Loop over column names
     for colname in colnames:
+        #   Detect color: 'continue in this case, since colors are not yet supported'
+        if colname[1] == '-':
+            continue
+
+        #   Get filter
+        column_filter = colname[0]
+        print('column_filter', column_filter)
+        if column_filter in ['i', 'x', 'y']:
+            continue
+
+        #   Get the image ID
+        image_id = colname.split('(')[1].split(')')[0]
+        print('image_id', image_id)
+
+        #   Is an image ID available?
+        if image_id != '':
+            #   Check for error column
+            error = any(x == f'{column_filter}_err ({image_id})' for x in colnames)
+
+            #   Combine derived infos -> (ID of the image, Filter, boolean: error available?)
+            info = (image_id, column_filter, error)
+        else:
+            #   Check for error column
+            error = any(x == f'{column_filter}_err' for x in colnames)
+
+            #   Combine derived infos -> (ID of the image, Filter, boolean: error available?)
+            info = (-1, column_filter, error)
+
+        #   Check if image and filter combination is already known. If yes continue.
+        if info in available_filter_image_error:
+            continue
+
+        #   Save image, filter, & error info
+        available_filter_image_error.append(info)
+
+        if image_id not in available_image_ids:
+            available_image_ids.append(image_id)
+
+        #
         # for filt in ['U', 'B', 'V', 'R', 'I', 'u', 'g', 'r', 'i', 'z']:
-        for filt in ['U', 'B', 'V', 'R', 'I']:
-            if filt in colname and '_err' in colname:
-                collected_err[filt] = tbl[colname].value
-            elif filt in colname:
-                collected_mags[filt] = tbl[colname].value
-                available_filter.append(filt)
+        #     if f'{filt}_err' in colname:
+        #         # collected_err[filt] = tbl[colname].value
+        #         collected_err[colname] = tbl[colname].value
+        #     elif filt in colname:
+        #         collected_mags[filt] = tbl[colname].value
+        #         available_filter.append(filt)
 
-    data_dict = {}
-    print(available_filter)
-    for filt in available_filter:
-        data_dict[filt] = unumpy.uarray(
-            collected_mags[filt],
-            collected_err[filt]
-        )
-    # import copy
-    # available_filter = copy.deepcopy(filter_to_convert)
+    print('available_image_ids', available_image_ids)
+    print('available_filter_image_error', available_filter_image_error)
+    # for filt in available_filter:
+    #     data_dict[filt] = unumpy.uarray(
+    #         collected_mags[filt],
+    #         collected_err[filt]
+    #     )
 
-    if target_filter_system == 'AB':
-        print('Will be available soon...')
+    #   Make conversion for each image ID individually
+    for image_id in available_image_ids:
+        #   Reset dictionary with data
+        data_dict = {}
 
-    elif target_filter_system == 'SDSS':
-        calib_functions = calibration_data \
-            .filter_system_conversions['SDSS']['Jordi_et_al_2005']
+        #   Get image ID, filter and error combination
+        for (current_image_id, column_filter, error) in available_image_ids:
+            #   Restrict to current image ID
+            if current_image_id != image_id:
+                continue
 
-        g = calib_functions['g'](**data_dict)
-        if g is not None:
-            data_dict['g'] = g
+            #   Fill data dictionary, branch according to error and image ID availability
+            if image_id == -1:
+                if error:
+                    data_dict[column_filter] = unumpy.uarray(
+                        tbl[f'{column_filter}'].value,
+                        tbl[f'{column_filter}_err'].value
+                    )
+                else:
+                    data_dict[column_filter] = tbl[f'{column_filter}'].value
+            else:
+                if error:
+                    data_dict[column_filter] = unumpy.uarray(
+                        tbl[f'{column_filter} ({image_id})'].value,
+                        tbl[f'{column_filter}_err ({image_id})'].value
+                    )
+                else:
+                    data_dict[column_filter] = tbl[f'{column_filter} ({image_id})'].value
 
-        u = calib_functions['u'](**data_dict)
-        if u is not None:
-            data_dict['u'] = u
+        print('data_dict', data_dict)
 
-        r = calib_functions['r'](**data_dict)
-        if r is not None:
-            data_dict['r'] = r
+        if target_filter_system == 'AB':
+            print('Will be available soon...')
 
-        i = calib_functions['i'](**data_dict)
-        if i is not None:
-            data_dict['i'] = i
+        elif target_filter_system == 'SDSS':
+            calib_functions = calibration_data \
+                .filter_system_conversions['SDSS']['Jordi_et_al_2005']
 
-        z = calib_functions['z'](**data_dict)
-        if z is not None:
-            data_dict['z'] = z
+            g = calib_functions['g'](**data_dict)
+            if g is not None:
+                data_dict['g'] = g
 
-        # tbl_cmd.add_columns(
-        #     [
-        #         mags[name_mag][i - 1][j] - mags[name_mag][i][j],
-        #         err_prop(
-        #             mags['err'][i - 1][j],
-        #             mags['err'][i][j],
-        #         ),
-        #     ],
-        #     names=[
-        #         list_bands[i - 1] + '-' + list_bands[i] \
-        #         + ' [mag] (' + str(j) + ')',
-        #         list_bands[i - 1] + '-' + list_bands[i] \
-        #         + '_err [mag] (' + str(j) + ')',
-        #     ]
-        # )
+            u = calib_functions['u'](**data_dict)
+            if u is not None:
+                data_dict['u'] = u
 
-        print('g')
-        print(g)
-        print()
-        print('r')
-        print(r)
+            r = calib_functions['r'](**data_dict)
+            if r is not None:
+                data_dict['r'] = r
 
-    elif target_filter_system == 'BESSELL':
-        print('Will be available soon...')
+            i = calib_functions['i'](**data_dict)
+            if i is not None:
+                data_dict['i'] = i
+
+            z = calib_functions['z'](**data_dict)
+            if z is not None:
+                data_dict['z'] = z
+
+            print('g')
+            print(g)
+            print()
+            print('r')
+            print(r)
+
+        elif target_filter_system == 'BESSELL':
+            print('Will be available soon...')
