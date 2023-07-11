@@ -4535,7 +4535,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
                         find_cluster_para_set=1, correl_method='astropy',
                         seplimit=2.*u.arcsec, r_limit=4., r_unit='arcsec',
                         convert_mags=False, target_filter_system='SDSS'):
-    '''
+    """
         Correlate photometric extraction results from 2 images and calibrate
         the magnitudes.
 
@@ -4572,7 +4572,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
             Path to the calibration file
             Default is ``None``.
 
-        ID                      : `integer`, optional
+        ID                      : `integer` or `None`, optional
             ID of the object
             Default is ``None``.
 
@@ -4661,7 +4661,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         target_filter_system    : `string`, optional
             Photometric system the magnitudes should be converted to
             Default is ``SDSS``.
-    '''
+    """
     ###
     #   Correlate the stellar positions from the different filter
     #
@@ -4698,6 +4698,8 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         vizier_dict=vizier_dict,
         calib_file=calib_file,
         mag_range=mag_range,
+        ra_unit=ra_unit,
+        dec_unit=dec_unit,
         )
 
     #   Apply calibration and perform magnitude transformation
@@ -4719,6 +4721,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     aux.postprocess_results(
         img_container,
         filter_list,
+        id_object=ID,
         photo_type=photo_type,
         region=region,
         radius=radius,

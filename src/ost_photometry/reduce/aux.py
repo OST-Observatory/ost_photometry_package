@@ -772,7 +772,7 @@ def make_hot_pixel_mask(dark, gain, outdir, verbose=False):
             Default is ``False``.
     '''
     #   Sanitize the provided paths
-    out_path  = checks.check_pathlib_Path(outdir)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   Get exposure time
     exposure   = dark.header['EXPTIME']
@@ -833,7 +833,7 @@ def make_bad_pixel_mask(mask_list, outdir, verbose=False):
             Default is ``False``.
     '''
     #   Sanitize the provided paths
-    out_path  = checks.check_pathlib_Path(outdir)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   Get information on the image dimensions/binning
     shape_list = []
@@ -1762,8 +1762,8 @@ def estimate_fwhm(path, outdir, image_type, plot_subplots=False,
             Default is ``      ``.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   New image collection for the images
     ifc = ccdp.ImageFileCollection(file_path)
@@ -1912,7 +1912,7 @@ def check_master_on_disk(path, image_type, dark_times, filters,
             Is True if all required master files are already prepared.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
+    file_path = checks.check_pathlib_path(path)
 
     #   Get image collection for the reduced files
     ifc_reduced = ccdp.ImageFileCollection(file_path)
@@ -2193,7 +2193,7 @@ def find_wcs(input_dir, output_dir, ref_id=0, force_wcs_determ=False,
     #   Prepare variables
     #
     #   Check directories
-    file_path = checks.check_pathlib_Path(input_dir)
+    file_path = checks.check_pathlib_path(input_dir)
     checks.check_out(output_dir)
 
     #   Set up image collection for the images
@@ -2305,7 +2305,7 @@ def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
     #   Prepare variables
     #
     #   Check directories
-    file_path = checks.check_pathlib_Path(input_dir)
+    file_path = checks.check_pathlib_path(input_dir)
     checks.check_out(output_dir)
 
     #   Set up image collection for the images

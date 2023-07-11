@@ -2635,9 +2635,9 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
     return tbl, id_img, mask, cluster_mask.values
 
 
-def save_mags_ascii(container, tbl, trans=False, ID='', rts='',
+def save_mags_ascii(container, tbl, trans=False, id_object=None, rts='',
                     photo_type='', doadd=True):
-    '''
+    """
         Save magnitudes as ASCII files
 
         Parameters
@@ -2653,9 +2653,9 @@ def save_mags_ascii(container, tbl, trans=False, ID='', rts='',
             If True a magnitude transformation was performed
             Default is ``False``.
 
-        ID              : `string`, optional
+        id_object       : `integer` or `None`, optional
             ID of the object
-            Default is ``''``.
+            Default is ``None``.
 
         rts             : `string`, optional
             Additional string characterizing that should be included in the
@@ -2669,7 +2669,7 @@ def save_mags_ascii(container, tbl, trans=False, ID='', rts='',
         doadd          : `boolean`, optional
             If True the file path will be added to the container object.
             Default is ``True``.
-    '''
+    """
     #   Check output directories
     outdir = list(container.ensembles.values())[0].outpath
     checks.check_out(
@@ -2678,8 +2678,10 @@ def save_mags_ascii(container, tbl, trans=False, ID='', rts='',
         )
 
     #   Define file name specifier
-    if ID != '':
-        ID = '_img_'+str(ID)
+    if id_object is not None:
+        id_object = f'_img_{id_object}'
+    else:
+        id_object = ''
     if photo_type != '':
         photo_type = '_'+photo_type
 
@@ -2692,10 +2694,10 @@ def save_mags_ascii(container, tbl, trans=False, ID='', rts='',
     #   Set file name
     if trans:
         #   Set file name for file with magnitude transformation
-        filename = 'mags_TRANS_calibrated'+photo_type+ID+rts+'.dat'
+        filename = f'mags_TRANS_calibrated{photo_type}{id_object}{rts}.dat'
     else:
         #   File name for file without magnitude transformation
-        filename = 'mags_calibrated'+photo_type+ID+rts+'.dat'
+        filename = f'mags_calibrated{photo_type}{id_object}{rts}.dat'
 
     #   Combine to a path
     out_path = outdir / 'tables' / filename
@@ -2727,7 +2729,6 @@ def save_mags_ascii(container, tbl, trans=False, ID='', rts='',
         # "B-V_err [mag]": '%12.3f',
         }
 
-
     #   Write file
     tbl.write(
         str(out_path),
@@ -2737,7 +2738,7 @@ def save_mags_ascii(container, tbl, trans=False, ID='', rts='',
         )
 
 
-def postprocess_results(img_container, filter_list, ID='', photo_type='',
+def postprocess_results(img_container, filter_list, id_object=None, photo_type='',
                         region=False, radius=600, data_cluster=False,
                         pm_median=False, n_clusters=10,
                         max_distance_cluster=6., find_cluster_para_set=1,
@@ -2755,9 +2756,9 @@ def postprocess_results(img_container, filter_list, ID='', photo_type='',
         filter_list             : `list` of `string`
             Filter names
 
-        ID                      : `string`, optional
+        id_object               : `integer` or `None`, optional
             ID of the object
-            Default is ``''``.
+            Default is ``None``.
 
         photo_type              : `string`, optional
             Applied extraction method. Possibilities: ePSF or APER`
@@ -2807,7 +2808,7 @@ def postprocess_results(img_container, filter_list, ID='', photo_type='',
             Default is ``SDSS``.
     """
     #   Do nothing if no post process method were defined
-    if not region and not pm_median and not data_cluster:
+    if not region and not pm_median and not data_cluster and not convert_mags:
         return
 
     #   Get image ensembles
@@ -2885,7 +2886,7 @@ def postprocess_results(img_container, filter_list, ID='', photo_type='',
             img_container,
             tbl,
             trans=trans,
-            ID=ID,
+            id_object=id_object,
             rts='_selection',
             photo_type=photo_type,
             doadd=False,
@@ -2943,9 +2944,9 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> None:
     if target_filter_system not in ['SDSS', 'AB', 'BESSELL']:
         terminal_output.print_terminal(
             target_filter_system,
-            string='Magnitude conversion not possible.Unfortunately, ' \
-                    'there is currently no conversion formula for this ' \
-                    'photometric system: {}.',
+            string='Magnitude conversion not possible.Unfortunately, '
+                   'there is currently no conversion formula for this '
+                   'photometric system: {}.',
             style_name='WARNING',
             )
 
@@ -2955,7 +2956,7 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> None:
     available_filter = []
 
     for colname in colnames:
-        #for filt in ['U', 'B', 'V', 'R', 'I', 'u', 'g', 'r', 'i', 'z']:
+        # for filt in ['U', 'B', 'V', 'R', 'I', 'u', 'g', 'r', 'i', 'z']:
         for filt in ['U', 'B', 'V', 'R', 'I']:
             if filt in colname and '_err' in colname:
                 collected_err[filt] = tbl[colname].value

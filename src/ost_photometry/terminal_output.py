@@ -1,12 +1,13 @@
-from . import style, checks
+from . import style
 
 ############################################################################
 ####                        Routines & definitions                      ####
 ############################################################################
 
+
 def print_terminal(*args, string='', condense=False, indent=1,
                    style_name='BOLD'):
-    '''
+    """
         Creates formatted output for the terminal
 
         Parameters
@@ -30,35 +31,34 @@ def print_terminal(*args, string='', condense=False, indent=1,
         style_name      : `string`, optional
             Style type of the output.
             Default is ``BOLD``.
-    '''
-    outstr = "".rjust(3*indent)
+    """
+    out_string = "".rjust(3 * indent)
     if style_name == 'HEADER':
-        outstr += style.bcolors.HEADER
+        out_string += style.bcolors.HEADER
 
     elif style_name == 'FAIL':
-        outstr += style.bcolors.FAIL
+        out_string += style.bcolors.FAIL
 
     elif style_name == 'WARNING':
-        outstr += style.bcolors.WARNING
+        out_string += style.bcolors.WARNING
 
     elif style_name == 'OKBLUE':
-        outstr += style.bcolors.OKBLUE
+        out_string += style.bcolors.OKBLUE
 
     elif style_name == 'OKGREEN':
-        outstr += style.bcolors.OKGREEN
+        out_string += style.bcolors.OKGREEN
 
     elif style_name == 'UNDERLINE':
-        outstr += style.bcolors.UNDERLINE
+        out_string += style.bcolors.UNDERLINE
 
     else:
-        outstr += style.bcolors.BOLD
+        out_string += style.bcolors.BOLD
 
-    outstr += string.format(*args)
-    outstr += style.bcolors.ENDC
+    out_string += string.format(*args)
+    out_string += style.bcolors.ENDC
 
     if condense:
-        outstr += '\n'
-        return outstr
+        out_string += '\n'
+        return out_string
     else:
-        print(outstr)
-
+        print(out_string)

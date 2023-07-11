@@ -477,7 +477,7 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
     if wcs_dir is None:
         wcs_dir = (image.outpath / 'wcs_imgs')
     else:
-        wcs_dir = checks.check_pathlib_Path(wcs_dir)
+        wcs_dir = checks.check_pathlib_path(wcs_dir)
         wcs_dir = wcs_dir / random_string_generator(7)
         checks.check_out(wcs_dir)
 

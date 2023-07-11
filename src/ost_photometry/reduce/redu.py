@@ -591,7 +591,7 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
             checks.clear_directory(out_path / filt)
 
             #   Set path to files
-            file_path = checks.check_pathlib_Path(out_path / 'cut')
+            file_path = checks.check_pathlib_path(out_path / 'cut')
 
             #   New image collection for the images
             ifc = ccdp.ImageFileCollection(file_path)
@@ -621,8 +621,8 @@ def master_bias(path, outdir, img_type):
             light
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   Create image collection
     ifc = ccdp.ImageFileCollection(file_path)
@@ -697,8 +697,8 @@ def reduce_dark(path, outdir, image_type, gain=None, readnoise=8.):
             Default is ``8`` e-.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   Create image collection for the flats
     ifc = ccdp.ImageFileCollection(file_path)
@@ -803,8 +803,8 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr={0:0.1},
             Default is ``False``.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   Create image collection
     try:
@@ -953,8 +953,8 @@ def reduce_flat(path, outdir, image_type, gain=None, readnoise=8.,
             Default is ``0.5``.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   Create image collection for the flats
     ifc_flats = ccdp.ImageFileCollection(file_path)
@@ -1101,8 +1101,8 @@ def master_flat(path, outdir, image_type, mask=True, plots=False,
             Default is ``False``.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   Create new image collection for the reduced flat images
     ifc_flats = ccdp.ImageFileCollection(file_path)
@@ -1278,8 +1278,8 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
             Default is ``None``.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   Get image collection for the science images
     ifc_lights = ccdp.ImageFileCollection(file_path)
@@ -1814,8 +1814,8 @@ def shift_img(path, outdir, image_type, ref_img=0, shift_method='skimage',
             Default is ``False``.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   New image collection for the images
     ifc = ccdp.ImageFileCollection(file_path)
@@ -1917,8 +1917,8 @@ def shift_img_all(path, outdir, image_type, ref_img=0,
             Default is ``False``.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   New image collection for the images
     ifc = ccdp.ImageFileCollection(file_path)
@@ -2089,8 +2089,8 @@ def stack_img(path, outdir, image_type, method='average', dtype=None,
             Default is ``False``.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   New image collection for the images
     ifc = ccdp.ImageFileCollection(file_path)
@@ -2171,8 +2171,8 @@ def make_big(path, outdir, image_type, combined=True):
 
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   New image collection for the images
     ifc = ccdp.ImageFileCollection(file_path)
@@ -2294,8 +2294,8 @@ def trim_img(path, outdir, image_type, ref_img=0, enlarged=True,
             Default is ``False``.
     '''
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_Path(path)
-    out_path  = checks.check_pathlib_Path(outdir)
+    file_path = checks.check_pathlib_path(path)
+    out_path  = checks.check_pathlib_path(outdir)
 
     #   New image collection for the images
     ifc = ccdp.ImageFileCollection(file_path)
