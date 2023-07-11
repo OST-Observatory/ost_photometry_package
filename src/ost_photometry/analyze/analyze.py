@@ -4733,7 +4733,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     ###
     #   Test
     #
-    convert_magnitudes_internal_wrapper(img_container, 'SDSS')
+    aux.convert_magnitudes_internal_wrapper(img_container, 'SDSS')
 
 
 def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,

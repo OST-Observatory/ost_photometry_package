@@ -1879,7 +1879,7 @@ def add_median_table(img_ensemble, meanb=False):
     img_ensemble.results = _tbl.group_by('x_fit')
 
 
-def derive_limiting_mag(img_container, filt_list, ref_img, , r_limit=4.,
+def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
                         r_unit='arcsec', indent=1):
     '''
         Determine limiting magnitude
@@ -2012,15 +2012,15 @@ def derive_limiting_mag(img_container, filt_list, ref_img, , r_limit=4.,
             progress_bar=False,
             )
 
-        #   Plot sky apertures
-        p = mp.Process(
-            target=plot_limiting_mag_sky_apertures,
-            args=(img_data, mask, depth),
-            )
-        p.start()
-
         #   Derive limits
         limits = depth(image.get_data(), mask)
+
+        #   Plot sky apertures
+        p = mp.Process(
+            target=plot.plot_limiting_mag_sky_apertures,
+            args=(image.outpath.name, image.get_data(), mask, depth),
+            )
+        p.start()
 
         #   Print results
         terminal_output.print_terminal(
@@ -2895,7 +2895,7 @@ def convert_magnitudes_internal_wrapper(img_container, target_filter_system):
 
 
 
-def convert_magnitudes(tbl, conert_to):
+def convert_magnitudes(tbl, target_filter_system):
     '''
         Convert magnitudes from one system to another
 
@@ -2911,7 +2911,7 @@ def convert_magnitudes(tbl, conert_to):
     colnames = tbl.colnames
 
     #   Checks
-    if target_filter_system is not in ['SDSS', 'AB', 'BESSELL']:
+    if target_filter_system not in ['SDSS', 'AB', 'BESSELL']:
         terminal_output.print_terminal(
             target_filter_system,
             string='Magnitude conversion not possible.Unfortunately, ' \
@@ -2927,7 +2927,8 @@ def convert_magnitudes(tbl, conert_to):
 
 
     for colname in colnames:
-        for filt in ['U', 'B', 'V', 'R', 'I', 'u', 'g', 'r', 'i', 'z']:
+        #for filt in ['U', 'B', 'V', 'R', 'I', 'u', 'g', 'r', 'i', 'z']:
+        for filt in ['U', 'B', 'V', 'R', 'I']:
             if filt in colname and '_err' in colname:
                 collected_err[filt] = tbl[colname].value
             elif filt in colname:
@@ -2935,6 +2936,7 @@ def convert_magnitudes(tbl, conert_to):
                 available_filter.append(filt)
 
     data_dict = {}
+    print (available_filter)
     for filt in available_filter:
         data_dict[filt] = unumpy.uarray(
             collected_mags[filt],
@@ -2950,29 +2952,30 @@ def convert_magnitudes(tbl, conert_to):
         calib_functions = calibration_data \
             .filter_system_conversions['SDSS']['Jordi_et_al_2005']
 
-        g = filter_system_conversions['g'](**data_dict)
+        g = calib_functions['g'](**data_dict)
         if g is not None:
             data_dict['g'] = g
 
-        u = filter_system_conversions['u'](**data_dict)
+        u = calib_functions['u'](**data_dict)
         if u is not None:
             data_dict['u'] = u
 
-        r = filter_system_conversions['r'](**data_dict)
+        r = calib_functions['r'](**data_dict)
         if r is not None:
             data_dict['r'] = r
 
-        i = filter_system_conversions['i'](**data_dict)
+        i = calib_functions['i'](**data_dict)
         if i is not None:
             data_dict['i'] = i
 
-        z = filter_system_conversions['z'](**data_dict)
+        z = calib_functions['z'](**data_dict)
         if z is not None:
             data_dict['z'] = z
 
-        print('g\n')
+        print('g')
         print(g)
-        print('r\n')
+        print()
+        print('r')
         print(r)
 
     elif target_filter_system == 'BESSELL':

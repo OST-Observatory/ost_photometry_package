@@ -2401,12 +2401,15 @@ def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
     plt.close()
 
 
-def plot_limiting_mag_sky_apertures(img_data, mask, depth):
+def plot_limiting_mag_sky_apertures(outdir, img_data, mask, depth):
     '''
         Plot the sky apertures that are used to estimate the limiting magnitude
 
         Parameters
         ----------
+        outdir          : `string`
+            Output directory
+
         img_data            : `numpy.ndarray`
             Image data
 
@@ -2423,15 +2426,15 @@ def plot_limiting_mag_sky_apertures(img_data, mask, depth):
         )
 
     #   Plot magnitudes
-    fig =  plt.subplots(nrows=1, ncols=2, figsize=(9, 3))
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(9, 3))
 
     #   Set titel
     ax[0].set_title('Data with blank apertures')
     ax[1].set_title('Mask with blank apertures')
 
     #   Normalize the image data and plot
-    norm = simple_norm(data, 'sqrt', percent=99.)
-    ax[0].imshow(data, norm=norm)
+    norm = simple_norm(img_data, 'sqrt', percent=99.)
+    ax[0].imshow(img_data, norm=norm)
 
     #   Plot mask with object positions
     ax[1].imshow(mask, interpolation='none')

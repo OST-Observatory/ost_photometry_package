@@ -581,25 +581,9 @@ filter_sytems = {
 
 
 ###
-#   Conversions between filter systems
-#
-filter_system_conversions = {
-    'SDSS': {
-        'Jordi_et_al_2005': {
-            'g': Jordi_g,
-            'u': Jordi_u,
-            'r': Jordi_r,
-            'i': Jordi_i,
-            'z': Jordi_z,
-            }
-        }
-    }
-
-
-###
 #   Filter system conversion functions
 #
-def Jordi_u{**kwargs}:
+def Jordi_u(**kwargs):
     if all(filt in kwargs for filt in ['U', 'B', 'V', 'g']):
         U = kwargs.get("U")
         B = kwargs.get("B")
@@ -706,6 +690,21 @@ def Jordi_z(**kwargs):
 
     return None
 
+
+###
+#   Filter system conversions
+#
+filter_system_conversions = {
+    'SDSS': {
+        'Jordi_et_al_2005': {
+            'g': Jordi_g,
+            'u': Jordi_u,
+            'r': Jordi_r,
+            'i': Jordi_i,
+            'z': Jordi_z,
+            }
+        }
+    }
 
 
 ###
