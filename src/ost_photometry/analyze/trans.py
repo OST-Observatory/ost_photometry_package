@@ -1443,7 +1443,7 @@ def prepare_ZP(img_container, image, image_o, id_i, id_o=None):
 
 
 def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
-                plot_sigma=False, plot_mags=True, ID='', photo_type='',
+                plot_sigma=False, plot_mags=True, id_object=None, photo_type='',
                 refid=0, indent=1):
     '''
         Apply the calibration to the magnitudes and perform a magnitude
@@ -1483,9 +1483,9 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
             created.
             Default is ``True``.
 
-        ID              : `string`, optional
+        id_object       : `integer` or `None`, optional
             ID of the object
-            Default is ``''``.
+            Default is ``None``.
 
         photo_type      : `string`, optional
             Applied extraction method. Possibilities: ePSF or APER`
@@ -1664,7 +1664,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
             img_container,
             table_mags_transformed,
             trans=True,
-            id_object=ID,
+            id_object=id_object,
             photo_type=photo_type,
             )
     else:
@@ -1694,7 +1694,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
         img_container,
         table_mags_not_transformed,
         trans=False,
-        id_object=ID,
+        id_object=id_object,
         photo_type=photo_type,
         )
 

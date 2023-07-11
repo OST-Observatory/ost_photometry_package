@@ -2661,7 +2661,7 @@ def save_mags_ascii(container, tbl, trans=False, id_object=None, rts='',
     else:
         id_object = ''
     if photo_type != '':
-        photo_type = '_' + photo_type
+        photo_type = f'_{photo_type}'
 
     #   Check if ``container`` object contains already entries
     #   for file names/paths. If not add dictionary.
