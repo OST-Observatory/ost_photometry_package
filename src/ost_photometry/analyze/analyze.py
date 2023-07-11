@@ -4533,7 +4533,8 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
                         region=False, radius=600, data_cluster=False,
                         pm_median=False, max_distance_cluster=6.,
                         find_cluster_para_set=1, correl_method='astropy',
-                        seplimit=2.*u.arcsec, r_limit=4., r_unit='arcsec'):
+                        seplimit=2.*u.arcsec, r_limit=4., r_unit='arcsec',
+                        convert_mags=False, target_filter_system='SDSS'):
     '''
         Correlate photometric extraction results from 2 images and calibrate
         the magnitudes.
@@ -4651,6 +4652,15 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         r_unit                  : `string`, optional
             Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
             Default is ``arcsec``.
+
+        convert_mags            : `boolean`, optional
+            If True the magnitudes will be converted to another
+            filter systems specified in `target_filter_system`.
+            Default is ``False``.
+
+        target_filter_system    : `string`, optional
+            Photometric system the magnitudes should be converted to
+            Default is ``SDSS``.
     '''
     ###
     #   Correlate the stellar positions from the different filter
@@ -4716,6 +4726,8 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         pm_median=pm_median,
         max_distance_cluster=max_distance_cluster,
         find_cluster_para_set=find_cluster_para_set,
+        convert_mags=convert_mags,
+        target_filter_system=target_filter_system,
         )
 
 
@@ -4733,7 +4745,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     ###
     #   Test
     #
-    aux.convert_magnitudes_internal_wrapper(img_container, 'SDSS')
+    # aux.convert_magnitudes_internal_wrapper(img_container, 'SDSS')
 
 
 def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
@@ -4753,7 +4765,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
         img_container       : `image.container`
             Container object with image ensemble objects for each filter
 
-        filt_list           : `list` of `strings`
+        filter_list           : `list` of `strings`
             List with filter names
 
         ra_obj              : `float`
@@ -5044,7 +5056,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
 
                     #   Create mask for time series to remove images
                     #   without entries
-                    #mask_ts = np.isin(
+                    # mask_ts = np.isin(
                         ##cali_mags['med'][i][:,objID],
                         #cali_mags[i][:,objID],
                         #[0.],

@@ -103,7 +103,7 @@ def mk_cmd_table(ind_sort, x, y, mags, list_bands):
             Table with CMD data
     '''
     #   Number of filter
-    nfilter    = len(list_bands)
+    nfilter = len(list_bands)
 
     #   Dimensions of magnitude array & number of images
     shape = mags['err'].shape
@@ -115,7 +115,7 @@ def mk_cmd_table(ind_sort, x, y, mags, list_bands):
 
     # Make CMD table
     tbl_cmd = Table(
-        names=['i','x', 'y',],
+        names=['i', 'x', 'y'],
         data=[
             np.intc(ind_sort),
             x,
@@ -685,13 +685,15 @@ def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
                         "\nWCS method not known -> Supplied method was "
                         f"{method} {style.bcolors.ENDC}"
                         )
+            else:
+                w = wcs.WCS(fits.open(img.path)[0].header)
 
             if i == 0:
                 image_ensemble.set_wcs(w)
 
 
 def extract_wcs(wcs_path, image_wcs=None, rmcos=False, filters=None):
-    '''
+    """
         Load wcs from FITS file
 
         Parameters
@@ -712,7 +714,7 @@ def extract_wcs(wcs_path, image_wcs=None, rmcos=False, filters=None):
         filters         : `list` of `string`, optional
             Filter list
             Default is ``None``.
-    '''
+    """
     #   Open the image with the WCS solution
     if image_wcs is not None:
         if rmcos:
@@ -736,19 +738,19 @@ def extract_wcs(wcs_path, image_wcs=None, rmcos=False, filters=None):
 
 
 def mk_ts(obs_time, cali_mags, filt, objID):
-    '''
+    """
         Make a time series object
 
         Parameters
         ----------
-        obs_time        : `numpy.ndarray`
+        obs_time        : `astropy.time.Time`
             Observation times
 
         cali_mags       : `numpy.ndarray`
             Magnitudes and uncertainties
 
-        filt            : `filter`
-            Filte
+        filt            : `string`
+            Filter
 
         objID           : `integer`
             ID/Number of the object for with the time series should be
@@ -757,7 +759,7 @@ def mk_ts(obs_time, cali_mags, filt, objID):
         Returns
         -------
         ts              : `astropy.timeseries.TimeSeries`
-    '''
+    """
     #   Extract magnitudes of the object 'objID' depending on array dtype
     if checks.check_unumpy_array(cali_mags):
         umags = cali_mags[:,objID]
@@ -768,7 +770,7 @@ def mk_ts(obs_time, cali_mags, filt, objID):
         try:
             mags_obj = cali_mags['mag'][:,objID]
             errs_obj = cali_mags['err'][:,objID]
-        except:
+        except KeyError:
             mags_obj = cali_mags['flux'][:,objID]
             errs_obj = cali_mags['err'][:,objID]
 
@@ -795,14 +797,14 @@ def mk_ts(obs_time, cali_mags, filt, objID):
 
 
 def lin_func(x, a, b):
-    '''
+    """
         Linear function
-    '''
+    """
     return a + b*x
 
 
 def fit_curve(fit_func, x, y, x0, sigma):
-    '''
+    """
         Fit curve with supplied fit function
 
         Parameters
@@ -835,7 +837,7 @@ def fit_curve(fit_func, x, y, x0, sigma):
 
         b_err           : `float`
             Error parameter II
-    '''
+    """
 
     #   Fit curve
     if np.any(sigma == 0.):
@@ -851,7 +853,7 @@ def fit_curve(fit_func, x, y, x0, sigma):
 
 
 def fit_data_oneD(x, y, order):
-    '''
+    """
         Fit polynomial to the provided data.
 
         Parameters
@@ -864,7 +866,7 @@ def fit_data_oneD(x, y, order):
 
         order           : `integer`
             Order of the polynomial to be fitted to the data
-    '''
+    """
     #   Check array type
     unc = checks.check_unumpy_array(x)
 
@@ -1011,7 +1013,7 @@ def mag_arr(flux_arr):
     #   Calculate magnitudes
     #
     #   Extract flux
-    flux        = flux_arr['flux_fit']
+    flux = flux_arr['flux_fit']
     #   Calculate magnitudes
     mags['mag'] = -2.5 * np.log10(flux)
 
@@ -1026,7 +1028,7 @@ def mag_arr(flux_arr):
 
 
 def mag_u_arr(flux):
-    '''
+    """
         Calculate magnitudes from flux
 
         Parameters
@@ -1040,7 +1042,7 @@ def mag_u_arr(flux):
         mags            : `unumpy.ndarray`
             Numpy structured array containing magnitudes and corresponding
             errors
-    '''
+    """
     #   Get dimensions
     shape = flux.shape
     dim = len(shape)
@@ -1118,7 +1120,7 @@ def mag_df(flux_df, flux_id='flux_fit', unc_id='flux_unc'):
     mag_err = 1.0857 * flux_err / flux
 
     #   Branch according to Series or DataFrame
-    if isinstance(mag_err_m, pd.DataFrame):
+    if isinstance(mag_err, pd.DataFrame):
         #   New index
         index = pd.MultiIndex.from_product([['err'], df_columns])
 
@@ -1130,8 +1132,7 @@ def mag_df(flux_df, flux_id='flux_fit', unc_id='flux_unc'):
             )
     else:
         #   Convert numpy array to data frame
-        err_df  = pd.DataFrame({'err':mag_err}, index=flux_df.index)
-
+        err_df = pd.DataFrame({'err': mag_err}, index=flux_df.index)
 
     #   Attach errors to data frame
     flux_df = pd.concat([flux_df, err_df], axis=1)
@@ -2434,7 +2435,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         columns=columns,
         row_limit=1e6,
         catalog=catalog,
-        column_filters={'Gmag':'<'+str(Gmag_limit)},
+        column_filters={'Gmag': '<'+str(Gmag_limit)},
         )
 
     #   Get data from the corresponding catalog for the objects in the FOV
@@ -2528,6 +2529,11 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         random_state = 25
         n_neighbors = 20
         affinity='rbf'
+    else:
+        raise RuntimeError(
+            f"{style.bcolors.FAIL} \nNo valid parameter set defined: "
+            f"Possibilities are 1, 2, or 3. {style.bcolors.ENDC}"
+        )
     spectral_cluster_model= SpectralClustering(
         #eigen_solver='lobpcg',
         n_clusters=n_clusters,
@@ -2594,19 +2600,19 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         #)
 
     #   Get user input
-    cluter_id, timedOut = timedInput(
+    cluster_id, timedOut = timedInput(
             style.bcolors.OKBLUE+
             "   Which one is the correct cluster (id)? "
             +style.bcolors.ENDC,
             timeout=300,
             )
-    if timedOut or cluter_id == '':
-        cluter_id = 0
+    if timedOut or cluster_id == '':
+        cluster_id = 0
     else:
-        cluter_id = int(cluter_id)
+        cluster_id = int(cluster_id)
 
     #   Calculated mask according to user input
-    cluster_mask = pd_result['cluster']==cluter_id
+    cluster_mask = pd_result['cluster']==cluster_id
 
     #   Apply correlation results and masks to the input table
     tbl = tbl[id_img][mask][cluster_mask.values]
@@ -2734,8 +2740,9 @@ def save_mags_ascii(container, tbl, trans=False, ID='', rts='',
 def postprocess_results(img_container, filter_list, ID='', photo_type='',
                         region=False, radius=600, data_cluster=False,
                         pm_median=False, n_clusters=10,
-                        max_distance_cluster=6., find_cluster_para_set=1):
-    '''
+                        max_distance_cluster=6., find_cluster_para_set=1,
+                        convert_mags=False, target_filter_system='SDSS'):
+    """
         Restrict results to specific areas of the image and filter by means
         of proper motion and distance using Gaia
 
@@ -2789,7 +2796,16 @@ def postprocess_results(img_container, filter_list, ID='', photo_type='',
         find_cluster_para_set   : `integer`, optional
             Parameter set used to identify the star cluster in proper
             motion and distance data.
-    '''
+
+        convert_mags            : `boolean`, optional
+            If True the magnitudes will be converted to another
+            filter systems specified in `target_filter_system`.
+            Default is ``False``.
+
+        target_filter_system    : `string`, optional
+            Photometric system the magnitudes should be converted to
+            Default is ``SDSS``.
+    """
     #   Do nothing if no post process method were defined
     if not region and not pm_median and not data_cluster:
         return
@@ -2798,13 +2814,24 @@ def postprocess_results(img_container, filter_list, ID='', photo_type='',
     img_ensembles = img_container.ensembles
 
     #   Get paths to the tables with the data
-    paths = img_container.photo_filepath
+    # paths = img_container.photo_filepath
 
+    #   Get astropy tables with positions and magnitudes
+    tbl_list = [
+        (getattr(img_container, 'table_mags_transformed', None), True),
+        (getattr(img_container, 'table_mags_not_transformed', None), False),
+        ]
     #   Loop over all Tables
-    first = True
-    for path, trans in paths.items():
+    mask_region = None
+    img_id_cluster = None
+    mask_cluster = None
+    mask_objects = None
+    img_id_pm = None
+    mask_pm = None
+    for (tbl, trans) in tbl_list:
+    # for path, trans in paths.items():
         #   Read Table
-        tbl = Table.read(path, format='ascii')
+        # tbl = Table.read(path, format='ascii')
 
 
         ###
@@ -2814,7 +2841,7 @@ def postprocess_results(img_container, filter_list, ID='', photo_type='',
         #   Extract circular region around a certain object
         #   such as a star cluster
         if region:
-            if first:
+            if mask_region is None:
                 tbl, mask_region = region_selection(
                     img_ensembles[filter_list[0]],
                     img_container.coord,
@@ -2826,7 +2853,7 @@ def postprocess_results(img_container, filter_list, ID='', photo_type='',
 
         #   Find a cluster in the Gaia data that could be the star cluster
         if data_cluster:
-            if first:
+            if any(x is None for x in [img_id_cluster, mask_cluster, mask_objects]):
                 tbl, img_id_cluster, mask_cluster, mask_objects = find_cluster(
                     img_ensembles[filter_list[0]],
                     tbl,
@@ -2839,13 +2866,17 @@ def postprocess_results(img_container, filter_list, ID='', photo_type='',
 
         #   Clean objects according to proper motion (Gaia)
         if pm_median:
-            if first:
+            if any(x is None for x in [img_id_pm, mask_pm]):
                 tbl, img_id_pm, mask_pm = proper_motion_selection(
                     img_ensembles[filter_list[0]],
                     tbl,
                     )
             else:
                 tbl = tbl[img_id_pm][mask_pm]
+
+        #   Convert magnitudes to a different filter system
+        if convert_mags:
+            convert_magnitudes(tbl, target_filter_system)
 
         ###
         #   Save results as ASCII files
@@ -2860,11 +2891,9 @@ def postprocess_results(img_container, filter_list, ID='', photo_type='',
             doadd=False,
             )
 
-        first = False
-
 
 def convert_magnitudes_internal_wrapper(img_container, target_filter_system):
-    '''
+    """
         Gets astropy table with  magnitudes from image container and
         calls then the magnitude conversion.
 
@@ -2875,7 +2904,7 @@ def convert_magnitudes_internal_wrapper(img_container, target_filter_system):
 
         target_filter_system    : `string`
             Photometric system the magnitudes should be converted to
-    '''
+    """
     # #   Get calibrated magnitudes
     # cali_mags = img_container.get_calibrated_magnitudes()
 
@@ -2895,8 +2924,8 @@ def convert_magnitudes_internal_wrapper(img_container, target_filter_system):
 
 
 
-def convert_magnitudes(tbl, target_filter_system):
-    '''
+def convert_magnitudes(tbl: Table, target_filter_system: str) -> None:
+    """
         Convert magnitudes from one system to another
 
         Parameters
@@ -2906,7 +2935,7 @@ def convert_magnitudes(tbl, target_filter_system):
 
         target_filter_system    : `string`
             Photometric system the magnitudes should be converted to
-    '''
+    """
     #   Get column names
     colnames = tbl.colnames
 
@@ -2924,7 +2953,6 @@ def convert_magnitudes(tbl, target_filter_system):
     collected_mags = {}
     collected_err = {}
     available_filter = []
-
 
     for colname in colnames:
         #for filt in ['U', 'B', 'V', 'R', 'I', 'u', 'g', 'r', 'i', 'z']:
