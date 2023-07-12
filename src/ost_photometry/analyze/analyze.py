@@ -1,4 +1,3 @@
-
 ############################################################################
 ####                            Libraries                               ####
 ############################################################################
@@ -14,22 +13,21 @@ from collections import Counter
 from pathlib import Path
 
 import warnings
-warnings.filterwarnings('ignore', category=UserWarning, append=True)
 
 from photutils import (
     DAOStarFinder,
     EPSFBuilder,
-    )
+)
 from photutils.psf import (
     extract_stars,
     DAOGroup,
     IterativelySubtractedPSFPhotometry,
-    )
+)
 from photutils.detection import IRAFStarFinder
 from photutils.background import (
     MMMBackground,
     MADStdBackgroundRMS,
-    )
+)
 
 import ccdproc as ccdp
 
@@ -40,12 +38,14 @@ from astropy.time import Time
 from astropy.nddata import NDData
 from astropy.stats import (gaussian_sigma_to_fwhm, sigma_clipped_stats)
 from astropy.modeling.fitting import LevMarLSQFitter
-from astropy.coordinates import SkyCoord, Angle, matching
+from astropy.coordinates import SkyCoord, Angle
 import astropy.units as u
+
+import pandas as pd
 
 #   hips2fits module is not in the Ubuntu 22.04 package version
 #   of astroquery (0.4.1)
-#from astroquery.hips2fits import hips2fits
+# from astroquery.hips2fits import hips2fits
 from astroquery.hips2fits import hips2fitsClass
 
 from astropy.nddata import CCDData
@@ -54,9 +54,9 @@ from photutils.aperture import (
     aperture_photometry,
     CircularAperture,
     CircularAnnulus,
-    )
+)
 from photutils.background import Background2D, MedianBackground
-#from photutils.utils import calc_total_error
+# from photutils.utils import calc_total_error
 
 import multiprocessing as mp
 
@@ -67,14 +67,18 @@ from .. import style, checks, terminal_output, calibration_data
 
 from .. import aux as base_aux
 
+warnings.filterwarnings('ignore', category=UserWarning, append=True)
+
 ############################################################################
 ####                        Routines & definitions                      ####
 ############################################################################
 
+
 class image_container:
-    '''
+    """
         Container class for image class objects
-    '''
+    """
+
     def __init__(self, **kwargs):
         #   Prepare dictionary
         self.ensembles = {}
@@ -83,10 +87,10 @@ class image_container:
         self.__dict__.update(kwargs)
 
         #   Check for right ascension and declination
-        ra  = kwargs.get('ra', None)
+        ra = kwargs.get('ra', None)
         dec = kwargs.get('dec', None)
         if ra is not None:
-            self.ra  = Angle(ra, unit='hour').degree
+            self.ra = Angle(ra, unit='hour').degree
         else:
             self.ra = None
         if dec is not None:
@@ -95,7 +99,7 @@ class image_container:
             self.dec = None
 
         #   Check for a object name
-        self.name  = kwargs.get('name', None)
+        self.name = kwargs.get('name', None)
 
         #   Create SkyCoord object
         if self.name is not None and self.ra is None and self.dec is None:
@@ -106,14 +110,13 @@ class image_container:
                 dec=self.dec,
                 unit=(u.degree, u.degree),
                 frame="icrs"
-                )
+            )
         else:
             self.coord = None
 
         #   Check if uncertainty should be calculated by means of the
         #   "uncertainties" package. Default is ``True``.
         self.unc = kwargs.get('unc', True)
-
 
     #   Get ePSF objects of all images
     def get_epsf(self):
@@ -180,14 +183,14 @@ class image_container:
         cali_mags = getattr(self, 'cali', None)
         if unc:
             if (cali_mags is None or
-                np.all(unumpy.nominal_values(cali_mags) == 0.)):
-                    #   If array with magnitude transformation is not available
-                    #   or if it is empty get the array without magnitude
-                    #   transformation
-                    cali_mags = getattr(self, 'noT', None)
-                    if cali_mags is not None:
-                        #   Get only the magnitude values
-                        cali_mags = unumpy.nominal_values(cali_mags)
+                    np.all(unumpy.nominal_values(cali_mags) == 0.)):
+                #   If array with magnitude transformation is not available
+                #   or if it is empty get the array without magnitude
+                #   transformation
+                cali_mags = getattr(self, 'noT', None)
+                if cali_mags is not None:
+                    #   Get only the magnitude values
+                    cali_mags = unumpy.nominal_values(cali_mags)
             else:
                 #   Get only the magnitude values
                 cali_mags = unumpy.nominal_values(cali_mags)
@@ -208,34 +211,35 @@ class image_container:
 
 
 class image_ensemble:
-    '''
+    """
         Image ensemble class: Used to handle multiple images, e.g.,
         an image series taken in a specific filter
-    '''
+    """
+
     def __init__(self, filt, obj_name, path, outdir, ref_ID):
         ###
         #   Get file list, if path is a directory, if path is a file put
         #   base name of this file in a list
         #
         if os.path.isdir(path):
-            formats=[".FIT",".fit",".FITS",".fits"]
+            formats = [".FIT", ".fit", ".FITS", ".fits"]
             fileList = os.listdir(path)
 
             #   Remove not FITS entries
             tempList = []
             for file_i in fileList:
                 for j, form in enumerate(formats):
-                    if file_i.find(form)!=-1:
+                    if file_i.find(form) != -1:
                         tempList.append(file_i)
-            fileList=tempList
+            fileList = tempList
         elif os.path.isfile(path):
-            fileList=[str(path).split('/')[-1]]
+            fileList = [str(path).split('/')[-1]]
             path = os.path.dirname(path)
         else:
             raise RuntimeError(
                 f'{style.bcolors.FAIL}ERROR: Provided path is neither a file'
                 f' nor a directory -> EXIT {style.bcolors.ENDC}'
-                )
+            )
 
         ###
         #   Check if the id of the reference image is valid
@@ -245,7 +249,7 @@ class image_ensemble:
                 f'{style.bcolors.FAIL} ERROR: Reference image ID [ref_ID] '
                 'is larger than the total number of images!'
                 f' -> EXIT {style.bcolors.ENDC}'
-                )
+            )
 
         #   Set filter
         self.filt = filt
@@ -269,16 +273,16 @@ class image_ensemble:
         terminal_output.print_terminal(
             string="Read images and calculate FOV, PIXEL scale, etc. ... ",
             indent=2,
-            )
-        for pd, file_name in enumerate(fileList):
+        )
+        for image_id, file_name in enumerate(fileList):
             self.image_list.append(
                 #   Prepare image class instance
-                self.image(pd, filt, obj_name, path, file_name, outdir)
-                )
+                self.image(image_id, filt, obj_name, path, file_name, outdir)
+            )
 
             #   Calculate field of view and additional quantities and add
             #   them to the image class instance
-            base_aux.cal_fov(self.image_list[pd], verbose=False)
+            base_aux.cal_fov(self.image_list[image_id], verbose=False)
 
         #   Set reference image
         self.ref_img = self.image_list[ref_ID]
@@ -305,17 +309,17 @@ class image_ensemble:
     class image:
         def __init__(self, pd, filt, obj_name, path, file_name, outdir):
             #   Set image ID
-            self.pd       = pd
+            self.pd = pd
             #   Set filter
-            self.filt     = filt
+            self.filt = filt
             #   Set object name
-            self.objname  = obj_name
+            self.objname = obj_name
             #   Set file name
             self.filename = file_name
             #   Set complete path
-            self.path     = Path(Path(path) / file_name)
+            self.path = Path(Path(path) / file_name)
             #   Set path to output directory
-            self.outpath  = Path(outdir)
+            self.outpath = Path(outdir)
 
         #   Read image
         def read_image(self):
@@ -399,7 +403,7 @@ class image_ensemble:
     def get_list_dict(self):
         dict_list = []
         for img in self.image_list:
-            dict_list.append({img.filt:img})
+            dict_list.append({img.filt: img})
 
         return dict_list
 
@@ -441,9 +445,9 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
             Default is ``True``.
     '''
     terminal_output.print_terminal(
-        #indent=1,
+        # indent=1,
         string="Remove cosmic rays ...",
-        )
+    )
 
     #   Get image
     ccd = image.read_image()
@@ -454,11 +458,11 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
     #   Get unit of the image to check if the image was scaled with the
     #   exposure time
     if ccd.unit == u.electron / u.s:
-        scaled   = True
+        scaled = True
         exposure = ccd.meta.get('exptime', 1.)
-        reduced  = ccd.multiply(exposure * u.second)
+        reduced = ccd.multiply(exposure * u.second)
     else:
-        scaled  = False
+        scaled = False
         reduced = ccd
 
     if not status:
@@ -470,7 +474,7 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
             sigclip=sigclip,
             satlevel=satlevel,
             verbose=verbose,
-            )
+        )
         if not addmask:
             reduced.mask = np.zeros(reduced.shape, dtype=bool)
         if verbose:
@@ -481,19 +485,19 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
 
         #   Reapply scaling if image was scaled with the exposure time
         if scaled:
-            reduced  = reduced.divide(exposure * u.second)
+            reduced = reduced.divide(exposure * u.second)
 
         #   Set file name
-        basename  = base_aux.get_basename(image.filename)
-        file_name = basename+'_cosmic-rm.fit'
+        basename = base_aux.get_basename(image.filename)
+        file_name = basename + '_cosmic-rm.fit'
 
         #   Set new file name and path
         image.filename = file_name
-        image.path     = os.path.join(
+        image.path = os.path.join(
             str(image.outpath),
             'cosmics_rm',
             file_name,
-            )
+        )
 
         #   Check if the 'cosmics_rm' directory already exits.
         #   If not, create it.
@@ -535,16 +539,16 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
             image.filt,
             string="Determine background: {:s} band",
             indent=2,
-            )
+        )
 
     #   Load image data
-    img    = image.read_image()
+    img = image.read_image()
 
     #   Set up sigma clipping
     sigma_clip = SigmaClip(sigma=sigma_bkg)
 
     #   Calculate background RMS
-    bkgrms        = MADStdBackgroundRMS(sigma_clip=sigma_clip)
+    bkgrms = MADStdBackgroundRMS(sigma_clip=sigma_clip)
     image.std_rms = bkgrms(img.data)
 
     #   2D background?
@@ -557,7 +561,7 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
             filter_size=(3, 3),
             sigma_clip=sigma_clip,
             bkg_estimator=bkg_estimator,
-            )
+        )
 
         #   Remove background
         img_no_bg = img.subtract(bkg.background * u.electron / u.s)
@@ -574,36 +578,34 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
         bkg_value = bkg.background_median
     else:
         #   Estimate 1D background
-        mmm_bkg    = MMMBackground(sigma_clip=sigma_clip)
-        bkg_value  = mmm_bkg.calc_background(img.data)
+        mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
+        bkg_value = mmm_bkg.calc_background(img.data)
 
         #   Remove background
         img_no_bg = img.subtract(bkg_value)
 
         #   Put meta data back on the image, because it is lost while
         #   subtracting the background
-        img_no_bg.meta = img_meta
+        img_no_bg.meta = image.meta
         img_no_bg.meta['HIERARCH'] = '1D background removed'
 
         #   Add Header keyword to mark the file as background subtracted
         img_no_bg.meta['NO_BG'] = True
 
-
     #   Define name and save image
-    file_name = base_aux.get_basename(image.filename)+'_nobg.fit'
+    file_name = base_aux.get_basename(image.filename) + '_nobg.fit'
     outpath = image.outpath / 'nobg'
     checks.check_out(outpath)
     img_no_bg.write(outpath / file_name, overwrite=True)
 
-
     #   Set new path and file
     #   -> Background subtracted image will be used in further processing steps
     if apply_background:
-        image.path     = outpath / file_name
+        image.path = outpath / file_name
         image.filename = file_name
 
     #   Add background value to image class
-    image.bkg_value  = bkg_value
+    image.bkg_value = bkg_value
 
 
 def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
@@ -651,7 +653,7 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
         indent=indent,
         string="Identify stars",
         condense=condense,
-        )
+    )
 
     #   Load image data
     img = image.read_image()
@@ -663,23 +665,23 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
     if method == 'DAO':
         #   Set up DAO finder
         daofind = DAOStarFinder(
-            fwhm=sigma_psf*gaussian_sigma_to_fwhm,
-            threshold=multi_start*sigma
-            )
+            fwhm=sigma_psf * gaussian_sigma_to_fwhm,
+            threshold=multi_start * sigma
+        )
 
         #   Find stars - make table
         tbl_posi_all = daofind(img.data)
     elif method == 'IRAF':
         #   Set up IRAF finder
         iraffind = IRAFStarFinder(
-                threshold=multi_start*sigma,
-                fwhm=sigma_psf*gaussian_sigma_to_fwhm,
-                minsep_fwhm=0.01,
-                roundhi=5.0,
-                roundlo=-5.0,
-                sharplo=0.0,
-                sharphi=2.0,
-                )
+            threshold=multi_start * sigma,
+            fwhm=sigma_psf * gaussian_sigma_to_fwhm,
+            minsep_fwhm=0.01,
+            roundhi=5.0,
+            roundlo=-5.0,
+            sharplo=0.0,
+            sharphi=2.0,
+        )
 
         #   Find stars - make table
         tbl_posi_all = iraffind(img.data)
@@ -687,7 +689,7 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
         raise RuntimeError(
             f"{style.bcolors.FAIL}\nExtraction method ({method}) not valid: "
             f"use either IRAF or DAO {style.bcolors.ENDC}"
-            )
+        )
 
     #   Add positions to image class
     image.positions = tbl_posi_all
@@ -746,29 +748,29 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
     data = image.get_data()
 
     #   Combine identification string
-    istring = str(image.pd)+'. '+image.filt
+    istring = str(image.pd) + '. ' + image.filt
 
     #   Useful information
     outstring = terminal_output.print_terminal(
         num_stars,
         istring,
-        indent=indent+1,
+        indent=indent + 1,
         string="{:d} sources identified in the {:s} band image",
         style_name='OKBLUE',
         condense=condense,
-        )
+    )
 
     ##  Determine sample of stars used for estimating the ePSF
     #   (rm the brightest 1% of all stars because those are often saturated)
     #   Sort list with star positions according to flux
     tbl_sort = tbl.group_by('flux')
     # Determine the 99 percentile
-    p99=np.percentile(tbl_sort['flux'], 99)
+    p99 = np.percentile(tbl_sort['flux'], 99)
     #   Determine the position of the 99 percentile in the position list
-    id_p99=np.argmin(np.absolute(tbl_sort['flux']-p99))
+    id_p99 = np.argmin(np.absolute(tbl_sort['flux'] - p99))
 
     #   Based on the input list, set the minimal number of stars
-    frac=int(num_stars*frac_epsf)
+    frac = int(num_stars * frac_epsf)
     #   If the minimal number of stars ('frac') is lower than 'min_stars'
     #   set it to 'min_stars' (the default is 25 as required by the cutout
     #   plots, 25 also appears to be reasonable for a good ePSF)
@@ -776,14 +778,14 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
         frac = min_stars
 
     #   Check if enough stars have been identified
-    if (id_p99-frac < min_stars and strict) or (id_p99-frac<1 and not strict):
+    if (id_p99 - frac < min_stars and strict) or (id_p99 - frac < 1 and not strict):
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNot enough stars ({id_p99-frac}) found "
+            f"{style.bcolors.FAIL} \nNot enough stars ({id_p99 - frac}) found "
             f"to determine the ePSF in the {istring} band{style.bcolors.ENDC}"
-            )
+        )
 
     #   Resize table -> limit it to the suitable stars
-    tbl_posi = tbl_sort[:][id_p99-frac:id_p99]
+    tbl_posi = tbl_sort[:][id_p99 - frac:id_p99]
 
     ##  Exclude stars that are too close to the image boarder
     #   Size of the extraction box around each star
@@ -793,15 +795,15 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
     x = tbl_posi['xcentroid']
     y = tbl_posi['ycentroid']
 
-    mask = ((x > hsize) & (x < (data.shape[1] -1 - hsize)) &
-            (y > hsize) & (y < (data.shape[0] -1 - hsize)))
+    mask = ((x > hsize) & (x < (data.shape[1] - 1 - hsize)) &
+            (y > hsize) & (y < (data.shape[0] - 1 - hsize)))
 
     #   Updated positions table
-    tbl_posi  = tbl_posi[:][mask]
+    tbl_posi = tbl_posi[:][mask]
     num_clean = len(tbl_posi)
 
     #   Check if there are still enough stars
-    if (num_clean < min_stars and strict) or (num_clean<1 and not strict):
+    if (num_clean < min_stars and strict) or (num_clean < 1 and not strict):
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nNot enough stars ({num_clean}) for the "
             f"ePSF determination in the {istring} band image. Too many "
@@ -811,8 +813,7 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
             "the case, shrink extraction region or allow for higher fraction "
             "of ePSF stars (size_epsf) from all identified stars "
             f"(frac_epsf_stars). {style.bcolors.ENDC}"
-            )
-
+        )
 
     ##  Find all potential ePSF stars with close neighbors
     dist_min = size
@@ -822,13 +823,13 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
     y1 = tbl_sort['ycentroid']
     x2 = tbl_posi['xcentroid']
     y2 = tbl_posi['ycentroid']
-    nmax = np.max((len(x1),len(x2)))
-    xall = np.zeros((nmax,2))
-    yall = np.zeros((nmax,2))
-    xall[0:len(x1),0] = x1
-    xall[0:len(x2),1] = x2
-    yall[0:len(y1),0] = y1
-    yall[0:len(y2),1] = y2
+    nmax = np.max((len(x1), len(x2)))
+    xall = np.zeros((nmax, 2))
+    yall = np.zeros((nmax, 2))
+    xall[0:len(x1), 0] = x1
+    xall[0:len(x2), 1] = x2
+    yall[0:len(y1), 0] = y1
+    yall[0:len(y2), 1] = y2
 
     id_p99 = correlate.newsrcor(
         xall,
@@ -836,21 +837,21 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
         dist_min,
         option=3,
         silent=True,
-        )[1]
+    )[1]
 
     #   Determine multiple entries -> stars that are contaminated
-    id_p99_mult = [ite for ite,count in Counter(id_p99).items() if count>1]
+    id_p99_mult = [ite for ite, count in Counter(id_p99).items() if count > 1]
     num_spoiled = len(id_p99_mult)
 
     #   Determine unique entries -> stars that are not contaminated
-    id_p99_uniq = [ite for ite,count in Counter(id_p99).items() if count==1]
-    num_clean   = len(id_p99_uniq)
+    id_p99_uniq = [ite for ite, count in Counter(id_p99).items() if count == 1]
+    num_clean = len(id_p99_uniq)
 
     #   Remove ePSF stars with close neighbors from the corresponding table
     tbl_posi.remove_rows(id_p99_mult)
 
     #   Check if there are still enough stars
-    if (num_clean < min_stars and strict) or (num_clean<1 and not strict):
+    if (num_clean < min_stars and strict) or (num_clean < 1 and not strict):
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nNot enough stars ({num_clean}) for the "
             f"ePSF determination in the {istring} band image. Too many "
@@ -860,7 +861,7 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
             "If that is the case, shrink extraction region or allow for "
             "higher fraction of ePSF stars (size_epsf) from all identified "
             f"stars (frac_epsf_stars). {style.bcolors.ENDC}"
-            )
+        )
 
     #   Add ePSF stars to image class
     image.positions_epsf = tbl_posi
@@ -870,7 +871,7 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
 
 
 def mk_epsf(image, size=25, oversampling=2, maxiters=7,
-                min_stars=25, multi=True, condense=False, indent=2):
+            min_stars=25, multi=True, condense=False, indent=2):
     '''
         Main function to determine the ePSF, using photutils
 
@@ -920,24 +921,23 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
     tbl_posi = image.positions_epsf
 
     #   Number of ePSF stars
-    num_fit =  len(tbl_posi)
+    num_fit = len(tbl_posi)
 
     #   Get object name
     nameobj = image.objname
 
     outstring = terminal_output.print_terminal(
-            indent=indent,
-            string="Determine the point spread function",
-            condense=condense,
-            )
+        indent=indent,
+        string="Determine the point spread function",
+        condense=condense,
+    )
     outstring = terminal_output.print_terminal(
-            num_fit,
-            indent=indent+1,
-            string="{:d} bright stars used",
-            style_name='OKBLUE',
-            condense=condense,
-            )
-
+        num_fit,
+        indent=indent + 1,
+        string="{:d} bright stars used",
+        style_name='OKBLUE',
+        condense=condense,
+    )
 
     #   Create new table with the names required by "extract_stars"
     stars_tbl = Table()
@@ -951,7 +951,7 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
     stars = extract_stars(nddata, stars_tbl, size=size)
 
     #   Combine plot identification string
-    string = 'img-'+str(image.pd)+'-'+image.filt
+    string = 'img-' + str(image.pd) + '-' + image.filt
 
     #   Get output directory
     outdir = image.outpath.name
@@ -961,8 +961,8 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
         p = mp.Process(
             target=plot.plot_cutouts,
             args=(outdir, stars, string),
-            kwargs={'nameobj':nameobj,}
-            )
+            kwargs={'nameobj': nameobj, }
+        )
         p.start()
     else:
         if condense:
@@ -972,7 +972,7 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
                 string,
                 nameobj=nameobj,
                 condense=True,
-                )
+            )
             outstring += tmpstr
         else:
             plot.plot_cutouts(
@@ -981,26 +981,26 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
                 string,
                 max_plot_stars=min_stars,
                 nameobj=nameobj,
-                )
+            )
 
     #   Build the ePSF (set oversampling and max. number of iterations)
     epsf_builder = EPSFBuilder(
         oversampling=oversampling,
         maxiters=maxiters,
         progress_bar=False,
-        )
+    )
     epsf, fitted_stars = epsf_builder(stars)
 
     #   Add ePSF and fitted stars to image class
-    image.epsf         = epsf
+    image.epsf = epsf
     image.fitted_stars = fitted_stars
 
     if condense:
-    	return outstring
+        return outstring
 
 
 def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
-                 method_finder='IRAF', size_epsf=25.,  multi=5.0,
+                 method_finder='IRAF', size_epsf=25., multi=5.0,
                  multi_grouper=2.0, strict_cleaning=True, condense=False,
                  rmbackground=False, indent=2):
     '''
@@ -1067,7 +1067,7 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
     checks.check_out(
         out_path,
         out_path / 'tables',
-        )
+    )
 
     #   Get image data
     data = image.get_data()
@@ -1081,20 +1081,20 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
             #   Get position information
             positions_flux = image.positions
             init_guesses = Table(
-                names=['x_0','y_0', 'flux_0'],
+                names=['x_0', 'y_0', 'flux_0'],
                 data=[
                     positions_flux['xcentroid'],
                     positions_flux['ycentroid'],
                     positions_flux['flux'],
-                    ]
-                )
+                ]
+            )
         except:
             #   Switch to backup in case positions and fluxes are not
             #   available
-            use_init_guesses=False
+            use_init_guesses = False
 
     #   Set output and plot identification string
-    istring = str(image.pd)+'-'+filt
+    istring = str(image.pd) + '-' + filt
 
     #   Get background RMS
     sigma = image.std_rms
@@ -1103,36 +1103,36 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
     epsf = image.epsf
 
     outstr = terminal_output.print_terminal(
-            istring,
-            indent=indent,
-            string="Performing the actual PSF photometry ({:s} image)",
-            condense=condense,
-            )
+        istring,
+        indent=indent,
+        string="Performing the actual PSF photometry ({:s} image)",
+        condense=condense,
+    )
 
     ##  Set up all necessary classes
     if method_finder == 'IRAF':
         #   IRAF finder
         finder = IRAFStarFinder(
-            threshold=multi*sigma,
-            fwhm=sigma_psf*gaussian_sigma_to_fwhm,
+            threshold=multi * sigma,
+            fwhm=sigma_psf * gaussian_sigma_to_fwhm,
             minsep_fwhm=0.01,
             roundhi=5.0,
             roundlo=-5.0,
             sharplo=0.0,
             sharphi=2.0,
-            )
+        )
     elif method_finder == 'DAO':
         #   DAO finder
         finder = DAOStarFinder(
-            fwhm=sigma_psf*gaussian_sigma_to_fwhm,
-            threshold=multi*sigma,
+            fwhm=sigma_psf * gaussian_sigma_to_fwhm,
+            threshold=multi * sigma,
             exclude_border=True,
-            )
+        )
     else:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nExtraction method ({method_finder}) "
             f"not valid: use either IRAF or DAO {style.bcolors.ENDC}"
-            )
+        )
     #   Fitter used
     fitter = LevMarLSQFitter()
 
@@ -1143,18 +1143,18 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
         sizepho = size_epsf
 
     #   Number of iterations
-    niter=1
+    niter = 1
 
     #   Set up sigma clipping
     if rmbackground:
         sigma_clip = SigmaClip(sigma=sigma_bkg)
-        mmm_bkg    = MMMBackground(sigma_clip=sigma_clip)
+        mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
     else:
         mmm_bkg = None
 
     try:
         #   DAO grouper
-        daogroup = DAOGroup(multi_grouper*sigma_psf*gaussian_sigma_to_fwhm)
+        daogroup = DAOGroup(multi_grouper * sigma_psf * gaussian_sigma_to_fwhm)
 
         #  Set up the overall class to extract the data
         photometry = IterativelySubtractedPSFPhotometry(
@@ -1165,8 +1165,8 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
             fitter=fitter,
             niters=niter,
             fitshape=(sizepho, sizepho),
-            aperture_radius=(sizepho-1)/2
-            )
+            aperture_radius=(sizepho - 1) / 2
+        )
 
         #   Extract the photometry and make a table
         if use_init_guesses:
@@ -1180,12 +1180,12 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
                 string="IterativelySubtractedPSFPhotometry failed. " \
                        "Will try again with 'multi_grouper' set to 1...",
                 style_name='WARNING',
-                )
+            )
             multi_grouper = 1.
             #   DAO grouper
             daogroup = DAOGroup(
-                multi_grouper*sigma_psf*gaussian_sigma_to_fwhm
-                )
+                multi_grouper * sigma_psf * gaussian_sigma_to_fwhm
+            )
 
             #  Set up the overall class to extract the data
             photometry = IterativelySubtractedPSFPhotometry(
@@ -1196,8 +1196,8 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
                 fitter=fitter,
                 niters=niter,
                 fitshape=(sizepho, sizepho),
-                aperture_radius=(sizepho-1)/2
-                )
+                aperture_radius=(sizepho - 1) / 2
+            )
 
             #   Extract the photometry and make a table
             if use_init_guesses:
@@ -1208,8 +1208,8 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
             terminal_output.print_terminal(
                 indent=0,
                 string=e,
-                )
-            #print(e)
+            )
+            # print(e)
 
     #   Check if result table contains a 'flux_unc' column
     #   For some reason, it's missing for some extractions....
@@ -1219,46 +1219,46 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
         #   early estimate 'flux_0'
         est_unc = np.absolute(
             result_tbl['flux_fit'] - result_tbl['flux_0']
-            )
+        )
         result_tbl.add_column(est_unc, name='flux_unc')
 
     #   Clean output for objects with negative uncertainties
     try:
-        num_spoiled  = 0
+        num_spoiled = 0
         spoiled_fits = np.where(result_tbl['flux_fit'].data < 0.)
         result_tbl.remove_rows(spoiled_fits)
-        num_spoiled  = np.size(spoiled_fits)
+        num_spoiled = np.size(spoiled_fits)
         if strict_cleaning:
             spoiled_fits = np.where(result_tbl['flux_unc'].data < 0.)
-            num_spoiled  += len(spoiled_fits)
+            num_spoiled += len(spoiled_fits)
             result_tbl.remove_rows(spoiled_fits)
     except:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nProblem with cleanup of negative "
             f"uncertainties... {style.bcolors.ENDC}"
-            )
+        )
 
     #   Clean output for objects with negative pixel coordinates
     try:
-        spoiled_fits  = np.where(result_tbl['x_fit'].data < 0.)
-        num_spoiled  += np.size(spoiled_fits)
+        spoiled_fits = np.where(result_tbl['x_fit'].data < 0.)
+        num_spoiled += np.size(spoiled_fits)
         result_tbl.remove_rows(spoiled_fits)
-        spoiled_fits  = np.where(result_tbl['y_fit'].data < 0.)
-        num_spoiled  += np.size(spoiled_fits)
+        spoiled_fits = np.where(result_tbl['y_fit'].data < 0.)
+        num_spoiled += np.size(spoiled_fits)
         result_tbl.remove_rows(spoiled_fits)
     except:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nProblem with cleanup of negative pixel "
             f"coordinates... {style.bcolors.ENDC}"
-            )
+        )
 
     if num_spoiled != 0:
         strout = terminal_output.print_terminal(
-                num_spoiled,
-                indent=indent+1,
-                string="{:d} objects removed because of poor fit quality",
-                condense=condense,
-                )
+            num_spoiled,
+            indent=indent + 1,
+            string="{:d} objects removed because of poor fit quality",
+            condense=condense,
+        )
         if condense: outstr += strout
 
     try:
@@ -1269,25 +1269,24 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
             "IterativelySubtractedPSFPhotometry is empty after cleaning up "
             "of objects with negative pixel coordinates and negative "
             f"uncertainties {style.bcolors.ENDC}"
-            )
+        )
 
     strout = terminal_output.print_terminal(
-            nstars,
-            indent=indent+1,
-            string="{:d} good stars extracted from the image",
-            style_name='OKBLUE',
-            condense=condense,
-            )
+        nstars,
+        indent=indent + 1,
+        string="{:d} good stars extracted from the image",
+        style_name='OKBLUE',
+        condense=condense,
+    )
     if condense: outstr += strout
-
 
     #   Remove objects that are too close to the image edges
     result_tbl, strout = aux.rm_edge_objects(
         result_tbl,
         data,
-        (sizepho-1)/2,
+        (sizepho - 1) / 2,
         condense=condense,
-        )
+    )
     if condense: outstr += strout
 
     #   Write table
@@ -1296,13 +1295,13 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
         out_path / 'tables' / filename,
         format='ascii',
         overwrite=True,
-        )
+    )
 
     #  Make residual image
     residual_image = photometry.get_residual_image()
 
     #   Add photometry and residual image to image class
-    image.photometry     = result_tbl
+    image.photometry = result_tbl
     image.residual_image = residual_image
 
     if condense:
@@ -1344,7 +1343,7 @@ def compute_phot_error(flux_variance, ap_area, nsky, stdev, gain=1.0):
     '''
 
     #   Calculate flux error as above
-    bg_variance_terms = (ap_area * stdev ** 2. ) * (1. + ap_area/nsky)
+    bg_variance_terms = (ap_area * stdev ** 2.) * (1. + ap_area / nsky)
     variance = flux_variance / gain + bg_variance_terms
     flux_error = variance ** .5
 
@@ -1391,22 +1390,22 @@ def define_apertures(image, r, r_in, r_out, r_unit):
     except:
         lst1 = tbl['xcentroid']
         lst2 = tbl['ycentroid']
-    positions = list(zip(lst1,lst2))
+    positions = list(zip(lst1, lst2))
 
     #   Check unit of radii
     if r_unit not in ['pixel', 'arcsec']:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nUnit of the aperture radii not valid: "
             f"set it either to pixel or arcsec {style.bcolors.ENDC}"
-            )
+        )
 
     #   Convert radii in arcsec to pixel
     #   (this part is prone to errors and needs to be rewritten)
     pixscale = image.pixscale
     if pixscale != None and r_unit == 'arcsec':
-        r     = r/pixscale
-        r_in  = r_in/pixscale
-        r_out = r_out/pixscale
+        r = r / pixscale
+        r_in = r_in / pixscale
+        r_out = r_out / pixscale
 
     #   Make stellar aperture
     aperture = CircularAperture(positions, r=r)
@@ -1438,7 +1437,7 @@ def background_simple(image, annulus_aperture):
             Standard deviation of the background
     '''
     bkg_median = []
-    bkg_stdev  = []
+    bkg_stdev = []
 
     #   Calculate mask from background annulus
     annulus_masks = annulus_aperture.to_mask(method='center')
@@ -1460,7 +1459,7 @@ def background_simple(image, annulus_aperture):
 
     #   Convert to numpy array
     bkg_median = np.array(bkg_median)
-    bkg_stdev  = np.array(bkg_stdev)
+    bkg_stdev = np.array(bkg_stdev)
 
     return bkg_median, bkg_stdev
 
@@ -1518,9 +1517,9 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
                           Error array for 'image'
     '''
     #   Load image data and uncertainty
-    img  = image.read_image()
+    img = image.read_image()
     data = img.data
-    err  = img.uncertainty.array
+    err = img.uncertainty.array
 
     #   Get filter
     filt = image.filt
@@ -1530,8 +1529,7 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
         indent=indent,
         string="Performing aperture photometry ({:s} image)",
         condense=condense,
-        )
-
+    )
 
     ###
     #   Define apertures
@@ -1542,15 +1540,13 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
         r_in,
         r_out,
         r_unit,
-        )
-
+    )
 
     ###
     #   Extract background and calculate median
     #
     if bg_simple:
         bkg_median, bkg_stdev = background_simple(image, annulus_aperture)
-
 
     ###
     #   Extract photometry
@@ -1565,14 +1561,14 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
             annulus_aperture,
             mask=img.mask,
             error=err,
-            )
+        )
 
         #   Calculate aperture background and the corresponding error
         phot['aper_bkg'] = bkg_phot['aperture_sum'] * aperture.area \
-                        / annulus_aperture.area
+                           / annulus_aperture.area
 
         phot['aper_bkg_err'] = bkg_phot['aperture_sum_err'] * aperture.area \
-                        / annulus_aperture.area
+                               / annulus_aperture.area
     else:
         #   Add median background to the output table
         phot['annulus_median'] = bkg_median
@@ -1593,7 +1589,7 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
     if err is not None:
         err_column = phot['aperture_sum_err']
     else:
-        err_column = phot['flux_fit']**(0.5)
+        err_column = phot['flux_fit'] ** (0.5)
 
     if bg_simple:
         bg_err = bkg_stdev
@@ -1605,7 +1601,7 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
         aperture.area,
         annulus_aperture.area,
         bg_err,
-        )
+    )
 
     #   Rename position columns
     phot.rename_column('xcenter', 'x_fit')
@@ -1625,7 +1621,6 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
     #   Add photometry to image class
     image.photometry = phot
 
-
     ###
     #   Plot star map with aperture overlay
     #
@@ -1636,7 +1631,7 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
             aperture,
             annulus_aperture,
             filt,
-            )
+        )
 
     #   Number of stars
     nstars = len(flux)
@@ -1644,13 +1639,13 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
     #   Useful info
     strout = terminal_output.print_terminal(
         nstars,
-        indent=indent+1,
+        indent=indent + 1,
         string="{:d} good stars extracted from the image",
         style_name='OKBLUE',
         condense=condense,
-        )
+    )
 
-    if condense: return outstr+strout
+    if condense: return outstr + strout
 
 
 def correlate_images(*args, **kwargs):
@@ -1664,7 +1659,7 @@ def correlate_images(*args, **kwargs):
         return correlate_tbl(*args, **kwargs)
 
 
-#@timeis
+# @timeis
 def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
                   maxid=1, refORI=0, refOBJ=[], nmissed=1, bfrac=1.0,
                   s_refOBJ=True):
@@ -1750,10 +1745,10 @@ def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
         arr_img_IDs,
         indent=1,
         string="Correlate results from the images ({:s})",
-        )
+    )
 
     #   Define variables
-    nimg      = len(arr_img_IDs)
+    nimg = len(arr_img_IDs)
     nmax_list = []
     x = []
     y = []
@@ -1768,11 +1763,11 @@ def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
     nmax = np.max(nmax_list)
 
     #   Define and fill new arrays
-    xall = np.zeros((nmax,nimg))
-    yall = np.zeros((nmax,nimg))
-    for i in range(0,nimg):
-        xall[0:len(x[i]),i] = x[i]
-        yall[0:len(y[i]),i] = y[i]
+    xall = np.zeros((nmax, nimg))
+    yall = np.zeros((nmax, nimg))
+    for i in range(0, nimg):
+        xall[0:len(x[i]), i] = x[i]
+        yall[0:len(y[i]), i] = y[i]
 
     #   Correlate the results from the two images
     indSR, reject, count, rej_obj = correlate.newsrcor(
@@ -1786,18 +1781,18 @@ def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
         refOBJ=refOBJ,
         nmissed=nmissed,
         s_refOBJ=s_refOBJ,
-        )
+    )
 
     if count == 1:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nOnly one common object "
             f"found!{style.bcolors.ENDC}"
-            )
+        )
     elif count == 0:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nNo common objects "
             f"found!{style.bcolors.ENDC}"
-            )
+        )
 
     nbad = len(reject)
     if nbad > 0:
@@ -1805,45 +1800,45 @@ def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
             nbad,
             indent=2,
             string="{:d} images do not meet the criteria -> removed",
-            )
+        )
 
     #   Remove bad origins listed in 'reject'
-    indSR       = np.delete(indSR, reject, 0)
+    indSR = np.delete(indSR, reject, 0)
     arr_img_IDs = np.delete(arr_img_IDs, reject, 0)
 
-    xall        = np.delete(xall, reject, 1)
-    yall        = np.delete(yall, reject, 1)
+    xall = np.delete(xall, reject, 1)
+    yall = np.delete(yall, reject, 1)
 
     #   Calculate shift for the reference origin
     shiftID = np.argwhere(reject < refORI)
-    Nshift  = len(shiftID)
+    Nshift = len(shiftID)
     refORI -= Nshift
 
     # Number of clean images
-    nclean = len(indSR[:,0])
+    nclean = len(indSR[:, 0])
 
     #   Rearrange arrays based on the newsrcor results
-    x_sort   = np.zeros((count))
-    y_sort   = np.zeros((count))
+    x_sort = np.zeros((count))
+    y_sort = np.zeros((count))
     ind_sort = np.arange(count)
 
-    for i in range(0,count):
-        x_sort[i]   = xall[indSR[refORI][i]][refORI]
-        y_sort[i]   = yall[indSR[refORI][i]][refORI]
+    for i in range(0, count):
+        x_sort[i] = xall[indSR[refORI][i]][refORI]
+        y_sort[i] = yall[indSR[refORI][i]][refORI]
 
     #   Array for the flux and uncertainty
     flux_arr = np.zeros(nclean, dtype=[('flux_fit', 'f8', (count)),
                                        ('flux_unc', 'f8', (count)),
-                                      ]
-                    )
+                                       ]
+                        )
 
     #   Fill arrays
     for j, img_ID in enumerate(arr_img_IDs):
         img_ID = str(img_ID)
 
         for i in range(0, count):
-            flux     = result_tbl[img_ID]['flux_fit'][indSR[j,i]]
-            flux_err = result_tbl[img_ID]['flux_unc'][indSR[j,i]]
+            flux = result_tbl[img_ID]['flux_fit'][indSR[j, i]]
+            flux_err = result_tbl[img_ID]['flux_unc'][indSR[j, i]]
             flux_arr['flux_fit'][j][i] = flux
             flux_arr['flux_unc'][j][i] = flux_err
 
@@ -1853,7 +1848,7 @@ def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
         nan=9999.,
         posinf=9999.,
         neginf=9999.,
-        )
+    )
 
     return ind_sort, x_sort, y_sort, flux_arr, reject, rej_obj, count
 
@@ -1861,7 +1856,7 @@ def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
 def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
                            refORI=0, refOBJ=[], nmissed=1, bfrac=1.0,
                            s_refOBJ=True, correl_method='astropy',
-                           seplimit=2.*u.arcsec):
+                           seplimit=2. * u.arcsec):
     '''
         Correlate star lists from the stacked images of all filters to find
         those stars that are visible on all images -> write calibrated CMD
@@ -1926,7 +1921,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         arr_img_IDs,
         indent=1,
         string="Correlate results from the images ({})",
-        )
+    )
 
     #   Get WCS
     w = img_ensemble.wcs
@@ -1935,7 +1930,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     result_tbl = img_ensemble.get_photometry()
 
     #   Number of images
-    nimg      = len(arr_img_IDs)
+    nimg = len(arr_img_IDs)
 
     #   Extract pixel positions of the objects -> needs to be improved!
     nmax_list = []
@@ -1950,12 +1945,12 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     nmax = np.max(nmax_list)
 
     #   Define and fill new arrays
-    xall = np.zeros((nmax,nimg))
-    yall = np.zeros((nmax,nimg))
+    xall = np.zeros((nmax, nimg))
+    yall = np.zeros((nmax, nimg))
 
-    for i in range(0,nimg):
-        xall[0:len(x[i]),i] = x[i]
-        yall[0:len(y[i]),i] = y[i]
+    for i in range(0, nimg):
+        xall[0:len(x[i]), i] = x[i]
+        yall[0:len(y[i]), i] = y[i]
 
     #   Correlate the object positions from the images
     #   -> find common objects
@@ -1970,7 +1965,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             nmissed=nmissed,
             s_refOBJ=s_refOBJ,
             seplimit=seplimit,
-            )
+        )
         count = len(indSR[0])
 
     elif correl_method == 'own':
@@ -1986,12 +1981,12 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             refOBJ=refOBJ,
             nmissed=nmissed,
             s_refOBJ=s_refOBJ,
-            )
+        )
     else:
         raise ValueError(
             f'{style.bcolors.FAIL}Correlation method not known. Expected: '
             f'"own" or astropy, but got "{correl_method}"{style.bcolors.ENDC}'
-            )
+        )
 
     ###
     #   Print correlation infos or raise error if not enough common
@@ -2001,18 +1996,18 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nOnly one common object "
             f"found! {style.bcolors.ENDC}"
-            )
+        )
     elif count == 0:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nNo common objects "
             f"found!{style.bcolors.ENDC}"
-            )
+        )
     else:
         terminal_output.print_terminal(
             count,
             indent=2,
             string="{} objects identified on all images",
-            )
+        )
 
     nbad = len(reject)
     if nbad > 0:
@@ -2020,21 +2015,20 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             nbad,
             indent=2,
             string="{:d} images do not meet the criteria -> removed",
-            )
+        )
     if nbad > 1:
         terminal_output.print_terminal(
             reject,
             indent=2,
             string="Rejected image IDs: {}",
-            )
+        )
     elif nbad == 1:
         terminal_output.print_terminal(
             reject,
             indent=2,
             string="ID of the rejected image: {}",
-            )
+        )
     terminal_output.print_terminal()
-
 
     ###
     #   Post process corelation results
@@ -2043,26 +2037,25 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     #   Remove "bad" datasets from index array
     #   (only necessary for 'own' method)
     if correl_method == 'own':
-        indSR       = np.delete(indSR, reject, 0)
+        indSR = np.delete(indSR, reject, 0)
 
     # Number of "clean" datasets
-    nclean = len(indSR[:,0])
+    nclean = len(indSR[:, 0])
 
     #   Remove "bad" datasets from image IDs -> used in a later step
     arr_img_IDs = np.delete(arr_img_IDs, reject, 0)
 
     #   Calculate new index of the reference origin
     shiftID = np.argwhere(reject < refORI)
-    Nshift  = len(shiftID)
-    refORI_new = refORI-Nshift
-
+    Nshift = len(shiftID)
+    refORI_new = refORI - Nshift
 
     ###
     #   Rearrange arrays based on the correlation results
     #
     #   Prepare new arrays for positions and indexes
-    x_sort   = np.zeros((count))
-    y_sort   = np.zeros((count))
+    x_sort = np.zeros((count))
+    y_sort = np.zeros((count))
     ind_sort = np.arange(count)
 
     #   Fill position arrays -> distinguish between input sources
@@ -2073,17 +2066,17 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
 
     elif correl_method == 'own':
         #   Remove "bad" datasets first
-        xall        = np.delete(xall, reject, 1)
-        yall        = np.delete(yall, reject, 1)
+        xall = np.delete(xall, reject, 1)
+        yall = np.delete(yall, reject, 1)
 
-        x_sort = xall[indSR[refORI_new]][:,refORI_new]
-        y_sort = yall[indSR[refORI_new]][:,refORI_new]
+        x_sort = xall[indSR[refORI_new]][:, refORI_new]
+        y_sort = yall[indSR[refORI_new]][:, refORI_new]
 
     #   Prepare array for the flux and uncertainty (all datasets)
     flux_arr = np.zeros(nclean, dtype=[('flux_fit', 'f8', (count)),
                                        ('flux_unc', 'f8', (count)),
-                                      ]
-                    )
+                                       ]
+                        )
 
     #   Fill flux arrays
     for j, img_ID in enumerate(arr_img_IDs):
@@ -2093,11 +2086,11 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         flux_img = np.zeros(
             count,
             dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
-            )
+        )
 
         #   Rearrange flux and error
-        flux_img['flux_fit'] = result_tbl[img_ID_str]['flux_fit'][indSR[j,:]]
-        flux_img['flux_unc'] = result_tbl[img_ID_str]['flux_unc'][indSR[j,:]]
+        flux_img['flux_fit'] = result_tbl[img_ID_str]['flux_fit'][indSR[j, :]]
+        flux_img['flux_unc'] = result_tbl[img_ID_str]['flux_unc'][indSR[j, :]]
 
         #   Remove nans etc. in error
         flux_img['flux_unc'] = np.nan_to_num(
@@ -2105,7 +2098,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             nan=9999.,
             posinf=9999.,
             neginf=9999.,
-            )
+        )
 
         #   Remove '--' entries in error
         flux_err_dash = np.argwhere(flux_img['flux_unc'] == '--')
@@ -2114,36 +2107,35 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         uflux_img = unumpy.uarray(
             flux_img['flux_fit'],
             flux_img['flux_unc']
-            )
+        )
 
         #   Add sorted flux data and positions back to the image
-        img_ensemble.image_list[img_ID].flux    = flux_img
-        img_ensemble.image_list[img_ID].uflux   = uflux_img
-        img_ensemble.image_list[img_ID].x_sort  = x_sort
-        img_ensemble.image_list[img_ID].y_sort  = y_sort
+        img_ensemble.image_list[img_ID].flux = flux_img
+        img_ensemble.image_list[img_ID].uflux = uflux_img
+        img_ensemble.image_list[img_ID].x_sort = x_sort
+        img_ensemble.image_list[img_ID].y_sort = y_sort
         img_ensemble.image_list[img_ID].id_sort = ind_sort
-
 
         #   Add to overall array
         flux_arr['flux_fit'][j] = flux_img['flux_fit']
         flux_arr['flux_unc'][j] = flux_img['flux_unc']
 
     uflux_arr = unumpy.uarray(
-            flux_arr['flux_fit'],
-            flux_arr['flux_unc']
-            )
+        flux_arr['flux_fit'],
+        flux_arr['flux_unc']
+    )
 
     #   Update image ensemble object and add IDs, pixel coordinates, and
     #   flux of the correlated objects
     img_list = img_ensemble.image_list
     img_list = np.delete(img_list, reject)
     img_ensemble.image_list = img_list
-    img_ensemble.nfiles     = len(img_list)
-    img_ensemble.ref_id     = refORI_new
+    img_ensemble.nfiles = len(img_list)
+    img_ensemble.ref_id = refORI_new
 
     img_ensemble.id_s = ind_sort
-    img_ensemble.x_s  = x_sort
-    img_ensemble.y_s  = y_sort
+    img_ensemble.x_s = x_sort
+    img_ensemble.y_s = y_sort
     img_ensemble.flux = flux_arr
     img_ensemble.uflux = uflux_arr
 
@@ -2151,7 +2143,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
 def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
                        refORI=0, refOBJ=[], nmissed=1, bfrac=1.0,
                        s_refOBJ=True, correl_method='astropy',
-                       seplimit=2.*u.arcsec):
+                       seplimit=2. * u.arcsec):
     '''
         Correlate star lists from the stacked images of all filters to find
         those stars that are visible on all images -> write calibrated CMD
@@ -2215,7 +2207,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
     terminal_output.print_terminal(
         indent=1,
         string="Correlate results from image ensembles",
-        )
+    )
 
     #   Get image ensembles
     ensemble_dict = img_container.get_ensembles(filt_list)
@@ -2245,9 +2237,9 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
     xall = np.zeros((nobj_max, nimg))
     yall = np.zeros((nobj_max, nimg))
 
-    for i in range(0,nimg):
-        xall[0:len(x[i]),i] = x[i]
-        yall[0:len(y[i]),i] = y[i]
+    for i in range(0, nimg):
+        xall[0:len(x[i]), i] = x[i]
+        yall[0:len(y[i]), i] = y[i]
 
     #   Correlate the object positions from the images
     #   -> find common objects
@@ -2263,7 +2255,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             s_refOBJ,
             cleanup_advanced=False,
             seplimit=seplimit,
-            )
+        )
         count = len(indSR[0])
 
     elif correl_method == 'own':
@@ -2279,12 +2271,12 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             refOBJ=refOBJ,
             nmissed=nmissed,
             s_refOBJ=s_refOBJ,
-            )
+        )
     else:
         raise ValueError(
             f'{style.bcolors.FAIL}Correlation method not known. Expected: '
             f'"own" or astropy, but got "{correl_method}"{style.bcolors.ENDC}'
-            )
+        )
 
     ###
     #   Print correlation infos or raise error if not enough common
@@ -2294,18 +2286,18 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nOnly one common object "
             f"found! {style.bcolors.ENDC}"
-            )
+        )
     elif count == 0:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nNo common objects "
             f"found!{style.bcolors.ENDC}"
-            )
+        )
     else:
         terminal_output.print_terminal(
             count,
             indent=2,
             string="{} objects identified on all ensemble",
-            )
+        )
 
     nbad = len(reject)
     if nbad > 0:
@@ -2313,21 +2305,20 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             nbad,
             indent=2,
             string="{:d} images do not meet the criteria -> removed",
-            )
+        )
     if nbad > 1:
         terminal_output.print_terminal(
             reject,
             indent=2,
             string="Rejected ensemble IDs: {}",
-            )
+        )
     elif nbad == 1:
         terminal_output.print_terminal(
             reject,
             indent=2,
             string="ID of the rejected ensembles: {}",
-            )
+        )
     terminal_output.print_terminal()
-
 
     ###
     #   Post process corelation results
@@ -2344,25 +2335,24 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 
     #   Calculate shift for the reference origin
     shiftID = np.argwhere(reject < refORI)
-    Nshift  = len(shiftID)
-    refORI_new = refORI-Nshift
-
+    Nshift = len(shiftID)
+    refORI_new = refORI - Nshift
 
     ###
     #   Rearrange arrays based on the correlation results
     #
     #   Prepare new arrays for positions and indexes
-    x_sort   = np.zeros((count))
-    y_sort   = np.zeros((count))
+    x_sort = np.zeros((count))
+    y_sort = np.zeros((count))
     ind_sort = np.arange(count)
 
     #   Fill position arrays -> distinguish between input sources
     #                           depending on correlation method
     if correl_method == 'astropy':
         if (isinstance(x[refORI], u.quantity.Quantity) or
-            isinstance(x[refORI], Table)):
-                x_sort = x[refORI][indSR[refORI_new]].value
-                y_sort = y[refORI][indSR[refORI_new]].value
+                isinstance(x[refORI], Table)):
+            x_sort = x[refORI][indSR[refORI_new]].value
+            y_sort = y[refORI][indSR[refORI_new]].value
         elif isinstance(x[refORI], np.ndarray):
             x_sort = x[refORI][indSR[refORI_new]]
             y_sort = y[refORI][indSR[refORI_new]]
@@ -2371,16 +2361,15 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
                 f"{style.bcolors.FAIL} \nType of the position arrays not "
                 "known. Expect numpy.float or astropy.units.quantity.Quantity "
                 f"but got {type(x[refORI])} {style.bcolors.ENDC}"
-                )
+            )
 
     elif correl_method == 'own':
         #   Remove "bad" datasets first
         xall = np.delete(xall, reject, 1)
         yall = np.delete(yall, reject, 1)
 
-        x_sort = xall[indSR[refORI_new]][:,refORI_new]
-        y_sort = yall[indSR[refORI_new]][:,refORI_new]
-
+        x_sort = xall[indSR[refORI_new]][:, refORI_new]
+        y_sort = yall[indSR[refORI_new]][:, refORI_new]
 
     #   Loop over image ensembles to rearrange flux arrays
     for j, ensemble in enumerate(ensemble_dict.values()):
@@ -2393,9 +2382,9 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 
         #   Overall array for the flux and uncertainty
         flux_arr = np.zeros(nimg, dtype=[('flux_fit', 'f8', (count)),
-                                          ('flux_unc', 'f8', (count)),
-                                          ]
-                        )
+                                         ('flux_unc', 'f8', (count)),
+                                         ]
+                            )
 
         #   Loop over images -> assumes that the images/results within each
         #   ensemble are already correlated such that the objects have the
@@ -2409,13 +2398,13 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             flux_sort = np.zeros(
                 count,
                 dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')]
-                )
+            )
 
             #   Rearrange flux
-            flux_sort['flux_fit'] = flux['flux_fit'][indSR[j,:]]
-            flux_sort['flux_unc'] = flux['flux_unc'][indSR[j,:]]
+            flux_sort['flux_fit'] = flux['flux_fit'][indSR[j, :]]
+            flux_sort['flux_unc'] = flux['flux_unc'][indSR[j, :]]
 
-            uflux_sort = uflux[indSR[j,:]]
+            uflux_sort = uflux[indSR[j, :]]
 
             #   Add sorted flux data and positions back to the image
             img.flux_es = flux_sort
@@ -2428,26 +2417,25 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             flux_arr['flux_fit'][z] = flux_sort['flux_fit']
             flux_arr['flux_unc'][z] = flux_sort['flux_unc']
 
-
         uflux_arr = getattr(ensemble, 'uflux', None)
         if uflux_arr is None:
             uflux_arr_sort = unumpy.uarray(
                 flux_arr['flux_fit'],
                 flux_arr['flux_unc']
-                )
+            )
         else:
-            uflux_arr_sort = uflux_arr[:,indSR[j,:]]
+            uflux_arr_sort = uflux_arr[:, indSR[j, :]]
 
         #   Update image ensemble object and add IDs, pixel coordinates, and
         #   flux of the correlated objects
         ensemble.id_es = ind_sort
-        ensemble.x_es  = x_sort
-        ensemble.y_es  = y_sort
+        ensemble.x_es = x_sort
+        ensemble.y_es = y_sort
         ensemble.flux_es = flux_arr
         ensemble.uflux_es = uflux_arr_sort
 
 
-#@timeis
+# @timeis
 def correlate_pd(outdir, input_df, img_IDs, dcr, option, maxid=1,
                  refORI=0, refOBJ=[], nmissed=1, bfrac=1.0):
     '''
@@ -2527,9 +2515,9 @@ def correlate_pd(outdir, input_df, img_IDs, dcr, option, maxid=1,
     '''
     terminal_output.print_terminal(
         img_IDs,
-        indent=indent,
+        indent=2,
         string="Correlate results from the images ({:d})",
-        )
+    )
 
     #   Number of images
     nimg = len(img_IDs)
@@ -2541,7 +2529,7 @@ def correlate_pd(outdir, input_df, img_IDs, dcr, option, maxid=1,
     #   Loop over all images
     for ID in img_IDs:
         #   Restrict input data frame to current image
-        mask    = input_df['type'] == ID
+        mask = input_df['type'] == ID
         ID_data = input_df[mask]
 
         #   Compile data frames with all X and Y positions
@@ -2563,19 +2551,19 @@ def correlate_pd(outdir, input_df, img_IDs, dcr, option, maxid=1,
         refOBJ=refOBJ,
         nmissed=nmissed,
         bfrac=bfrac
-        )
+    )
 
     #   Checks
     if count == 1:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nOnly one common object "
             f"found! {style.bcolors.ENDC}"
-            )
+        )
     elif count == 0:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nNo common objects "
             f"found! {style.bcolors.ENDC}"
-            )
+        )
 
     nbad = len(reject)
     if nbad > 0:
@@ -2583,31 +2571,31 @@ def correlate_pd(outdir, input_df, img_IDs, dcr, option, maxid=1,
             nbad,
             indent=2,
             string="{:d} images do not meet the criteria -> removed",
-            )
+        )
 
     #   Remove bad origins listed in 'reject'
-    indSR   = np.delete(indSR, reject, 0)
-    xall    = np.delete(xall,  reject, 1)
-    yall    = np.delete(yall,  reject, 1)
+    indSR = np.delete(indSR, reject, 0)
+    xall = np.delete(xall, reject, 1)
+    yall = np.delete(yall, reject, 1)
     img_IDs = np.delete(img_IDs, reject, 0)
 
     #   Calculate shift for the reference origin
     shiftID = np.argwhere(reject < refORI)
-    Nshift  = len(shiftID)
+    Nshift = len(shiftID)
     refORI -= Nshift
 
     # Number of clean images
-    nclean = len(indSR[:,0])
+    nclean = len(indSR[:, 0])
 
     #   Initialize new arrays for X, Y positions, and index
-    x_sort   = np.zeros((count))
-    y_sort   = np.zeros((count))
+    x_sort = np.zeros((count))
+    y_sort = np.zeros((count))
     ind_sort = np.arange(count)
 
     #   Sort X and Y positions according to correlation results
-    for i in range(0,count):
-        x_sort[i]   = xall[indSR[refORI][i]][refORI]
-        y_sort[i]   = yall[indSR[refORI][i]][refORI]
+    for i in range(0, count):
+        x_sort[i] = xall[indSR[refORI][i]][refORI]
+        y_sort[i] = yall[indSR[refORI][i]][refORI]
 
     #   New data frame to return
     result = pd.DataFrame()
@@ -2636,12 +2624,12 @@ def correlate_pd(outdir, input_df, img_IDs, dcr, option, maxid=1,
 
 
 def correlate_preserve_calibs(img_ensemble, filter_list,
-                              calib_method='APASS', mag_range=(0.,18.5),
+                              calib_method='APASS', mag_range=(0., 18.5),
                               vizier_dict={}, calib_file=None, dcr=3,
                               option=1, verbose=False, maxid=1, ref_ID=0,
                               nmissed=1, bfrac=1.0, s_refOBJ=True,
                               plot_test=True, correl_method='astropy',
-                              seplimit=2.*u.arcsec):
+                              seplimit=2. * u.arcsec):
     '''
         Correlate results from all images, while preserving the calibration
         stars
@@ -2733,7 +2721,7 @@ def correlate_preserve_calibs(img_ensemble, filter_list,
         mag_range=mag_range,
         vizier_dict=vizier_dict,
         calib_file=calib_file,
-        )
+    )
 
     #   Number of calibration stars
     n_calib = len(calib_tbl)
@@ -2742,8 +2730,7 @@ def correlate_preserve_calibs(img_ensemble, filter_list,
         raise Exception(
             f"{style.bcolors.FAIL} \nNo match between calibrations stars and "
             f"the\n extracted stars detected. -> EXIT {style.bcolors.ENDC}"
-            )
-
+        )
 
     ###
     #   Find IDs of calibration stars to ensure they are not deleted in
@@ -2751,13 +2738,13 @@ def correlate_preserve_calibs(img_ensemble, filter_list,
     #
     #   Lists for IDs, and xy coordinates
     calib_IDs = []
-    calib_xs  = []
-    calib_ys  = []
+    calib_xs = []
+    calib_ys = []
 
     #   Loop over all calibration stars
-    for k in range(0,n_calib):
+    for k in range(0, n_calib):
         #   Find the calibration star
-        inds_obj, ref_count, x_obj, y_obj  = correlate.posi_obj_srcor_img(
+        inds_obj, ref_count, x_obj, y_obj = correlate.posi_obj_srcor_img(
             img_ensemble.image_list[ref_ID],
             calib_tbl[col_names['ra']].data[k],
             calib_tbl[col_names['dec']].data[k],
@@ -2766,7 +2753,7 @@ def correlate_preserve_calibs(img_ensemble, filter_list,
             option=option,
             ra_unit=ra_unit,
             verbose=verbose,
-            )
+        )
         if verbose:
             terminal_output.print_terminal()
 
@@ -2780,9 +2767,8 @@ def correlate_preserve_calibs(img_ensemble, filter_list,
         indent=3,
         string="{:d} matches",
         style_name='OKBLUE',
-        )
+    )
     terminal_output.print_terminal()
-
 
     ###
     #   Correlate the results from all images
@@ -2799,8 +2785,7 @@ def correlate_preserve_calibs(img_ensemble, filter_list,
         s_refOBJ=s_refOBJ,
         correl_method=correl_method,
         seplimit=seplimit,
-        )
-
+    )
 
     ###
     #   Plot image with the final positions overlaid (final version)
@@ -2810,14 +2795,14 @@ def correlate_preserve_calibs(img_ensemble, filter_list,
         calib_xs,
         calib_ys,
         plot_test=plot_test,
-        )
+    )
 
 
 def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
                                 option=1, maxid=1, ref_ID=0, nmissed=1,
                                 bfrac=1.0, s_refOBJ=True,
                                 correl_method='astropy',
-                                seplimit=2.*u.arcsec, verbose=False,
+                                seplimit=2. * u.arcsec, verbose=False,
                                 plot_test=True):
     '''
         Correlate results from all images, while preserving the variable
@@ -2893,7 +2878,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     terminal_output.print_terminal(
         indent=1,
         string="Identify the variable star",
-        )
+    )
 
     if correl_method == 'astropy':
         variable_ID, count, x_obj, y_obj = correlate.posi_obj_astropy_img(
@@ -2902,10 +2887,10 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
             dec_obj,
             img_ensemble.wcs,
             seplimit=seplimit,
-            )
+        )
 
     elif correl_method == 'own':
-        inds_obj, count, x_obj, y_obj  = correlate.posi_obj_srcor_img(
+        inds_obj, count, x_obj, y_obj = correlate.posi_obj_srcor_img(
             img_ensemble.image_list[ref_ID],
             ra_obj,
             dec_obj,
@@ -2913,14 +2898,13 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
             dcr=dcr,
             option=option,
             verbose=verbose,
-            )
+        )
 
         #   Current object ID
-        variable_ID  = inds_obj[1]
+        variable_ID = inds_obj[1]
 
         if verbose:
             terminal_output.print_terminal()
-
 
     ###
     #   Check if variable star was detected I
@@ -2929,8 +2913,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         raise RuntimeError(
             f"{style.bcolors.FAIL} \tERROR: The variable object was not "
             f"detected in the reference image.\n\t-> EXIT{style.bcolors.ENDC}"
-            )
-
+        )
 
     ###
     #   Correlate the stellar positions from the different filter
@@ -2947,8 +2930,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         s_refOBJ=s_refOBJ,
         correl_method=correl_method,
         seplimit=seplimit,
-        )
-
+    )
 
     ###
     #   Find position of the variable star II
@@ -2956,7 +2938,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     terminal_output.print_terminal(
         indent=1,
         string="Reidentify the variable star",
-        )
+    )
 
     if correl_method == 'astropy':
         variable_ID, count, x_obj, y_obj = correlate.posi_obj_astropy(
@@ -2966,10 +2948,10 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
             dec_obj,
             img_ensemble.wcs,
             seplimit=seplimit,
-            )
+        )
 
     elif correl_method == 'own':
-        inds_obj, count, x_obj, y_obj  = correlate.posi_obj_srcor(
+        inds_obj, count, x_obj, y_obj = correlate.posi_obj_srcor(
             img_ensemble.x_s,
             img_ensemble.y_s,
             ra_obj,
@@ -2978,13 +2960,12 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
             dcr=dcr,
             option=option,
             verbose=verbose,
-            )
+        )
         if verbose:
             terminal_output.print_terminal()
 
         #   Current object ID
-        variable_ID  = inds_obj[1]
-
+        variable_ID = inds_obj[1]
 
     ###
     #   Check if variable star was detected II
@@ -2993,8 +2974,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         raise RuntimeError(
             f"{style.bcolors.FAIL} \tERROR: The variable was not detected "
             f"in the reference image.\n\t-> EXIT{style.bcolors.ENDC}"
-            )
-
+        )
 
     ###
     #   Plot image with the final positions overlaid (final version)
@@ -3004,7 +2984,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         [x_obj],
         [y_obj],
         plot_test=plot_test,
-        )
+    )
 
     #   Add ID of the variable star to the image ensemble
     img_ensemble.variable_ID = variable_ID
@@ -3130,7 +3110,6 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
     #   Get filter
     filt = img_ensemble.filt
 
-
     ###
     #   Find the stars (via DAO or IRAF StarFinder)
     #
@@ -3142,8 +3121,7 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
             sigma_psf[filt],
             multi_start=multi_start,
             method=method,
-            )
-
+        )
 
     ###
     #   Main loop: Extract stars and info from all images, using
@@ -3164,32 +3142,32 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
             args=(
                 image,
                 sigma_psf[filt],
-                ),
+            ),
             kwargs={
-                'sigma_bkg':sigma_bkg,
-                'multi_start':multi_start,
-                'size_epsf':size_epsf,
-                'frac_epsf_stars':frac_epsf_stars,
-                'oversampling':oversampling,
-                'maxiters':maxiters,
-                'epsf_use_init_guesses':epsf_use_init_guesses,
-                'method':method,
-                'multi':multi,
-                'multi_grouper':multi_grouper,
-                'strict_cleaning':strict_cleaning,
-                'min_eps_stars':min_eps_stars,
-                'strict_eps':strict_eps,
-                'refid':img_ensemble.ref_id,
-                'photometry':photometry,
-                'rstars':rstars,
-                'rbg_in':rbg_in,
-                'rbg_out':rbg_out,
-                'r_unit':r_unit,
-                'search_image':search_image,
-                'plot_ifi':plot_ifi,
-                'plot_test':plot_test,
-                }
-            )
+                'sigma_bkg': sigma_bkg,
+                'multi_start': multi_start,
+                'size_epsf': size_epsf,
+                'frac_epsf_stars': frac_epsf_stars,
+                'oversampling': oversampling,
+                'maxiters': maxiters,
+                'epsf_use_init_guesses': epsf_use_init_guesses,
+                'method': method,
+                'multi': multi,
+                'multi_grouper': multi_grouper,
+                'strict_cleaning': strict_cleaning,
+                'min_eps_stars': min_eps_stars,
+                'strict_eps': strict_eps,
+                'refid': img_ensemble.ref_id,
+                'photometry': photometry,
+                'rstars': rstars,
+                'rbg_in': rbg_in,
+                'rbg_out': rbg_out,
+                'r_unit': r_unit,
+                'search_image': search_image,
+                'plot_ifi': plot_ifi,
+                'plot_test': plot_test,
+            }
+        )
     #   Close multiprocessing pool and wait until it finishes
     executor.wait()
 
@@ -3198,8 +3176,7 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
         raise RuntimeError(
             f'\n{style.bcolors.FAIL}Extraction using multiprocessing failed '
             f'for {filt} :({style.bcolors.ENDC}'
-            )
-
+        )
 
     ###
     #   Sort multiprocessing results
@@ -3336,17 +3313,15 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
     ###
     #   Initialize output string
     #
-    outstring  = "      "
+    outstring = "      "
     outstring += style.bcolors.UNDERLINE
-    outstring += "Image: "+str(image.pd)
-    outstring += style.bcolors.ENDC+"\n"
-
+    outstring += "Image: " + str(image.pd)
+    outstring += style.bcolors.ENDC + "\n"
 
     ###
     #   Estimate and remove background
     #
     mk_bg(image, sigma_bkg=sigma_bkg)
-
 
     ###
     #   Find the stars (via DAO or IRAF StarFinder)
@@ -3358,7 +3333,7 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             multi_start=multi_start,
             method=method,
             condense=True,
-            )
+        )
         outstring += out_str
 
     if photometry == 'PSF':
@@ -3373,9 +3348,8 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             frac_epsf=frac_epsf_stars,
             condense=True,
             strict=strict_eps,
-            )
+        )
         outstring += out_str
-
 
         ###
         #   Plot images with the identified stars overlaid
@@ -3389,14 +3363,13 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
                 tbl_2=image.positions_epsf,
                 label='identified stars',
                 label_2='stars used to determine the ePSF',
-                rts='initial-img-'+str(image.pd),
+                rts='initial-img-' + str(image.pd),
                 nameobj=image.objname,
                 condense=True,
-                )
+            )
         else:
             out_str = ''
         outstring += out_str
-
 
         ###
         #   Calculate the ePSF
@@ -3409,22 +3382,20 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             min_stars=min_eps_stars,
             multi=False,
             condense=True,
-            )
+        )
         outstring += out_str
-
 
         ###
         #   Plot the ePSFs
         #
         out_str = plot.plot_epsf(
             image.outpath.name,
-            {'img-'+str(image.pd)+'-'+image.filt:image.epsf},
+            {'img-' + str(image.pd) + '-' + image.filt: image.epsf},
             condense=True,
             nameobj=image.objname,
             indent=2,
-            )
+        )
         outstring += out_str
-
 
         ###
         #   Performing the PSF photometry
@@ -3440,24 +3411,23 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             multi_grouper=multi_grouper,
             strict_cleaning=strict_cleaning,
             condense=True,
-            )
+        )
         outstring += out_str
-
 
         ###
         #   Plot original and residual image
         #
         out_str = plot.plot_residual(
             image.objname,
-            {f'{image.pd}-{image.filt}':image.get_data()},
-            {f'{image.pd}-{image.filt}':image.residual_image},
-            #{str(image.pd)+'-'+image.filt:image.get_data()},
-            #{str(image.pd)+'-'+image.filt:image.residual_image},
+            {f'{image.pd}-{image.filt}': image.get_data()},
+            {f'{image.pd}-{image.filt}': image.residual_image},
+            # {str(image.pd)+'-'+image.filt:image.get_data()},
+            # {str(image.pd)+'-'+image.filt:image.residual_image},
             image.outpath.name,
             condense=True,
             nameobj=image.objname,
             indent=2,
-            )
+        )
         outstring += out_str
 
     elif photometry == 'APER':
@@ -3465,9 +3435,9 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
         #   Perform aperture photometry
         #
         if image.pd == refid:
-            plotaper=True
+            plotaper = True
         else:
-            plotaper=False
+            plotaper = False
 
         out_str = aperture_extract(
             image,
@@ -3478,15 +3448,14 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             plotaper=plotaper,
             condense=True,
             indent=3,
-            )
+        )
         outstring += out_str
 
     else:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
             f"valid: use either aper or PSF {style.bcolors.ENDC}"
-            )
-
+        )
 
     ###
     #   Plot images with extracted stars overlaid
@@ -3500,10 +3469,9 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
     terminal_output.print_terminal(
         indent=0,
         string=outstring,
-        )
+    )
 
     return image
-
 
 
 def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
@@ -3646,8 +3614,7 @@ def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
         indent=2,
         string="Image: {:d}",
         style_name='UNDERLINE',
-        )
-
+    )
 
     ###
     #   Remove cosmics (optional)
@@ -3659,14 +3626,12 @@ def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             readnoise=readnoise,
             sigclip=sigclip,
             satlevel=satlevel,
-            )
-
+        )
 
     ###
     #   Estimate and remove background
     #
     mk_bg(image, sigma_bkg=sigma_bkg)
-
 
     ###
     #   Find the stars (via DAO or IRAF StarFinder)
@@ -3676,8 +3641,7 @@ def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
         sigma_psf,
         multi_start=multi_start,
         method=method,
-        )
-
+    )
 
     if photometry == 'PSF':
         ###
@@ -3690,8 +3654,7 @@ def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             min_stars=min_eps_stars,
             frac_epsf=frac_epsf_stars,
             strict=strict_eps,
-            )
-
+        )
 
         ###
         #   Plot images with the identified stars overlaid
@@ -3705,10 +3668,9 @@ def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
                 tbl_2=image.positions_epsf,
                 label='identified stars',
                 label_2='stars used to determine the ePSF',
-                rts='initial-img-'+str(image.pd),
+                rts='initial-img-' + str(image.pd),
                 nameobj=image.objname,
-                )
-
+            )
 
         ###
         #   Calculate the ePSF
@@ -3720,19 +3682,17 @@ def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             maxiters=maxiters,
             min_stars=min_eps_stars,
             multi=False,
-            )
-
+        )
 
         ###
         #   Plot the ePSFs
         #
         plot.plot_epsf(
             image.outpath.name,
-            {'img-'+str(image.pd)+'-'+image.filt:image.epsf},
+            {'img-' + str(image.pd) + '-' + image.filt: image.epsf},
             nameobj=image.objname,
             indent=2,
-            )
-
+        )
 
         ###
         #   Performing the PSF photometry
@@ -3747,29 +3707,28 @@ def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             multi=multi,
             multi_grouper=multi_grouper,
             strict_cleaning=strict_cleaning,
-            )
-
+        )
 
         ###
         #   Plot original and residual image
         #
         plot.plot_residual(
             image.objname,
-            {str(image.pd)+'-'+image.filt:image.get_data()},
-            {str(image.pd)+'-'+image.filt:image.residual_image},
+            {str(image.pd) + '-' + image.filt: image.get_data()},
+            {str(image.pd) + '-' + image.filt: image.residual_image},
             image.outpath.name,
             nameobj=image.objname,
             indent=2,
-            )
+        )
 
     elif photometry == 'APER':
         ###
         #   Perform aperture photometry
         #
         if image.pd == refid:
-            plotaper=True
+            plotaper = True
         else:
-            plotaper=False
+            plotaper = False
 
         aperture_extract(
             image,
@@ -3779,28 +3738,27 @@ def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             r_unit=r_unit,
             plotaper=plotaper,
             indent=3,
-            )
+        )
     else:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
             f"valid: use either APER or PSF {style.bcolors.ENDC}"
-            )
+        )
 
     #   Add flux array to image (is this really necessary?)
     flux_img = np.zeros(
         len(image.photometry['x_fit']),
         dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
-        )
+    )
     flux_img['flux_fit'] = image.photometry['flux_fit']
     flux_img['flux_unc'] = image.photometry['flux_unc']
 
     uflux_img = unumpy.uarray(
-            flux_img['flux_fit'],
-            flux_img['flux_unc']
-            )
+        flux_img['flux_fit'],
+        flux_img['flux_unc']
+    )
     image.flux = flux_img
     image.uflux = uflux_img
-
 
     ###
     #   Plot images with extracted stars overlaid
@@ -3971,8 +3929,8 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
     #
     checks.check_out(
         outdir,
-        os.path.join(outdir,'tables'),
-        )
+        os.path.join(outdir, 'tables'),
+    )
 
     ###
     #   Loop over all filter
@@ -3982,13 +3940,12 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
             filt,
             string="Analyzing {:s} images",
             style_name='HEADER',
-            )
+        )
 
         ###
         #   Check input paths
         #
         checks.check_file(img_paths[filt])
-
 
         #   Initialize image ensemble object
         img_container.ensembles[filt] = current_ensemble = image_ensemble(
@@ -3997,8 +3954,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
             img_paths[filt],
             outdir,
             0,
-            )
-
+        )
 
         ###
         #   Find the WCS solution for the image
@@ -4010,7 +3966,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
                 method=wcs_method,
                 force_wcs_determ=force_wcs_determ,
                 indent=3,
-                )
+            )
         except Exception as e:
             for f in filter_list:
                 wcs = getattr(img_container.ensembles[f], 'wcs', None)
@@ -4022,7 +3978,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
                                f"This could lead to problems...",
                         indent=1,
                         style_name='WARNING',
-                        )
+                    )
                     break
             else:
                 raise RuntimeError('')
@@ -4058,14 +4014,13 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
             satlevel=satlevel,
             plot_ifi=plot_ifi,
             plot_test=plot_test,
-            )
+        )
 
         #   Add stellar positions to ensemble class
         #   TODO: Shift this into main extract
         photo = current_ensemble.image_list[0].photometry
         current_ensemble.x_s = photo['x_fit']
         current_ensemble.y_s = photo['y_fit']
-
 
     if photometry == 'PSF':
         ###
@@ -4074,9 +4029,8 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
         p = mp.Process(
             target=plot.plot_epsf,
             args=(outdir, img_container.get_ref_epsf(),),
-            )
+        )
         p.start()
-
 
         ###
         #   Plot original and residual image
@@ -4088,11 +4042,11 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
                 img_container.get_ref_img(),
                 img_container.get_ref_residual_img(),
                 outdir,
-                ),
+            ),
             kwargs={
-                'nameobj':'reference image'
-                }
-            )
+                'nameobj': 'reference image'
+            }
+        )
         p.start()
 
 
@@ -4106,7 +4060,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                        photometry='PSF', rstars=5., rbg_in=7., rbg_out=10.,
                        r_unit='arcsec', dcr=3., option=1, maxid=1, ref_ID=0,
                        nmissed=1, bfrac=1.0, s_refOBJ=True,
-                       correl_method='astropy', seplimit=2.*u.arcsec,
+                       correl_method='astropy', seplimit=2. * u.arcsec,
                        verbose=False, search_image=True, plot_ifi=False,
                        plot_test=True):
     '''
@@ -4287,14 +4241,12 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
     ###
     #   Check output directories
     #
-    checks.check_out(outdir, os.path.join(outdir,'tables'))
-
+    checks.check_out(outdir, os.path.join(outdir, 'tables'))
 
     ###
     #   Check image directories
     #
     checks.check_dir(img_paths)
-
 
     #   Outer loop over all filter
     for filt in filter_list:
@@ -4302,8 +4254,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             filt,
             string="Analyzing {:s} images",
             style_name='HEADER',
-            )
-
+        )
 
         #   Initialize image ensemble object
         img_container.ensembles[filt] = image_ensemble(
@@ -4312,8 +4263,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             img_paths[filt],
             outdir,
             ref_ID,
-            )
-
+        )
 
         ###
         #   Find the WCS solution for the image
@@ -4324,8 +4274,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             method=wcs_method,
             force_wcs_determ=force_wcs_determ,
             indent=3,
-            )
-
+        )
 
         ###
         #   Main extraction of object positions and object fluxes
@@ -4355,8 +4304,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             search_image=search_image,
             plot_ifi=plot_ifi,
             plot_test=plot_test,
-            )
-
+        )
 
         if search_image:
             ###
@@ -4378,7 +4326,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                 plot_test=plot_test,
                 correl_method=correl_method,
                 seplimit=seplimit,
-                )
+            )
 
         else:
             img_ensemble = img_container.ensembles[filt]
@@ -4389,7 +4337,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             terminal_output.print_terminal(
                 indent=1,
                 string="Identify the variable star",
-                )
+            )
 
             if correl_method == 'astropy':
                 variable_ID, count, x_obj, y_obj = correlate.posi_obj_astropy_img(
@@ -4397,10 +4345,10 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                     ra_obj,
                     dec_obj,
                     img_ensemble.wcs,
-                    )
+                )
 
             elif correl_method == 'own':
-                inds_obj, count, x_obj, y_obj  = correlate.posi_obj_srcor_img(
+                inds_obj, count, x_obj, y_obj = correlate.posi_obj_srcor_img(
                     img_ensemble.image_list[ref_ID],
                     ra_obj,
                     dec_obj,
@@ -4408,14 +4356,13 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                     dcr=dcr,
                     option=option,
                     verbose=verbose,
-                    )
+                )
 
                 #   Current object ID
-                variable_ID  = inds_obj[1]
+                variable_ID = inds_obj[1]
 
                 if verbose:
                     terminal_output.print_terminal()
-
 
             ###
             #   Check if variable star was detected
@@ -4425,11 +4372,10 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                     f"{style.bcolors.FAIL} \tERROR: The variable object was "
                     f"not detected in the reference image.\n"
                     f"\t-> EXIT {style.bcolors.ENDC}"
-                    )
+                )
 
             #   Add ID of the variable star to the image ensemble
             img_ensemble.variable_ID = variable_ID
-
 
             ###
             #
@@ -4453,8 +4399,8 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             #   Prepare array for the flux and uncertainty (all datasets)
             flux_arr = np.zeros(nimg, dtype=[('flux_fit', 'f8', (count)),
                                              ('flux_unc', 'f8', (count)),
-                                            ]
-                            )
+                                             ]
+                                )
 
             #   Fill flux arrays
             for j, img_ID in enumerate(arr_img_IDs):
@@ -4464,7 +4410,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                 flux_img = np.zeros(
                     count,
                     dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
-                    )
+                )
 
                 #   Rearrange flux and error
                 flux_img['flux_fit'] = result_tbl[img_ID_str]['flux_fit']
@@ -4476,7 +4422,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                     nan=9999.,
                     posinf=9999.,
                     neginf=9999.,
-                    )
+                )
 
                 #   Remove '--' entries in error
                 flux_err_dash = np.argwhere(flux_img['flux_unc'] == '--')
@@ -4485,34 +4431,31 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                 uflux_img = unumpy.uarray(
                     flux_img['flux_fit'],
                     flux_img['flux_unc']
-                    )
+                )
 
                 #   Add sorted flux data and positions back to the image
-                img_ensemble.image_list[img_ID].flux    = flux_img
-                img_ensemble.image_list[img_ID].uflux   = uflux_img
-                img_ensemble.image_list[img_ID].x_sort  = x_s
-                img_ensemble.image_list[img_ID].y_sort  = y_s
+                img_ensemble.image_list[img_ID].flux = flux_img
+                img_ensemble.image_list[img_ID].uflux = uflux_img
+                img_ensemble.image_list[img_ID].x_sort = x_s
+                img_ensemble.image_list[img_ID].y_sort = y_s
                 img_ensemble.image_list[img_ID].id_sort = id_s
-
 
                 #   Add to overall array
                 flux_arr['flux_fit'][j] = flux_img['flux_fit']
                 flux_arr['flux_unc'][j] = flux_img['flux_unc']
 
             uflux_arr = unumpy.uarray(
-                    flux_arr['flux_fit'],
-                    flux_arr['flux_unc']
-                    )
+                flux_arr['flux_fit'],
+                flux_arr['flux_unc']
+            )
 
             #   Update image ensemble object and add IDs, pixel coordinates, and
             #   flux of the correlated objects
             img_ensemble.id_s = id_s
-            img_ensemble.x_s  = x_s
-            img_ensemble.y_s  = y_s
+            img_ensemble.x_s = x_s
+            img_ensemble.y_s = y_s
             img_ensemble.flux = flux_arr
             img_ensemble.uflux = uflux_arr
-
-
 
             ###
             #   Plot image with the final positions overlaid (final version)
@@ -4522,18 +4465,18 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                 [x_obj],
                 [y_obj],
                 plot_test=plot_test,
-                )
+            )
 
 
 def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
                         ref_img=0, calib_method='APASS', vizier_dict={},
                         calib_file=None, ID=None, ra_unit=u.deg,
-                        dec_unit=u.deg, mag_range=(0.,18.5), Tcs=None,
+                        dec_unit=u.deg, mag_range=(0., 18.5), Tcs=None,
                         derive_Tcs=False, plot_sigma=False, photo_type='',
                         region=False, radius=600, data_cluster=False,
                         pm_median=False, max_distance_cluster=6.,
                         find_cluster_para_set=1, correl_method='astropy',
-                        seplimit=2.*u.arcsec, r_limit=4., r_unit='arcsec',
+                        seplimit=2. * u.arcsec, r_limit=4., r_unit='arcsec',
                         convert_mags=False, target_filter_system='SDSS'):
     """
         Correlate photometric extraction results from 2 images and calibrate
@@ -4672,8 +4615,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         option=option,
         correl_method=correl_method,
         seplimit=seplimit,
-        )
-
+    )
 
     ###
     #   Plot image with the final positions overlaid (final version)
@@ -4682,8 +4624,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         aux.prepare_and_plot_starmap_final(
             img_container,
             filter_list,
-            )
-
+        )
 
     ###
     #   Calibrate the magnitudes
@@ -4700,7 +4641,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         mag_range=mag_range,
         ra_unit=ra_unit,
         dec_unit=dec_unit,
-        )
+    )
 
     #   Apply calibration and perform magnitude transformation
     trans.apply_calib(
@@ -4711,8 +4652,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         plot_sigma=plot_sigma,
         photo_type=photo_type,
         refid=ref_img,
-        )
-
+    )
 
     ###
     #   Restrict results to specific areas of the image and filter by means
@@ -4731,8 +4671,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         find_cluster_para_set=find_cluster_para_set,
         convert_mags=convert_mags,
         target_filter_system=target_filter_system,
-        )
-
+    )
 
     ###
     #   Determine limiting magnitudes
@@ -4743,24 +4682,19 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         ref_img,
         r_limit=r_limit,
         r_unit=r_unit,
-        )
-
-    ###
-    #   Test
-    #
-    # aux.convert_magnitudes_internal_wrapper(img_container, 'SDSS')
+    )
 
 
 def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                          outdir, transit_time, period, valid_calibs=None,
                          binn=None, Tcs=None, derive_Tcs=False, ref_ID=0,
                          calib_method='APASS', vizier_dict={}, calib_file=None,
-                         mag_range=(0.,18.5), dcr=3., option=1, maxid=1,
+                         mag_range=(0., 18.5), dcr=3., option=1, maxid=1,
                          nmissed=1, bfrac=1.0, s_refOBJ=True, photo_type='',
-                         correl_method='astropy', seplimit=2.*u.arcsec,
+                         correl_method='astropy', seplimit=2. * u.arcsec,
                          verbose=False, plot_test=True, plot_ifi=False,
                          plot_sigma=False):
-    '''
+    """
         Calculate magnitudes, calibrate, and plot light curves
 
         Parameters
@@ -4889,7 +4823,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
             If True sigma clipped magnitudes will be plotted.
             Default is ``False``.
 
-    '''
+    """
     if valid_calibs is None:
         valid_calibs = calibration_data.valid_calibs
 
@@ -4898,7 +4832,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
             filt,
             string="Working on filter: {:s}",
             style_name='OKBLUE',
-            )
+        )
 
         ###
         #   Try magnitude transformation
@@ -4933,15 +4867,14 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         s_refOBJ=s_refOBJ,
                         correl_method=correl_method,
                         seplimit=seplimit,
-                        )
-
+                    )
 
                     ###
                     #   Reidentify position of the variable star
                     #
                     terminal_output.print_terminal(
                         string="Identify the variable star",
-                        )
+                    )
 
                     if correl_method == 'astropy':
                         objID, count, _, _ = correlate.posi_obj_astropy(
@@ -4951,10 +4884,10 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                             dec_obj,
                             img_container.ensembles[filt].wcs,
                             seplimit=seplimit,
-                            )
+                        )
 
                     elif correl_method == 'own':
-                        inds_obj, count, _, _  = correlate.posi_obj_srcor(
+                        inds_obj, count, _, _ = correlate.posi_obj_srcor(
                             img_container.ensembles[filt].x_es,
                             img_container.ensembles[filt].y_es,
                             ra_obj,
@@ -4963,16 +4896,15 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                             dcr=dcr,
                             option=option,
                             verbose=verbose,
-                            )
+                        )
                         if verbose:
                             terminal_output.print_terminal()
 
                         #   Current object ID
-                        objID  = inds_obj[1]
+                        objID = inds_obj[1]
 
                     #   Set new object ID
                     img_container.ensembles[filt].variable_ID = objID
-
 
                     #   Check if variable star was detected
                     if count == 0:
@@ -4980,8 +4912,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                             f"{style.bcolors.FAIL} \tERROR: The variable "
                             "star was not detected in the reference image.\n"
                             f"\t-> EXIT {style.bcolors.ENDC}"
-                            )
-
+                        )
 
                     ###
                     #   Load calibration information
@@ -4997,27 +4928,26 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         mag_range=mag_range,
                         correl_method=correl_method,
                         seplimit=seplimit,
-                        )
+                    )
                     terminal_output.print_terminal()
 
                     #   Stop here if calibration data is not available
                     filter_calib = img_container.calib_parameters.column_names
-                    if ('mag'+calib_fil[0] not in filter_calib or
-                        'mag'+calib_fil[1] not in filter_calib):
-                            if 'mag'+calib_fil[0] not in filter_calib:
-                                err_filter = calib_fil[0]
-                            if 'mag'+calib_fil[1] not in filter_calib:
-                                err_filter = calib_fil[1]
-                            terminal_output.print_terminal(
-                                err_filter,
-                                indent=2,
-                                string="Magnitude transformation not "\
-                                "possible because no calibration data "\
-                                "available for filter {}",
-                                style_name='WARNING',
-                                )
-                            break
-
+                    if ('mag' + calib_fil[0] not in filter_calib or
+                            'mag' + calib_fil[1] not in filter_calib):
+                        if 'mag' + calib_fil[0] not in filter_calib:
+                            err_filter = calib_fil[0]
+                        if 'mag' + calib_fil[1] not in filter_calib:
+                            err_filter = calib_fil[1]
+                        terminal_output.print_terminal(
+                            err_filter,
+                            indent=2,
+                            string="Magnitude transformation not " \
+                                   "possible because no calibration data " \
+                                   "available for filter {}",
+                            style_name='WARNING',
+                        )
+                        break
 
                     ###
                     #   Calibrate magnitudes
@@ -5038,7 +4968,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         photo_type=photo_type,
                         refid=ref_ID,
                         plot_sigma=plot_sigma,
-                        )
+                    )
                     cali_mags = getattr(img_container, 'cali', None)
                     if not checks.check_unumpy_array(cali_mags):
                         cali = cali_mags['mag']
@@ -5047,7 +4977,6 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                     if np.all(cali == 0):
                         break
 
-
                     ###
                     #   Plot light curve
                     #
@@ -5055,16 +4984,16 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                     otime = Time(
                         img_container.ensembles[filt].get_obs_time(),
                         format='jd',
-                        )
+                    )
 
                     #   Create mask for time series to remove images
                     #   without entries
                     # mask_ts = np.isin(
-                        ##cali_mags['med'][i][:,objID],
-                        #cali_mags[i][:,objID],
-                        #[0.],
-                        #invert=True
-                        #)
+                    ##cali_mags['med'][i][:,objID],
+                    # cali_mags[i][:,objID],
+                    # [0.],
+                    # invert=True
+                    # )
 
                     #   Create a time series object
                     ts = aux.mk_ts(
@@ -5072,44 +5001,43 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         cali_mags[i],
                         filt,
                         objID,
-                        )
+                    )
 
                     #   Write time series
                     ts.write(
-                        outdir+'/tables/light_curce_'+filt+'.dat',
+                        outdir + '/tables/light_curce_' + filt + '.dat',
                         format='ascii',
                         overwrite=True,
-                        )
+                    )
                     ts.write(
-                        outdir+'/tables/light_curce_'+filt+'.csv',
+                        outdir + '/tables/light_curce_' + filt + '.csv',
                         format='ascii.csv',
                         overwrite=True,
-                        )
+                    )
 
                     #   Plot light curve over JD
                     plot.light_curve_jd(
                         ts,
                         filt,
-                        filt+'_err',
+                        filt + '_err',
                         outdir,
                         nameobj=nameobj
-                        )
+                    )
 
                     #   Plot the light curve folded on the period
                     plot.light_curve_fold(
                         ts,
                         filt,
-                        filt+'_err',
+                        filt + '_err',
                         outdir,
                         transit_time,
                         period,
                         binn=binn,
                         nameobj=nameobj,
-                        )
+                    )
 
                     success = True
                     break
-
 
         if not success:
             #   Load calibration information
@@ -5122,20 +5050,20 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                 vizier_dict=vizier_dict,
                 calib_file=calib_file,
                 mag_range=mag_range,
-                )
+            )
 
             #   Check if calibration data is available
             filter_calib = img_container.calib_parameters.column_names
-            if 'mag'+filt not in filter_calib:
+            if 'mag' + filt not in filter_calib:
                 terminal_output.print_terminal(
                     filt,
                     indent=2,
-                    string="Magnitude calibration not "\
-                    "possible because no calibration data is "\
-                    "available for filter {}. Use normalized flux for light "\
-                    "curve.",
+                    string="Magnitude calibration not " \
+                           "possible because no calibration data is " \
+                           "available for filter {}. Use normalized flux for light " \
+                           "curve.",
                     style_name='WARNING',
-                    )
+                )
 
                 #   Get ensemble
                 ensemble = img_container.ensembles[filt]
@@ -5157,9 +5085,8 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                     [filt],
                     plot_mags=plot_mags,
                     photo_type=photo_type,
-                    )
+                )
                 plot_quantity = getattr(img_container, 'noT', None)[0]
-
 
             ###
             #   Plot light curve
@@ -5168,7 +5095,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
             otime = Time(
                 img_container.ensembles[filt].get_obs_time(),
                 format='jd',
-                )
+            )
 
             #   Create a time series object
             ts = aux.mk_ts(
@@ -5176,40 +5103,39 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                 plot_quantity,
                 filt,
                 img_container.ensembles[filt].variable_ID,
-                )
+            )
 
             #   Write time series
             ts.write(
-                outdir+'/tables/light_curce_'+filt+'.dat',
+                outdir + '/tables/light_curce_' + filt + '.dat',
                 format='ascii',
                 overwrite=True,
-                )
+            )
             ts.write(
-                outdir+'/tables/light_curce_'+filt+'.csv',
+                outdir + '/tables/light_curce_' + filt + '.csv',
                 format='ascii.csv',
                 overwrite=True,
-                )
+            )
 
             #   Plot light curve over JD
             plot.light_curve_jd(
                 ts,
                 filt,
-                filt+'_err',
+                filt + '_err',
                 outdir,
                 nameobj=nameobj)
-
 
             #   Plot the light curve folded on the period
             plot.light_curve_fold(
                 ts,
                 filt,
-                filt+'_err',
+                filt + '_err',
                 outdir,
                 transit_time,
                 period,
                 binn=binn,
                 nameobj=nameobj,
-                )
+            )
 
 
 def subtract_archive_img_from_img(filt, name, path, outdir,
@@ -5247,16 +5173,14 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
     #
     checks.check_out(
         outdir,
-        os.path.join(outdir,'subtract'),
-        )
-    outdir = os.path.join(outdir,'subtract')
-
+        os.path.join(outdir, 'subtract'),
+    )
+    outdir = os.path.join(outdir, 'subtract')
 
     ###
     #   Check input path
     #
     checks.check_file(path)
-
 
     ###
     #   Trim image as needed (currently images with < 4*10^6 are required)
@@ -5266,18 +5190,17 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
 
     #   Trim
     xtrim = 2501
-    #xtrim = 2502
+    # xtrim = 2502
     ytrim = 1599
     img = ccdp.trim_image(img[0:ytrim, 0:xtrim])
     img.meta['NAXIS1'] = xtrim
     img.meta['NAXIS2'] = ytrim
 
     #   Save trimmed file
-    basename  = base_aux.get_basename(path)
-    file_name = basename+'_trimmed.fit'
+    basename = base_aux.get_basename(path)
+    file_name = basename + '_trimmed.fit'
     file_path = os.path.join(outdir, file_name)
     img.write(file_path, overwrite=True)
-
 
     ###
     #   Initialize image ensemble object
@@ -5285,12 +5208,11 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
     img_ensemble = image_ensemble(
         filt,
         name,
-        #file_path,
+        # file_path,
         path,
         outdir,
         0,
-        )
-
+    )
 
     ###
     #   Find the WCS solution for the image
@@ -5300,32 +5222,30 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
         ref_id=0,
         method=wcs_method,
         indent=3,
-        )
-
+    )
 
     ###
     #   Get image via hips2fits
     #
-    #from astropy.utils import data
-    #data.Conf.remote_timeout=600
+    # from astropy.utils import data
+    # data.Conf.remote_timeout=600
     hipsInstance = hips2fitsClass()
     hipsInstance.timeout = 120000
-    #hipsInstance.timeout = 1200000000
-    #hipsInstance.timeout = (200000000, 200000000)
+    # hipsInstance.timeout = 1200000000
+    # hipsInstance.timeout = (200000000, 200000000)
     hipsInstance.server = "https://alaskybis.cds.unistra.fr/hips-image-services/hips2fits"
     print(hipsInstance.timeout)
     print(hipsInstance.server)
-    #hips_hdus = hips2fits.query_with_wcs(
+    # hips_hdus = hips2fits.query_with_wcs(
     hips_hdus = hipsInstance.query_with_wcs(
         hips=hips_source,
         wcs=img_ensemble.wcs,
         get_query_payload=False,
         format='fits',
         verbose=True,
-        )
+    )
     #   Save downloaded file
     hips_hdus.writeto(os.path.join(outdir, 'hips.fits'), overwrite=True)
-
 
     ###
     #   Plot original and reference image
@@ -5335,8 +5255,7 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
             outdir,
             img_ensemble.image_list[0].get_data(),
             hips_hdus[0].data,
-            )
-
+        )
 
     ###
     #   Perform image subtraction
@@ -5352,12 +5271,12 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
         img.mask,
         np.zeros(hips_data.shape, dtype=bool),
         image_gain=1.,
-        #template_gain=1,
+        # template_gain=1,
         template_gain=None,
         err=img.uncertainty.array,
-        #err=True,
+        # err=True,
         template_err=True,
-        #verbose=True,
+        # verbose=True,
         _workdir=outdir,
-        #_exe=exe_path,
-        )
+        # _exe=exe_path,
+    )
