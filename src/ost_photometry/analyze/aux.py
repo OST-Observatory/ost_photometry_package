@@ -1958,12 +1958,12 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
         terminal_output.print_terminal(
             np.median(tbl_mag['mags'][-10:]),
             indent=indent * 3,
-            string="Median of the 10 faintest objects: {}",
+            string="Median of the 10 faintest objects: {} mag",
         )
         terminal_output.print_terminal(
             np.mean(tbl_mag['mags'][-10:]),
             indent=indent * 3,
-            string="Mean of the 10 faintest objects: {}",
+            string="Mean of the 10 faintest objects: {} mag",
         )
 
         #   Convert object positions to pixel index values
@@ -2009,7 +2009,7 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
         terminal_output.print_terminal(
             limits[1],
             indent=indent * 3,
-            string="500 apertures, 5 sigma, 2 iterations: {}",
+            string="500 apertures, 5 sigma, 2 iterations: {} mag",
         )
 
 
@@ -2841,7 +2841,7 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
             tbl,
             trans=trans,
             id_object=id_object,
-            rts='_selection',
+            rts='_postprocessed',
             photo_type=photo_type,
             doadd=False,
         )
@@ -2923,6 +2923,8 @@ def add_column_to_table(tbl, column_name, data, column_id):
             ]
         )
 
+    return tbl
+
 
 def convert_magnitudes(tbl: Table, target_filter_system: str) -> Table:
     """
@@ -2950,9 +2952,6 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> Table:
         )
 
     #   Select magnitudes and errors and corresponding filter
-    # collected_mags = {}
-    # collected_err = {}
-    # available_filter = []
     available_image_ids = []
     available_filter_image_error = []
 
@@ -2964,13 +2963,11 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> Table:
 
         #   Get filter
         column_filter = colname[0]
-        # print('column_filter', column_filter)
         if column_filter in ['i', 'x', 'y']:
             continue
 
         #   Get the image ID
         image_id = colname.split('(')[1].split(')')[0]
-        # print('image_id', image_id)
 
         #   Is an image ID available?
         if image_id != '':
@@ -2998,23 +2995,6 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> Table:
 
         if image_id not in available_image_ids:
             available_image_ids.append(image_id)
-
-        #
-        # for filt in ['U', 'B', 'V', 'R', 'I', 'u', 'g', 'r', 'i', 'z']:
-        #     if f'{filt}_err' in colname:
-        #         # collected_err[filt] = tbl[colname].value
-        #         collected_err[colname] = tbl[colname].value
-        #     elif filt in colname:
-        #         collected_mags[filt] = tbl[colname].value
-        #         available_filter.append(filt)
-
-    # print('available_image_ids', available_image_ids)
-    # print('available_filter_image_error', available_filter_image_error)
-    # for filt in available_filter:
-    #     data_dict[filt] = unumpy.uarray(
-    #         collected_mags[filt],
-    #         collected_err[filt]
-    #     )
 
     #   Make conversion for each image ID individually
     for image_id in available_image_ids:
@@ -3045,7 +3025,7 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> Table:
                 else:
                     data_dict[column_filter] = tbl[f'{column_filter} ({image_id})'].value
 
-        print('data_dict', data_dict)
+        # print('data_dict', data_dict)
 
         if target_filter_system == 'AB':
             print('Will be available soon...')
@@ -3080,12 +3060,6 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> Table:
             if z is not None:
                 data_dict['z'] = z
                 tbl = add_column_to_table(tbl, 'z', z, image_id)
-
-            # print('g')
-            # print(g)
-            # print()
-            # print('r')
-            # print(r)
 
         elif target_filter_system == 'BESSELL':
             print('Will be available soon...')
