@@ -1406,7 +1406,7 @@ def prepare_ZP(img_container, image, image_o, id_i, id_o=None):
     #   Plot sigma clipping if it makes sense
     if not np.all(mag_lit == 0.):
         #   Make fit
-        ZP_fit = aux.fit_data_oneD(
+        ZP_fit = aux.SSfit_data_one_d(
             mag_fit_i[image.ZP_mask],
             mag_lit[id_i][image.ZP_mask],
             1,
