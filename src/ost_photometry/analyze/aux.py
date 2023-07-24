@@ -1531,7 +1531,7 @@ def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
 
 class Executor:
     """
-        Class that handels the multiprocessing, using apply_async.
+        Class that handles the multiprocessing, using apply_async.
         -> allows for easy catch of exceptions
     """
 
@@ -1552,9 +1552,9 @@ class Executor:
 
     def callback_error(self, e):
         """
-            Handles axceptions by apply_async's error callback
+            Handles exceptions by apply_async's error callback
         """
-        #   Termninate pool
+        #   Terminate pool
         self.pool.terminate()
         #   Raise exceptions
         self.err = e
@@ -1752,11 +1752,11 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
         img_ensemble    : `image ensemble`
             Image img_ensemble class object
 
-        calib_xs        : `numpy.ndarray` of `floats`
+        calib_xs        : `numpy.ndarray` or `list` of `floats`
             Position of the claibration objects on the image in pixel
             in X direction
 
-        calib_ys        : `numpy.ndarray` of `floats`
+        calib_ys        : `numpy.ndarray` or `list`  of `floats`
             Position of the claibration objects on the image in pixel
             in Y direction
 

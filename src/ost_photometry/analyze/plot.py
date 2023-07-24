@@ -576,7 +576,7 @@ def plot_epsf(outdir, epsf, condense=False, nameobj=None, indent=1):
 
 def plot_residual(name, image_orig, residual_image, outdir,
                   condense=False, nameobj=None, indent=1):
-    '''
+    """
         Plot the original and the residual image
 
         Parameters
@@ -584,10 +584,10 @@ def plot_residual(name, image_orig, residual_image, outdir,
         name            : `string`
             Name of the plot, can be name of the object
 
-        image_orig      : `numpy.ndarray`
+        image_orig      : `dictionary` {`string`: `numpy.ndarray`}
             Original image data
 
-        residual_image  : `numpy.ndarray`
+        residual_image  : `dictionary` {`string`: `numpy.ndarray`}
             Residual image data
 
         outdir          : `string`
@@ -604,7 +604,7 @@ def plot_residual(name, image_orig, residual_image, outdir,
         indent          : `integer`, optional
             Indentation for the console output lines
             Default is ``1``.
-    '''
+    """
     #   Check output directories
     checks.check_out(
         outdir,

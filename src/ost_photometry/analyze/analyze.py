@@ -455,11 +455,13 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
     #   Get status cosmic ray removal status
     status = ccd.meta.get('cosmics_rm', False)
 
+    #   Get exposure time
+    exposure = ccd.meta.get('exptime', 1.)
+
     #   Get unit of the image to check if the image was scaled with the
     #   exposure time
     if ccd.unit == u.electron / u.s:
         scaled = True
-        exposure = ccd.meta.get('exptime', 1.)
         reduced = ccd.multiply(exposure * u.second)
     else:
         scaled = False
@@ -1402,7 +1404,7 @@ def define_apertures(image, r, r_in, r_out, r_unit):
     #   Convert radii in arcsec to pixel
     #   (this part is prone to errors and needs to be rewritten)
     pixscale = image.pixscale
-    if pixscale != None and r_unit == 'arcsec':
+    if pixscale is not None and r_unit == 'arcsec':
         r = r / pixscale
         r_in = r_in / pixscale
         r_out = r_out / pixscale
@@ -1466,7 +1468,7 @@ def background_simple(image, annulus_aperture):
 
 def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
                      plotaper=False, condense=False, indent=2):
-    '''
+    """
         Perform aperture photometry using the photutils.aperture package
 
         Parameters
@@ -1515,7 +1517,7 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
 
             img_err     - numpy.ndarray or None
                           Error array for 'image'
-    '''
+    """
     #   Load image data and uncertainty
     img = image.read_image()
     data = img.data
@@ -1607,8 +1609,20 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
     phot.rename_column('xcenter', 'x_fit')
     phot.rename_column('ycenter', 'y_fit')
 
+    #   Convert distance/radius to the border to pixel.
+    if r_unit == 'pixel':
+        r_border = int(r_out)
+    elif r_unit == 'arcsec':
+        pixscale = image.pixscale
+        r_border = int(round(r_out / pixscale))
+    else:
+        raise RuntimeError(
+            f"{style.bcolors.FAIL} \nException in aperture_extract(): '"
+            f"\n'r_unit ({r_unit}) not known -> Exit {style.bcolors.ENDC}"
+        )
+
     #   Remove objects that are too close to the image edges
-    phot, strout = aux.rm_edge_objects(phot, data, r_out, condense=condense)
+    phot, strout = aux.rm_edge_objects(phot, data, r_border, condense=condense)
     if condense:
         outstr += strout
 
@@ -2804,7 +2818,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
                                 correl_method='astropy',
                                 seplimit=2. * u.arcsec, verbose=False,
                                 plot_test=True):
-    '''
+    """
         Correlate results from all images, while preserving the variable
         star
 
@@ -2871,7 +2885,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
             If True only the masterplot for the reference image will
             be created.
             Default is ``True``.
-    '''
+    """
     ###
     #   Find position of the variable star I
     #
@@ -2881,7 +2895,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     )
 
     if correl_method == 'astropy':
-        variable_ID, count, x_obj, y_obj = correlate.posi_obj_astropy_img(
+        variable_id, count, x_obj, y_obj = correlate.posi_obj_astropy_img(
             img_ensemble.image_list[ref_ID],
             ra_obj,
             dec_obj,
@@ -2901,7 +2915,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         )
 
         #   Current object ID
-        variable_ID = inds_obj[1]
+        variable_id = inds_obj[1]
 
         if verbose:
             terminal_output.print_terminal()
@@ -2924,7 +2938,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         option=option,
         maxid=maxid,
         refORI=ref_ID,
-        refOBJ=int(variable_ID),
+        refOBJ=int(variable_id),
         nmissed=nmissed,
         bfrac=bfrac,
         s_refOBJ=s_refOBJ,
@@ -2941,7 +2955,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     )
 
     if correl_method == 'astropy':
-        variable_ID, count, x_obj, y_obj = correlate.posi_obj_astropy(
+        variable_id, count, x_obj, y_obj = correlate.posi_obj_astropy(
             img_ensemble.x_s,
             img_ensemble.y_s,
             ra_obj,
@@ -2965,7 +2979,10 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
             terminal_output.print_terminal()
 
         #   Current object ID
-        variable_ID = inds_obj[1]
+        variable_id = inds_obj[1]
+
+    else:
+        raise ValueError(f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.')
 
     ###
     #   Check if variable star was detected II
@@ -2987,7 +3004,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     )
 
     #   Add ID of the variable star to the image ensemble
-    img_ensemble.variable_ID = variable_ID
+    img_ensemble.variable_ID = variable_id
 
 
 def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
@@ -3000,7 +3017,7 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
                             photometry='PSF', rstars=5., rbg_in=7.,
                             rbg_out=10., r_unit='arcsec', strict_eps=True,
                             search_image=True, plot_ifi=False, plot_test=True):
-    '''
+    """
         Extract flux and object positions using multiprocessing
 
         Parameters
@@ -3106,7 +3123,7 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
             If True a star map plots only for the reference image [refid] is
             created
             Default is ``True``.
-    '''
+    """
     #   Get filter
     filt = img_ensemble.filt
 
@@ -3204,7 +3221,7 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
                           photometry='PSF', rstars=5., rbg_in=7.,
                           rbg_out=10., r_unit='arcsec', strict_eps=True,
                           search_image=True, plot_ifi=False, plot_test=True):
-    '''
+    """
         Main function to extract the information from the individual images
 
         Parameters
@@ -3309,7 +3326,7 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             If True a star map plots only for the reference image [refid] is
             created
             Default is ``True``.
-    '''
+    """
     ###
     #   Initialize output string
     #
@@ -3454,7 +3471,7 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
     else:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
-            f"valid: use either aper or PSF {style.bcolors.ENDC}"
+            f"valid: use either APER or PSF {style.bcolors.ENDC}"
         )
 
     ###
@@ -4063,7 +4080,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                        correl_method='astropy', seplimit=2. * u.arcsec,
                        verbose=False, search_image=True, plot_ifi=False,
                        plot_test=True):
-    '''
+    """
         Extract flux from multiple images per filter and add results to
         the image container
 
@@ -4237,7 +4254,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             If True a star map plots only for the reference image [refid] is
             created
             Default is ``True``.
-    '''
+    """
     ###
     #   Check output directories
     #
@@ -4717,7 +4734,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
         outdir              : `string`
             Path, where the output should be stored.
 
-        transit_time        : `float`
+        transit_time        : `string`
             Date and time of the transit.
             Format: "yyyy:mm:ddThh:mm:ss" e.g., "2020-09-18T01:00:00"
 
