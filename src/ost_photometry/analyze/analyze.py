@@ -3327,13 +3327,18 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             created
             Default is ``True``.
     """
+    delay_output = True
+
     ###
     #   Initialize output string
     #
-    outstring = "      "
-    outstring += style.bcolors.UNDERLINE
-    outstring += "Image: " + str(image.pd)
-    outstring += style.bcolors.ENDC + "\n"
+    log = terminal_output.TerminalLog()
+    log.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
+    log.add_to_cache("\n")
+    # outstring = "      "
+    # outstring += style.bcolors.UNDERLINE
+    # outstring += "Image: " + str(image.pd)
+    # outstring += style.bcolors.ENDC + "\n"
 
     ###
     #   Estimate and remove background
@@ -3351,7 +3356,8 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             method=method,
             condense=True,
         )
-        outstring += out_str
+        # outstring += out_str
+        log.add_to_cache("out_str")
 
     if photometry == 'PSF':
         ###
@@ -3366,7 +3372,8 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             condense=True,
             strict=strict_eps,
         )
-        outstring += out_str
+        # outstring += out_str
+        log.add_to_cache("out_str")
 
         ###
         #   Plot images with the identified stars overlaid
@@ -3386,7 +3393,8 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             )
         else:
             out_str = ''
-        outstring += out_str
+        # outstring += out_str
+        log.add_to_cache("out_str")
 
         ###
         #   Calculate the ePSF
@@ -3400,7 +3408,8 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             multi=False,
             condense=True,
         )
-        outstring += out_str
+        # outstring += out_str
+        log.add_to_cache("out_str")
 
         ###
         #   Plot the ePSFs
@@ -3412,7 +3421,8 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             nameobj=image.objname,
             indent=2,
         )
-        outstring += out_str
+        # outstring += out_str
+        log.add_to_cache("out_str")
 
         ###
         #   Performing the PSF photometry
@@ -3429,7 +3439,8 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             strict_cleaning=strict_cleaning,
             condense=True,
         )
-        outstring += out_str
+        # outstring += out_str
+        log.add_to_cache("out_str")
 
         ###
         #   Plot original and residual image
@@ -3445,7 +3456,8 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             nameobj=image.objname,
             indent=2,
         )
-        outstring += out_str
+        # outstring += out_str
+        log.add_to_cache("out_str")
 
     elif photometry == 'APER':
         ###
@@ -3466,7 +3478,8 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             condense=True,
             indent=3,
         )
-        outstring += out_str
+        # outstring += out_str
+        log.add_to_cache("out_str")
 
     else:
         raise RuntimeError(
@@ -3481,12 +3494,15 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
         out_str = aux.prepare_and_plot_starmap(image, condense=True)
     else:
         out_str = ''
-    outstring += out_str
-    outstring += '\n'
-    terminal_output.print_terminal(
-        indent=0,
-        string=outstring,
-    )
+    # outstring += out_str
+    # outstring += '\n'
+    log.add_to_cache("out_str")
+    log.print_to_terminal("\n")
+
+    # terminal_output.print_terminal(
+    #     indent=0,
+    #     string=outstring,
+    # )
 
     return image
 
@@ -4111,7 +4127,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             Declination of the object
 
         ncores          : `integer`, optional
-            Number of cores to use for multi core processing
+            Number of cores to use for multicore processing
             Default is ``6``.
 
         wcs_method      : `string`, optional

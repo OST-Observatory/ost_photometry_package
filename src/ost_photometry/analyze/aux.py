@@ -1544,7 +1544,7 @@ class Executor:
 
     def collect_results(self, result):
         """
-            Uses apply_async's callback to setup up a separate Queue
+            Uses apply_async's callback to set up a separate Queue
             for each process
         """
         #   Catch all results
