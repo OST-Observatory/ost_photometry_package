@@ -1617,7 +1617,7 @@ def mk_ds9_region(x, y, r, filename, wcs_object):
     reg.write(filename, format='ds9', overwrite=True)
 
 
-def prepare_and_plot_starmap(image, condense=False, tbl=None,
+def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
                              x_name='x_fit', y_name='y_fit', rts_pre='img',
                              label='Stars with photometric extractions',
                              add_image_id=True):
@@ -1629,10 +1629,10 @@ def prepare_and_plot_starmap(image, condense=False, tbl=None,
         image           : `image.class`
             Image class with all image specific properties
 
-        condense        : `boolean`, optional
-            If True the terminal output will be returned to the calling
-            function.
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
 
         tbl             : `astropy.table.Table` or `None`, optional
             Table with position information.
@@ -1676,7 +1676,7 @@ def prepare_and_plot_starmap(image, condense=False, tbl=None,
         rts_pre += '-' + str(image.pd)
 
     #   Plot star map
-    out_str = plot.starmap(
+    plot.starmap(
         image.outpath.name,
         data,
         filt,
@@ -1684,10 +1684,8 @@ def prepare_and_plot_starmap(image, condense=False, tbl=None,
         label=label,
         rts=rts_pre,
         nameobj=name,
-        condense=condense,
+        terminal_logger=terminal_logger,
     )
-    if condense:
-        return out_str
 
 
 def prepare_and_plot_starmap_final(img_container, filt_list):
@@ -2013,7 +2011,7 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
         )
 
 
-def rm_edge_objects(table, data, border=10, condense=False, indent=3):
+def rm_edge_objects(table, data, border=10, terminal_logger=None, indent=3):
     """
         Remove detected objects that are too close to the image edges
 
@@ -2030,10 +2028,10 @@ def rm_edge_objects(table, data, border=10, condense=False, indent=3):
             incomplete and should therefore be discarded.
             Default is ``10``.
 
-        condense            : `boolean`, optional
-            If True the terminal output will be returned to the calling
-            function.
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
 
         indent              : `integer`, optional
             Indentation for the console output lines
@@ -2050,17 +2048,15 @@ def rm_edge_objects(table, data, border=10, condense=False, indent=3):
     mask = ((x > hsize) & (x < (data.shape[1] - 1 - hsize)) &
             (y > hsize) & (y < (data.shape[0] - 1 - hsize)))
 
-    outstr = terminal_output.print_terminal(
-        np.count_nonzero(np.invert(mask)),
-        indent=indent,
-        string='{} objects removed because they are too close to the '
-               'image edges',
-        condense=condense,
-    )
-    if condense:
-        return table[mask], outstr
+
+    out_str = f'{np.count_nonzero(np.invert(mask))} objects removed because '\
+               'they are too close to the image edges'
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(out_str, indent=indent)
     else:
-        return table[mask], ''
+        terminal_output.print_to_terminal(out_str, indent=indent)
+
+    return table[mask]
 
 
 def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",

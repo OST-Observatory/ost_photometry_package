@@ -611,7 +611,7 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
 
 
 def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
-               verbose=False, condense=False, indent=2):
+               verbose=False, terminal_logger=None, indent=2):
     '''
         Find the stars on the images, using photutils and search and select
         stars for the ePSF stars
@@ -637,25 +637,19 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
             If True addtional information will be printed to the terminal.
             Default is ``False``.
 
-        condense        : `boolean`, optional
-            If True the terminal output will be returned to the calling
-            function.
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
 
         indent          : `integer`, optional
             Indentation for the console output lines
             Default is ``2``.
-
-        Returns
-        -------
-        outstring       : `string`, optional
-            Information to be printed to the terminal
     '''
-    outstring = terminal_output.print_terminal(
-        indent=indent,
-        string="Identify stars",
-        condense=condense,
-    )
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache("Identify stars", indent=indent)
+    else:
+        terminal_output.print_to_terminal("Identify stars", indent=indent)
 
     #   Load image data
     img = image.read_image()
@@ -696,12 +690,10 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
     #   Add positions to image class
     image.positions = tbl_posi_all
 
-    if condense:
-        return outstring
 
 
 def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
-                     condense=False, strict=True, indent=2):
+                     terminal_logger=None, strict=True, indent=2):
     '''
         Select ePSF stars and check if there are enough
 
@@ -722,10 +714,10 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
             Fraction of all stars that should be used to calculate the ePSF
             Default is ``0.2``.
 
-        condense        : `boolean`, optional
-            If True the terminal output will be returned to the calling
-            function.
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
 
         strict          : `boolean`, optional
             If True a stringent test of the ePSF conditions is applied.
@@ -753,14 +745,19 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
     istring = str(image.pd) + '. ' + image.filt
 
     #   Useful information
-    outstring = terminal_output.print_terminal(
-        num_stars,
-        istring,
-        indent=indent + 1,
-        string="{:d} sources identified in the {:s} band image",
-        style_name='OKBLUE',
-        condense=condense,
-    )
+    out_string = f"{num_stars} sources identified in the {istring} band image"
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(
+            out_string,
+            indent=indent+1,
+            style_name='OK',
+        )
+    else:
+        print_to_terminal.print_terminal(
+            out_string,
+            indent=indent + 1,
+            style_name='OK',
+        )
 
     ##  Determine sample of stars used for estimating the ePSF
     #   (rm the brightest 1% of all stars because those are often saturated)
@@ -868,12 +865,9 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
     #   Add ePSF stars to image class
     image.positions_epsf = tbl_posi
 
-    if condense:
-        return outstring
-
 
 def mk_epsf(image, size=25, oversampling=2, maxiters=7,
-            min_stars=25, multi=True, condense=False, indent=2):
+            min_stars=25, multi=True, terminal_logger=None, indent=2):
     '''
         Main function to determine the ePSF, using photutils
 
@@ -902,19 +896,14 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
             If True multi processing is used for plotting.
             Default is ``True``.
 
-        condense        : `boolean`, optional
-            If True the terminal output will be returned to the calling
-            function.
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
 
         indent          : `integer`, optional
             Indentation for the console output lines
             Default is ``2``.
-
-        Returns
-        -------
-        outstring       : `string`, optional
-            Information to be printed to the terminal
     '''
     #   Get image data
     data = image.get_data()
@@ -928,18 +917,28 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
     #   Get object name
     nameobj = image.objname
 
-    outstring = terminal_output.print_terminal(
-        indent=indent,
-        string="Determine the point spread function",
-        condense=condense,
-    )
-    outstring = terminal_output.print_terminal(
-        num_fit,
-        indent=indent + 1,
-        string="{:d} bright stars used",
-        style_name='OKBLUE',
-        condense=condense,
-    )
+
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(
+            "Determine the point spread function",
+            indent=indent
+        )
+        terminal_logger.add_to_cache(
+            "{num_fit} bright stars used",
+            indent=indent+1,
+            style_name='OK',
+        )
+    else:
+        terminal_output.print_to_terminal(
+            "Determine the point spread function",
+            indent=indent
+        )
+        terminal_output.print_to_terminal(
+            "{num_fit} bright stars used",
+            indent=indent+1,
+            style_name='OK',
+        )
+
 
     #   Create new table with the names required by "extract_stars"
     stars_tbl = Table()
@@ -953,7 +952,7 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
     stars = extract_stars(nddata, stars_tbl, size=size)
 
     #   Combine plot identification string
-    string = 'img-' + str(image.pd) + '-' + image.filt
+    string = f'img-{image.pd}-{image.filt}'
 
     #   Get output directory
     outdir = image.outpath.name
@@ -967,23 +966,13 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
         )
         p.start()
     else:
-        if condense:
-            tmpstr = plot.plot_cutouts(
-                outdir,
-                stars,
-                string,
-                nameobj=nameobj,
-                condense=True,
-            )
-            outstring += tmpstr
-        else:
-            plot.plot_cutouts(
-                outdir,
-                stars,
-                string,
-                max_plot_stars=min_stars,
-                nameobj=nameobj,
-            )
+        plot.plot_cutouts(
+            outdir,
+            stars,
+            string,
+            nameobj=nameobj,
+            terminal_logger=terminal_logger,
+        )
 
     #   Build the ePSF (set oversampling and max. number of iterations)
     epsf_builder = EPSFBuilder(
@@ -997,13 +986,10 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
     image.epsf = epsf
     image.fitted_stars = fitted_stars
 
-    if condense:
-        return outstring
-
 
 def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
                  method_finder='IRAF', size_epsf=25., multi=5.0,
-                 multi_grouper=2.0, strict_cleaning=True, condense=False,
+                 multi_grouper=2.0, strict_cleaning=True, terminal_logger=None,
                  rmbackground=False, indent=2):
     '''
         Main function to perform the eEPSF photometry, using photutils
@@ -1047,10 +1033,10 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
             If True objects with negative flux uncertainties will be removed
             Default is ``True``.
 
-        condense            : `boolean`, optional
-            If True the terminal output will be returned to the calling
-            function.
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
 
         rmbackground        : `boolean`, optional
             If True the background will be estimated and considered.
@@ -1104,12 +1090,11 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
     #   Get ePSF
     epsf = image.epsf
 
-    outstr = terminal_output.print_terminal(
-        istring,
-        indent=indent,
-        string="Performing the actual PSF photometry ({:s} image)",
-        condense=condense,
-    )
+    outstr = f"Performing the actual PSF photometry ({istring} image)"
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(outstr, indent=indent)
+    else:
+        terminal_output.print_to_terminal(outstr, indent=indent)
 
     ##  Set up all necessary classes
     if method_finder == 'IRAF':
@@ -1255,13 +1240,11 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
         )
 
     if num_spoiled != 0:
-        strout = terminal_output.print_terminal(
-            num_spoiled,
-            indent=indent + 1,
-            string="{:d} objects removed because of poor fit quality",
-            condense=condense,
-        )
-        if condense: outstr += strout
+        out_str = f"{num_spoiled} objects removed because of poor fit quality"
+        if terminal_logger is not None:
+            terminal_logger.add_to_cache(out_str, indent=indent+1)
+        else:
+            terminal_output.print_to_terminal(out_str, indent=indent+1)
 
     try:
         nstars = len(result_tbl['flux_fit'].data)
@@ -1273,23 +1256,23 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
             f"uncertainties {style.bcolors.ENDC}"
         )
 
-    strout = terminal_output.print_terminal(
-        nstars,
-        indent=indent + 1,
-        string="{:d} good stars extracted from the image",
-        style_name='OKBLUE',
-        condense=condense,
-    )
-    if condense: outstr += strout
+    out_str = f"{nstars} good stars extracted from the image"
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(out_str, indent=indent+1, style_name='OK')
+    else:
+        terminal_output.print_to_terminal(
+            out_str,
+            indent=indent+1,
+            style_name='OK'
+        )
 
     #   Remove objects that are too close to the image edges
-    result_tbl, strout = aux.rm_edge_objects(
+    result_tbl = aux.rm_edge_objects(
         result_tbl,
         data,
         (sizepho - 1) / 2,
-        condense=condense,
+        terminal_logger=terminal_logger,
     )
-    if condense: outstr += strout
 
     #   Write table
     filename = 'table_photometry_{}_PSF.dat'.format(istring)
@@ -1305,9 +1288,6 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
     #   Add photometry and residual image to image class
     image.photometry = result_tbl
     image.residual_image = residual_image
-
-    if condense:
-        return outstr
 
 
 def compute_phot_error(flux_variance, ap_area, nsky, stdev, gain=1.0):
@@ -1467,7 +1447,7 @@ def background_simple(image, annulus_aperture):
 
 
 def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
-                     plotaper=False, condense=False, indent=2):
+                     plotaper=False, terminal_logger=None, indent=2):
     """
         Perform aperture photometry using the photutils.aperture package
 
@@ -1501,10 +1481,10 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
             created.
             Default is ``False``.
 
-        condense        : `boolean`, optional
-            If True the terminal output will be returned to the calling
-            function.
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
 
         indent          : `integer`, optional
             Indentation for the console output lines
@@ -1526,12 +1506,16 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
     #   Get filter
     filt = image.filt
 
-    outstr = terminal_output.print_terminal(
-        filt,
-        indent=indent,
-        string="Performing aperture photometry ({:s} image)",
-        condense=condense,
-    )
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(
+            f"Performing aperture photometry ({filt} image)",
+            indent=indent,
+        )
+    else:
+        terminal_output.print_to_terminal(
+            f"Performing aperture photometry ({filt} image)",
+            indent=indent,
+        )
 
     ###
     #   Define apertures
@@ -1622,9 +1606,13 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
         )
 
     #   Remove objects that are too close to the image edges
-    phot, strout = aux.rm_edge_objects(phot, data, r_border, condense=condense)
-    if condense:
-        outstr += strout
+    phot = aux.rm_edge_objects(
+        phot,
+        data,
+        r_border,
+        terminal_logger=terminal_logger,
+    )
+
 
     #   Replace negative flux values with 10^-10
     #   -> arbitrary, but very small
@@ -1651,15 +1639,18 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
     nstars = len(flux)
 
     #   Useful info
-    strout = terminal_output.print_terminal(
-        nstars,
-        indent=indent + 1,
-        string="{:d} good stars extracted from the image",
-        style_name='OKBLUE',
-        condense=condense,
-    )
-
-    if condense: return outstr + strout
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(
+            f"{nstars} good stars extracted from the image",
+            indent=indent+1,
+            style_name='OK',
+        )
+    else:
+        terminal_output.print_to_terminal(
+            f"{nstars} good stars extracted from the image",
+            indent=indent+1,
+            style_name='OK',
+        )
 
 
 def correlate_images(*args, **kwargs):
@@ -2385,7 +2376,8 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
         x_sort = xall[indSR[refORI_new]][:, refORI_new]
         y_sort = yall[indSR[refORI_new]][:, refORI_new]
 
-    #   Loop over image ensembles to rearrange flux arrays
+    #   Rearrange flux array, according to correlation results, so that objects
+    #   have the same position in each
     for j, ensemble in enumerate(ensemble_dict.values()):
 
         #   Get image list
@@ -3332,13 +3324,8 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
     ###
     #   Initialize output string
     #
-    log = terminal_output.TerminalLog()
-    log.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
-    log.add_to_cache("\n")
-    # outstring = "      "
-    # outstring += style.bcolors.UNDERLINE
-    # outstring += "Image: " + str(image.pd)
-    # outstring += style.bcolors.ENDC + "\n"
+    log_terminal = terminal_output.TerminalLog()
+    log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
 
     ###
     #   Estimate and remove background
@@ -3349,37 +3336,33 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
     #   Find the stars (via DAO or IRAF StarFinder)
     #
     if search_image:
-        out_str = find_stars(
+        find_stars(
             image,
             sigma_psf,
             multi_start=multi_start,
             method=method,
-            condense=True,
+            terminal_logger=log_terminal,
         )
-        # outstring += out_str
-        log.add_to_cache("out_str")
 
     if photometry == 'PSF':
         ###
         #   Check if enough stars have been detected to allow ePSF
         #   calculations
         #
-        out_str = check_epsf_stars(
+        check_epsf_stars(
             image,
             size=size_epsf,
             min_stars=min_eps_stars,
             frac_epsf=frac_epsf_stars,
-            condense=True,
+            terminal_logger=log_terminal,
             strict=strict_eps,
         )
-        # outstring += out_str
-        log.add_to_cache("out_str")
 
         ###
         #   Plot images with the identified stars overlaid
         #
         if plot_ifi or (plot_test and image.pd == refid):
-            out_str = plot.starmap(
+            plot.starmap(
                 image.outpath.name,
                 image.get_data(),
                 image.filt,
@@ -3389,45 +3372,37 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
                 label_2='stars used to determine the ePSF',
                 rts='initial-img-' + str(image.pd),
                 nameobj=image.objname,
-                condense=True,
+                terminal_logger=log_terminal,
             )
-        else:
-            out_str = ''
-        # outstring += out_str
-        log.add_to_cache("out_str")
 
         ###
         #   Calculate the ePSF
         #
-        out_str = mk_epsf(
+        mk_epsf(
             image,
             size=size_epsf,
             oversampling=oversampling,
             maxiters=maxiters,
             min_stars=min_eps_stars,
             multi=False,
-            condense=True,
+            terminal_logger=log_terminal,
         )
-        # outstring += out_str
-        log.add_to_cache("out_str")
 
         ###
         #   Plot the ePSFs
         #
-        out_str = plot.plot_epsf(
+        plot.plot_epsf(
             image.outpath.name,
             {'img-' + str(image.pd) + '-' + image.filt: image.epsf},
-            condense=True,
+            terminal_logger=log_terminal,
             nameobj=image.objname,
             indent=2,
         )
-        # outstring += out_str
-        log.add_to_cache("out_str")
 
         ###
         #   Performing the PSF photometry
         #
-        out_str = epsf_extract(
+        epsf_extract(
             image,
             sigma_psf,
             sigma_bkg=sigma_bkg,
@@ -3437,27 +3412,21 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             multi=multi,
             multi_grouper=multi_grouper,
             strict_cleaning=strict_cleaning,
-            condense=True,
+            terminal_logger=log_terminal,
         )
-        # outstring += out_str
-        log.add_to_cache("out_str")
 
         ###
         #   Plot original and residual image
         #
-        out_str = plot.plot_residual(
+        plot.plot_residual(
             image.objname,
             {f'{image.pd}-{image.filt}': image.get_data()},
             {f'{image.pd}-{image.filt}': image.residual_image},
-            # {str(image.pd)+'-'+image.filt:image.get_data()},
-            # {str(image.pd)+'-'+image.filt:image.residual_image},
             image.outpath.name,
-            condense=True,
+            terminal_logger=log_terminal,
             nameobj=image.objname,
             indent=2,
         )
-        # outstring += out_str
-        log.add_to_cache("out_str")
 
     elif photometry == 'APER':
         ###
@@ -3468,18 +3437,16 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
         else:
             plotaper = False
 
-        out_str = aperture_extract(
+        aperture_extract(
             image,
             rstars,
             rbg_in,
             rbg_out,
             r_unit=r_unit,
             plotaper=plotaper,
-            condense=True,
+            terminal_logger=log_terminal,
             indent=3,
         )
-        # outstring += out_str
-        log.add_to_cache("out_str")
 
     else:
         raise RuntimeError(
@@ -3487,22 +3454,30 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             f"valid: use either APER or PSF {style.bcolors.ENDC}"
         )
 
+    #   Add flux array to image (is this really necessary?)
+    #   TODO: Rewrite correlation. Then remove this:
+    flux_img = np.zeros(
+        len(image.photometry['x_fit']),
+        dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
+    )
+    flux_img['flux_fit'] = image.photometry['flux_fit']
+    flux_img['flux_unc'] = image.photometry['flux_unc']
+
+    uflux_img = unumpy.uarray(
+        flux_img['flux_fit'],
+        flux_img['flux_unc']
+    )
+    image.flux = flux_img
+    image.uflux = uflux_img
+
+
     ###
     #   Plot images with extracted stars overlaid
     #
     if plot_ifi or (plot_test and image.pd == refid):
-        out_str = aux.prepare_and_plot_starmap(image, condense=True)
-    else:
-        out_str = ''
-    # outstring += out_str
-    # outstring += '\n'
-    log.add_to_cache("out_str")
-    log.print_to_terminal("\n")
+        aux.prepare_and_plot_starmap(image, terminal_logger=log_terminal)
 
-    # terminal_output.print_terminal(
-    #     indent=0,
-    #     string=outstring,
-    # )
+    log_terminal.print_to_terminal('')
 
     return image
 

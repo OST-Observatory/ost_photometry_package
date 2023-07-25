@@ -415,8 +415,9 @@ def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
             #              reference and the current data set,
             #              matching.search_around_sky will fail.
             #              => set reference indexes
-            if np.all(x[i] == x[refORI]) and np.all(y[i] == y[refORI]):
-                idarray[i,:] = idarray[refORI,:]
+            if ((len(x[i]) == len(x[refORI])) and
+                (np.all(x[i] == x[refORI]) and np.all(y[i] == y[refORI]))):
+                    idarray[i,:] = idarray[refORI,:]
             else:
                 #   Create coordinates object
                 coords = SkyCoord.from_pixel(

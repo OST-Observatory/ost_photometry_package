@@ -64,6 +64,28 @@ def print_terminal(*args, string='', condense=False, indent=1,
         print(out_string)
 
 
+def print_to_terminal(string, indent=1, style_name='BOLD'):
+        """
+            Print output to terminal after formatting
+
+            Parameters
+            ----------
+            string          : `string`, optional
+                Output string.
+                Default is ````.
+
+            indent          : `integer`, optional
+                Indentation level of the terminal output.
+                Default is ``1``.
+
+            style_name      : `string`, optional
+                Style type of the output.
+                Default is ``BOLD``.
+        """
+        #   Print to terminal
+        print(format_string(string, indent=indent, style_name=style_name))
+
+
 def format_string(string, indent=1, style_name='BOLD'):
     """
         Formats string
@@ -143,8 +165,10 @@ class TerminalLog:
 
         """
         self.cache += format_string(string, indent=indent, style_name=style_name)
+        self.cache += "\n"
+        # self.cache += f"{string}\n"
 
-    def print_to_terminal(self, string, indent=1, style_name='BOLD', print_cache=False):
+    def print_to_terminal(self, string, indent=1, style_name='BOLD'):
         """
             Print output to terminal after formatting
 
@@ -166,22 +190,10 @@ class TerminalLog:
                 Print complete cache instead of only the string
                 Default is ``False``
         """
-        #   Add to cache
-        if print_cache:
-            self.add_to_cache(string)
+        #   Add string to cache
+        self.add_to_cache(string, indent=indent, style_name=style_name)
 
-        #   Format string
-        string = format_string(string, indent=indent, style_name=style_name)
-
-        #   Add cache or string
-        if print_cache:
-            out_string = self.cache + string
-        else:
-            out_string = string
-
-        #   Print to terminal
-        print(out_string)
+        print(self.cache)
 
         #   Reset cache
-        if print_cache:
-            self.cache = ""
+        # self.cache = ""

@@ -78,7 +78,7 @@ def comp_img(outdir, o_image, c_image):
 
 def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
             label='Identified stars', label_2='Identified stars (set 2)',
-            rts=None, mode=None, nameobj=None, condense=False):
+            rts=None, mode=None, nameobj=None, terminal_logger=None):
     '''
         Plot star maps  -> overlays of the determined star positions on FITS
                         -> supports different versions
@@ -125,9 +125,10 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
             Name of the object
             Default is ``None``
 
-        condense        : `boolean`, optional
-            If True pass the console output to the calling function.
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
     '''
     #   Check output directories
     checks.check_out(
@@ -136,12 +137,15 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
         )
 
     if rts is not None:
-        outstring = terminal_output.print_terminal(
-            band,
-            rts,
-            indent=indent,
-            string="Plot {} band image with stars overlaid ({})",
-            condense=condense,
+        if terminal_logger is not None:
+            terminal_logger.add_to_cache(
+                f"Plot {band} band image with stars overlaid ({rts})",
+                indent=indent,
+            )
+        else:
+            terminal_output.print_to_terminal(
+                f"Plot {band} band image with stars overlaid ({rts})",
+                indent=indent,
             )
 
     #   Check if column with X and Y coordinates are available for table 1
@@ -297,9 +301,6 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
     # plt.show()
     plt.close()
 
-    if condense:
-    	return outstring
-
 
 def plot_apertures(outdir, image, aperture, annulus_aperture, string):
     '''
@@ -381,8 +382,8 @@ def plot_apertures(outdir, image, aperture, annulus_aperture, string):
     plt.close()
 
 
-def plot_cutouts(outdir, stars, string, condense=False, max_plot_stars=25,
-                 nameobj=None, indent=2):
+def plot_cutouts(outdir, stars, string, terminal_logger=None,
+                 max_plot_stars=25, nameobj=None, indent=2):
     '''
         Plot the cutouts of the stars used to estimated the ePSF
 
@@ -397,9 +398,10 @@ def plot_cutouts(outdir, stars, string, condense=False, max_plot_stars=25,
         string          : `string`
             String characterizing the plot
 
-        condense        : `boolean`, optional
-            If True pass the console output to the calling function
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
 
         max_plot_stars  : `integer`, optional
             Maximum number of cutouts to plot
@@ -425,11 +427,15 @@ def plot_cutouts(outdir, stars, string, condense=False, max_plot_stars=25,
     else:
         n_cutouts = len(stars)
 
-    outstr = terminal_output.print_terminal(
-        string,
-        indent=indent,
-        string="Plot ePSF cutouts ({})",
-        condense=condense,
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(
+            "Plot ePSF cutouts ({string})",
+            indent=indent,
+        )
+    else:
+        terminal_output.print_to_terminal(
+            "Plot ePSF cutouts ({string})",
+            indent=indent,
         )
 
     ##  Plot the first cutouts (default: 25)
@@ -467,11 +473,8 @@ def plot_cutouts(outdir, stars, string, condense=False, max_plot_stars=25,
     # plt.show()
     plt.close()
 
-    if condense:
-        return outstr
 
-
-def plot_epsf(outdir, epsf, condense=False, nameobj=None, indent=1):
+def plot_epsf(outdir, epsf, terminal_logger=None, nameobj=None, indent=1):
     '''
         Plot the ePSF image of all filters
 
@@ -483,9 +486,10 @@ def plot_epsf(outdir, epsf, condense=False, nameobj=None, indent=1):
         epsf            : `epsf.object` ???
             ePSF object, usually constructed by epsf_builder
 
-        condense        : `boolean`, optional
-            If True pass the console output to the calling function
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
 
         nameobj         : `string`, optional
             Name of the object
@@ -501,11 +505,10 @@ def plot_epsf(outdir, epsf, condense=False, nameobj=None, indent=1):
         os.path.join(outdir, 'epsfs'),
         )
 
-    outstr = terminal_output.print_terminal(
-        indent=indent,
-        string="Plot ePSF image",
-        condense=condense,
-        )
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache("Plot ePSF image", indent=indent)
+    else:
+        terminal_output.print_to_terminal("Plot ePSF image", indent=indent)
 
     #   Set font size
     rcParams['font.size'] = 13
@@ -570,12 +573,9 @@ def plot_epsf(outdir, epsf, condense=False, nameobj=None, indent=1):
     # plt.show()
     plt.close()
 
-    if condense:
-        return outstr
-
 
 def plot_residual(name, image_orig, residual_image, outdir,
-                  condense=False, nameobj=None, indent=1):
+                  terminal_logger=None, nameobj=None, indent=1):
     """
         Plot the original and the residual image
 
@@ -593,9 +593,10 @@ def plot_residual(name, image_orig, residual_image, outdir,
         outdir          : `string`
             Output directory
 
-        condense        : `boolean`, optional
-            If True pass the console output to the calling function
-            Default is ``False``.
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
 
         nameobj         : `string`, optional
             Name of the object
@@ -611,10 +612,15 @@ def plot_residual(name, image_orig, residual_image, outdir,
         os.path.join(outdir, 'residual'),
         )
 
-    outstr = terminal_output.print_terminal(
-        indent=indent,
-        string="Plot original and the residual image",
-        condense=condense,
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(
+            "Plot original and the residual image",
+            indent=indent,
+        )
+    else:
+        terminal_output.print_to_terminal(
+            "Plot original and the residual image",
+            indent=indent,
         )
 
     #   Set font size
@@ -722,9 +728,6 @@ def plot_residual(name, image_orig, residual_image, outdir,
                     bbox_inches='tight',format='pdf')
     # plt.show()
     plt.close()
-
-    if condense:
-        return outstr
 
 
 def plot_mags(mag1, name1, mag2, name2, rts, outdir, err1=None, err2=None,
