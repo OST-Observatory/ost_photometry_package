@@ -3540,7 +3540,11 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
     if plot_ifi or (plot_test and image.pd == refid):
         aux.prepare_and_plot_starmap(image, terminal_logger=log_terminal)
 
-    log_terminal.print_to_terminal('')
+    if multiprocessing:
+        log_terminal.print_to_terminal('')
+    else:
+        terminal_output.print_to_terminal('')
+
 
     if multiprocessing:
         return image

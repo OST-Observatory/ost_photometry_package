@@ -857,7 +857,7 @@ def deter_calib(img_container, band_list, calib_method='APASS',
                         )
 
                     #   Check if errors are nice floats
-                    if err.dtype in (np.float,np.float32,np.float64):
+                    if err.dtype in (float,np.float32,np.float64):
                         valerr = err
                     else:
                         valerr = 0.
