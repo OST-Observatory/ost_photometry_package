@@ -1848,7 +1848,7 @@ def deter_trans(img_container, key_filt, filter_list, tbl_trans,
             nameobj=ensemble_dict[filter_list[0]].objname,
         )
 
-        ##  Mag transform - Fit the data with fit_func
+        #  Mag transform - Fit the data with fit_func
         #   Set sigma, using errors calculate above
         if weights:
             sigma = zero_err_plot
@@ -1956,8 +1956,8 @@ def deter_trans(img_container, key_filt, filter_list, tbl_trans,
 def calculate_trans(img_container, key_filt, filt_list, tbl_trans,
                     weights=True, dcr=3., option=1, calib_method='APASS',
                     vizier_dict={'APASS': 'II/336/apass9'}, calib_file=None,
-                    mag_range=(0., 18.5), rm_obj_coord=None, indent='      '):
-    '''
+                    mag_range=(0., 18.5)):
+    """
         Calculate the transformation coefficients
 
         Parameters
@@ -1990,7 +1990,7 @@ def calculate_trans(img_container, key_filt, filt_list, tbl_trans,
             Calibration method
             Default is ``APASS``.
 
-        vizier_dict             : `dictionary`, optional
+        vizier_dict             : `dictionary` or `None`, optional
             Dictionary with identifiers of the Vizier catalogs with valid
             calibration data
             Default is ``{'APASS':'II/336/apass9'}``.
@@ -2002,16 +2002,7 @@ def calculate_trans(img_container, key_filt, filt_list, tbl_trans,
         mag_range               : `tupel` or `float`, optional
             Magnitude range
             Default is ``(0.,18.5)``.
-
-        rm_obj_coord            : `astropy.coordinates.SkyCoord`, optional
-            Coordinates of an object that should not be used for calibrating
-            the data.
-            Default is ``None``.
-
-        indent              : `string`, optional
-            Indentation for the console output lines
-            Default is ``'      '``.
-    '''
+    """
     ###
     #   Correlate the results from the different filter
     #

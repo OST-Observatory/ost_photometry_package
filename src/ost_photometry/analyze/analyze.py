@@ -197,7 +197,7 @@ class image_container:
 
         #   numpy structured ndarray type:
         else:
-            if (cali_mags is None or np.all(cali_mags['mag'] == 0.)):
+            if cali_mags is None or np.all(cali_mags['mag'] == 0.):
                 #   If array with magnitude transformation is not available
                 #   or if it is empty get the array without magnitude
                 #   transformation
@@ -288,19 +288,24 @@ class image_ensemble:
         self.ref_img = self.image_list[ref_ID]
 
         #   Set field of view
-        self.fov = self.ref_img.fov
+        # self.fov = self.ref_img.fov
+        self.fov = getattr(self.ref_img, 'fov', None)
 
         #   Set PixelRegion for the field of view
-        self.region_pix = self.ref_img.region_pix
+        # self.region_pix = self.ref_img.region_pix
+        self.region_pix = getattr(self.ref_img, 'region_pix', None)
 
         #   Set pixel scale
-        self.pixscale = self.ref_img.pixscale
+        # self.pixscale = self.ref_img.pixscale
+        self.pixscale = getattr(self.ref_img, 'pixscale', None)
 
         #   Set coordinates of image center
-        self.coord = self.ref_img.coord
+        # self.coord = self.ref_img.coord
+        self.coord = getattr(self.ref_img, 'coord', None)
 
         #   Set instrument
-        self.instrument = self.ref_img.instrument
+        # self.instrument = self.ref_img.instrument
+        self.instrument = getattr(self.ref_img, 'instrument', None)
 
         #   Get image shape
         self.img_shape = self.ref_img.get_data().shape
@@ -347,7 +352,8 @@ class image_ensemble:
     def get_photometry(self):
         photo_dict = {}
         for img in self.image_list:
-            photo_dict[str(img.pd)] = img.photometry
+            # photo_dict[str(img.pd)] = img.photometry
+            photo_dict[str(img.pd)] = getattr(img, 'photometry', None)
 
         return photo_dict
 
@@ -363,7 +369,8 @@ class image_ensemble:
     def mean_sigma_clip_air_mass(self):
         am_list = []
         for img in self.image_list:
-            am_list.append(img.air_mass)
+            # am_list.append(img.air_mass)
+            am_list.append(getattr(img, 'air_mass', 0.))
 
         return sigma_clipped_stats(am_list, sigma=1.5)[0]
 
@@ -371,7 +378,8 @@ class image_ensemble:
     def median_air_mass(self):
         am_list = []
         for img in self.image_list:
-            am_list.append(img.air_mass)
+            # am_list.append(img.air_mass)
+            am_list.append(getattr(img, 'air_mass', 0.))
 
         return np.median(am_list)
 
@@ -379,7 +387,8 @@ class image_ensemble:
     def get_air_mass(self):
         am_list = []
         for img in self.image_list:
-            am_list.append(img.air_mass)
+            # am_list.append(img.air_mass)
+            am_list.append(getattr(img, 'air_mass', 0.))
 
         return am_list
 
@@ -387,7 +396,8 @@ class image_ensemble:
     def get_obs_time(self):
         obs_time_list = []
         for img in self.image_list:
-            obs_time_list.append(img.jd)
+            # obs_time_list.append(img.jd)
+            obs_time_list.append(getattr(img, 'jd', 0.))
 
         return np.array(obs_time_list)
 
@@ -395,7 +405,8 @@ class image_ensemble:
     def median_obs_time(self):
         obs_time_list = []
         for img in self.image_list:
-            obs_time_list.append(img.jd)
+            # obs_time_list.append(img.jd)
+            obs_time_list.append(getattr(img, 'jd', 0.))
 
         return np.median(obs_time_list)
 
@@ -409,7 +420,7 @@ class image_ensemble:
 
 
 def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
-              verbose=False, addmask=True):
+              verbose=False, addmask=True, terminal_logger=None):
     '''
         Remove cosmic rays
 
@@ -443,11 +454,17 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
         addmask         : `boolean`, optional
             If True add hot and bad pixel mask to the reduced science images.
             Default is ``True``.
+
+        terminal_logger : `terminal_output.TerminalLog` or None, optional
+            Logger object. If provided, the terminal output will be directed
+            to this object.
+            Default is ``None``.
     '''
-    terminal_output.print_terminal(
-        # indent=1,
-        string="Remove cosmic rays ...",
-    )
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache("Remove cosmic rays ...")
+    else:
+        terminal_output.print_to_terminal("Remove cosmic rays ...")
+
 
     #   Get image
     ccd = image.read_image()
@@ -480,7 +497,10 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
         if not addmask:
             reduced.mask = np.zeros(reduced.shape, dtype=bool)
         if verbose:
-            terminal_output.print_terminal()
+            if terminal_logger is not None:
+                terminal_logger.add_to_cache("")
+            else:
+                terminal_output.print_to_terminal("")
 
         #   Add Header keyword to mark the file as combined
         reduced.meta['cosmics_rm'] = True
@@ -612,7 +632,7 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
 
 def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
                verbose=False, terminal_logger=None, indent=2):
-    '''
+    """
         Find the stars on the images, using photutils and search and select
         stars for the ePSF stars
 
@@ -634,7 +654,7 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
             Default is ``IRAF``.
 
         verbose         : `boolean`, optional
-            If True addtional information will be printed to the terminal.
+            If True additional information will be printed to the terminal.
             Default is ``False``.
 
         terminal_logger : `terminal_output.TerminalLog` or None, optional
@@ -645,7 +665,7 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
         indent          : `integer`, optional
             Indentation for the console output lines
             Default is ``2``.
-    '''
+    """
     if terminal_logger is not None:
         terminal_logger.add_to_cache("Identify stars", indent=indent)
     else:
@@ -694,7 +714,7 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
 
 def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
                      terminal_logger=None, strict=True, indent=2):
-    '''
+    """
         Select ePSF stars and check if there are enough
 
         Parameters
@@ -731,7 +751,7 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
         -------
         outstring       : `string`, optional
             Information to be printed to the terminal
-    '''
+    """
     #   Get object positions
     tbl = image.positions
 
@@ -753,13 +773,13 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
             style_name='OK',
         )
     else:
-        print_to_terminal.print_terminal(
+        terminal_output.print_to_terminal(
             out_string,
             indent=indent + 1,
             style_name='OK',
         )
 
-    ##  Determine sample of stars used for estimating the ePSF
+    #  Determine sample of stars used for estimating the ePSF
     #   (rm the brightest 1% of all stars because those are often saturated)
     #   Sort list with star positions according to flux
     tbl_sort = tbl.group_by('flux')
@@ -1076,7 +1096,7 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
                     positions_flux['flux'],
                 ]
             )
-        except:
+        except RuntimeError as e:
             #   Switch to backup in case positions and fluxes are not
             #   available
             use_init_guesses = False
@@ -1096,7 +1116,7 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
     else:
         terminal_output.print_to_terminal(outstr, indent=indent)
 
-    ##  Set up all necessary classes
+    #  Set up all necessary classes
     if method_finder == 'IRAF':
         #   IRAF finder
         finder = IRAFStarFinder(
@@ -1164,7 +1184,7 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
         if multi_grouper != 1.:
             terminal_output.print_terminal(
                 indent=indent,
-                string="IterativelySubtractedPSFPhotometry failed. " \
+                string="IterativelySubtractedPSFPhotometry failed. "
                        "Will try again with 'multi_grouper' set to 1...",
                 style_name='WARNING',
             )
@@ -1192,16 +1212,17 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
             else:
                 result_tbl = photometry(image=data)
         else:
-            terminal_output.print_terminal(
+            terminal_output.print_to_terminal(
+                "IterativelySubtractedPSFPhotometry failed. No recovery possible.",
                 indent=0,
-                string=e,
+                style_name='ERROR'
             )
-            # print(e)
+            raise e
 
     #   Check if result table contains a 'flux_unc' column
     #   For some reason, it's missing for some extractions....
     if 'flux_unc' not in result_tbl.colnames:
-        #   Calculate a very very rough approximation of the uncertainty
+        #   Calculate a very, very rough approximation of the uncertainty
         #   by means of the actual extraction result 'flux_fit' and the
         #   early estimate 'flux_0'
         est_unc = np.absolute(
@@ -1270,7 +1291,7 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
     result_tbl = aux.rm_edge_objects(
         result_tbl,
         data,
-        (sizepho - 1) / 2,
+        int((sizepho - 1) / 2),
         terminal_logger=terminal_logger,
     )
 
@@ -1529,19 +1550,21 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
     )
 
     ###
-    #   Extract background and calculate median
-    #
-    if bg_simple:
-        bkg_median, bkg_stdev = background_simple(image, annulus_aperture)
-
-    ###
     #   Extract photometry
     #
     #   Extract aperture
     phot = aperture_photometry(data, aperture, mask=img.mask, error=err)
 
-    #   Extract background aperture
-    if not bg_simple:
+    #   Extract background and calculate median - extract background aperture
+    if bg_simple:
+        bkg_median, bg_err = background_simple(image, annulus_aperture)
+
+        #   Add median background to the output table
+        phot['annulus_median'] = bkg_median
+
+        #   Calculate background for the apertures add to the output table
+        phot['aper_bkg'] = bkg_median * aperture.area
+    else:
         bkg_phot = aperture_photometry(
             data,
             annulus_aperture,
@@ -1551,16 +1574,12 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
 
         #   Calculate aperture background and the corresponding error
         phot['aper_bkg'] = bkg_phot['aperture_sum'] * aperture.area \
-                           / annulus_aperture.area
+                         / annulus_aperture.area
 
         phot['aper_bkg_err'] = bkg_phot['aperture_sum_err'] * aperture.area \
-                               / annulus_aperture.area
-    else:
-        #   Add median background to the output table
-        phot['annulus_median'] = bkg_median
+                             / annulus_aperture.area
 
-        #   Calculate background for the apertures add to the output table
-        phot['aper_bkg'] = bkg_median * aperture.area
+        bg_err = phot['aper_bkg_err']
 
     #   Subtract background from aperture flux and add it to the
     #   output table
@@ -1575,12 +1594,7 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
     if err is not None:
         err_column = phot['aperture_sum_err']
     else:
-        err_column = phot['flux_fit'] ** (0.5)
-
-    if bg_simple:
-        bg_err = bkg_stdev
-    else:
-        bg_err = phot['aper_bkg_err']
+        err_column = phot['flux_fit'] ** 0.5
 
     phot['flux_unc'] = compute_phot_error(
         err_column,
@@ -1612,7 +1626,6 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
         r_border,
         terminal_logger=terminal_logger,
     )
-
 
     #   Replace negative flux values with 10^-10
     #   -> arbitrary, but very small
@@ -1668,7 +1681,7 @@ def correlate_images(*args, **kwargs):
 def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
                   maxid=1, refORI=0, refOBJ=[], nmissed=1, bfrac=1.0,
                   s_refOBJ=True):
-    '''
+    """
         WARNING: This function is not up to date
 
         Correlate star lists from the stacked images of all filters to find
@@ -1745,7 +1758,7 @@ def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
 
         count               : `integer
             Number of matches found
-    '''
+    """
     terminal_output.print_terminal(
         arr_img_IDs,
         indent=1,
@@ -1862,7 +1875,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
                            refORI=0, refOBJ=[], nmissed=1, bfrac=1.0,
                            s_refOBJ=True, correl_method='astropy',
                            seplimit=2. * u.arcsec):
-    '''
+    """
         Correlate star lists from the stacked images of all filters to find
         those stars that are visible on all images -> write calibrated CMD
 
@@ -1918,7 +1931,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         seplimit            : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
-    '''
+    """
     #   Get image IDs
     arr_img_IDs = img_ensemble.get_image_ids()
 
@@ -2631,12 +2644,12 @@ def correlate_pd(outdir, input_df, img_IDs, dcr, option, maxid=1,
 
 def correlate_preserve_calibs(img_ensemble, filter_list,
                               calib_method='APASS', mag_range=(0., 18.5),
-                              vizier_dict={}, calib_file=None, dcr=3,
+                              vizier_dict=None, calib_file=None, dcr=3,
                               option=1, verbose=False, maxid=1, ref_ID=0,
                               nmissed=1, bfrac=1.0, s_refOBJ=True,
                               plot_test=True, correl_method='astropy',
                               seplimit=2. * u.arcsec):
-    '''
+    """
         Correlate results from all images, while preserving the calibration
         stars
 
@@ -2657,9 +2670,9 @@ def correlate_preserve_calibs(img_ensemble, filter_list,
             Magnitude range
             Default is ``(0.,18.5)``.
 
-        vizier_dict         : `dictionary`, optional
+        vizier_dict         : `dictionary` or None, optional
             Identifiers of catalogs, containing calibration data
-            Derfault is ``{}``.
+            Default is ``None``.
 
         calib_file          : `string`, optional
             Path to the calibration file
@@ -2716,7 +2729,7 @@ def correlate_preserve_calibs(img_ensemble, filter_list,
         seplimit            : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
-    '''
+    """
     ###
     #   Load calibration data
     #
@@ -2912,6 +2925,9 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         if verbose:
             terminal_output.print_terminal()
 
+    else:
+        raise ValueError(f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.')
+
     ###
     #   Check if variable star was detected I
     #
@@ -2930,7 +2946,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         option=option,
         maxid=maxid,
         refORI=ref_ID,
-        refOBJ=int(variable_id),
+        refOBJ=[int(variable_id)],
         nmissed=nmissed,
         bfrac=bfrac,
         s_refOBJ=s_refOBJ,
@@ -3021,7 +3037,7 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
         ncores          : `integer`
             Number of cores to use during multiprocessing.
 
-        sigma_psf       : `float`
+        sigma_psf       : `dictionary`
             Sigma of the objects PSF, assuming it is a Gaussian
 
         sigma_bkg       : `float`, optional
@@ -3098,7 +3114,7 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
             Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
             Default is ``pixel``.
 
-        strict_eps      ; `boolean`, optional
+        strict_eps      : `boolean`, optional
             If True a stringent test of the ePSF conditions is applied.
             Default is ``True``.
 
@@ -3147,12 +3163,13 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
 
         #   Extract photometry
         executor.schedule(
-            main_extract_condense,
+            main_extract,
             args=(
                 image,
                 sigma_psf[filt],
             ),
             kwargs={
+                'multiprocessing': True,
                 'sigma_bkg': sigma_bkg,
                 'multi_start': multi_start,
                 'size_epsf': size_epsf,
@@ -3205,47 +3222,54 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
     img_ensemble.image_list = tmp_list
 
 
-def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
-                          size_epsf=25, frac_epsf_stars=0.2, oversampling=2,
-                          maxiters=7, epsf_use_init_guesses=True,
-                          method='IRAF', multi=5.0, multi_grouper=2.0,
-                          strict_cleaning=True, min_eps_stars=25, refid=0,
-                          photometry='PSF', rstars=5., rbg_in=7.,
-                          rbg_out=10., r_unit='arcsec', strict_eps=True,
-                          search_image=True, plot_ifi=False, plot_test=True):
+def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
+                          multi_start=5., size_epsf=25, frac_epsf_stars=0.2,
+                          oversampling=2, maxiters=7,
+                          epsf_use_init_guesses=True, method='IRAF', multi=5.0,
+                          multi_grouper=2.0, strict_cleaning=True,
+                          min_eps_stars=25, refid=0, photometry='PSF',
+                          rstars=5., rbg_in=7., rbg_out=10., r_unit='arcsec',
+                          strict_eps=True, search_image=True, rmcos=False,
+                          objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
+                          plot_ifi=False, plot_test=True):
     """
         Main function to extract the information from the individual images
 
         Parameters
         ----------
-        image           : `image.class`
+        image                   : `image.class`
             Image class with all image specific properties
 
-        sigma_psf       : `float`
+        sigma_psf               : `float`
             Sigma of the objects PSF, assuming it is a Gaussian
 
-        sigma_bkg       : `float`, optional
+        multiprocessing         : `boolean`, optional
+            If True, the routine is set up to meet the requirements of
+            multiprocessing, such as returning results and delayed
+            output to the terminal.
+
+        sigma_bkg               : `float`, optional
             Sigma used for the sigma clipping of the background
             Default is ``5``.
 
-        multi_start     : `float`, optional
+        multi_start             : `float`, optional
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
             Default is ``7``.
 
-        size_epsf       : `integer`, optional
+        size_epsf               : `integer`, optional
             Size of the extraction region in pixel
             Default is `25``.
 
-        frac_epsf_stars : `float`, optional
+        frac_epsf_stars         : `float`, optional
             Fraction of all stars that should be used to calculate the ePSF
             Default is ``0.2``.
 
-        oversampling    : `integer`, optional
+        oversampling            : `integer`, optional
             ePSF oversampling factor
             Default is ``2``.
 
-        maxiters        : `integer`, optional
+        maxiters                : `integer`, optional
             Number of ePSF iterations
             Default is ``7``.
 
@@ -3255,77 +3279,117 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
             will be identified by means of the ``method_finder`` method.
             Default is ``True``.
 
-        method         : `string`, optional
+        method                  : `string`, optional
             Finder method DAO or IRAF
             Default is ``IRAF``.
 
-        multi           : `float`, optional
+        multi                   : `float`, optional
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
             Default is ``5.0``.
 
-        multi_grouper   : `float`, optional
+        multi_grouper           : `float`, optional
             Multiplier for the DAO grouper
             Default is ``5.0``.
 
-        strict_cleaning : `boolean`, optional
+        strict_cleaning         : `boolean`, optional
             If True objects with negative flux uncertainties will be removed
             Default is ``True``.
 
-        min_eps_stars   : `integer`, optional
+        min_eps_stars           : `integer`, optional
             Minimal number of required ePSF stars
             Default is ``25``.
 
-        refid           : `integer`, optional
+        refid                   : `integer`, optional
             ID of the reference image
             Default is ``0``.
 
-        photometry      : `string`, optional
+        photometry              : `string`, optional
             Switch between aperture and ePSF photometry.
             Possibilities: 'PSF' & 'APER'
             Default is ``PSF``.
 
-        rstars          : `float`, optional
+        rstars                  : `float`, optional
             Radius of the stellar aperture
             Default is ``5``.
 
-        rbg_in          : `float`, optional
+        rbg_in                  : `float`, optional
             Inner radius of the background annulus
             Default is ``7``.
 
-        rbg_out         : `float`, optional
+        rbg_out                 : `float`, optional
             Outer radius of the background annulus
             Default is ``10``.
 
-        r_unit          : `string`, optional
+        r_unit                  : `string`, optional
             Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
             Default is ``pixel``.
 
-        strict_eps      ; `boolean`, optional
+        strict_eps              : `boolean`, optional
             If True a stringent test of the ePSF conditions is applied.
             Default is ``True``.
 
-        search_image    : `boolean`, optional
+        search_image            : `boolean`, optional
             If `True` the objects on the image will be identified. If `False`
             it is assumed that object identification was performed in advance.
             Default is ``True``.
 
-        plot_ifi        : `boolean`, optional
+        rmcos                   : `bool`
+            If True cosmic rays will be removed from the image.
+            Default is ``False``.
+
+        objlim                  : `float`, optional
+            Parameter for the cosmic ray removal: Minimum contrast between
+            Laplacian image and the fine structure image.
+            Default is ``5``.
+
+        readnoise               : `float`, optional
+            The read noise (e-) of the camera chip.
+            Default is ``8`` e-.
+
+        sigclip                 : `float`, optional
+            Parameter for the cosmic ray removal: Fractional detection limit
+            for neighboring pixels.
+            Default is ``4.5``.
+
+        satlevel                : `float`, optional
+            Saturation limit of the camera chip.
+            Default is ``65535``.
+
+        plot_ifi                : `boolean`, optional
             If True star map plots for all stars are created
             Default is ``False``.
 
-        plot_test       : `boolean`, optional
+        plot_test               : `boolean`, optional
             If True a star map plots only for the reference image [refid] is
             created
             Default is ``True``.
     """
-    delay_output = True
+    ###
+    #   Initialize output class in case of multiprocessing
+    #
+    if multiprocessing:
+        log_terminal = terminal_output.TerminalLog()
+        log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
+    else:
+        terminal_output.print_to_terminal(
+            f"Image: {image.pd}",
+            indent=2,
+            style_name='UNDERLINE',
+        )
+        log_terminal = None
 
     ###
-    #   Initialize output string
+    #   Remove cosmics (optional)
     #
-    log_terminal = terminal_output.TerminalLog()
-    log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
+    if rmcos:
+        rm_cosmic(
+            image,
+            objlim=objlim,
+            readnoise=readnoise,
+            sigclip=sigclip,
+            satlevel=satlevel,
+        )
 
     ###
     #   Estimate and remove background
@@ -3393,7 +3457,7 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
         #
         plot.plot_epsf(
             image.outpath.name,
-            {'img-' + str(image.pd) + '-' + image.filt: image.epsf},
+            {f'img-{image.pd}-{image.filt}': image.epsf},
             terminal_logger=log_terminal,
             nameobj=image.objname,
             indent=2,
@@ -3470,7 +3534,6 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
     image.flux = flux_img
     image.uflux = uflux_img
 
-
     ###
     #   Plot images with extracted stars overlaid
     #
@@ -3479,302 +3542,303 @@ def main_extract_condense(image, sigma_psf, sigma_bkg=5., multi_start=5.,
 
     log_terminal.print_to_terminal('')
 
-    return image
+    if multiprocessing:
+        return image
 
 
-def main_extract(image, sigma_psf, sigma_bkg=5., multi_start=5.,
-                 size_epsf=25, frac_epsf_stars=0.2, oversampling=2,
-                 maxiters=7, epsf_use_init_guesses=True,
-                 method='IRAF', multi=5.0, multi_grouper=2.0,
-                 strict_cleaning=True, min_eps_stars=25, refid=0,
-                 photometry='PSF', rstars=5., rbg_in=7., rbg_out=10.,
-                 r_unit='arcsec', strict_eps=True, rmcos=False, objlim=5.,
-                 readnoise=8., sigclip=4.5, satlevel=65535., plot_ifi=False,
-                 plot_test=True):
-    '''
-        Main function to extract the information from the individual images
-
-        Parameters
-        ----------
-        image                   : `image.class`
-            Image class with all image specific properties
-
-        sigma_psf               : `float`
-            Sigma of the objects PSF, assuming it is a Gaussian
-
-        sigma_bkg               : `float`, optional
-            Sigma used for the sigma clipping of the background
-            Default is ``5.``.
-
-        multi_start             : `float`, optional
-            Multiplier for the background RMS, used to calculate the
-            threshold to identify stars
-            Default is ``5.0``.
-
-        size_epsf               : `integer`, optional
-            Size of the extraction region in pixel
-            Default is `25``.
-
-        frac_epsf_stars         : `float`, optional
-            Fraction of all stars that should be used to calculate the ePSF
-            Default is ``0.2``.
-
-        oversampling            : `integer`, optional
-            ePSF oversampling factor
-            Default is ``2``.
-
-        maxiters                : `integer`, optional
-            Number of ePSF iterations
-            Default is ``7``.
-
-        epsf_use_init_guesses   : `boolean`, optional
-            If True the initial positions from a previous object
-            identification procedure will be used. If False the objects
-            will be identified by means of the ``method_finder`` method.
-            Default is ``True``.
-
-        method                 : `string`, optional
-            Finder method DAO or IRAF
-            Default is ``IRAF``.
-
-        multi                   : `float`, optional
-            Multiplier for the background RMS, used to calculate the
-            threshold to identify stars
-            Default is ``5.0``.
-
-        multi_grouper           : `float`, optional
-            Multiplier for the DAO grouper
-            Default is ``5.0``.
-
-        strict_cleaning         : `boolean`, optional
-            If True objects with negative flux uncertainties will be removed
-            Default is ``True``.
-
-        min_eps_stars           : `integer`, optional
-            Minimal number of required ePSF stars
-            Default is ``25``.
-
-        refid                   : `integer`, optional
-            ID of the reference image
-            Default is ``0``.
-
-        photometry              : `string`, optional
-            Switch between aperture and ePSF photometry.
-            Possibilities: 'PSF' & 'APER'
-            Default is ``PSF``.
-
-        rstars                  : `float`, optional
-            Radius of the stellar aperture
-            Default is ``5``.
-
-        rbg_in                  : `float`, optional
-            Inner radius of the background annulus
-            Default is ``7``.
-
-        rbg_out                 : `float`, optional
-            Outer radius of the background annulus
-            Default is ``10``.
-
-        r_unit                  : `string`, optional
-            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
-            Default is ``pixel``.
-
-        strict_eps              ; `boolean`, optional
-            If True a stringent test of the ePSF conditions is applied.
-            Default is ``True``.
-
-        rmcos                   : `bool`
-            If True cosmic rays will be removed from the image.
-            Default is ``False``.
-
-        objlim                  : `float`, optional
-            Parameter for the cosmic ray removal: Minimum contrast between
-            Laplacian image and the fine structure image.
-            Default is ``5``.
-
-        readnoise               : `float`, optional
-            The read noise (e-) of the camera chip.
-            Default is ``8`` e-.
-
-        sigclip                 : `float`, optional
-            Parameter for the cosmic ray removal: Fractional detection limit
-            for neighboring pixels.
-            Default is ``4.5``.
-
-        satlevel                : `float`, optional
-            Saturation limit of the camera chip.
-            Default is ``65535``.
-
-        plot_ifi                : `boolean`, optional
-            If True star map plots for all stars are created
-            Default is ``False``.
-
-        plot_test               : `boolean`, optional
-            If True a star map plots only for the reference image [refid] is
-            created
-            Default is ``True``.
-    '''
-    ###
-    #   Initialize output string
-    #
-    terminal_output.print_terminal(
-        image.pd,
-        indent=2,
-        string="Image: {:d}",
-        style_name='UNDERLINE',
-    )
-
-    ###
-    #   Remove cosmics (optional)
-    #
-    if rmcos:
-        rm_cosmic(
-            image,
-            objlim=objlim,
-            readnoise=readnoise,
-            sigclip=sigclip,
-            satlevel=satlevel,
-        )
-
-    ###
-    #   Estimate and remove background
-    #
-    mk_bg(image, sigma_bkg=sigma_bkg)
-
-    ###
-    #   Find the stars (via DAO or IRAF StarFinder)
-    #
-    find_stars(
-        image,
-        sigma_psf,
-        multi_start=multi_start,
-        method=method,
-    )
-
-    if photometry == 'PSF':
-        ###
-        #   Check if enough stars have been detected to allow ePSF
-        #   calculations
-        #
-        check_epsf_stars(
-            image,
-            size=size_epsf,
-            min_stars=min_eps_stars,
-            frac_epsf=frac_epsf_stars,
-            strict=strict_eps,
-        )
-
-        ###
-        #   Plot images with the identified stars overlaid
-        #
-        if plot_ifi or (plot_test and image.pd == refid):
-            plot.starmap(
-                image.outpath.name,
-                image.get_data(),
-                image.filt,
-                image.positions,
-                tbl_2=image.positions_epsf,
-                label='identified stars',
-                label_2='stars used to determine the ePSF',
-                rts='initial-img-' + str(image.pd),
-                nameobj=image.objname,
-            )
-
-        ###
-        #   Calculate the ePSF
-        #
-        mk_epsf(
-            image,
-            size=size_epsf,
-            oversampling=oversampling,
-            maxiters=maxiters,
-            min_stars=min_eps_stars,
-            multi=False,
-        )
-
-        ###
-        #   Plot the ePSFs
-        #
-        plot.plot_epsf(
-            image.outpath.name,
-            {'img-' + str(image.pd) + '-' + image.filt: image.epsf},
-            nameobj=image.objname,
-            indent=2,
-        )
-
-        ###
-        #   Performing the PSF photometry
-        #
-        epsf_extract(
-            image,
-            sigma_psf,
-            sigma_bkg=sigma_bkg,
-            use_init_guesses=epsf_use_init_guesses,
-            method_finder=method,
-            size_epsf=size_epsf,
-            multi=multi,
-            multi_grouper=multi_grouper,
-            strict_cleaning=strict_cleaning,
-        )
-
-        ###
-        #   Plot original and residual image
-        #
-        plot.plot_residual(
-            image.objname,
-            {str(image.pd) + '-' + image.filt: image.get_data()},
-            {str(image.pd) + '-' + image.filt: image.residual_image},
-            image.outpath.name,
-            nameobj=image.objname,
-            indent=2,
-        )
-
-    elif photometry == 'APER':
-        ###
-        #   Perform aperture photometry
-        #
-        if image.pd == refid:
-            plotaper = True
-        else:
-            plotaper = False
-
-        aperture_extract(
-            image,
-            rstars,
-            rbg_in,
-            rbg_out,
-            r_unit=r_unit,
-            plotaper=plotaper,
-            indent=3,
-        )
-    else:
-        raise RuntimeError(
-            f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
-            f"valid: use either APER or PSF {style.bcolors.ENDC}"
-        )
-
-    #   Add flux array to image (is this really necessary?)
-    flux_img = np.zeros(
-        len(image.photometry['x_fit']),
-        dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
-    )
-    flux_img['flux_fit'] = image.photometry['flux_fit']
-    flux_img['flux_unc'] = image.photometry['flux_unc']
-
-    uflux_img = unumpy.uarray(
-        flux_img['flux_fit'],
-        flux_img['flux_unc']
-    )
-    image.flux = flux_img
-    image.uflux = uflux_img
-
-    ###
-    #   Plot images with extracted stars overlaid
-    #
-    if plot_ifi or (plot_test and image.pd == refid):
-        aux.prepare_and_plot_starmap(image)
-
-    terminal_output.print_terminal()
+# def main_extract_old(image, sigma_psf, sigma_bkg=5., multi_start=5.,
+#                  size_epsf=25, frac_epsf_stars=0.2, oversampling=2,
+#                  maxiters=7, epsf_use_init_guesses=True,
+#                  method='IRAF', multi=5.0, multi_grouper=2.0,
+#                  strict_cleaning=True, min_eps_stars=25, refid=0,
+#                  photometry='PSF', rstars=5., rbg_in=7., rbg_out=10.,
+#                  r_unit='arcsec', strict_eps=True, rmcos=False, objlim=5.,
+#                  readnoise=8., sigclip=4.5, satlevel=65535., plot_ifi=False,
+#                  plot_test=True):
+#     '''
+#         Main function to extract the information from the individual images
+#
+#         Parameters
+#         ----------
+#         image                   : `image.class`
+#             Image class with all image specific properties
+#
+#         sigma_psf               : `float`
+#             Sigma of the objects PSF, assuming it is a Gaussian
+#
+#         sigma_bkg               : `float`, optional
+#             Sigma used for the sigma clipping of the background
+#             Default is ``5.``.
+#
+#         multi_start             : `float`, optional
+#             Multiplier for the background RMS, used to calculate the
+#             threshold to identify stars
+#             Default is ``5.0``.
+#
+#         size_epsf               : `integer`, optional
+#             Size of the extraction region in pixel
+#             Default is `25``.
+#
+#         frac_epsf_stars         : `float`, optional
+#             Fraction of all stars that should be used to calculate the ePSF
+#             Default is ``0.2``.
+#
+#         oversampling            : `integer`, optional
+#             ePSF oversampling factor
+#             Default is ``2``.
+#
+#         maxiters                : `integer`, optional
+#             Number of ePSF iterations
+#             Default is ``7``.
+#
+#         epsf_use_init_guesses   : `boolean`, optional
+#             If True the initial positions from a previous object
+#             identification procedure will be used. If False the objects
+#             will be identified by means of the ``method_finder`` method.
+#             Default is ``True``.
+#
+#         method                 : `string`, optional
+#             Finder method DAO or IRAF
+#             Default is ``IRAF``.
+#
+#         multi                   : `float`, optional
+#             Multiplier for the background RMS, used to calculate the
+#             threshold to identify stars
+#             Default is ``5.0``.
+#
+#         multi_grouper           : `float`, optional
+#             Multiplier for the DAO grouper
+#             Default is ``5.0``.
+#
+#         strict_cleaning         : `boolean`, optional
+#             If True objects with negative flux uncertainties will be removed
+#             Default is ``True``.
+#
+#         min_eps_stars           : `integer`, optional
+#             Minimal number of required ePSF stars
+#             Default is ``25``.
+#
+#         refid                   : `integer`, optional
+#             ID of the reference image
+#             Default is ``0``.
+#
+#         photometry              : `string`, optional
+#             Switch between aperture and ePSF photometry.
+#             Possibilities: 'PSF' & 'APER'
+#             Default is ``PSF``.
+#
+#         rstars                  : `float`, optional
+#             Radius of the stellar aperture
+#             Default is ``5``.
+#
+#         rbg_in                  : `float`, optional
+#             Inner radius of the background annulus
+#             Default is ``7``.
+#
+#         rbg_out                 : `float`, optional
+#             Outer radius of the background annulus
+#             Default is ``10``.
+#
+#         r_unit                  : `string`, optional
+#             Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+#             Default is ``pixel``.
+#
+#         strict_eps              ; `boolean`, optional
+#             If True a stringent test of the ePSF conditions is applied.
+#             Default is ``True``.
+#
+#         rmcos                   : `bool`
+#             If True cosmic rays will be removed from the image.
+#             Default is ``False``.
+#
+#         objlim                  : `float`, optional
+#             Parameter for the cosmic ray removal: Minimum contrast between
+#             Laplacian image and the fine structure image.
+#             Default is ``5``.
+#
+#         readnoise               : `float`, optional
+#             The read noise (e-) of the camera chip.
+#             Default is ``8`` e-.
+#
+#         sigclip                 : `float`, optional
+#             Parameter for the cosmic ray removal: Fractional detection limit
+#             for neighboring pixels.
+#             Default is ``4.5``.
+#
+#         satlevel                : `float`, optional
+#             Saturation limit of the camera chip.
+#             Default is ``65535``.
+#
+#         plot_ifi                : `boolean`, optional
+#             If True star map plots for all stars are created
+#             Default is ``False``.
+#
+#         plot_test               : `boolean`, optional
+#             If True a star map plots only for the reference image [refid] is
+#             created
+#             Default is ``True``.
+#     '''
+#     ###
+#     #   Initialize output string
+#     #
+#     terminal_output.print_terminal(
+#         image.pd,
+#         indent=2,
+#         string="Image: {:d}",
+#         style_name='UNDERLINE',
+#     )
+#
+#     ###
+#     #   Remove cosmics (optional)
+#     #
+#     if rmcos:
+#         rm_cosmic(
+#             image,
+#             objlim=objlim,
+#             readnoise=readnoise,
+#             sigclip=sigclip,
+#             satlevel=satlevel,
+#         )
+#
+#     ###
+#     #   Estimate and remove background
+#     #
+#     mk_bg(image, sigma_bkg=sigma_bkg)
+#
+#     ###
+#     #   Find the stars (via DAO or IRAF StarFinder)
+#     #
+#     find_stars(
+#         image,
+#         sigma_psf,
+#         multi_start=multi_start,
+#         method=method,
+#     )
+#
+#     if photometry == 'PSF':
+#         ###
+#         #   Check if enough stars have been detected to allow ePSF
+#         #   calculations
+#         #
+#         check_epsf_stars(
+#             image,
+#             size=size_epsf,
+#             min_stars=min_eps_stars,
+#             frac_epsf=frac_epsf_stars,
+#             strict=strict_eps,
+#         )
+#
+#         ###
+#         #   Plot images with the identified stars overlaid
+#         #
+#         if plot_ifi or (plot_test and image.pd == refid):
+#             plot.starmap(
+#                 image.outpath.name,
+#                 image.get_data(),
+#                 image.filt,
+#                 image.positions,
+#                 tbl_2=image.positions_epsf,
+#                 label='identified stars',
+#                 label_2='stars used to determine the ePSF',
+#                 rts='initial-img-' + str(image.pd),
+#                 nameobj=image.objname,
+#             )
+#
+#         ###
+#         #   Calculate the ePSF
+#         #
+#         mk_epsf(
+#             image,
+#             size=size_epsf,
+#             oversampling=oversampling,
+#             maxiters=maxiters,
+#             min_stars=min_eps_stars,
+#             multi=False,
+#         )
+#
+#         ###
+#         #   Plot the ePSFs
+#         #
+#         plot.plot_epsf(
+#             image.outpath.name,
+#             {'img-' + str(image.pd) + '-' + image.filt: image.epsf},
+#             nameobj=image.objname,
+#             indent=2,
+#         )
+#
+#         ###
+#         #   Performing the PSF photometry
+#         #
+#         epsf_extract(
+#             image,
+#             sigma_psf,
+#             sigma_bkg=sigma_bkg,
+#             use_init_guesses=epsf_use_init_guesses,
+#             method_finder=method,
+#             size_epsf=size_epsf,
+#             multi=multi,
+#             multi_grouper=multi_grouper,
+#             strict_cleaning=strict_cleaning,
+#         )
+#
+#         ###
+#         #   Plot original and residual image
+#         #
+#         plot.plot_residual(
+#             image.objname,
+#             {str(image.pd) + '-' + image.filt: image.get_data()},
+#             {str(image.pd) + '-' + image.filt: image.residual_image},
+#             image.outpath.name,
+#             nameobj=image.objname,
+#             indent=2,
+#         )
+#
+#     elif photometry == 'APER':
+#         ###
+#         #   Perform aperture photometry
+#         #
+#         if image.pd == refid:
+#             plotaper = True
+#         else:
+#             plotaper = False
+#
+#         aperture_extract(
+#             image,
+#             rstars,
+#             rbg_in,
+#             rbg_out,
+#             r_unit=r_unit,
+#             plotaper=plotaper,
+#             indent=3,
+#         )
+#     else:
+#         raise RuntimeError(
+#             f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
+#             f"valid: use either APER or PSF {style.bcolors.ENDC}"
+#         )
+#
+#     #   Add flux array to image (is this really necessary?)
+#     flux_img = np.zeros(
+#         len(image.photometry['x_fit']),
+#         dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
+#     )
+#     flux_img['flux_fit'] = image.photometry['flux_fit']
+#     flux_img['flux_unc'] = image.photometry['flux_unc']
+#
+#     uflux_img = unumpy.uarray(
+#         flux_img['flux_fit'],
+#         flux_img['flux_unc']
+#     )
+#     image.flux = flux_img
+#     image.uflux = uflux_img
+#
+#     ###
+#     #   Plot images with extracted stars overlaid
+#     #
+#     if plot_ifi or (plot_test and image.pd == refid):
+#         aux.prepare_and_plot_starmap(image)
+#
+#     terminal_output.print_terminal()
 
 
 def extract_flux(img_container, filter_list, name, img_paths, outdir,
@@ -3787,7 +3851,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
                  rbg_in=7., rbg_out=10., r_unit='arcsec', rmcos=False,
                  objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
                  plot_ifi=False, plot_test=True):
-    '''
+    """
         Extract flux and fill the image container
 
         Parameters
@@ -3807,7 +3871,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
         outdir          : `string`
             Path, where the output should be stored.
 
-        sigma_psf       : `float`
+        sigma_psf       : `dictionary`
             Sigma of the objects PSF, assuming it is a Gaussian
 
         wcs_method      : `string`, optional
@@ -3931,7 +3995,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
             If True a star map plots only for the reference image [refid] is
             created
             Default is ``True``.
-    '''
+    """
     ###
     #   Check output directories
     #
@@ -4092,7 +4156,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
         outdir          : `string`
             Path, where the output should be stored.
 
-        sigma_psf       : `float`
+        sigma_psf       : `dictionary`
             Sigma of the objects PSF, assuming it is a Gaussian
 
         ra_obj          : `float`
@@ -4371,6 +4435,10 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
 
                 if verbose:
                     terminal_output.print_terminal()
+            else:
+                raise ValueError(
+                    f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.'
+                )
 
             ###
             #   Check if variable star was detected
@@ -4477,7 +4545,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
 
 
 def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
-                        ref_img=0, calib_method='APASS', vizier_dict={},
+                        ref_img=0, calib_method='APASS', vizier_dict=None,
                         calib_file=None, ID=None, ra_unit=u.deg,
                         dec_unit=u.deg, mag_range=(0., 18.5), Tcs=None,
                         derive_Tcs=False, plot_sigma=False, photo_type='',
@@ -4514,10 +4582,10 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
             Calibration method
             Default is ``APASS``.
 
-        vizier_dict             : `dictionary`, optional
+        vizier_dict             : `dictionary` or `None`, optional
             Dictionary with identifiers of the Vizier catalogs with valid
             calibration data
-            Default is ``{}``.
+            Default is ``None``.
 
         calib_file              : `string`, optional
             Path to the calibration file
@@ -4696,7 +4764,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
 def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                          outdir, transit_time, period, valid_calibs=None,
                          binn=None, Tcs=None, derive_Tcs=False, ref_ID=0,
-                         calib_method='APASS', vizier_dict={}, calib_file=None,
+                         calib_method='APASS', vizier_dict=None, calib_file=None,
                          mag_range=(0., 18.5), dcr=3., option=1, maxid=1,
                          nmissed=1, bfrac=1.0, s_refOBJ=True, photo_type='',
                          correl_method='astropy', seplimit=2. * u.arcsec,
@@ -4758,10 +4826,10 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
             Calibration method
             Default is ``APASS``.
 
-        vizier_dict         : `dictionary`, optional
+        vizier_dict         : `dictionary` or `None`, optional
             Dictionary with identifiers of the Vizier catalogs with valid
             calibration data
-            Default is ``{}``.
+            Default is ``None``.
 
         calib_file          : `string`, optional
             Path to the calibration file
@@ -4911,6 +4979,11 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         #   Current object ID
                         objID = inds_obj[1]
 
+                    else:
+                        raise ValueError(
+                            f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.'
+                        )
+
                     #   Set new object ID
                     img_container.ensembles[filt].variable_ID = objID
 
@@ -4943,6 +5016,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                     filter_calib = img_container.calib_parameters.column_names
                     if ('mag' + calib_fil[0] not in filter_calib or
                             'mag' + calib_fil[1] not in filter_calib):
+                        err_filter = None
                         if 'mag' + calib_fil[0] not in filter_calib:
                             err_filter = calib_fil[0]
                         if 'mag' + calib_fil[1] not in filter_calib:
@@ -4950,8 +5024,8 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         terminal_output.print_terminal(
                             err_filter,
                             indent=2,
-                            string="Magnitude transformation not " \
-                                   "possible because no calibration data " \
+                            string="Magnitude transformation not "
+                                   "possible because no calibration data "
                                    "available for filter {}",
                             style_name='WARNING',
                         )
@@ -5149,7 +5223,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
 def subtract_archive_img_from_img(filt, name, path, outdir,
                                   wcs_method='astrometry', plot_comp=True,
                                   hips_source='CDS/P/DSS2/blue'):
-    '''
+    """
         Subtraction of a reference/archival image from the input image.
         The installation of Hotpants is required.
 
@@ -5175,7 +5249,7 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
             ID string of the image catalog that will be queried using the
             hips service.
             Default is ``CDS/P/DSS2/blue``.
-    '''
+    """
     ###
     #   Check output directories
     #
@@ -5188,7 +5262,8 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
     ###
     #   Check input path
     #
-    checks.check_file(path)
+    for p in path.keys():
+        checks.check_file(p)
 
     ###
     #   Trim image as needed (currently images with < 4*10^6 are required)

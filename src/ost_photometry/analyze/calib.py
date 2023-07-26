@@ -429,8 +429,8 @@ def read_votable_simbad(calib_file, band_list, mag_range=(0.,18.5),
 
 
 def load_calib(image, band_list, calib_method='APASS', mag_range=(0.,18.5),
-               vizier_dict={}, calib_file=None, ra_unit=u.deg, indent=1):
-    '''
+               vizier_dict=None, calib_file=None, ra_unit=u.deg, indent=1):
+    """
         Load calibration information
 
         Parameters
@@ -449,9 +449,9 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0.,18.5),
             Magnitude range
             Default is ``(0.,18.5)``.
 
-        vizier_dict     : `dictionary`, optional
+        vizier_dict     : `dictionary` or None, optional
             Identifiers of catalogs, containing calibration data
-            Derfault is ``{}``.
+            Default is ``None``.
 
         calib_file      : `string`, optional
             Path to the calibration file
@@ -475,9 +475,9 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0.,18.5),
 
         ra_unit         : `astropy.unit`
             Returns also the right ascension unit in case it changed
-    '''
+    """
     #   Get identifiers of catalogs if no has been provided
-    if not vizier_dict:
+    if vizier_dict is None:
         vizier_dict = calibration_data.vizier_dict
 
     #   Read calibration table
@@ -634,13 +634,12 @@ def get_calib_fit(img, img_container):
     img.mags_fit = mags_fit
 
 
-
 def deter_calib(img_container, band_list, calib_method='APASS',
-                dcr=3., option=1, vizier_dict={},
+                dcr=3., option=1, vizier_dict=None,
                 calib_file=None, ID=None, ra_unit=u.deg, dec_unit=u.deg,
                 mag_range=(0.,18.5), rm_obj_coord=None,
                 correl_method='astropy', seplimit=2.*u.arcsec, indent=1):
-    '''
+    """
         Determine calibration information, find suitable calibration stars
         and determine calibration factors
 
@@ -664,10 +663,10 @@ def deter_calib(img_container, band_list, calib_method='APASS',
             Option for the srcor correlation function
             Default is ``1``.
 
-        vizier_dict             : `dictionary`, optional
+        vizier_dict             : `dictionary` or `None`, optional
             Dictionary with identifiers of the Vizier catalogs with valid
             calibration data
-            Default is ``{}``.
+            Default is ``None``.
 
         calib_file              : `string`, optional
             Path to the calibration file
@@ -707,7 +706,7 @@ def deter_calib(img_container, band_list, calib_method='APASS',
         indent                  : `integer`, optional
             Indentation for the console output lines
             Default is ``1``.
-    '''
+    """
     terminal_output.print_terminal(
         tuple(band_list),
         indent=indent,

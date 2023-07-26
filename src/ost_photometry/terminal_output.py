@@ -112,7 +112,7 @@ def format_string(string, indent=1, style_name='BOLD'):
     if style_name == 'HEADER':
         string_out += style.bcolors.HEADER
 
-    elif style_name == 'FAIL':
+    elif style_name in ['FAIL', 'ERROR']:
         string_out += style.bcolors.FAIL
 
     elif style_name == 'WARNING':
@@ -166,7 +166,6 @@ class TerminalLog:
         """
         self.cache += format_string(string, indent=indent, style_name=style_name)
         self.cache += "\n"
-        # self.cache += f"{string}\n"
 
     def print_to_terminal(self, string, indent=1, style_name='BOLD'):
         """

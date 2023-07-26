@@ -2048,7 +2048,6 @@ def rm_edge_objects(table, data, border=10, terminal_logger=None, indent=3):
     mask = ((x > hsize) & (x < (data.shape[1] - 1 - hsize)) &
             (y > hsize) & (y < (data.shape[0] - 1 - hsize)))
 
-
     out_str = f'{np.count_nonzero(np.invert(mask))} objects removed because '\
                'they are too close to the image edges'
     if terminal_logger is not None:
