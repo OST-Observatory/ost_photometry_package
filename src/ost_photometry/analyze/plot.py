@@ -1909,7 +1909,7 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
                 #   Check that the entries are not HEADER keywords
                 try:
                     float(line_elements[0])
-                except RuntimeError:
+                except ValueError:
                     continue
 
                 #   Fill lists
@@ -1953,11 +1953,11 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
             #   Cycle through iso lines
             for i in range(0, Niso):
                 if logAGE:
-                    age_value = float(age_list[i][0])
+                    age_value = float(age_list[i])
                     age_value = 10 ** (age_value) / 10 ** 9
                     age_value = round(age_value, 2)
                 else:
-                    age_value = round(float(age_list[i][0]), 2)
+                    age_value = round(float(age_list[i]), 2)
                 agestr = str(age_value) + ' Gyr'
 
                 #   Plot iso lines
