@@ -1,5 +1,5 @@
 ############################################################################
-####                            Libraries                               ####
+#                               Libraries                                  #
 ############################################################################
 
 import os
@@ -41,8 +41,6 @@ from astropy.modeling.fitting import LevMarLSQFitter
 from astropy.coordinates import SkyCoord, Angle
 import astropy.units as u
 
-import pandas as pd
-
 #   hips2fits module is not in the Ubuntu 22.04 package version
 #   of astroquery (0.4.1)
 # from astroquery.hips2fits import hips2fits
@@ -70,7 +68,7 @@ from .. import aux as base_aux
 warnings.filterwarnings('ignore', category=UserWarning, append=True)
 
 ############################################################################
-####                        Routines & definitions                      ####
+#                           Routines & definitions                         #
 ############################################################################
 
 
@@ -421,7 +419,7 @@ class image_ensemble:
 
 def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
               verbose=False, addmask=True, terminal_logger=None):
-    '''
+    """
         Remove cosmic rays
 
         Parameters
@@ -459,12 +457,11 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
             Logger object. If provided, the terminal output will be directed
             to this object.
             Default is ``None``.
-    '''
+    """
     if terminal_logger is not None:
         terminal_logger.add_to_cache("Remove cosmic rays ...")
     else:
         terminal_output.print_to_terminal("Remove cosmic rays ...")
-
 
     #   Get image
     ccd = image.read_image()
@@ -531,7 +528,7 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
 
 def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
           verbose=False):
-    '''
+    """
         Determine background, using photutils
 
         Parameters
@@ -555,7 +552,7 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
         verbose             : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
-    '''
+    """
     if verbose:
         terminal_output.print_terminal(
             image.filt,
@@ -588,7 +585,7 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
         #   Remove background
         img_no_bg = img.subtract(bkg.background * u.electron / u.s)
 
-        #   Put meta data back on the image, because it is lost while
+        #   Put metadata back on the image, because it is lost while
         #   subtracting the background
         img_no_bg.meta = img.meta
         img_no_bg.meta['HIERARCH'] = '2D background removed'
@@ -606,7 +603,7 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
         #   Remove background
         img_no_bg = img.subtract(bkg_value)
 
-        #   Put meta data back on the image, because it is lost while
+        #   Put metadata back on the image, because it is lost while
         #   subtracting the background
         img_no_bg.meta = image.meta
         img_no_bg.meta['HIERARCH'] = '1D background removed'
@@ -711,7 +708,6 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
     image.positions = tbl_posi_all
 
 
-
 def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
                      terminal_logger=None, strict=True, indent=2):
     """
@@ -806,7 +802,7 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
     #   Resize table -> limit it to the suitable stars
     tbl_posi = tbl_sort[:][id_p99 - frac:id_p99]
 
-    ##  Exclude stars that are too close to the image boarder
+    #   Exclude stars that are too close to the image boarder
     #   Size of the extraction box around each star
     hsize = (size - 1) / 2
 
@@ -834,7 +830,7 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
             f"(frac_epsf_stars). {style.bcolors.ENDC}"
         )
 
-    ##  Find all potential ePSF stars with close neighbors
+    #   Find all potential ePSF stars with close neighbors
     dist_min = size
 
     #   Define and fill new arrays
@@ -888,7 +884,7 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
 
 def mk_epsf(image, size=25, oversampling=2, maxiters=7,
             min_stars=25, multi=True, terminal_logger=None, indent=2):
-    '''
+    """
         Main function to determine the ePSF, using photutils
 
         Parameters
@@ -924,7 +920,7 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
         indent          : `integer`, optional
             Indentation for the console output lines
             Default is ``2``.
-    '''
+    """
     #   Get image data
     data = image.get_data()
 
@@ -936,7 +932,6 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
 
     #   Get object name
     nameobj = image.objname
-
 
     if terminal_logger is not None:
         terminal_logger.add_to_cache(
@@ -958,7 +953,6 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
             indent=indent+1,
             style_name='OK',
         )
-
 
     #   Create new table with the names required by "extract_stars"
     stars_tbl = Table()
@@ -1011,7 +1005,7 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
                  method_finder='IRAF', size_epsf=25., multi=5.0,
                  multi_grouper=2.0, strict_cleaning=True, terminal_logger=None,
                  rmbackground=False, indent=2):
-    '''
+    """
         Main function to perform the eEPSF photometry, using photutils
 
         Parameters
@@ -1067,7 +1061,7 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
             Indentation for the console output lines
             Default is ``2`.
 
-    '''
+    """
     #   Get output path
     out_path = image.outpath
 
@@ -1312,7 +1306,7 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
 
 
 def compute_phot_error(flux_variance, ap_area, nsky, stdev, gain=1.0):
-    '''
+    """
         This function is largely borrowed from the Space Telescope Science
         Institute's wfc3_photometry package:
 
@@ -1343,7 +1337,7 @@ def compute_phot_error(flux_variance, ap_area, nsky, stdev, gain=1.0):
             Electrons per ADU
             Default is ``1.0``. Usually we already work with gain corrected
             data.
-    '''
+    """
 
     #   Calculate flux error as above
     bg_variance_terms = (ap_area * stdev ** 2.) * (1. + ap_area / nsky)
@@ -1354,7 +1348,7 @@ def compute_phot_error(flux_variance, ap_area, nsky, stdev, gain=1.0):
 
 
 def define_apertures(image, r, r_in, r_out, r_unit):
-    '''
+    """
         Define stellar and background apertures
 
         Parameters
@@ -1382,7 +1376,7 @@ def define_apertures(image, r, r_in, r_out, r_unit):
 
         annulus_aperture    : `photutils.aperture.CircularAnnulus`
             Background annulus
-    '''
+    """
     #   Get position information
     tbl = image.positions
 
@@ -1420,7 +1414,7 @@ def define_apertures(image, r, r_in, r_out, r_unit):
 
 
 def background_simple(image, annulus_aperture):
-    '''
+    """
         Calculate background from annulus
 
         Parameters
@@ -1438,7 +1432,7 @@ def background_simple(image, annulus_aperture):
 
         bkg_stdev           : `float`
             Standard deviation of the background
-    '''
+    """
     bkg_median = []
     bkg_stdev = []
 
@@ -1667,14 +1661,12 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
 
 
 def correlate_images(*args, **kwargs):
-    '''
-        Wrapper function: distinguish between astropy table
-                          and pandas data frame
-    '''
-    if base_aux.dict_vs_df(args[1]):
-        return correlate_pd(*args, **kwargs)
-    else:
-        return correlate_tbl(*args, **kwargs)
+    """
+        Wrapper function: Used to distinguish between astropy table
+                          and pandas data frame before the latter was removed
+                          -> Will be removed in the future.
+    """
+    return correlate_tbl(*args, **kwargs)
 
 
 # @timeis
@@ -2162,7 +2154,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
                        refORI=0, refOBJ=[], nmissed=1, bfrac=1.0,
                        s_refOBJ=True, correl_method='astropy',
                        seplimit=2. * u.arcsec):
-    '''
+    """
         Correlate star lists from the stacked images of all filters to find
         those stars that are visible on all images -> write calibrated CMD
 
@@ -2221,7 +2213,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
         seplimit            : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
-    '''
+    """
     terminal_output.print_terminal(
         indent=1,
         string="Correlate results from image ensembles",
@@ -2453,368 +2445,180 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
         ensemble.flux_es = flux_arr
         ensemble.uflux_es = uflux_arr_sort
 
-
-# @timeis
-def correlate_pd(outdir, input_df, img_IDs, dcr, option, maxid=1,
-                 refORI=0, refOBJ=[], nmissed=1, bfrac=1.0):
-    '''
-        WARNING: This function is not up to date
-
-        Correlate star lists from the stacked images of all filters to find
-        those stars that are visible on all images -> write calibrated CMD
-
-        Parameters
-        ----------
-        outdir              : `string`
-            Output directory
-
-        input_df            : `pandas.DataFrame`
-            Position and flux data
-
-        img_IDs             : `numpy.ndarray` or `list`
-            Image IDs (can be multidimensional, e.g., several images for
-            different filter)
-
-        dcr                 : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
-
-        option              : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
-
-        maxid               : `integer`, optional
-            Max. number of allowed identical cross identifications between
-            objects from a specific origin
-            Default is ``1``.
-
-        refORI              : `integer`, optional
-            ID of the reference origin
-            Default is ``0``.
-
-        refOBJ              : `list` of `integer`, optional
-            IDs of the reference objects. The reference objects will not be
-            removed from the list of objects.
-            Default is ``[]``.
-
-        nmissed             : `integer`, optional
-            Maximum number an object is allowed to be not detected in an
-            origin. If this limit is reached the object will be removed.
-            Default is ``i`.
-
-        bfrac               : `float`, optional
-            Fraction of low quality source position origins, i.e., those
-            origins, for which it is expected to find a reduced number of
-            objects with valid source positions.
-            Default is ``1.0``.
-
-
-        Returns
-        -------
-        ind_sort            : `numpy.ndarray`
-            IDs of the images
-
-        x_sort              : `numpy.ndarray`
-            Position of the objects on the image in pixel in X direction
-
-        y_sort              : `numpy.ndarray`
-            Position of the objects on the image in pixel in X direction
-
-        flux_arr            : `numpy.ndarray`
-            Numpy array with the data of all stars such as magnitudes
-
-        reject              : `numpy.ndarray`
-            IDs of the rejected images
-
-        rej_obj             : `numpy.ndarray`
-            IDs of the rejected objects
-
-        count               : `integer
-            Number of matches found
-    '''
-    terminal_output.print_terminal(
-        img_IDs,
-        indent=2,
-        string="Correlate results from the images ({:d})",
-    )
-
-    #   Number of images
-    nimg = len(img_IDs)
-
-    #   Define data frames for X and Y coordinates
-    df_x = pd.DataFrame()
-    df_y = pd.DataFrame()
-
-    #   Loop over all images
-    for ID in img_IDs:
-        #   Restrict input data frame to current image
-        mask = input_df['type'] == ID
-        ID_data = input_df[mask]
-
-        #   Compile data frames with all X and Y positions
-        df_x = pd.concat([df_x, ID_data['x_fit']], axis=1)
-        df_y = pd.concat([df_y, ID_data['y_fit']], axis=1)
-
-    #   Replace potential Nans with 0
-    xall = df_x.fillna(0).to_numpy()
-    yall = df_y.fillna(0).to_numpy()
-
-    #   Correlate the results from the two images
-    indSR, reject, count, rej_obj = correlate.newsrcor(
-        xall,
-        yall,
-        dcr,
-        option=option,
-        maxid=maxid,
-        refORI=refORI,
-        refOBJ=refOBJ,
-        nmissed=nmissed,
-        bfrac=bfrac
-    )
-
-    #   Checks
-    if count == 1:
-        raise RuntimeError(
-            f"{style.bcolors.FAIL} \nOnly one common object "
-            f"found! {style.bcolors.ENDC}"
-        )
-    elif count == 0:
-        raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo common objects "
-            f"found! {style.bcolors.ENDC}"
-        )
-
-    nbad = len(reject)
-    if nbad > 0:
-        terminal_output.print_terminal(
-            nbad,
-            indent=2,
-            string="{:d} images do not meet the criteria -> removed",
-        )
-
-    #   Remove bad origins listed in 'reject'
-    indSR = np.delete(indSR, reject, 0)
-    xall = np.delete(xall, reject, 1)
-    yall = np.delete(yall, reject, 1)
-    img_IDs = np.delete(img_IDs, reject, 0)
-
-    #   Calculate shift for the reference origin
-    shiftID = np.argwhere(reject < refORI)
-    Nshift = len(shiftID)
-    refORI -= Nshift
-
-    # Number of clean images
-    nclean = len(indSR[:, 0])
-
-    #   Initialize new arrays for X, Y positions, and index
-    x_sort = np.zeros((count))
-    y_sort = np.zeros((count))
-    ind_sort = np.arange(count)
-
-    #   Sort X and Y positions according to correlation results
-    for i in range(0, count):
-        x_sort[i] = xall[indSR[refORI][i]][refORI]
-        y_sort[i] = yall[indSR[refORI][i]][refORI]
-
-    #   New data frame to return
-    result = pd.DataFrame()
-
-    #   Loop over all images --> Check if this loop can be removed by
-    #                            dropping the data of removed images from
-    #                            'input_df'
-    for j, ID in enumerate(img_IDs):
-        #   Restrict input data frame to current image
-        mask = input_df['type'] == ID
-        data = input_df[mask]
-
-        #   Sort according to newsrcor results
-        pre_result = data.copy().iloc[indSR[j]]
-
-        #   Add new index
-        pre_result['corr_index'] = ind_sort
-
-        #    Rearrange index
-        pre_result = pre_result.reset_index(level=0).set_index(['corr_index'])
-
-        #   Add to data frame
-        result = pd.concat([result, pre_result], axis=0)
-
-    return ind_sort, x_sort, y_sort, result, reject, rej_obj, count
-
-
-def correlate_preserve_calibs(img_ensemble, filter_list,
-                              calib_method='APASS', mag_range=(0., 18.5),
-                              vizier_dict=None, calib_file=None, dcr=3,
-                              option=1, verbose=False, maxid=1, ref_ID=0,
-                              nmissed=1, bfrac=1.0, s_refOBJ=True,
-                              plot_test=True, correl_method='astropy',
-                              seplimit=2. * u.arcsec):
-    """
-        Correlate results from all images, while preserving the calibration
-        stars
-
-        Parameters
-        ----------
-        img_ensemble        : `image.ensemble` object
-            Ensemble class object with all image data taken in a specific
-            filter
-
-        filter_list         : 'list` with `strings`
-            Filter list
-
-        calib_method       : `string`, optional
-            Calibration method
-            Default is ``APASS``.
-
-        mag_range           : `tupel` or `float`, optional
-            Magnitude range
-            Default is ``(0.,18.5)``.
-
-        vizier_dict         : `dictionary` or None, optional
-            Identifiers of catalogs, containing calibration data
-            Default is ``None``.
-
-        calib_file          : `string`, optional
-            Path to the calibration file
-            Default is ``None``.
-
-        dcr             : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
-
-        option          : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
-
-        verbose         : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
-
-        maxid               : `integer`, optional
-            Max. number of allowed identical cross identifications between
-            objects from a specific origin
-            Default is ``1``.
-
-        ref_ID              : `integer`, optional
-            ID of the reference origin
-            Default is ``0``.
-
-        nmissed             : `integer`, optional
-            Maximum number an object is allowed to be not detected in an
-            origin. If this limit is reached the object will be removed.
-            Default is ``i`.
-
-        bfrac               : `float`, optional
-            Fraction of low quality source position origins, i.e., those
-            origins, for which it is expected to find a reduced number of
-            objects with valid source positions.
-            Default is ``1.0``.
-
-        s_refOBJ            : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
-
-        plot_test       : `boolean`, optional
-            If True only the masterplot for the reference image will
-            be created.
-            Default is ``True``.
-
-        correl_method       : `string`, optional
-            Correlation method to be used to find the common objects on
-            the images.
-            Possibilities: ``astropy``, ``own``
-            Default is ``astropy``.
-
-        seplimit            : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
-    """
-    ###
-    #   Load calibration data
-    #
-    calib_tbl, col_names, ra_unit = calib.load_calib(
-        img_ensemble.image_list[ref_ID],
-        filter_list,
-        calib_method=calib_method,
-        mag_range=mag_range,
-        vizier_dict=vizier_dict,
-        calib_file=calib_file,
-    )
-
-    #   Number of calibration stars
-    n_calib = len(calib_tbl)
-
-    if n_calib == 0:
-        raise Exception(
-            f"{style.bcolors.FAIL} \nNo match between calibrations stars and "
-            f"the\n extracted stars detected. -> EXIT {style.bcolors.ENDC}"
-        )
-
-    ###
-    #   Find IDs of calibration stars to ensure they are not deleted in
-    #   the correlation process
-    #
-    #   Lists for IDs, and xy coordinates
-    calib_IDs = []
-    calib_xs = []
-    calib_ys = []
-
-    #   Loop over all calibration stars
-    for k in range(0, n_calib):
-        #   Find the calibration star
-        inds_obj, ref_count, x_obj, y_obj = correlate.posi_obj_srcor_img(
-            img_ensemble.image_list[ref_ID],
-            calib_tbl[col_names['ra']].data[k],
-            calib_tbl[col_names['dec']].data[k],
-            img_ensemble.wcs,
-            dcr=dcr,
-            option=option,
-            ra_unit=ra_unit,
-            verbose=verbose,
-        )
-        if verbose:
-            terminal_output.print_terminal()
-
-        #   Add ID and coordinates of the calibration star to the lists
-        if ref_count != 0:
-            calib_IDs.append(inds_obj[1][0])
-            calib_xs.append(x_obj)
-            calib_ys.append(y_obj)
-    terminal_output.print_terminal(
-        len(calib_IDs),
-        indent=3,
-        string="{:d} matches",
-        style_name='OKBLUE',
-    )
-    terminal_output.print_terminal()
-
-    ###
-    #   Correlate the results from all images
-    #
-    correlate_ensemble_img(
-        img_ensemble,
-        dcr=dcr,
-        option=option,
-        maxid=maxid,
-        refORI=ref_ID,
-        refOBJ=calib_IDs,
-        nmissed=nmissed,
-        bfrac=bfrac,
-        s_refOBJ=s_refOBJ,
-        correl_method=correl_method,
-        seplimit=seplimit,
-    )
-
-    ###
-    #   Plot image with the final positions overlaid (final version)
-    #
-    aux.prepare_and_plot_starmap_final_3(
-        img_ensemble,
-        calib_xs,
-        calib_ys,
-        plot_test=plot_test,
-    )
+#   TODO: Check if the following routine is still necessary?
+# def correlate_preserve_calibs(img_ensemble, filter_list,
+#                               calib_method='APASS', mag_range=(0., 18.5),
+#                               vizier_dict=None, calib_file=None, dcr=3,
+#                               option=1, verbose=False, maxid=1, ref_ID=0,
+#                               nmissed=1, bfrac=1.0, s_refOBJ=True,
+#                               plot_test=True, correl_method='astropy',
+#                               seplimit=2. * u.arcsec):
+#     """
+#         Correlate results from all images, while preserving the calibration
+#         stars
+#
+#         Parameters
+#         ----------
+#         img_ensemble        : `image.ensemble` object
+#             Ensemble class object with all image data taken in a specific
+#             filter
+#
+#         filter_list         : `list` with `strings`
+#             Filter list
+#
+#         calib_method       : `string`, optional
+#             Calibration method
+#             Default is ``APASS``.
+#
+#         mag_range           : `tupel` or `float`, optional
+#             Magnitude range
+#             Default is ``(0.,18.5)``.
+#
+#         vizier_dict         : `dictionary` or None, optional
+#             Identifiers of catalogs, containing calibration data
+#             Default is ``None``.
+#
+#         calib_file          : `string`, optional
+#             Path to the calibration file
+#             Default is ``None``.
+#
+#         dcr             : `float`, optional
+#             Maximal distance between two objects in Pixel
+#             Default is ``3``.
+#
+#         option          : `integer`, optional
+#             Option for the srcor correlation function
+#             Default is ``1``.
+#
+#         verbose         : `boolean`, optional
+#             If True additional output will be printed to the command line.
+#             Default is ``False``.
+#
+#         maxid               : `integer`, optional
+#             Max. number of allowed identical cross identifications between
+#             objects from a specific origin
+#             Default is ``1``.
+#
+#         ref_ID              : `integer`, optional
+#             ID of the reference origin
+#             Default is ``0``.
+#
+#         nmissed             : `integer`, optional
+#             Maximum number an object is allowed to be not detected in an
+#             origin. If this limit is reached the object will be removed.
+#             Default is ``i`.
+#
+#         bfrac               : `float`, optional
+#             Fraction of low quality source position origins, i.e., those
+#             origins, for which it is expected to find a reduced number of
+#             objects with valid source positions.
+#             Default is ``1.0``.
+#
+#         s_refOBJ            : `boolean`, optional
+#             If ``False`` also reference objects will be rejected, if they do
+#             not fulfill all criteria.
+#             Default is ``True``.
+#
+#         plot_test       : `boolean`, optional
+#             If True only the masterplot for the reference image will
+#             be created.
+#             Default is ``True``.
+#
+#         correl_method       : `string`, optional
+#             Correlation method to be used to find the common objects on
+#             the images.
+#             Possibilities: ``astropy``, ``own``
+#             Default is ``astropy``.
+#
+#         seplimit            : `astropy.units`, optional
+#             Allowed separation between objects.
+#             Default is ``2.*u.arcsec``.
+#     """
+#     ###
+#     #   Load calibration data
+#     #
+#     calib_tbl, col_names, ra_unit = calib.load_calib(
+#         img_ensemble.image_list[ref_ID],
+#         filter_list,
+#         calib_method=calib_method,
+#         mag_range=mag_range,
+#         vizier_dict=vizier_dict,
+#         calib_file=calib_file,
+#     )
+#
+#     #   Number of calibration stars
+#     n_calib = len(calib_tbl)
+#
+#     if n_calib == 0:
+#         raise Exception(
+#             f"{style.bcolors.FAIL} \nNo match between calibrations stars and "
+#             f"the\n extracted stars detected. -> EXIT {style.bcolors.ENDC}"
+#         )
+#
+#     ###
+#     #   Find IDs of calibration stars to ensure they are not deleted in
+#     #   the correlation process
+#     #
+#     #   Lists for IDs, and xy coordinates
+#     calib_IDs = []
+#     calib_xs = []
+#     calib_ys = []
+#
+#     #   Loop over all calibration stars
+#     for k in range(0, n_calib):
+#         #   Find the calibration star
+#         inds_obj, ref_count, x_obj, y_obj = correlate.posi_obj_srcor_img(
+#             img_ensemble.image_list[ref_ID],
+#             calib_tbl[col_names['ra']].data[k],
+#             calib_tbl[col_names['dec']].data[k],
+#             img_ensemble.wcs,
+#             dcr=dcr,
+#             option=option,
+#             ra_unit=ra_unit,
+#             verbose=verbose,
+#         )
+#         if verbose:
+#             terminal_output.print_terminal()
+#
+#         #   Add ID and coordinates of the calibration star to the lists
+#         if ref_count != 0:
+#             calib_IDs.append(inds_obj[1][0])
+#             calib_xs.append(x_obj)
+#             calib_ys.append(y_obj)
+#     terminal_output.print_terminal(
+#         len(calib_IDs),
+#         indent=3,
+#         string="{:d} matches",
+#         style_name='OKBLUE',
+#     )
+#     terminal_output.print_terminal()
+#
+#     ###
+#     #   Correlate the results from all images
+#     #
+#     correlate_ensemble_img(
+#         img_ensemble,
+#         dcr=dcr,
+#         option=option,
+#         maxid=maxid,
+#         refORI=ref_ID,
+#         refOBJ=calib_IDs,
+#         nmissed=nmissed,
+#         bfrac=bfrac,
+#         s_refOBJ=s_refOBJ,
+#         correl_method=correl_method,
+#         seplimit=seplimit,
+#     )
+#
+#     ###
+#     #   Plot image with the final positions overlaid (final version)
+#     #
+#     aux.prepare_and_plot_starmap_final_3(
+#         img_ensemble,
+#         calib_xs,
+#         calib_ys,
+#         plot_test=plot_test,
+#     )
 
 
 def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
@@ -2959,7 +2763,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     #
     terminal_output.print_terminal(
         indent=1,
-        string="Reidentify the variable star",
+        string="Re-identify the variable star",
     )
 
     if correl_method == 'astropy':
@@ -3545,304 +3349,8 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
     else:
         terminal_output.print_to_terminal('')
 
-
     if multiprocessing:
         return image
-
-
-# def main_extract_old(image, sigma_psf, sigma_bkg=5., multi_start=5.,
-#                  size_epsf=25, frac_epsf_stars=0.2, oversampling=2,
-#                  maxiters=7, epsf_use_init_guesses=True,
-#                  method='IRAF', multi=5.0, multi_grouper=2.0,
-#                  strict_cleaning=True, min_eps_stars=25, refid=0,
-#                  photometry='PSF', rstars=5., rbg_in=7., rbg_out=10.,
-#                  r_unit='arcsec', strict_eps=True, rmcos=False, objlim=5.,
-#                  readnoise=8., sigclip=4.5, satlevel=65535., plot_ifi=False,
-#                  plot_test=True):
-#     '''
-#         Main function to extract the information from the individual images
-#
-#         Parameters
-#         ----------
-#         image                   : `image.class`
-#             Image class with all image specific properties
-#
-#         sigma_psf               : `float`
-#             Sigma of the objects PSF, assuming it is a Gaussian
-#
-#         sigma_bkg               : `float`, optional
-#             Sigma used for the sigma clipping of the background
-#             Default is ``5.``.
-#
-#         multi_start             : `float`, optional
-#             Multiplier for the background RMS, used to calculate the
-#             threshold to identify stars
-#             Default is ``5.0``.
-#
-#         size_epsf               : `integer`, optional
-#             Size of the extraction region in pixel
-#             Default is `25``.
-#
-#         frac_epsf_stars         : `float`, optional
-#             Fraction of all stars that should be used to calculate the ePSF
-#             Default is ``0.2``.
-#
-#         oversampling            : `integer`, optional
-#             ePSF oversampling factor
-#             Default is ``2``.
-#
-#         maxiters                : `integer`, optional
-#             Number of ePSF iterations
-#             Default is ``7``.
-#
-#         epsf_use_init_guesses   : `boolean`, optional
-#             If True the initial positions from a previous object
-#             identification procedure will be used. If False the objects
-#             will be identified by means of the ``method_finder`` method.
-#             Default is ``True``.
-#
-#         method                 : `string`, optional
-#             Finder method DAO or IRAF
-#             Default is ``IRAF``.
-#
-#         multi                   : `float`, optional
-#             Multiplier for the background RMS, used to calculate the
-#             threshold to identify stars
-#             Default is ``5.0``.
-#
-#         multi_grouper           : `float`, optional
-#             Multiplier for the DAO grouper
-#             Default is ``5.0``.
-#
-#         strict_cleaning         : `boolean`, optional
-#             If True objects with negative flux uncertainties will be removed
-#             Default is ``True``.
-#
-#         min_eps_stars           : `integer`, optional
-#             Minimal number of required ePSF stars
-#             Default is ``25``.
-#
-#         refid                   : `integer`, optional
-#             ID of the reference image
-#             Default is ``0``.
-#
-#         photometry              : `string`, optional
-#             Switch between aperture and ePSF photometry.
-#             Possibilities: 'PSF' & 'APER'
-#             Default is ``PSF``.
-#
-#         rstars                  : `float`, optional
-#             Radius of the stellar aperture
-#             Default is ``5``.
-#
-#         rbg_in                  : `float`, optional
-#             Inner radius of the background annulus
-#             Default is ``7``.
-#
-#         rbg_out                 : `float`, optional
-#             Outer radius of the background annulus
-#             Default is ``10``.
-#
-#         r_unit                  : `string`, optional
-#             Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
-#             Default is ``pixel``.
-#
-#         strict_eps              ; `boolean`, optional
-#             If True a stringent test of the ePSF conditions is applied.
-#             Default is ``True``.
-#
-#         rmcos                   : `bool`
-#             If True cosmic rays will be removed from the image.
-#             Default is ``False``.
-#
-#         objlim                  : `float`, optional
-#             Parameter for the cosmic ray removal: Minimum contrast between
-#             Laplacian image and the fine structure image.
-#             Default is ``5``.
-#
-#         readnoise               : `float`, optional
-#             The read noise (e-) of the camera chip.
-#             Default is ``8`` e-.
-#
-#         sigclip                 : `float`, optional
-#             Parameter for the cosmic ray removal: Fractional detection limit
-#             for neighboring pixels.
-#             Default is ``4.5``.
-#
-#         satlevel                : `float`, optional
-#             Saturation limit of the camera chip.
-#             Default is ``65535``.
-#
-#         plot_ifi                : `boolean`, optional
-#             If True star map plots for all stars are created
-#             Default is ``False``.
-#
-#         plot_test               : `boolean`, optional
-#             If True a star map plots only for the reference image [refid] is
-#             created
-#             Default is ``True``.
-#     '''
-#     ###
-#     #   Initialize output string
-#     #
-#     terminal_output.print_terminal(
-#         image.pd,
-#         indent=2,
-#         string="Image: {:d}",
-#         style_name='UNDERLINE',
-#     )
-#
-#     ###
-#     #   Remove cosmics (optional)
-#     #
-#     if rmcos:
-#         rm_cosmic(
-#             image,
-#             objlim=objlim,
-#             readnoise=readnoise,
-#             sigclip=sigclip,
-#             satlevel=satlevel,
-#         )
-#
-#     ###
-#     #   Estimate and remove background
-#     #
-#     mk_bg(image, sigma_bkg=sigma_bkg)
-#
-#     ###
-#     #   Find the stars (via DAO or IRAF StarFinder)
-#     #
-#     find_stars(
-#         image,
-#         sigma_psf,
-#         multi_start=multi_start,
-#         method=method,
-#     )
-#
-#     if photometry == 'PSF':
-#         ###
-#         #   Check if enough stars have been detected to allow ePSF
-#         #   calculations
-#         #
-#         check_epsf_stars(
-#             image,
-#             size=size_epsf,
-#             min_stars=min_eps_stars,
-#             frac_epsf=frac_epsf_stars,
-#             strict=strict_eps,
-#         )
-#
-#         ###
-#         #   Plot images with the identified stars overlaid
-#         #
-#         if plot_ifi or (plot_test and image.pd == refid):
-#             plot.starmap(
-#                 image.outpath.name,
-#                 image.get_data(),
-#                 image.filt,
-#                 image.positions,
-#                 tbl_2=image.positions_epsf,
-#                 label='identified stars',
-#                 label_2='stars used to determine the ePSF',
-#                 rts='initial-img-' + str(image.pd),
-#                 nameobj=image.objname,
-#             )
-#
-#         ###
-#         #   Calculate the ePSF
-#         #
-#         mk_epsf(
-#             image,
-#             size=size_epsf,
-#             oversampling=oversampling,
-#             maxiters=maxiters,
-#             min_stars=min_eps_stars,
-#             multi=False,
-#         )
-#
-#         ###
-#         #   Plot the ePSFs
-#         #
-#         plot.plot_epsf(
-#             image.outpath.name,
-#             {'img-' + str(image.pd) + '-' + image.filt: image.epsf},
-#             nameobj=image.objname,
-#             indent=2,
-#         )
-#
-#         ###
-#         #   Performing the PSF photometry
-#         #
-#         epsf_extract(
-#             image,
-#             sigma_psf,
-#             sigma_bkg=sigma_bkg,
-#             use_init_guesses=epsf_use_init_guesses,
-#             method_finder=method,
-#             size_epsf=size_epsf,
-#             multi=multi,
-#             multi_grouper=multi_grouper,
-#             strict_cleaning=strict_cleaning,
-#         )
-#
-#         ###
-#         #   Plot original and residual image
-#         #
-#         plot.plot_residual(
-#             image.objname,
-#             {str(image.pd) + '-' + image.filt: image.get_data()},
-#             {str(image.pd) + '-' + image.filt: image.residual_image},
-#             image.outpath.name,
-#             nameobj=image.objname,
-#             indent=2,
-#         )
-#
-#     elif photometry == 'APER':
-#         ###
-#         #   Perform aperture photometry
-#         #
-#         if image.pd == refid:
-#             plotaper = True
-#         else:
-#             plotaper = False
-#
-#         aperture_extract(
-#             image,
-#             rstars,
-#             rbg_in,
-#             rbg_out,
-#             r_unit=r_unit,
-#             plotaper=plotaper,
-#             indent=3,
-#         )
-#     else:
-#         raise RuntimeError(
-#             f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
-#             f"valid: use either APER or PSF {style.bcolors.ENDC}"
-#         )
-#
-#     #   Add flux array to image (is this really necessary?)
-#     flux_img = np.zeros(
-#         len(image.photometry['x_fit']),
-#         dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
-#     )
-#     flux_img['flux_fit'] = image.photometry['flux_fit']
-#     flux_img['flux_unc'] = image.photometry['flux_unc']
-#
-#     uflux_img = unumpy.uarray(
-#         flux_img['flux_fit'],
-#         flux_img['flux_unc']
-#     )
-#     image.flux = flux_img
-#     image.uflux = uflux_img
-#
-#     ###
-#     #   Plot images with extracted stars overlaid
-#     #
-#     if plot_ifi or (plot_test and image.pd == refid):
-#         aux.prepare_and_plot_starmap(image)
-#
-#     terminal_output.print_terminal()
 
 
 def extract_flux(img_container, filter_list, name, img_paths, outdir,
@@ -4618,7 +4126,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         derive_Tcs              : `boolean`, optional
             If True the magnitude transformation coefficients will be
             calculated from the current data even if calibration coefficients
-            are available in the data base.
+            are available in the database.
             Default is ``False``
 
         plot_sigma              : `boolean', optional

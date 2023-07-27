@@ -1,8 +1,6 @@
 ############################################################################
-####                            Libraries                               ####
+#                               Libraries                                  #
 ############################################################################
-
-import sys
 
 import numpy as np
 
@@ -10,7 +8,6 @@ from uncertainties import unumpy, ufloat
 
 import multiprocessing as mp
 
-from astropy.table import Table
 from astropy.stats import sigma_clipped_stats
 from astropy.stats import sigma_clip as sigma_clipping
 
@@ -20,12 +17,12 @@ from .. import checks, style, calibration_data, terminal_output
 
 
 ############################################################################
-####                        Routines & definitions                      ####
+#                           Routines & definitions                         #
 ############################################################################
 
 def cal_err_T(image, lit_mags, color_mag, Tc, cali, id_1, id_2, id_f,
               ttype='simple', air_mass=1.0):
-    '''
+    """
         Calculate errors in case of the simple magnitude transformation
 
         Parameters
@@ -64,7 +61,7 @@ def cal_err_T(image, lit_mags, color_mag, Tc, cali, id_1, id_2, id_f,
         -------
         u           : `numpy.ndarray`
             Propagated uncertainty
-    '''
+    """
 
     #   Get mask from sigma clipping that needs to be applied to the data
     mask = image.ZP_mask
@@ -156,7 +153,7 @@ def cal_err_T(image, lit_mags, color_mag, Tc, cali, id_1, id_2, id_f,
 
 
 def cal_err(mask, mags_fit, lit_mags, mags, cali):
-    '''
+    """
         Calculate errors in case of **no** magnitude transformation
 
         Parameters
@@ -180,7 +177,7 @@ def cal_err(mask, mags_fit, lit_mags, mags, cali):
         -------
         u           : `numpy.ndarray`
             Propagated uncertainty
-    '''
+    """
     #   ZP errors
     uZP = aux.err_prop(mags_fit, lit_mags)
     uZP_clip = np.median(uZP[mask])
@@ -196,7 +193,7 @@ def cal_err(mask, mags_fit, lit_mags, mags, cali):
 
 def cal_sigma_plot(m_fit, masked, filt, m_lit, outdir, nameobj, rts,
                    fit=None, m_fit_err=None, m_lit_err=None):
-    '''
+    """
         Set up multiprocessing for sigma clipped magnitude plots
 
     Parameters
@@ -234,7 +231,7 @@ def cal_sigma_plot(m_fit, masked, filt, m_lit, outdir, nameobj, rts,
         m_lit_err       : `numpy.ndarray' or ``None``, optional
             Error of the filter 1 magnitudes
 
-    '''
+    """
     p = mp.Process(
         target=plot.plot_mags,
         args=(
@@ -273,7 +270,7 @@ def cal_sigma_plot(m_fit, masked, filt, m_lit, outdir, nameobj, rts,
 def cal_sigma_plot_color(filt, outdir, nameobj, f_list, id_1, id_2,
                          color_fit, color_lit, color_fit_clip,
                          color_lit_clip, rts):
-    '''
+    """
         Set up multiprocessing for sigma plots
 
     Parameters
@@ -310,7 +307,7 @@ def cal_sigma_plot_color(filt, outdir, nameobj, f_list, id_1, id_2,
 
         rts             : `string`
                 Expression characterizing the plot
-    '''
+    """
     p = mp.Process(
         target=plot.plot_mags,
         args=(
@@ -345,7 +342,7 @@ def cal_sigma_plot_color(filt, outdir, nameobj, f_list, id_1, id_2,
 
 def prepare_trans_variables(img_container, id_img_i, filt_o, filt_i,
                             filt_id_1, filter_list, id_tuple_trans):
-    '''
+    """
         Prepare variables for magnitude transformation
 
         Parameters
@@ -375,7 +372,7 @@ def prepare_trans_variables(img_container, id_img_i, filt_o, filt_i,
         -------
         img_o           : `image.class`
             Image class with all image specific properties
-    '''
+    """
     #   Get image ensemble
     img_ensembles = img_container.ensembles
     ensemble = img_ensembles[filter_list[filt_i]]
@@ -423,7 +420,7 @@ def prepare_trans_variables(img_container, id_img_i, filt_o, filt_i,
 
 def prepare_trans(img_container, Tcs, filter_list, filt_i, id_img_i,
                   id_tuple_notrans, derive_Tcs=False):
-    '''
+    """
         Prepare magnitude transformation: find filter combination,
         get calibration parameters, prepare variables, ...
 
@@ -470,7 +467,7 @@ def prepare_trans(img_container, Tcs, filter_list, filt_i, id_img_i,
 
         Tc                  : `dictionary`
             Dictionary with validated calibration parameters from Tcs.
-    '''
+    """
     #   Get filter name
     band = filter_list[filt_i]
 
@@ -572,7 +569,7 @@ def prepare_trans(img_container, Tcs, filter_list, filt_i, id_img_i,
 def derive_trans_onthefly(image, f_list, id_f, id_1, id_2, color_lit_clip,
                           lit_mag_1, lit_mag_2, mag_cali_fit_1,
                           mag_cali_fit_2):
-    '''
+    """
         Determine the parameters for the color term used in the magnitude
         calibration. This corresponds to a magnitude transformation without
         considering the dependence on the air mass.
@@ -620,7 +617,7 @@ def derive_trans_onthefly(image, f_list, id_f, id_1, id_2, color_lit_clip,
 
         T_2                 : `ufloat` or `float`
             Color correction term for filter 2.
-    '''
+    """
     #   Initial guess for the parameters
     # x0    = np.array([0.0, 0.0])
     x0 = np.array([1.0, 1.0])
@@ -719,12 +716,12 @@ def derive_trans_onthefly(image, f_list, id_f, id_1, id_2, color_lit_clip,
 
 
 def apply_trans(*args, **kwargs):
-    '''
+    """
         Apply magnitude transformation and return calibrated magnitude array
 
         Distinguishes between different input array types.
         Possibilities: unumpy.uarray & numpy structured ndarray
-    '''
+    """
     #   Get type of the magnitude arrays
     unc = getattr(args[0], 'unc', True)
 
@@ -738,7 +735,7 @@ def trans_core(image, lit_mag_1, lit_mag_2, mag_cali_fit_1, mag_cali_fit_2,
                mags_1, mags_2, mags, Tc_C, Tc_color, Tc_T1, Tc_k1, Tc_T2,
                Tc_k2, id_f, id_1, id_2, f_list, plot_sigma=False,
                ttype='derive'):
-    '''
+    """
         Routine that performs the actual magnitude transformation.
 
         Parameters
@@ -812,7 +809,7 @@ def trans_core(image, lit_mag_1, lit_mag_2, mag_cali_fit_1, mag_cali_fit_2,
         -------
                             : `numpy.ndarray` or `unumpy.uarray`
             Calibrated magnitudes
-    '''
+    """
     #   Get clipped zero points
     ZP = image.ZP_clip
 
@@ -924,7 +921,7 @@ def trans_core(image, lit_mag_1, lit_mag_2, mag_cali_fit_1, mag_cali_fit_2,
 
 def apply_trans_str(img_container, image, lit_m, id_f, id_i, id_1, id_2,
                     f_list, Tc, plot_sigma=False, ttype='derive'):
-    '''
+    """
         Apply transformation
 
         Parameters
@@ -965,7 +962,7 @@ def apply_trans_str(img_container, image, lit_m, id_f, id_i, id_1, id_2,
             Type of magnitude transformation.
             Possibilities: simple, airmass, or derive
             Default is ``derive``.
-    '''
+    """
     #   Get current filter
     filt = f_list[id_f]
 
@@ -1036,7 +1033,7 @@ def apply_trans_str(img_container, image, lit_m, id_f, id_i, id_1, id_2,
 
 def apply_trans_unc(img_container, image, lit_m, id_f, id_i, id_1, id_2,
                     f_list, Tc, plot_sigma=False, ttype='derive'):
-    '''
+    """
         Apply transformation
 
         Parameters
@@ -1077,7 +1074,7 @@ def apply_trans_unc(img_container, image, lit_m, id_f, id_i, id_1, id_2,
             Type of magnitude transformation.
             Possibilities: simple, airmass, or derive
             Default is ``derive``.
-    '''
+    """
     #   Get necessary magnitudes arrays
     lit_mag = lit_m
     mag_cali_fit_1 = image.mag_fit_1
@@ -1130,10 +1127,10 @@ def apply_trans_unc(img_container, image, lit_m, id_f, id_i, id_1, id_2,
 
 
 def calibrate_simple(*args, **kwargs):
-    '''
+    """
         Apply minimal calibration: No magnitude transformation & no other
                                    kind of color corrections.
-    '''
+    """
     #   Get type of the magnitude arrays
     unc = getattr(args[0], 'unc', True)
 
@@ -1144,7 +1141,7 @@ def calibrate_simple(*args, **kwargs):
 
 
 def calibrate_simple_core(image, mag_arr):
-    '''
+    """
         Perform minimal calibration
 
         Parameters
@@ -1159,7 +1156,7 @@ def calibrate_simple_core(image, mag_arr):
         -------
         mag_cali        : `numpy.ndarray`
             Array with calibrated magnitudes
-    '''
+    """
     #   Get clipped zero points
     ZP = image.ZP_clip
 
@@ -1177,7 +1174,7 @@ def calibrate_simple_core(image, mag_arr):
 
 
 def calibrate_str(img_container, image, lit_m, id_f, id_img):
-    '''
+    """
         Calibrate magnitudes without magnitude transformation
 
         Parameters
@@ -1197,7 +1194,7 @@ def calibrate_str(img_container, image, lit_m, id_f, id_img):
 
         id_img:         : `integer`
             ID of the current image
-    '''
+    """
     #   Get mask from sigma clipping
     mask = image.ZP_mask
 
@@ -1234,7 +1231,7 @@ def calibrate_str(img_container, image, lit_m, id_f, id_img):
 
 
 def calibrate_unc(img_container, image, lit_m, id_f, id_img):
-    '''
+    """
         Calibrate magnitudes without magnitude transformation
 
         Parameters
@@ -1254,7 +1251,7 @@ def calibrate_unc(img_container, image, lit_m, id_f, id_img):
 
         id_img:         : `integer`
             ID of the current image
-    '''
+    """
     #   Get extracted magnitudes for all objects
     mag_arr = image.mags
 
@@ -1282,7 +1279,7 @@ def calibrate_unc(img_container, image, lit_m, id_f, id_img):
 
 
 def flux_calibrate_ensemble(ensemble):
-    '''
+    """
         Simple calibration for flux values. Assuming the median over all
         objects in an image as a quasi ZP.
 
@@ -1291,7 +1288,7 @@ def flux_calibrate_ensemble(ensemble):
         ensemble        : `image.ensemble`
             Image ensemble object with flux and magnitudes of all objects in
             all images within the ensemble
-    '''
+    """
     #   Get flux
     flux = ensemble.uflux
 
@@ -1306,7 +1303,7 @@ def flux_calibrate_ensemble(ensemble):
 
 
 def flux_normalize_ensemble(ensemble):
-    '''
+    """
         Normalize flux
 
         Parameters
@@ -1314,7 +1311,7 @@ def flux_normalize_ensemble(ensemble):
         ensemble        : `image.ensemble`
             Image ensemble object with flux and magnitudes of all objects in
             all images within the ensemble
-    '''
+    """
     #   Get flux
     try:
         flux = ensemble.uflux_cali
@@ -1695,7 +1692,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
 
 def deter_trans(img_container, key_filt, filter_list, tbl_trans,
                 fit_func=aux.lin_func, weights=True, indent=2):
-    '''
+    """
         Determine the magnitude transformation factors
 
         Parameters
@@ -1723,7 +1720,7 @@ def deter_trans(img_container, key_filt, filter_list, tbl_trans,
         indent              : `integer`, optional
             Indentation for the console output lines
             Default is ``2``.
-    '''
+    """
     #   Get image ensembles
     ensemble_dict = img_container.ensembles
 

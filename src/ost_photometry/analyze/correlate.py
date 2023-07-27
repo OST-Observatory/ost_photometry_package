@@ -1,5 +1,5 @@
 ############################################################################
-####                            Libraries                               ####
+#                               Libraries                                  #
 ############################################################################
 
 import numpy as np
@@ -12,7 +12,7 @@ import astropy.units as u
 
 
 ############################################################################
-####                        Routines & definitions                      ####
+#                           Routines & definitions                         #
 ############################################################################
 
 
@@ -539,7 +539,7 @@ def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
     return idarray, rej_ori
 
 
-def newsrcor(x, y, dcr=3, bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
+def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
              nmissed=1, indent='   ', option=None, magnitude=None,
              silent=False, s_refOBJ=True):
     """
@@ -736,7 +736,7 @@ def newsrcor(x, y, dcr=3, bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
                                 #   -> counts up
                                 _bad_ori += 1
 
-                                ##  Fill the reject vectors
+                                #   Fill the reject vectors
                                 #   Mark origin as "problematic"
                                 _ori_rej[j] = 1
 
@@ -784,7 +784,7 @@ def newsrcor(x, y, dcr=3, bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
     if not silent:
         print(
             bcolors.BOLD
-            + indent + "   " + str(count).strip() + " matches found."
+            + indent + f"   {count} matches found."
             + bcolors.ENDC
         )
 
@@ -792,12 +792,11 @@ def newsrcor(x, y, dcr=3, bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
         ind = ind[:, 0:count]
         _ind2 = np.zeros((count), dtype=int) - 1
     else:
-        reject = np.copy(rej_ori)
         reject = -1
         return ind, reject, count, reject_obj
 
     #   Return in case of option 0 and 3
-    if option == 0: return ind, reject, count, reject_obj
+    if option == 0: return ind, rej_ori, count, reject_obj
     if option == 3: return ind
 
     ###

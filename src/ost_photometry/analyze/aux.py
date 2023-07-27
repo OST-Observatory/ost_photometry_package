@@ -1,5 +1,5 @@
 ############################################################################
-####                            Libraries                               ####
+#                               Libraries                                  #
 ############################################################################
 
 import sys
@@ -7,8 +7,6 @@ import sys
 import numpy as np
 
 from uncertainties import unumpy
-
-import pandas as pd
 
 from pytimedinput import timedInput
 
@@ -46,9 +44,8 @@ from .. import checks, style, terminal_output, calibration_data
 
 from . import plot
 
-
 ############################################################################
-####                        Routines & definitions                      ####
+#                           Routines & definitions                         #
 ############################################################################
 
 
@@ -58,187 +55,21 @@ def err_prop(*args):
 
         Parameters
         ----------
-        args        : `list`
-            List of errors that should be added
+        args        : `list` of `float`s or `numpy.ndarray`s
+            Sources of error that should be added up
 
         Returns
         -------
-        sum_error   : `float`
-            Summed up error
+        sum_error   : `float` or `numpy.ndarray`
+            Accumulated error
     """
-    sum_error = 0
     #   Adding up the errors
-    for x in args:
-        sum_error = np.sqrt(np.square(u) + np.square(x))
+    for i, x in enumerate(args):
+        if i == 0:
+            sum_error = x
+        else:
+            sum_error = np.sqrt(np.square(sum_error) + np.square(x))
     return sum_error
-
-
-# def mk_cmd_table(ind_sort, x, y, mags, list_bands):
-#     """
-#         Create and export the CMD
-#
-#         Parameters
-#         ----------
-#         ind_sort        : `numpy.ndarray`
-#             IDs of the stars
-#
-#         x               : `numpy.ndarray`
-#             Position of the stars on the image in pixel in X direction
-#
-#         y               : `numpy.ndarray`
-#             Position of the stars on the image in pixel in X direction
-#
-#         mags            : `numpy.ndarray`
-#             Magnitudes of all stars
-#
-#         list_bands      : `list`
-#             Filter
-#
-#         Returns
-#         -------
-#         tbl_cmd         : `astropy.table.Table`
-#             Table with CMD data
-#     """
-#     #   Number of filter
-#     nfilter = len(list_bands)
-#
-#     #   Dimensions of magnitude array & number of images
-#     shape = mags['err'].shape
-#     dim = len(shape)
-#     if dim == 2:
-#         nimg = 1
-#     else:
-#         nimg = shape[1]
-#
-#     # Make CMD table
-#     tbl_cmd = Table(
-#         names=['i', 'x', 'y'],
-#         data=[
-#             np.intc(ind_sort),
-#             x,
-#             y,
-#         ]
-#     )
-#
-#     #   Set name of the magnitude field
-#     if 'med' in mags.dtype.names:
-#         name_mag = 'med'
-#     else:
-#         name_mag = 'mag'
-#
-#     #   Add magnitude columns to CMD table
-#     for i in range(0, nfilter):
-#         if dim == 2:
-#             if 'err' in mags.dtype.names:
-#                 tbl_cmd.add_columns(
-#                     [
-#                         mags[name_mag][i],
-#                         mags['err'][i],
-#                     ],
-#                     names=[
-#                         list_bands[i] + ' [mag]',
-#                         list_bands[i] + '_err [mag]',
-#                     ]
-#                 )
-#             else:
-#                 tbl_cmd.add_column(
-#                     mags[name_mag][i],
-#                     name=list_bands[i] + ' [mag]'
-#                 )
-#
-#             if i != 0:
-#                 tbl_cmd.add_column(
-#                     mags[name_mag][i - 1] - mags[name_mag][i],
-#                     name=list_bands[i - 1] + '-' + list_bands[i] + ' [mag]'
-#                 )
-#         else:
-#             for j in range(0, nimg):
-#                 if nimg == 1:
-#                     if 'err' in mags.dtype.names:
-#                         tbl_cmd.add_columns(
-#                             [
-#                                 mags[name_mag][i][j],
-#                                 mags['err'][i][j],
-#                             ],
-#                             names=[
-#                                 list_bands[i] + ' [mag]',
-#                                 list_bands[i] + '_err [mag]',
-#                             ]
-#                         )
-#                         if i != 0:
-#                             tbl_cmd.add_columns(
-#                                 [
-#                                     mags[name_mag][i - 1][j] - mags[name_mag][i][j],
-#                                     err_prop(
-#                                         mags['err'][i - 1][j],
-#                                         mags['err'][i][j],
-#                                     ),
-#                                 ],
-#                                 names=[
-#                                     f'{list_bands[i - 1]}-{list_bands[i]} [mag]',
-#                                     f'{list_bands[i - 1]}-{list_bands[i]}_err [mag]',
-#                                 ]
-#                             )
-#                     else:
-#                         tbl_cmd.add_column(
-#                             mags[name_mag][i][j],
-#                             name=list_bands[i] + ' [mag]'
-#                         )
-#
-#                         if i != 0:
-#                             tbl_cmd.add_column(
-#                                 mags[name_mag][i - 1][j] - mags[name_mag][i][j],
-#                                 name=list_bands[i - 1] + '-' + list_bands[i] + ' [mag]'
-#                             )
-#
-#                 else:
-#                     if 'err' in mags.dtype.names:
-#                         tbl_cmd.add_columns(
-#                             [
-#                                 mags[name_mag][i][j],
-#                                 mags['err'][i][j],
-#                             ],
-#                             names=[
-#                                 list_bands[i] + ' [mag] (' + str(j) + ')',
-#                                 list_bands[i] + '_err [mag] (' + str(j) + ')',
-#                             ]
-#                         )
-#                         if i != 0:
-#                             tbl_cmd.add_columns(
-#                                 [
-#                                     mags[name_mag][i - 1][j] - mags[name_mag][i][j],
-#                                     err_prop(
-#                                         mags['err'][i - 1][j],
-#                                         mags['err'][i][j],
-#                                     ),
-#                                 ],
-#                                 names=[
-#                                     list_bands[i - 1] + '-' + list_bands[i] \
-#                                     + ' [mag] (' + str(j) + ')',
-#                                     list_bands[i - 1] + '-' + list_bands[i] \
-#                                     + '_err [mag] (' + str(j) + ')',
-#                                 ]
-#                             )
-#
-#                     else:
-#                         tbl_cmd.add_column(
-#                             mags[name_mag][i][j],
-#                             name=list_bands[i] + ' [mag] (' + str(j) + ')'
-#                         )
-#                         if i != 0:
-#                             tbl_cmd.add_column(
-#                                 mags[name_mag][i - 1][j] - mags[name_mag][i][j],
-#                                 name=list_bands[i - 1] + '-' + list_bands[i] \
-#                                      + ' [mag] (' + str(j) + ')'
-#                             )
-#
-#     #   Sort CMD table
-#     if nimg == 1:
-#         tbl_cmd = tbl_cmd.group_by(list_bands[0] + ' [mag]')
-#     else:
-#         tbl_cmd = tbl_cmd.group_by(list_bands[0] + ' [mag] (0)')
-#
-#     return tbl_cmd
 
 
 def mk_mag_table(*args, **kwargs):
@@ -420,128 +251,6 @@ def mk_mag_table_unc(ind_sort, x, y, mags, list_bands, id_tupels):
     )
 
     return tbl_cmd
-
-
-# def mk_cmd_table_u(ind_sort, x, y, mags, list_bands):
-#     """
-#         Create and export the CMD
-#
-#         Parameters
-#         ----------
-#         ind_sort        : `numpy.ndarray`
-#             IDs of the stars
-#
-#         x               : `numpy.ndarray`
-#             Position of the stars on the image in pixel in X direction
-#
-#         y               : `numpy.ndarray`
-#             Position of the stars on the image in pixel in X direction
-#
-#         mags            : `unumpy.ndarray`
-#             Magnitudes of all stars
-#
-#         list_bands      : `list`
-#             Filter
-#
-#         Returns
-#         -------
-#         tbl_cmd         : `astropy.table.Table`
-#             Table with CMD data
-#     """
-#     #   Number of filter
-#     nfilter = len(list_bands)
-#
-#     #   Dimensions of magnitude array & number of images
-#     shape = mags.shape
-#     dim = len(shape)
-#     if dim == 2:
-#         nimg = 1
-#     else:
-#         nimg = shape[1]
-#
-#     # Make CMD table
-#     tbl_cmd = Table(
-#         names=['i', 'x', 'y', ],
-#         data=[
-#             np.intc(ind_sort),
-#             x,
-#             y,
-#         ]
-#     )
-#
-#     #   Add magnitude columns to CMD table
-#     for i in range(0, nfilter):
-#         if dim == 2:
-#             tbl_cmd.add_columns(
-#                 [
-#                     unumpy.nominal_values(mags)[i] * u.mag,
-#                     unumpy.std_devs(mags)[i] * u.mag,
-#                 ],
-#                 names=[
-#                     f'{list_bands[i]}',
-#                     f'{list_bands[i]}_err',
-#                 ]
-#             )
-#
-#             if i != 0:
-#                 tbl_cmd.add_column(
-#                     unumpy.nominal_values(mags[i - 1] - mags[i]) * u.mag,
-#                     name=f'{list_bands[i - 1]}-{list_bands[i]}'
-#                 )
-#         else:
-#             for j in range(0, nimg):
-#                 if nimg == 1:
-#                     tbl_cmd.add_columns(
-#                         [
-#                             unumpy.nominal_values(mags)[i][j] * u.mag,
-#                             unumpy.std_devs(mags)[i][j] * u.mag,
-#                         ],
-#                         names=[
-#                             f'{list_bands[i]}',
-#                             f'{list_bands[i]}_err',
-#                         ]
-#                     )
-#                     if i != 0:
-#                         tbl_cmd.add_columns(
-#                             [
-#                                 unumpy.nominal_values(mags[i - 1][j] - mags[i][j]) * u.mag,
-#                                 unumpy.std_devs(mags[i - 1][j] - mags[i][j]) * u.mag,
-#                             ],
-#                             names=[
-#                                 f'{list_bands[i - 1]}-{list_bands[i]}',
-#                                 f'{list_bands[i - 1]}-{list_bands[i]}_err',
-#                             ]
-#                         )
-#                 else:
-#                     tbl_cmd.add_columns(
-#                         [
-#                             unumpy.nominal_values(mags[i][j]) * u.mag,
-#                             unumpy.std_devs(mags[i][j]) * u.mag,
-#                         ],
-#                         names=[
-#                             f'{list_bands[i]} ({j}) ',
-#                             f'{list_bands[i]}_err ({j})',
-#                         ]
-#                     )
-#                     if i != 0:
-#                         tbl_cmd.add_columns(
-#                             [
-#                                 unumpy.nominal_values(mags[i - 1][j] - mags[i][j]) * u.mag,
-#                                 unumpy.std_devs(mags[i - 1][j] - mags[i][j]) * u.mag,
-#                             ],
-#                             names=[
-#                                 f'{list_bands[i - 1]}-{list_bands[i]} ({j})',
-#                                 f'{list_bands[i - 1]}-{list_bands[i]}_err ({j})',
-#                             ]
-#                         )
-#
-#     #   Sort CMD table
-#     if nimg == 1:
-#         tbl_cmd = tbl_cmd.group_by(f'{list_bands[0]}')
-#     else:
-#         tbl_cmd = tbl_cmd.group_by(f'{list_bands[0]} (0)')
-#
-#     return tbl_cmd
 
 
 def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
@@ -939,13 +648,11 @@ def prepare_arrays(img_container, nfilter, count):
 
 def cal_mag(*args, **kwargs):
     """
-        Wrapper function: distinguish between astropy table
-                          and pandas data frame
+        Wrapper function: used to distinguish between astropy table
+                          and pandas data frame before the latter was
+                          removed
     """
-    if base_aux.np_vs_df(args[0]):
-        return mag_df(*args, **kwargs)
-    else:
-        return mag_arr(*args, **kwargs)
+    return mag_arr(*args, **kwargs)
 
 
 # @timeis
@@ -1037,88 +744,6 @@ def mag_u_arr(flux):
     return mags
 
 
-# @timeis
-def mag_df(flux_df, flux_id='flux_fit', unc_id='flux_unc'):
-    """
-        Calculate magnitudes from flux
-
-        Parameters
-        ----------
-        flux_df         : `pandas.DataFrame`
-            Flux values and corresponding uncertainties
-
-        flux_id         : `string`, optional
-            Name for the flux column
-            Default is ``flux_fit``.
-
-        unc_id          : `string`, optional
-            Name for the flux uncertainty column
-            Default is ``flux_unc``.
-
-        Returns
-        -------
-        flux_df         : `pandas.DataFrame`
-            Magnitudes and orresponding uncertainties
-    """
-    #   Extract flux and flux uncertainty
-    flux = flux_df[flux_id]
-    flux_err = flux_df[unc_id]
-    flux_err = np.absolute(flux_err)
-
-    #   Calculate magnitudes
-    df_temp = -2.5 * np.log10(flux)
-
-    #   Check if we are dealing with a Series or DataFrame
-    if isinstance(df_temp, pd.Series):
-        df_temp.name = 'mag'
-    elif isinstance(df_temp, pd.DataFrame):
-        #   Add 'mag' to the column index (make multi index), so that the
-        #   magnitudes can be combined with the input data frame
-        #   'flux_df'
-        df_columns = df_temp.columns
-        index = pd.MultiIndex.from_product([['mag'], df_columns])
-        df_temp.columns = index
-    else:
-        raise Exception(
-            f"{style.bcolors.FAIL} \nInput object is neither a Pandas Series "
-            f"nor Dataframe -> EXIT {style.bcolors.ENDC}"
-        )
-
-    #   Add magnitudes to input data frame
-    flux_df = pd.concat([flux_df, df_temp], axis=1)
-
-    # #   Prepare array with difference between flux and flux error
-    # #   Sanitize -> ensure that the difference is > 0
-    # pre_arr = np.where(
-    #     flux_err < flux,
-    #     flux - flux_err,
-    #     1E-20
-    # )
-
-    #   Calculate Errors
-    mag_err = 1.0857 * flux_err / flux
-
-    #   Branch according to Series or DataFrame
-    if isinstance(mag_err, pd.DataFrame):
-        #   New index
-        index = pd.MultiIndex.from_product([['err'], df_columns])
-
-        #   Convert numpy array to data frame
-        err_df = pd.DataFrame(
-            mag_err,
-            index=flux_df.index,
-            columns=index,
-        )
-    else:
-        #   Convert numpy array to data frame
-        err_df = pd.DataFrame({'err': mag_err}, index=flux_df.index)
-
-    #   Attach errors to data frame
-    flux_df = pd.concat([flux_df, err_df], axis=1)
-
-    return flux_df
-
-
 def mk_posi_tbl(img_container, ensemble_IDs):
     """
         Make position tables
@@ -1206,63 +831,6 @@ def mk_posi_tbl_ensem(ensemble):
         tbl_xy[img.pd] = Table(
             names=['id', 'xcentroid', 'ycentroid', 'mag'],
             data=[np.intc(ids), xs, ys, mags]
-        )
-
-    return tbl_xy
-
-
-def mk_posi_tbl_pd(ind_sort, img_IDs, x, y, mags):
-    """
-        Make position tables
-
-        Parameters
-        ----------
-        ind_sort        : `numpy.ndarray`
-            IDs of the stars
-
-        img_IDs         : `flist` of `float`
-            List with image IDs
-
-        x               : `numpy.ndarray` of `floats`
-            Position of the objects on the image in pixel in X direction
-
-        y               : `numpy.ndarray` of `floats`
-            Position of the objects on the image in pixel in Y direction
-
-        mags            : `pandas.DataFrame`
-            Magnitude array of the stars
-
-        Returns
-        -------
-        tbl_xy          : `astropy.table.Table`
-            X and Y position in pixel among other data
-    """
-    #   Drop level > 0, if column levels > 1
-    if mags.columns.nlevels > 1:
-        cols = mags.columns.droplevel(1)
-    else:
-        cols = mags.columns
-    #   Check whether median values of the magnitudes are available
-    #   in 'mags'
-    if 'mag' in cols.values:
-        col_name = 'mag'
-    elif 'median' in cols.values:
-        col_name = 'median'
-    else:
-        raise Exception(
-            f"{style.bcolors.FAIL} \nMagnitude column not recognize in 'mags' "
-            f"DataFrame -> EXIT {style.bcolors.ENDC}"
-        )
-
-    tbl_xy = {}
-    for j, img_ID in enumerate(img_IDs):
-        #   Restrict input data frame to current image
-        mask = mags['type'] == img_ID
-
-        img_ID = str(img_ID)
-        tbl_xy[img_ID] = Table(
-            names=['id', 'xcentroid', 'ycentroid', 'mag'],
-            data=[np.intc(ind_sort), x, y, mags[mask][col_name]]
         )
 
     return tbl_xy
@@ -1805,59 +1373,6 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
         terminal_output.print_terminal()
 
 
-def add_median_table(img_ensemble, meanb=False):
-    """
-        Calculate flux median or flux mean and add it to a new table
-
-        Parameters
-        ----------
-        img_ensemble        : `image.ensemble` object
-            Ensemble class object with all image data taken in a specific
-            filter
-
-        meanb               : `boolean`
-            If True the mean instead of the median flux will be added to the
-            table.
-    """
-    #   Get flux:
-    try:
-        flux = img_ensemble.flux_es['flux_fit']
-        xs = img_ensemble.x_es
-        ys = img_ensemble.y_es
-    except AttributeError:
-        flux = img_ensemble.flux['flux_fit']
-        xs = img_ensemble.x_s
-        ys = img_ensemble.y_s
-
-    ###
-    #   Calculate mean, median, and standard deviation of the
-    #   object fluxes, using sigma clipping
-    #
-    mean, median, std = sigma_clipped_stats(
-        flux,
-        sigma=1.5,
-        axis=0,
-    )
-
-    ###
-    #   Make new table to add the median of the flux
-    #
-    #   New table
-    if meanb:
-        _tbl = Table(
-            names=['x_fit', 'y_fit', 'flux_fit', 'flux_unc', ],
-            data=[xs, ys, mean, std, ]
-        )
-    else:
-        _tbl = Table(
-            names=['x_fit', 'y_fit', 'flux_fit', 'flux_unc', ],
-            data=[xs, ys, median, std, ]
-        )
-
-    #   Add to the overall dictionary
-    img_ensemble.results = _tbl.group_by('x_fit')
-
-
 def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
                         r_unit='arcsec', indent=1):
     """
@@ -1990,7 +1505,7 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
         )
 
         #   Derive limits
-        limits = depth(image.get_data(), mask)
+        flux_limit, mag_limit = depth(image.get_data(), mask)
 
         #   Plot sky apertures
         p = mp.Process(
@@ -2005,7 +1520,7 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
             string="Based on the ImageDepth (photutils) routine:",
         )
         terminal_output.print_terminal(
-            limits[1],
+            mag_limit,
             indent=indent * 3,
             string="500 apertures, 5 sigma, 2 iterations: {} mag",
         )
@@ -2842,35 +2357,35 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
         )
 
 
-def convert_magnitudes_internal_wrapper(img_container, target_filter_system):
-    """
-        Gets astropy table with  magnitudes from image container and
-        calls then the magnitude conversion.
-
-        Parameters
-        ----------
-        img_container           : `image.container`
-            Container object with image ensemble objects for each filter
-
-        target_filter_system    : `string`
-            Photometric system the magnitudes should be converted to
-    """
-    # #   Get calibrated magnitudes
-    # cali_mags = img_container.get_calibrated_magnitudes()
-
-    #   Get astropy tables with magnitudes
-    tbl_transformed = getattr(img_container, 'table_mags_transformed', None)
-    tbl_not_transformed = getattr(
-        img_container,
-        'table_mags_not_transformed',
-        None,
-    )
-
-    #   Convert magnitudes
-    if tbl_transformed is not None:
-        convert_magnitudes(tbl_transformed, target_filter_system)
-    if tbl_not_transformed is not None:
-        convert_magnitudes(tbl_not_transformed, target_filter_system)
+# def convert_magnitudes_internal_wrapper(img_container, target_filter_system):
+#     """
+#         Gets astropy table with magnitudes from the image container and
+#         calls then the magnitude conversion.
+#
+#         Parameters
+#         ----------
+#         img_container           : `image.container`
+#             Container object with image ensemble objects for each filter
+#
+#         target_filter_system    : `string`
+#             Photometric system the magnitudes should be converted to
+#     """
+#     # #   Get calibrated magnitudes
+#     # cali_mags = img_container.get_calibrated_magnitudes()
+#
+#     #   Get astropy tables with magnitudes
+#     tbl_transformed = getattr(img_container, 'table_mags_transformed', None)
+#     tbl_not_transformed = getattr(
+#         img_container,
+#         'table_mags_not_transformed',
+#         None,
+#     )
+#
+#     #   Convert magnitudes
+#     if tbl_transformed is not None:
+#         convert_magnitudes(tbl_transformed, target_filter_system)
+#     if tbl_not_transformed is not None:
+#         convert_magnitudes(tbl_not_transformed, target_filter_system)
 
 
 def add_column_to_table(tbl, column_name, data, column_id):
@@ -2923,7 +2438,7 @@ def add_column_to_table(tbl, column_name, data, column_id):
 
 def convert_magnitudes(tbl: Table, target_filter_system: str) -> Table:
     """
-        Convert magnitudes from one system to another
+        Convert magnitudes from one magnitude system to another
 
         Parameters
         ----------

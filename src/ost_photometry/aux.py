@@ -3,6 +3,7 @@
 ############################################################################
 
 import os
+import sys
 
 import time
 
@@ -10,8 +11,6 @@ import random
 import string
 
 import subprocess
-
-import pandas as pd
 
 import json
 import yaml
@@ -330,41 +329,11 @@ def progress(x):
 
 
 def endProgress():
-    '''
+    """
         End progress bar
-    '''
+    """
     sys.stdout.write("#" * (40 - progress_x) + "]\n")
     sys.stdout.flush()
-
-
-def dict_vs_df(var):
-    '''
-        Distinguish between dictionary and pandas data frame
-    '''
-    if isinstance(var, dict):
-        return False
-    elif isinstance(var, pd.DataFrame):
-        return True
-    else:
-        raise Exception(
-            f"{style.bcolors.FAIL} \nType of varaible not recognized"
-            f"{style.bcolors.ENDC}"
-            )
-
-
-def np_vs_df(var):
-    '''
-        Distinguish between numpy array and pandas data frame
-    '''
-    if isinstance(var, np.ndarray):
-        return False
-    elif isinstance(var, pd.DataFrame):
-        return True
-    else:
-        raise Exception(
-            f"{style.bcolors.FAIL} \nType of varaible not recognized"
-            f"{style.bcolors.ENDC}"
-            )
 
 
 def indices_to_slices(a):
@@ -553,7 +522,7 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
 
 
 def find_wcs_twirl(image, x=None, y=None, indent=2):
-    '''
+    """
         Calculate WCS information from star positions
         -> use twirl libary
 
@@ -569,7 +538,7 @@ def find_wcs_twirl(image, x=None, y=None, indent=2):
         indent          : `string`, optional
             Indentation for the console output lines
             Default is ``2``.
-    '''
+    """
     terminal_output.print_terminal(
         indent=indent,
         string="Searching for a WCS solution (pixel to ra/dec conversion)",
