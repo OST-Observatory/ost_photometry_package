@@ -1308,6 +1308,7 @@ def prepare_and_plot_starmap_final(img_container, filt_list):
     terminal_output.print_terminal()
 
 
+#   TODO: Merge with the one above
 def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
                                      plot_test=True):
     """

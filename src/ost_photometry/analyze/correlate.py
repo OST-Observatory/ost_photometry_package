@@ -16,12 +16,13 @@ import astropy.units as u
 ############################################################################
 
 
+#   TODO: Unify the code in the following 4 functions.
 def posi_obj_astropy(xs, ys, ra_obj, dec_obj, w, ra_unit=u.hourangle,
                      dec_unit=u.deg, seplimit=2. * u.arcsec):
     """
         Find the image coordinates of a star based on the stellar
         coordinates and the WCS of the image, using astropy matching
-        algorisms.
+        algorithms.
 
         Parameters
         ----------
@@ -88,172 +89,172 @@ def posi_obj_astropy(xs, ys, ra_obj, dec_obj, w, ra_unit=u.hourangle,
     return id_ds, len(id_ds), x_obj, y_obj
 
 
-def posi_obj_astropy_img(image, ra_obj, dec_obj, w, ra_unit=u.hourangle,
-                         dec_unit=u.deg, seplimit=2. * u.arcsec):
-    """
-        Find the image coordinates of a star based on the stellar
-        coordinates and the WCS of the image, using astropy matching
-        algorisms.
+# def posi_obj_astropy_img(image, ra_obj, dec_obj, w, ra_unit=u.hourangle,
+#                          dec_unit=u.deg, seplimit=2. * u.arcsec):
+#     """
+#         Find the image coordinates of a star based on the stellar
+#         coordinates and the WCS of the image, using astropy matching
+#         algorithms.
+#
+#         Parameters
+#         ----------
+#         image           : `image.class`
+#             Image class with all image specific properties
+#
+#         ra_obj          : `float`
+#             Right ascension of the object
+#
+#         dec_obj         : `float`
+#             Declination of the object
+#
+#         w               : `astropy.wcs.WCS`
+#             WCS infos
+#
+#         ra_unit         : `astropy.units`, optional
+#             Right ascension unit
+#             Default is ``u.hourangle``.
+#
+#         dec_unit        : `astropy.units`, optional
+#             Declination unit
+#             Default is ``u.deg``.
+#
+#         seplimit            : `astropy.units`, optional
+#             Allowed separation between objects.
+#             Default is ``2.*u.arcsec``.
+#
+#         Returns
+#         -------
+#         inds            : `numpy.ndarray`
+#             Index positions of matched objects in the origins. Is -1 is no
+#             objects were found.
+#
+#         count           : `integer`
+#             Number of times the object has been identified on the image
+#
+#         x_obj           : `float`
+#             X coordinates of the objects in pixel
+#
+#         y_obj
+#             Y coordinates of the objects in pixel
+#     """
+#     #   Make coordinates object
+#     coord_obj = SkyCoord(
+#         ra_obj,
+#         dec_obj,
+#         unit=(ra_unit, dec_unit),
+#         frame="icrs",
+#     )
+#
+#     #   Convert ra & dec to pixel coordinates
+#     x_obj, y_obj = w.all_world2pix(coord_obj.ra, coord_obj.dec, 0)
+#
+#     #   Get photometry tabel
+#     tbl = image.photometry
+#
+#     #   Create SkyCoord object for dataset
+#     coords_ds = SkyCoord.from_pixel(
+#         tbl['x_fit'],
+#         tbl['y_fit'],
+#         w,
+#     )
+#
+#     #   Find matches in the dataset
+#     dist_mask = coords_ds.separation(coord_obj) < seplimit
+#     id_ds = np.argwhere(dist_mask).ravel()
+#
+#     return id_ds, len(id_ds), x_obj, y_obj
 
-        Parameters
-        ----------
-        image           : `image.class`
-            Image class with all image specific properties
 
-        ra_obj          : `float`
-            Right ascension of the object
-
-        dec_obj         : `float`
-            Declination of the object
-
-        w               : `astropy.wcs.WCS`
-            WCS infos
-
-        ra_unit         : `astropy.units`, optional
-            Right ascension unit
-            Default is ``u.hourangle``.
-
-        dec_unit        : `astropy.units`, optional
-            Declination unit
-            Default is ``u.deg``.
-
-        seplimit            : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
-
-        Returns
-        -------
-        inds            : `numpy.ndarray`
-            Index positions of matched objects in the origins. Is -1 is no
-            objects were found.
-
-        count           : `integer`
-            Number of times the object has been identified on the image
-
-        x_obj           : `float`
-            X coordinates of the objects in pixel
-
-        y_obj
-            Y coordinates of the objects in pixel
-    """
-    #   Make coordinates object
-    coord_obj = SkyCoord(
-        ra_obj,
-        dec_obj,
-        unit=(ra_unit, dec_unit),
-        frame="icrs",
-    )
-
-    #   Convert ra & dec to pixel coordinates
-    x_obj, y_obj = w.all_world2pix(coord_obj.ra, coord_obj.dec, 0)
-
-    #   Get photometry tabel
-    tbl = image.photometry
-
-    #   Create SkyCoord object for dataset
-    coords_ds = SkyCoord.from_pixel(
-        tbl['x_fit'],
-        tbl['y_fit'],
-        w,
-    )
-
-    #   Find matches in the dataset
-    dist_mask = coords_ds.separation(coord_obj) < seplimit
-    id_ds = np.argwhere(dist_mask).ravel()
-
-    return id_ds, len(id_ds), x_obj, y_obj
-
-
-def posi_obj_srcor_img(image, ra_obj, dec_obj, w, dcr=3, option=1,
-                       ra_unit=u.hourangle, dec_unit=u.deg, verbose=False):
-    """
-        Find the image coordinates of a star based on the stellar
-        coordinates and the WCS of the image
-
-        Parameters
-        ----------
-        image           : `image.class`
-            Image class with all image specific properties
-
-        ra_obj          : `float`
-            Right ascension of the object
-
-        dec_obj         : `float`
-            Declination of the object
-
-        w               : `astropy.wcs.WCS`
-            WCS infos
-
-        dcr             : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
-
-        option          : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
-
-        ra_unit         : `astropy.units`, optional
-            Right ascension unit
-            Default is ``u.hourangle``.
-
-        dec_unit        : `astropy.units`, optional
-            Declination unit
-            Default is ``u.deg``.
-
-        verbose         : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
-
-        Returns
-        -------
-        inds            : `numpy.ndarray`
-            Index positions of matched objects in the origins. Is -1 is no
-            objects were found.
-
-        count           : `integer`
-            Number of times the object has been identified on the image
-
-        x_obj           : `float`
-            X coordinates of the objects in pixel
-
-        y_obj
-            Y coordinates of the objects in pixel
-    """
-    #   Make coordinates object
-    coord_obj = SkyCoord(
-        ra_obj,
-        dec_obj,
-        unit=(ra_unit, dec_unit),
-        frame="icrs",
-    )
-
-    #   Convert ra & dec to pixel coordinates
-    x_obj, y_obj = w.all_world2pix(coord_obj.ra, coord_obj.dec, 0)
-
-    #   Get photometry tabel
-    tbl = image.photometry
-
-    #   Number of objects
-    count = len(tbl['x_fit'])
-
-    #   Define and fill new arrays to allow correlation
-    xall = np.zeros((count, 2))
-    yall = np.zeros((count, 2))
-    xall[0, 0] = x_obj
-    xall[0:count, 1] = tbl['x_fit']
-    yall[0, 0] = y_obj
-    yall[0:count, 1] = tbl['y_fit']
-
-    #   Correlate calibration stars with stars on the image
-    inds, reject, count, reject_obj = newsrcor(
-        xall,
-        yall,
-        dcr,
-        option=option,
-        silent=not verbose,
-    )
-
-    return inds, count, x_obj, y_obj
+# def posi_obj_srcor_img(image, ra_obj, dec_obj, w, dcr=3, option=1,
+#                        ra_unit=u.hourangle, dec_unit=u.deg, verbose=False):
+#     """
+#         Find the image coordinates of a star based on the stellar
+#         coordinates and the WCS of the image
+#
+#         Parameters
+#         ----------
+#         image           : `image.class`
+#             Image class with all image specific properties
+#
+#         ra_obj          : `float`
+#             Right ascension of the object
+#
+#         dec_obj         : `float`
+#             Declination of the object
+#
+#         w               : `astropy.wcs.WCS`
+#             WCS infos
+#
+#         dcr             : `float`, optional
+#             Maximal distance between two objects in Pixel
+#             Default is ``3``.
+#
+#         option          : `integer`, optional
+#             Option for the srcor correlation function
+#             Default is ``1``.
+#
+#         ra_unit         : `astropy.units`, optional
+#             Right ascension unit
+#             Default is ``u.hourangle``.
+#
+#         dec_unit        : `astropy.units`, optional
+#             Declination unit
+#             Default is ``u.deg``.
+#
+#         verbose         : `boolean`, optional
+#             If True additional output will be printed to the command line.
+#             Default is ``False``.
+#
+#         Returns
+#         -------
+#         inds            : `numpy.ndarray`
+#             Index positions of matched objects in the origins. Is -1 is no
+#             objects were found.
+#
+#         count           : `integer`
+#             Number of times the object has been identified on the image
+#
+#         x_obj           : `float`
+#             X coordinates of the objects in pixel
+#
+#         y_obj
+#             Y coordinates of the objects in pixel
+#     """
+#     #   Make coordinates object
+#     coord_obj = SkyCoord(
+#         ra_obj,
+#         dec_obj,
+#         unit=(ra_unit, dec_unit),
+#         frame="icrs",
+#     )
+#
+#     #   Convert ra & dec to pixel coordinates
+#     x_obj, y_obj = w.all_world2pix(coord_obj.ra, coord_obj.dec, 0)
+#
+#     #   Get photometry tabel
+#     tbl = image.photometry
+#
+#     #   Number of objects
+#     count = len(tbl['x_fit'])
+#
+#     #   Define and fill new arrays to allow correlation
+#     xall = np.zeros((count, 2))
+#     yall = np.zeros((count, 2))
+#     xall[0, 0] = x_obj
+#     xall[0:count, 1] = tbl['x_fit']
+#     yall[0, 0] = y_obj
+#     yall[0:count, 1] = tbl['y_fit']
+#
+#     #   Correlate calibration stars with stars on the image
+#     inds, reject, count, reject_obj = newsrcor(
+#         xall,
+#         yall,
+#         dcr,
+#         option=option,
+#         silent=not verbose,
+#     )
+#
+#     return inds, count, x_obj, y_obj
 
 
 def posi_obj_srcor(xs, ys, ra_obj, dec_obj, w, dcr=3, option=1,
@@ -346,6 +347,114 @@ def posi_obj_srcor(xs, ys, ra_obj, dec_obj, w, dcr=3, option=1,
     )
 
     return inds, count, x_obj, y_obj
+
+
+def identify_star_in_dataset(x, y, ra_obj, dec_obj, w, ra_unit=u.hourangle,
+                             dec_unit=u.deg, seplimit=2. * u.arcsec, dcr=3, option=1,
+                             verbose=False, correl_method='astropy'):
+    """
+        Identify a specific star based on its right ascension and declination
+         in a dataset of pixel coordinates. Requires a valid WCS.
+
+        Parameters
+        ----------
+        x                   : `list` of `numpy.ndarray`
+            Object positions in pixel coordinates. X direction.
+
+        y                   : `list` of `numpy.ndarray`
+            Object positions in pixel coordinates. Y direction.
+
+        ra_obj              : `float`
+            Right ascension of the object
+
+        dec_obj             : `float`
+            Declination of the object
+
+        w                   : `astropy.wcs ` object
+            WCS information
+
+        ra_unit             : `astropy.units`, optional
+            Right ascension unit
+            Default is ``u.hourangle``.
+
+        dec_unit            : `astropy.units`, optional
+            Declination unit
+            Default is ``u.deg``.
+
+        seplimit            : `astropy.units`, optional
+            Allowed separation between objects.
+            Default is ``2.*u.arcsec``.
+
+        dcr                 : `float`, optional
+            Maximal distance between two objects in Pixel
+            Default is ``3``.
+
+        option              : `integer`, optional
+            Option for the srcor correlation function
+            Default is ``1``.
+
+        verbose             : `boolean`, optional
+            If True additional output will be printed to the command line.
+            Default is ``False``.
+
+        correl_method       : `string`, optional
+            Correlation method to be used to find the common objects on
+            the images.
+            Possibilities: ``astropy``, ``own``
+            Default is ``astropy``.
+
+
+        Returns
+        -------
+        inds            : `numpy.ndarray`
+            Index positions of matched objects in the origins. Is -1 is no
+            objects were found.
+
+        count           : `integer`
+            Number of times the object has been identified on the image
+
+        x_obj           : `float`
+            X coordinates of the objects in pixel
+
+        y_obj           : `float`
+            Y coordinates of the objects in pixel
+    """
+    if correl_method == 'astropy':
+        variable_id, count, x_obj, y_obj = posi_obj_astropy(
+            x,
+            y,
+            ra_obj,
+            dec_obj,
+            w,
+            ra_unit=ra_unit,
+            dec_unit=dec_unit,
+            seplimit=seplimit,
+        )
+
+    elif correl_method == 'own':
+        inds_obj, count, x_obj, y_obj = posi_obj_srcor(
+            x,
+            y,
+            ra_obj,
+            dec_obj,
+            w,
+            dcr=dcr,
+            option=option,
+            verbose=verbose,
+            ra_unit=ra_unit,
+            dec_unit=dec_unit,
+        )
+
+        # if verbose:
+        #     terminal_output.print_terminal()
+
+        #   Current object ID
+        variable_id = inds_obj[1]
+
+    else:
+        raise ValueError(f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.')
+
+    return variable_id, count, x_obj, y_obj
 
 
 def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
