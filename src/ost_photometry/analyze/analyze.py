@@ -1881,8 +1881,8 @@ def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
 
 
 def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
-                           refORI=0, refOBJ=[], nmissed=1, bfrac=1.0,
-                           s_refOBJ=True, correl_method='astropy',
+                           ref_ori=0, ref_obj=[], nmissed=1, bfrac=1.0,
+                           s_ref_obj=True, correl_method='astropy',
                            seplimit=2. * u.arcsec):
     """
         Correlate object positions from all stars in the image ensemble to
@@ -1906,11 +1906,12 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             objects from a specific origin
             Default is ``1``.
 
-        refORI              : `integer`, optional
+        TODO: Remove ref_ori because it is already on the ensemble
+        ref_ori             : `integer`, optional
             ID of the reference origin
             Default is ``0``.
 
-        refOBJ              : `list` of `integer`, optional
+        ref_obj             : `list` of `integer`, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``[]``.
@@ -1926,7 +1927,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             objects with valid source positions.
             Default is ``1.0``.
 
-        s_refOBJ            : `boolean`, optional
+        s_ref_obj           : `boolean`, optional
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
@@ -1941,17 +1942,16 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
     """
-    #   Get image IDs
-    arr_img_ids = img_ensemble.get_image_ids()
-
-    terminal_output.print_terminal(
-        arr_img_ids,
-        indent=1,
-        string="Correlate results from the images ({})",
-    )
-
     #   Number of images
-    nimg = len(arr_img_ids)
+    n_image = img_ensemble.nfiles
+
+    #   Set proxy image position IDs
+    arr_img_ids = np.arrange(n_image)
+
+    terminal_output.print_to_terminal(
+        f"Correlate results from the images ({arr_img_ids})",
+        indent=1,
+    )
 
     #   Get WCS
     w = img_ensemble.wcs
@@ -1964,39 +1964,39 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     #   -> find common objects
     if correl_method == 'astropy':
         #   Astropy version: 2x faster than own
-        indSR, reject = correlate.astropycor(
+        ind_sr, reject = correlate.astropycor(
             x,
             y,
             w,
-            refORI=refORI,
-            refOBJ=refOBJ,
+            refORI=ref_ori,
+            refOBJ=ref_obj,
             nmissed=nmissed,
-            s_refOBJ=s_refOBJ,
+            s_refOBJ=s_ref_obj,
             seplimit=seplimit,
         )
-        count = len(indSR[0])
+        count = len(ind_sr[0])
 
     elif correl_method == 'own':
         #   'Own' correlation method requires positions to be in a numpy array
-        xall = np.zeros((nmax, nimg))
-        yall = np.zeros((nmax, nimg))
+        xall = np.zeros((nmax, n_image))
+        yall = np.zeros((nmax, n_image))
 
-        for i in range(0, nimg):
+        for i in range(0, n_image):
             xall[0:len(x[i]), i] = x[i]
             yall[0:len(y[i]), i] = y[i]
 
         #   Own version based on srcor from the IDL Astro Library
-        indSR, reject, count, rej_obj = correlate.newsrcor(
+        ind_sr, reject, count, rej_obj = correlate.newsrcor(
             xall,
             yall,
             dcr,
             bfrac=bfrac,
             option=option,
             maxid=maxid,
-            refORI=refORI,
-            refOBJ=refOBJ,
+            refORI=ref_ori,
+            refOBJ=ref_obj,
             nmissed=nmissed,
-            s_refOBJ=s_refOBJ,
+            s_refOBJ=s_ref_obj,
         )
     else:
         raise ValueError(
@@ -2049,47 +2049,35 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     #   Remove "bad" images from index array
     #   (only necessary for 'own' method)
     if correl_method == 'own':
-        indSR = np.delete(indSR, reject, 0)
-
-    # Number of "clean" datasets
-    nclean = len(indSR[:, 0])
+        ind_sr = np.delete(ind_sr, reject, 0)
 
     #   Remove "bad" images from image IDs
     arr_img_ids = np.delete(arr_img_ids, reject, 0)
 
     #   Calculate new index of the reference origin
-    shiftID = np.argwhere(reject < refORI)
-    Nshift = len(shiftID)
-    refORI_new = refORI - Nshift
+    shift_id = np.argwhere(reject < ref_ori)
+    ref_ori_new = ref_ori - len(shift_id)
 
     ###
     #   TODO: Add here sort for table
     #
-    print(len(img_ensemble.get_photometry()))
-
     #   Remove images that are rejected (bad images) during the correlation process.
-    del img_ensemble.image_list[reject]
+    img_ensemble.image_list = [img_ensemble.image_list[i] for i in arr_img_ids]
+    # img_ensemble.image_list = np.delete(img_list, reject)
+    img_ensemble.nfiles = len(arr_img_ids)
+    img_ensemble.ref_id = ref_ori_new
 
+    #   Limit the photometry tables to common objects.
+    for j, image in enumerate(img_ensemble.image_list):
+        image.photometry = image.photometry[ind_sr[j, :]]
+
+    #   TODO: Move the following to a dedicated function and then move it to the calibration procedure
     #   Get dictionary with astropy tables with the position and flux data
     photometry_dict_of_tbls = img_ensemble.get_photometry()
 
-    print(len(photometry_dict_of_tbls))
+    # Number of "clean" datasets
+    nclean = len(ind_sr[:, 0])
 
-    # for i, img in enumerate(img_ensemble.image_list):
-    #     if img.pk not in arr_img_ids:
-    #         del img_ensemble.image_list
-    for j, img_id in enumerate(arr_img_ids):
-        img_id_str = str(img_id)
-
-        current_image_photometry = photometry_dict_of_tbls[img_id_str]
-
-        print(img_id_str)
-        print(current_image_photometry)
-        print('--------------')
-        print(current_image_photometry[indSR[j, :]])
-        print()
-
-    #   TODO: Move the following to a dedicated function and then move it to the calibration procedure
     ###
     #   Rearrange arrays based on the correlation results
     #
@@ -2101,16 +2089,16 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     #   Fill position arrays -> distinguish between input sources
     #                           depending on correlation method
     if correl_method == 'astropy':
-        x_sort = x[refORI][indSR[refORI_new]].value
-        y_sort = y[refORI][indSR[refORI_new]].value
+        x_sort = x[ref_ori][ind_sr[ref_ori_new]].value
+        y_sort = y[ref_ori][ind_sr[ref_ori_new]].value
 
     elif correl_method == 'own':
         #   Remove "bad" datasets first
         xall = np.delete(xall, reject, 1)
         yall = np.delete(yall, reject, 1)
 
-        x_sort = xall[indSR[refORI_new]][:, refORI_new]
-        y_sort = yall[indSR[refORI_new]][:, refORI_new]
+        x_sort = xall[ind_sr[ref_ori_new]][:, ref_ori_new]
+        y_sort = yall[ind_sr[ref_ori_new]][:, ref_ori_new]
 
     #   Prepare array for the flux and uncertainty (all datasets)
     flux_arr = np.zeros(nclean, dtype=[('flux_fit', 'f8', (count)),
@@ -2129,8 +2117,8 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         )
 
         #   Rearrange flux and error
-        flux_img['flux_fit'] = photometry_dict_of_tbls[img_ID_str]['flux_fit'][indSR[j, :]]
-        flux_img['flux_unc'] = photometry_dict_of_tbls[img_ID_str]['flux_unc'][indSR[j, :]]
+        flux_img['flux_fit'] = photometry_dict_of_tbls[img_ID_str]['flux_fit'][ind_sr[j, :]]
+        flux_img['flux_unc'] = photometry_dict_of_tbls[img_ID_str]['flux_unc'][ind_sr[j, :]]
 
         #   Remove nans etc. in error
         #   TODO: Replace with object removal
@@ -2151,11 +2139,11 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         )
 
         #   Add sorted flux data and positions back to the image
-        img_ensemble.image_list[img_ID].flux = flux_img
-        img_ensemble.image_list[img_ID].uflux = uflux_img
-        img_ensemble.image_list[img_ID].x_sort = x_sort
-        img_ensemble.image_list[img_ID].y_sort = y_sort
-        img_ensemble.image_list[img_ID].id_sort = ind_sort
+        img_ensemble.image_list[j].flux = flux_img
+        img_ensemble.image_list[j].uflux = uflux_img
+        img_ensemble.image_list[j].x_sort = x_sort
+        img_ensemble.image_list[j].y_sort = y_sort
+        img_ensemble.image_list[j].id_sort = ind_sort
 
         #   Add to overall array
         flux_arr['flux_fit'][j] = flux_img['flux_fit']
@@ -2168,11 +2156,11 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
 
     #   Update image ensemble object and add IDs, pixel coordinates, and
     #   flux of the correlated objects
-    img_list = img_ensemble.image_list
-    img_list = np.delete(img_list, reject)
-    img_ensemble.image_list = img_list
-    img_ensemble.nfiles = len(img_list)
-    img_ensemble.ref_id = refORI_new
+    # img_list = img_ensemble.image_list
+    # img_list = np.delete(img_list, reject)
+    # img_ensemble.image_list = img_list
+    # img_ensemble.nfiles = len(img_ensemble.image_list)
+    # img_ensemble.ref_id = ref_ori_new
 
     img_ensemble.id_s = ind_sort
     img_ensemble.x_s = x_sort
@@ -2632,11 +2620,11 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 #         dcr=dcr,
 #         option=option,
 #         maxid=maxid,
-#         refORI=ref_ID,
-#         refOBJ=calib_IDs,
+#         ref_ori=ref_ID,
+#         ref_obj=calib_IDs,
 #         nmissed=nmissed,
 #         bfrac=bfrac,
-#         s_refOBJ=s_refOBJ,
+#         s_ref_obj=s_refOBJ,
 #         correl_method=correl_method,
 #         seplimit=seplimit,
 #     )
@@ -2763,11 +2751,11 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         dcr=dcr,
         option=option,
         maxid=maxid,
-        refORI=ref_ID,
-        refOBJ=[int(variable_id)],
+        ref_ori=ref_ID,
+        ref_obj=[int(variable_id)],
         nmissed=nmissed,
         bfrac=bfrac,
-        s_refOBJ=s_refOBJ,
+        s_ref_obj=s_refOBJ,
         correl_method=correl_method,
         seplimit=seplimit,
     )
