@@ -1946,7 +1946,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     n_image = img_ensemble.nfiles
 
     #   Set proxy image position IDs
-    arr_img_ids = np.arrange(n_image)
+    arr_img_ids = np.arange(n_image)
 
     terminal_output.print_to_terminal(
         f"Correlate results from the images ({arr_img_ids})",
@@ -2117,8 +2117,8 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         )
 
         #   Rearrange flux and error
-        flux_img['flux_fit'] = photometry_dict_of_tbls[img_ID_str]['flux_fit'][ind_sr[j, :]]
-        flux_img['flux_unc'] = photometry_dict_of_tbls[img_ID_str]['flux_unc'][ind_sr[j, :]]
+        flux_img['flux_fit'] = photometry_dict_of_tbls[img_ID_str]['flux_fit']
+        flux_img['flux_unc'] = photometry_dict_of_tbls[img_ID_str]['flux_unc']
 
         #   Remove nans etc. in error
         #   TODO: Replace with object removal
