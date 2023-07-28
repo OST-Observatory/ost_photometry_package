@@ -559,8 +559,8 @@ def get_calib_fit(img, img_container):
     #   Calculate number of calibration stars
     count_cali = len(ind_list)
 
-    #   Get required type for magnitude array. If ``True`` a unumpy array
-    #   will be used. Otherwise a structured numpy array will be created.
+    #   Get required type for magnitude array. If ``True`` an unumpy array
+    #   will be used. Otherwise, a structured numpy array will be created.
     unc = getattr(img_container, 'unc', True)
 
     #   Calculate magnitudes
@@ -690,7 +690,8 @@ def deter_calib(img_container, band_list, calib_method='APASS',
         string="Get calibration star magnitudes (filter: {})",
     )
 
-    #   Get image ensemble (replace with reference filter in future)
+    #   Get one of image ensembles to extract wcs, positions, ect.
+    #   TODO: replace with reference filter or at all relevant infos to image container?
     img_ensemble = img_container.ensembles[band_list[0]]
 
     #   Get wcs
@@ -813,6 +814,7 @@ def deter_calib(img_container, band_list, calib_method='APASS',
     y_fit = y[ind_fit_list]
     indnew_fit = np.arange(count_cali)
 
+    #   TODO: Get rid of the stuff below and replace it with an astropy table. To the table add x any pixel coordinates.
     ###
     #   Arrange literature magnitudes in numpy arrays
     #

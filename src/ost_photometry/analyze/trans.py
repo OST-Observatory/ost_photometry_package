@@ -1466,7 +1466,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
         derive_Tcs      : `boolean`, optional
             If True the magnitude transformation coefficients will be
             calculated from the current data even if calibration coefficients
-            are available in the data base.
+            are available in the database.
             Default is ``False``
 
         plot_sigma      : `boolean', optional
@@ -1521,10 +1521,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
     nfilter = len(filter_list)
 
     #   Get number of objects
-    try:
-        count = len(img_ensembles[filter_list[0]].id_es)
-    except:
-        count = len(img_ensembles[filter_list[0]].id_s)
+    count = len(ind)
 
     #   Prepare arrays
     aux.prepare_arrays(img_container, nfilter, count)
@@ -1573,6 +1570,8 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
                 )
             else:
                 img_o = None
+
+            #   TODO: After the switch to astropy tables. Add here conversion from astropy tables to arrays.
 
             #   Prepare ZP for the magnitude calibration and perform
             #   sigma clipping on the delta color or color, depending on

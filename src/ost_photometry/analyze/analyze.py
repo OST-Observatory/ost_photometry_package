@@ -417,6 +417,21 @@ class image_ensemble:
 
         return dict_list
 
+    #   Get object positions in pixel coordinates
+    #   TODO: improve?
+    def get_object_positions_pixel(self):
+        arr_img_IDs = self.get_image_ids()
+        tbl = self.get_photometry()
+        nmax_list = []
+        x = []
+        y = []
+        for i, img_id in enumerate(arr_img_IDs):
+            x.append(tbl[str(img_id)]['x_fit'])
+            y.append(tbl[str(img_id)]['y_fit'])
+            nmax_list.append(len(x[i]))
+
+        return x, y, np.max(nmax_list)
+
 
 def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
               verbose=False, addmask=True, terminal_logger=None):
@@ -1935,35 +1950,26 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         string="Correlate results from the images ({})",
     )
 
-    #   Get WCS
-    w = img_ensemble.wcs
-
-    #   Get dictionary with astropy tables with the position and flux data
-    result_tbl = img_ensemble.get_photometry()
-
     #   Number of images
     nimg = len(arr_img_IDs)
 
-    #   Extract pixel positions of the objects -> TODO: improved!
-    #   TODO: Put this in the ensemble class
-    nmax_list = []
-    x = []
-    y = []
-    for i, img_ID in enumerate(arr_img_IDs):
-        x.append(result_tbl[str(img_ID)]['x_fit'])
-        y.append(result_tbl[str(img_ID)]['y_fit'])
-        nmax_list.append(len(x[i]))
+    #   Get WCS
+    w = img_ensemble.wcs
+
+    #   Extract pixel positions of the objects
+    #   Returns list of lists for x and y
+    #   TODO: Put this in the ensemble class [x]
+    # nmax_list = []
+    # x = []
+    # y = []
+    # for i, img_ID in enumerate(arr_img_IDs):
+    #     x.append(result_tbl[str(img_ID)]['x_fit'])
+    #     y.append(result_tbl[str(img_ID)]['y_fit'])
+    #     nmax_list.append(len(x[i]))
 
     #   Max. number of objects
-    nmax = np.max(nmax_list)
-
-    #   Define and fill new arrays
-    xall = np.zeros((nmax, nimg))
-    yall = np.zeros((nmax, nimg))
-
-    for i in range(0, nimg):
-        xall[0:len(x[i]), i] = x[i]
-        yall[0:len(y[i]), i] = y[i]
+    # nmax = np.max(nmax_list)
+    x, y, nmax = img_ensemble.get_object_positions_pixel()
 
     #   Correlate the object positions from the images
     #   -> find common objects
@@ -1982,6 +1988,14 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         count = len(indSR[0])
 
     elif correl_method == 'own':
+        #   'Own' correlation method requires positions to be in a numpy array
+        xall = np.zeros((nmax, nimg))
+        yall = np.zeros((nmax, nimg))
+
+        for i in range(0, nimg):
+            xall[0:len(x[i]), i] = x[i]
+            yall[0:len(y[i]), i] = y[i]
+
         #   Own version based on srcor from the IDL Astro Library
         indSR, reject, count, rej_obj = correlate.newsrcor(
             xall,
@@ -2002,7 +2016,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         )
 
     ###
-    #   Print correlation infos or raise error if not enough common
+    #   Print correlation result or raise error if not enough common
     #   objects were detected
     #
     if count == 1:
@@ -2016,30 +2030,26 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             f"found!{style.bcolors.ENDC}"
         )
     else:
-        terminal_output.print_terminal(
-            count,
+        terminal_output.print_to_terminal(
+            f"{count} objects identified on all images",
             indent=2,
-            string="{} objects identified on all images",
         )
 
     nbad = len(reject)
     if nbad > 0:
-        terminal_output.print_terminal(
-            nbad,
+        terminal_output.print_to_terminal(
+            f"{nbad} images do not meet the criteria -> removed",
             indent=2,
-            string="{:d} images do not meet the criteria -> removed",
         )
     if nbad > 1:
-        terminal_output.print_terminal(
-            reject,
+        terminal_output.print_to_terminal(
+            f"Rejected image IDs: {reject}",
             indent=2,
-            string="Rejected image IDs: {}",
         )
     elif nbad == 1:
-        terminal_output.print_terminal(
-            reject,
+        terminal_output.print_to_terminal(
+            f"ID of the rejected image: {reject}",
             indent=2,
-            string="ID of the rejected image: {}",
         )
     terminal_output.print_terminal()
 
@@ -2047,7 +2057,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     #   Post process correlation results
     #
 
-    #   Remove "bad" datasets from index array
+    #   Remove "bad" images from index array
     #   (only necessary for 'own' method)
     if correl_method == 'own':
         indSR = np.delete(indSR, reject, 0)
@@ -2055,7 +2065,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     # Number of "clean" datasets
     nclean = len(indSR[:, 0])
 
-    #   Remove "bad" datasets from image IDs -> used in a later step
+    #   Remove "bad" images from image IDs
     arr_img_IDs = np.delete(arr_img_IDs, reject, 0)
 
     #   Calculate new index of the reference origin
@@ -2066,6 +2076,19 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     ###
     #   TODO: Add here sort for table
     #
+    #   Get dictionary with astropy tables with the position and flux data
+    photometry_dict_of_tbls = img_ensemble.get_photometry()
+
+    for j, img_id in enumerate(arr_img_IDs):
+        img_id_str = str(img_id)
+        
+        current_imag_photometry = photometry_dict_of_tbls[img_id_str]
+
+        print(img_id_str)
+        print(current_imag_photometry)
+        print('--------------')
+        print(current_imag_photometry[indSR[j, :]])
+        print()
 
     #   TODO: Move the following to a dedicated function and then move it to the calibration procedure
     ###
@@ -2107,8 +2130,8 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         )
 
         #   Rearrange flux and error
-        flux_img['flux_fit'] = result_tbl[img_ID_str]['flux_fit'][indSR[j, :]]
-        flux_img['flux_unc'] = result_tbl[img_ID_str]['flux_unc'][indSR[j, :]]
+        flux_img['flux_fit'] = photometry_dict_of_tbls[img_ID_str]['flux_fit'][indSR[j, :]]
+        flux_img['flux_unc'] = photometry_dict_of_tbls[img_ID_str]['flux_unc'][indSR[j, :]]
 
         #   Remove nans etc. in error
         #   TODO: Replace with object removal
@@ -2707,8 +2730,6 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     ###
     #   Find position of the variable star I
     #
-    #   TODO: Rewrite it slightly so that this and the identification of
-    #    the variable star below can be put into a function.
     terminal_output.print_terminal(
         indent=1,
         string="Identify the variable star",
@@ -2725,38 +2746,6 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
             option=option,
             verbose=verbose,
     )
-    #
-    # reference_image = img_ensemble.image_list[ref_ID]
-    # image.photometry['x_fit']
-    #
-    # if correl_method == 'astropy':
-    #     variable_id, count, x_obj, y_obj = correlate.posi_obj_astropy_img(
-    #         img_ensemble.image_list[ref_ID],
-    #         ra_obj,
-    #         dec_obj,
-    #         img_ensemble.wcs,
-    #         seplimit=seplimit,
-    #     )
-    #
-    # elif correl_method == 'own':
-    #     inds_obj, count, x_obj, y_obj = correlate.posi_obj_srcor_img(
-    #         img_ensemble.image_list[ref_ID],
-    #         ra_obj,
-    #         dec_obj,
-    #         img_ensemble.wcs,
-    #         dcr=dcr,
-    #         option=option,
-    #         verbose=verbose,
-    #     )
-    #
-    #     #   Current object ID
-    #     variable_id = inds_obj[1]
-    #
-    #     if verbose:
-    #         terminal_output.print_terminal()
-    #
-    # else:
-    #     raise ValueError(f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.')
 
     ###
     #   Check if variable star was detected I
@@ -2803,35 +2792,6 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
             option=option,
             verbose=verbose,
     )
-    # if correl_method == 'astropy':
-    #     variable_id, count, x_obj, y_obj = correlate.posi_obj_astropy(
-    #         img_ensemble.x_s,
-    #         img_ensemble.y_s,
-    #         ra_obj,
-    #         dec_obj,
-    #         img_ensemble.wcs,
-    #         seplimit=seplimit,
-    #     )
-    #
-    # elif correl_method == 'own':
-    #     inds_obj, count, x_obj, y_obj = correlate.posi_obj_srcor(
-    #         img_ensemble.x_s,
-    #         img_ensemble.y_s,
-    #         ra_obj,
-    #         dec_obj,
-    #         img_ensemble.wcs,
-    #         dcr=dcr,
-    #         option=option,
-    #         verbose=verbose,
-    #     )
-    #     if verbose:
-    #         terminal_output.print_terminal()
-    #
-    #     #   Current object ID
-    #     variable_id = inds_obj[1]
-    #
-    # else:
-    #     raise ValueError(f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.')
 
     ###
     #   Check if variable star was detected II
@@ -4686,9 +4646,9 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                 terminal_output.print_terminal(
                     filt,
                     indent=2,
-                    string="Magnitude calibration not " \
-                           "possible because no calibration data is " \
-                           "available for filter {}. Use normalized flux for light " \
+                    string="Magnitude calibration not "
+                           "possible because no calibration data is "
+                           "available for filter {}. Use normalized flux for light "
                            "curve.",
                     style_name='WARNING',
                 )
