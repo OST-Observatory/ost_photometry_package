@@ -1942,33 +1942,22 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             Default is ``2.*u.arcsec``.
     """
     #   Get image IDs
-    arr_img_IDs = img_ensemble.get_image_ids()
+    arr_img_ids = img_ensemble.get_image_ids()
 
     terminal_output.print_terminal(
-        arr_img_IDs,
+        arr_img_ids,
         indent=1,
         string="Correlate results from the images ({})",
     )
 
     #   Number of images
-    nimg = len(arr_img_IDs)
+    nimg = len(arr_img_ids)
 
     #   Get WCS
     w = img_ensemble.wcs
 
     #   Extract pixel positions of the objects
     #   Returns list of lists for x and y
-    #   TODO: Put this in the ensemble class [x]
-    # nmax_list = []
-    # x = []
-    # y = []
-    # for i, img_ID in enumerate(arr_img_IDs):
-    #     x.append(result_tbl[str(img_ID)]['x_fit'])
-    #     y.append(result_tbl[str(img_ID)]['y_fit'])
-    #     nmax_list.append(len(x[i]))
-
-    #   Max. number of objects
-    # nmax = np.max(nmax_list)
     x, y, nmax = img_ensemble.get_object_positions_pixel()
 
     #   Correlate the object positions from the images
@@ -2066,7 +2055,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     nclean = len(indSR[:, 0])
 
     #   Remove "bad" images from image IDs
-    arr_img_IDs = np.delete(arr_img_IDs, reject, 0)
+    arr_img_ids = np.delete(arr_img_ids, reject, 0)
 
     #   Calculate new index of the reference origin
     shiftID = np.argwhere(reject < refORI)
@@ -2076,18 +2065,28 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     ###
     #   TODO: Add here sort for table
     #
+    print(len(img_ensemble.get_photometry()))
+
+    #   Remove images that are rejected (bad images) during the correlation process.
+    del img_ensemble.image_list[reject]
+
     #   Get dictionary with astropy tables with the position and flux data
     photometry_dict_of_tbls = img_ensemble.get_photometry()
 
-    for j, img_id in enumerate(arr_img_IDs):
+    print(len(photometry_dict_of_tbls))
+
+    # for i, img in enumerate(img_ensemble.image_list):
+    #     if img.pk not in arr_img_ids:
+    #         del img_ensemble.image_list
+    for j, img_id in enumerate(arr_img_ids):
         img_id_str = str(img_id)
-        
-        current_imag_photometry = photometry_dict_of_tbls[img_id_str]
+
+        current_image_photometry = photometry_dict_of_tbls[img_id_str]
 
         print(img_id_str)
-        print(current_imag_photometry)
+        print(current_image_photometry)
         print('--------------')
-        print(current_imag_photometry[indSR[j, :]])
+        print(current_image_photometry[indSR[j, :]])
         print()
 
     #   TODO: Move the following to a dedicated function and then move it to the calibration procedure
@@ -2120,7 +2119,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
                         )
 
     #   Fill flux arrays
-    for j, img_ID in enumerate(arr_img_IDs):
+    for j, img_ID in enumerate(arr_img_ids):
         img_ID_str = str(img_ID)
 
         #   Flux and uncertainty array for individual images
