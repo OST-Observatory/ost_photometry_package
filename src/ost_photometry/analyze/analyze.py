@@ -419,15 +419,26 @@ class image_ensemble:
 
     #   Get object positions in pixel coordinates
     #   TODO: improve?
+    # def get_object_positions_pixel(self):
+    #     arr_img_IDs = self.get_image_ids()
+    #     tbl = self.get_photometry()
+    #     nmax_list = []
+    #     x = []
+    #     y = []
+    #     for i, img_id in enumerate(arr_img_IDs):
+    #         x.append(tbl[str(img_id)]['x_fit'])
+    #         y.append(tbl[str(img_id)]['y_fit'])
+    #         nmax_list.append(len(x[i]))
+    #
+    #     return x, y, np.max(nmax_list)
     def get_object_positions_pixel(self):
-        arr_img_IDs = self.get_image_ids()
-        tbl = self.get_photometry()
+        tbls = self.get_photometry()
         nmax_list = []
         x = []
         y = []
-        for i, img_id in enumerate(arr_img_IDs):
-            x.append(tbl[str(img_id)]['x_fit'])
-            y.append(tbl[str(img_id)]['y_fit'])
+        for i, tbl in enumerate(tbls):
+            x.append(tbl['x_fit'])
+            y.append(tbl['y_fit'])
             nmax_list.append(len(x[i]))
 
         return x, y, np.max(nmax_list)
@@ -1943,10 +1954,10 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             Default is ``2.*u.arcsec``.
     """
     #   Number of images
-    n_image = img_ensemble.nfiles
+    n_images = img_ensemble.nfiles
 
     #   Set proxy image position IDs
-    arr_img_ids = np.arange(n_image)
+    arr_img_ids = np.arange(n_images)
 
     terminal_output.print_to_terminal(
         f"Correlate results from the images ({arr_img_ids})",
@@ -1958,109 +1969,124 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
 
     #   Extract pixel positions of the objects
     #   Returns list of lists for x and y
-    x, y, nmax = img_ensemble.get_object_positions_pixel()
+    x, y, n_objects = img_ensemble.get_object_positions_pixel()
 
-    #   Correlate the object positions from the images
-    #   -> find common objects
-    if correl_method == 'astropy':
-        #   Astropy version: 2x faster than own
-        ind_sr, reject = correlate.astropycor(
-            x,
-            y,
-            w,
-            refORI=ref_ori,
-            refOBJ=ref_obj,
-            nmissed=nmissed,
-            s_refOBJ=s_ref_obj,
-            seplimit=seplimit,
-        )
-        count = len(ind_sr[0])
-
-    elif correl_method == 'own':
-        #   'Own' correlation method requires positions to be in a numpy array
-        xall = np.zeros((nmax, n_image))
-        yall = np.zeros((nmax, n_image))
-
-        for i in range(0, n_image):
-            xall[0:len(x[i]), i] = x[i]
-            yall[0:len(y[i]), i] = y[i]
-
-        #   Own version based on srcor from the IDL Astro Library
-        ind_sr, reject, count, rej_obj = correlate.newsrcor(
-            xall,
-            yall,
-            dcr,
-            bfrac=bfrac,
-            option=option,
-            maxid=maxid,
-            refORI=ref_ori,
-            refOBJ=ref_obj,
-            nmissed=nmissed,
-            s_refOBJ=s_ref_obj,
-        )
-    else:
-        raise ValueError(
-            f'{style.bcolors.FAIL}Correlation method not known. Expected: '
-            f'"own" or astropy, but got "{correl_method}"{style.bcolors.ENDC}'
-        )
-
-    ###
-    #   Print correlation result or raise error if not enough common
-    #   objects were detected
+    # #   Correlate the object positions from the images
+    # #   -> find common objects
+    # if correl_method == 'astropy':
+    #     #   Astropy version: 2x faster than own
+    #     ind_sr, reject = correlate.astropycor(
+    #         x,
+    #         y,
+    #         w,
+    #         refORI=ref_ori,
+    #         refOBJ=ref_obj,
+    #         nmissed=nmissed,
+    #         s_refOBJ=s_ref_obj,
+    #         seplimit=seplimit,
+    #     )
+    #     count = len(ind_sr[0])
     #
-    if count == 1:
-        raise RuntimeError(
-            f"{style.bcolors.FAIL} \nOnly one common object "
-            f"found! {style.bcolors.ENDC}"
-        )
-    elif count == 0:
-        raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo common objects "
-            f"found!{style.bcolors.ENDC}"
-        )
-    else:
-        terminal_output.print_to_terminal(
-            f"{count} objects identified on all images",
-            indent=2,
-        )
-
-    nbad = len(reject)
-    if nbad > 0:
-        terminal_output.print_to_terminal(
-            f"{nbad} images do not meet the criteria -> removed",
-            indent=2,
-        )
-    if nbad > 1:
-        terminal_output.print_to_terminal(
-            f"Rejected image IDs: {reject}",
-            indent=2,
-        )
-    elif nbad == 1:
-        terminal_output.print_to_terminal(
-            f"ID of the rejected image: {reject}",
-            indent=2,
-        )
-    terminal_output.print_terminal()
-
-    ###
-    #   Post process correlation results
+    # elif correl_method == 'own':
+    #     #   'Own' correlation method requires positions to be in a numpy array
+    #     xall = np.zeros((nmax, n_image))
+    #     yall = np.zeros((nmax, n_image))
     #
+    #     for i in range(0, n_image):
+    #         xall[0:len(x[i]), i] = x[i]
+    #         yall[0:len(y[i]), i] = y[i]
+    #
+    #     #   Own version based on srcor from the IDL Astro Library
+    #     ind_sr, reject, count, rej_obj = correlate.newsrcor(
+    #         xall,
+    #         yall,
+    #         dcr,
+    #         bfrac=bfrac,
+    #         option=option,
+    #         maxid=maxid,
+    #         refORI=ref_ori,
+    #         refOBJ=ref_obj,
+    #         nmissed=nmissed,
+    #         s_refOBJ=s_ref_obj,
+    #     )
+    # else:
+    #     raise ValueError(
+    #         f'{style.bcolors.FAIL}Correlation method not known. Expected: '
+    #         f'"own" or astropy, but got "{correl_method}"{style.bcolors.ENDC}'
+    #     )
+    #
+    # ###
+    # #   Print correlation result or raise error if not enough common
+    # #   objects were detected
+    # #
+    # if count == 1:
+    #     raise RuntimeError(
+    #         f"{style.bcolors.FAIL} \nOnly one common object "
+    #         f"found! {style.bcolors.ENDC}"
+    #     )
+    # elif count == 0:
+    #     raise RuntimeError(
+    #         f"{style.bcolors.FAIL} \nNo common objects "
+    #         f"found!{style.bcolors.ENDC}"
+    #     )
+    # else:
+    #     terminal_output.print_to_terminal(
+    #         f"{count} objects identified on all images",
+    #         indent=2,
+    #     )
+    #
+    # nbad = len(reject)
+    # if nbad > 0:
+    #     terminal_output.print_to_terminal(
+    #         f"{nbad} images do not meet the criteria -> removed",
+    #         indent=2,
+    #     )
+    # if nbad > 1:
+    #     terminal_output.print_to_terminal(
+    #         f"Rejected image IDs: {reject}",
+    #         indent=2,
+    #     )
+    # elif nbad == 1:
+    #     terminal_output.print_to_terminal(
+    #         f"ID of the rejected image: {reject}",
+    #         indent=2,
+    #     )
+    # terminal_output.print_to_terminal('')
+    #
+    # ###
+    # #   Post process correlation results
+    # #
+    #
+    # #   Remove "bad" images from index array
+    # #   (only necessary for 'own' method)
+    # if correl_method == 'own':
+    #     ind_sr = np.delete(ind_sr, reject, 0)
+    #
+    # #   Calculate new index of the reference origin
+    # shift_id = np.argwhere(reject < ref_ori)
+    # ref_ori_new = ref_ori - len(shift_id)
 
-    #   Remove "bad" images from index array
-    #   (only necessary for 'own' method)
-    if correl_method == 'own':
-        ind_sr = np.delete(ind_sr, reject, 0)
+    ind_sr, ref_ori_new, reject, count = correlate.correlate_datasets(
+        x,
+        y,
+        w,
+        n_objects,
+        n_images,
+        ref_ori=0,
+        ref_obj=[],
+        nmissed=1,
+        s_ref_obj=True,
+        seplimit=2. * u.arcsec,
+        dcr=3.,
+        bfrac=1.0,
+        option=1,
+        maxid=1,
+        correl_method='astropy',
+    )
 
     #   Remove "bad" images from image IDs
     arr_img_ids = np.delete(arr_img_ids, reject, 0)
 
-    #   Calculate new index of the reference origin
-    shift_id = np.argwhere(reject < ref_ori)
-    ref_ori_new = ref_ori - len(shift_id)
-
-    ###
-    #   TODO: Add here sort for table
-    #
     #   Remove images that are rejected (bad images) during the correlation process.
     img_ensemble.image_list = [img_ensemble.image_list[i] for i in arr_img_ids]
     # img_ensemble.image_list = np.delete(img_list, reject)
@@ -2093,6 +2119,13 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         y_sort = y[ref_ori][ind_sr[ref_ori_new]].value
 
     elif correl_method == 'own':
+        xall = np.zeros((n_objects, n_images))
+        yall = np.zeros((n_objects, n_images))
+
+        for i in range(0, n_images):
+            xall[0:len(x[i]), i] = x[i]
+            yall[0:len(y[i]), i] = y[i]
+
         #   Remove "bad" datasets first
         xall = np.delete(xall, reject, 1)
         yall = np.delete(yall, reject, 1)
@@ -2198,6 +2231,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             objects from a specific origin
             Default is ``1``.
 
+        TODO: Remove ref_ori because it is already on the ensemble
         refORI              : `integer`, optional
             ID of the reference origin
             Default is ``0``.
@@ -2233,9 +2267,9 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
     """
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
+        "Correlate results from image ensembles",
         indent=1,
-        string="Correlate results from image ensembles",
     )
 
     #   Get image ensembles
@@ -2250,123 +2284,160 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 
     #   Number of objects in each table/image
     for key, ensemble in ensemble_dict.items():
-        keys.append(key)
-        x.append(ensemble.x_s)
-        y.append(ensemble.y_s)
-        nobj_list.append(len(ensemble.x_s))
         w.append(ensemble.wcs)
 
+        keys.append(key)
+
+        # x.append(ensemble.x_s)
+        # y.append(ensemble.y_s)
+        # nobj_list.append(len(ensemble.x_s))
+        _x = ensemble.image_list[0].photometry['x_fit']
+        x.append(_x)
+        y.append(ensemble.image_list[0].photometry['y_fit'])
+        nobj_list.append(len(_x))
+
+    print(x)
+    print(nobj_list)
+    print('------------')
+    print(keys)
+    print(ensemble_dict.keys())
+    print(list(ensemble_dict.keys()))
+    print('------------')
+
     #   Max. number of objects
-    nobj_max = np.max(nobj_list)
+    n_objects = np.max(nobj_list)
 
-    #   Number of ''images''/image ensembles
-    nimg = len(x)
-
-    #   Define and fill new arrays
-    xall = np.zeros((nobj_max, nimg))
-    yall = np.zeros((nobj_max, nimg))
-
-    for i in range(0, nimg):
-        xall[0:len(x[i]), i] = x[i]
-        yall[0:len(y[i]), i] = y[i]
+    #   Number of image ensembles
+    n_ensembles = len(x)
 
     #   Correlate the object positions from the images
     #   -> find common objects
-    if correl_method == 'astropy':
-        #   Astropy version: ~2x faster than own
-        indSR, reject = correlate.astropycor(
-            x,
-            y,
-            w[refORI],
-            refORI,
-            refOBJ,
-            nmissed,
-            s_refOBJ,
-            cleanup_advanced=False,
-            seplimit=seplimit,
-        )
-        count = len(indSR[0])
-
-    elif correl_method == 'own':
-        #   Own version based on srcor from the IDL Astro Library
-        indSR, reject, count, rej_obj = correlate.newsrcor(
-            xall,
-            yall,
-            dcr,
-            bfrac=bfrac,
-            option=option,
-            maxid=maxid,
-            refORI=refORI,
-            refOBJ=refOBJ,
-            nmissed=nmissed,
-            s_refOBJ=s_refOBJ,
-        )
-    else:
-        raise ValueError(
-            f'{style.bcolors.FAIL}Correlation method not known. Expected: '
-            f'"own" or astropy, but got "{correl_method}"{style.bcolors.ENDC}'
-        )
-
-    ###
-    #   Print correlation infos or raise error if not enough common
-    #   objects were detected
+    #   TODO: Check if this can be joined with the code from the correlate_ensemble_img function [x]
+    # if correl_method == 'astropy':
+    #     #   Astropy version: ~2x faster than own
+    #     indSR, reject = correlate.astropycor(
+    #         x,
+    #         y,
+    #         w[refORI],
+    #         refORI,
+    #         refOBJ,
+    #         nmissed,
+    #         s_refOBJ,
+    #         cleanup_advanced=False,
+    #         seplimit=seplimit,
+    #     )
+    #     count = len(indSR[0])
     #
-    if count == 1:
-        raise RuntimeError(
-            f"{style.bcolors.FAIL} \nOnly one common object "
-            f"found! {style.bcolors.ENDC}"
-        )
-    elif count == 0:
-        raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo common objects "
-            f"found!{style.bcolors.ENDC}"
-        )
-    else:
-        terminal_output.print_terminal(
-            count,
-            indent=2,
-            string="{} objects identified on all ensemble",
-        )
-
-    nbad = len(reject)
-    if nbad > 0:
-        terminal_output.print_terminal(
-            nbad,
-            indent=2,
-            string="{:d} images do not meet the criteria -> removed",
-        )
-    if nbad > 1:
-        terminal_output.print_terminal(
-            reject,
-            indent=2,
-            string="Rejected ensemble IDs: {}",
-        )
-    elif nbad == 1:
-        terminal_output.print_terminal(
-            reject,
-            indent=2,
-            string="ID of the rejected ensembles: {}",
-        )
-    terminal_output.print_terminal()
-
-    ###
-    #   Post process corelation results
+    # elif correl_method == 'own':
+    #     #   'Own' correlation method requires positions to be in a numpy array
+    #     xall = np.zeros((nobj_max, nimg))
+    #     yall = np.zeros((nobj_max, nimg))
     #
+    #     for i in range(0, nimg):
+    #         xall[0:len(x[i]), i] = x[i]
+    #         yall[0:len(y[i]), i] = y[i]
+    #
+    #     #   Own version based on srcor from the IDL Astro Library
+    #     indSR, reject, count, rej_obj = correlate.newsrcor(
+    #         xall,
+    #         yall,
+    #         dcr,
+    #         bfrac=bfrac,
+    #         option=option,
+    #         maxid=maxid,
+    #         refORI=refORI,
+    #         refOBJ=refOBJ,
+    #         nmissed=nmissed,
+    #         s_refOBJ=s_refOBJ,
+    #     )
+    # else:
+    #     raise ValueError(
+    #         f'{style.bcolors.FAIL}Correlation method not known. Expected: '
+    #         f'"own" or astropy, but got "{correl_method}"{style.bcolors.ENDC}'
+    #     )
+    #
+    # ###
+    # #   Print correlation infos or raise error if not enough common
+    # #   objects were detected
+    # #
+    # if count == 1:
+    #     raise RuntimeError(
+    #         f"{style.bcolors.FAIL} \nOnly one common object "
+    #         f"found! {style.bcolors.ENDC}"
+    #     )
+    # elif count == 0:
+    #     raise RuntimeError(
+    #         f"{style.bcolors.FAIL} \nNo common objects "
+    #         f"found!{style.bcolors.ENDC}"
+    #     )
+    # else:
+    #     terminal_output.print_terminal(
+    #         count,
+    #         indent=2,
+    #         string="{} objects identified on all ensemble",
+    #     )
+    #
+    # nbad = len(reject)
+    # if nbad > 0:
+    #     terminal_output.print_terminal(
+    #         nbad,
+    #         indent=2,
+    #         string="{:d} images do not meet the criteria -> removed",
+    #     )
+    # if nbad > 1:
+    #     terminal_output.print_terminal(
+    #         reject,
+    #         indent=2,
+    #         string="Rejected ensemble IDs: {}",
+    #     )
+    # elif nbad == 1:
+    #     terminal_output.print_terminal(
+    #         reject,
+    #         indent=2,
+    #         string="ID of the rejected ensembles: {}",
+    #     )
+    # terminal_output.print_terminal()
 
-    #   Remove "bad" datasets from index array
-    #   (only necessary for 'own' method)
-    if correl_method == 'own':
-        indSR = np.delete(indSR, reject, 0)
+    # ###
+    # #   Post process correlation results
+    # #
+    #
+    # #   Remove "bad" datasets from index array
+    # #   (only necessary for 'own' method)
+    # if correl_method == 'own':
+    #     indSR = np.delete(ind_sr, reject, 0)
+    #
+    # #   Calculate shift for the reference origin
+    # shiftID = np.argwhere(reject < refORI)
+    # Nshift = len(shiftID)
+    # refORI_new = refORI - Nshift
+
+    ind_sr, ref_ori_new, reject, count = correlate.correlate_datasets(
+        x,
+        y,
+        w,
+        n_objects,
+        n_ensembles,
+        dataset_type='ensemble',
+        ref_ori=0,
+        ref_obj=[],
+        nmissed=1,
+        s_ref_obj=True,
+        seplimit=2. * u.arcsec,
+        dcr=3.,
+        bfrac=1.0,
+        option=1,
+        maxid=1,
+        correl_method='astropy',
+    )
 
     #   Remove "bad"/rejected ensembles
     for ject in reject:
         ensemble_dict.pop(keys[ject])
 
-    #   Calculate shift for the reference origin
-    shiftID = np.argwhere(reject < refORI)
-    Nshift = len(shiftID)
-    refORI_new = refORI - Nshift
+    #   TODO: Add code here to sort the tables.
 
+    #   TODO: Move the following to a dedicated function and then move it to the calibration procedure
     ###
     #   Rearrange arrays based on the correlation results
     #
@@ -2380,11 +2451,11 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
     if correl_method == 'astropy':
         if (isinstance(x[refORI], u.quantity.Quantity) or
                 isinstance(x[refORI], Table)):
-            x_sort = x[refORI][indSR[refORI_new]].value
-            y_sort = y[refORI][indSR[refORI_new]].value
+            x_sort = x[refORI][ind_sr[ref_ori_new]].value
+            y_sort = y[refORI][ind_sr[ref_ori_new]].value
         elif isinstance(x[refORI], np.ndarray):
-            x_sort = x[refORI][indSR[refORI_new]]
-            y_sort = y[refORI][indSR[refORI_new]]
+            x_sort = x[refORI][ind_sr[ref_ori_new]]
+            y_sort = y[refORI][ind_sr[ref_ori_new]]
         else:
             raise TypeError(
                 f"{style.bcolors.FAIL} \nType of the position arrays not "
@@ -2393,12 +2464,19 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             )
 
     elif correl_method == 'own':
+        xall = np.zeros((n_objects, n_ensembles))
+        yall = np.zeros((n_objects, n_ensembles))
+
+        for i in range(0, n_ensembles):
+            xall[0:len(x[i]), i] = x[i]
+            yall[0:len(y[i]), i] = y[i]
+
         #   Remove "bad" datasets first
         xall = np.delete(xall, reject, 1)
         yall = np.delete(yall, reject, 1)
 
-        x_sort = xall[indSR[refORI_new]][:, refORI_new]
-        y_sort = yall[indSR[refORI_new]][:, refORI_new]
+        x_sort = xall[ind_sr[ref_ori_new]][:, ref_ori_new]
+        y_sort = yall[ind_sr[ref_ori_new]][:, ref_ori_new]
 
     #   Rearrange flux array, according to correlation results, so that objects
     #   have the same position in each
@@ -2431,10 +2509,10 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             )
 
             #   Rearrange flux
-            flux_sort['flux_fit'] = flux['flux_fit'][indSR[j, :]]
-            flux_sort['flux_unc'] = flux['flux_unc'][indSR[j, :]]
+            flux_sort['flux_fit'] = flux['flux_fit'][ind_sr[j, :]]
+            flux_sort['flux_unc'] = flux['flux_unc'][ind_sr[j, :]]
 
-            uflux_sort = uflux[indSR[j, :]]
+            uflux_sort = uflux[ind_sr[j, :]]
 
             #   Add sorted flux data and positions back to the image
             img.flux_es = flux_sort
@@ -2454,7 +2532,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
                 flux_arr['flux_unc']
             )
         else:
-            uflux_arr_sort = uflux_arr[:, indSR[j, :]]
+            uflux_arr_sort = uflux_arr[:, ind_sr[j, :]]
 
         #   Update image ensemble object and add IDs, pixel coordinates, and
         #   flux of the correlated objects
@@ -2463,6 +2541,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
         ensemble.y_es = y_sort
         ensemble.flux_es = flux_arr
         ensemble.uflux_es = uflux_arr_sort
+
 
 #   TODO: Check if the following routine is still necessary? -> seems to be useful
 # def correlate_preserve_calibs(img_ensemble, filter_list,
@@ -3307,7 +3386,7 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
         )
 
     #   Add flux array to image (is this really necessary?)
-    #   TODO: Rewrite correlation. Then remove this:
+    #   TODO: Rewrite correlation and reduction. Then remove this:
     flux_img = np.zeros(
         len(image.photometry['x_fit']),
         dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
@@ -3536,10 +3615,10 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
                 wcs = getattr(img_container.ensembles[f], 'wcs', None)
                 if wcs is not None:
                     current_ensemble.set_wcs(wcs)
-                    terminal_output.print_terminal(
-                        string=f"WCS could not be determined for filter {filt}"
-                               f"The WCS of filter {f} will be used instead."
-                               f"This could lead to problems...",
+                    terminal_output.print_to_terminal(
+                        f"WCS could not be determined for filter {filt}"
+                        f"The WCS of filter {f} will be used instead."
+                        f"This could lead to problems...",
                         indent=1,
                         style_name='WARNING',
                     )
@@ -3581,7 +3660,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
         )
 
         #   Add stellar positions to ensemble class
-        #   TODO: Shift this into main extract?
+        #   TODO: Shift this into main extract? -> Better remove?
         photo = current_ensemble.image_list[0].photometry
         current_ensemble.x_s = photo['x_fit']
         current_ensemble.y_s = photo['y_fit']
@@ -3869,6 +3948,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             plot_test=plot_test,
         )
 
+        #   TODO: Remove this switch?
         if search_image:
             ###
             #   Correlate results from all images, while preserving

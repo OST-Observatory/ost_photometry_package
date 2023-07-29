@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from .. import style
+from .. import style, terminal_output
 from ..style import bcolors
 
 from astropy.coordinates import SkyCoord, matching
@@ -646,6 +646,184 @@ def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
     idarray = np.delete(idarray, rowsrm[1], 1)
 
     return idarray, rej_ori
+
+
+def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
+                       ref_ori=0, ref_obj=[], nmissed=1, s_ref_obj=True,
+                       seplimit=2. * u.arcsec, dcr=3., bfrac=1.0,
+                       option=1, maxid=1, correl_method='astropy'):
+    """
+        Correlate the pixel positions from different dataset such as
+        images or image ensembles.
+
+        Parameters
+        ----------
+        x                   : `list` or `list` of `lists` with `floats`
+            Pixel positions in X direction
+
+        y                   : `list` or `list` of `lists` with `floats`
+            Pixel positions in Y direction
+
+        w                   : `astropy.wcs.WCS`
+            WCS information
+
+        n_objects           : `integer`
+            Number of objects
+
+        n_images           : `integer`
+            Number of images
+
+        dataset_type        : `string`
+            Characterizes the dataset.
+            Default is ``image``.
+
+        ref_ori             : `integer`, optional
+            ID of the reference origin
+            Default is ``0``.
+
+        ref_obj             : `list` of `integer`, optional
+            IDs of the reference objects. The reference objects will not be
+            removed from the list of objects.
+            Default is ``[]``.
+
+        nmissed             : `integer`, optional
+            Maximum number an object is allowed to be not detected in an
+            origin. If this limit is reached the object will be removed.
+            Default is ``i`.
+
+        s_ref_obj           : `boolean`, optional
+            If ``False`` also reference objects will be rejected, if they do
+            not fulfill all criteria.
+            Default is ``True``.
+
+        seplimit            : `astropy.units`, optional
+            Allowed separation between objects.
+            Default is ``2.*u.arcsec``.
+
+        dcr                 : `float`, optional
+            Maximal distance between two objects in Pixel
+            Default is ``3``.
+
+        bfrac               : `float`, optional
+            Fraction of low quality source position origins, i.e., those
+            origins, for which it is expected to find a reduced number of
+            objects with valid source positions.
+            Default is ``1.0``.
+
+        option              : `integer`, optional
+            Option for the srcor correlation function
+            Default is ``1``.
+
+        maxid               : `integer`, optional
+            Max. number of allowed identical cross identifications between
+            objects from a specific origin
+            Default is ``1``.
+
+        correl_method       : `string`, optional
+            Correlation method to be used to find the common objects on
+            the images.
+            Possibilities: ``astropy``, ``own``
+            Default is ``astropy``.
+
+
+        Returns
+        -------
+
+    """
+    if correl_method == 'astropy':
+        #   Astropy version: 2x faster than own
+        ind_sr, reject = astropycor(
+            x,
+            y,
+            w,
+            refORI=ref_ori,
+            refOBJ=ref_obj,
+            nmissed=nmissed,
+            s_refOBJ=s_ref_obj,
+            seplimit=seplimit,
+        )
+        count = len(ind_sr[0])
+
+    elif correl_method == 'own':
+        #   'Own' correlation method requires positions to be in a numpy array
+        xall = np.zeros((n_objects, n_images))
+        yall = np.zeros((n_objects, n_images))
+
+        for i in range(0, n_images):
+            xall[0:len(x[i]), i] = x[i]
+            yall[0:len(y[i]), i] = y[i]
+
+        #   Own version based on srcor from the IDL Astro Library
+        ind_sr, reject, count, rej_obj = newsrcor(
+            xall,
+            yall,
+            dcr,
+            bfrac=bfrac,
+            option=option,
+            maxid=maxid,
+            refORI=ref_ori,
+            refOBJ=ref_obj,
+            nmissed=nmissed,
+            s_refOBJ=s_ref_obj,
+        )
+    else:
+        raise ValueError(
+            f'{style.bcolors.FAIL}Correlation method not known. Expected: '
+            f'"own" or astropy, but got "{correl_method}"{style.bcolors.ENDC}'
+        )
+
+    ###
+    #   Print correlation result or raise error if not enough common
+    #   objects were detected
+    #
+    if count == 1:
+        raise RuntimeError(
+            f"{style.bcolors.FAIL} \nOnly one common object "
+            f"found! {style.bcolors.ENDC}"
+        )
+    elif count == 0:
+        raise RuntimeError(
+            f"{style.bcolors.FAIL} \nNo common objects "
+            f"found!{style.bcolors.ENDC}"
+        )
+    else:
+        terminal_output.print_to_terminal(
+            f"{count} objects identified on all {dataset_type}s",
+            indent=2,
+        )
+
+    nbad = len(reject)
+    if nbad > 0:
+        terminal_output.print_to_terminal(
+            f"{nbad} images do not meet the criteria -> removed",
+            indent=2,
+        )
+    if nbad > 1:
+        terminal_output.print_to_terminal(
+            f"Rejected {dataset_type} IDs: {reject}",
+            indent=2,
+        )
+    elif nbad == 1:
+        terminal_output.print_to_terminal(
+            f"ID of the rejected {dataset_type}: {reject}",
+            indent=2,
+        )
+    terminal_output.print_to_terminal('')
+
+    ###
+    #   Post process correlation results
+    #
+
+    #   Remove "bad" images from index array
+    #   (only necessary for 'own' method)
+    if correl_method == 'own':
+        ind_sr = np.delete(ind_sr, reject, 0)
+
+    #   Calculate new index of the reference origin
+    shift_id = np.argwhere(reject < ref_ori)
+    ref_ori_new = ref_ori - len(shift_id)
+
+    return ind_sr, ref_ori_new, reject, count
 
 
 def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
