@@ -2072,16 +2072,16 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         w,
         n_objects,
         n_images,
-        ref_ori=0,
-        ref_obj=[],
-        nmissed=1,
-        s_ref_obj=True,
-        seplimit=2. * u.arcsec,
-        dcr=3.,
-        bfrac=1.0,
-        option=1,
-        maxid=1,
-        correl_method='astropy',
+        ref_ori=ref_ori,
+        ref_obj=ref_obj,
+        nmissed=nmissed,
+        s_ref_obj=s_ref_obj,
+        seplimit=seplimit,
+        dcr=dcr,
+        bfrac=bfrac,
+        option=option,
+        maxid=maxid,
+        correl_method=correl_method,
     )
 
     #   Remove "bad" images from image IDs
@@ -2203,8 +2203,8 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
 
 
 def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
-                       refORI=0, refOBJ=[], nmissed=1, bfrac=1.0,
-                       s_refOBJ=True, correl_method='astropy',
+                       ref_ori=0, ref_obj=[], nmissed=1, bfrac=1.0,
+                       s_ref_obj=True, correl_method='astropy',
                        seplimit=2. * u.arcsec):
     """
         Correlate star lists from the stacked images of all filters to find
@@ -2232,11 +2232,11 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             Default is ``1``.
 
         TODO: Remove ref_ori because it is already on the ensemble
-        refORI              : `integer`, optional
+        ref_ori             : `integer`, optional
             ID of the reference origin
             Default is ``0``.
 
-        refOBJ              : `list` of `integer`, optional
+        ref_obj             : `list` of `integer`, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``[]``.
@@ -2252,7 +2252,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             objects with valid source positions.
             Default is ``1.0``.
 
-        s_refOBJ            : `boolean`, optional
+        s_ref_obj           : `boolean`, optional
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
@@ -2415,20 +2415,20 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
     ind_sr, ref_ori_new, reject, count = correlate.correlate_datasets(
         x,
         y,
-        w,
+        w[ref_ori],
         n_objects,
         n_ensembles,
         dataset_type='ensemble',
-        ref_ori=0,
-        ref_obj=[],
-        nmissed=1,
-        s_ref_obj=True,
-        seplimit=2. * u.arcsec,
-        dcr=3.,
-        bfrac=1.0,
-        option=1,
-        maxid=1,
-        correl_method='astropy',
+        ref_ori=ref_ori,
+        ref_obj=ref_obj,
+        nmissed=nmissed,
+        s_ref_obj=s_ref_obj,
+        seplimit=seplimit,
+        dcr=dcr,
+        bfrac=bfrac,
+        option=option,
+        maxid=maxid,
+        correl_method=correl_method,
     )
 
     #   Remove "bad"/rejected ensembles
@@ -2449,18 +2449,18 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
     #   Fill position arrays -> distinguish between input sources
     #                           depending on correlation method
     if correl_method == 'astropy':
-        if (isinstance(x[refORI], u.quantity.Quantity) or
-                isinstance(x[refORI], Table)):
-            x_sort = x[refORI][ind_sr[ref_ori_new]].value
-            y_sort = y[refORI][ind_sr[ref_ori_new]].value
-        elif isinstance(x[refORI], np.ndarray):
-            x_sort = x[refORI][ind_sr[ref_ori_new]]
-            y_sort = y[refORI][ind_sr[ref_ori_new]]
+        if (isinstance(x[ref_ori], u.quantity.Quantity) or
+                isinstance(x[ref_ori], Table)):
+            x_sort = x[ref_ori][ind_sr[ref_ori_new]].value
+            y_sort = y[ref_ori][ind_sr[ref_ori_new]].value
+        elif isinstance(x[ref_ori], np.ndarray):
+            x_sort = x[ref_ori][ind_sr[ref_ori_new]]
+            y_sort = y[ref_ori][ind_sr[ref_ori_new]]
         else:
             raise TypeError(
                 f"{style.bcolors.FAIL} \nType of the position arrays not "
                 "known. Expect numpy.float or astropy.units.quantity.Quantity "
-                f"but got {type(x[refORI])} {style.bcolors.ENDC}"
+                f"but got {type(x[ref_ori])} {style.bcolors.ENDC}"
             )
 
     elif correl_method == 'own':
@@ -4510,10 +4510,10 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         dcr=dcr,
                         option=option,
                         maxid=maxid,
-                        refOBJ=[objID],
+                        ref_obj=[objID],
                         nmissed=nmissed,
                         bfrac=bfrac,
-                        s_refOBJ=s_refOBJ,
+                        s_ref_obj=s_refOBJ,
                         correl_method=correl_method,
                         seplimit=seplimit,
                     )
