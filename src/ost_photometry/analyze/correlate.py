@@ -650,8 +650,9 @@ def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
 
 def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
                        ref_ori=0, ref_obj=[], nmissed=1, s_ref_obj=True,
-                       seplimit=2. * u.arcsec, dcr=3., bfrac=1.0,
-                       option=1, maxid=1, correl_method='astropy'):
+                       seplimit=2. * u.arcsec, cleanup_advanced=True,
+                       dcr=3., bfrac=1.0, option=1, maxid=1,
+                       correl_method='astropy'):
     """
         Correlate the pixel positions from different dataset such as
         images or image ensembles.
@@ -700,6 +701,12 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
 
+        cleanup_advanced    : `boolean`, optional
+            If ``True`` a multilevel cleanup of the results will be
+            attempted. If ``False`` only the minimal necessary removal of
+            objects that are not on all datasets will be performed.
+            Default is ``True``.
+
         dcr                 : `float`, optional
             Maximal distance between two objects in Pixel
             Default is ``3``.
@@ -728,7 +735,18 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
 
         Returns
         -------
+        ind_sr             : `numpy.ndarray`
+            IDs of the correlated objects
 
+        ref_ori_new        : `integer`, optional
+            New ID of the reference origin
+            Default is ``0``.
+
+        reject              : `numpy.ndarray`
+            IDs of the images that were rejected because of insufficient quality
+
+        count               : `integer`
+            Number of objects found on all datasets
     """
     if correl_method == 'astropy':
         #   Astropy version: 2x faster than own
@@ -741,6 +759,7 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
             nmissed=nmissed,
             s_refOBJ=s_ref_obj,
             seplimit=seplimit,
+            cleanup_advanced=cleanup_advanced,
         )
         count = len(ind_sr[0])
 
