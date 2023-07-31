@@ -744,6 +744,7 @@ def mag_u_arr(flux):
     return mags
 
 
+#   TODO: Remove
 def mk_posi_tbl(img_container, ensemble_IDs):
     """
         Make position tables
@@ -796,6 +797,7 @@ def mk_posi_tbl(img_container, ensemble_IDs):
     return tbl_xy
 
 
+#   TODO: Remove
 def mk_posi_tbl_ensem(ensemble):
     """
         Make position tables
@@ -1273,11 +1275,11 @@ def prepare_and_plot_starmap_final(img_container, filt_list):
         string="Plot star maps with positions from the final "
                "correlation",
     )
-    #   Make position table
-    tbl_xy_final = mk_posi_tbl(
-        img_container,
-        filt_list,
-    )
+    # #   Make position table
+    # tbl_xy_final = mk_posi_tbl(
+    #     img_container,
+    #     filt_list,
+    # )
 
     for filt in filt_list:
         if filt == filt_list[0]:
@@ -1295,7 +1297,7 @@ def prepare_and_plot_starmap_final(img_container, filt_list):
                 str(image.outpath / 'final'),
                 image.get_data(),
                 filt,
-                tbl_xy_final[filt],
+                image.photometry,
             ),
             kwargs={
                 'rts': rts,
@@ -1332,16 +1334,16 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
             be created.
             Default is ``True``.
     """
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
+        "Plot star map with the objects identified on all images",
         indent=1,
-        string="Plot star map with the objects identified on all images",
     )
 
     #   Get image IDs, IDs of the objects, and pixel coordinates
     img_ids = img_ensemble.get_image_ids()
 
     #   Make position table
-    tbl_xy_final = mk_posi_tbl_ensem(img_ensemble)
+    # tbl_xy_final = mk_posi_tbl_ensem(img_ensemble)
 
     #   Make new table with the position of the calibration stars
     tbl_xy_calib = Table(
@@ -1350,8 +1352,7 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
     )
 
     #   Make the plot using multiprocessing
-    for j, ID in enumerate(img_ids):
-        key = str(ID)
+    for j, image_id in enumerate(img_ids):
         if plot_test and j != img_ensemble.ref_id:
             continue
         p = mp.Process(
@@ -1360,11 +1361,11 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
                 img_ensemble.outpath.name,
                 img_ensemble.image_list[j].get_data(),
                 img_ensemble.filt,
-                tbl_xy_final[ID],
+                img_ensemble.image_list[j].photometry,
             ),
             kwargs={
                 'tbl_2': tbl_xy_calib,
-                'rts': key + '_final',
+                'rts': f'{image_id}_final',
                 'label': 'Stars identified in all images',
                 'label_2': 'Calibration stars',
                 'nameobj': img_ensemble.objname,

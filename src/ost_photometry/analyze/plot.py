@@ -233,7 +233,7 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
             plt.text(
                 tbl[x_column][i],
                 tbl[y_column][i],
-                " " + str(f"{tbl['mags'][i]:.1f}"),
+                " " + str(f"{tbl['mags_fit'][i]:.1f}"),
                 fontdict=style.font,
                 color='blue',
             )
