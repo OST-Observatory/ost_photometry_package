@@ -1320,7 +1320,8 @@ def flux_normalize_ensemble(ensemble):
     ensemble.uflux_norm = flux / unumpy.uarray(median_reshape, std_reshape)
 
 
-def prepare_ZP(img_container, image, image_o, id_i, mag_lit, id_o=None):
+def prepare_ZP(img_container, image, image_o, id_i, mag_lit, mag_fit_i,
+               id_o=None, mag_fit_o=None):
     """
         Prepare some values necessary for the magnitude calibration and add
         them to the image class
@@ -1342,9 +1343,16 @@ def prepare_ZP(img_container, image, image_o, id_i, mag_lit, id_o=None):
         mag_lit             : `numpy.ndarray` or `unumpy.uarray`
             Literature magnitudes
 
+        mag_fit_i           : `numpy.ndarray` or `unumpy.uarray`
+            Observed magnitudes of the objects used for calibration from image i
+
         id_o                : `integer`, optional
             ID of the `second` image/filter that is used for the magnitude
             transformation.
+            Default is ``None``.
+
+        mag_fit_o           : `numpy.ndarray` or `unumpy.uarray`, optional
+            Observed magnitudes of the objects used for calibration from image o
             Default is ``None``.
     """
     #   Get type of the magnitudes array used
@@ -1352,19 +1360,14 @@ def prepare_ZP(img_container, image, image_o, id_i, mag_lit, id_o=None):
     unc = getattr(img_container, 'unc', True)
 
     #   Set array with literature magnitudes for the calibration stars
-    # mag_lit = img_container.calib_parameters.mags_lit
     if not unc:
         mag_lit = mag_lit['mag']
 
-    #   Get extracted magnitudes
-    mag_fit_i = image.mags_fit
-    if not unc:
+        #   Get extracted magnitudes
         mag_fit_i = mag_fit_i['mag']
 
-    if id_o is not None:
-        mag_fit_o = image_o.mags_fit
-        if not unc:
-            mag_fit_o = mag_fit_o['mag']
+        if id_o is not None:
+                mag_fit_o = mag_fit_o['mag']
 
     #   Calculated color. For two filter calculate delta color
     if id_o is not None:
@@ -1680,6 +1683,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
                 #   Set values for mag_fit_1 and mag_fit_2 to allow
                 #   calculation of the correct color later on
                 #   TODO: Remove later
+                img_o.mags_fit = img_o_mags_calib
                 if filt_id_1 == filt_i:
                     img_i.mag_fit_1 = img_i_mags_calib
                     img_i.mag_fit_2 = img_o_mags_calib
@@ -1695,6 +1699,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
 
             else:
                 img_o = None
+                img_o_mags_calib = None
 
             #   Prepare ZP for the magnitude calibration and perform
             #   sigma clipping on the delta color or color, depending on
@@ -1705,7 +1710,9 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
                 img_o,
                 filt_i,
                 lit_mags,
+                img_i_mags_calib,
                 id_o=filt_o,
+                mag_fit_o=img_o_mags_calib,
             )
 
             ###
