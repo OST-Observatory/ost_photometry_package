@@ -2004,109 +2004,109 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     for j, image in enumerate(img_ensemble.image_list):
         image.photometry = image.photometry[ind_sr[j, :]]
 
-    #   TODO: Move the following to a dedicated function and then move it to the calibration procedure
-    #   Get dictionary with astropy tables with the position and flux data
-    photometry_dict_of_tbls = img_ensemble.get_photometry()
-
-    # Number of "clean" datasets
-    nclean = len(ind_sr[:, 0])
-
-    ###
-    #   Rearrange arrays based on the correlation results
+    #   TODO: Move the following to a dedicated function and then move it to the calibration procedure [x]
+    # #   Get dictionary with astropy tables with the position and flux data
+    # photometry_dict_of_tbls = img_ensemble.get_photometry()
     #
-    #   Prepare new arrays for positions and indexes
-    x_sort = np.zeros((count))
-    y_sort = np.zeros((count))
-    ind_sort = np.arange(count)
-
-    #   Fill position arrays -> distinguish between input sources
-    #                           depending on correlation method
-    if correl_method == 'astropy':
-        x_sort = x[ref_ori][ind_sr[ref_ori_new]].value
-        y_sort = y[ref_ori][ind_sr[ref_ori_new]].value
-
-    elif correl_method == 'own':
-        xall = np.zeros((n_objects, n_images))
-        yall = np.zeros((n_objects, n_images))
-
-        for i in range(0, n_images):
-            xall[0:len(x[i]), i] = x[i]
-            yall[0:len(y[i]), i] = y[i]
-
-        #   Remove "bad" datasets first
-        xall = np.delete(xall, reject, 1)
-        yall = np.delete(yall, reject, 1)
-
-        x_sort = xall[ind_sr[ref_ori_new]][:, ref_ori_new]
-        y_sort = yall[ind_sr[ref_ori_new]][:, ref_ori_new]
-
-    #   Prepare array for the flux and uncertainty (all datasets)
-    flux_arr = np.zeros(nclean, dtype=[('flux_fit', 'f8', (count)),
-                                       ('flux_unc', 'f8', (count)),
-                                       ]
-                        )
-
-    #   Fill flux arrays
-    for j, img_ID in enumerate(arr_img_ids):
-        img_ID_str = str(img_ID)
-
-        #   Flux and uncertainty array for individual images
-        flux_img = np.zeros(
-            count,
-            dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
-        )
-
-        #   Rearrange flux and error
-        flux_img['flux_fit'] = photometry_dict_of_tbls[img_ID_str]['flux_fit']
-        flux_img['flux_unc'] = photometry_dict_of_tbls[img_ID_str]['flux_unc']
-
-        #   Remove nans etc. in error
-        #   TODO: Replace with object removal
-        flux_img['flux_unc'] = np.nan_to_num(
-            flux_img['flux_unc'],
-            nan=9999.,
-            posinf=9999.,
-            neginf=9999.,
-        )
-
-        #   Remove '--' entries in error
-        flux_err_dash = np.argwhere(flux_img['flux_unc'] == '--')
-        flux_img['flux_unc'][flux_err_dash] = 9999.
-
-        uflux_img = unumpy.uarray(
-            flux_img['flux_fit'],
-            flux_img['flux_unc']
-        )
-
-        #   Add sorted flux data and positions back to the image
-        img_ensemble.image_list[j].flux = flux_img
-        img_ensemble.image_list[j].uflux = uflux_img
-        img_ensemble.image_list[j].x_sort = x_sort
-        img_ensemble.image_list[j].y_sort = y_sort
-        img_ensemble.image_list[j].id_sort = ind_sort
-
-        #   Add to overall array
-        flux_arr['flux_fit'][j] = flux_img['flux_fit']
-        flux_arr['flux_unc'][j] = flux_img['flux_unc']
-
-    uflux_arr = unumpy.uarray(
-        flux_arr['flux_fit'],
-        flux_arr['flux_unc']
-    )
-
-    #   Update image ensemble object and add IDs, pixel coordinates, and
-    #   flux of the correlated objects
-    # img_list = img_ensemble.image_list
-    # img_list = np.delete(img_list, reject)
-    # img_ensemble.image_list = img_list
-    # img_ensemble.nfiles = len(img_ensemble.image_list)
-    # img_ensemble.ref_id = ref_ori_new
-
-    img_ensemble.id_s = ind_sort
-    img_ensemble.x_s = x_sort
-    img_ensemble.y_s = y_sort
-    img_ensemble.flux = flux_arr
-    img_ensemble.uflux = uflux_arr
+    # # Number of "clean" datasets
+    # nclean = len(ind_sr[:, 0])
+    #
+    # ###
+    # #   Rearrange arrays based on the correlation results
+    # #
+    # #   Prepare new arrays for positions and indexes
+    # x_sort = np.zeros((count))
+    # y_sort = np.zeros((count))
+    # ind_sort = np.arange(count)
+    #
+    # #   Fill position arrays -> distinguish between input sources
+    # #                           depending on correlation method
+    # if correl_method == 'astropy':
+    #     x_sort = x[ref_ori][ind_sr[ref_ori_new]].value
+    #     y_sort = y[ref_ori][ind_sr[ref_ori_new]].value
+    #
+    # elif correl_method == 'own':
+    #     xall = np.zeros((n_objects, n_images))
+    #     yall = np.zeros((n_objects, n_images))
+    #
+    #     for i in range(0, n_images):
+    #         xall[0:len(x[i]), i] = x[i]
+    #         yall[0:len(y[i]), i] = y[i]
+    #
+    #     #   Remove "bad" datasets first
+    #     xall = np.delete(xall, reject, 1)
+    #     yall = np.delete(yall, reject, 1)
+    #
+    #     x_sort = xall[ind_sr[ref_ori_new]][:, ref_ori_new]
+    #     y_sort = yall[ind_sr[ref_ori_new]][:, ref_ori_new]
+    #
+    # #   Prepare array for the flux and uncertainty (all datasets)
+    # flux_arr = np.zeros(nclean, dtype=[('flux_fit', 'f8', (count)),
+    #                                    ('flux_unc', 'f8', (count)),
+    #                                    ]
+    #                     )
+    #
+    # #   Fill flux arrays
+    # for j, img_ID in enumerate(arr_img_ids):
+    #     img_ID_str = str(img_ID)
+    #
+    #     #   Flux and uncertainty array for individual images
+    #     flux_img = np.zeros(
+    #         count,
+    #         dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
+    #     )
+    #
+    #     #   Rearrange flux and error
+    #     flux_img['flux_fit'] = photometry_dict_of_tbls[img_ID_str]['flux_fit']
+    #     flux_img['flux_unc'] = photometry_dict_of_tbls[img_ID_str]['flux_unc']
+    #
+    #     #   Remove nans etc. in error
+    #     #   TODO: Replace with object removal
+    #     flux_img['flux_unc'] = np.nan_to_num(
+    #         flux_img['flux_unc'],
+    #         nan=9999.,
+    #         posinf=9999.,
+    #         neginf=9999.,
+    #     )
+    #
+    #     #   Remove '--' entries in error
+    #     flux_err_dash = np.argwhere(flux_img['flux_unc'] == '--')
+    #     flux_img['flux_unc'][flux_err_dash] = 9999.
+    #
+    #     uflux_img = unumpy.uarray(
+    #         flux_img['flux_fit'],
+    #         flux_img['flux_unc']
+    #     )
+    #
+    #     #   Add sorted flux data and positions back to the image
+    #     img_ensemble.image_list[j].flux = flux_img
+    #     img_ensemble.image_list[j].uflux = uflux_img
+    #     img_ensemble.image_list[j].x_sort = x_sort
+    #     img_ensemble.image_list[j].y_sort = y_sort
+    #     img_ensemble.image_list[j].id_sort = ind_sort
+    #
+    #     #   Add to overall array
+    #     flux_arr['flux_fit'][j] = flux_img['flux_fit']
+    #     flux_arr['flux_unc'][j] = flux_img['flux_unc']
+    #
+    # uflux_arr = unumpy.uarray(
+    #     flux_arr['flux_fit'],
+    #     flux_arr['flux_unc']
+    # )
+    #
+    # #   Update image ensemble object and add IDs, pixel coordinates, and
+    # #   flux of the correlated objects
+    # # img_list = img_ensemble.image_list
+    # # img_list = np.delete(img_list, reject)
+    # # img_ensemble.image_list = img_list
+    # # img_ensemble.nfiles = len(img_ensemble.image_list)
+    # # img_ensemble.ref_id = ref_ori_new
+    #
+    # img_ensemble.id_s = ind_sort
+    # img_ensemble.x_s = x_sort
+    # img_ensemble.y_s = y_sort
+    # img_ensemble.flux = flux_arr
+    # img_ensemble.uflux = uflux_arr
 
 
 def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
@@ -2236,110 +2236,110 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
         for image in ensemble.image_list:
             image.photometry = image.photometry[ind_sr[j, :]]
 
-    #   TODO: Move the following to a dedicated function and then move it to the calibration procedure
-    ###
-    #   Rearrange arrays based on the correlation results
+    #   TODO: Move the following to a dedicated function and then move it to the calibration procedure [x]
+    # ###
+    # #   Rearrange arrays based on the correlation results
+    # #
+    # #   Prepare new arrays for positions and indexes
+    # x_sort = np.zeros((count))
+    # y_sort = np.zeros((count))
+    # ind_sort = np.arange(count)
     #
-    #   Prepare new arrays for positions and indexes
-    x_sort = np.zeros((count))
-    y_sort = np.zeros((count))
-    ind_sort = np.arange(count)
-
-    #   Fill position arrays -> distinguish between input sources
-    #                           depending on correlation method
-    if correl_method == 'astropy':
-        if (isinstance(x[ref_ori], u.quantity.Quantity) or
-                isinstance(x[ref_ori], Table)):
-            x_sort = x[ref_ori][ind_sr[ref_ori_new]].value
-            y_sort = y[ref_ori][ind_sr[ref_ori_new]].value
-        elif isinstance(x[ref_ori], np.ndarray):
-            x_sort = x[ref_ori][ind_sr[ref_ori_new]]
-            y_sort = y[ref_ori][ind_sr[ref_ori_new]]
-        else:
-            raise TypeError(
-                f"{style.bcolors.FAIL} \nType of the position arrays not "
-                "known. Expect numpy.float or astropy.units.quantity.Quantity "
-                f"but got {type(x[ref_ori])} {style.bcolors.ENDC}"
-            )
-
-    elif correl_method == 'own':
-        xall = np.zeros((n_objects, n_ensembles))
-        yall = np.zeros((n_objects, n_ensembles))
-
-        for i in range(0, n_ensembles):
-            xall[0:len(x[i]), i] = x[i]
-            yall[0:len(y[i]), i] = y[i]
-
-        #   Remove "bad" datasets first
-        xall = np.delete(xall, reject, 1)
-        yall = np.delete(yall, reject, 1)
-
-        x_sort = xall[ind_sr[ref_ori_new]][:, ref_ori_new]
-        y_sort = yall[ind_sr[ref_ori_new]][:, ref_ori_new]
-
-    #   Rearrange flux array, according to correlation results, so that objects
-    #   have the same position in each
-    for j, ensemble in enumerate(ensemble_dict.values()):
-
-        #   Get image list
-        img_list = ensemble.image_list
-
-        #   Get number of images
-        nimg = len(img_list)
-
-        #   Overall array for the flux and uncertainty
-        flux_arr = np.zeros(nimg, dtype=[('flux_fit', 'f8', (count)),
-                                         ('flux_unc', 'f8', (count)),
-                                         ]
-                            )
-
-        #   Loop over images -> assumes that the images/results within each
-        #   ensemble are already correlated such that the objects have the
-        #   same indexes
-        for z, img in enumerate(img_list):
-            #   Get flux
-            flux = img.flux
-            uflux = img.uflux
-
-            #   Define new flux array
-            flux_sort = np.zeros(
-                count,
-                dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')]
-            )
-
-            #   Rearrange flux
-            flux_sort['flux_fit'] = flux['flux_fit'][ind_sr[j, :]]
-            flux_sort['flux_unc'] = flux['flux_unc'][ind_sr[j, :]]
-
-            uflux_sort = uflux[ind_sr[j, :]]
-
-            #   Add sorted flux data and positions back to the image
-            img.flux_es = flux_sort
-            img.uflux_es = uflux_sort
-            img.x_es = x_sort
-            img.y_es = y_sort
-            img.id_es = ind_sort
-
-            #   Add to overall array
-            flux_arr['flux_fit'][z] = flux_sort['flux_fit']
-            flux_arr['flux_unc'][z] = flux_sort['flux_unc']
-
-        uflux_arr = getattr(ensemble, 'uflux', None)
-        if uflux_arr is None:
-            uflux_arr_sort = unumpy.uarray(
-                flux_arr['flux_fit'],
-                flux_arr['flux_unc']
-            )
-        else:
-            uflux_arr_sort = uflux_arr[:, ind_sr[j, :]]
-
-        #   Update image ensemble object and add IDs, pixel coordinates, and
-        #   flux of the correlated objects
-        ensemble.id_es = ind_sort
-        ensemble.x_es = x_sort
-        ensemble.y_es = y_sort
-        ensemble.flux_es = flux_arr
-        ensemble.uflux_es = uflux_arr_sort
+    # #   Fill position arrays -> distinguish between input sources
+    # #                           depending on correlation method
+    # if correl_method == 'astropy':
+    #     if (isinstance(x[ref_ori], u.quantity.Quantity) or
+    #             isinstance(x[ref_ori], Table)):
+    #         x_sort = x[ref_ori][ind_sr[ref_ori_new]].value
+    #         y_sort = y[ref_ori][ind_sr[ref_ori_new]].value
+    #     elif isinstance(x[ref_ori], np.ndarray):
+    #         x_sort = x[ref_ori][ind_sr[ref_ori_new]]
+    #         y_sort = y[ref_ori][ind_sr[ref_ori_new]]
+    #     else:
+    #         raise TypeError(
+    #             f"{style.bcolors.FAIL} \nType of the position arrays not "
+    #             "known. Expect numpy.float or astropy.units.quantity.Quantity "
+    #             f"but got {type(x[ref_ori])} {style.bcolors.ENDC}"
+    #         )
+    #
+    # elif correl_method == 'own':
+    #     xall = np.zeros((n_objects, n_ensembles))
+    #     yall = np.zeros((n_objects, n_ensembles))
+    #
+    #     for i in range(0, n_ensembles):
+    #         xall[0:len(x[i]), i] = x[i]
+    #         yall[0:len(y[i]), i] = y[i]
+    #
+    #     #   Remove "bad" datasets first
+    #     xall = np.delete(xall, reject, 1)
+    #     yall = np.delete(yall, reject, 1)
+    #
+    #     x_sort = xall[ind_sr[ref_ori_new]][:, ref_ori_new]
+    #     y_sort = yall[ind_sr[ref_ori_new]][:, ref_ori_new]
+    #
+    # #   Rearrange flux array, according to correlation results, so that objects
+    # #   have the same position in each
+    # for j, ensemble in enumerate(ensemble_dict.values()):
+    #
+    #     #   Get image list
+    #     img_list = ensemble.image_list
+    #
+    #     #   Get number of images
+    #     nimg = len(img_list)
+    #
+    #     #   Overall array for the flux and uncertainty
+    #     flux_arr = np.zeros(nimg, dtype=[('flux_fit', 'f8', (count)),
+    #                                      ('flux_unc', 'f8', (count)),
+    #                                      ]
+    #                         )
+    #
+    #     #   Loop over images -> assumes that the images/results within each
+    #     #   ensemble are already correlated such that the objects have the
+    #     #   same indexes
+    #     for z, img in enumerate(img_list):
+    #         #   Get flux
+    #         flux = img.flux
+    #         uflux = img.uflux
+    #
+    #         #   Define new flux array
+    #         flux_sort = np.zeros(
+    #             count,
+    #             dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')]
+    #         )
+    #
+    #         #   Rearrange flux
+    #         flux_sort['flux_fit'] = flux['flux_fit'][ind_sr[j, :]]
+    #         flux_sort['flux_unc'] = flux['flux_unc'][ind_sr[j, :]]
+    #
+    #         uflux_sort = uflux[ind_sr[j, :]]
+    #
+    #         #   Add sorted flux data and positions back to the image
+    #         img.flux_es = flux_sort
+    #         img.uflux_es = uflux_sort
+    #         img.x_es = x_sort
+    #         img.y_es = y_sort
+    #         img.id_es = ind_sort
+    #
+    #         #   Add to overall array
+    #         flux_arr['flux_fit'][z] = flux_sort['flux_fit']
+    #         flux_arr['flux_unc'][z] = flux_sort['flux_unc']
+    #
+    #     uflux_arr = getattr(ensemble, 'uflux', None)
+    #     if uflux_arr is None:
+    #         uflux_arr_sort = unumpy.uarray(
+    #             flux_arr['flux_fit'],
+    #             flux_arr['flux_unc']
+    #         )
+    #     else:
+    #         uflux_arr_sort = uflux_arr[:, ind_sr[j, :]]
+    #
+    #     #   Update image ensemble object and add IDs, pixel coordinates, and
+    #     #   flux of the correlated objects
+    #     ensemble.id_es = ind_sort
+    #     ensemble.x_es = x_sort
+    #     ensemble.y_es = y_sort
+    #     ensemble.flux_es = flux_arr
+    #     ensemble.uflux_es = uflux_arr_sort
 
 
 #   TODO: Check if the following routine is still necessary? -> seems to be useful
@@ -3196,19 +3196,19 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
 
     #   Add flux array to image (is this really necessary?)
     #   TODO: Rewrite correlation and reduction. Then remove this:
-    flux_img = np.zeros(
-        len(image.photometry['x_fit']),
-        dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
-    )
-    flux_img['flux_fit'] = image.photometry['flux_fit']
-    flux_img['flux_unc'] = image.photometry['flux_unc']
-
-    uflux_img = unumpy.uarray(
-        flux_img['flux_fit'],
-        flux_img['flux_unc']
-    )
-    image.flux = flux_img
-    image.uflux = uflux_img
+    # flux_img = np.zeros(
+    #     len(image.photometry['x_fit']),
+    #     dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
+    # )
+    # flux_img['flux_fit'] = image.photometry['flux_fit']
+    # flux_img['flux_unc'] = image.photometry['flux_unc']
+    #
+    # uflux_img = unumpy.uarray(
+    #     flux_img['flux_fit'],
+    #     flux_img['flux_unc']
+    # )
+    # image.flux = flux_img
+    # image.uflux = uflux_img
 
     ###
     #   Plot images with extracted stars overlaid

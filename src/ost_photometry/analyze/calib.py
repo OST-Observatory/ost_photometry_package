@@ -31,7 +31,6 @@ class calib_parameters:
     def __init__(self, inds, column_names, calib_tbl):
         self.inds = inds
         self.column_names = column_names
-#        self.mags_lit = mags_lit
         self.calib_tbl = calib_tbl
 
 
@@ -732,16 +731,9 @@ def deter_calib(img_container, band_list, calib_method='APASS',
     y_cali = y_cali[~np.isnan(y_cali)]
     calib_tbl = calib_tbl[~np.isnan(y_cali)]
 
-    #   TODO: Replace with table request [x]
+    #   X & Y pixel positions
     x = img_ensemble.image_list[0].photometry['x_fit']
     y = img_ensemble.image_list[0].photometry['y_fit']
-    # #   Get X & Y pixel positions
-    # try:
-    #     x = img_ensemble.x_es
-    #     y = img_ensemble.y_es
-    # except:
-    #     x = img_ensemble.x_s
-    #     y = img_ensemble.y_s
 
     if correl_method == 'astropy':
         #   Create coordinates object
@@ -857,86 +849,9 @@ def deter_calib(img_container, band_list, calib_method='APASS',
             )
             p.start()
 
-    # TODO: Move the following to a dedicated function and to the point where the calibration will actually take place. {x]
-    # ###
-    # #   Arrange literature magnitudes in numpy arrays
-    # #
-    # #   Ensure 'ind_lit' is a list
-    # ind_lit_l = list(ind_lit)
-    #
-    # #   unmpy.array or default numpy.ndarray
-    # unc = getattr(img_container, 'unc', True)
-    # if unc:
-    #     #   Create uncertainties array with the literature magnitudes
-    #     mags_lit = unumpy.uarray(
-    #         np.zeros((nfilt, count_cali)),
-    #         np.zeros((nfilt, count_cali))
-    #     )
-    #
-    #     #
-    #     for z, band in enumerate(band_list):
-    #         if 'mag' + band in col_names:
-    #             #   Check if errors for the calibration magnitudes exist
-    #             if 'err' + band in col_names:
-    #                 err = np.array(
-    #                     calib_tbl[col_names['err' + band]][ind_lit_l]
-    #                 )
-    #
-    #                 #   Check if errors are nice floats
-    #                 if err.dtype in (float, np.float32, np.float64):
-    #                     valerr = err
-    #                 else:
-    #                     valerr = 0.
-    #             else:
-    #                 valerr = 0.
-    #
-    #             #   Extract magnitudes
-    #             mags_lit[z] = unumpy.uarray(
-    #                 calib_tbl[col_names['mag' + band]][ind_lit_l],
-    #                 valerr
-    #             )
-    #
-    # #   Default numpy.ndarray
-    # else:
-    #     #   Define new arrays
-    #     mags_lit = np.zeros(nfilt, dtype=[('mag', 'f8', (count_cali)),
-    #                                       ('err', 'f8', (count_cali)),
-    #                                       ('qua', 'U1', (count_cali)),
-    #                                       ]
-    #                         )
-    #
-    #     #
-    #     for z, band in enumerate(band_list):
-    #         if 'mag' + band in col_names:
-    #             #   Extract magnitudes
-    #             col_mags = np.array(
-    #                 calib_tbl[col_names['mag' + band]][ind_lit_l]
-    #             )
-    #             mags_lit['mag'][z] = col_mags
-    #
-    #             #   Check if errors for the calibration magnitudes exist
-    #             if 'err' + band in col_names:
-    #                 valerr = np.array(
-    #                     calib_tbl[col_names['err' + band]][ind_lit_l]
-    #                 )
-    #             else:
-    #                 valerr = np.zeros((count_cali))
-    #
-    #             #   Check if errors are nice floats
-    #             if valerr.dtype in (np.float, np.float32, np.float64):
-    #                 mags_lit['err'][z] = valerr
-    #
-    #             #   Add quality flag, if it exists
-    #             if 'qua' + band in col_names:
-    #                 valqua = np.array(
-    #                     calib_tbl[col_names['qua' + band]][ind_lit_l]
-    #                 )
-    #                 mags_lit['qua'][z] = valqua
-
     #   Add calibration data to image container
     img_container.calib_parameters = calib_parameters(
         ind_fit,
         col_names,
-#        mags_lit,
         calib_tbl_sort,
     )

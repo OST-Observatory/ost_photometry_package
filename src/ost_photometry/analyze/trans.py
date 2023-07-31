@@ -1320,7 +1320,7 @@ def flux_normalize_ensemble(ensemble):
     ensemble.uflux_norm = flux / unumpy.uarray(median_reshape, std_reshape)
 
 
-def prepare_ZP(img_container, image, image_o, id_i, mag_lit, mag_fit_i,
+def prepare_ZP(img_container, image, id_i, mag_lit, mag_fit_i,
                id_o=None, mag_fit_o=None):
     """
         Prepare some values necessary for the magnitude calibration and add
@@ -1333,9 +1333,6 @@ def prepare_ZP(img_container, image, image_o, id_i, mag_lit, mag_fit_i,
 
         image               : `image.class`
             Image class with all image specific properties
-
-        image_o             : `image.class`
-            Second image class with all image specific properties
 
         id_i                : `integer`
             ID of the filter
@@ -1683,7 +1680,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
                 #   Set values for mag_fit_1 and mag_fit_2 to allow
                 #   calculation of the correct color later on
                 #   TODO: Remove later
-                img_o.mags_fit = img_o_mags_calib
+                # img_o.mags_fit = img_o_mags_calib
                 if filt_id_1 == filt_i:
                     img_i.mag_fit_1 = img_i_mags_calib
                     img_i.mag_fit_2 = img_o_mags_calib
@@ -1698,7 +1695,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
                     img_i.mags_2 = img_i_mags
 
             else:
-                img_o = None
+                # img_o = None
                 img_o_mags_calib = None
 
             #   Prepare ZP for the magnitude calibration and perform
@@ -1707,7 +1704,6 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
             prepare_ZP(
                 img_container,
                 img_i,
-                img_o,
                 filt_i,
                 lit_mags,
                 img_i_mags_calib,
