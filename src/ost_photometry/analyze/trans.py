@@ -1340,14 +1340,14 @@ def flux_normalize_ensemble(ensemble):
     ensemble.uflux_norm = flux / unumpy.uarray(median_reshape, std_reshape)
 
 
-def prepare_ZP(img_container, image, image_o, id_i, id_o=None):
+def prepare_ZP(img_container, image, image_o, id_i, mag_lit, id_o=None):
     """
         Prepare some values necessary for the magnitude calibration and add
         them to the image class
 
         Parameters
         ----------
-        img_container   : `image.container`
+        img_container       : `image.container`
             Container object with image ensemble objects for each filter
 
         image               : `image.class`
@@ -1358,6 +1358,9 @@ def prepare_ZP(img_container, image, image_o, id_i, id_o=None):
 
         id_i                : `integer`
             ID of the filter
+
+        mag_lit             : `numpy.ndarray` or `unumpy.uarray`
+            Literature magnitudes
 
         id_o                : `integer`, optional
             ID of the `second` image/filter that is used for the magnitude
@@ -1585,9 +1588,9 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
     else:
         #   Define new arrays
         lit_mags = np.zeros(n_filter, dtype=[('mag', 'f8', (count_cali)),
-                                          ('err', 'f8', (count_cali)),
-                                          ('qua', 'U1', (count_cali)),
-                                          ]
+                                             ('err', 'f8', (count_cali)),
+                                             ('qua', 'U1', (count_cali)),
+                                             ]
                             )
 
         #
@@ -1639,6 +1642,27 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
 
         #   Loop over images
         for id_img_i, img_i in enumerate(img_list):
+            #   TODO: Add here conversion from astropy tables to arrays. -> put in function later
+            ########################################################################################
+            unc = getattr(img_container, 'unc', True)
+            if unc:
+                #   Create uncertainties array with the literature magnitudes
+                magnitudes_img_i = unumpy.uarray(
+                    img_i.photometry['mags_fit'],
+                    img_i.photometry['mags_unc']
+                )
+            else:
+                #   Overall array for the flux and uncertainty
+                magnitudes_img_i = np.zeros(
+                    1,
+                    dtype=[('mag', 'f8', count), ('err', 'f8', count)]        # Code requirements require current naming
+                )
+                magnitudes_img_i['mag'] = img_i.photometry['mags_fit']
+                magnitudes_img_i['err'] = img_i.photometry['mags_unc']
+
+            print(magnitudes_img_i)
+            ########################################################################################
+
             #   Get extracted magnitudes of the calibration stars for the
             #   current image
             calib.get_calib_fit(img_i, img_container)
@@ -1657,8 +1681,6 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
             else:
                 img_o = None
 
-            #   TODO: After the switch to astropy tables. Add here conversion from astropy tables to arrays.
-
             #   Prepare ZP for the magnitude calibration and perform
             #   sigma clipping on the delta color or color, depending on
             #   whether magnitude transformation is possible or not.
@@ -1667,6 +1689,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
                 img_i,
                 img_o,
                 filt_i,
+                lit_mags,
                 id_o=filt_o,
             )
 

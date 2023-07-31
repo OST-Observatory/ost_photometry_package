@@ -3184,18 +3184,15 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
             f"valid: use either APER or PSF {style.bcolors.ENDC}"
         )
 
-    #   TODO: Add conversion to magnitudes to photo table
+    #   Conversion of flux to magnitudes
     uflux_img = unumpy.uarray(
         image.photometry['flux_fit'],
         image.photometry['flux_unc']
     )
     mags = aux.mag_u_arr(uflux_img)
 
-    print(unumpy.nominal_values(mags))
-    print(unumpy.std_devs(mags))
-
-    image.photometry['mag_fit'] = unumpy.nominal_values(mags)
-    image.photometry['mag_unc'] = unumpy.std_devs(mags)
+    image.photometry['mags_fit'] = unumpy.nominal_values(mags)
+    image.photometry['mags_unc'] = unumpy.std_devs(mags)
 
     #   Add flux array to image (is this really necessary?)
     #   TODO: Rewrite correlation and reduction. Then remove this:
