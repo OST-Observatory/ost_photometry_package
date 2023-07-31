@@ -3194,6 +3194,9 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
     print(unumpy.nominal_values(mags))
     print(unumpy.std_devs(mags))
 
+    image.photometry['mag_fit'] = unumpy.nominal_values(mags)
+    image.photometry['mag_unc'] = unumpy.std_devs(mags)
+
     #   Add flux array to image (is this really necessary?)
     #   TODO: Rewrite correlation and reduction. Then remove this:
     flux_img = np.zeros(

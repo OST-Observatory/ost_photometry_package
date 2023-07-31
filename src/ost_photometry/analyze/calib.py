@@ -28,10 +28,10 @@ from . import aux, correlate, plot
 
 #   TODO: Remove this class?
 class calib_parameters:
-    def __init__(self, inds, column_names, mags_lit, calib_tbl):
+    def __init__(self, inds, column_names, calib_tbl):
         self.inds = inds
         self.column_names = column_names
-        self.mags_lit = mags_lit
+#        self.mags_lit = mags_lit
         self.calib_tbl = calib_tbl
 
 
@@ -950,6 +950,6 @@ def deter_calib(img_container, band_list, calib_method='APASS',
     img_container.calib_parameters = calib_parameters(
         ind_fit,
         col_names,
-        mags_lit,
+#        mags_lit,
         calib_tbl_sort,
     )
