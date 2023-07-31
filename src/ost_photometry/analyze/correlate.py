@@ -457,197 +457,6 @@ def identify_star_in_dataset(x, y, ra_obj, dec_obj, w, ra_unit=u.hourangle,
     return variable_id, count, x_obj, y_obj
 
 
-def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
-               seplimit=2. * u.arcsec, cleanup_advanced=True):
-    """
-        Correlation based on astropy matching algorithm
-
-        Parameters
-        ----------
-        x                   : `list` of `numpy.ndarray`
-            Object positions in pixel coordinates. X direction.
-
-        y                   : `list` of `numpy.ndarray`
-            Object positions in pixel coordinates. Y direction.
-
-        w                   : `astropy.wcs ` object
-            WCS information
-
-        refORI              : `integer`, optional
-            ID of the reference origin
-            Default is ``0``.
-
-        refOBJ              : `list` of `integer`, optional
-            IDs of the reference objects. The reference objects will not be
-            removed from the list of objects.
-            Default is ``[]``.
-
-        nmissed             : `integer`, optional
-            Maximum number an object is allowed to be not detected in an
-            origin. If this limit is reached the object will be removed.
-            Default is ``1``.
-
-        s_refOBJ            : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
-
-        seplimit            : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
-
-        cleanup_advanced    : `boolean`, optional
-            If ``True`` a multilevel cleanup of the results will be
-            attempted. If ``False`` only the minimal necessary removal of
-            objects that are not on all datasets will be performed.
-            Default is ``True``.
-    """
-    #   Number of datasets/images
-    n = len(x)
-
-    #   Create reference SkyCoord object
-    coords_ref = SkyCoord.from_pixel(
-        x[refORI],
-        y[refORI],
-        w,
-    )
-
-    #   Prepare index array and fill in values for the reference dataset
-    idarray = np.ones((n, len(x[refORI])), dtype=int)
-    idarray *= -1
-    idarray[refORI, :] = np.arange(len(x[refORI]))
-
-    #   Loop over datasets
-    for i in range(0, n):
-        #   Do nothing for the reference object
-        if i != refORI:
-            #   Dirty fix: In case of identical positions between the
-            #              reference and the current data set,
-            #              matching.search_around_sky will fail.
-            #              => set reference indexes
-            if ((len(x[i]) == len(x[refORI])) and
-                    (np.all(x[i] == x[refORI]) and np.all(y[i] == y[refORI]))):
-                idarray[i, :] = idarray[refORI, :]
-            else:
-                #   Create coordinates object
-                coords = SkyCoord.from_pixel(
-                    x[i],
-                    y[i],
-                    w,
-                )
-
-                #   Find matches between the datasets
-                id_ref, id_current, d2ds, d3ds = matching.search_around_sky(
-                    coords_ref,
-                    coords,
-                    seplimit,
-                )
-
-                #   Fill ID array
-                idarray[i, id_ref] = id_current
-
-    ###
-    #   Cleanup: Remove "bad" objects and datasets
-    #
-
-    #   1. Remove bad objects (preburner) -> Useful to remove bad objects
-    #                                        that may spoil the correct
-    #                                        identification of bad datasets.
-    if cleanup_advanced:
-        #   Identify objects that were not identified in all datasets
-        rowsrm = np.where(idarray == -1)
-
-        #   Reduce to unique objects
-        unique_obj, count_obj = np.unique(rowsrm[1], return_counts=True)
-
-        #   Identify objects that are not in >= "nmissed" datasets
-        rej_obj_id = np.argwhere(count_obj >= nmissed)
-        rej_obj = unique_obj[rej_obj_id].flatten()
-
-        #   Check if reference objects are within the "bad" objects
-        ref_isin = np.isin(rej_obj, refOBJ)
-
-        #   If YES remove reference objects from the "bad" objects
-        if s_refOBJ and np.any(ref_isin):
-            refOBJ_id = np.argwhere(rej_obj == refOBJ)
-            rej_obj = np.delete(rej_obj, refOBJ_id)
-
-        #   Remove "bad" objects
-        idarray = np.delete(idarray, rej_obj, 1)
-
-        #   Calculate new reference object position
-        shiftOBJ = np.argwhere(rej_obj < refOBJ)
-        Nshift = len(shiftOBJ)
-        refOBJ = np.array(refOBJ) - Nshift
-
-        #   2. Remove bad images
-
-        #   Identify objects that were not identified in all datasets
-        rowsrm = np.where(idarray == -1)
-
-        #   Reduce to unique objects
-        unique_ori, count_ori = np.unique(rowsrm[0], return_counts=True)
-
-        #   Create mask -> Identify all datasets as bad that contain less
-        #                  than 90% of all objects from the reference image.
-        mask = count_ori > 0.02 * len(x[refORI])
-        rej_ori = unique_ori[mask]
-
-        #   Remove those datasets
-        idarray = np.delete(idarray, rej_ori, 0)
-
-    else:
-        rej_ori = np.array([], dtype=int)
-
-    #   3. Remove remaining objects that are not on all datasets
-    #      (afterburner)
-
-    #   Identify objects that were not identified in all datasets
-    rowsrm = np.where(idarray == -1)
-
-    if s_refOBJ:
-        #   Check if reference objects are within the "bad" objects
-        ref_isin = np.isin(rowsrm[1], refOBJ)
-
-        #   If YES remove reference objects from "bad" objects and remove
-        #   the datasets on which they were not detected instead.
-        if np.any(ref_isin):
-            if n <= 2:
-                raise RuntimeError(
-                    f"{style.bcolors.FAIL} \nReference object only found one "
-                    "or on no image at all. This is not sufficient. "
-                    f"=> Exit {style.bcolors.ENDC}"
-                )
-            rej_obj = rowsrm[1]
-            rej_obj = np.unique(rej_obj)
-            refOBJ_id = np.argwhere(rej_obj == refOBJ)
-            rej_obj = np.delete(rej_obj, refOBJ_id)
-
-            #   Remove remaining bad objects
-            idarray = np.delete(idarray, rej_obj, 1)
-
-            #   Remove datasets
-            rowsrm = np.where(idarray == -1)
-            rej_ori_two = np.unique(rowsrm[0])
-            idarray = np.delete(idarray, rej_ori_two, 0)
-
-            rej_ori_two_old = []
-            for el_two in rej_ori_two:
-                for el_one in rej_ori:
-                    if el_one <= el_two:
-                        el_two += 1
-                rej_ori_two_old.append(el_two)
-
-            rej_ori = np.concatenate((rej_ori, np.array(rej_ori_two_old)))
-
-            return idarray, rej_ori
-
-    #   Remove bad objects
-    idarray = np.delete(idarray, rowsrm[1], 1)
-
-    return idarray, rej_ori
-
-
 def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
                        ref_ori=0, ref_obj=[], nmissed=1, s_ref_obj=True,
                        seplimit=2. * u.arcsec, cleanup_advanced=True,
@@ -843,6 +652,197 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
     ref_ori_new = ref_ori - len(shift_id)
 
     return ind_sr, ref_ori_new, reject, count
+
+
+def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
+               seplimit=2. * u.arcsec, cleanup_advanced=True):
+    """
+        Correlation based on astropy matching algorithm
+
+        Parameters
+        ----------
+        x                   : `list` of `numpy.ndarray`
+            Object positions in pixel coordinates. X direction.
+
+        y                   : `list` of `numpy.ndarray`
+            Object positions in pixel coordinates. Y direction.
+
+        w                   : `astropy.wcs ` object
+            WCS information
+
+        refORI              : `integer`, optional
+            ID of the reference origin
+            Default is ``0``.
+
+        refOBJ              : `list` of `integer`, optional
+            IDs of the reference objects. The reference objects will not be
+            removed from the list of objects.
+            Default is ``[]``.
+
+        nmissed             : `integer`, optional
+            Maximum number an object is allowed to be not detected in an
+            origin. If this limit is reached the object will be removed.
+            Default is ``1``.
+
+        s_refOBJ            : `boolean`, optional
+            If ``False`` also reference objects will be rejected, if they do
+            not fulfill all criteria.
+            Default is ``True``.
+
+        seplimit            : `astropy.units`, optional
+            Allowed separation between objects.
+            Default is ``2.*u.arcsec``.
+
+        cleanup_advanced    : `boolean`, optional
+            If ``True`` a multilevel cleanup of the results will be
+            attempted. If ``False`` only the minimal necessary removal of
+            objects that are not on all datasets will be performed.
+            Default is ``True``.
+    """
+    #   Number of datasets/images
+    n = len(x)
+
+    #   Create reference SkyCoord object
+    coords_ref = SkyCoord.from_pixel(
+        x[refORI],
+        y[refORI],
+        w,
+    )
+
+    #   Prepare index array and fill in values for the reference dataset
+    idarray = np.ones((n, len(x[refORI])), dtype=int)
+    idarray *= -1
+    idarray[refORI, :] = np.arange(len(x[refORI]))
+
+    #   Loop over datasets
+    for i in range(0, n):
+        #   Do nothing for the reference object
+        if i != refORI:
+            #   Dirty fix: In case of identical positions between the
+            #              reference and the current data set,
+            #              matching.search_around_sky will fail.
+            #              => set reference indexes
+            if ((len(x[i]) == len(x[refORI])) and
+                    (np.all(x[i] == x[refORI]) and np.all(y[i] == y[refORI]))):
+                idarray[i, :] = idarray[refORI, :]
+            else:
+                #   Create coordinates object
+                coords = SkyCoord.from_pixel(
+                    x[i],
+                    y[i],
+                    w,
+                )
+
+                #   Find matches between the datasets
+                id_ref, id_current, d2ds, d3ds = matching.search_around_sky(
+                    coords_ref,
+                    coords,
+                    seplimit,
+                )
+
+                #   Fill ID array
+                idarray[i, id_ref] = id_current
+
+    ###
+    #   Cleanup: Remove "bad" objects and datasets
+    #
+
+    #   1. Remove bad objects (preburner) -> Useful to remove bad objects
+    #                                        that may spoil the correct
+    #                                        identification of bad datasets.
+    if cleanup_advanced:
+        #   Identify objects that were not identified in all datasets
+        rowsrm = np.where(idarray == -1)
+
+        #   Reduce to unique objects
+        unique_obj, count_obj = np.unique(rowsrm[1], return_counts=True)
+
+        #   Identify objects that are not in >= "nmissed" datasets
+        rej_obj_id = np.argwhere(count_obj >= nmissed)
+        rej_obj = unique_obj[rej_obj_id].flatten()
+
+        #   Check if reference objects are within the "bad" objects
+        ref_isin = np.isin(rej_obj, refOBJ)
+
+        #   If YES remove reference objects from the "bad" objects
+        if s_refOBJ and np.any(ref_isin):
+            refOBJ_id = np.argwhere(rej_obj == refOBJ)
+            rej_obj = np.delete(rej_obj, refOBJ_id)
+
+        #   Remove "bad" objects
+        idarray = np.delete(idarray, rej_obj, 1)
+
+        #   Calculate new reference object position
+        shiftOBJ = np.argwhere(rej_obj < refOBJ)
+        Nshift = len(shiftOBJ)
+        refOBJ = np.array(refOBJ) - Nshift
+
+        #   2. Remove bad images
+
+        #   Identify objects that were not identified in all datasets
+        rowsrm = np.where(idarray == -1)
+
+        #   Reduce to unique objects
+        unique_ori, count_ori = np.unique(rowsrm[0], return_counts=True)
+
+        #   Create mask -> Identify all datasets as bad that contain less
+        #                  than 90% of all objects from the reference image.
+        mask = count_ori > 0.02 * len(x[refORI])
+        rej_ori = unique_ori[mask]
+
+        #   Remove those datasets
+        idarray = np.delete(idarray, rej_ori, 0)
+
+    else:
+        rej_ori = np.array([], dtype=int)
+
+    #   3. Remove remaining objects that are not on all datasets
+    #      (afterburner)
+
+    #   Identify objects that were not identified in all datasets
+    rowsrm = np.where(idarray == -1)
+
+    if s_refOBJ:
+        #   Check if reference objects are within the "bad" objects
+        ref_isin = np.isin(rowsrm[1], refOBJ)
+
+        #   If YES remove reference objects from "bad" objects and remove
+        #   the datasets on which they were not detected instead.
+        if np.any(ref_isin):
+            if n <= 2:
+                raise RuntimeError(
+                    f"{style.bcolors.FAIL} \nReference object only found one "
+                    "or on no image at all. This is not sufficient. "
+                    f"=> Exit {style.bcolors.ENDC}"
+                )
+            rej_obj = rowsrm[1]
+            rej_obj = np.unique(rej_obj)
+            refOBJ_id = np.argwhere(rej_obj == refOBJ)
+            rej_obj = np.delete(rej_obj, refOBJ_id)
+
+            #   Remove remaining bad objects
+            idarray = np.delete(idarray, rej_obj, 1)
+
+            #   Remove datasets
+            rowsrm = np.where(idarray == -1)
+            rej_ori_two = np.unique(rowsrm[0])
+            idarray = np.delete(idarray, rej_ori_two, 0)
+
+            rej_ori_two_old = []
+            for el_two in rej_ori_two:
+                for el_one in rej_ori:
+                    if el_one <= el_two:
+                        el_two += 1
+                rej_ori_two_old.append(el_two)
+
+            rej_ori = np.concatenate((rej_ori, np.array(rej_ori_two_old)))
+
+            return idarray, rej_ori
+
+    #   Remove bad objects
+    idarray = np.delete(idarray, rowsrm[1], 1)
+
+    return idarray, rej_ori
 
 
 def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],

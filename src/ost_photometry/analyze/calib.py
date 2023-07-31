@@ -26,10 +26,11 @@ from . import aux, correlate, plot
 ############################################################################
 
 class calib_parameters:
-    def __init__(self, inds, column_names, mags_lit, umags_lit=None):
+    def __init__(self, inds, column_names, mags_lit, calib_tbl):
         self.inds = inds
         self.column_names = column_names
         self.mags_lit = mags_lit
+        self.calib_tbl = calib_tbl
 
 
 def get_comp_stars(coord, filters=['B', 'V'], field_of_view=18.5,
@@ -684,10 +685,9 @@ def deter_calib(img_container, band_list, calib_method='APASS',
             Indentation for the console output lines
             Default is ``1``.
     """
-    terminal_output.print_terminal(
-        tuple(band_list),
+    terminal_output.print_to_terminal(
+        f"Get calibration star magnitudes (filter: {tuple(band_list)})",
         indent=indent,
-        string="Get calibration star magnitudes (filter: {})",
     )
 
     #   Get one of image ensembles to extract wcs, positions, ect.
@@ -742,13 +742,16 @@ def deter_calib(img_container, band_list, calib_method='APASS',
     y_cali = y_cali[~np.isnan(y_cali)]
     calib_tbl = calib_tbl[~np.isnan(y_cali)]
 
-    #   Get X & Y pixel positions
-    try:
-        x = img_ensemble.x_es
-        y = img_ensemble.y_es
-    except:
-        x = img_ensemble.x_s
-        y = img_ensemble.y_s
+    #   TODO: Replace with table request [x]
+    x = img_ensemble.image_list[0].photometry['x_fit']
+    y = img_ensemble.image_list[0].photometry['y_fit']
+    # #   Get X & Y pixel positions
+    # try:
+    #     x = img_ensemble.x_es
+    #     y = img_ensemble.y_es
+    # except:
+    #     x = img_ensemble.x_s
+    #     y = img_ensemble.y_s
 
     if correl_method == 'astropy':
         #   Create coordinates object
@@ -806,15 +809,65 @@ def deter_calib(img_container, band_list, calib_method='APASS',
             f"-> EXIT {style.bcolors.ENDC}"
         )
 
-    #   Ensure 'ind_fit' is a list
-    ind_fit_list = list(ind_fit)
+    #   Limit calibration table to common objects
+    calib_tbl_sort = calib_tbl[ind_lit]
 
+    ###
+    #   Plots
+    #
     #   Make new arrays based on the correlation results
-    x_fit = x[ind_fit_list]
-    y_fit = y[ind_fit_list]
+    x_fit = x[list(ind_fit)]
+    y_fit = y[list(ind_fit)]
     indnew_fit = np.arange(count_cali)
 
-    #   TODO: Get rid of the stuff below and replace it with an astropy table. To the table add x any pixel coordinates.
+    #   Add pixel positions and object ids to the calibration table
+    # tbl_xy_cali = Table(
+    #     names=['id', 'xcentroid', 'ycentroid'],
+    #     data=[np.intc(indnew_fit), x_fit, y_fit]
+    # )
+    calib_tbl_sort.add_columns(
+        [np.intc(indnew_fit), x_fit, y_fit],
+        names=['id', 'xcentroid', 'ycentroid']
+    )
+
+    # tbl_xy_cali_all = Table(
+    #     names=['id', 'xcentroid', 'ycentroid'],
+    #     data=[np.arange(0, len(y_cali)), x_cali, y_cali]
+    # )
+    calib_tbl.add_columns(
+        [np.arange(0, len(y_cali)), x_cali, y_cali],
+        names=['id', 'xcentroid', 'ycentroid']
+    )
+
+    #   Plot star map with calibration stars
+    if ID is not None:
+        rts = 'calib_' + str(ID)
+    else:
+        rts = 'calib'
+    for band in band_list:
+        if 'mag' + band in col_names:
+            p = mp.Process(
+                target=plot.starmap,
+                args=(
+                    img_ensemble.outpath.name,
+                    #   Replace with reference image in the future
+                    img_ensemble.image_list[0].get_data(),
+                    band,
+                    # tbl_xy_cali_all,
+                    calib_tbl,
+                ),
+                kwargs={
+                    # 'tbl_2': tbl_xy_cali,
+                    'tbl_2': calib_tbl_sort,
+                    'label': 'downloaded calibration stars',
+                    'label_2': 'matched calibration stars',
+                    'rts': rts,
+                    'nameobj': img_ensemble.objname,
+                }
+            )
+            p.start()
+
+    # TODO: Move the following to a dedicated function and to the point where the calibration will actually take place.
     ###
     #   Arrange literature magnitudes in numpy arrays
     #
@@ -883,52 +936,17 @@ def deter_calib(img_container, band_list, calib_method='APASS',
                 if valerr.dtype in (np.float, np.float32, np.float64):
                     mags_lit['err'][z] = valerr
 
-                #   Add quality flag, if it exist
+                #   Add quality flag, if it exists
                 if 'qua' + band in col_names:
                     valqua = np.array(
                         calib_tbl[col_names['qua' + band]][ind_lit_l]
                     )
                     mags_lit['qua'][z] = valqua
 
-    #   Make new tables
-    tbl_xy_cali = Table(
-        names=['id', 'xcentroid', 'ycentroid'],
-        data=[np.intc(indnew_fit), x_fit, y_fit]
-    )
-    tbl_xy_cali_all = Table(
-        names=['id', 'xcentroid', 'ycentroid'],
-        data=[np.arange(0, len(y_cali)), x_cali, y_cali]
-    )
-
-    #   Plot star map with calibration stars
-    if ID is not None:
-        rts = 'calib_' + str(ID)
-    else:
-        rts = 'calib'
-    for band in band_list:
-        if 'mag' + band in col_names:
-            p = mp.Process(
-                target=plot.starmap,
-                args=(
-                    img_ensemble.outpath.name,
-                    #   Replace with reference image in the future
-                    img_ensemble.image_list[0].get_data(),
-                    band,
-                    tbl_xy_cali_all,
-                ),
-                kwargs={
-                    'tbl_2': tbl_xy_cali,
-                    'label': 'downloaded calibration stars',
-                    'label_2': 'matched calibration stars',
-                    'rts': rts,
-                    'nameobj': img_ensemble.objname,
-                }
-            )
-            p.start()
-
     #   Add calibration data to image container
     img_container.calib_parameters = calib_parameters(
         ind_fit,
         col_names,
         mags_lit,
+        calib_tbl,
     )
