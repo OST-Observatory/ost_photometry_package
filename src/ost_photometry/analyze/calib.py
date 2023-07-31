@@ -566,6 +566,7 @@ def get_calib_fit(img, img_container):
     #   will be used. Otherwise, a structured numpy array will be created.
     unc = getattr(img_container, 'unc', True)
 
+    #   TODO: Replace with table request?
     #   Calculate magnitudes
     if unc:
         try:
@@ -869,86 +870,86 @@ def deter_calib(img_container, band_list, calib_method='APASS',
             )
             p.start()
 
-    # TODO: Move the following to a dedicated function and to the point where the calibration will actually take place.
-    ###
-    #   Arrange literature magnitudes in numpy arrays
+    # TODO: Move the following to a dedicated function and to the point where the calibration will actually take place. {x]
+    # ###
+    # #   Arrange literature magnitudes in numpy arrays
+    # #
+    # #   Ensure 'ind_lit' is a list
+    # ind_lit_l = list(ind_lit)
     #
-    #   Ensure 'ind_lit' is a list
-    ind_lit_l = list(ind_lit)
-
-    #   unmpy.array or default numpy.ndarray
-    unc = getattr(img_container, 'unc', True)
-    if unc:
-        #   Create uncertainties array with the literature magnitudes
-        mags_lit = unumpy.uarray(
-            np.zeros((nfilt, count_cali)),
-            np.zeros((nfilt, count_cali))
-        )
-
-        #
-        for z, band in enumerate(band_list):
-            if 'mag' + band in col_names:
-                #   Check if errors for the calibration magnitudes exist
-                if 'err' + band in col_names:
-                    err = np.array(
-                        calib_tbl[col_names['err' + band]][ind_lit_l]
-                    )
-
-                    #   Check if errors are nice floats
-                    if err.dtype in (float, np.float32, np.float64):
-                        valerr = err
-                    else:
-                        valerr = 0.
-                else:
-                    valerr = 0.
-
-                #   Extract magnitudes
-                mags_lit[z] = unumpy.uarray(
-                    calib_tbl[col_names['mag' + band]][ind_lit_l],
-                    valerr
-                )
-
-    #   Default numpy.ndarray
-    else:
-        #   Define new arrays
-        mags_lit = np.zeros(nfilt, dtype=[('mag', 'f8', (count_cali)),
-                                          ('err', 'f8', (count_cali)),
-                                          ('qua', 'U1', (count_cali)),
-                                          ]
-                            )
-
-        #
-        for z, band in enumerate(band_list):
-            if 'mag' + band in col_names:
-                #   Extract magnitudes
-                col_mags = np.array(
-                    calib_tbl[col_names['mag' + band]][ind_lit_l]
-                )
-                mags_lit['mag'][z] = col_mags
-
-                #   Check if errors for the calibration magnitudes exist
-                if 'err' + band in col_names:
-                    valerr = np.array(
-                        calib_tbl[col_names['err' + band]][ind_lit_l]
-                    )
-                else:
-                    valerr = np.zeros((count_cali))
-
-                #   Check if errors are nice floats
-                if valerr.dtype in (np.float, np.float32, np.float64):
-                    mags_lit['err'][z] = valerr
-
-                #   Add quality flag, if it exists
-                if 'qua' + band in col_names:
-                    valqua = np.array(
-                        calib_tbl[col_names['qua' + band]][ind_lit_l]
-                    )
-                    mags_lit['qua'][z] = valqua
+    # #   unmpy.array or default numpy.ndarray
+    # unc = getattr(img_container, 'unc', True)
+    # if unc:
+    #     #   Create uncertainties array with the literature magnitudes
+    #     mags_lit = unumpy.uarray(
+    #         np.zeros((nfilt, count_cali)),
+    #         np.zeros((nfilt, count_cali))
+    #     )
+    #
+    #     #
+    #     for z, band in enumerate(band_list):
+    #         if 'mag' + band in col_names:
+    #             #   Check if errors for the calibration magnitudes exist
+    #             if 'err' + band in col_names:
+    #                 err = np.array(
+    #                     calib_tbl[col_names['err' + band]][ind_lit_l]
+    #                 )
+    #
+    #                 #   Check if errors are nice floats
+    #                 if err.dtype in (float, np.float32, np.float64):
+    #                     valerr = err
+    #                 else:
+    #                     valerr = 0.
+    #             else:
+    #                 valerr = 0.
+    #
+    #             #   Extract magnitudes
+    #             mags_lit[z] = unumpy.uarray(
+    #                 calib_tbl[col_names['mag' + band]][ind_lit_l],
+    #                 valerr
+    #             )
+    #
+    # #   Default numpy.ndarray
+    # else:
+    #     #   Define new arrays
+    #     mags_lit = np.zeros(nfilt, dtype=[('mag', 'f8', (count_cali)),
+    #                                       ('err', 'f8', (count_cali)),
+    #                                       ('qua', 'U1', (count_cali)),
+    #                                       ]
+    #                         )
+    #
+    #     #
+    #     for z, band in enumerate(band_list):
+    #         if 'mag' + band in col_names:
+    #             #   Extract magnitudes
+    #             col_mags = np.array(
+    #                 calib_tbl[col_names['mag' + band]][ind_lit_l]
+    #             )
+    #             mags_lit['mag'][z] = col_mags
+    #
+    #             #   Check if errors for the calibration magnitudes exist
+    #             if 'err' + band in col_names:
+    #                 valerr = np.array(
+    #                     calib_tbl[col_names['err' + band]][ind_lit_l]
+    #                 )
+    #             else:
+    #                 valerr = np.zeros((count_cali))
+    #
+    #             #   Check if errors are nice floats
+    #             if valerr.dtype in (np.float, np.float32, np.float64):
+    #                 mags_lit['err'][z] = valerr
+    #
+    #             #   Add quality flag, if it exists
+    #             if 'qua' + band in col_names:
+    #                 valqua = np.array(
+    #                     calib_tbl[col_names['qua' + band]][ind_lit_l]
+    #                 )
+    #                 mags_lit['qua'][z] = valqua
 
     #   Add calibration data to image container
     img_container.calib_parameters = calib_parameters(
         ind_fit,
         col_names,
         mags_lit,
-        calib_tbl,
+        calib_tbl_sort,
     )

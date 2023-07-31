@@ -479,7 +479,7 @@ def prepare_trans(img_container, Tcs, filter_list, filt_i, id_img_i,
         Tcs = calibration_data.getTcs(img_i.jd)
 
     #   Check if transformation is possible with the calibration
-    #   coefficients. If not, try to derive calibration coefficients.
+    #   coefficients..
     if Tcs is not None and not derive_Tcs:
         Tc, filt_id_1, filt_id_2 = aux.find_filt(
             filter_list,
@@ -1540,6 +1540,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
     # lit_mags = img_container.calib_parameters.mags_lit
 
     #   TODO: Put the following in a function
+    ################################################################
     ###
     #   Arrange literature magnitudes in numpy arrays
     #
@@ -1616,6 +1617,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
                         calib_tbl[calib_column_names['qua' + band]]
                     )
                     lit_mags['qua'][z] = valqua
+    ################################################################
 
     for filt_i, band in enumerate(filter_list):
         #   Get image ensemble

@@ -2185,7 +2185,6 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 
     #   Define variables
     nobj_list = []
-    # keys = []
     x = []
     y = []
     w = []
@@ -2194,20 +2193,10 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
     for ensemble in ensemble_dict.values():
         w.append(ensemble.wcs)
 
-        # keys.append(key)
-
         _x = ensemble.image_list[0].photometry['x_fit']
         x.append(_x)
         y.append(ensemble.image_list[0].photometry['y_fit'])
         nobj_list.append(len(_x))
-
-    # print(x)
-    # print(nobj_list)
-    # print('------------')
-    # print(keys)
-    # print(ensemble_dict.keys())
-    # print(list(ensemble_dict.keys()))
-    # print('------------')
 
     #   Max. number of objects
     n_objects = np.max(nobj_list)
@@ -3194,6 +3183,16 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
             f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
             f"valid: use either APER or PSF {style.bcolors.ENDC}"
         )
+
+    #   TODO: Add conversion to magnitudes to photo table
+    uflux_img = unumpy.uarray(
+        image.photometry['flux_fit'],
+        image.photometry['flux_unc']
+    )
+    mags = aux.mag_u_arr(uflux_img)
+
+    print(unumpy.nominal_values(mags))
+    print(unumpy.std_devs(mags))
 
     #   Add flux array to image (is this really necessary?)
     #   TODO: Rewrite correlation and reduction. Then remove this:
