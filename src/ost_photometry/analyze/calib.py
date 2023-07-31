@@ -533,7 +533,7 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
     return calib_tbl, col_names, ra_unit
 
 
-def get_calib_fit(img, img_container):
+def get_calib_fit(img, mags, img_container):
     """
         Sort and rearrange input numpy array with extracted magnitude
         data, such that the returned numpy array contains the extracted
@@ -541,15 +541,18 @@ def get_calib_fit(img, img_container):
 
         Parameters
         ----------
-        img              : `image class`
+        img             : `image class`
             Image class object
+
+        mags            : `numpy.ndarray` or `unumpy.uarray`
+            Array with image magnitudes
 
         img_container   : `image.container`
             Container object with image ensemble objects for each filter
 
         Returns
         -------
-        mags_fit        : structured `numpy.ndarray`
+        mags_fit        : `numpy.ndarray` or `unumpy.uarray`
             Rearrange array with magnitudes
     """
     #   Get calibration data
@@ -566,35 +569,19 @@ def get_calib_fit(img, img_container):
     #   will be used. Otherwise, a structured numpy array will be created.
     unc = getattr(img_container, 'unc', True)
 
-    #   TODO: Replace with table request?
-    #   Calculate magnitudes
-    if unc:
-        try:
-            mags = aux.mag_u_arr(img.uflux_es)
-        except:
-            mags = aux.mag_u_arr(img.uflux)
-    else:
-        try:
-            mags = aux.cal_mag(img.flux_es)
-        except:
-            mags = aux.cal_mag(img.flux)
-
-    #   Add magnitudes to image
-    img.mags = mags
-
     ###
     #   Sort and add magnitudes
     #
     #   unumpy.uarray
     if unc:
         #   Check if we have calibration data for the current filter/image
-        if 'mag' + getattr(img, 'filt', '?') in col_names:
+        if f'mag{getattr(img, "filt", "?")}' in col_names:
             #   Sort
             mags_fit = mags[ind_list]
         else:
             mags_fit = unumpy.uarray(
-                np.zeros((count_cali)),
-                np.zeros((count_cali))
+                np.zeros(count_cali),
+                np.zeros(count_cali)
             )
 
     #   numpy structured array
@@ -606,13 +593,13 @@ def get_calib_fit(img, img_container):
         )
 
         #   Check if we have calibration data for the current filter/image
-        if 'mag' + getattr(img, 'filt', '?') in col_names:
+        if f'mag{getattr(img, "filt", "?")}' in col_names:
             #   Sort
             mags_fit['mag'] = mags['mag'][ind_list]
             mags_fit['err'] = mags['err'][ind_list]
 
     #   Add array with magnitudes to the image
-    img.mags_fit = mags_fit
+    return mags_fit
 
 
 def deter_calib(img_container, band_list, calib_method='APASS',

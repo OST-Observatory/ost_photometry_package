@@ -1372,7 +1372,7 @@ def prepare_ZP(img_container, image, image_o, id_i, mag_lit, id_o=None):
     unc = getattr(img_container, 'unc', True)
 
     #   Set array with literature magnitudes for the calibration stars
-    mag_lit = img_container.calib_parameters.mags_lit
+    # mag_lit = img_container.calib_parameters.mags_lit
     if not unc:
         mag_lit = mag_lit['mag']
 
@@ -1512,18 +1512,9 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
 
     #   Get object indices and X & Y pixel positions
     #   Assumes that the image ensembles are already correlated
-    #   TODO: Convert to table request [x]
     ind = img_ensembles[filter_list[0]].image_list[0].photometry['id']
     x = img_ensembles[filter_list[0]].image_list[0].photometry['x_fit']
     y = img_ensembles[filter_list[0]].image_list[0].photometry['y_fit']
-    # try:
-    #     ind = img_ensembles[filter_list[0]].id_es
-    #     x = img_ensembles[filter_list[0]].x_es
-    #     y = img_ensembles[filter_list[0]].y_es
-    # except:
-    #     ind = img_ensembles[filter_list[0]].id_s
-    #     x = img_ensembles[filter_list[0]].x_s
-    #     y = img_ensembles[filter_list[0]].y_s
 
     #   Number of filter
     n_filter = len(filter_list)
@@ -1539,9 +1530,6 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
     id_tuple_notrans = []
 
     #   Get calibration magnitudes
-    #   TODO: Convert to table request [x]
-    # lit_mags = img_container.calib_parameters.mags_lit
-
     #   TODO: Put the following in a function
     ################################################################
     ###
@@ -1587,9 +1575,9 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
     #   Default numpy.ndarray
     else:
         #   Define new arrays
-        lit_mags = np.zeros(n_filter, dtype=[('mag', 'f8', (count_cali)),
-                                             ('err', 'f8', (count_cali)),
-                                             ('qua', 'U1', (count_cali)),
+        lit_mags = np.zeros(n_filter, dtype=[('mag', 'f8', count_cali),
+                                             ('err', 'f8', count_cali),
+                                             ('qua', 'U1', count_cali),
                                              ]
                             )
 
@@ -1608,7 +1596,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
                         calib_tbl[calib_column_names['err' + band]]
                     )
                 else:
-                    valerr = np.zeros((count_cali))
+                    valerr = np.zeros(count_cali)
 
                 #   Check if errors are nice floats
                 if valerr.dtype in (np.float, np.float32, np.float64):
@@ -1630,7 +1618,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
         img_list = img_ensemble.image_list
 
         #   Prepare transformation
-        Tc_type, filt_o, filt_id_1, filt_id_2, Tc = prepare_trans(
+        tc_type, filt_o, filt_id_1, filt_id_2, Tc = prepare_trans(
             img_container,
             Tcs,
             filter_list,
@@ -1647,28 +1635,33 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
             unc = getattr(img_container, 'unc', True)
             if unc:
                 #   Create uncertainties array with the literature magnitudes
-                magnitudes_img_i = unumpy.uarray(
+                img_i_mags = unumpy.uarray(
                     img_i.photometry['mags_fit'],
                     img_i.photometry['mags_unc']
                 )
             else:
                 #   Overall array for the flux and uncertainty
-                magnitudes_img_i = np.zeros(
+                img_i_mags = np.zeros(
                     1,
                     dtype=[('mag', 'f8', count), ('err', 'f8', count)]        # Code requirements require current naming
                 )
-                magnitudes_img_i['mag'] = img_i.photometry['mags_fit']
-                magnitudes_img_i['err'] = img_i.photometry['mags_unc']
+                img_i_mags['mag'] = img_i.photometry['mags_fit']
+                img_i_mags['err'] = img_i.photometry['mags_unc']
 
-            print(magnitudes_img_i)
             ########################################################################################
+
+            #   TODO: Remove later
+            #   Add magnitudes to image
+            img_i.mags = img_i_mags
 
             #   Get extracted magnitudes of the calibration stars for the
             #   current image
-            calib.get_calib_fit(img_i, img_container)
+            img_i_mags_calib = calib.get_calib_fit(img_i, img_i_mags, img_container)
+            #   TODO: Remove later
+            img_i.mags_fit = img_i_mags_calib
 
             #   Prepare some variables and find corresponding image to img_i
-            if Tc_type is not None:
+            if tc_type is not None:
                 img_o = prepare_trans_variables(
                     img_container,
                     id_img_i,
@@ -1696,7 +1689,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
             ###
             #   Calculate transformation if possible
             #
-            if Tc_type is not None:
+            if tc_type is not None:
                 apply_trans(
                     img_container,
                     img_i,
@@ -1708,7 +1701,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
                     filter_list,
                     Tc,
                     plot_sigma=plot_sigma,
-                    ttype=Tc_type,
+                    ttype=tc_type,
                 )
 
             ###
