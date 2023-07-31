@@ -436,7 +436,7 @@ class image_ensemble:
         nmax_list = []
         x = []
         y = []
-        for i, tbl in enumerate(tbls):
+        for i, tbl in enumerate(tbls.values()):
             x.append(tbl['x_fit'])
             y.append(tbl['y_fit'])
             nmax_list.append(len(x[i]))
@@ -2244,7 +2244,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
     #   TODO: Add code here to sort the tables.
     #   Limit the photometry tables to common objects.
     for j, ensemble in enumerate(ensemble_dict.values()):
-        for image in ensemble.values:
+        for image in ensemble.image_list:
             image.photometry = image.photometry[ind_sr[j, :]]
 
     #   TODO: Move the following to a dedicated function and then move it to the calibration procedure
