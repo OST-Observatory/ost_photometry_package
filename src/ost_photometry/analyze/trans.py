@@ -395,26 +395,6 @@ def prepare_trans_variables(img_container, id_img_i, filt_o, filt_i,
     #   Get image corresponding to this exposure time
     img_o = img_ensembles[filter_list[filt_o]].image_list[id_img_o]
 
-    #   Get extracted magnitudes of the calibration stars
-    #   for the image in the ``o``ther filter
-    #   -> required for magnitude transformation
-    calib.get_calib_fit(img_o, img_container)
-
-    #   Set values for mag_fit_1 and mag_fit_2 to allow
-    #   calculation of the correct color later on
-    if filt_id_1 == filt_i:
-        img_i.mag_fit_1 = img_i.mags_fit
-        img_i.mag_fit_2 = img_o.mags_fit
-
-        img_i.mags_1 = img_i.mags
-        img_i.mags_2 = img_o.mags
-    else:
-        img_i.mag_fit_1 = img_o.mags_fit
-        img_i.mag_fit_2 = img_i.mags_fit
-
-        img_i.mags_1 = img_o.mags
-        img_i.mags_2 = img_i.mags
-
     return img_o
 
 
@@ -1630,7 +1610,7 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
 
         #   Loop over images
         for id_img_i, img_i in enumerate(img_list):
-            #   TODO: Add here conversion from astropy tables to arrays. -> put in function later
+            #   TODO: Put in function
             ########################################################################################
             unc = getattr(img_container, 'unc', True)
             if unc:
@@ -1671,6 +1651,48 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
                     filter_list,
                     id_tuple_trans,
                 )
+
+                #   TODO: Put in function
+                ########################################################################################
+                unc = getattr(img_container, 'unc', True)
+                if unc:
+                    #   Create uncertainties array with the literature magnitudes
+                    img_o_mags = unumpy.uarray(
+                        img_o.photometry['mags_fit'],
+                        img_o.photometry['mags_unc']
+                    )
+                else:
+                    #   Overall array for the flux and uncertainty
+                    img_o_mags = np.zeros(
+                        1,
+                        dtype=[('mag', 'f8', count), ('err', 'f8', count)]  # Code requirements require current naming
+                    )
+                    img_o_mags['mag'] = img_o.photometry['mags_fit']
+                    img_o_mags['err'] = img_o.photometry['mags_unc']
+
+                ########################################################################################
+
+                #   Get extracted magnitudes of the calibration stars
+                #   for the image in the ``o``ther filter
+                #   -> required for magnitude transformation
+                img_o_mags_calib = calib.get_calib_fit(img_o, img_o_mags, img_container)
+
+                #   Set values for mag_fit_1 and mag_fit_2 to allow
+                #   calculation of the correct color later on
+                #   TODO: Remove later
+                if filt_id_1 == filt_i:
+                    img_i.mag_fit_1 = img_i_mags_calib
+                    img_i.mag_fit_2 = img_o_mags_calib
+
+                    img_i.mags_1 = img_i_mags
+                    img_i.mags_2 = img_o_mags
+                else:
+                    img_i.mag_fit_1 = img_o_mags_calib
+                    img_i.mag_fit_2 = img_i_mags_calib
+
+                    img_i.mags_1 = img_o_mags
+                    img_i.mags_2 = img_i_mags
+
             else:
                 img_o = None
 
