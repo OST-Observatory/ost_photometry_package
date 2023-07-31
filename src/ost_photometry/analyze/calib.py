@@ -25,6 +25,8 @@ from . import aux, correlate, plot
 #                           Routines & definitions                         #
 ############################################################################
 
+
+#   TODO: Remove this class?
 class calib_parameters:
     def __init__(self, inds, column_names, mags_lit, calib_tbl):
         self.inds = inds

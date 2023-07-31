@@ -1508,30 +1508,114 @@ def apply_calib(img_container, filter_list, Tcs=None, derive_Tcs=False,
     img_ensembles = img_container.ensembles
 
     #   Get object indices and X & Y pixel positions
-    try:
-        ind = img_ensembles[filter_list[0]].id_es
-        x = img_ensembles[filter_list[0]].x_es
-        y = img_ensembles[filter_list[0]].y_es
-    except:
-        ind = img_ensembles[filter_list[0]].id_s
-        x = img_ensembles[filter_list[0]].x_s
-        y = img_ensembles[filter_list[0]].y_s
+    #   Assumes that the image ensembles are already correlated
+    #   TODO: Convert to table request [x]
+    ind = img_ensembles[filter_list[0]].image_list[0].photometry['id']
+    x = img_ensembles[filter_list[0]].image_list[0].photometry['x_fit']
+    y = img_ensembles[filter_list[0]].image_list[0].photometry['y_fit']
+    # try:
+    #     ind = img_ensembles[filter_list[0]].id_es
+    #     x = img_ensembles[filter_list[0]].x_es
+    #     y = img_ensembles[filter_list[0]].y_es
+    # except:
+    #     ind = img_ensembles[filter_list[0]].id_s
+    #     x = img_ensembles[filter_list[0]].x_s
+    #     y = img_ensembles[filter_list[0]].y_s
 
     #   Number of filter
-    nfilter = len(filter_list)
+    n_filter = len(filter_list)
 
     #   Get number of objects
     count = len(ind)
 
     #   Prepare arrays
-    aux.prepare_arrays(img_container, nfilter, count)
+    aux.prepare_arrays(img_container, n_filter, count)
 
     #   Initialize bool and image ID for transformation
     id_tuple_trans = []
     id_tuple_notrans = []
 
     #   Get calibration magnitudes
-    lit_mags = img_container.calib_parameters.mags_lit
+    #   TODO: Convert to table request [x]
+    # lit_mags = img_container.calib_parameters.mags_lit
+
+    #   TODO: Put the following in a function
+    ###
+    #   Arrange literature magnitudes in numpy arrays
+    #
+    calib_tbl = img_container.calib_parameters.calib_tbl
+    calib_column_names = img_container.calib_parameters.column_names
+
+    count_cali = len(calib_tbl)
+
+    #   unmpy.array or default numpy.ndarray
+    unc = getattr(img_container, 'unc', True)
+    if unc:
+        #   Create uncertainties array with the literature magnitudes
+        lit_mags = unumpy.uarray(
+            np.zeros((n_filter, count_cali)),
+            np.zeros((n_filter, count_cali))
+        )
+
+        #
+        for z, band in enumerate(filter_list):
+            if 'mag' + band in calib_column_names:
+                #   Check if errors for the calibration magnitudes exist
+                if 'err' + band in calib_column_names:
+                    err = np.array(
+                        calib_tbl[calib_column_names['err' + band]]
+                    )
+
+                    #   Check if errors are nice floats
+                    if err.dtype in (float, np.float32, np.float64):
+                        valerr = err
+                    else:
+                        valerr = 0.
+                else:
+                    valerr = 0.
+
+                #   Extract magnitudes
+                lit_mags[z] = unumpy.uarray(
+                    calib_tbl[calib_column_names['mag' + band]],
+                    valerr
+                )
+
+    #   Default numpy.ndarray
+    else:
+        #   Define new arrays
+        lit_mags = np.zeros(n_filter, dtype=[('mag', 'f8', (count_cali)),
+                                          ('err', 'f8', (count_cali)),
+                                          ('qua', 'U1', (count_cali)),
+                                          ]
+                            )
+
+        #
+        for z, band in enumerate(filter_list):
+            if 'mag' + band in calib_column_names:
+                #   Extract magnitudes
+                col_mags = np.array(
+                    calib_tbl[calib_column_names['mag' + band]]
+                )
+                lit_mags['mag'][z] = col_mags
+
+                #   Check if errors for the calibration magnitudes exist
+                if 'err' + band in calib_column_names:
+                    valerr = np.array(
+                        calib_tbl[calib_column_names['err' + band]]
+                    )
+                else:
+                    valerr = np.zeros((count_cali))
+
+                #   Check if errors are nice floats
+                if valerr.dtype in (np.float, np.float32, np.float64):
+                    lit_mags['err'][z] = valerr
+
+                #   Add quality flag, if it exists
+                if 'qua' + band in calib_column_names:
+                    valqua = np.array(
+                        calib_tbl[calib_column_names['qua' + band]]
+                    )
+                    lit_mags['qua'][z] = valqua
 
     for filt_i, band in enumerate(filter_list):
         #   Get image ensemble
