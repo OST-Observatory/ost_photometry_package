@@ -745,97 +745,97 @@ def mag_u_arr(flux):
 
 
 #   TODO: Remove
-def mk_posi_tbl(img_container, ensemble_IDs):
-    """
-        Make position tables
-
-        Parameters
-        ----------
-        img_container           : `image.container`
-            Container object with image ensemble objects for each filter
-
-        ensemble_IDs            : `list`
-            List with image IDs
-
-        Returns
-        -------
-        tbl_xy          : `dictionary` of `astropy.table.Table` objects
-            X and Y position in pixel among other data
-    """
-    #   Get image ensembles
-    ensembles = img_container.ensembles
-
-    tbl_xy = {}
-    for ID in ensemble_IDs:
-        #   Ensure ID is `string`
-        ID = str(ID)
-
-        #   Get ensemble
-        ensem = ensembles[ID]
-
-        #   Get reference image
-        img = ensem.image_list[ensem.ref_id]
-
-        #   Get magnitudes and positions
-        try:
-            mags = cal_mag(img.flux_es)['mag']
-            ids = ensem.id_es
-            xs = ensem.x_es
-            ys = ensem.y_es
-        except AttributeError:
-            mags = cal_mag(img.flux)['mag']
-            ids = ensem.id_s
-            xs = ensem.x_s
-            ys = ensem.y_s
-
-        #   Fill astropy table
-        tbl_xy[ID] = Table(
-            names=['id', 'xcentroid', 'ycentroid', 'mag'],
-            data=[np.intc(ids), xs, ys, mags]
-        )
-
-    return tbl_xy
+# def mk_posi_tbl(img_container, ensemble_IDs):
+#     """
+#         Make position tables
+#
+#         Parameters
+#         ----------
+#         img_container           : `image.container`
+#             Container object with image ensemble objects for each filter
+#
+#         ensemble_IDs            : `list`
+#             List with image IDs
+#
+#         Returns
+#         -------
+#         tbl_xy          : `dictionary` of `astropy.table.Table` objects
+#             X and Y position in pixel among other data
+#     """
+#     #   Get image ensembles
+#     ensembles = img_container.ensembles
+#
+#     tbl_xy = {}
+#     for ID in ensemble_IDs:
+#         #   Ensure ID is `string`
+#         ID = str(ID)
+#
+#         #   Get ensemble
+#         ensem = ensembles[ID]
+#
+#         #   Get reference image
+#         img = ensem.image_list[ensem.ref_id]
+#
+#         #   Get magnitudes and positions
+#         try:
+#             mags = cal_mag(img.flux_es)['mag']
+#             ids = ensem.id_es
+#             xs = ensem.x_es
+#             ys = ensem.y_es
+#         except AttributeError:
+#             mags = cal_mag(img.flux)['mag']
+#             ids = ensem.id_s
+#             xs = ensem.x_s
+#             ys = ensem.y_s
+#
+#         #   Fill astropy table
+#         tbl_xy[ID] = Table(
+#             names=['id', 'xcentroid', 'ycentroid', 'mag'],
+#             data=[np.intc(ids), xs, ys, mags]
+#         )
+#
+#     return tbl_xy
 
 
 #   TODO: Remove
-def mk_posi_tbl_ensem(ensemble):
-    """
-        Make position tables
-
-        Parameters
-        ----------
-        ensemble                : `image ensemble`
-            Image image ensemble class object
-
-        Returns
-        -------
-        tbl_xy          : `dictionary` of `astropy.table.Table` objects
-            X and Y position in pixel among other data
-    """
-    #   Define astropy table
-    tbl_xy = {}
-
-    #   Get image
-    for img in ensemble.image_list:
-        #   Get magnitudes and positions
-        try:
-            mags = cal_mag(img.flux_es)['mag']
-            ids = ensemble.id_es
-            xs = ensemble.x_es
-            ys = ensemble.y_es
-        except AttributeError:
-            mags = cal_mag(img.flux)['mag']
-            ids = ensemble.id_s
-            xs = ensemble.x_s
-            ys = ensemble.y_s
-
-        #   Fill astropy table
-        tbl_xy[img.pd] = Table(
-            names=['id', 'xcentroid', 'ycentroid', 'mag'],
-            data=[np.intc(ids), xs, ys, mags]
-        )
-
-    return tbl_xy
+# def mk_posi_tbl_ensem(ensemble):
+#     """
+#         Make position tables
+#
+#         Parameters
+#         ----------
+#         ensemble                : `image ensemble`
+#             Image image ensemble class object
+#
+#         Returns
+#         -------
+#         tbl_xy          : `dictionary` of `astropy.table.Table` objects
+#             X and Y position in pixel among other data
+#     """
+#     #   Define astropy table
+#     tbl_xy = {}
+#
+#     #   Get image
+#     for img in ensemble.image_list:
+#         #   Get magnitudes and positions
+#         try:
+#             mags = cal_mag(img.flux_es)['mag']
+#             ids = ensemble.id_es
+#             xs = ensemble.x_es
+#             ys = ensemble.y_es
+#         except AttributeError:
+#             mags = cal_mag(img.flux)['mag']
+#             ids = ensemble.id_s
+#             xs = ensemble.x_s
+#             ys = ensemble.y_s
+#
+#         #   Fill astropy table
+#         tbl_xy[img.pd] = Table(
+#             names=['id', 'xcentroid', 'ycentroid', 'mag'],
+#             data=[np.intc(ids), xs, ys, mags]
+#         )
+#
+#     return tbl_xy
 
 
 def find_filt(filt_list, in_dict, filt, camera, verbose=False, indent=2):

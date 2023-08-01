@@ -2889,15 +2889,15 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
 
 
 def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
-                          multi_start=5., size_epsf=25, frac_epsf_stars=0.2,
-                          oversampling=2, maxiters=7,
-                          epsf_use_init_guesses=True, method='IRAF', multi=5.0,
-                          multi_grouper=2.0, strict_cleaning=True,
-                          min_eps_stars=25, refid=0, photometry='PSF',
-                          rstars=5., rbg_in=7., rbg_out=10., r_unit='arcsec',
-                          strict_eps=True, search_image=True, rmcos=False,
-                          objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
-                          plot_ifi=False, plot_test=True):
+                 multi_start=5., size_epsf=25, frac_epsf_stars=0.2,
+                 oversampling=2, maxiters=7,
+                 epsf_use_init_guesses=True, method='IRAF', multi=5.0,
+                 multi_grouper=2.0, strict_cleaning=True,
+                 min_eps_stars=25, refid=0, photometry='PSF',
+                 rstars=5., rbg_in=7., rbg_out=10., r_unit='arcsec',
+                 strict_eps=True, search_image=True, rmcos=False,
+                 objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
+                 plot_ifi=False, plot_test=True):
     """
         Main function to extract the information from the individual images
 
@@ -3031,198 +3031,185 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
             created
             Default is ``True``.
     """
-    ###
-    #   Initialize output class in case of multiprocessing
-    #
-    if multiprocessing:
-        log_terminal = terminal_output.TerminalLog()
-        log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
-    else:
-        terminal_output.print_to_terminal(
-            f"Image: {image.pd}",
-            indent=2,
-            style_name='UNDERLINE',
-        )
-        log_terminal = None
-
-    ###
-    #   Remove cosmics (optional)
-    #
-    if rmcos:
-        rm_cosmic(
-            image,
-            objlim=objlim,
-            readnoise=readnoise,
-            sigclip=sigclip,
-            satlevel=satlevel,
-        )
-
-    ###
-    #   Estimate and remove background
-    #
-    mk_bg(image, sigma_bkg=sigma_bkg)
-
-    ###
-    #   Find the stars (via DAO or IRAF StarFinder)
-    #
-    if search_image:
-        find_stars(
-            image,
-            sigma_psf,
-            multi_start=multi_start,
-            method=method,
-            terminal_logger=log_terminal,
-        )
-
-    if photometry == 'PSF':
+    try:
         ###
-        #   Check if enough stars have been detected to allow ePSF
-        #   calculations
+        #   Initialize output class in case of multiprocessing
         #
-        check_epsf_stars(
-            image,
-            size=size_epsf,
-            min_stars=min_eps_stars,
-            frac_epsf=frac_epsf_stars,
-            terminal_logger=log_terminal,
-            strict=strict_eps,
-        )
+        if multiprocessing:
+            log_terminal = terminal_output.TerminalLog()
+            log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
+        else:
+            terminal_output.print_to_terminal(
+                f"Image: {image.pd}",
+                indent=2,
+                style_name='UNDERLINE',
+            )
+            log_terminal = None
 
         ###
-        #   Plot images with the identified stars overlaid
+        #   Remove cosmics (optional)
         #
-        if plot_ifi or (plot_test and image.pd == refid):
-            plot.starmap(
-                image.outpath.name,
-                image.get_data(),
-                image.filt,
-                image.positions,
-                tbl_2=image.positions_epsf,
-                label='identified stars',
-                label_2='stars used to determine the ePSF',
-                rts='initial-img-' + str(image.pd),
-                nameobj=image.objname,
-                terminal_logger=log_terminal,
+        if rmcos:
+            rm_cosmic(
+                image,
+                objlim=objlim,
+                readnoise=readnoise,
+                sigclip=sigclip,
+                satlevel=satlevel,
             )
 
         ###
-        #   Calculate the ePSF
+        #   Estimate and remove background
         #
-        mk_epsf(
-            image,
-            size=size_epsf,
-            oversampling=oversampling,
-            maxiters=maxiters,
-            min_stars=min_eps_stars,
-            multi=False,
-            terminal_logger=log_terminal,
-        )
+        mk_bg(image, sigma_bkg=sigma_bkg)
 
         ###
-        #   Plot the ePSFs
+        #   Find the stars (via DAO or IRAF StarFinder)
         #
-        plot.plot_epsf(
-            image.outpath.name,
-            {f'img-{image.pd}-{image.filt}': image.epsf},
-            terminal_logger=log_terminal,
-            nameobj=image.objname,
-            indent=2,
-        )
+        if search_image:
+            find_stars(
+                image,
+                sigma_psf,
+                multi_start=multi_start,
+                method=method,
+                terminal_logger=log_terminal,
+            )
 
-        ###
-        #   Performing the PSF photometry
-        #
-        epsf_extract(
-            image,
-            sigma_psf,
-            sigma_bkg=sigma_bkg,
-            use_init_guesses=epsf_use_init_guesses,
-            method_finder=method,
-            size_epsf=size_epsf,
-            multi=multi,
-            multi_grouper=multi_grouper,
-            strict_cleaning=strict_cleaning,
-            terminal_logger=log_terminal,
-        )
+        if photometry == 'PSF':
+            ###
+            #   Check if enough stars have been detected to allow ePSF
+            #   calculations
+            #
+            check_epsf_stars(
+                image,
+                size=size_epsf,
+                min_stars=min_eps_stars,
+                frac_epsf=frac_epsf_stars,
+                terminal_logger=log_terminal,
+                strict=strict_eps,
+            )
 
-        ###
-        #   Plot original and residual image
-        #
-        plot.plot_residual(
-            image.objname,
-            {f'{image.pd}-{image.filt}': image.get_data()},
-            {f'{image.pd}-{image.filt}': image.residual_image},
-            image.outpath.name,
-            terminal_logger=log_terminal,
-            nameobj=image.objname,
-            indent=2,
-        )
+            ###
+            #   Plot images with the identified stars overlaid
+            #
+            if plot_ifi or (plot_test and image.pd == refid):
+                plot.starmap(
+                    image.outpath.name,
+                    image.get_data(),
+                    image.filt,
+                    image.positions,
+                    tbl_2=image.positions_epsf,
+                    label='identified stars',
+                    label_2='stars used to determine the ePSF',
+                    rts='initial-img-' + str(image.pd),
+                    nameobj=image.objname,
+                    terminal_logger=log_terminal,
+                )
 
-    elif photometry == 'APER':
-        ###
-        #   Perform aperture photometry
-        #
-        if image.pd == refid:
-            plotaper = True
+            ###
+            #   Calculate the ePSF
+            #
+            mk_epsf(
+                image,
+                size=size_epsf,
+                oversampling=oversampling,
+                maxiters=maxiters,
+                min_stars=min_eps_stars,
+                multi=False,
+                terminal_logger=log_terminal,
+            )
+
+            ###
+            #   Plot the ePSFs
+            #
+            plot.plot_epsf(
+                image.outpath.name,
+                {f'img-{image.pd}-{image.filt}': image.epsf},
+                terminal_logger=log_terminal,
+                nameobj=image.objname,
+                indent=2,
+            )
+
+            ###
+            #   Performing the PSF photometry
+            #
+            epsf_extract(
+                image,
+                sigma_psf,
+                sigma_bkg=sigma_bkg,
+                use_init_guesses=epsf_use_init_guesses,
+                method_finder=method,
+                size_epsf=size_epsf,
+                multi=multi,
+                multi_grouper=multi_grouper,
+                strict_cleaning=strict_cleaning,
+                terminal_logger=log_terminal,
+            )
+
+            ###
+            #   Plot original and residual image
+            #
+            plot.plot_residual(
+                image.objname,
+                {f'{image.pd}-{image.filt}': image.get_data()},
+                {f'{image.pd}-{image.filt}': image.residual_image},
+                image.outpath.name,
+                terminal_logger=log_terminal,
+                nameobj=image.objname,
+                indent=2,
+            )
+
+        elif photometry == 'APER':
+            ###
+            #   Perform aperture photometry
+            #
+            if image.pd == refid:
+                plotaper = True
+            else:
+                plotaper = False
+
+            aperture_extract(
+                image,
+                rstars,
+                rbg_in,
+                rbg_out,
+                r_unit=r_unit,
+                plotaper=plotaper,
+                terminal_logger=log_terminal,
+                indent=3,
+            )
+
         else:
-            plotaper = False
+            raise RuntimeError(
+                f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
+                f"valid: use either APER or PSF {style.bcolors.ENDC}"
+            )
 
-        aperture_extract(
-            image,
-            rstars,
-            rbg_in,
-            rbg_out,
-            r_unit=r_unit,
-            plotaper=plotaper,
-            terminal_logger=log_terminal,
-            indent=3,
+        #   Conversion of flux to magnitudes
+        uflux_img = unumpy.uarray(
+            image.photometry['flux_fit'],
+            image.photometry['flux_unc']
         )
+        mags = aux.mag_u_arr(uflux_img)
 
-    else:
-        raise RuntimeError(
-            f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
-            f"valid: use either APER or PSF {style.bcolors.ENDC}"
-        )
+        image.photometry['mags_fit'] = unumpy.nominal_values(mags)
+        image.photometry['mags_unc'] = unumpy.std_devs(mags)
 
-    #   Conversion of flux to magnitudes
-    uflux_img = unumpy.uarray(
-        image.photometry['flux_fit'],
-        image.photometry['flux_unc']
-    )
-    mags = aux.mag_u_arr(uflux_img)
+        ###
+        #   Plot images with extracted stars overlaid
+        #
+        if plot_ifi or (plot_test and image.pd == refid):
+            aux.prepare_and_plot_starmap(image, terminal_logger=log_terminal)
 
-    image.photometry['mags_fit'] = unumpy.nominal_values(mags)
-    image.photometry['mags_unc'] = unumpy.std_devs(mags)
+        if multiprocessing:
+            log_terminal.print_to_terminal('')
+        else:
+            terminal_output.print_to_terminal('')
 
-    #   Add flux array to image (is this really necessary?)
-    #   TODO: Rewrite correlation and reduction. Then remove this:
-    # flux_img = np.zeros(
-    #     len(image.photometry['x_fit']),
-    #     dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
-    # )
-    # flux_img['flux_fit'] = image.photometry['flux_fit']
-    # flux_img['flux_unc'] = image.photometry['flux_unc']
-    #
-    # uflux_img = unumpy.uarray(
-    #     flux_img['flux_fit'],
-    #     flux_img['flux_unc']
-    # )
-    # image.flux = flux_img
-    # image.uflux = uflux_img
-
-    ###
-    #   Plot images with extracted stars overlaid
-    #
-    if plot_ifi or (plot_test and image.pd == refid):
-        aux.prepare_and_plot_starmap(image, terminal_logger=log_terminal)
-
-    if multiprocessing:
-        log_terminal.print_to_terminal('')
-    else:
-        terminal_output.print_to_terminal('')
-
-    if multiprocessing:
-        return image
+        if multiprocessing:
+            return image
+    except Exception as e:
+        raise e
 
 
 def extract_flux(img_container, filter_list, name, img_paths, outdir,

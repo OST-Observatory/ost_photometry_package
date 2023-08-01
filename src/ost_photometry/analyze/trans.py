@@ -1202,12 +1202,6 @@ def calibrate_str(img_container, image, lit_m, id_f, id_img):
 
     #   Write data back to the image container
     img_container.noT = m_out
-    # try:
-    #     img_container.flux['flux'][id_f][id_img] = image.flux_es['flux_fit']
-    #     img_container.flux['err'][id_f][id_img] = image.flux_es['flux_unc']
-    # except:
-    #     img_container.flux['flux'][id_f][id_img] = image.flux['flux_fit']
-    #     img_container.flux['err'][id_f][id_img] = image.flux['flux_unc']
 
 
 def calibrate_unc(img_container, image, lit_m, id_f, id_img):
@@ -1252,10 +1246,6 @@ def calibrate_unc(img_container, image, lit_m, id_f, id_img):
 
     #   Write data back to the image container
     img_container.noT[id_f][id_img] = median
-    # try:
-    #     img_container.flux[id_f][id_img] = image.uflux_es
-    # except:
-    #     img_container.flux[id_f][id_img] = image.uflux
 
 
 def flux_calibrate_ensemble(ensemble):

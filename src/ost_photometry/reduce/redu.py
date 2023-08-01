@@ -277,7 +277,6 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
         tolerance=tolerance,
         )
 
-
     ###
     #   Get camera specific parameters
     #
@@ -288,7 +287,7 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
     bit_pix = img_parameters[3]
     temperature = img_parameters[4]
 
-    if (readnoise is None or gain is None or dr is None or satlevel is None):
+    if readnoise is None or gain is None or dr is None or satlevel is None:
         camera_info = calibration_data.camera_info(
             instrument,
             redout_mode,
@@ -750,10 +749,9 @@ def reduce_dark(path, outdir, image_type, gain=None, readnoise=8.):
         dark.write(dark_path / file_name, overwrite=True)
 
 
-
 def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr={0:0.1},
                 mask=True, plots=False, verbose=False, debug=False, **kwargs):
-    '''
+    """
         This function calculates master darks from individual dark images
         located in one directory. The dark images are group according to
         their exposure time.
@@ -801,7 +799,7 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr={0:0.1},
             If `True` the intermediate files of the data reduction will not
             be removed.
             Default is ``False``.
-    '''
+    """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(path)
     out_path  = checks.check_pathlib_path(outdir)
@@ -891,7 +889,7 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr={0:0.1},
             plot.plot_hist(combined_dark.data, out_path, gain, exp_time)
             plot.plot_dark_with_distributions(
                 combined_dark.data,
-                rn,
+                readnoise,
                 dr,
                 out_path,
                 exposure=exp_time,
@@ -1291,6 +1289,8 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
     #   Limit images to those of the target. If a target is given.
     if target is not None:
         ifc_lights = ifc_lights.filter(object=target)
+
+    # TODO: Check if ifc_lights is empty after previous filter
 
     #   Find science images
     lights = [True if file in image_type['light'] else False for file in \

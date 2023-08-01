@@ -1,5 +1,5 @@
 ############################################################################
-####                            Libraries                               ####
+#                               Libraries                                  #
 ############################################################################
 
 import os
@@ -24,31 +24,34 @@ from astropy.io import fits
 from astropy.time import Time
 from astropy import wcs
 
-from regions import PixCoord, RectangleSkyRegion, RectanglePixelRegion
+import twirl
+
+from regions import PixCoord, RectanglePixelRegion
 
 from pathlib import Path
 
 from . import checks, terminal_output, style, calibration_data
 
+
 ############################################################################
-####                        Routines & definitions                      ####
+#                           Routines & definitions                         #
 ############################################################################
 
 class image:
-    '''
+    """
         Image object used to store and transport some data
-    '''
+    """
 
     def __init__(self, pd, filt, name, path, outdir):
-        self.pd       = pd
-        self.filt     = filt
-        self.objname  = name
+        self.pd = pd
+        self.filt = filt
+        self.objname = name
         if isinstance(path, Path):
             self.filename = path.name
-            self.path     = path
+            self.path = path
         else:
             self.filename = path.split('/')[-1]
-            self.path     = Path(path)
+            self.path = Path(path)
         if isinstance(outdir, Path):
             self.outpath = outdir
         else:
@@ -68,7 +71,7 @@ class image:
 
 
 def cal_fov(image, indent=2, verbose=True):
-    '''
+    """
         Calculate field of view, pixel scale, etc. ...
 
         Parameters
@@ -83,12 +86,12 @@ def cal_fov(image, indent=2, verbose=True):
         verbose         : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
-    '''
+    """
     if verbose:
         terminal_output.print_terminal(
             indent=indent,
             string="Calculating FOV, PIXEL scale, etc. ... ",
-            )
+        )
 
     #   Get header
     header = image.get_header()
@@ -97,7 +100,7 @@ def cal_fov(image, indent=2, verbose=True):
     f = header.get('FOCALLEN', 3454.)
 
     #   Read ra and dec of image center
-    ra  = header.get('OBJCTRA', '00 00 00')
+    ra = header.get('OBJCTRA', '00 00 00')
     dec = header.get('OBJCTDEC', '+00 00 00')
 
     #   Convert ra & dec to degrees
@@ -111,15 +114,15 @@ def cal_fov(image, indent=2, verbose=True):
         raise ValueError(
             f"{style.bcolors.FAIL}\nException in cal_fov(): X dimension of "
             f"the image is 0 {style.bcolors.ENDC}"
-            )
+        )
     if npixY == 0:
         raise ValueError(
             f"{style.bcolors.FAIL}\nException in cal_fov(): Y dimension of "
             f"the image is 0 {style.bcolors.ENDC}"
-            )
+        )
 
     #   Get binning
-    binX = header.get('YBINNING', 1)
+    binX = header.get('XBINNING', 1)
     binY = header.get('YBINNING', 1)
 
     #   Set instrument
@@ -149,38 +152,38 @@ def cal_fov(image, indent=2, verbose=True):
         d, h = calibration_data.get_chip_dimensions(instrument)
 
     #   Calculate field of view
-    fov_x = 2 * np.arctan(d/2/f)
-    fov_y = 2 * np.arctan(h/2/f)
+    fov_x = 2 * np.arctan(d / 2 / f)
+    fov_y = 2 * np.arctan(h / 2 / f)
 
     #   Convert to arc min
-    fov = fov_x*360./2./np.pi*60.
-    fov_y = fov_y*360./2./np.pi*60.
+    fov = fov_x * 360. / 2. / np.pi * 60.
+    fov_y = fov_y * 360. / 2. / np.pi * 60.
 
     #   Calculate pixel scale
-    pixscale = fov*60/npixX
+    pixscale = fov * 60 / npixX
 
     #   Create RectangleSkyRegion that covers the field of view
-    #region_sky = RectangleSkyRegion(
-        #center=coord_fov,
-        #width=fov_x * u.rad,
-        #height=fov_y * u.rad,
-        #angle=0 * u.deg,
-        #)
+    # region_sky = RectangleSkyRegion(
+    # center=coord_fov,
+    # width=fov_x * u.rad,
+    # height=fov_y * u.rad,
+    # angle=0 * u.deg,
+    # )
     #   Create RectanglePixelRegion that covers the field of view
     region_pix = RectanglePixelRegion(
-        center=PixCoord(x=int(npixX/2), y=int(npixY/2)),
+        center=PixCoord(x=int(npixX / 2), y=int(npixY / 2)),
         width=npixX,
         height=npixY,
-        )
+    )
 
     #   Add to image class
-    image.coord      = coord_fov
-    image.fov        = fov
-    image.fov_y      = fov_y
+    image.coord = coord_fov
+    image.fov = fov
+    image.fov_y = fov_y
     image.instrument = instrument
-    image.pixscale   = pixscale
-    #image.region_sky  = region_sky
-    image.region_pix  = region_pix
+    image.pixscale = pixscale
+    # image.region_sky  = region_sky
+    image.region_pix = region_pix
 
     #   Add JD (observation time) and air mass from Header to image class
     jd = header.get('JD', None)
@@ -191,7 +194,7 @@ def cal_fov(image, indent=2, verbose=True):
                 f"{style.bcolors.FAIL} \tERROR: No information about the "
                 "observation time was found in the header"
                 f"{style.bcolors.ENDC}"
-                )
+            )
         jd = Time(obs_time, format='fits').jd
 
     image.jd = jd
@@ -201,9 +204,9 @@ def cal_fov(image, indent=2, verbose=True):
     image.instrument = instrument
 
 
-def mkfilelist(path, formats=[".FIT",".fit",".FITS",".fits"], addpath=False,
+def mkfilelist(path, formats=[".FIT", ".fit", ".FITS", ".fits"], addpath=False,
                sort=False):
-    '''
+    """
         Fill the file list
 
         Parameters
@@ -229,7 +232,7 @@ def mkfilelist(path, formats=[".FIT",".fit",".FITS",".fits"], addpath=False,
 
         nfiles      : `interger`
             Number of files
-    '''
+    """
     fileList = os.listdir(path)
     if sort:
         fileList.sort()
@@ -238,7 +241,7 @@ def mkfilelist(path, formats=[".FIT",".fit",".FITS",".fits"], addpath=False,
     tempList = []
     for file_i in fileList:
         for j, form in enumerate(formats):
-            if file_i.find(form)!=-1:
+            if file_i.find(form) != -1:
                 if addpath:
                     tempList.append(os.path.join(path, file_i))
                 else:
@@ -248,7 +251,7 @@ def mkfilelist(path, formats=[".FIT",".fit",".FITS",".fits"], addpath=False,
 
 
 def random_string_generator(str_size):
-    '''
+    """
         Generate random string
 
         Parameters
@@ -260,14 +263,14 @@ def random_string_generator(str_size):
         -------
                         : `string`
             Random string of length ``str_size``.
-    '''
+    """
     allowed_chars = string.ascii_letters
 
     return ''.join(random.choice(allowed_chars) for x in range(str_size))
 
 
 def get_basename(path):
-    '''
+    """
         Determine basename without ending from a file path. Accounts for
         multiple dots in the file name.
 
@@ -280,47 +283,49 @@ def get_basename(path):
         -------
         basename        : `string`
             Basename without ending
-    '''
+    """
     name_parts = str(path).split('/')[-1].split('.')[0:-1]
     if len(name_parts) == 1:
         basename = name_parts[0]
     else:
         basename = name_parts[0]
         for part in name_parts[1:]:
-            basename = basename+'.'+part
+            basename = basename + '.' + part
 
     return basename
 
 
 def timeis(func):
-    '''
+    """
         Decorator that reports the execution time
-    '''
+    """
 
     def wrap(*args, **kwargs):
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
 
-        print(func.__name__, end-start)
+        print(func.__name__, end - start)
         return result
+
     return wrap
 
 
+#   TODO: Remove unused functions?
 def startProgress(title):
-    '''
+    """
         Start progress bar
-    '''
+    """
     global progress_x
-    sys.stdout.write(title + ": [" + "-"*40 + "]" + chr(8)*41)
+    sys.stdout.write(title + ": [" + "-" * 40 + "]" + chr(8) * 41)
     sys.stdout.flush()
     progress_x = 0
 
 
 def progress(x):
-    '''
+    """
         Update progress bar
-    '''
+    """
     global progress_x
     x = int(x * 40 // 100)
     sys.stdout.write("#" * (x - progress_x))
@@ -337,7 +342,7 @@ def endProgress():
 
 
 def indices_to_slices(a):
-    '''
+    """
         Convert a list of indices to slices for an array
 
         Parameters
@@ -349,7 +354,7 @@ def indices_to_slices(a):
         -------
         slices          : `list`
             List of slices
-    '''
+    """
     it = iter(a)
     start = next(it)
     slices = []
@@ -370,7 +375,7 @@ def indices_to_slices(a):
 
 
 def link_files(output_path, file_list):
-    '''
+    """
         Links files from a list (`file_list`) to a target directory
 
         Parameters
@@ -380,7 +385,7 @@ def link_files(output_path, file_list):
 
         file_list           : `list` of `string`
             List with file paths that should be linked to the target directory
-    '''
+    """
     #   Check and if necessary create output directory
     checks.check_out(output_path)
 
@@ -400,7 +405,7 @@ def link_files(output_path, file_list):
 
 def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
                         force_wcs_determ=False, wcs_dir=None):
-    '''
+    """
         Find WCS (using astrometry.net)
 
         Parameters
@@ -436,11 +441,11 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
         -------
         w                   : `astropy.wcs.WCS`
             WCS information
-    '''
+    """
     terminal_output.print_terminal(
         indent=indent,
         string="Searching for a WCS solution (pixel to ra/dec conversion)",
-        )
+    )
 
     #   Define WCS dir
     if wcs_dir is None:
@@ -450,13 +455,12 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
         wcs_dir = wcs_dir / random_string_generator(7)
         checks.check_out(wcs_dir)
 
-
     #   Check output directories
     checks.check_out(image.outpath, wcs_dir)
 
     #   RA & DEC
     coord = image.coord
-    ra  = coord.ra.deg
+    ra = coord.ra.deg
     dec = coord.dec.deg
 
     #   Select file depending on whether cosmics were rm or not
@@ -469,22 +473,22 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
     basename = get_basename(wcsFILE)
 
     #   Compose file name
-    filename = basename+'.new'
+    filename = basename + '.new'
     filepath = Path(wcs_dir / filename)
 
     #   String passed to the shell
-    #command=('solve-field --overwrite --scale-units arcsecperpix '
-            #+'--scale-low '+str(image.pixscale-0.1)+' --scale-high '
-            #+str(image.pixscale+0.1)+' --ra '+str(ra)+' --dec '+str(dec)
-            #+' --radius 1.0 --dir '+str(wcs_dir)+' --resort '+str(wcsFILE).replace(' ', '\ ')
-            #+' --fits-image'
-            #)
-    command=(
+    # command=('solve-field --overwrite --scale-units arcsecperpix '
+    # +'--scale-low '+str(image.pixscale-0.1)+' --scale-high '
+    # +str(image.pixscale+0.1)+' --ra '+str(ra)+' --dec '+str(dec)
+    # +' --radius 1.0 --dir '+str(wcs_dir)+' --resort '+str(wcsFILE).replace(' ', '\ ')
+    # +' --fits-image'
+    # )
+    command = (
         f'solve-field --overwrite --scale-units arcsecperpix --scale-low '
-        f'{image.pixscale-0.1} --scale-high {image.pixscale+0.1} --ra {ra} '
+        f'{image.pixscale - 0.1} --scale-high {image.pixscale + 0.1} --ra {ra} '
         f'--dec {dec} --radius 1.0 --dir {wcs_dir} --resort '
         '{} --fits-image'.format(str(wcsFILE).replace(" ", "\ "))
-        )
+    )
 
     #   Running the command
     cmd_output = subprocess.run(
@@ -492,7 +496,7 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
         shell=True,
         text=True,
         capture_output=True,
-        )
+    )
 
     rcode = cmd_output.returncode
     rfind = cmd_output.stdout.find('Creating new FITS file')
@@ -503,13 +507,13 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
             f"The command was:\n {command} \nDetailed error output:\n"
             f"{style.bcolors.ENDC}{cmd_output.stdout}{cmd_output.stderr}"
             f"{style.bcolors.FAIL}Exit{style.bcolors.ENDC}"
-            )
+        )
 
     terminal_output.print_terminal(
         indent=indent,
         string="WCS solution found :)",
         style_name='OKGREEN',
-        )
+    )
 
     #   Get image hdu list
     hdulist = fits.open(filepath)
@@ -542,12 +546,12 @@ def find_wcs_twirl(image, x=None, y=None, indent=2):
     terminal_output.print_terminal(
         indent=indent,
         string="Searching for a WCS solution (pixel to ra/dec conversion)",
-        )
+    )
 
     #   Arrange object positions
     x = np.array(x)
     y = np.array(y)
-    objects = np.column_stack((x,y))
+    objects = np.column_stack((x, y))
 
     #   Limit the number of objects to 50
     if len(objects) > 50:
@@ -557,15 +561,15 @@ def find_wcs_twirl(image, x=None, y=None, indent=2):
     objects = objects[0:n]
 
     coord = image.coord
-    fov   = image.fov
+    fov = image.fov
     print('n', n, 'fov', fov, coord.ra.deg, coord.dec.deg)
     #   Calculate WCS
     gaias = twirl.gaia_radecs(
         [coord.ra.deg, coord.dec.deg],
-        fov/60,
-        #limit=n,
+        fov / 60,
+        # limit=n,
         limit=300,
-        )
+    )
     wcs = twirl._compute_wcs(objects, gaias, n=n)
 
     gaias_pixel = np.array(SkyCoord(gaias, unit="deg").to_pixel(wcs)).T
@@ -576,18 +580,18 @@ def find_wcs_twirl(image, x=None, y=None, indent=2):
     print(objects)
 
     from matplotlib import pyplot as plt
-    plt.figure(figsize=(8,8))
+    plt.figure(figsize=(8, 8))
     plt.plot(*objects.T, "o", fillstyle="none", c="b", ms=12)
     plt.plot(*gaias_pixel.T, "o", fillstyle="none", c="C1", ms=18)
-    plt.savefig('/tmp/test_twirl.pdf', bbox_inches='tight',format='pdf')
+    plt.savefig('/tmp/test_twirl.pdf', bbox_inches='tight', format='pdf')
     plt.show()
 
     ##wcs = twirl.compute_wcs(
-        #objects,
-        #(coord.ra.deg, coord.dec.deg),
-        #fov/60,
-        #n=n,
-        #)
+    # objects,
+    # (coord.ra.deg, coord.dec.deg),
+    # fov/60,
+    # n=n,
+    # )
 
     print(wcs)
 
@@ -595,14 +599,14 @@ def find_wcs_twirl(image, x=None, y=None, indent=2):
         indent=indent,
         string="WCS solution found :)",
         style_name='OKGREEN',
-        )
+    )
 
-    image.wcs = w
+    image.wcs = wcs
     return wcs
 
 
 def find_wcs_astap(image, indent=2, force_wcs_determ=False):
-    '''
+    """
         Find WCS (using ASTAP)
 
         Parameters
@@ -623,12 +627,12 @@ def find_wcs_astap(image, indent=2, force_wcs_determ=False):
         -------
         w                   : `astropy.wcs.WCS`
             WCS information
-    '''
+    """
     terminal_output.print_terminal(
         indent=indent,
         string="Searching for a WCS solution (pixel to ra/dec conversion)" \
                " for image {}".format(image.pd),
-        )
+    )
 
     #   FOV in degrees
     fov = image.fov_y / 60.
@@ -637,9 +641,9 @@ def find_wcs_astap(image, indent=2, force_wcs_determ=False):
     wcsFILE = image.path
 
     #   String passed to the shell
-    command=(
+    command = (
         'astap_cli -f {} -r 1 -fov {} -update'.format(wcsFILE, fov)
-        )
+    )
 
     #   Running the command
     cmd_output = subprocess.run(
@@ -647,7 +651,7 @@ def find_wcs_astap(image, indent=2, force_wcs_determ=False):
         shell=True,
         text=True,
         capture_output=True,
-        )
+    )
 
     rcode = cmd_output.returncode
     rfind = cmd_output.stdout.find('Solution found:')
@@ -658,13 +662,13 @@ def find_wcs_astap(image, indent=2, force_wcs_determ=False):
             f"The command was:\n{command} \nDetailed error output:\n"
             f"{style.bcolors.ENDC}{cmd_output.stdout}{cmd_output.stderr}"
             f"{style.bcolors.FAIL}Exit{style.bcolors.ENDC}"
-            )
+        )
 
     terminal_output.print_terminal(
         indent=indent,
         string="WCS solution found :)",
         style_name='OKGREEN',
-        )
+    )
 
     #   Get image hdu list
     hdulist = fits.open(wcsFILE)
@@ -677,7 +681,7 @@ def find_wcs_astap(image, indent=2, force_wcs_determ=False):
 
 
 def check_wcs_exists(image, wcs_dir=None, indent=2):
-    '''
+    """
         Checks if the image contains already a valid WCS.
 
         Parameters
@@ -702,7 +706,7 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
 
         wcsFILE         : `string`
             Path to the image with the WCS
-    '''
+    """
     #   Path to image
     wcsFILE = image.path
 
@@ -712,13 +716,12 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
     #   Determine wcs type of original WCS
     wcs_original_type = wcs_original.get_axis_types()[0]['coordinate_type']
 
-
     if wcs_original_type == 'celestial':
         terminal_output.print_terminal(
             indent=indent,
             string="Image contains already a valid WCS.",
             style_name='OKGREEN',
-            )
+        )
         return True, wcsFILE
     else:
         #   Check if a image with a WCS in the astronomy.net format exists
@@ -732,7 +735,7 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
         basename = get_basename(image.path)
 
         #   Compose file name
-        filename = basename+'.new'
+        filename = basename + '.new'
         filepath = Path(wcs_dir / filename)
 
         if filepath.is_file():
@@ -742,21 +745,21 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
             #   Determine wcs type
             wcs_astronomy_net_type = wcs_astronomy_net.get_axis_types()[0][
                 'coordinate_type'
-                ]
+            ]
 
             if wcs_astronomy_net_type == 'celestial':
                 terminal_output.print_terminal(
                     indent=indent,
                     string="Image in the wcs_dir with a valid WCS found.",
                     style_name='OKGREEN',
-                    )
+                )
                 return True, filepath
 
         return False, ''
 
 
 def read_params_from_json(jsonfile):
-    '''
+    """
         Read data from JSON file
 
         Parameters
@@ -768,7 +771,7 @@ def read_params_from_json(jsonfile):
         -------
                         : `dictionary`
             Dictionary with the data from the JSON file
-    '''
+    """
     try:
         with open(jsonfile) as file:
             data = json.load(file)
@@ -779,19 +782,19 @@ def read_params_from_json(jsonfile):
 
 
 def read_params_from_yaml(yamlfile):
-    '''
+    """
         Read data from YAML file
 
         Parameters
         ----------
-        jsonfile        : `string`
+        yamlfile        : `string`
             Path to the YAML file
 
         Returns
         -------
                         : `dictionary`
             Dictionary with the data from the YAML file
-    '''
+    """
     try:
         with open(yamlfile, 'r') as file:
             data = yaml.safe_load(file)
