@@ -1476,19 +1476,19 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
             string="Based on detected objects:",
         )
         terminal_output.print_terminal(
-            np.median(tbl_mag['mags'][-10:]),
+            np.median(tbl_mag['mags_fit'][-10:]),
             indent=indent * 3,
             string="Median of the 10 faintest objects: {} mag",
         )
         terminal_output.print_terminal(
-            np.mean(tbl_mag['mags'][-10:]),
+            np.mean(tbl_mag['mags_fit'][-10:]),
             indent=indent * 3,
             string="Mean of the 10 faintest objects: {} mag",
         )
 
         #   Convert object positions to pixel index values
-        index_x = np.rint(x).astype(int)
-        index_y = np.rint(y).astype(int)
+        index_x = np.rint(tbl_mag['x_fit']).astype(int)
+        index_y = np.rint(tbl_mag['y_fit']).astype(int)
 
         #   Convert object positions to mask
         mask = np.zeros(image.get_shape(), dtype=bool)

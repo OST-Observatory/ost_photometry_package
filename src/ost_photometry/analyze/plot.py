@@ -231,29 +231,35 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
     plt.ylim(0, image.shape[0] - 1)
 
     # Plot labels next to the apertures
+    if isinstance(tbl[x_column], u.quantity.Quantity):
+        x = tbl[x_column].value
+        y = tbl[y_column].value
+    else:
+        x = tbl[x_column]
+        y = tbl[y_column]
     if mode == 'mags':
-        for i in range(0, len(tbl[x_column])):
+        for i in range(0, len(x)):
             plt.text(
-                tbl[x_column][i],
-                tbl[y_column][i],
+                x[i],
+                y[i],
                 " " + str(f"{tbl['mags_fit'][i]:.1f}"),
                 fontdict=style.font,
                 color='blue',
             )
     elif mode == 'list':
-        for i in range(0, len(tbl[x_column])):
+        for i in range(0, len(x)):
             plt.text(
-                tbl[x_column][i],
-                tbl[y_column][i],
+                x[i],
+                y[i],
                 " " + str(i),
                 fontdict=style.font,
                 color='blue',
             )
     else:
-        for i in range(0, len(tbl[x_column])):
+        for i in range(0, len(x)):
             plt.text(
-                tbl[x_column][i] + 6,
-                tbl[y_column][i] + 6,
+                x[i] + 6,
+                y[i] + 6,
                 " " + str(tbl['id'][i]),
                 fontdict=style.font,
                 color='blue',
