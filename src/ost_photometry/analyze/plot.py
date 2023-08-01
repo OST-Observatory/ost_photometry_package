@@ -158,6 +158,9 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
     elif 'xfit' in tbl.colnames:
         x_column = 'xfit'
         y_column = 'yfit'
+    elif 'xf_it' in tbl.colnames:
+        x_column = 'x_fit'
+        y_column = 'y_fit'
     else:
         raise RuntimeError(
             f"{style.bcolors.FAIL} \nNo valid X and Y column found for "

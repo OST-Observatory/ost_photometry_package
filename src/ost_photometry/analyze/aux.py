@@ -634,16 +634,16 @@ def prepare_arrays(img_container, nfilter, count):
     img_container.cali = cali
     img_container.noT = np.copy(cali)
 
-    #   Define flux arrays
-    if unc:
-        img_container.flux = np.copy(cali)
-    else:
-        img_container.flux = np.zeros(
-            nfilter,
-            dtype=[('flux', 'f8', (nimg_max, count)),
-                   ('err', 'f8', (nimg_max, count)),
-                   ]
-        )
+    # #   Define flux arrays
+    # if unc:
+    #     img_container.flux = np.copy(cali)
+    # else:
+    #     img_container.flux = np.zeros(
+    #         nfilter,
+    #         dtype=[('flux', 'f8', (nimg_max, count)),
+    #                ('err', 'f8', (nimg_max, count)),
+    #                ]
+    #     )
 
 
 def cal_mag(*args, **kwargs):
