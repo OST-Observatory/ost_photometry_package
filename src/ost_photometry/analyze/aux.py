@@ -1414,28 +1414,33 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
         #   Get image ensemble
         ensemble = img_ensembles[filt]
 
-        #   Get object indices and X & Y pixel positions
-        try:
-            x = ensemble.x_es
-            y = ensemble.y_es
-        except AttributeError:
-            x = ensemble.x_s
-            y = ensemble.y_s
-
         #   Get reference image
         image = ensemble.image_list[ref_img]
 
-        mag_data = cali_mags[i][ref_img]
+        #   Get object position and magnitudes
+        #   TODO: Change to reference image in the future
+        photo = ensemble.image_list[0].photometry
 
-        #   Make astropy table
-        tbl_mag = Table(
-            names=['xcentroid', 'ycentroid', 'mags'],
-            data=[x, y, mag_data]
-        )
-        tbl_mag = tbl_mag.group_by('mags')
+        # #   Get object indices and X & Y pixel positions
+        # try:
+        #     x = ensemble.x_es
+        #     y = ensemble.y_es
+        # except AttributeError:
+        #     x = ensemble.x_s
+        #     y = ensemble.y_s
+        #
+        #
+        # mag_data = cali_mags[i][ref_img]
+        #
+        # #   Make astropy table
+        # tbl_mag = Table(
+        #     names=['xcentroid', 'ycentroid', 'mags'],
+        #     data=[x, y, mag_data]
+        # )
+        tbl_mag = photo.group_by('mags_fit')
 
         #   Remove implausible dark results
-        mask = tbl_mag['mags'] < 30
+        mask = tbl_mag['mags_fit'] < 30
         tbl_mag = tbl_mag[mask]
 
         #   Plot star map
