@@ -148,8 +148,6 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
                 indent=indent,
             )
 
-    print(tbl.colnames)
-
     #   Check if column with X and Y coordinates are available for table 1
     if 'x' in tbl.colnames:
         x_column = 'x'
@@ -160,7 +158,7 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
     elif 'xfit' in tbl.colnames:
         x_column = 'xfit'
         y_column = 'yfit'
-    elif 'xf_it' in tbl.colnames:
+    elif 'x_fit' in tbl.colnames:
         x_column = 'x_fit'
         y_column = 'y_fit'
     else:
