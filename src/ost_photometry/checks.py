@@ -1,5 +1,5 @@
 ############################################################################
-####                            Libraries                               ####
+#                               Libraries                                  #
 ############################################################################
 
 import os
@@ -10,7 +10,7 @@ from .style import bcolors
 
 
 ############################################################################
-####                        Routines & definitions                      ####
+#                           Routines & definitions                         #
 ############################################################################
 
 def check_path(path):
@@ -31,7 +31,7 @@ def check_path(path):
 
 def check_file(test_file):
     """
-        Check if file exsits
+        Check if file exists
 
         Parameters
         ----------
@@ -47,7 +47,7 @@ def check_file(test_file):
 
 def list_subdir(path):
     """
-        List sub directories
+        List subdirectories
 
         Parameters
         ----------
@@ -96,7 +96,7 @@ def check_dir(path_dict):
 
 def check_unumpy_array(arr):
     """
-        Check if an array is a unumpy array. Since those arrays are also
+        Check if an array is an unumpy array. Since those arrays are also
         numpy arrays, the for dtype. The dtype of unumpy arrays is always
         ``object``.
 
@@ -178,7 +178,7 @@ def clear_directory(path):
         path.mkdir(exist_ok=True)
 
 
-def check_dir_empty(path, del_files=True):
+def check_dir_empty(path):
     """
         Check if path is a directory and if it is empty.
 
@@ -186,10 +186,6 @@ def check_dir_empty(path, del_files=True):
         ----------
         path            : `pathlib.Path`
             Path to the directory.
-
-        del_files       : `boolean`
-            If `True` files in the input directory will be removed.
-            Default is ``True``.
 
         Returns
         -------

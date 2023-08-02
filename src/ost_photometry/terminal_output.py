@@ -65,25 +65,25 @@ def print_terminal(*args, string='', condense=False, indent=1,
 
 
 def print_to_terminal(string, indent=1, style_name='BOLD'):
-        """
-            Print output to terminal after formatting
+    """
+        Print output to terminal after formatting
 
-            Parameters
-            ----------
-            string          : `string`, optional
-                Output string.
-                Default is ````.
+        Parameters
+        ----------
+        string          : `string`, optional
+            Output string.
+            Default is ````.
 
-            indent          : `integer`, optional
-                Indentation level of the terminal output.
-                Default is ``1``.
+        indent          : `integer`, optional
+            Indentation level of the terminal output.
+            Default is ``1``.
 
-            style_name      : `string`, optional
-                Style type of the output.
-                Default is ``BOLD``.
-        """
-        #   Print to terminal
-        print(format_string(string, indent=indent, style_name=style_name))
+        style_name      : `string`, optional
+            Style type of the output.
+            Default is ``BOLD``.
+    """
+    #   Print to terminal
+    print(format_string(string, indent=indent, style_name=style_name))
 
 
 def format_string(string, indent=1, style_name='BOLD'):
@@ -184,10 +184,6 @@ class TerminalLog:
             style_name      : `string`, optional
                 Style type of the output.
                 Default is ``BOLD``.
-
-            print_cache     : `boolean`, optional
-                Print complete cache instead of only the string
-                Default is ``False``
         """
         #   Add string to cache
         self.add_to_cache(string, indent=indent, style_name=style_name)

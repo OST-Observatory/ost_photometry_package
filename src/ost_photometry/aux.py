@@ -404,7 +404,7 @@ def link_files(output_path, file_list):
 
 
 def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
-                        force_wcs_determ=False, wcs_dir=None):
+                        wcs_dir=None):
     """
         Find WCS (using astrometry.net)
 
@@ -426,14 +426,9 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
             Indentation for the console output lines
             Default is ``2``.
 
-        force_wcs_determ    : `boolean`, optional
-            If ``True`` a new WCS determination will be calculated even if
-            a WCS is already present in the FITS Header.
-            Default is ``False``.
-
         wcs_dir             : `string` or `None`
             Path to the working directory, where intermediate data will be
-            saved. If `None` a 'wcs_imgs` directory will be created in the
+            saved. If `None` a wcs_imgs` directory will be created in the
             output directory.
             Default is ``None``.
 
@@ -691,7 +686,7 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
 
         wcs_dir             : `string` or `None`, optional
             Path to the working directory, where intermediate data will be
-            saved. If `None` a 'wcs_imgs` directory will be created in the
+            saved. If `None` a `wcs_imgs` directory will be created in the
             output directory.
             Default is ``None``.
 
@@ -724,7 +719,7 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
         )
         return True, wcsFILE
     else:
-        #   Check if a image with a WCS in the astronomy.net format exists
+        #   Check if an image with a WCS in the astronomy.net format exists
         #   in the wcs directory (`wcs_dir`)
 
         #   Set WCS dir

@@ -3031,25 +3031,25 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
             created
             Default is ``True``.
     """
-    try:
-        ###
-        #   Initialize output class in case of multiprocessing
-        #
-        if multiprocessing:
-            log_terminal = terminal_output.TerminalLog()
-            log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
-        else:
-            terminal_output.print_to_terminal(
-                f"Image: {image.pd}",
-                indent=2,
-                style_name='UNDERLINE',
-            )
-            log_terminal = None
+    ###
+    #   Initialize output class in case of multiprocessing
+    #
+    if multiprocessing:
+        log_terminal = terminal_output.TerminalLog()
+        log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
+    else:
+        terminal_output.print_to_terminal(
+            f"Image: {image.pd}",
+            indent=2,
+            style_name='UNDERLINE',
+        )
+        log_terminal = None
 
-        ###
-        #   Remove cosmics (optional)
-        #
-        if rmcos:
+    ###
+    #   Remove cosmics (optional)
+    #
+    if rmcos:
+        try:
             rm_cosmic(
                 image,
                 objlim=objlim,
@@ -3057,16 +3057,21 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
                 sigclip=sigclip,
                 satlevel=satlevel,
             )
-
-        ###
-        #   Estimate and remove background
-        #
+        except Exception as e:
+            raise e
+    ###
+    #   Estimate and remove background
+    #
+    try:
         mk_bg(image, sigma_bkg=sigma_bkg)
+    except Exception as e:
+        raise e
 
-        ###
-        #   Find the stars (via DAO or IRAF StarFinder)
-        #
-        if search_image:
+    ###
+    #   Find the stars (via DAO or IRAF StarFinder)
+    #
+    if search_image:
+        try:
             find_stars(
                 image,
                 sigma_psf,
@@ -3074,100 +3079,103 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
                 method=method,
                 terminal_logger=log_terminal,
             )
+        except Exception as e:
+            raise e
 
-        if photometry == 'PSF':
-            ###
-            #   Check if enough stars have been detected to allow ePSF
-            #   calculations
-            #
-            check_epsf_stars(
-                image,
-                size=size_epsf,
-                min_stars=min_eps_stars,
-                frac_epsf=frac_epsf_stars,
-                terminal_logger=log_terminal,
-                strict=strict_eps,
-            )
+    if photometry == 'PSF':
+        ###
+        #   Check if enough stars have been detected to allow ePSF
+        #   calculations
+        #
+        check_epsf_stars(
+            image,
+            size=size_epsf,
+            min_stars=min_eps_stars,
+            frac_epsf=frac_epsf_stars,
+            terminal_logger=log_terminal,
+            strict=strict_eps,
+        )
 
-            ###
-            #   Plot images with the identified stars overlaid
-            #
-            if plot_ifi or (plot_test and image.pd == refid):
-                plot.starmap(
-                    image.outpath.name,
-                    image.get_data(),
-                    image.filt,
-                    image.positions,
-                    tbl_2=image.positions_epsf,
-                    label='identified stars',
-                    label_2='stars used to determine the ePSF',
-                    rts='initial-img-' + str(image.pd),
-                    nameobj=image.objname,
-                    terminal_logger=log_terminal,
-                )
-
-            ###
-            #   Calculate the ePSF
-            #
-            mk_epsf(
-                image,
-                size=size_epsf,
-                oversampling=oversampling,
-                maxiters=maxiters,
-                min_stars=min_eps_stars,
-                multi=False,
-                terminal_logger=log_terminal,
-            )
-
-            ###
-            #   Plot the ePSFs
-            #
-            plot.plot_epsf(
+        ###
+        #   Plot images with the identified stars overlaid
+        #
+        if plot_ifi or (plot_test and image.pd == refid):
+            plot.starmap(
                 image.outpath.name,
-                {f'img-{image.pd}-{image.filt}': image.epsf},
-                terminal_logger=log_terminal,
+                image.get_data(),
+                image.filt,
+                image.positions,
+                tbl_2=image.positions_epsf,
+                label='identified stars',
+                label_2='stars used to determine the ePSF',
+                rts='initial-img-' + str(image.pd),
                 nameobj=image.objname,
-                indent=2,
-            )
-
-            ###
-            #   Performing the PSF photometry
-            #
-            epsf_extract(
-                image,
-                sigma_psf,
-                sigma_bkg=sigma_bkg,
-                use_init_guesses=epsf_use_init_guesses,
-                method_finder=method,
-                size_epsf=size_epsf,
-                multi=multi,
-                multi_grouper=multi_grouper,
-                strict_cleaning=strict_cleaning,
                 terminal_logger=log_terminal,
             )
 
-            ###
-            #   Plot original and residual image
-            #
-            plot.plot_residual(
-                image.objname,
-                {f'{image.pd}-{image.filt}': image.get_data()},
-                {f'{image.pd}-{image.filt}': image.residual_image},
-                image.outpath.name,
-                terminal_logger=log_terminal,
-                nameobj=image.objname,
-                indent=2,
-            )
+        ###
+        #   Calculate the ePSF
+        #
+        mk_epsf(
+            image,
+            size=size_epsf,
+            oversampling=oversampling,
+            maxiters=maxiters,
+            min_stars=min_eps_stars,
+            multi=False,
+            terminal_logger=log_terminal,
+        )
 
-        elif photometry == 'APER':
-            ###
-            #   Perform aperture photometry
-            #
-            if image.pd == refid:
-                plotaper = True
-            else:
-                plotaper = False
+        ###
+        #   Plot the ePSFs
+        #
+        plot.plot_epsf(
+            image.outpath.name,
+            {f'img-{image.pd}-{image.filt}': image.epsf},
+            terminal_logger=log_terminal,
+            nameobj=image.objname,
+            indent=2,
+        )
 
+        ###
+        #   Performing the PSF photometry
+        #
+        epsf_extract(
+            image,
+            sigma_psf,
+            sigma_bkg=sigma_bkg,
+            use_init_guesses=epsf_use_init_guesses,
+            method_finder=method,
+            size_epsf=size_epsf,
+            multi=multi,
+            multi_grouper=multi_grouper,
+            strict_cleaning=strict_cleaning,
+            terminal_logger=log_terminal,
+        )
+
+        ###
+        #   Plot original and residual image
+        #
+        plot.plot_residual(
+            image.objname,
+            {f'{image.pd}-{image.filt}': image.get_data()},
+            {f'{image.pd}-{image.filt}': image.residual_image},
+            image.outpath.name,
+            terminal_logger=log_terminal,
+            nameobj=image.objname,
+            indent=2,
+        )
+
+    elif photometry == 'APER':
+        ###
+        #   Perform aperture photometry
+        #
+        if image.pd == refid:
+            plotaper = True
+        else:
+            plotaper = False
+
+        try:
             aperture_extract(
                 image,
                 rstars,
@@ -3178,38 +3186,38 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
                 terminal_logger=log_terminal,
                 indent=3,
             )
+        except Exception as e:
+            raise e
 
-        else:
-            raise RuntimeError(
-                f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
-                f"valid: use either APER or PSF {style.bcolors.ENDC}"
-            )
-
-        #   Conversion of flux to magnitudes
-        uflux_img = unumpy.uarray(
-            image.photometry['flux_fit'],
-            image.photometry['flux_unc']
+    else:
+        raise RuntimeError(
+            f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
+            f"valid: use either APER or PSF {style.bcolors.ENDC}"
         )
-        mags = aux.mag_u_arr(uflux_img)
 
-        image.photometry['mags_fit'] = unumpy.nominal_values(mags)
-        image.photometry['mags_unc'] = unumpy.std_devs(mags)
+    #   Conversion of flux to magnitudes
+    uflux_img = unumpy.uarray(
+        image.photometry['flux_fit'],
+        image.photometry['flux_unc']
+    )
+    mags = aux.mag_u_arr(uflux_img)
 
-        ###
-        #   Plot images with extracted stars overlaid
-        #
-        if plot_ifi or (plot_test and image.pd == refid):
-            aux.prepare_and_plot_starmap(image, terminal_logger=log_terminal)
+    image.photometry['mags_fit'] = unumpy.nominal_values(mags)
+    image.photometry['mags_unc'] = unumpy.std_devs(mags)
 
-        if multiprocessing:
-            log_terminal.print_to_terminal('')
-        else:
-            terminal_output.print_to_terminal('')
+    ###
+    #   Plot images with extracted stars overlaid
+    #
+    if plot_ifi or (plot_test and image.pd == refid):
+        aux.prepare_and_plot_starmap(image, terminal_logger=log_terminal)
 
-        if multiprocessing:
-            return image
-    except Exception as e:
-        raise e
+    if multiprocessing:
+        log_terminal.print_to_terminal('')
+    else:
+        terminal_output.print_to_terminal('')
+
+    if multiprocessing:
+        return image
 
 
 def extract_flux(img_container, filter_list, name, img_paths, outdir,

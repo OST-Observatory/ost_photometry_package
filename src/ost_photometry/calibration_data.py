@@ -120,10 +120,11 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
             )
             readnoise = spline(gain_setting)
         except Exception as e:
-            terminal_output.print_terminal(
-                string="The read noise could not be determined... \n" \
-                       f"{e}\n" \
-                       "Use default value: 7.904",
+            terminal_output.print_to_terminal(
+                f'Camera: {camera}\n'
+                "   The read noise could not be determined... \n"
+                "   Use default value: 7.904"
+                f"  Readout mode was {e}\n",
                 indent=1,
                 style_name='WARNING'
             )
@@ -139,10 +140,11 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
             )
             gain = spline(gain_setting)
         except Exception as e:
-            terminal_output.print_terminal(
-                string="The true gain factor could not be determined... \n"
-                       f"{e}\n"
-                       "Use default value: 1.292",
+            terminal_output.print_to_terminal(
+                f'Camera: {camera}\n'
+                "   The true gain factor could not be determined... \n"
+                "   Use default value: 1.292"
+                f"   Readout mode was {e}\n",
                 indent=1,
                 style_name='WARNING'
             )
@@ -169,10 +171,11 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
         )
         dark_rate = spline(temperature)
     except Exception as e:
-        terminal_output.print_terminal(
-            string="The true gain factor could not be determined... \n"
-                   f"{e}\n"
-                   "Use default value: 0.002",
+        terminal_output.print_to_terminal(
+            f'Camera: {camera}\n'
+            "   The dark current could not be determined... \n"
+            "   Use default value: 0.002"
+            f"   {e}\n",
             indent=1,
             style_name='WARNING'
         )
