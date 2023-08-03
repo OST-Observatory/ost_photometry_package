@@ -2647,8 +2647,8 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     )
 
     variable_id, count, x_obj, y_obj = correlate.identify_star_in_dataset(
-            img_ensemble.x_s,
-            img_ensemble.y_s,
+            img_ensemble.image_list[ref_ID].photometry['x_fit'],
+            img_ensemble.image_list[ref_ID].photometry['y_fit'],
             ra_obj,
             dec_obj,
             img_ensemble.wcs,
@@ -2860,8 +2860,6 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
                 'plot_test': plot_test,
             }
         )
-    #   Close multiprocessing pool and wait until it finishes
-    executor.wait()
 
     #   Exit if exceptions occurred
     if executor.err is not None:
@@ -2869,6 +2867,9 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
             f'\n{style.bcolors.FAIL}Extraction using multiprocessing failed '
             f'for {filt} :({style.bcolors.ENDC}'
         )
+
+    #   Close multiprocessing pool and wait until it finishes
+    executor.wait()
 
     ###
     #   Sort multiprocessing results
@@ -3034,16 +3035,16 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
     ###
     #   Initialize output class in case of multiprocessing
     #
-    # if multiprocessing:
-    #     log_terminal = terminal_output.TerminalLog()
-    #     log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
-    # else:
-    terminal_output.print_to_terminal(
-        f"Image: {image.pd}",
-        indent=2,
-        style_name='UNDERLINE',
-    )
-    log_terminal = None
+    if multiprocessing:
+        log_terminal = terminal_output.TerminalLog()
+        log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
+    else:
+        terminal_output.print_to_terminal(
+            f"Image: {image.pd}",
+            indent=2,
+            style_name='UNDERLINE',
+        )
+        log_terminal = None
 
     ###
     #   Remove cosmics (optional)
@@ -3200,10 +3201,10 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
     if plot_ifi or (plot_test and image.pd == refid):
         aux.prepare_and_plot_starmap(image, terminal_logger=log_terminal)
 
-    # if multiprocessing:
-    #     log_terminal.print_to_terminal('')
-    # else:
-    terminal_output.print_to_terminal('')
+    if multiprocessing:
+        log_terminal.print_to_terminal('')
+    else:
+        terminal_output.print_to_terminal('')
 
     if multiprocessing:
         return image

@@ -432,10 +432,10 @@ def get_image_type(ifc, image_type, image_class=None):
 
         Parameters
         ----------
-        idc             : `ccdproc.ImageFileCollection`
+        ifc             : `ccdproc.ImageFileCollection`
             Image file collection
 
-        image_type      : `dictionary`
+        image_type      : `dictionary` or `list`
             Image types of the images. Possibilities: bias, dark, flat,
             light
 
@@ -445,11 +445,11 @@ def get_image_type(ifc, image_type, image_class=None):
     """
     #   Create mask
     if not image_class:
-        mask = [True if img_type in ifc.summary['imagetyp'] else \
-                    False for img_type in image_type]
+        mask = [True if img_type in ifc.summary['imagetyp'] else
+                False for img_type in image_type]
     else:
-        mask = [True if img_type in ifc.summary['imagetyp'] else \
-                    False for img_type in image_type[image_class]]
+        mask = [True if img_type in ifc.summary['imagetyp'] else
+                False for img_type in image_type[image_class]]
 
     #   Get image type
     id_type = np.argwhere(mask).ravel()
@@ -707,9 +707,13 @@ def get_pixel_mask(out_path, shape):
             raise RuntimeError('')
     except:
         #   If no precalculated mask are available, try to load masks
-        #   calculated by  'master_dark' and 'master_flat'
+        #   calculated by 'master_dark' and 'master_flat'
 
         try:
+            #   Set default masks
+            mask_hot = np.ones(shape, dtype=bool)
+            mask_bad = np.ones(shape, dtype=bool)
+
             #   New image collection
             ifc = ccdp.ImageFileCollection(out_path)
 
@@ -734,12 +738,12 @@ def get_pixel_mask(out_path, shape):
             success = True
         except:
             terminal_output.print_terminal(
-                string="No bad pixel mask available. Skip adding bad pixel" \
+                string="No bad pixel mask available. Skip adding bad pixel"
                        " mask.",
                 indent=1,
                 style_name='WARNING',
             )
-            mask = ''  # This should be solved differently
+            mask = np.ones(shape, dtype=bool)
             success = False
 
     return success, mask
@@ -807,7 +811,7 @@ def make_hot_pixel_mask(dark, gain, outdir, verbose=False):
         data=hot_pixels.astype('uint8'), unit=u.dimensionless_unscaled,
     )
     mask_as_ccd.header['imagetyp'] = 'dark mask'
-    file_name = 'mask_from_dark_' + str(shape1) + 'x' + str(shape2) + '.fit'
+    file_name = f'mask_from_dark_{shape1}x{shape2}.fit'
     mask_as_ccd.write(out_path / file_name, overwrite=True)
 
 
@@ -844,7 +848,8 @@ def make_bad_pixel_mask(mask_list, outdir, verbose=False):
                 if i == 0:
                     combined_mask = bpm
                 else:
-                    combined_mask = combined_mask & bpm
+                    #   TODO: Check this: Replaced & with | - 2023.08.03
+                    combined_mask = combined_mask | bpm
 
         if verbose:
             terminal_output.print_terminal(
@@ -1729,16 +1734,16 @@ def interpolate_width(axis):
 
 
 def estimate_fwhm(path, outdir, image_type, plot_subplots=False,
-                  indent='      '):
+                  indent=2):
     """
         Combine images
 
         Parameters
         ----------
-        path            : `string`
+        path            : `pathlib.Path`
             Path to the images
 
-        outdir          : `string`
+        outdir          : `pathlib.Path`
             Path to the directory where the master files should be saved to
 
         image_type      : `string`
@@ -1749,9 +1754,9 @@ def estimate_fwhm(path, outdir, image_type, plot_subplots=False,
             Plot subplots around the stars used to estimate the FWHM
             Default is ``False``.
 
-        indent          : `string`
+        indent          : `integer`
             Indentation for the console output lines.
-            Default is ``      ``.
+            Default is ``2``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(path)
@@ -1866,10 +1871,8 @@ def estimate_fwhm(path, outdir, image_type, plot_subplots=False,
             print(fname, mean_fwhm)
             img_fwhm.append(mean_fwhm)
 
-        terminal_output.print_terminal(
-            filt,
-            np.median(img_fwhm),
-            string="FWHM (median) of the stars in Filter {}: {}",
+        terminal_output.print_to_terminal(
+            f"FWHM (median) of the stars in Filter {filt}: {np.median(img_fwhm)}",
             indent=indent,
         )
 
@@ -2006,6 +2009,8 @@ def flip_img(ifc, out_path):
 
     #   Check directory
     checks.check_out(out_path)
+    out_flipped = out_path / 'flipped'
+    checks.check_out(out_flipped)
 
     for img, file_name in ifc.ccds(
             ccd_kwargs={'unit': 'adu'},
@@ -2015,8 +2020,6 @@ def flip_img(ifc, out_path):
         img_fliped = ccdp.transform_image(img, np.flip, axis=(0, 1))
 
         #   Save the result
-        out_flipped = out_path / 'flipped'
-        checks.check_out(out_flipped)
         img_fliped.write(out_flipped / file_name, overwrite=True)
 
     #   Replace new image file collection
@@ -2277,7 +2280,7 @@ def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
             Filter for images that have a 'combined' fits header keyword.
             Default is ``False``.
 
-        img_type        : `string` or `None`, optional
+        img_type        : `list` of `string` or `None`, optional
             Image type to select. Possibilities: bias, dark, flat, light
             Default is ``None``.
 

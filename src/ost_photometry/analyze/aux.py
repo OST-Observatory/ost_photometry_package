@@ -1124,6 +1124,14 @@ class Executor:
         """
             Handles exceptions by apply_async's error callback
         """
+        terminal_output.print_to_terminal(
+            'Exception detected: Try to terminate the multiprocessing Pool',
+            style_name='ERROR',
+        )
+        terminal_output.print_to_terminal(
+            f'The exception is {e}',
+            style_name='ERROR',
+        )
         #   Terminate pool
         self.pool.terminate()
         #   Raise exceptions
