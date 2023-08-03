@@ -2054,6 +2054,8 @@ def bin_img(ifc, out_path, bin_value):
 
     #   Check directory
     checks.check_out(out_path)
+    out_binned = out_path / 'binned'
+    checks.check_out(out_binned)
 
     for img, file_name in ifc.ccds(
             ccd_kwargs={'unit': 'adu'},
@@ -2071,8 +2073,6 @@ def bin_img(ifc, out_path, bin_value):
         img_binned.meta['INFO_1'] = '    Exposure time scaled accordingly'
 
         #   Save the result
-        out_binned = out_path / 'binned'
-        checks.check_out(out_binned)
         img_binned.write(out_binned / file_name, overwrite=True)
 
     #   Replace new image file collection
@@ -2119,6 +2119,8 @@ def trim_img(ifc, out_path, xs=100, xe=100, ys=100, ye=100):
 
     #   Check directory
     checks.check_out(out_path)
+    out_trimmed = out_path / 'trimmed'
+    checks.check_out(out_trimmed)
 
     for img, file_name in ifc.ccds(
             ccd_kwargs={'unit': 'adu'},
@@ -2128,8 +2130,6 @@ def trim_img(ifc, out_path, xs=100, xe=100, ys=100, ye=100):
         img_trimmed = ccdp.trim_image(img[ys:-ye, xs:-xe])
 
         #   Save the result
-        out_trimmed = out_path / 'trimmed'
-        checks.check_out(out_trimmed)
         img_trimmed.write(out_trimmed / file_name, overwrite=True)
 
     #   Return new image file collection
@@ -2195,6 +2195,7 @@ def find_wcs(input_dir, output_dir, ref_id=0, force_wcs_determ=False,
     filt_list = ['I', 'R', 'V', 'B', 'U']
 
     #   Filter ifc according to filter list
+    ifc_filtered = None
     for filt in filt_list:
         ifc_filtered = ifc.filter(filter=filt)
 
@@ -2204,7 +2205,7 @@ def find_wcs(input_dir, output_dir, ref_id=0, force_wcs_determ=False,
 
     #   Check again if ifc is empty. If True use first filter from
     #   the ifc filter list.
-    if not ifc_filtered.files:
+    if ifc_filtered is None or not ifc_filtered.files:
         #   Determine ifc filter
         filters = set(h['filter'] for h in ifc.headers())
         filt = list(filters)[0]
