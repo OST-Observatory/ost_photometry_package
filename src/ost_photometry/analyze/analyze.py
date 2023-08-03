@@ -433,7 +433,7 @@ class image_ensemble:
 
     def get_flux_uarray(self):
         #   Get data
-        tbls = self.get_photometry().values()
+        tbls = list(self.get_photometry().values())
 
         #   Expects the number of objects in each table to be the same.
         n_images = len(tbls)
