@@ -419,18 +419,6 @@ class image_ensemble:
 
     #   Get object positions in pixel coordinates
     #   TODO: improve?
-    # def get_object_positions_pixel(self):
-    #     arr_img_IDs = self.get_image_ids()
-    #     tbl = self.get_photometry()
-    #     nmax_list = []
-    #     x = []
-    #     y = []
-    #     for i, img_id in enumerate(arr_img_IDs):
-    #         x.append(tbl[str(img_id)]['x_fit'])
-    #         y.append(tbl[str(img_id)]['y_fit'])
-    #         nmax_list.append(len(x[i]))
-    #
-    #     return x, y, np.max(nmax_list)
     def get_object_positions_pixel(self):
         tbls = self.get_photometry()
         nmax_list = []
@@ -442,6 +430,23 @@ class image_ensemble:
             nmax_list.append(len(x[i]))
 
         return x, y, np.max(nmax_list)
+
+    def get_flux_uarray(self):
+        #   Get data
+        tbls = self.get_photometry()
+
+        #   Expects the number of objects in each table to be the same.
+        n_images = len(tbls)
+        n_objects = len(tbls[0])
+
+        flux = np.zeros((n_images, n_objects))
+        flux_unc = np.zeros((n_images, n_objects))
+
+        for i, tbl in enumerate(tbls.values()):
+            flux[i] = tbl['flux_fit']
+            flux_unc[i] = tbl['flux_unc']
+
+        return unumpy.uarray(flux, flux_unc)
 
 
 def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
@@ -4319,6 +4324,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         string="Identify the variable star",
                     )
 
+                    #   TODO: Replace with function
                     if correl_method == 'astropy':
                         objID, count, _, _ = correlate.posi_obj_astropy(
                             img_container.ensembles[filt].x_es,
@@ -4396,6 +4402,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                                    "available for filter {}",
                             style_name='WARNING',
                         )
+                        #   TODO: Check: Shouldn't that be 'continue'?
                         break
 
                     ###

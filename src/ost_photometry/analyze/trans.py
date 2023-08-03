@@ -1260,7 +1260,8 @@ def flux_calibrate_ensemble(ensemble):
             all images within the ensemble
     """
     #   Get flux
-    flux = ensemble.uflux
+    # flux = ensemble.uflux
+    flux = ensemble.get_flux_uarray()
 
     #   Calculate median flux in each image
     median_flux = np.median(flux, axis=1)
