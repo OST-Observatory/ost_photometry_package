@@ -3034,53 +3034,45 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
     ###
     #   Initialize output class in case of multiprocessing
     #
-    if multiprocessing:
-        log_terminal = terminal_output.TerminalLog()
-        log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
-    else:
-        terminal_output.print_to_terminal(
-            f"Image: {image.pd}",
-            indent=2,
-            style_name='UNDERLINE',
-        )
-        log_terminal = None
+    # if multiprocessing:
+    #     log_terminal = terminal_output.TerminalLog()
+    #     log_terminal.add_to_cache(f"Image: {image.pd}", style_name='UNDERLINE')
+    # else:
+    terminal_output.print_to_terminal(
+        f"Image: {image.pd}",
+        indent=2,
+        style_name='UNDERLINE',
+    )
+    log_terminal = None
 
     ###
     #   Remove cosmics (optional)
     #
     if rmcos:
-        try:
-            rm_cosmic(
-                image,
-                objlim=objlim,
-                readnoise=readnoise,
-                sigclip=sigclip,
-                satlevel=satlevel,
-            )
-        except Exception as e:
-            raise e
+        rm_cosmic(
+            image,
+            objlim=objlim,
+            readnoise=readnoise,
+            sigclip=sigclip,
+            satlevel=satlevel,
+        )
+
     ###
     #   Estimate and remove background
     #
-    try:
-        mk_bg(image, sigma_bkg=sigma_bkg)
-    except Exception as e:
-        raise e
+    mk_bg(image, sigma_bkg=sigma_bkg)
 
     ###
     #   Find the stars (via DAO or IRAF StarFinder)
     #
     if search_image:
-        try:
-            find_stars(
-                image,
-                sigma_psf,
-                multi_start=multi_start,
-                method=method,
-                terminal_logger=log_terminal,
-            )
-        except Exception as e:
-            raise e
+        find_stars(
+            image,
+            sigma_psf,
+            multi_start=multi_start,
+            method=method,
+            terminal_logger=log_terminal,
+        )
 
     if photometry == 'PSF':
         ###
@@ -3175,19 +3167,16 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
         else:
             plotaper = False
 
-        try:
-            aperture_extract(
-                image,
-                rstars,
-                rbg_in,
-                rbg_out,
-                r_unit=r_unit,
-                plotaper=plotaper,
-                terminal_logger=log_terminal,
-                indent=3,
-            )
-        except Exception as e:
-            raise e
+        aperture_extract(
+            image,
+            rstars,
+            rbg_in,
+            rbg_out,
+            r_unit=r_unit,
+            plotaper=plotaper,
+            terminal_logger=log_terminal,
+            indent=3,
+        )
 
     else:
         raise RuntimeError(
@@ -3211,10 +3200,10 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
     if plot_ifi or (plot_test and image.pd == refid):
         aux.prepare_and_plot_starmap(image, terminal_logger=log_terminal)
 
-    if multiprocessing:
-        log_terminal.print_to_terminal('')
-    else:
-        terminal_output.print_to_terminal('')
+    # if multiprocessing:
+    #     log_terminal.print_to_terminal('')
+    # else:
+    terminal_output.print_to_terminal('')
 
     if multiprocessing:
         return image
