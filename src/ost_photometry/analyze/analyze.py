@@ -442,7 +442,7 @@ class image_ensemble:
         flux = np.zeros((n_images, n_objects))
         flux_unc = np.zeros((n_images, n_objects))
 
-        for i, tbl in enumerate(tbls.values()):
+        for i, tbl in enumerate(tbls):
             flux[i] = tbl['flux_fit']
             flux_unc[i] = tbl['flux_unc']
 
