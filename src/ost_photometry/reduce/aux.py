@@ -2195,30 +2195,29 @@ def find_wcs(input_dir, output_dir, ref_id=0, force_wcs_determ=False,
     filt_list = ['I', 'R', 'V', 'B', 'U']
 
     #   Filter ifc according to filter list
-    ifc_filtered = None
     for filt in filt_list:
         ifc_filtered = ifc.filter(filter=filt)
 
         #   Exit loop when images are found for the current filter
         if ifc_filtered.files:
+            filter_ref = filt
             break
 
     #   Check again if ifc is empty. If True use first filter from
     #   the ifc filter list.
-    if ifc_filtered is None or not ifc_filtered.files:
+    if not ifc_filtered.files:
         #   Determine ifc filter
         filters = set(h['filter'] for h in ifc.headers())
-        filt = list(filters)[0]
+        filter_ref = list(filters)[0]
 
-        ifc_filtered = ifc.filter(filter=filt)
+        ifc_filtered = ifc.filter(filter=filter_ref)
 
     ###
     #   Get reference image
     #
     reff_name = ifc_filtered.files[ref_id]
-    reff_ccd = CCDData.read(reff_name)
 
-    reff_img = base_aux.image(ref_id, filt, 'target', reff_name, output_dir)
+    reff_img = base_aux.image(ref_id, filter_ref, 'target', reff_name, output_dir)
 
     base_aux.cal_fov(reff_img)
 

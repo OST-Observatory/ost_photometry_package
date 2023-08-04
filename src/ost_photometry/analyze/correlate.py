@@ -89,174 +89,6 @@ def posi_obj_astropy(xs, ys, ra_obj, dec_obj, w, ra_unit=u.hourangle,
     return id_ds, len(id_ds), x_obj, y_obj
 
 
-# def posi_obj_astropy_img(image, ra_obj, dec_obj, w, ra_unit=u.hourangle,
-#                          dec_unit=u.deg, seplimit=2. * u.arcsec):
-#     """
-#         Find the image coordinates of a star based on the stellar
-#         coordinates and the WCS of the image, using astropy matching
-#         algorithms.
-#
-#         Parameters
-#         ----------
-#         image           : `image.class`
-#             Image class with all image specific properties
-#
-#         ra_obj          : `float`
-#             Right ascension of the object
-#
-#         dec_obj         : `float`
-#             Declination of the object
-#
-#         w               : `astropy.wcs.WCS`
-#             WCS infos
-#
-#         ra_unit         : `astropy.units`, optional
-#             Right ascension unit
-#             Default is ``u.hourangle``.
-#
-#         dec_unit        : `astropy.units`, optional
-#             Declination unit
-#             Default is ``u.deg``.
-#
-#         seplimit            : `astropy.units`, optional
-#             Allowed separation between objects.
-#             Default is ``2.*u.arcsec``.
-#
-#         Returns
-#         -------
-#         inds            : `numpy.ndarray`
-#             Index positions of matched objects in the origins. Is -1 is no
-#             objects were found.
-#
-#         count           : `integer`
-#             Number of times the object has been identified on the image
-#
-#         x_obj           : `float`
-#             X coordinates of the objects in pixel
-#
-#         y_obj
-#             Y coordinates of the objects in pixel
-#     """
-#     #   Make coordinates object
-#     coord_obj = SkyCoord(
-#         ra_obj,
-#         dec_obj,
-#         unit=(ra_unit, dec_unit),
-#         frame="icrs",
-#     )
-#
-#     #   Convert ra & dec to pixel coordinates
-#     x_obj, y_obj = w.all_world2pix(coord_obj.ra, coord_obj.dec, 0)
-#
-#     #   Get photometry tabel
-#     tbl = image.photometry
-#
-#     #   Create SkyCoord object for dataset
-#     coords_ds = SkyCoord.from_pixel(
-#         tbl['x_fit'],
-#         tbl['y_fit'],
-#         w,
-#     )
-#
-#     #   Find matches in the dataset
-#     dist_mask = coords_ds.separation(coord_obj) < seplimit
-#     id_ds = np.argwhere(dist_mask).ravel()
-#
-#     return id_ds, len(id_ds), x_obj, y_obj
-
-
-# def posi_obj_srcor_img(image, ra_obj, dec_obj, w, dcr=3, option=1,
-#                        ra_unit=u.hourangle, dec_unit=u.deg, verbose=False):
-#     """
-#         Find the image coordinates of a star based on the stellar
-#         coordinates and the WCS of the image
-#
-#         Parameters
-#         ----------
-#         image           : `image.class`
-#             Image class with all image specific properties
-#
-#         ra_obj          : `float`
-#             Right ascension of the object
-#
-#         dec_obj         : `float`
-#             Declination of the object
-#
-#         w               : `astropy.wcs.WCS`
-#             WCS infos
-#
-#         dcr             : `float`, optional
-#             Maximal distance between two objects in Pixel
-#             Default is ``3``.
-#
-#         option          : `integer`, optional
-#             Option for the srcor correlation function
-#             Default is ``1``.
-#
-#         ra_unit         : `astropy.units`, optional
-#             Right ascension unit
-#             Default is ``u.hourangle``.
-#
-#         dec_unit        : `astropy.units`, optional
-#             Declination unit
-#             Default is ``u.deg``.
-#
-#         verbose         : `boolean`, optional
-#             If True additional output will be printed to the command line.
-#             Default is ``False``.
-#
-#         Returns
-#         -------
-#         inds            : `numpy.ndarray`
-#             Index positions of matched objects in the origins. Is -1 is no
-#             objects were found.
-#
-#         count           : `integer`
-#             Number of times the object has been identified on the image
-#
-#         x_obj           : `float`
-#             X coordinates of the objects in pixel
-#
-#         y_obj
-#             Y coordinates of the objects in pixel
-#     """
-#     #   Make coordinates object
-#     coord_obj = SkyCoord(
-#         ra_obj,
-#         dec_obj,
-#         unit=(ra_unit, dec_unit),
-#         frame="icrs",
-#     )
-#
-#     #   Convert ra & dec to pixel coordinates
-#     x_obj, y_obj = w.all_world2pix(coord_obj.ra, coord_obj.dec, 0)
-#
-#     #   Get photometry tabel
-#     tbl = image.photometry
-#
-#     #   Number of objects
-#     count = len(tbl['x_fit'])
-#
-#     #   Define and fill new arrays to allow correlation
-#     xall = np.zeros((count, 2))
-#     yall = np.zeros((count, 2))
-#     xall[0, 0] = x_obj
-#     xall[0:count, 1] = tbl['x_fit']
-#     yall[0, 0] = y_obj
-#     yall[0:count, 1] = tbl['y_fit']
-#
-#     #   Correlate calibration stars with stars on the image
-#     inds, reject, count, reject_obj = newsrcor(
-#         xall,
-#         yall,
-#         dcr,
-#         option=option,
-#         silent=not verbose,
-#     )
-#
-#     return inds, count, x_obj, y_obj
-
-
 def posi_obj_srcor(xs, ys, ra_obj, dec_obj, w, dcr=3, option=1,
                    ra_unit=u.hourangle, dec_unit=u.deg, verbose=False):
     """
@@ -358,10 +190,10 @@ def identify_star_in_dataset(x, y, ra_obj, dec_obj, w, ra_unit=u.hourangle,
 
         Parameters
         ----------
-        x                   : `list` of `numpy.ndarray`
+        x                   : `numpy.ndarray`
             Object positions in pixel coordinates. X direction.
 
-        y                   : `list` of `numpy.ndarray`
+        y                   : `numpy.ndarray`
             Object positions in pixel coordinates. Y direction.
 
         ra_obj              : `float`
@@ -370,7 +202,7 @@ def identify_star_in_dataset(x, y, ra_obj, dec_obj, w, ra_unit=u.hourangle,
         dec_obj             : `float`
             Declination of the object
 
-        w                   : `astropy.wcs ` object
+        w                   : `astropy.wcs` object
             WCS information
 
         ra_unit             : `astropy.units`, optional
@@ -406,9 +238,8 @@ def identify_star_in_dataset(x, y, ra_obj, dec_obj, w, ra_unit=u.hourangle,
 
         Returns
         -------
-        inds            : `numpy.ndarray`
-            Index positions of matched objects in the origins. Is -1 is no
-            objects were found.
+        variable_id     : `integer`
+            Index positions of the object.
 
         count           : `integer`
             Number of times the object has been identified on the image
@@ -563,10 +394,10 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
             x,
             y,
             w,
-            refORI=ref_ori,
-            refOBJ=ref_obj,
+            reference_image_id=ref_ori,
+            reference_obj=ref_obj,
             nmissed=nmissed,
-            s_refOBJ=s_ref_obj,
+            protect_reference_obj=s_ref_obj,
             seplimit=seplimit,
             cleanup_advanced=cleanup_advanced,
         )
@@ -589,10 +420,10 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
             bfrac=bfrac,
             option=option,
             maxid=maxid,
-            refORI=ref_ori,
-            refOBJ=ref_obj,
+            reference_image_id=ref_ori,
+            reference_obj=ref_obj,
             nmissed=nmissed,
-            s_refOBJ=s_ref_obj,
+            protect_reference_obj=s_ref_obj,
         )
     else:
         raise ValueError(
@@ -654,46 +485,46 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
     return ind_sr, ref_ori_new, reject, count
 
 
-def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
+def astropycor(x, y, w, reference_image_id=0, reference_obj=[], nmissed=1, protect_reference_obj=True,
                seplimit=2. * u.arcsec, cleanup_advanced=True):
     """
         Correlation based on astropy matching algorithm
 
         Parameters
         ----------
-        x                   : `list` of `numpy.ndarray`
+        x                       : `list` of `numpy.ndarray`
             Object positions in pixel coordinates. X direction.
 
-        y                   : `list` of `numpy.ndarray`
+        y                       : `list` of `numpy.ndarray`
             Object positions in pixel coordinates. Y direction.
 
-        w                   : `astropy.wcs ` object
+        w                       : `astropy.wcs ` object
             WCS information
 
-        refORI              : `integer`, optional
+        reference_image_id      : `integer`, optional
             ID of the reference origin
             Default is ``0``.
 
-        refOBJ              : `list` of `integer`, optional
+        reference_obj           : `list` of `integer`, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``[]``.
 
-        nmissed             : `integer`, optional
+        nmissed                 : `integer`, optional
             Maximum number an object is allowed to be not detected in an
             origin. If this limit is reached the object will be removed.
             Default is ``1``.
 
-        s_refOBJ            : `boolean`, optional
+        protect_reference_obj   : `boolean`, optional
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
 
-        seplimit            : `astropy.units`, optional
+        seplimit                : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
 
-        cleanup_advanced    : `boolean`, optional
+        cleanup_advanced        : `boolean`, optional
             If ``True`` a multilevel cleanup of the results will be
             attempted. If ``False`` only the minimal necessary removal of
             objects that are not on all datasets will be performed.
@@ -704,27 +535,27 @@ def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
 
     #   Create reference SkyCoord object
     coords_ref = SkyCoord.from_pixel(
-        x[refORI],
-        y[refORI],
+        x[reference_image_id],
+        y[reference_image_id],
         w,
     )
 
     #   Prepare index array and fill in values for the reference dataset
-    idarray = np.ones((n, len(x[refORI])), dtype=int)
+    idarray = np.ones((n, len(x[reference_image_id])), dtype=int)
     idarray *= -1
-    idarray[refORI, :] = np.arange(len(x[refORI]))
+    idarray[reference_image_id, :] = np.arange(len(x[reference_image_id]))
 
     #   Loop over datasets
     for i in range(0, n):
         #   Do nothing for the reference object
-        if i != refORI:
+        if i != reference_image_id:
             #   Dirty fix: In case of identical positions between the
             #              reference and the current data set,
             #              matching.search_around_sky will fail.
             #              => set reference indexes
-            if ((len(x[i]) == len(x[refORI])) and
-                    (np.all(x[i] == x[refORI]) and np.all(y[i] == y[refORI]))):
-                idarray[i, :] = idarray[refORI, :]
+            if ((len(x[i]) == len(x[reference_image_id])) and
+                    (np.all(x[i] == x[reference_image_id]) and np.all(y[i] == y[reference_image_id]))):
+                idarray[i, :] = idarray[reference_image_id, :]
             else:
                 #   Create coordinates object
                 coords = SkyCoord.from_pixel(
@@ -762,20 +593,20 @@ def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
         rej_obj = unique_obj[rej_obj_id].flatten()
 
         #   Check if reference objects are within the "bad" objects
-        ref_isin = np.isin(rej_obj, refOBJ)
+        ref_isin = np.isin(rej_obj, reference_obj)
 
         #   If YES remove reference objects from the "bad" objects
-        if s_refOBJ and np.any(ref_isin):
-            refOBJ_id = np.argwhere(rej_obj == refOBJ)
-            rej_obj = np.delete(rej_obj, refOBJ_id)
+        if protect_reference_obj and np.any(ref_isin):
+            reference_obj_id = np.argwhere(rej_obj == reference_obj)
+            rej_obj = np.delete(rej_obj, reference_obj_id)
 
         #   Remove "bad" objects
         idarray = np.delete(idarray, rej_obj, 1)
 
         #   Calculate new reference object position
-        shiftOBJ = np.argwhere(rej_obj < refOBJ)
-        Nshift = len(shiftOBJ)
-        refOBJ = np.array(refOBJ) - Nshift
+        shift_obj = np.argwhere(rej_obj < reference_obj)
+        n_shift = len(shift_obj)
+        reference_obj = np.array(reference_obj) - n_shift
 
         #   2. Remove bad images
 
@@ -787,7 +618,7 @@ def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
 
         #   Create mask -> Identify all datasets as bad that contain less
         #                  than 90% of all objects from the reference image.
-        mask = count_ori > 0.02 * len(x[refORI])
+        mask = count_ori > 0.02 * len(x[reference_image_id])
         rej_ori = unique_ori[mask]
 
         #   Remove those datasets
@@ -802,9 +633,9 @@ def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
     #   Identify objects that were not identified in all datasets
     rowsrm = np.where(idarray == -1)
 
-    if s_refOBJ:
+    if protect_reference_obj:
         #   Check if reference objects are within the "bad" objects
-        ref_isin = np.isin(rowsrm[1], refOBJ)
+        ref_isin = np.isin(rowsrm[1], reference_obj)
 
         #   If YES remove reference objects from "bad" objects and remove
         #   the datasets on which they were not detected instead.
@@ -817,8 +648,8 @@ def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
                 )
             rej_obj = rowsrm[1]
             rej_obj = np.unique(rej_obj)
-            refOBJ_id = np.argwhere(rej_obj == refOBJ)
-            rej_obj = np.delete(rej_obj, refOBJ_id)
+            reference_obj_id = np.argwhere(rej_obj == reference_obj)
+            rej_obj = np.delete(rej_obj, reference_obj_id)
 
             #   Remove remaining bad objects
             idarray = np.delete(idarray, rej_obj, 1)
@@ -845,9 +676,9 @@ def astropycor(x, y, w, refORI=0, refOBJ=[], nmissed=1, s_refOBJ=True,
     return idarray, rej_ori
 
 
-def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
+def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_obj=[],
              nmissed=1, indent='   ', option=None, magnitude=None,
-             silent=False, s_refOBJ=True):
+             silent=False, protect_reference_obj=True):
     """
     NAME:
     ----
@@ -890,8 +721,8 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
                 between objects from a specific origin (columns in x and y)
                 and objects from the origin with the id 'refORI'. The origin
                 will be rejected, if this limit is reached.
-      refORI  - Id of the reference origin (e.g., an image).
-      refOBJ  - Ids of the reference objects. The reference objects will not be
+      reference_image_id  - ID of the reference origin (e.g., an image).
+      reference_obj  - Ids of the reference objects. The reference objects will not be
                 removed from the list of objects.
       nmissed - Maximum number an object is allowed to be not detected in an
                 origin. If this limit is reached the object will be removed.
@@ -903,7 +734,7 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
           OPTION=0 | left out
                 For each object of the origin 'refORI' the closest match
                 from all other origins is found, but if none is found within
-                the distance of 'dcr', the match is thrown out. Thus the
+                the distance of 'dcr', the match is thrown out. Thus, the
                 index of that object will not appear in the 'ind' output
                 array.
           OPTION=1
@@ -927,7 +758,7 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
                 is taken as a match. The option keyword is set to 4
                 internally.
     silent    - Suppresses output if True.
-    s_refOBJ  - Also reference objects will be rejected if Falls.
+    protect_reference_obj  - Also reference objects will be rejected if Falls.
 
     Returns:
     -------
@@ -941,8 +772,10 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
     ###
     #   Keywords.
     #
-    if option is None: option = 0
-    if magnitude is not None: option = 4
+    if option is None:
+        option = 0
+    if magnitude is not None:
+        option = 4
     if option < 0 or option > 3:
         print(bcolors.BOLD + indent + "Invalid option code." + bcolors.ENDC)
 
@@ -988,33 +821,33 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
         #   allow for multi
         #   identifications
         #   (option 3)
-        rej_ori = np.zeros((k), dtype=int)
-        rej_obj = np.zeros((n), dtype=int)
+        rej_ori = np.zeros(k, dtype=int)
+        rej_obj = np.zeros(n, dtype=int)
         #   Initialize counter of mutual sources
         count = 0
 
         #   Loop over the number of objects
         for i in range(0, n):
             #   Check that objects exists in origin with 'refORI'
-            if x[i, refORI] != 0.:
+            if x[i, reference_image_id] != 0.:
                 #   Prepare dummy arrays and counter for bad origins
-                _ind = np.zeros((k), dtype=int) - 1
-                _ind[refORI] = i
-                _ori_rej = np.zeros((k), dtype=int)
-                _obj_rej = np.zeros((n), dtype=int)
+                _ind = np.zeros(k, dtype=int) - 1
+                _ind[reference_image_id] = i
+                _ori_rej = np.zeros(k, dtype=int)
+                _obj_rej = np.zeros(n, dtype=int)
                 _bad_ori = 0
 
                 #   Loop over all origins
                 for j in range(0, k):
                     #   Exclude origin with id 'refORI'
-                    if j != refORI:
+                    if j != reference_image_id:
                         xcomp = np.copy(x[:, j])
                         ycomp = np.copy(y[:, j])
                         xcomp[xcomp == 0] = 9E13
                         ycomp[ycomp == 0] = 9E13
 
                         #   Calculate radii
-                        d2 = (x[i, refORI] - xcomp) ** 2 + (y[i, refORI] - ycomp) ** 2
+                        d2 = (x[i, reference_image_id] - xcomp) ** 2 + (y[i, reference_image_id] - ycomp) ** 2
 
                         if option == 3:
                             #   Find objects with distances that are smaller
@@ -1026,7 +859,7 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
                             ml = len(m)
                             if ml != 0:
                                 ind[j, count:count + ml] = m
-                                ind[refORI, count:count + ml] = _ind[refORI]
+                                ind[reference_image_id, count:count + ml] = _ind[reference_image_id]
                                 count += ml
                         else:
                             #   Find object with minimum distance
@@ -1047,14 +880,14 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
                                 _ori_rej[j] = 1
 
                                 #   Check that object is not a reference
-                                if i not in refOBJ or not s_refOBJ:
+                                if i not in reference_obj or not protect_reference_obj:
                                     #   Mark object as problematic
                                     #   -> counts up
                                     _obj_rej[i] += 1
 
                 if option != 3:
                     if (_bad_ori > (1 - bfrac) * k
-                            and (i not in refOBJ or not s_refOBJ)):
+                            and (i not in reference_obj or not protect_reference_obj)):
                         rej_obj += _obj_rej
                         continue
                     else:
@@ -1084,8 +917,8 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
             )
 
         #   Discard objects that are on not enough images
-        x[rej_obj_tup, refORI] = 0.
-        y[rej_obj_tup, refORI] = 0.
+        x[rej_obj_tup, reference_image_id] = 0.
+        y[rej_obj_tup, reference_image_id] = 0.
 
     if not silent:
         print(
@@ -1096,14 +929,16 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
 
     if count > 0:
         ind = ind[:, 0:count]
-        _ind2 = np.zeros((count), dtype=int) - 1
+        _ind2 = np.zeros(count, dtype=int) - 1
     else:
         reject = -1
         return ind, reject, count, reject_obj
 
     #   Return in case of option 0 and 3
-    if option == 0: return ind, rej_ori, count, reject_obj
-    if option == 3: return ind
+    if option == 0:
+        return ind, rej_ori, count, reject_obj
+    if option == 3:
+        return ind
 
     ###
     #   Modify the matches depending on input options.
@@ -1131,7 +966,7 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
 
     #   Loop over the origins
     for j in range(0, len(ind[:, 0])):
-        if j == refORI:
+        if j == reference_image_id:
             continue
         #   Loop over the indexes of the objects
         # for i in range(0, np.max(ind[j,:])+1):
@@ -1149,14 +984,14 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
                     rej_ori[j] = 1
 
                 if option == 4 and k == 2:
-                    m = np.argmin(magnitude[ind[refORI, ww]])
+                    m = np.argmin(magnitude[ind[reference_image_id, ww]])
                 else:
                     xx = x[i, j]
                     yy = y[i, j]
                     #   Calculate individual distances of the many-to-one
                     #   identifications
-                    d2 = ((xx - x[ind[refORI, ww], refORI]) ** 2 +
-                          (yy - y[ind[refORI, ww], refORI]) ** 2)
+                    d2 = ((xx - x[ind[reference_image_id, ww], reference_image_id]) ** 2 +
+                          (yy - y[ind[reference_image_id, ww], reference_image_id]) ** 2)
 
                     #   Logical test
                     if len(d2) != ncount:
@@ -1192,7 +1027,7 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
                             f"{style.bcolors.FAIL}\nLogic error 2"
                             f"{style.bcolors.ENDC}"
                         )
-                    if len(ind[refORI, :]) != (csave - ncount):
+                    if len(ind[reference_image_id, :]) != (csave - ncount):
                         raise Exception(
                             f"{style.bcolors.FAIL}\nLogic error 3"
                             f"{style.bcolors.ENDC}"
@@ -1203,12 +1038,12 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
                             f"{style.bcolors.FAIL}\nLogic error 2"
                             f"{style.bcolors.ENDC}"
                         )
-                    if len(ind[refORI, :]) != (csave - ncount + 1):
+                    if len(ind[reference_image_id, :]) != (csave - ncount + 1):
                         raise Exception(
                             f"{style.bcolors.FAIL}\nLogic error 3"
                             f"{style.bcolors.ENDC}"
                         )
-                if len(ind[j, :]) != len(ind[refORI, :]):
+                if len(ind[j, :]) != len(ind[reference_image_id, :]):
                     raise Exception(
                         f"{style.bcolors.FAIL}\nLogic error 4"
                         f"{style.bcolors.ENDC}"
@@ -1218,12 +1053,12 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, refORI=0, refOBJ=[],
     reject = np.argwhere(rej_ori >= 1).ravel()
 
     #   Set count variable once more
-    count = len(ind[refORI, :])
+    count = len(ind[reference_image_id, :])
 
     if not silent:
         print(
             bcolors.OKGREEN
-            + indent + "       " + str(len(ind[refORI, :])).strip()
+            + indent + "       " + str(len(ind[reference_image_id, :])).strip()
             + " unique matches found."
             + bcolors.ENDC
         )

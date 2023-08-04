@@ -81,7 +81,7 @@ class image_container:
         #   Prepare dictionary
         self.ensembles = {}
 
-        #   Add additional key words
+        #   Add additional keywords
         self.__dict__.update(kwargs)
 
         #   Check for right ascension and declination
@@ -96,7 +96,7 @@ class image_container:
         else:
             self.dec = None
 
-        #   Check for a object name
+        #   Check for an object name
         self.name = kwargs.get('name', None)
 
         #   Create SkyCoord object
@@ -131,9 +131,9 @@ class image_container:
     def get_ref_epsf(self):
         epsf_dict = {}
         for key, ensemble in self.ensembles.items():
-            ref_id = ensemble.ref_id
+            reference_image_id = ensemble.reference_image_id
 
-            img = ensemble.image_list[ref_id]
+            img = ensemble.image_list[reference_image_id]
 
             epsf_dict[key] = img.epsf
 
@@ -143,9 +143,9 @@ class image_container:
     def get_ref_img(self):
         img_dict = {}
         for key, ensemble in self.ensembles.items():
-            ref_id = ensemble.ref_id
+            reference_image_id = ensemble.reference_image_id
 
-            img = ensemble.image_list[ref_id]
+            img = ensemble.image_list[reference_image_id]
 
             img_dict[key] = img.get_data()
 
@@ -155,9 +155,9 @@ class image_container:
     def get_ref_residual_img(self):
         img_dict = {}
         for key, ensemble in self.ensembles.items():
-            ref_id = ensemble.ref_id
+            reference_image_id = ensemble.reference_image_id
 
-            img = ensemble.image_list[ref_id]
+            img = ensemble.image_list[reference_image_id]
 
             img_dict[key] = img.residual_image
 
@@ -214,8 +214,7 @@ class image_ensemble:
         an image series taken in a specific filter
     """
 
-    def __init__(self, filt, obj_name, path, outdir, ref_ID):
-        #   TODO: Set default for ref_ID and rename
+    def __init__(self, filt, obj_name, path, outdir, reference_image_id=0):
         ###
         #   Get file list, if path is a directory, if path is a file put
         #   base name of this file in a list
@@ -243,11 +242,11 @@ class image_ensemble:
         ###
         #   Check if the id of the reference image is valid
         #
-        if ref_ID > len(fileList):
+        if reference_image_id > len(fileList):
             raise ValueError(
-                f'{style.bcolors.FAIL} ERROR: Reference image ID [ref_ID] '
-                'is larger than the total number of images!'
-                f' -> EXIT {style.bcolors.ENDC}'
+                f'{style.bcolors.FAIL} ERROR: Reference image ID '
+                '[reference_image_id] is larger than the total number of '
+                f'images! -> EXIT {style.bcolors.ENDC}'
             )
 
         #   Set filter
@@ -257,7 +256,7 @@ class image_ensemble:
         self.nfiles = len(fileList)
 
         #   Set ID of the reference image
-        self.ref_id = ref_ID
+        self.reference_image_id = reference_image_id
 
         #   Prepare image list
         self.image_list = []
@@ -284,7 +283,7 @@ class image_ensemble:
             base_aux.cal_fov(self.image_list[image_id], verbose=False)
 
         #   Set reference image
-        self.ref_img = self.image_list[ref_ID]
+        self.ref_img = self.image_list[reference_image_id]
 
         #   Set field of view
         # self.fov = self.ref_img.fov
@@ -308,6 +307,9 @@ class image_ensemble:
 
         #   Get image shape
         self.img_shape = self.ref_img.get_data().shape
+
+        #   Set wcs default
+        self.wcs = None
 
     #   Image class
     class image:
@@ -660,7 +662,7 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
 
 
 def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
-               verbose=False, terminal_logger=None, indent=2):
+               terminal_logger=None, indent=2):
     """
         Find the stars on the images, using photutils and search and select
         stars for the ePSF stars
@@ -681,10 +683,6 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
         method         : `string`, optional
             Finder method DAO or IRAF
             Default is ``IRAF``.
-
-        verbose         : `boolean`, optional
-            If True additional information will be printed to the terminal.
-            Default is ``False``.
 
         terminal_logger : `terminal_output.TerminalLog` or None, optional
             Logger object. If provided, the terminal output will be directed
@@ -888,7 +886,6 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
 
     #   Determine multiple entries -> stars that are contaminated
     id_p99_mult = [ite for ite, count in Counter(id_p99).items() if count > 1]
-    num_spoiled = len(id_p99_mult)
 
     #   Determine unique entries -> stars that are not contaminated
     id_p99_uniq = [ite for ite, count in Counter(id_p99).items() if count == 1]
@@ -941,7 +938,7 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
             Default is ``25``.
 
         multi           : `boolean`, optional
-            If True multi processing is used for plotting.
+            If True multiprocessing is used for plotting.
             Default is ``True``.
 
         terminal_logger : `terminal_output.TerminalLog` or None, optional
@@ -962,6 +959,15 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
     #   Number of ePSF stars
     num_fit = len(tbl_posi)
 
+    #   TODO: Add check if minimal number of EPSF stars have been identified
+    if num_fit < min_stars:
+        terminal_logger.add_to_cache(
+            f"The number of ePSF stars is less than required."
+            f"{num_fit} ePSF stars available. {min_stars} were requested.",
+            indent=indent,
+            style_name='WARNING',
+        )
+
     #   Get object name
     nameobj = image.objname
 
@@ -971,7 +977,7 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
             indent=indent
         )
         terminal_logger.add_to_cache(
-            "{num_fit} bright stars used",
+            f"{num_fit} bright stars used",
             indent=indent+1,
             style_name='OK',
         )
@@ -981,7 +987,7 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
             indent=indent
         )
         terminal_output.print_to_terminal(
-            "{num_fit} bright stars used",
+            f"{num_fit} bright stars used",
             indent=indent+1,
             style_name='OK',
         )
@@ -1122,9 +1128,10 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
                     positions_flux['flux'],
                 ]
             )
-        except RuntimeError as e:
-            #   Switch to backup in case positions and fluxes are not
-            #   available
+        except RuntimeError:
+            #   If positions and fluxes are not available,
+            #   those will need to be determined. Set
+            #   switch accordingly.
             use_init_guesses = False
 
     #   Set output and plot identification string
@@ -1258,7 +1265,6 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
 
     #   Clean output for objects with negative uncertainties
     try:
-        num_spoiled = 0
         spoiled_fits = np.where(result_tbl['flux_fit'].data < 0.)
         result_tbl.remove_rows(spoiled_fits)
         num_spoiled = np.size(spoiled_fits)
@@ -1398,7 +1404,7 @@ def define_apertures(image, r, r_in, r_out, r_unit):
             Outer radius of the background annulus
 
         r_unit              : `string`, optional
-            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+            Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
             Default is ``pixel``.
 
         Returns
@@ -1496,7 +1502,7 @@ def background_simple(image, annulus_aperture):
 def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
                      plotaper=False, terminal_logger=None, indent=2):
     """
-        Perform aperture photometry using the photutils.aperture package
+        Perform aperture photometry using the photutils aperture package
 
         Parameters
         ----------
@@ -1513,7 +1519,7 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
             Outer radius of the background annulus
 
         r_unit          : `string`, optional
-            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+            Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
             Default is ``pixel``.
 
         bg_simple       : `boolean`, optional
@@ -1653,12 +1659,10 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
         terminal_logger=terminal_logger,
     )
 
-    #   Replace negative flux values with 10^-10
-    #   -> arbitrary, but very small
-    #   TODO: Remove objects/rows instead of replacing values
+    #   Remove negative flux values as they are not physical
     flux = np.array(phot['flux_fit'])
-    mask = np.where(flux <= 0.)
-    phot['flux_fit'][mask] = 1E-10
+    mask = np.where(flux > 0.)
+    phot['flux_fit'] = phot['flux_fit'][mask]
 
     #   Add photometry to image class
     image.photometry = phot
@@ -1693,213 +1697,9 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
         )
 
 
-def correlate_images(*args, **kwargs):
-    """
-        Wrapper function: Used to distinguish between astropy table
-                          and pandas data frame before the latter was removed
-                          -> Will be removed in the future.
-    """
-    return correlate_tbl(*args, **kwargs)
-
-
-# @timeis
-def correlate_tbl(outdir, result_tbl, arr_img_IDs, dcr=3., option=1,
-                  maxid=1, refORI=0, refOBJ=[], nmissed=1, bfrac=1.0,
-                  s_refOBJ=True):
-    """
-        WARNING: This function is not up to date
-
-        Correlate star lists from the stacked images of all filters to find
-        those stars that are visible on all images -> write calibrated CMD
-
-        Parameters
-        ----------
-        outdir              : `string`
-            Output directory
-
-        result_tbl          : `dictionary` - `astropy.table.Table`
-            Dictionary of astropy tables with the position and flux data
-
-        arr_img_IDs         : `numpy.ndarray` or `list`
-            Image IDs
-
-        dcr                 : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
-
-        option              : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
-
-        maxid               : `integer`, optional
-            Max. number of allowed identical cross identifications between
-            objects from a specific origin
-            Default is ``1``.
-
-        refORI              : `integer`, optional
-            ID of the reference origin
-            Default is ``0``.
-
-        refOBJ              : `list` of `integer`, optional
-            IDs of the reference objects. The reference objects will not be
-            removed from the list of objects.
-            Default is ``[]``.
-
-        nmissed             : `integer`, optional
-            Maximum number an object is allowed to be not detected in an
-            origin. If this limit is reached the object will be removed.
-            Default is ``i`.
-
-        bfrac               : `float`, optional
-            Fraction of low quality source position origins, i.e., those
-            origins, for which it is expected to find a reduced number of
-            objects with valid source positions.
-            Default is ``1.0``.
-
-        s_refOBJ            : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
-
-        Returns
-        -------
-        ind_sort            : `numpy.ndarray`
-            IDs of the images
-
-        x_sort              : `numpy.ndarray`
-            Position of the objects on the image in pixel in X direction
-
-        y_sort              : `numpy.ndarray`
-            Position of the objects on the image in pixel in X direction
-
-        flux_arr            : `numpy.ndarray`
-            Numpy array with the data of all stars such as magnitudes
-
-        reject              : `numpy.ndarray`
-            IDs of the rejected images
-
-        rej_obj             : `numpy.ndarray`
-            IDs of the rejected objects
-
-        count               : `integer
-            Number of matches found
-    """
-    terminal_output.print_terminal(
-        arr_img_IDs,
-        indent=1,
-        string="Correlate results from the images ({:s})",
-    )
-
-    #   Define variables
-    nimg = len(arr_img_IDs)
-    nmax_list = []
-    x = []
-    y = []
-
-    #   Number of objects in each table/image
-    for i, img_ID in enumerate(arr_img_IDs):
-        x.append(result_tbl[str(img_ID)]['x_fit'])
-        y.append(result_tbl[str(img_ID)]['y_fit'])
-        nmax_list.append(len(x[i]))
-
-    #   Max. number of objects
-    nmax = np.max(nmax_list)
-
-    #   Define and fill new arrays
-    xall = np.zeros((nmax, nimg))
-    yall = np.zeros((nmax, nimg))
-    for i in range(0, nimg):
-        xall[0:len(x[i]), i] = x[i]
-        yall[0:len(y[i]), i] = y[i]
-
-    #   Correlate the results from the two images
-    indSR, reject, count, rej_obj = correlate.newsrcor(
-        xall,
-        yall,
-        dcr,
-        bfrac=bfrac,
-        option=option,
-        maxid=maxid,
-        refORI=refORI,
-        refOBJ=refOBJ,
-        nmissed=nmissed,
-        s_refOBJ=s_refOBJ,
-    )
-
-    if count == 1:
-        raise RuntimeError(
-            f"{style.bcolors.FAIL} \nOnly one common object "
-            f"found!{style.bcolors.ENDC}"
-        )
-    elif count == 0:
-        raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo common objects "
-            f"found!{style.bcolors.ENDC}"
-        )
-
-    nbad = len(reject)
-    if nbad > 0:
-        terminal_output.print_terminal(
-            nbad,
-            indent=2,
-            string="{:d} images do not meet the criteria -> removed",
-        )
-
-    #   Remove bad origins listed in 'reject'
-    indSR = np.delete(indSR, reject, 0)
-    arr_img_IDs = np.delete(arr_img_IDs, reject, 0)
-
-    xall = np.delete(xall, reject, 1)
-    yall = np.delete(yall, reject, 1)
-
-    #   Calculate shift for the reference origin
-    shiftID = np.argwhere(reject < refORI)
-    Nshift = len(shiftID)
-    refORI -= Nshift
-
-    # Number of clean images
-    nclean = len(indSR[:, 0])
-
-    #   Rearrange arrays based on the newsrcor results
-    x_sort = np.zeros((count))
-    y_sort = np.zeros((count))
-    ind_sort = np.arange(count)
-
-    for i in range(0, count):
-        x_sort[i] = xall[indSR[refORI][i]][refORI]
-        y_sort[i] = yall[indSR[refORI][i]][refORI]
-
-    #   Array for the flux and uncertainty
-    flux_arr = np.zeros(nclean, dtype=[('flux_fit', 'f8', (count)),
-                                       ('flux_unc', 'f8', (count)),
-                                       ]
-                        )
-
-    #   Fill arrays
-    for j, img_ID in enumerate(arr_img_IDs):
-        img_ID = str(img_ID)
-
-        for i in range(0, count):
-            flux = result_tbl[img_ID]['flux_fit'][indSR[j, i]]
-            flux_err = result_tbl[img_ID]['flux_unc'][indSR[j, i]]
-            flux_arr['flux_fit'][j][i] = flux
-            flux_arr['flux_unc'][j][i] = flux_err
-
-    #   Remove nans
-    flux_arr['flux_unc'] = np.nan_to_num(
-        flux_arr['flux_unc'],
-        nan=9999.,
-        posinf=9999.,
-        neginf=9999.,
-    )
-
-    return ind_sort, x_sort, y_sort, flux_arr, reject, rej_obj, count
-
-
 def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
-                           ref_ori=0, ref_obj=[], nmissed=1, bfrac=1.0,
-                           s_ref_obj=True, correl_method='astropy',
-                           seplimit=2. * u.arcsec):
+                           ref_obj=[], nmissed=1, bfrac=1.0, s_ref_obj=True,
+                           correl_method='astropy', seplimit=2. * u.arcsec):
     """
         Correlate object positions from all stars in the image ensemble to
         identify those objects that are visible on all images
@@ -1921,11 +1721,6 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             Max. number of allowed identical cross identifications between
             objects from a specific origin
             Default is ``1``.
-
-        TODO: Remove ref_ori because it is already on the ensemble
-        ref_ori             : `integer`, optional
-            ID of the reference origin
-            Default is ``0``.
 
         ref_obj             : `list` of `integer`, optional
             IDs of the reference objects. The reference objects will not be
@@ -1984,7 +1779,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         w,
         n_objects,
         n_images,
-        ref_ori=ref_ori,
+        ref_ori=img_ensemble.reference_image_id,
         ref_obj=ref_obj,
         nmissed=nmissed,
         s_ref_obj=s_ref_obj,
@@ -2003,115 +1798,11 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
     img_ensemble.image_list = [img_ensemble.image_list[i] for i in arr_img_ids]
     # img_ensemble.image_list = np.delete(img_list, reject)
     img_ensemble.nfiles = len(arr_img_ids)
-    img_ensemble.ref_id = ref_ori_new
+    img_ensemble.reference_image_id = ref_ori_new
 
     #   Limit the photometry tables to common objects.
     for j, image in enumerate(img_ensemble.image_list):
         image.photometry = image.photometry[ind_sr[j, :]]
-
-    #   TODO: Move the following to a dedicated function and then move it to the calibration procedure [x]
-    # #   Get dictionary with astropy tables with the position and flux data
-    # photometry_dict_of_tbls = img_ensemble.get_photometry()
-    #
-    # # Number of "clean" datasets
-    # nclean = len(ind_sr[:, 0])
-    #
-    # ###
-    # #   Rearrange arrays based on the correlation results
-    # #
-    # #   Prepare new arrays for positions and indexes
-    # x_sort = np.zeros((count))
-    # y_sort = np.zeros((count))
-    # ind_sort = np.arange(count)
-    #
-    # #   Fill position arrays -> distinguish between input sources
-    # #                           depending on correlation method
-    # if correl_method == 'astropy':
-    #     x_sort = x[ref_ori][ind_sr[ref_ori_new]].value
-    #     y_sort = y[ref_ori][ind_sr[ref_ori_new]].value
-    #
-    # elif correl_method == 'own':
-    #     xall = np.zeros((n_objects, n_images))
-    #     yall = np.zeros((n_objects, n_images))
-    #
-    #     for i in range(0, n_images):
-    #         xall[0:len(x[i]), i] = x[i]
-    #         yall[0:len(y[i]), i] = y[i]
-    #
-    #     #   Remove "bad" datasets first
-    #     xall = np.delete(xall, reject, 1)
-    #     yall = np.delete(yall, reject, 1)
-    #
-    #     x_sort = xall[ind_sr[ref_ori_new]][:, ref_ori_new]
-    #     y_sort = yall[ind_sr[ref_ori_new]][:, ref_ori_new]
-    #
-    # #   Prepare array for the flux and uncertainty (all datasets)
-    # flux_arr = np.zeros(nclean, dtype=[('flux_fit', 'f8', (count)),
-    #                                    ('flux_unc', 'f8', (count)),
-    #                                    ]
-    #                     )
-    #
-    # #   Fill flux arrays
-    # for j, img_ID in enumerate(arr_img_ids):
-    #     img_ID_str = str(img_ID)
-    #
-    #     #   Flux and uncertainty array for individual images
-    #     flux_img = np.zeros(
-    #         count,
-    #         dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
-    #     )
-    #
-    #     #   Rearrange flux and error
-    #     flux_img['flux_fit'] = photometry_dict_of_tbls[img_ID_str]['flux_fit']
-    #     flux_img['flux_unc'] = photometry_dict_of_tbls[img_ID_str]['flux_unc']
-    #
-    #     #   Remove nans etc. in error
-    #     #   TODO: Replace with object removal
-    #     flux_img['flux_unc'] = np.nan_to_num(
-    #         flux_img['flux_unc'],
-    #         nan=9999.,
-    #         posinf=9999.,
-    #         neginf=9999.,
-    #     )
-    #
-    #     #   Remove '--' entries in error
-    #     flux_err_dash = np.argwhere(flux_img['flux_unc'] == '--')
-    #     flux_img['flux_unc'][flux_err_dash] = 9999.
-    #
-    #     uflux_img = unumpy.uarray(
-    #         flux_img['flux_fit'],
-    #         flux_img['flux_unc']
-    #     )
-    #
-    #     #   Add sorted flux data and positions back to the image
-    #     img_ensemble.image_list[j].flux = flux_img
-    #     img_ensemble.image_list[j].uflux = uflux_img
-    #     img_ensemble.image_list[j].x_sort = x_sort
-    #     img_ensemble.image_list[j].y_sort = y_sort
-    #     img_ensemble.image_list[j].id_sort = ind_sort
-    #
-    #     #   Add to overall array
-    #     flux_arr['flux_fit'][j] = flux_img['flux_fit']
-    #     flux_arr['flux_unc'][j] = flux_img['flux_unc']
-    #
-    # uflux_arr = unumpy.uarray(
-    #     flux_arr['flux_fit'],
-    #     flux_arr['flux_unc']
-    # )
-    #
-    # #   Update image ensemble object and add IDs, pixel coordinates, and
-    # #   flux of the correlated objects
-    # # img_list = img_ensemble.image_list
-    # # img_list = np.delete(img_list, reject)
-    # # img_ensemble.image_list = img_list
-    # # img_ensemble.nfiles = len(img_ensemble.image_list)
-    # # img_ensemble.ref_id = ref_ori_new
-    #
-    # img_ensemble.id_s = ind_sort
-    # img_ensemble.x_s = x_sort
-    # img_ensemble.y_s = y_sort
-    # img_ensemble.flux = flux_arr
-    # img_ensemble.uflux = uflux_arr
 
 
 def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
@@ -2143,7 +1834,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             objects from a specific origin
             Default is ``1``.
 
-        TODO: Remove ref_ori because it is already on the ensemble
+        TODO: Remove ref_ori because it is already on the ensemble. Maybe here this is actually usefull...
         ref_ori             : `integer`, optional
             ID of the reference origin
             Default is ``0``.
@@ -2235,123 +1926,17 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
     for ject in reject:
         ensemble_dict.pop(ensemble_keys[ject])
 
-    #   TODO: Add code here to sort the tables.
     #   Limit the photometry tables to common objects.
     for j, ensemble in enumerate(ensemble_dict.values()):
         for image in ensemble.image_list:
             image.photometry = image.photometry[ind_sr[j, :]]
-
-    #   TODO: Move the following to a dedicated function and then move it to the calibration procedure [x]
-    # ###
-    # #   Rearrange arrays based on the correlation results
-    # #
-    # #   Prepare new arrays for positions and indexes
-    # x_sort = np.zeros((count))
-    # y_sort = np.zeros((count))
-    # ind_sort = np.arange(count)
-    #
-    # #   Fill position arrays -> distinguish between input sources
-    # #                           depending on correlation method
-    # if correl_method == 'astropy':
-    #     if (isinstance(x[ref_ori], u.quantity.Quantity) or
-    #             isinstance(x[ref_ori], Table)):
-    #         x_sort = x[ref_ori][ind_sr[ref_ori_new]].value
-    #         y_sort = y[ref_ori][ind_sr[ref_ori_new]].value
-    #     elif isinstance(x[ref_ori], np.ndarray):
-    #         x_sort = x[ref_ori][ind_sr[ref_ori_new]]
-    #         y_sort = y[ref_ori][ind_sr[ref_ori_new]]
-    #     else:
-    #         raise TypeError(
-    #             f"{style.bcolors.FAIL} \nType of the position arrays not "
-    #             "known. Expect numpy.float or astropy.units.quantity.Quantity "
-    #             f"but got {type(x[ref_ori])} {style.bcolors.ENDC}"
-    #         )
-    #
-    # elif correl_method == 'own':
-    #     xall = np.zeros((n_objects, n_ensembles))
-    #     yall = np.zeros((n_objects, n_ensembles))
-    #
-    #     for i in range(0, n_ensembles):
-    #         xall[0:len(x[i]), i] = x[i]
-    #         yall[0:len(y[i]), i] = y[i]
-    #
-    #     #   Remove "bad" datasets first
-    #     xall = np.delete(xall, reject, 1)
-    #     yall = np.delete(yall, reject, 1)
-    #
-    #     x_sort = xall[ind_sr[ref_ori_new]][:, ref_ori_new]
-    #     y_sort = yall[ind_sr[ref_ori_new]][:, ref_ori_new]
-    #
-    # #   Rearrange flux array, according to correlation results, so that objects
-    # #   have the same position in each
-    # for j, ensemble in enumerate(ensemble_dict.values()):
-    #
-    #     #   Get image list
-    #     img_list = ensemble.image_list
-    #
-    #     #   Get number of images
-    #     nimg = len(img_list)
-    #
-    #     #   Overall array for the flux and uncertainty
-    #     flux_arr = np.zeros(nimg, dtype=[('flux_fit', 'f8', (count)),
-    #                                      ('flux_unc', 'f8', (count)),
-    #                                      ]
-    #                         )
-    #
-    #     #   Loop over images -> assumes that the images/results within each
-    #     #   ensemble are already correlated such that the objects have the
-    #     #   same indexes
-    #     for z, img in enumerate(img_list):
-    #         #   Get flux
-    #         flux = img.flux
-    #         uflux = img.uflux
-    #
-    #         #   Define new flux array
-    #         flux_sort = np.zeros(
-    #             count,
-    #             dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')]
-    #         )
-    #
-    #         #   Rearrange flux
-    #         flux_sort['flux_fit'] = flux['flux_fit'][ind_sr[j, :]]
-    #         flux_sort['flux_unc'] = flux['flux_unc'][ind_sr[j, :]]
-    #
-    #         uflux_sort = uflux[ind_sr[j, :]]
-    #
-    #         #   Add sorted flux data and positions back to the image
-    #         img.flux_es = flux_sort
-    #         img.uflux_es = uflux_sort
-    #         img.x_es = x_sort
-    #         img.y_es = y_sort
-    #         img.id_es = ind_sort
-    #
-    #         #   Add to overall array
-    #         flux_arr['flux_fit'][z] = flux_sort['flux_fit']
-    #         flux_arr['flux_unc'][z] = flux_sort['flux_unc']
-    #
-    #     uflux_arr = getattr(ensemble, 'uflux', None)
-    #     if uflux_arr is None:
-    #         uflux_arr_sort = unumpy.uarray(
-    #             flux_arr['flux_fit'],
-    #             flux_arr['flux_unc']
-    #         )
-    #     else:
-    #         uflux_arr_sort = uflux_arr[:, ind_sr[j, :]]
-    #
-    #     #   Update image ensemble object and add IDs, pixel coordinates, and
-    #     #   flux of the correlated objects
-    #     ensemble.id_es = ind_sort
-    #     ensemble.x_es = x_sort
-    #     ensemble.y_es = y_sort
-    #     ensemble.flux_es = flux_arr
-    #     ensemble.uflux_es = uflux_arr_sort
 
 
 #   TODO: Check if the following routine is still necessary? -> seems to be useful
 # def correlate_preserve_calibs(img_ensemble, filter_list,
 #                               calib_method='APASS', mag_range=(0., 18.5),
 #                               vizier_dict=None, calib_file=None, dcr=3,
-#                               option=1, verbose=False, maxid=1, ref_ID=0,
+#                               option=1, verbose=False, maxid=1, reference_image_id=0,
 #                               nmissed=1, bfrac=1.0, s_refOBJ=True,
 #                               plot_test=True, correl_method='astropy',
 #                               seplimit=2. * u.arcsec):
@@ -2401,7 +1986,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 #             objects from a specific origin
 #             Default is ``1``.
 #
-#         ref_ID              : `integer`, optional
+#         reference_image_id  : `integer`, optional
 #             ID of the reference origin
 #             Default is ``0``.
 #
@@ -2440,7 +2025,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 #     #   Load calibration data
 #     #
 #     calib_tbl, col_names, ra_unit = calib.load_calib(
-#         img_ensemble.image_list[ref_ID],
+#         img_ensemble.image_list[reference_image_id],
 #         filter_list,
 #         calib_method=calib_method,
 #         mag_range=mag_range,
@@ -2470,7 +2055,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 #     for k in range(0, n_calib):
 #         #   Find the calibration star
 #         inds_obj, ref_count, x_obj, y_obj = correlate.posi_obj_srcor_img(
-#             img_ensemble.image_list[ref_ID],
+#             img_ensemble.image_list[reference_image_id],
 #             calib_tbl[col_names['ra']].data[k],
 #             calib_tbl[col_names['dec']].data[k],
 #             img_ensemble.wcs,
@@ -2503,7 +2088,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 #         dcr=dcr,
 #         option=option,
 #         maxid=maxid,
-#         ref_ori=ref_ID,
+#         ref_ori=reference_image_id,
 #         ref_obj=calib_IDs,
 #         nmissed=nmissed,
 #         bfrac=bfrac,
@@ -2524,8 +2109,8 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 
 
 def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
-                                option=1, maxid=1, ref_ID=0, nmissed=1,
-                                bfrac=1.0, s_refOBJ=True,
+                                option=1, maxid=1, reference_image_id=0,
+                                nmissed=1, bfrac=1.0, s_refOBJ=True,
                                 correl_method='astropy',
                                 seplimit=2. * u.arcsec, verbose=False,
                                 plot_test=True):
@@ -2558,7 +2143,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
             objects from a specific origin
             Default is ``1``.
 
-        ref_ID              : `integer`, optional
+        reference_image_id  : `integer`, optional
             ID of the reference origin
             Default is ``0``.
 
@@ -2606,8 +2191,8 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     )
 
     variable_id, count, x_obj, y_obj = correlate.identify_star_in_dataset(
-            img_ensemble.image_list[ref_ID].photometry['x_fit'],
-            img_ensemble.image_list[ref_ID].photometry['y_fit'],
+            img_ensemble.image_list[reference_image_id].photometry['x_fit'],
+            img_ensemble.image_list[reference_image_id].photometry['y_fit'],
             ra_obj,
             dec_obj,
             img_ensemble.wcs,
@@ -2634,7 +2219,6 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         dcr=dcr,
         option=option,
         maxid=maxid,
-        ref_ori=ref_ID,
         ref_obj=[int(variable_id)],
         nmissed=nmissed,
         bfrac=bfrac,
@@ -2652,15 +2236,15 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     )
 
     variable_id, count, x_obj, y_obj = correlate.identify_star_in_dataset(
-            img_ensemble.image_list[ref_ID].photometry['x_fit'],
-            img_ensemble.image_list[ref_ID].photometry['y_fit'],
-            ra_obj,
-            dec_obj,
-            img_ensemble.wcs,
-            seplimit=seplimit,
-            dcr=dcr,
-            option=option,
-            verbose=verbose,
+        img_ensemble.image_list[reference_image_id].photometry['x_fit'],
+        img_ensemble.image_list[reference_image_id].photometry['y_fit'],
+        ra_obj,
+        dec_obj,
+        img_ensemble.wcs,
+        seplimit=seplimit,
+        dcr=dcr,
+        option=option,
+        verbose=verbose,
     )
 
     ###
@@ -2782,7 +2366,7 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
             Default is ``10``.
 
         r_unit          : `string`, optional
-            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+            Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
             Default is ``pixel``.
 
         strict_eps      : `boolean`, optional
@@ -2854,7 +2438,7 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
                 'strict_cleaning': strict_cleaning,
                 'min_eps_stars': min_eps_stars,
                 'strict_eps': strict_eps,
-                'refid': img_ensemble.ref_id,
+                'refid': img_ensemble.reference_image_id,
                 'photometry': photometry,
                 'rstars': rstars,
                 'rbg_in': rbg_in,
@@ -2994,7 +2578,7 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
             Default is ``10``.
 
         r_unit                  : `string`, optional
-            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+            Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
             Default is ``pixel``.
 
         strict_eps              : `boolean`, optional
@@ -3332,7 +2916,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
             Default is ``10``.
 
         r_unit          : `string`, optional
-            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+            Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
             Default is ``arcsec``.
 
         strict_eps      ; `boolean`, optional
@@ -3394,7 +2978,6 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
             name,
             img_paths[filt],
             outdir,
-            0,
         )
 
         ###
@@ -3403,7 +2986,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
         try:
             aux.find_wcs(
                 current_ensemble,
-                ref_id=0,
+                reference_image_id=0,
                 method=wcs_method,
                 force_wcs_determ=force_wcs_determ,
                 indent=3,
@@ -3458,12 +3041,6 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
             plot_test=plot_test,
         )
 
-        #   Add stellar positions to ensemble class
-        #   TODO: Shift this into main extract? -> Better remove?
-        photo = current_ensemble.image_list[0].photometry
-        current_ensemble.x_s = photo['x_fit']
-        current_ensemble.y_s = photo['y_fit']
-
     if photometry == 'PSF':
         ###
         #   Plot the ePSFs
@@ -3500,7 +3077,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                        method='IRAF', multi=5.0, multi_grouper=2.0,
                        strict_cleaning=True, min_eps_stars=25, strict_eps=True,
                        photometry='PSF', rstars=5., rbg_in=7., rbg_out=10.,
-                       r_unit='arcsec', dcr=3., option=1, maxid=1, ref_ID=0,
+                       r_unit='arcsec', dcr=3., option=1, maxid=1, reference_image_id=0,
                        nmissed=1, bfrac=1.0, s_refOBJ=True,
                        correl_method='astropy', seplimit=2. * u.arcsec,
                        verbose=False, search_image=True, plot_ifi=False,
@@ -3511,35 +3088,35 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
 
         Parameters
         ----------
-        img_container   : `image.container`
+        img_container       : `image.container`
             Container object with image ensemble objects for each filter
 
-        filter_list     : `list` of `string`
+        filter_list         : `list` of `string`
             Filter list
 
-        name            : `string`
+        name                : `string`
             Name of the object
 
-        img_paths       : `dictionary`
+        img_paths           : `dictionary`
             Paths to images: key - filter name; value - path
 
-        outdir          : `string`
+        outdir              : `string`
             Path, where the output should be stored.
 
-        sigma_psf       : `dictionary`
+        sigma_psf           : `dictionary`
             Sigma of the objects PSF, assuming it is a Gaussian
 
-        ra_obj          : `float`
+        ra_obj              : `float`
             Right ascension of the object
 
-        dec_obj         : `float`
+        dec_obj             : `float`
             Declination of the object
 
-        ncores          : `integer`, optional
+        ncores              : `integer`, optional
             Number of cores to use for multicore processing
             Default is ``6``.
 
-        wcs_method      : `string`, optional
+        wcs_method          : `string`, optional
             Method that should be used to determine the WCS.
             Default is ``'astrometry'``.
 
@@ -3548,62 +3125,62 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             a WCS is already present in the FITS Header.
             Default is ``False``.
 
-        sigma_bkg       : `float`, optional
+        sigma_bkg           : `float`, optional
             Sigma used for the sigma clipping of the background
             Default is ``5.``.
 
-        multi_start     : `float`, optional
+        multi_start         : `float`, optional
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
             Default is ``7``.
 
-        size_epsf       : `integer`, optional
+        size_epsf           : `integer`, optional
             Size of the extraction region in pixel
             Default is `25``.
 
-        frac_epsf_stars : `float`, optional
+        frac_epsf_stars     : `float`, optional
             Fraction of all stars that should be used to calculate the ePSF
             Default is ``0.2``.
 
-        oversampling    : `integer`, optional
+        oversampling        : `integer`, optional
             ePSF oversampling factor
             Default is ``2``.
 
-        maxiters        : `integer`, optional
+        maxiters            : `integer`, optional
             Number of ePSF iterations
             Default is ``7``.
 
-        method         : `string`, optional
+        method              : `string`, optional
             Finder method DAO or IRAF
             Default is ``IRAF``.
 
-        multi           : `float`, optional
+        multi               : `float`, optional
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
             Default is ``5.0``.
 
-        multi_grouper   : `float`, optional
+        multi_grouper       : `float`, optional
             Multiplier for the DAO grouper
             Default is ``5.0``.
 
-        strict_cleaning : `boolean`, optional
+        strict_cleaning     : `boolean`, optional
             If True objects with negative flux uncertainties will be removed
             Default is ``True``.
 
-        min_eps_stars   : `integer`, optional
+        min_eps_stars       : `integer`, optional
             Minimal number of required ePSF stars
             Default is ``25``.
 
-        photometry      : `string`, optional
+        photometry          : `string`, optional
             Switch between aperture and ePSF photometry.
             Possibilities: 'PSF' & 'APER'
             Default is ``PSF``.
 
-        rstars          : `float`, optional
+        rstars              : `float`, optional
             Radius of the stellar aperture
             Default is ``5``.
 
-        rbg_in          : `float`, optional
+        rbg_in              : `float`, optional
             Inner radius of the background annulus
             Default is ``7``.
 
@@ -3611,11 +3188,11 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             Outer radius of the background annulus
             Default is ``10``.
 
-        r_unit          : `string`, optional
-            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+        r_unit              : `string`, optional
+            Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
             Default is ``pixel``.
 
-        strict_eps      ; `boolean`, optional
+        strict_eps          : `boolean`, optional
             If True a stringent test of the ePSF conditions is applied.
             Default is ``True``.
 
@@ -3632,7 +3209,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             objects from a specific origin
             Default is ``1``.
 
-        ref_ID              : `integer`, optional
+        reference_image_id  : `integer`, optional
             ID of the reference origin
             Default is ``0``.
 
@@ -3662,20 +3239,20 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
 
-        verbose         : `boolean`, optional
+        verbose             : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
 
-        search_image    : `boolean`, optional
+        search_image        : `boolean`, optional
             If `True` the objects on the image will be identified. If `False`
             it is assumed that object identification was performed in advance.
             Default is ``True``.
 
-        plot_ifi        : `boolean`, optional
+        plot_ifi            : `boolean`, optional
             If True star map plots for all stars are created
             Default is ``False``.
 
-        plot_test       : `boolean`, optional
+        plot_test           : `boolean`, optional
             If True a star map plots only for the reference image [refid] is
             created
             Default is ``True``.
@@ -3703,7 +3280,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             name,
             img_paths[filt],
             outdir,
-            ref_ID,
+            reference_image_id=reference_image_id,
         )
 
         ###
@@ -3711,7 +3288,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
         #
         aux.find_wcs(
             img_container.ensembles[filt],
-            ref_id=ref_ID,
+            reference_image_id=reference_image_id,
             method=wcs_method,
             force_wcs_determ=force_wcs_determ,
             indent=3,
@@ -3747,173 +3324,26 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             plot_test=plot_test,
         )
 
-        #   TODO: Remove this switch?
-        if search_image:
-            ###
-            #   Correlate results from all images, while preserving
-            #   the variable star
-            #
-            correlate_preserve_variable(
-                img_container.ensembles[filt],
-                ra_obj,
-                dec_obj,
-                dcr=dcr,
-                option=option,
-                maxid=maxid,
-                ref_ID=ref_ID,
-                nmissed=nmissed,
-                bfrac=bfrac,
-                s_refOBJ=s_refOBJ,
-                verbose=verbose,
-                plot_test=plot_test,
-                correl_method=correl_method,
-                seplimit=seplimit,
-            )
-
-        #   TODO: Remove this branch
-        # else:
-        #     #   Branch without proper correlation
-        #     img_ensemble = img_container.ensembles[filt]
+        ###
+        #   Correlate results from all images, while preserving
+        #   the variable star
         #
-        #     ###
-        #     #   Find position of the variable star
-        #     #
-        #     terminal_output.print_terminal(
-        #         indent=1,
-        #         string="Identify the variable star",
-        #     )
-        #
-        #     if correl_method == 'astropy':
-        #         variable_ID, count, x_obj, y_obj = correlate.posi_obj_astropy_img(
-        #             img_ensemble.image_list[ref_ID],
-        #             ra_obj,
-        #             dec_obj,
-        #             img_ensemble.wcs,
-        #         )
-        #
-        #     elif correl_method == 'own':
-        #         inds_obj, count, x_obj, y_obj = correlate.posi_obj_srcor_img(
-        #             img_ensemble.image_list[ref_ID],
-        #             ra_obj,
-        #             dec_obj,
-        #             img_ensemble.wcs,
-        #             dcr=dcr,
-        #             option=option,
-        #             verbose=verbose,
-        #         )
-        #
-        #         #   Current object ID
-        #         variable_ID = inds_obj[1]
-        #
-        #         if verbose:
-        #             terminal_output.print_terminal()
-        #     else:
-        #         raise ValueError(
-        #             f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.'
-        #         )
-        #
-        #     ###
-        #     #   Check if variable star was detected
-        #     #
-        #     if count == 0:
-        #         raise RuntimeError(
-        #             f"{style.bcolors.FAIL} \tERROR: The variable object was "
-        #             f"not detected in the reference image.\n"
-        #             f"\t-> EXIT {style.bcolors.ENDC}"
-        #         )
-        #
-        #     #   Add ID of the variable star to the image ensemble
-        #     img_ensemble.variable_ID = variable_ID
-        #
-        #     ###
-        #     #
-        #     #
-        #
-        #     #   Get dictionary with astropy tables with the position and flux data
-        #     result_tbl = img_ensemble.get_photometry()
-        #
-        #     x_s = result_tbl[str(ref_ID)]['x_fit']
-        #     y_s = result_tbl[str(ref_ID)]['y_fit']
-        #
-        #     count = len(x_s)
-        #     id_s = np.arange(count)
-        #
-        #     #   Get image IDs
-        #     arr_img_IDs = img_ensemble.get_image_ids()
-        #
-        #     #   Number of images
-        #     nimg = len(arr_img_IDs)
-        #
-        #     #   Prepare array for the flux and uncertainty (all datasets)
-        #     flux_arr = np.zeros(nimg, dtype=[('flux_fit', 'f8', (count)),
-        #                                      ('flux_unc', 'f8', (count)),
-        #                                      ]
-        #                         )
-        #
-        #     #   Fill flux arrays
-        #     for j, img_ID in enumerate(arr_img_IDs):
-        #         img_ID_str = str(img_ID)
-        #
-        #         #   Flux and uncertainty array for individual images
-        #         flux_img = np.zeros(
-        #             count,
-        #             dtype=[('flux_fit', 'f8'), ('flux_unc', 'f8')],
-        #         )
-        #
-        #         #   Rearrange flux and error
-        #         flux_img['flux_fit'] = result_tbl[img_ID_str]['flux_fit']
-        #         flux_img['flux_unc'] = result_tbl[img_ID_str]['flux_unc']
-        #
-        #         #   Remove nans etc. in error
-        #         flux_img['flux_unc'] = np.nan_to_num(
-        #             flux_img['flux_unc'],
-        #             nan=9999.,
-        #             posinf=9999.,
-        #             neginf=9999.,
-        #         )
-        #
-        #         #   Remove '--' entries in error
-        #         flux_err_dash = np.argwhere(flux_img['flux_unc'] == '--')
-        #         flux_img['flux_unc'][flux_err_dash] = 9999.
-        #
-        #         uflux_img = unumpy.uarray(
-        #             flux_img['flux_fit'],
-        #             flux_img['flux_unc']
-        #         )
-        #
-        #         #   Add sorted flux data and positions back to the image
-        #         img_ensemble.image_list[img_ID].flux = flux_img
-        #         img_ensemble.image_list[img_ID].uflux = uflux_img
-        #         img_ensemble.image_list[img_ID].x_sort = x_s
-        #         img_ensemble.image_list[img_ID].y_sort = y_s
-        #         img_ensemble.image_list[img_ID].id_sort = id_s
-        #
-        #         #   Add to overall array
-        #         flux_arr['flux_fit'][j] = flux_img['flux_fit']
-        #         flux_arr['flux_unc'][j] = flux_img['flux_unc']
-        #
-        #     uflux_arr = unumpy.uarray(
-        #         flux_arr['flux_fit'],
-        #         flux_arr['flux_unc']
-        #     )
-        #
-        #     #   Update image ensemble object and add IDs, pixel coordinates, and
-        #     #   flux of the correlated objects
-        #     img_ensemble.id_s = id_s
-        #     img_ensemble.x_s = x_s
-        #     img_ensemble.y_s = y_s
-        #     img_ensemble.flux = flux_arr
-        #     img_ensemble.uflux = uflux_arr
-        #
-        #     ###
-        #     #   Plot image with the final positions overlaid (final version)
-        #     #
-        #     aux.prepare_and_plot_starmap_final_3(
-        #         img_ensemble,
-        #         [x_obj],
-        #         [y_obj],
-        #         plot_test=plot_test,
-        #     )
+        correlate_preserve_variable(
+            img_container.ensembles[filt],
+            ra_obj,
+            dec_obj,
+            dcr=dcr,
+            option=option,
+            maxid=maxid,
+            reference_image_id=reference_image_id,
+            nmissed=nmissed,
+            bfrac=bfrac,
+            s_refOBJ=s_refOBJ,
+            verbose=verbose,
+            plot_test=plot_test,
+            correl_method=correl_method,
+            seplimit=seplimit,
+        )
 
 
 def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
@@ -4041,7 +3471,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
             Default is ``4``.
 
         r_unit                  : `string`, optional
-            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+            Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
             Default is ``arcsec``.
 
         convert_mags            : `boolean`, optional
@@ -4095,8 +3525,8 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     trans.apply_calib(
         img_container,
         filter_list,
-        Tcs=Tcs,
-        derive_Tcs=derive_Tcs,
+        tcs=Tcs,
+        derive_tcs=derive_Tcs,
         plot_sigma=plot_sigma,
         photo_type=photo_type,
         refid=ref_img,
@@ -4124,7 +3554,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     ###
     #   Determine limiting magnitudes
     #
-    aux.derive_limiting_mag(
+    aux.derive_limiting_magnitude(
         img_container,
         filter_list,
         ref_img,
@@ -4135,7 +3565,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
 
 def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                          outdir, transit_time, period, valid_calibs=None,
-                         binn=None, Tcs=None, derive_Tcs=False, ref_ID=0,
+                         binn=None, Tcs=None, derive_Tcs=False, reference_image_id=0,
                          calib_method='APASS', vizier_dict=None, calib_file=None,
                          mag_range=(0., 18.5), dcr=3., option=1, maxid=1,
                          nmissed=1, bfrac=1.0, s_refOBJ=True, photo_type='',
@@ -4150,7 +3580,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
         img_container       : `image.container`
             Container object with image ensemble objects for each filter
 
-        filter_list           : `list` of `strings`
+        filter_list         : `list` of `strings`
             List with filter names
 
         ra_obj              : `float`
@@ -4184,17 +3614,17 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
             Calibration coefficients for the magnitude transformation
             Default is ``None``.
 
-        derive_Tcs      : `boolean`, optional
+        derive_Tcs          : `boolean`, optional
             If True the magnitude transformation coefficients will be
             calculated from the current data even if calibration coefficients
-            are available in the data base.
+            are available in the database.
             Default is ``False``
 
-        ref_ID              : `integer`, optional
+        reference_image_id  : `integer`, optional
             ID of the reference origin
             Default is ``0``.
 
-        calib_method       : `string`, optional
+        calib_method        : `string`, optional
             Calibration method
             Default is ``APASS``.
 
@@ -4276,9 +3706,8 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
         valid_calibs = calibration_data.valid_calibs
 
     for filt in filter_list:
-        terminal_output.print_terminal(
-            filt,
-            string="Working on filter: {:s}",
+        terminal_output.print_to_terminal(
+            f"Working on filter: {filt}",
             style_name='OKBLUE',
         )
 
@@ -4298,7 +3727,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         i = 1
 
                     #   Get object ID
-                    objID = img_container.ensembles[filt].variable_ID
+                    obj_id = img_container.ensembles[filt].variable_ID
 
                     ###
                     #   Correlate star positions from the different filter
@@ -4309,7 +3738,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         dcr=dcr,
                         option=option,
                         maxid=maxid,
-                        ref_obj=[objID],
+                        ref_obj=[obj_id],
                         nmissed=nmissed,
                         bfrac=bfrac,
                         s_ref_obj=s_refOBJ,
@@ -4325,40 +3754,51 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                     )
 
                     #   TODO: Replace with function
-                    if correl_method == 'astropy':
-                        objID, count, _, _ = correlate.posi_obj_astropy(
-                            img_container.ensembles[filt].x_es,
-                            img_container.ensembles[filt].y_es,
-                            ra_obj,
-                            dec_obj,
-                            img_container.ensembles[filt].wcs,
-                            seplimit=seplimit,
-                        )
-
-                    elif correl_method == 'own':
-                        inds_obj, count, _, _ = correlate.posi_obj_srcor(
-                            img_container.ensembles[filt].x_es,
-                            img_container.ensembles[filt].y_es,
-                            ra_obj,
-                            dec_obj,
-                            img_container.ensembles[filt].wcs,
-                            dcr=dcr,
-                            option=option,
-                            verbose=verbose,
-                        )
-                        if verbose:
-                            terminal_output.print_terminal()
-
-                        #   Current object ID
-                        objID = inds_obj[1]
-
-                    else:
-                        raise ValueError(
-                            f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.'
-                        )
+                    obj_id, count, _, _ = correlate.identify_star_in_dataset(
+                        img_container.ensembles[filt].image_list[reference_image_id].photometry['x_fit'],
+                        img_container.ensembles[filt].image_list[reference_image_id].photometry['y_fit'],
+                        ra_obj,
+                        dec_obj,
+                        img_container.ensembles[filt].wcs,
+                        seplimit=seplimit,
+                        dcr=dcr,
+                        option=option,
+                        verbose=verbose,
+                    )
+                    # if correl_method == 'astropy':
+                    #     objID, count, _, _ = correlate.posi_obj_astropy(
+                    #         img_container.ensembles[filt].x_es,
+                    #         img_container.ensembles[filt].y_es,
+                    #         ra_obj,
+                    #         dec_obj,
+                    #         img_container.ensembles[filt].wcs,
+                    #         seplimit=seplimit,
+                    #     )
+                    #
+                    # elif correl_method == 'own':
+                    #     inds_obj, count, _, _ = correlate.posi_obj_srcor(
+                    #         img_container.ensembles[filt].x_es,
+                    #         img_container.ensembles[filt].y_es,
+                    #         ra_obj,
+                    #         dec_obj,
+                    #         img_container.ensembles[filt].wcs,
+                    #         dcr=dcr,
+                    #         option=option,
+                    #         verbose=verbose,
+                    #     )
+                    #     if verbose:
+                    #         terminal_output.print_terminal()
+                    #
+                    #     #   Current object ID
+                    #     objID = inds_obj[1]
+                    #
+                    # else:
+                    #     raise ValueError(
+                    #         f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.'
+                    #     )
 
                     #   Set new object ID
-                    img_container.ensembles[filt].variable_ID = objID
+                    img_container.ensembles[filt].variable_ID = obj_id
 
                     #   Check if variable star was detected
                     if count == 0:
@@ -4394,16 +3834,15 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                             err_filter = calib_fil[0]
                         if 'mag' + calib_fil[1] not in filter_calib:
                             err_filter = calib_fil[1]
-                        terminal_output.print_terminal(
-                            err_filter,
+                        terminal_output.print_to_terminal(
+                            "Magnitude transformation not "
+                            "possible because no calibration data "
+                            f"available for filter {err_filter}",
                             indent=2,
-                            string="Magnitude transformation not "
-                                   "possible because no calibration data "
-                                   "available for filter {}",
                             style_name='WARNING',
                         )
-                        #   TODO: Check: Shouldn't that be 'continue'?
-                        break
+                        #   2023.08.04: Changed from 'break' to 'continue'
+                        continue
 
                     ###
                     #   Calibrate magnitudes
@@ -4417,12 +3856,11 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                     trans.apply_calib(
                         img_container,
                         calib_fil,
-                        Tcs=Tcs,
-                        derive_Tcs=derive_Tcs,
+                        tcs=Tcs,
+                        derive_tcs=derive_Tcs,
                         plot_mags=plot_mags,
-                        # id_object=filt,
                         photo_type=photo_type,
-                        refid=ref_ID,
+                        refid=reference_image_id,
                         plot_sigma=plot_sigma,
                     )
                     cali_mags = getattr(img_container, 'cali', None)
@@ -4456,7 +3894,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         otime,
                         cali_mags[i],
                         filt,
-                        objID,
+                        obj_id,
                     )
 
                     #   Write time series
@@ -4665,10 +4103,8 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
     img_ensemble = image_ensemble(
         filt,
         name,
-        # file_path,
         path,
         outdir,
-        0,
     )
 
     ###
@@ -4676,7 +4112,7 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
     #
     aux.find_wcs(
         img_ensemble,
-        ref_id=0,
+        reference_image_id=0,
         method=wcs_method,
         indent=3,
     )

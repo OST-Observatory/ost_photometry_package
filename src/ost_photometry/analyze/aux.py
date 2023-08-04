@@ -11,7 +11,7 @@ from uncertainties import unumpy
 from pytimedinput import timedInput
 
 from astropy.table import Table
-from astropy.stats import sigma_clipped_stats, sigma_clip
+from astropy.stats import sigma_clip
 from astropy.io import fits
 from astropy.coordinates import SkyCoord, matching
 from astropy.timeseries import TimeSeries
@@ -43,6 +43,7 @@ from .. import aux as base_aux
 from .. import checks, style, terminal_output, calibration_data
 
 from . import plot
+
 
 ############################################################################
 #                           Routines & definitions                         #
@@ -181,7 +182,7 @@ def mk_mag_table_str(ind_sort, x, y, mags, list_bands, id_tupels):
 def mk_mag_table_unc(ind_sort, x, y, mags, list_bands, id_tupels):
     """
         Create and export astropy table with object positions and magnitudes
-        Input magnitude array is expected to be a unumpy uarray.
+        Input magnitude array is expected to be an unumpy uarray.
 
         Parameters
         ----------
@@ -253,35 +254,35 @@ def mk_mag_table_unc(ind_sort, x, y, mags, list_bands, id_tupels):
     return tbl_cmd
 
 
-def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
+def find_wcs(image_ensemble, reference_image_id=None, method='astrometry', rmcos=False,
              path_cos=None, x=None, y=None, force_wcs_determ=False, indent=2):
     """
         Meta function for finding image WCS
 
         Parameters
         ----------
-        image_ensemble  : `image.ensemble.class`
+        image_ensemble      : `image.ensemble.class`
             Image class with all images taken in a specific filter
 
-        ref_id          : `integer`, optional
+        reference_image_id  : `integer`, optional
             ID of the reference image
             Default is ``None``.
 
-        method          : `string`, optional
+        method              : `string`, optional
             Method to use for the WCS determination
             Options: 'astrometry', 'astap', or 'twirl'
             Default is ``astrometry``.
 
-        rmcos           : `boolean`, optional
+        rmcos               : `boolean`, optional
             If True the function assumes that the cosmic ray reduction
             function was run before this function
             Default is ``False``.
 
-        path_cos        : `string`
+        path_cos            : `string`
             Path to the image in case 'rmcos' is True
             Default is ``None``.
 
-        x, y            : `numpy.ndarray`, optional
+        x, y                : `numpy.ndarray`, optional
             Pixel coordinates of the objects
             Default is ``None``.
 
@@ -290,13 +291,13 @@ def find_wcs(image_ensemble, ref_id=None, method='astrometry', rmcos=False,
             a WCS is already present in the FITS Header.
             Default is ``False``.
 
-        indent          : `integer`, optional
+        indent              : `integer`, optional
             Indentation for the console output lines
             Default is ``2``.
     """
-    if ref_id is not None:
+    if reference_image_id is not None:
         #   Image
-        img = image_ensemble.image_list[ref_id]
+        img = image_ensemble.image_list[reference_image_id]
 
         #   Test if the image contains already a WCS
         cal_wcs, wcs_file = base_aux.check_wcs_exists(img)
@@ -392,7 +393,7 @@ def extract_wcs(wcs_path, image_wcs=None, rmcos=False, filters=None):
             contains this image
 
         image_wcs       : `string`, optional
-            WCS image name. Needed in case 'wcs_path` is only the path to
+            WCS image name. Needed in case `wcs_path` is only the path to
             the image directory.
             Default is ``None``.
 
@@ -634,17 +635,6 @@ def prepare_arrays(img_container, nfilter, count):
     img_container.cali = cali
     img_container.noT = np.copy(cali)
 
-    # #   Define flux arrays
-    # if unc:
-    #     img_container.flux = np.copy(cali)
-    # else:
-    #     img_container.flux = np.zeros(
-    #         nfilter,
-    #         dtype=[('flux', 'f8', (nimg_max, count)),
-    #                ('err', 'f8', (nimg_max, count)),
-    #                ]
-    #     )
-
 
 def cal_mag(*args, **kwargs):
     """
@@ -705,7 +695,7 @@ def mag_arr(flux_arr):
     mags['mag'] = -2.5 * np.log10(flux)
 
     ###
-    #   Calculate magnitudes and error
+    #   Calculate magnitudes and uncertainty
     #
     #   Error propagation also used by DAOPHOT -> see 'compute_phot_error'
     mags['err'] = 1.0857 * flux_arr['flux_unc'] / flux_arr['flux_fit']
@@ -742,100 +732,6 @@ def mag_u_arr(flux):
     mags = -2.5 * unumpy.log10(flux)
 
     return mags
-
-
-#   TODO: Remove
-# def mk_posi_tbl(img_container, ensemble_IDs):
-#     """
-#         Make position tables
-#
-#         Parameters
-#         ----------
-#         img_container           : `image.container`
-#             Container object with image ensemble objects for each filter
-#
-#         ensemble_IDs            : `list`
-#             List with image IDs
-#
-#         Returns
-#         -------
-#         tbl_xy          : `dictionary` of `astropy.table.Table` objects
-#             X and Y position in pixel among other data
-#     """
-#     #   Get image ensembles
-#     ensembles = img_container.ensembles
-#
-#     tbl_xy = {}
-#     for ID in ensemble_IDs:
-#         #   Ensure ID is `string`
-#         ID = str(ID)
-#
-#         #   Get ensemble
-#         ensem = ensembles[ID]
-#
-#         #   Get reference image
-#         img = ensem.image_list[ensem.ref_id]
-#
-#         #   Get magnitudes and positions
-#         try:
-#             mags = cal_mag(img.flux_es)['mag']
-#             ids = ensem.id_es
-#             xs = ensem.x_es
-#             ys = ensem.y_es
-#         except AttributeError:
-#             mags = cal_mag(img.flux)['mag']
-#             ids = ensem.id_s
-#             xs = ensem.x_s
-#             ys = ensem.y_s
-#
-#         #   Fill astropy table
-#         tbl_xy[ID] = Table(
-#             names=['id', 'xcentroid', 'ycentroid', 'mag'],
-#             data=[np.intc(ids), xs, ys, mags]
-#         )
-#
-#     return tbl_xy
-
-
-#   TODO: Remove
-# def mk_posi_tbl_ensem(ensemble):
-#     """
-#         Make position tables
-#
-#         Parameters
-#         ----------
-#         ensemble                : `image ensemble`
-#             Image image ensemble class object
-#
-#         Returns
-#         -------
-#         tbl_xy          : `dictionary` of `astropy.table.Table` objects
-#             X and Y position in pixel among other data
-#     """
-#     #   Define astropy table
-#     tbl_xy = {}
-#
-#     #   Get image
-#     for img in ensemble.image_list:
-#         #   Get magnitudes and positions
-#         try:
-#             mags = cal_mag(img.flux_es)['mag']
-#             ids = ensemble.id_es
-#             xs = ensemble.x_es
-#             ys = ensemble.y_es
-#         except AttributeError:
-#             mags = cal_mag(img.flux)['mag']
-#             ids = ensemble.id_s
-#             xs = ensemble.x_s
-#             ys = ensemble.y_s
-#
-#         #   Fill astropy table
-#         tbl_xy[img.pd] = Table(
-#             names=['id', 'xcentroid', 'ycentroid', 'mag'],
-#             data=[np.intc(ids), xs, ys, mags]
-#         )
-#
-#     return tbl_xy
 
 
 def find_filt(filt_list, in_dict, filt, camera, verbose=False, indent=2):
@@ -932,7 +828,7 @@ def find_filt(filt_list, in_dict, filt, camera, verbose=False, indent=2):
 
 
 def check_variable(filename, filetype, filt_1, filt_2, cali,
-                   ISOcolumntype, ISOcolumn):
+                   iso_column_type, iso_column):
     """
         Check variables and set defaults for CMDs and isochrone plots
 
@@ -956,10 +852,10 @@ def check_variable(filename, filetype, filt_1, filt_2, cali,
         cali                : `dictionary`
             Keys = filter - Values = zero points
 
-        ISOcolumntype       : `dictionary`
+        iso_column_type       : `dictionary`
             Keys = filter - Values = type
 
-        ISOcolumn           : `dictionary`
+        iso_column           : `dictionary`
             Keys = filter - Values = column
     """
 
@@ -971,7 +867,7 @@ def check_variable(filename, filetype, filt_1, filt_2, cali,
         cali,
     )
 
-    check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn)
+    check_variable_absolute_cmd(filt_1, filt_2, iso_column_type, iso_column)
 
     return filename, filetype
 
@@ -1049,7 +945,7 @@ def check_variable_apparent_cmd(filename, filetype, filt_1, filt_2, cali):
     return filename, filetype
 
 
-def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
+def check_variable_absolute_cmd(filt_1, filt_2, iso_column_type, iso_column):
     """
         Check variables and set defaults for CMDs and isochrone plots
 
@@ -1061,16 +957,16 @@ def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
         filt_2              : `string`
             Second filter
 
-        ISOcolumntype       : `dictionary`
+        iso_column_type       : `dictionary`
             Keys = filter - Values = type
 
-        ISOcolumn           : `dictionary`
+        iso_column           : `dictionary`
             Keys = filter - Values = column
     """
     #   Check if the column declaration for the isochrones fits to the
     #   specified filter
     for fil in filt_2:
-        if fil not in ISOcolumntype.keys():
+        if fil not in iso_column_type.keys():
             terminal_output.print_terminal(
                 fil,
                 indent=1,
@@ -1079,7 +975,7 @@ def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
                 style_name='WARNING',
             )
             sys.exit()
-        if fil not in ISOcolumn.keys():
+        if fil not in iso_column.keys():
             terminal_output.print_terminal(
                 fil,
                 indent=1,
@@ -1088,7 +984,7 @@ def check_variable_absolute_cmd(filt_1, filt_2, ISOcolumntype, ISOcolumn):
                 style_name='WARNING',
             )
             sys.exit()
-    if filt_1 not in ISOcolumn.keys():
+    if filt_1 not in iso_column.keys():
         terminal_output.print_terminal(
             filt_1,
             indent=1,
@@ -1350,9 +1246,6 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
     #   Get image IDs, IDs of the objects, and pixel coordinates
     img_ids = img_ensemble.get_image_ids()
 
-    #   Make position table
-    # tbl_xy_final = mk_posi_tbl_ensem(img_ensemble)
-
     #   Make new table with the position of the calibration stars
     tbl_xy_calib = Table(
         names=['xcentroid', 'ycentroid'],
@@ -1361,7 +1254,7 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
 
     #   Make the plot using multiprocessing
     for j, image_id in enumerate(img_ids):
-        if plot_test and j != img_ensemble.ref_id:
+        if plot_test and j != img_ensemble.reference_image_id:
             continue
         p = mp.Process(
             target=plot.starmap,
@@ -1383,8 +1276,8 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
         terminal_output.print_terminal()
 
 
-def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
-                        r_unit='arcsec', indent=1):
+def derive_limiting_magnitude(img_container, filt_list, ref_img, r_limit=4.,
+                              r_unit='arcsec', indent=1):
     """
         Determine limiting magnitude
 
@@ -1404,7 +1297,7 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
             Default is ``4``.
 
         r_unit                  : `string`, optional
-            Unit of the radii above. Allowed are ``pixel`` and ``arcsec``.
+            Unit of the radii above. Permitted are ``pixel`` and ``arcsec``.
             Default is ``arcsec``.
 
         indent          : `integer`, optional
@@ -1413,9 +1306,6 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
     """
     #   Get image ensembles
     img_ensembles = img_container.ensembles
-
-    #   Get calibrated magnitudes
-    cali_mags = img_container.get_calibrated_magnitudes()
 
     #   Get magnitudes of reference image
     for i, filt in enumerate(filt_list):
@@ -1429,22 +1319,6 @@ def derive_limiting_mag(img_container, filt_list, ref_img, r_limit=4.,
         #   TODO: Change to reference image in the future
         photo = ensemble.image_list[0].photometry
 
-        # #   Get object indices and X & Y pixel positions
-        # try:
-        #     x = ensemble.x_es
-        #     y = ensemble.y_es
-        # except AttributeError:
-        #     x = ensemble.x_s
-        #     y = ensemble.y_s
-        #
-        #
-        # mag_data = cali_mags[i][ref_img]
-        #
-        # #   Make astropy table
-        # tbl_mag = Table(
-        #     names=['xcentroid', 'ycentroid', 'mags'],
-        #     data=[x, y, mag_data]
-        # )
         tbl_mag = photo.group_by('mags_fit')
 
         #   Remove implausible dark results
@@ -1578,8 +1452,8 @@ def rm_edge_objects(table, data, border=10, terminal_logger=None, indent=3):
     mask = ((x > hsize) & (x < (data.shape[1] - 1 - hsize)) &
             (y > hsize) & (y < (data.shape[0] - 1 - hsize)))
 
-    out_str = f'{np.count_nonzero(np.invert(mask))} objects removed because '\
-               'they are too close to the image edges'
+    out_str = f'{np.count_nonzero(np.invert(mask))} objects removed because ' \
+              'they are too close to the image edges'
     if terminal_logger is not None:
         terminal_logger.add_to_cache(out_str, indent=indent)
     else:
@@ -1589,7 +1463,7 @@ def rm_edge_objects(table, data, border=10, terminal_logger=None, indent=3):
 
 
 def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
-                            Gmag_limit=20, seplimit=1., sigma=3.,
+                            g_mag_limit=20, seplimit=1., sigma=3.,
                             maxiters_sigma=3):
     """
         Select a sub set of the objects that are close to the median
@@ -1608,7 +1482,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
             Identifier for the catalog to download.
             Default is ``I/350/gaiaedr3``.
 
-        Gmag_limit          : `float`, optional
+        g_mag_limit         : `float`, optional
             Limiting magnitude in the G band. Fainter objects will not be
             downloaded.
 
@@ -1661,7 +1535,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         columns=columns,
         row_limit=1e6,
         catalog=catalog,
-        column_filters={'Gmag': '<' + str(Gmag_limit)},
+        column_filters={'Gmag': '<' + str(g_mag_limit)},
     )
 
     #   Get data from the corresponding catalog for the objects in the FOV
@@ -1696,8 +1570,8 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
     #
 
     #   Proper motion of the common objects
-    pmDE = result[0]['pmDE'][id_calib]
-    pmRA = result[0]['pmRA'][id_calib]
+    pm_de = result[0]['pmDE'][id_calib]
+    pm_ra = result[0]['pmRA'][id_calib]
 
     #   Parallax
     parallax = result[0]['Plx'][id_calib].data / 1000 * u.arcsec
@@ -1706,19 +1580,19 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
     distance = parallax.to_value(u.kpc, equivalencies=u.parallax())
 
     #   Sigma clipping
-    sigma_clip_DE = sigma_clip(
-        pmDE,
+    sigma_clip_de = sigma_clip(
+        pm_de,
         sigma=sigma,
         maxiters=maxiters_sigma,
     )
-    sigma_clip_RA = sigma_clip(
-        pmRA,
+    sigma_clip_ra = sigma_clip(
+        pm_ra,
         sigma=sigma,
         maxiters=maxiters_sigma,
     )
 
     #   Create mask from sigma clipping
-    mask = sigma_clip_RA.mask | sigma_clip_DE.mask
+    mask = sigma_clip_ra.mask | sigma_clip_de.mask
 
     ###
     #   Make plots
@@ -1746,8 +1620,8 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
 
     #   2D and 3D plot of the proper motion and the distance
     plot.comp_scatter(
-        pmRA,
-        pmDE,
+        pm_ra,
+        pm_de,
         'pm_RA * cos(DEC) (mas/yr)',
         'pm_DEC (mas/yr)',
         '_pm_',
@@ -1755,8 +1629,8 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         oneTOone=False,
     )
     plot.D3_scatter(
-        [pmRA],
-        [pmDE],
+        [pm_ra],
+        [pm_de],
         [distance],
         image.outpath.name,
         name_x='pm_RA * cos(DEC) (mas/yr)',
@@ -1832,7 +1706,7 @@ def region_selection(ensemble, coord, tbl, radius=600.):
     return tbl, mask
 
 
-def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
+def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
                  seplimit=1., max_distance=6., parameter_set=1):
     """
         Identify cluster in data
@@ -1850,7 +1724,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
             Identifier for the catalog to download.
             Default is ``I/350/gaiaedr3``.
 
-        Gmag_limit          : `float`, optional
+        g_mag_limit         : `float`, optional
             Limiting magnitude in the G band. Fainter objects will not be
             downloaded.
 
@@ -1921,7 +1795,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         columns=columns,
         row_limit=1e6,
         catalog=catalog,
-        column_filters={'Gmag': '<' + str(Gmag_limit)},
+        column_filters={'Gmag': '<' + str(g_mag_limit)},
     )
 
     #   Get data from the corresponding catalog for the objects in the FOV
@@ -1931,17 +1805,17 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
     )[0]
 
     #   Restrict proper motion to Simbad value plus some margin
-    customSimbad = Simbad()
-    customSimbad.add_votable_fields('pm')
+    custom_simbad = Simbad()
+    custom_simbad.add_votable_fields('pm')
 
-    result_simbad = customSimbad.query_object(ensemble.objname)
+    result_simbad = custom_simbad.query_object(ensemble.objname)
     pmra = result_simbad['PMRA'].value[0]
     pmde = result_simbad['PMDEC'].value[0]
     if pmra != '--' and pmde != '--':
         pm_m = 3.
-        mask_DE = (result['pmDE'] <= pmde - pm_m) | (result['pmDE'] >= pmde + pm_m)
-        mask_RA = (result['pmRA'] <= pmra - pm_m) | (result['pmRA'] >= pmra + pm_m)
-        mask = np.invert(mask_DE | mask_RA)
+        mask_de = (result['pmDE'] <= pmde - pm_m) | (result['pmDE'] >= pmde + pm_m)
+        mask_ra = (result['pmRA'] <= pmra - pm_m) | (result['pmRA'] >= pmra + pm_m)
+        mask = np.invert(mask_de | mask_ra)
         result = result[mask]
 
     #   Create SkyCoord object with coordinates of all Gaia objects
@@ -1970,8 +1844,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
     #
 
     #   Proper motion of the common objects
-    pmDE = result['pmDE'][id_calib]
-    pmRA = result['pmRA'][id_calib]
+    pm_de = result['pmDE'][id_calib]
+    pm_ra = result['pmRA'][id_calib]
 
     #   Parallax
     parallax = result['Plx'][id_calib].data / 1000 * u.arcsec
@@ -1989,7 +1863,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
 
     #   Calculate a mask accounting for NaNs in proper motion and the
     #   distance estimates
-    mask = np.invert(pmRA.mask | pmDE.mask | distance_mask)
+    mask = np.invert(pm_ra.mask | pm_de.mask | distance_mask)
 
     #   Convert astropy table to pandas data frame and add distance
     pd_result = result[id_calib].to_pandas()
@@ -2036,16 +1910,16 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
     #   3D plot of the proper motion and the distance
     #   -> select the star cluster by eye
     groups = pd_result.groupby('cluster')
-    pmRA_group = []
-    pmDE_group = []
+    pm_ra_group = []
+    pm_de_group = []
     distance_group = []
     for name, group in groups:
-        pmRA_group.append(group.pmRA.values)
-        pmDE_group.append(group.pmDE.values)
+        pm_ra_group.append(group.pmRA.values)
+        pm_de_group.append(group.pmDE.values)
         distance_group.append(group.distance.values)
     plot.D3_scatter(
-        pmRA_group,
-        pmDE_group,
+        pm_ra_group,
+        pm_de_group,
         distance_group,
         image.outpath.name,
         # color=np.unique(pd_result['cluster']),
@@ -2057,8 +1931,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
         pmde=pmde,
     )
     plot.D3_scatter(
-        pmRA_group,
-        pmDE_group,
+        pm_ra_group,
+        pm_de_group,
         distance_group,
         image.outpath.name,
         # color=np.unique(pd_result['cluster']),
@@ -2084,13 +1958,13 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", Gmag_limit=20,
     # )
 
     #   Get user input
-    cluster_id, timedOut = timedInput(
+    cluster_id, timed_out = timedInput(
         style.bcolors.OKBLUE +
         "   Which one is the correct cluster (id)? "
         + style.bcolors.ENDC,
         timeout=300,
     )
-    if timedOut or cluster_id == '':
+    if timed_out or cluster_id == '':
         cluster_id = 0
     else:
         cluster_id = int(cluster_id)
@@ -2203,12 +2077,6 @@ def save_mags_ascii(container, tbl, trans=False, id_object=None, rts='',
     formats = {
         'x': '{:12.2f}',
         'y': '{:12.2f}',
-        # "B [mag]": '%12.3f',
-        # "B_err [mag]": '%12.3f',
-        # "V [mag]": '%12.3f',
-        # "V_err [mag]": '%12.3f',
-        # "B-V [mag]": '%12.3f',
-        # "B-V_err [mag]": '%12.3f',
     }
 
     #   Write file
@@ -2372,37 +2240,6 @@ def postprocess_results(img_container, filter_list, id_object=None, photo_type='
         )
 
 
-# def convert_magnitudes_internal_wrapper(img_container, target_filter_system):
-#     """
-#         Gets astropy table with magnitudes from the image container and
-#         calls then the magnitude conversion.
-#
-#         Parameters
-#         ----------
-#         img_container           : `image.container`
-#             Container object with image ensemble objects for each filter
-#
-#         target_filter_system    : `string`
-#             Photometric system the magnitudes should be converted to
-#     """
-#     # #   Get calibrated magnitudes
-#     # cali_mags = img_container.get_calibrated_magnitudes()
-#
-#     #   Get astropy tables with magnitudes
-#     tbl_transformed = getattr(img_container, 'table_mags_transformed', None)
-#     tbl_not_transformed = getattr(
-#         img_container,
-#         'table_mags_not_transformed',
-#         None,
-#     )
-#
-#     #   Convert magnitudes
-#     if tbl_transformed is not None:
-#         convert_magnitudes(tbl_transformed, target_filter_system)
-#     if tbl_not_transformed is not None:
-#         convert_magnitudes(tbl_not_transformed, target_filter_system)
-
-
 def add_column_to_table(tbl, column_name, data, column_id):
     """
         Adds data from an unumpy array to an astropy Table
@@ -2449,6 +2286,46 @@ def add_column_to_table(tbl, column_name, data, column_id):
         )
 
     return tbl
+
+
+def magnitude_array_from_table(img_container, image):
+    """
+        From an astropy table, create a numpy or uncertainty array for magnitudes.
+
+        Parameters
+        ----------
+        img_container   : `image.container`
+            Container object with image ensemble objects for each filter
+
+        image           : `image`
+            Image object
+
+        Returns
+        -------
+        image_mags      : `numpy.ndarray` or `uncertainties.unumpy.uarray`
+            Magnitude array
+    """
+    #   Number of objects
+    n_objects = len(image.photometry)
+
+    #   Check which array type is required
+    unc = getattr(img_container, 'unc', True)
+    if unc:
+        #   Create uncertainties array with the literature magnitudes
+        image_mags = unumpy.uarray(
+            image.photometry['mags_fit'],
+            image.photometry['mags_unc']
+        )
+    else:
+        #   Overall array for the flux and uncertainty
+        image_mags = np.zeros(
+            1,
+            dtype=[('mag', 'f8', n_objects), ('err', 'f8', n_objects)]  # Code requirements require current naming
+        )
+        image_mags['mag'] = image.photometry['mags_fit']
+        image_mags['err'] = image.photometry['mags_unc']
+
+    return image_mags
 
 
 def convert_magnitudes(tbl: Table, target_filter_system: str) -> Table:
@@ -2566,10 +2443,10 @@ def convert_magnitudes(tbl: Table, target_filter_system: str) -> Table:
                 data_dict['g'] = g
                 tbl = add_column_to_table(tbl, 'g', g, image_id)
 
-            u = calib_functions['u'](**data_dict)
-            if u is not None:
-                data_dict['u'] = u
-                tbl = add_column_to_table(tbl, 'u', u, image_id)
+            u_mag = calib_functions['u'](**data_dict)
+            if u_mag is not None:
+                data_dict['u'] = u_mag
+                tbl = add_column_to_table(tbl, 'u', u_mag, image_id)
 
             r = calib_functions['r'](**data_dict)
             if r is not None:
