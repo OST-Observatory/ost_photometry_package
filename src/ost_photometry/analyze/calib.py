@@ -18,7 +18,7 @@ import multiprocessing as mp
 
 from .. import style, calibration_data, terminal_output
 
-from . import aux, correlate, plot
+from . import correlate, plot
 
 
 ############################################################################
@@ -27,7 +27,7 @@ from . import aux, correlate, plot
 
 
 #   TODO: Remove this class?
-class calib_parameters:
+class CalibParameters:
     def __init__(self, inds, column_names, calib_tbl):
         self.inds = inds
         self.column_names = column_names
@@ -76,7 +76,8 @@ def get_comp_stars(coord, filters=['B', 'V'], field_of_view=18.5,
     #   Prepare url
     ra = coord.ra.degree
     dec = coord.dec.degree
-    vsp_template = 'https://www.aavso.org/apps/vsp/api/chart/?format=json&fov={}&maglimit={}&ra={}&dec={}&special=std_field'
+    vsp_template = 'https://www.aavso.org/apps/vsp/api/chart/"\
+        "?format=json&fov={}&maglimit={}&ra={}&dec={}&special=std_field'
 
     #   Download data
     r = requests.get(vsp_template.format(field_of_view, mag_range[1], ra, dec))
@@ -85,9 +86,9 @@ def get_comp_stars(coord, filters=['B', 'V'], field_of_view=18.5,
     status_code = r.status_code
     if status_code != 200:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nThe request of the AAVSO website was not "
+            f"{style.Bcolors.FAIL} \nThe request of the AAVSO website was not "
             "successful.\nProbably no calibration stars found.\n -> EXIT"
-            f"{style.bcolors.ENDC}"
+            f"{style.Bcolors.ENDC}"
         )
     else:
         #   Prepare arrays and lists
@@ -373,7 +374,7 @@ def read_votable_simbad(calib_file, band_list, mag_range=(0., 18.5),
     #   Filter magnitudes: lower and upper threshold
     mask = calib_tbl['FLUX_V'] >= mag_range[0]
     mask = mask * calib_tbl['FLUX_V'] <= mag_range[1]
-    tbl = calib_tbl[mask]
+    calib_tbl = calib_tbl[mask]
 
     #   Define dict with column names
     column_dict = {'ra': 'RA_d', 'dec': 'DEC_d'}
@@ -392,9 +393,9 @@ def read_votable_simbad(calib_file, band_list, mag_range=(0., 18.5),
 
             if not calib_tbl:
                 raise Exception(
-                    f"{style.bcolors.FAIL}\nAll calibration stars in the "
+                    f"{style.Bcolors.FAIL}\nAll calibration stars in the "
                     f"{band} removed because of variability and multiplicity "
-                    f"citeria. -> EXIT {style.bcolors.ENDC}"
+                    f"citeria. -> EXIT {style.Bcolors.ENDC}"
                 )
 
             column_dict['mag' + band] = 'FLUX_' + band
@@ -475,7 +476,7 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
             indent=indent + 1,
         )
         ra_unit = u.hourangle
-    elif calib_method == 'simbad_vot' and calib_file != None:
+    elif calib_method == 'simbad_vot' and calib_file is not None:
         #   Load info from data file in VO format downloaded from Simbad
         calib_tbl, col_names = read_votable_simbad(
             calib_file,
@@ -495,9 +496,9 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
         )
     else:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nCalibration method not recognized\n"
+            f"{style.Bcolors.FAIL} \nCalibration method not recognized\n"
             "Check variable: calib_method and vizier_dict "
-            f"-> EXIT {style.bcolors.ENDC}"
+            f"-> EXIT {style.Bcolors.ENDC}"
         )
 
     terminal_output.print_terminal(
@@ -515,12 +516,13 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
             arr = calib_tbl[col_names['mag' + band]]
             if hasattr(arr, 'mask'):
                 ind_rm = np.where(arr.mask)
+                #   TODO: Add a test to check whether the following line is working or not.
                 calib_tbl.remove_rows(ind_rm)
 
     if not calib_tbl:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo calibration star with {band_list} "
-            f"magnitudes found. -> EXIT {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nNo calibration star with {band_list} "
+            f"magnitudes found. -> EXIT {style.Bcolors.ENDC}"
         )
     terminal_output.print_terminal(
         len(calib_tbl),
@@ -555,8 +557,8 @@ def get_observed_magnitudes_of_calibration_stars(img, mags, img_container):
             Rearrange array with magnitudes
     """
     #   Get calibration data
-    ind_fit = img_container.calib_parameters.inds
-    col_names = img_container.calib_parameters.column_names
+    ind_fit = img_container.CalibParameters.inds
+    col_names = img_container.CalibParameters.column_names
 
     #   Convert index array of the calibration stars to a list
     ind_list = list(ind_fit)
@@ -603,7 +605,7 @@ def get_observed_magnitudes_of_calibration_stars(img, mags, img_container):
 
 def deter_calib(img_container, band_list, calib_method='APASS',
                 dcr=3., option=1, vizier_dict=None,
-                calib_file=None, ID=None, ra_unit=u.deg, dec_unit=u.deg,
+                calib_file=None, id_obj=None, ra_unit=u.deg, dec_unit=u.deg,
                 mag_range=(0., 18.5), rm_obj_coord=None,
                 correl_method='astropy', seplimit=2. * u.arcsec, indent=1):
     """
@@ -639,7 +641,7 @@ def deter_calib(img_container, band_list, calib_method='APASS',
             Path to the calibration file
             Default is ``None``.
 
-        ID                      : `integer`, optional
+        id_obj                  : `integer`, optional
             ID of the object
             Default is ``None``.
 
@@ -686,9 +688,6 @@ def deter_calib(img_container, band_list, calib_method='APASS',
     #   Get wcs
     w = img_ensemble.wcs
 
-    #   Number of filters
-    nfilt = len(band_list)
-
     #   Load calibration data
     calib_tbl, col_names, ra_unit = load_calib(
         img_ensemble,
@@ -698,6 +697,7 @@ def deter_calib(img_container, band_list, calib_method='APASS',
         vizier_dict=vizier_dict,
         calib_file=calib_file,
         indent=indent,
+        ra_unit=ra_unit,
     )
 
     #   Convert coordinates of the calibration stars to SkyCoord object
@@ -781,14 +781,14 @@ def deter_calib(img_container, band_list, calib_method='APASS',
 
     if count_cali == 0:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo calibration star was identified "
-            f"-> EXIT {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nNo calibration star was identified "
+            f"-> EXIT {style.Bcolors.ENDC}"
         )
     if count_cali == 1:
         raise RuntimeError(
-            f"{style.bcolors.FAIL}\nOnly one calibration star was identified\n"
+            f"{style.Bcolors.FAIL}\nOnly one calibration star was identified\n"
             "Unfortunately, that is not enough at the moment\n"
-            f"-> EXIT {style.bcolors.ENDC}"
+            f"-> EXIT {style.Bcolors.ENDC}"
         )
 
     #   Limit calibration table to common objects
@@ -814,8 +814,8 @@ def deter_calib(img_container, band_list, calib_method='APASS',
     )
 
     #   Plot star map with calibration stars
-    if ID is not None:
-        rts = 'calib_' + str(ID)
+    if id_obj is not None:
+        rts = 'calib_' + str(id_obj)
     else:
         rts = 'calib'
     for band in band_list:
@@ -840,7 +840,7 @@ def deter_calib(img_container, band_list, calib_method='APASS',
             p.start()
 
     #   Add calibration data to image container
-    img_container.calib_parameters = calib_parameters(
+    img_container.CalibParameters = CalibParameters(
         ind_fit,
         col_names,
         calib_tbl_sort,
@@ -868,8 +868,8 @@ def magnitude_array_from_calibration_table(img_container, filter_list):
     n_filter = len(filter_list)
 
     #   Get calibration table
-    calib_tbl = img_container.calib_parameters.calib_tbl
-    calib_column_names = img_container.calib_parameters.column_names
+    calib_tbl = img_container.CalibParameters.calib_tbl
+    calib_column_names = img_container.CalibParameters.column_names
 
     count_cali = len(calib_tbl)
 

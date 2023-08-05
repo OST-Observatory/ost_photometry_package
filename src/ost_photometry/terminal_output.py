@@ -34,28 +34,28 @@ def print_terminal(*args, string='', condense=False, indent=1,
     """
     out_string = "".rjust(3 * indent)
     if style_name == 'HEADER':
-        out_string += style.bcolors.HEADER
+        out_string += style.Bcolors.HEADER
 
     elif style_name == 'FAIL':
-        out_string += style.bcolors.FAIL
+        out_string += style.Bcolors.FAIL
 
     elif style_name == 'WARNING':
-        out_string += style.bcolors.WARNING
+        out_string += style.Bcolors.WARNING
 
     elif style_name == 'OKBLUE':
-        out_string += style.bcolors.OKBLUE
+        out_string += style.Bcolors.OKBLUE
 
     elif style_name == 'OKGREEN':
-        out_string += style.bcolors.OKGREEN
+        out_string += style.Bcolors.OKGREEN
 
     elif style_name == 'UNDERLINE':
-        out_string += style.bcolors.UNDERLINE
+        out_string += style.Bcolors.UNDERLINE
 
     else:
-        out_string += style.bcolors.BOLD
+        out_string += style.Bcolors.BOLD
 
     out_string += string.format(*args)
-    out_string += style.bcolors.ENDC
+    out_string += style.Bcolors.ENDC
 
     if condense:
         out_string += '\n'
@@ -110,29 +110,29 @@ def format_string(string, indent=1, style_name='BOLD'):
     """
     string_out = "".rjust(3 * indent)
     if style_name == 'HEADER':
-        string_out += style.bcolors.HEADER
+        string_out += style.Bcolors.HEADER
 
     elif style_name in ['FAIL', 'ERROR']:
-        string_out += style.bcolors.FAIL
+        string_out += style.Bcolors.FAIL
 
     elif style_name == 'WARNING':
-        string_out += style.bcolors.WARNING
+        string_out += style.Bcolors.WARNING
 
     elif style_name in ['OKBLUE', 'OK']:
-        string_out += style.bcolors.OKBLUE
+        string_out += style.Bcolors.OKBLUE
 
     elif style_name in ['OKGREEN', 'GOOD']:
-        string_out += style.bcolors.OKGREEN
+        string_out += style.Bcolors.OKGREEN
 
     elif style_name == 'UNDERLINE':
-        string_out += style.bcolors.UNDERLINE
+        string_out += style.Bcolors.UNDERLINE
 
     else:
-        string_out += style.bcolors.BOLD
+        string_out += style.Bcolors.BOLD
 
     string_out += string
 
-    string_out += style.bcolors.ENDC
+    string_out += style.Bcolors.ENDC
 
     return string_out
 

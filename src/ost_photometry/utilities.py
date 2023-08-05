@@ -32,12 +32,12 @@ from pathlib import Path
 
 from . import checks, terminal_output, style, calibration_data
 
-
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
 
-class image:
+
+class Image:
     """
         Image object used to store and transport some data
     """
@@ -107,31 +107,31 @@ def cal_fov(image, indent=2, verbose=True):
     coord_fov = SkyCoord(ra, dec, unit=(u.hourangle, u.deg), frame="icrs")
 
     #   Number of pixels
-    npixX = header.get('NAXIS1', 0)
-    npixY = header.get('NAXIS2', 0)
+    n_pix_x = header.get('NAXIS1', 0)
+    n_pix_y = header.get('NAXIS2', 0)
 
-    if npixX == 0:
+    if n_pix_x == 0:
         raise ValueError(
-            f"{style.bcolors.FAIL}\nException in cal_fov(): X dimension of "
-            f"the image is 0 {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL}\nException in cal_fov(): X dimension of "
+            f"the image is 0 {style.Bcolors.ENDC}"
         )
-    if npixY == 0:
+    if n_pix_y == 0:
         raise ValueError(
-            f"{style.bcolors.FAIL}\nException in cal_fov(): Y dimension of "
-            f"the image is 0 {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL}\nException in cal_fov(): Y dimension of "
+            f"the image is 0 {style.Bcolors.ENDC}"
         )
 
     #   Get binning
-    binX = header.get('XBINNING', 1)
-    binY = header.get('YBINNING', 1)
+    bin_x = header.get('XBINNING', 1)
+    bin_y = header.get('YBINNING', 1)
 
     #   Set instrument
     instrument = header.get('INSTRUME', '')
 
     if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
         #   Physical chip dimensions in pixel
-        xdim_phy = npixX * binX
-        ydim_phy = npixY * binY
+        xdim_phy = n_pix_x * bin_x
+        ydim_phy = n_pix_y * bin_y
 
         #   Set instrument
         if xdim_phy == 9576 and ydim_phy == 6388:
@@ -146,8 +146,8 @@ def cal_fov(image, indent=2, verbose=True):
     #   Calculate chip size in mm
     if 'XPIXSZ' in header:
         pixwidth = header['XPIXSZ']
-        d = npixX * pixwidth / 1000
-        h = npixY * pixwidth / 1000
+        d = n_pix_x * pixwidth / 1000
+        h = n_pix_y * pixwidth / 1000
     else:
         d, h = calibration_data.get_chip_dimensions(instrument)
 
@@ -160,7 +160,7 @@ def cal_fov(image, indent=2, verbose=True):
     fov_y = fov_y * 360. / 2. / np.pi * 60.
 
     #   Calculate pixel scale
-    pixscale = fov * 60 / npixX
+    pixscale = fov * 60 / n_pix_x
 
     #   Create RectangleSkyRegion that covers the field of view
     # region_sky = RectangleSkyRegion(
@@ -171,9 +171,9 @@ def cal_fov(image, indent=2, verbose=True):
     # )
     #   Create RectanglePixelRegion that covers the field of view
     region_pix = RectanglePixelRegion(
-        center=PixCoord(x=int(npixX / 2), y=int(npixY / 2)),
-        width=npixX,
-        height=npixY,
+        center=PixCoord(x=int(n_pix_x / 2), y=int(n_pix_y / 2)),
+        width=n_pix_x,
+        height=n_pix_y,
     )
 
     #   Add to image class
@@ -191,9 +191,9 @@ def cal_fov(image, indent=2, verbose=True):
         obs_time = header.get('DATE-OBS', None)
         if not obs_time:
             raise ValueError(
-                f"{style.bcolors.FAIL} \tERROR: No information about the "
+                f"{style.Bcolors.FAIL} \tERROR: No information about the "
                 "observation time was found in the header"
-                f"{style.bcolors.ENDC}"
+                f"{style.Bcolors.ENDC}"
             )
         jd = Time(obs_time, format='fits').jd
 
@@ -233,21 +233,21 @@ def mkfilelist(path, formats=[".FIT", ".fit", ".FITS", ".fits"], addpath=False,
         nfiles      : `interger`
             Number of files
     """
-    fileList = os.listdir(path)
+    file_list = os.listdir(path)
     if sort:
-        fileList.sort()
+        file_list.sort()
 
     #   Remove not TIFF entries
-    tempList = []
-    for file_i in fileList:
+    temp_list = []
+    for file_i in file_list:
         for j, form in enumerate(formats):
             if file_i.find(form) != -1:
                 if addpath:
-                    tempList.append(os.path.join(path, file_i))
+                    temp_list.append(os.path.join(path, file_i))
                 else:
-                    tempList.append(file_i)
+                    temp_list.append(file_i)
 
-    return tempList, int(len(fileList))
+    return temp_list, int(len(file_list))
 
 
 def random_string_generator(str_size):
@@ -312,7 +312,7 @@ def timeis(func):
 
 
 #   TODO: Remove unused functions?
-def startProgress(title):
+def start_progress(title):
     """
         Start progress bar
     """
@@ -333,7 +333,7 @@ def progress(x):
     progress_x = x
 
 
-def endProgress():
+def end_progress():
     """
         End progress bar
     """
@@ -460,12 +460,12 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
 
     #   Select file depending on whether cosmics were rm or not
     if rmcos:
-        wcsFILE = path_cos
+        wcs_file = path_cos
     else:
-        wcsFILE = image.path
+        wcs_file = image.path
 
     #   Get image base name
-    basename = get_basename(wcsFILE)
+    basename = get_basename(wcs_file)
 
     #   Compose file name
     filename = basename + '.new'
@@ -482,7 +482,7 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
         f'solve-field --overwrite --scale-units arcsecperpix --scale-low '
         f'{image.pixscale - 0.1} --scale-high {image.pixscale + 0.1} --ra {ra} '
         f'--dec {dec} --radius 1.0 --dir {wcs_dir} --resort '
-        '{} --fits-image'.format(str(wcsFILE).replace(" ", "\ "))
+        '{} --fits-image'.format(str(wcs_file).replace(" ", "\ "))
     )
 
     #   Running the command
@@ -497,11 +497,11 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
     rfind = cmd_output.stdout.find('Creating new FITS file')
     if rcode != 0 or rfind == -1:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo wcs solution could be found for "
-            f"the images!\n {style.bcolors.ENDC}{style.bcolors.BOLD}"
+            f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
+            f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"
             f"The command was:\n {command} \nDetailed error output:\n"
-            f"{style.bcolors.ENDC}{cmd_output.stdout}{cmd_output.stderr}"
-            f"{style.bcolors.FAIL}Exit{style.bcolors.ENDC}"
+            f"{style.Bcolors.ENDC}{cmd_output.stdout}{cmd_output.stderr}"
+            f"{style.Bcolors.FAIL}Exit{style.Bcolors.ENDC}"
         )
 
     terminal_output.print_terminal(
@@ -581,7 +581,7 @@ def find_wcs_twirl(image, x=None, y=None, indent=2):
     plt.savefig('/tmp/test_twirl.pdf', bbox_inches='tight', format='pdf')
     plt.show()
 
-    ##wcs = twirl.compute_wcs(
+    # #wcs = twirl.compute_wcs(
     # objects,
     # (coord.ra.deg, coord.dec.deg),
     # fov/60,
@@ -600,7 +600,7 @@ def find_wcs_twirl(image, x=None, y=None, indent=2):
     return wcs
 
 
-def find_wcs_astap(image, indent=2, force_wcs_determ=False):
+def find_wcs_astap(image, indent=2):
     """
         Find WCS (using ASTAP)
 
@@ -613,31 +613,26 @@ def find_wcs_astap(image, indent=2, force_wcs_determ=False):
             Indentation for the console output lines
             Default is ``2``.
 
-        force_wcs_determ    : `boolean`, optional
-            If ``True`` a new WCS determination will be calculated even if
-            a WCS is already present in the FITS Header.
-            Default is ``False``.
-
         Returns
         -------
         w                   : `astropy.wcs.WCS`
             WCS information
     """
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
+        "Searching for a WCS solution (pixel to ra/dec conversion)"
+        f" for image {image.pd}",
         indent=indent,
-        string="Searching for a WCS solution (pixel to ra/dec conversion)" \
-               " for image {}".format(image.pd),
     )
 
     #   FOV in degrees
     fov = image.fov_y / 60.
 
     #   Path to image
-    wcsFILE = image.path
+    wcs_file = image.path
 
     #   String passed to the shell
     command = (
-        'astap_cli -f {} -r 1 -fov {} -update'.format(wcsFILE, fov)
+        'astap_cli -f {} -r 1 -fov {} -update'.format(wcs_file, fov)
     )
 
     #   Running the command
@@ -652,11 +647,11 @@ def find_wcs_astap(image, indent=2, force_wcs_determ=False):
     rfind = cmd_output.stdout.find('Solution found:')
     if rcode != 0 or rfind == -1:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo wcs solution could be found for "
-            f"the images!\n {style.bcolors.ENDC}{style.bcolors.BOLD}"
+            f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
+            f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"
             f"The command was:\n{command} \nDetailed error output:\n"
-            f"{style.bcolors.ENDC}{cmd_output.stdout}{cmd_output.stderr}"
-            f"{style.bcolors.FAIL}Exit{style.bcolors.ENDC}"
+            f"{style.Bcolors.ENDC}{cmd_output.stdout}{cmd_output.stderr}"
+            f"{style.Bcolors.FAIL}Exit{style.Bcolors.ENDC}"
         )
 
     terminal_output.print_terminal(
@@ -666,7 +661,7 @@ def find_wcs_astap(image, indent=2, force_wcs_determ=False):
     )
 
     #   Get image hdu list
-    hdulist = fits.open(wcsFILE)
+    hdulist = fits.open(wcs_file)
 
     #   Extract the WCS
     w = wcs.WCS(hdulist[0].header)
@@ -703,10 +698,10 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
             Path to the image with the WCS
     """
     #   Path to image
-    wcsFILE = image.path
+    wcs_file = image.path
 
     #   Get WCS of the original image
-    wcs_original = wcs.WCS(fits.open(wcsFILE)[0].header)
+    wcs_original = wcs.WCS(fits.open(wcs_file)[0].header)
 
     #   Determine wcs type of original WCS
     wcs_original_type = wcs_original.get_axis_types()[0]['coordinate_type']
@@ -717,7 +712,7 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
             string="Image contains already a valid WCS.",
             style_name='OKGREEN',
         )
-        return True, wcsFILE
+        return True, wcs_file
     else:
         #   Check if an image with a WCS in the astronomy.net format exists
         #   in the wcs directory (`wcs_dir`)

@@ -10,7 +10,6 @@ import scipy.interpolate as interpolate
 
 from . import terminal_output
 
-
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
@@ -837,13 +836,13 @@ Tcs = {
 }
 
 
-def getTcs(obsJD):
+def get_tcs(observation_jd):
     """
         Get the Tcs calibration values for the provided JD
 
         Parameters
         ----------
-        obsJD           : `float`
+        observation_jd           : `float`
             JD of the observation
 
         Returns
@@ -851,10 +850,10 @@ def getTcs(obsJD):
         Tcs             : `dictionary`
             Tcs calibration factors
     """
-    if obsJD is not None:
+    if observation_jd is not None:
         for key in Tcs.keys():
             t = Time(key, format='isot', scale='utc')
-            if obsJD >= t.jd:
+            if observation_jd >= t.jd:
                 return Tcs[key]
 
     return None

@@ -11,7 +11,7 @@ import multiprocessing as mp
 from astropy.stats import sigma_clipped_stats
 from astropy.stats import sigma_clip as sigma_clipping
 
-from . import calib, analyze, aux, plot
+from . import calib, analyze, utilities, plot
 
 from .. import checks, style, calibration_data, terminal_output
 
@@ -69,16 +69,16 @@ def cal_err_t(image, lit_mags, color_mag, tc, id_1, id_2, id_f,
     u = np.zeros(count, dtype=[('err', 'f8')])
 
     #   ZP errors
-    u_zp = aux.err_prop(image.mags_fit['err'], lit_mags['err'][id_f])
+    u_zp = utilities.err_prop(image.mags_fit['err'], lit_mags['err'][id_f])
     u_zp_clip = np.median(u_zp[mask])
 
     #   Literature color errors
-    ucl = aux.err_prop(lit_mags['err'][id_1], lit_mags['err'][id_2])
+    ucl = utilities.err_prop(lit_mags['err'][id_1], lit_mags['err'][id_2])
     ucl_clip = np.median(ucl[mask])
 
     for i in range(0, count):
         #   Err: delta(color) [(inst_2 - inst_1) - (lit_2 - lit_1)]
-        udc = aux.err_prop(
+        udc = utilities.err_prop(
             image.mags_1['err'][i],
             image.mags_2['err'][i],
             ucl_clip,
@@ -89,7 +89,7 @@ def cal_err_t(image, lit_mags, color_mag, tc, id_1, id_2, id_f,
 
         #   Errors including magnitude transformation
         if ttype == 'simple':
-            u_obj = aux.err_prop(
+            u_obj = utilities.err_prop(
                 image.mags['err'][i],
                 u_zp_clip,
                 tc['color'] * color * tc['C_err'],
@@ -102,8 +102,8 @@ def cal_err_t(image, lit_mags, color_mag, tc, id_1, id_2, id_f,
             c_2 = tc['T_2'] - tc['k_2'] * air_mass
 
             #   c_1 & c_2 errors
-            u_c_1 = aux.err_prop(tc['T_1_err'], air_mass * tc['k_1_err'])
-            u_c_2 = aux.err_prop(tc['T_2_err'], air_mass * tc['k_2_err'])
+            u_c_1 = utilities.err_prop(tc['T_1_err'], air_mass * tc['k_1_err'])
+            u_c_2 = utilities.err_prop(tc['T_2_err'], air_mass * tc['k_2_err'])
 
         elif ttype == 'derive':
             c_1 = image.C_1
@@ -112,9 +112,9 @@ def cal_err_t(image, lit_mags, color_mag, tc, id_1, id_2, id_f,
             u_c_2 = image.C_2_err
         else:
             raise Exception(
-                f"{style.bcolors.FAIL} \nType of magnitude transformation not "
+                f"{style.Bcolors.FAIL} \nType of magnitude transformation not "
                 "known \n\t-> Check calibration coefficients \n\t-> Exit"
-                f"{style.bcolors.ENDC}"
+                f"{style.Bcolors.ENDC}"
             )
 
         if ttype in ['airmass', 'derive']:
@@ -122,7 +122,7 @@ def cal_err_t(image, lit_mags, color_mag, tc, id_1, id_2, id_f,
             d = 1. - c_1 + c_2
 
             #   Denominator error
-            u_d = aux.err_prop(u_c_1, u_c_2)
+            u_d = utilities.err_prop(u_c_1, u_c_2)
 
             #   C or more precise C'
             if id_f == id_1:
@@ -132,11 +132,11 @@ def cal_err_t(image, lit_mags, color_mag, tc, id_1, id_2, id_f,
 
             #   C error
             if id_f == id_1:
-                u_c = aux.err_prop(u_c_1 * d, u_d * c_1 / d / d)
+                u_c = utilities.err_prop(u_c_1 * d, u_d * c_1 / d / d)
             elif id_f == id_2:
-                u_c = aux.err_prop(u_c_2 * d, u_d * c_2 / d / d)
+                u_c = utilities.err_prop(u_c_2 * d, u_d * c_2 / d / d)
 
-            u_obj = aux.err_prop(
+            u_obj = utilities.err_prop(
                 image.mags['err'][i],
                 u_zp_clip,
                 u_c * color,
@@ -172,11 +172,11 @@ def cal_err(mask, mags_fit, lit_mags, mags):
             Propagated uncertainty
     """
     #   ZP errors
-    u_zp = aux.err_prop(mags_fit, lit_mags)
+    u_zp = utilities.err_prop(mags_fit, lit_mags)
     u_zp_clip = np.median(u_zp[mask])
 
     #   Add up errors
-    u = aux.err_prop(
+    u = utilities.err_prop(
         mags,
         u_zp_clip,
     )
@@ -445,12 +445,12 @@ def prepare_trans(img_container, tcs, filter_list, filt_i, id_img_i,
 
     #   Load calibration coefficients
     if tcs is None:
-        tcs = calibration_data.getTcs(img_i.jd)
+        tcs = calibration_data.get_tcs(img_i.jd)
 
     #   Check if transformation is possible with the calibration
     #   coefficients.
     if tcs is not None and not derive_tcs:
-        tc, filt_id_1, filt_id_2 = aux.find_filt(
+        tc, filt_id_1, filt_id_2 = utilities.find_filt(
             filter_list,
             tcs,
             band,
@@ -493,7 +493,7 @@ def prepare_trans(img_container, tcs, filter_list, filt_i, id_img_i,
 
         #   Check if calibration data is available for the
         #   filter in``filter_list`
-        filter_calib = img_container.calib_parameters.column_names
+        filter_calib = img_container.CalibParameters.column_names
         for band in filter_list:
             if 'mag' + band not in filter_calib:
                 tc_type = None
@@ -592,7 +592,7 @@ def derive_trans_onthefly(image, f_list, id_f, id_1, id_2, color_lit_clip,
     x0 = np.array([1.0, 1.0])
 
     #   Fit function
-    fit_func = aux.lin_func
+    fit_func = utilities.lin_func
 
     #   Get required type for magnitude array.
     unc = checks.check_unumpy_array(color_lit_clip)
@@ -615,14 +615,14 @@ def derive_trans_onthefly(image, f_list, id_f, id_1, id_2, color_lit_clip,
     sigma = np.array(color_lit_err_plot)
 
     #   Fit
-    z_1, z_1_err, t_1, t_1_err = aux.fit_curve(
+    z_1, z_1_err, t_1, t_1_err = utilities.fit_curve(
         fit_func,
         color_lit_plot,
         diff_mag_plot_1,
         x0,
         sigma,
     )
-    z_2, z_2_err, t_2, t_2_err = aux.fit_curve(
+    z_2, z_2_err, t_2, t_2_err = utilities.fit_curve(
         fit_func,
         color_lit_plot,
         diff_mag_plot_2,
@@ -828,9 +828,9 @@ def trans_core(image, lit_mag_1, lit_mag_2, mag_cali_fit_1, mag_cali_fit_2,
 
     else:
         raise Exception(
-            f"{style.bcolors.FAIL}\nType of magnitude transformation not known"
+            f"{style.Bcolors.FAIL}\nType of magnitude transformation not known"
             "\n\t-> Check calibration coefficients \n\t-> Exit"
-            f"{style.bcolors.ENDC}"
+            f"{style.Bcolors.ENDC}"
         )
 
     if ttype in ['airmass', 'derive']:
@@ -844,10 +844,10 @@ def trans_core(image, lit_mag_1, lit_mag_2, mag_cali_fit_1, mag_cali_fit_2,
             c = c_2 / denominator
         else:
             raise Exception(
-                f"{style.bcolors.FAIL} \nMagnitude transformation: filter "
+                f"{style.Bcolors.FAIL} \nMagnitude transformation: filter "
                 "combination not valid \n\t-> This should never happen. The "
                 f"current filter  ID is {id_f}, while filter IDs are {id_1} "
-                f"and {id_2} {style.bcolors.ENDC}"
+                f"and {id_2} {style.Bcolors.ENDC}"
             )
 
     #   Calculate calibrated magnitudes
@@ -1354,7 +1354,7 @@ def prepare_zp(img_container, image, id_i, mag_lit, mag_fit_i,
     #   Plot sigma clipping if it makes sense
     if not np.all(mag_lit == 0.):
         #   Make fit
-        zp_fit = aux.fit_data_one_d(
+        zp_fit = utilities.fit_data_one_d(
             mag_fit_i[image.ZP_mask],
             mag_lit[id_i][image.ZP_mask],
             1,
@@ -1473,7 +1473,7 @@ def apply_calib(img_container, filter_list, tcs=None, derive_tcs=False,
     count = len(ind)
 
     #   Prepare arrays
-    aux.prepare_arrays(img_container, n_filter, count)
+    utilities.prepare_arrays(img_container, n_filter, count)
 
     #   Initialize bool and image ID for transformation
     id_tuple_trans = []
@@ -1503,7 +1503,7 @@ def apply_calib(img_container, filter_list, tcs=None, derive_tcs=False,
         #   Loop over images
         for id_img_i, img_i in enumerate(img_list):
             #   Get magnitude array for image i
-            img_i_mags = aux.magnitude_array_from_table(img_container, img_i)
+            img_i_mags = utilities.magnitude_array_from_table(img_container, img_i)
 
             #   TODO: Remove later
             #   Add magnitudes to image
@@ -1527,7 +1527,7 @@ def apply_calib(img_container, filter_list, tcs=None, derive_tcs=False,
                 )
 
                 #   Get magnitude array for image o
-                img_o_mags = aux.magnitude_array_from_table(img_container, img_o)
+                img_o_mags = utilities.magnitude_array_from_table(img_container, img_o)
 
                 #   Get extracted magnitudes of the calibration stars
                 #   for the image in the ``o``ther filter
@@ -1618,7 +1618,7 @@ def apply_calib(img_container, filter_list, tcs=None, derive_tcs=False,
     #   If transformation is available
     if np.any(cali != 0.):
         #   Make astropy table
-        table_mags_transformed = aux.mk_mag_table(
+        table_mags_transformed = utilities.mk_mag_table(
             ind,
             x,
             y,
@@ -1631,7 +1631,7 @@ def apply_calib(img_container, filter_list, tcs=None, derive_tcs=False,
         img_container.table_mags_transformed = table_mags_transformed
 
         #   Save to file
-        aux.save_mags_ascii(
+        utilities.save_mags_ascii(
             img_container,
             table_mags_transformed,
             trans=True,
@@ -1648,7 +1648,7 @@ def apply_calib(img_container, filter_list, tcs=None, derive_tcs=False,
     #   Without transformation
 
     #   Make astropy table
-    table_mags_not_transformed = aux.mk_mag_table(
+    table_mags_not_transformed = utilities.mk_mag_table(
         ind,
         x,
         y,
@@ -1661,7 +1661,7 @@ def apply_calib(img_container, filter_list, tcs=None, derive_tcs=False,
     img_container.table_mags_not_transformed = table_mags_not_transformed
 
     #   Save to file
-    aux.save_mags_ascii(
+    utilities.save_mags_ascii(
         img_container,
         table_mags_not_transformed,
         trans=False,
@@ -1671,7 +1671,7 @@ def apply_calib(img_container, filter_list, tcs=None, derive_tcs=False,
 
 
 def deter_trans(img_container, key_filt, filter_list, tbl_trans,
-                fit_func=aux.lin_func, weights=True, indent=2):
+                fit_func=utilities.lin_func, weights=True, indent=2):
     """
         Determine the magnitude transformation factors
 
@@ -1708,7 +1708,7 @@ def deter_trans(img_container, key_filt, filter_list, tbl_trans,
     id_filt = filter_list.index(key_filt)
 
     #   Get calibration parameters
-    calib_parameters = img_container.calib_parameters
+    calib_parameters = img_container.CalibParameters
 
     #   Get calibration data
     mags_lit = calib_parameters.mags_lit
@@ -1753,9 +1753,9 @@ def deter_trans(img_container, key_filt, filter_list, tbl_trans,
             lit_mags = mags_lit['mag']
             lit_errs = mags_lit['err']
 
-            color_lit_err = aux.err_prop(lit_errs[0], lit_errs[1])
-            color_fit_err = aux.err_prop(fit_err_1, fit_err_2)
-            zero_err = aux.err_prop(lit_errs[id_filt], fit_err_key)
+            color_lit_err = utilities.err_prop(lit_errs[0], lit_errs[1])
+            color_fit_err = utilities.err_prop(fit_err_1, fit_err_2)
+            zero_err = utilities.err_prop(lit_errs[id_filt], fit_err_key)
 
         color_lit = lit_mags[0] - lit_mags[1]
         color_fit = fit_mags_1 - fit_mags_2
@@ -1793,7 +1793,7 @@ def deter_trans(img_container, key_filt, filter_list, tbl_trans,
             sigma = 0.
 
         #   Fit
-        a, _, b, tcolor_err = aux.fit_curve(
+        a, _, b, tcolor_err = utilities.fit_curve(
             fit_func,
             color_lit_plot,
             color_fit_plot,
@@ -1833,7 +1833,7 @@ def deter_trans(img_container, key_filt, filter_list, tbl_trans,
             sigma = 0.
 
         #   Fit
-        zdash, zdash_err, tmag, tmag_err = aux.fit_curve(
+        zdash, zdash_err, tmag, tmag_err = utilities.fit_curve(
             fit_func,
             color_lit_plot,
             zero_plot,
@@ -1994,7 +1994,7 @@ def calculate_trans(img_container, key_filt, filt_list, tbl_trans,
     #   Plot image with the final positions overlaid
     #   (final version)
     #
-    aux.prepare_and_plot_starmap_final(
+    utilities.prepare_and_plot_starmap_final(
         img_container,
         filt_list,
     )

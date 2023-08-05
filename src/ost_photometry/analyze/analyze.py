@@ -58,21 +58,22 @@ from photutils.background import Background2D, MedianBackground
 
 import multiprocessing as mp
 
-from . import aux, calib, trans, plot, correlate
+from . import utilities, calib, trans, plot, correlate
 # from . import subtraction
 
 from .. import style, checks, terminal_output, calibration_data
 
-from .. import aux as base_aux
+from .. import utilities as base_utilities
 
 warnings.filterwarnings('ignore', category=UserWarning, append=True)
+
 
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
 
 
-class image_container:
+class ImageContainer:
     """
         Container class for image class objects
     """
@@ -208,7 +209,7 @@ class image_container:
         return cali_mags
 
 
-class image_ensemble:
+class ImageEnsemble:
     """
         Image ensemble class: Used to handle multiple images, e.g.,
         an image series taken in a specific filter
@@ -221,39 +222,39 @@ class image_ensemble:
         #
         if os.path.isdir(path):
             formats = [".FIT", ".fit", ".FITS", ".fits"]
-            fileList = os.listdir(path)
+            file_list = os.listdir(path)
 
             #   Remove not FITS entries
-            tempList = []
-            for file_i in fileList:
+            temp_list = []
+            for file_i in file_list:
                 for j, form in enumerate(formats):
                     if file_i.find(form) != -1:
-                        tempList.append(file_i)
-            fileList = tempList
+                        temp_list.append(file_i)
+            file_list = temp_list
         elif os.path.isfile(path):
-            fileList = [str(path).split('/')[-1]]
+            file_list = [str(path).split('/')[-1]]
             path = os.path.dirname(path)
         else:
             raise RuntimeError(
-                f'{style.bcolors.FAIL}ERROR: Provided path is neither a file'
-                f' nor a directory -> EXIT {style.bcolors.ENDC}'
+                f'{style.Bcolors.FAIL}ERROR: Provided path is neither a file'
+                f' nor a directory -> EXIT {style.Bcolors.ENDC}'
             )
 
         ###
         #   Check if the id of the reference image is valid
         #
-        if reference_image_id > len(fileList):
+        if reference_image_id > len(file_list):
             raise ValueError(
-                f'{style.bcolors.FAIL} ERROR: Reference image ID '
+                f'{style.Bcolors.FAIL} ERROR: Reference image ID '
                 '[reference_image_id] is larger than the total number of '
-                f'images! -> EXIT {style.bcolors.ENDC}'
+                f'images! -> EXIT {style.Bcolors.ENDC}'
             )
 
         #   Set filter
         self.filt = filt
 
         #   Set number of images
-        self.nfiles = len(fileList)
+        self.nfiles = len(file_list)
 
         #   Set ID of the reference image
         self.reference_image_id = reference_image_id
@@ -272,15 +273,15 @@ class image_ensemble:
             string="Read images and calculate FOV, PIXEL scale, etc. ... ",
             indent=2,
         )
-        for image_id, file_name in enumerate(fileList):
+        for image_id, file_name in enumerate(file_list):
             self.image_list.append(
                 #   Prepare image class instance
-                self.image(image_id, filt, obj_name, path, file_name, outdir)
+                self.Image(image_id, filt, obj_name, path, file_name, outdir)
             )
 
             #   Calculate field of view and additional quantities and add
             #   them to the image class instance
-            base_aux.cal_fov(self.image_list[image_id], verbose=False)
+            base_utilities.cal_fov(self.image_list[image_id], verbose=False)
 
         #   Set reference image
         self.ref_img = self.image_list[reference_image_id]
@@ -312,7 +313,7 @@ class image_ensemble:
         self.wcs = None
 
     #   Image class
-    class image:
+    class Image:
         def __init__(self, pd, filt, obj_name, path, file_name, outdir):
             #   Set image ID
             self.pd = pd
@@ -541,7 +542,7 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
             reduced = reduced.divide(exposure * u.second)
 
         #   Set file name
-        basename = base_aux.get_basename(image.filename)
+        basename = base_utilities.get_basename(image.filename)
         file_name = basename + '_cosmic-rm.fit'
 
         #   Set new file name and path
@@ -560,7 +561,7 @@ def rm_cosmic(image, objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
         reduced.write(image.path, overwrite=True)
 
 
-def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
+def mk_bg(image, sigma_bkg=5., d2=True, apply_background=True,
           verbose=False):
     """
         Determine background, using photutils
@@ -574,7 +575,7 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
             Sigma used for the sigma clipping of the background
             Default is ``5.``.
 
-        D2                  : `boolean`, optional
+        d2                  : `boolean`, optional
             If True a 2D background will be estimated and subtracted.
             Default is ``True``.
 
@@ -605,7 +606,7 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
     image.std_rms = bkgrms(img.data)
 
     #   2D background?
-    if D2:
+    if d2:
         #   Estimate 2D background
         bkg_estimator = MedianBackground()
         bkg = Background2D(
@@ -646,7 +647,7 @@ def mk_bg(image, sigma_bkg=5., D2=True, apply_background=True,
         img_no_bg.meta['NO_BG'] = True
 
     #   Define name and save image
-    file_name = base_aux.get_basename(image.filename) + '_nobg.fit'
+    file_name = base_utilities.get_basename(image.filename) + '_nobg.fit'
     outpath = image.outpath / 'nobg'
     checks.check_out(outpath)
     img_no_bg.write(outpath / file_name, overwrite=True)
@@ -730,8 +731,8 @@ def find_stars(image, sigma_psf, multi_start=5., method='IRAF',
         tbl_posi_all = iraffind(img.data)
     else:
         raise RuntimeError(
-            f"{style.bcolors.FAIL}\nExtraction method ({method}) not valid: "
-            f"use either IRAF or DAO {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL}\nExtraction method ({method}) not valid: "
+            f"use either IRAF or DAO {style.Bcolors.ENDC}"
         )
 
     #   Add positions to image class
@@ -795,7 +796,7 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
     if terminal_logger is not None:
         terminal_logger.add_to_cache(
             out_string,
-            indent=indent+1,
+            indent=indent + 1,
             style_name='OK',
         )
     else:
@@ -825,8 +826,8 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
     #   Check if enough stars have been identified
     if (id_p99 - frac < min_stars and strict) or (id_p99 - frac < 1 and not strict):
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNot enough stars ({id_p99 - frac}) found "
-            f"to determine the ePSF in the {istring} band{style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nNot enough stars ({id_p99 - frac}) found "
+            f"to determine the ePSF in the {istring} band{style.Bcolors.ENDC}"
         )
 
     #   Resize table -> limit it to the suitable stars
@@ -850,14 +851,14 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
     #   Check if there are still enough stars
     if (num_clean < min_stars and strict) or (num_clean < 1 and not strict):
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNot enough stars ({num_clean}) for the "
+            f"{style.Bcolors.FAIL} \nNot enough stars ({num_clean}) for the "
             f"ePSF determination in the {istring} band image. Too many "
             "potential ePSF stars have been removed, because they are too "
             "close to the image border. Check first that enough stars have "
             "been identified, using the starmap_?.pdf files.\n If that is "
             "the case, shrink extraction region or allow for higher fraction "
             "of ePSF stars (size_epsf) from all identified stars "
-            f"(frac_epsf_stars). {style.bcolors.ENDC}"
+            f"(frac_epsf_stars). {style.Bcolors.ENDC}"
         )
 
     #   Find all potential ePSF stars with close neighbors
@@ -897,14 +898,14 @@ def check_epsf_stars(image, size=25, min_stars=25, frac_epsf=0.2,
     #   Check if there are still enough stars
     if (num_clean < min_stars and strict) or (num_clean < 1 and not strict):
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNot enough stars ({num_clean}) for the "
+            f"{style.Bcolors.FAIL} \nNot enough stars ({num_clean}) for the "
             f"ePSF determination in the {istring} band image. Too many "
             "potential ePSF stars have been removed, because other "
             "stars are in the extraction region. Check first that enough "
             "stars have been identified, using the starmap_?.pdf files.\n"
             "If that is the case, shrink extraction region or allow for "
             "higher fraction of ePSF stars (size_epsf) from all identified "
-            f"stars (frac_epsf_stars). {style.bcolors.ENDC}"
+            f"stars (frac_epsf_stars). {style.Bcolors.ENDC}"
         )
 
     #   Add ePSF stars to image class
@@ -978,7 +979,7 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
         )
         terminal_logger.add_to_cache(
             f"{num_fit} bright stars used",
-            indent=indent+1,
+            indent=indent + 1,
             style_name='OK',
         )
     else:
@@ -988,7 +989,7 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
         )
         terminal_output.print_to_terminal(
             f"{num_fit} bright stars used",
-            indent=indent+1,
+            indent=indent + 1,
             style_name='OK',
         )
 
@@ -1170,8 +1171,8 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
         )
     else:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nExtraction method ({method_finder}) "
-            f"not valid: use either IRAF or DAO {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nExtraction method ({method_finder}) "
+            f"not valid: use either IRAF or DAO {style.Bcolors.ENDC}"
         )
     #   Fitter used
     fitter = LevMarLSQFitter()
@@ -1274,8 +1275,8 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
             result_tbl.remove_rows(spoiled_fits)
     except:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nProblem with cleanup of negative "
-            f"uncertainties... {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nProblem with cleanup of negative "
+            f"uncertainties... {style.Bcolors.ENDC}"
         )
 
     #   Clean output for objects with negative pixel coordinates
@@ -1288,39 +1289,39 @@ def epsf_extract(image, sigma_psf, sigma_bkg=5., use_init_guesses=True,
         result_tbl.remove_rows(spoiled_fits)
     except:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nProblem with cleanup of negative pixel "
-            f"coordinates... {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nProblem with cleanup of negative pixel "
+            f"coordinates... {style.Bcolors.ENDC}"
         )
 
     if num_spoiled != 0:
         out_str = f"{num_spoiled} objects removed because of poor fit quality"
         if terminal_logger is not None:
-            terminal_logger.add_to_cache(out_str, indent=indent+1)
+            terminal_logger.add_to_cache(out_str, indent=indent + 1)
         else:
-            terminal_output.print_to_terminal(out_str, indent=indent+1)
+            terminal_output.print_to_terminal(out_str, indent=indent + 1)
 
     try:
         nstars = len(result_tbl['flux_fit'].data)
     except:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nTable produced by "
+            f"{style.Bcolors.FAIL} \nTable produced by "
             "IterativelySubtractedPSFPhotometry is empty after cleaning up "
             "of objects with negative pixel coordinates and negative "
-            f"uncertainties {style.bcolors.ENDC}"
+            f"uncertainties {style.Bcolors.ENDC}"
         )
 
     out_str = f"{nstars} good stars extracted from the image"
     if terminal_logger is not None:
-        terminal_logger.add_to_cache(out_str, indent=indent+1, style_name='OK')
+        terminal_logger.add_to_cache(out_str, indent=indent + 1, style_name='OK')
     else:
         terminal_output.print_to_terminal(
             out_str,
-            indent=indent+1,
+            indent=indent + 1,
             style_name='OK'
         )
 
     #   Remove objects that are too close to the image edges
-    result_tbl = aux.rm_edge_objects(
+    result_tbl = utilities.rm_edge_objects(
         result_tbl,
         data,
         int((sizepho - 1) / 2),
@@ -1430,8 +1431,8 @@ def define_apertures(image, r, r_in, r_out, r_unit):
     #   Check unit of radii
     if r_unit not in ['pixel', 'arcsec']:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nUnit of the aperture radii not valid: "
-            f"set it either to pixel or arcsec {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nUnit of the aperture radii not valid: "
+            f"set it either to pixel or arcsec {style.Bcolors.ENDC}"
         )
 
     #   Convert radii in arcsec to pixel
@@ -1606,10 +1607,10 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
 
         #   Calculate aperture background and the corresponding error
         phot['aper_bkg'] = bkg_phot['aperture_sum'] * aperture.area \
-                         / annulus_aperture.area
+            / annulus_aperture.area
 
         phot['aper_bkg_err'] = bkg_phot['aperture_sum_err'] * aperture.area \
-                             / annulus_aperture.area
+            / annulus_aperture.area
 
         bg_err = phot['aper_bkg_err']
 
@@ -1647,12 +1648,12 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
         r_border = int(round(r_out / pixscale))
     else:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nException in aperture_extract(): '"
-            f"\n'r_unit ({r_unit}) not known -> Exit {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nException in aperture_extract(): '"
+            f"\n'r_unit ({r_unit}) not known -> Exit {style.Bcolors.ENDC}"
         )
 
     #   Remove objects that are too close to the image edges
-    phot = aux.rm_edge_objects(
+    phot = utilities.rm_edge_objects(
         phot,
         data,
         r_border,
@@ -1661,8 +1662,8 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
 
     #   Remove negative flux values as they are not physical
     flux = np.array(phot['flux_fit'])
-    mask = np.where(flux > 0.)
-    phot['flux_fit'] = phot['flux_fit'][mask]
+    mask = np.where(flux > 0.).ravel()
+    phot = phot[mask]
 
     #   Add photometry to image class
     image.photometry = phot
@@ -1686,13 +1687,13 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
     if terminal_logger is not None:
         terminal_logger.add_to_cache(
             f"{nstars} good stars extracted from the image",
-            indent=indent+1,
+            indent=indent + 1,
             style_name='OK',
         )
     else:
         terminal_output.print_to_terminal(
             f"{nstars} good stars extracted from the image",
-            indent=indent+1,
+            indent=indent + 1,
             style_name='OK',
         )
 
@@ -2038,8 +2039,8 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 #
 #     if n_calib == 0:
 #         raise Exception(
-#             f"{style.bcolors.FAIL} \nNo match between calibrations stars and "
-#             f"the\n extracted stars detected. -> EXIT {style.bcolors.ENDC}"
+#             f"{style.Bcolors.FAIL} \nNo match between calibrations stars and "
+#             f"the\n extracted stars detected. -> EXIT {style.Bcolors.ENDC}"
 #         )
 #
 #     ###
@@ -2100,7 +2101,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 #     ###
 #     #   Plot image with the final positions overlaid (final version)
 #     #
-#     aux.prepare_and_plot_starmap_final_3(
+#     utilities.prepare_and_plot_starmap_final_3(
 #         img_ensemble,
 #         calib_xs,
 #         calib_ys,
@@ -2110,7 +2111,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 
 def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
                                 option=1, maxid=1, reference_image_id=0,
-                                nmissed=1, bfrac=1.0, s_refOBJ=True,
+                                nmissed=1, bfrac=1.0, protect_reference_obj=True,
                                 correl_method='astropy',
                                 seplimit=2. * u.arcsec, verbose=False,
                                 plot_test=True):
@@ -2158,7 +2159,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
             objects with valid source positions.
             Default is ``1.0``.
 
-        s_refOBJ            : `boolean`, optional
+        protect_reference_obj            : `boolean`, optional
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
@@ -2191,15 +2192,15 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     )
 
     variable_id, count, x_obj, y_obj = correlate.identify_star_in_dataset(
-            img_ensemble.image_list[reference_image_id].photometry['x_fit'],
-            img_ensemble.image_list[reference_image_id].photometry['y_fit'],
-            ra_obj,
-            dec_obj,
-            img_ensemble.wcs,
-            seplimit=seplimit,
-            dcr=dcr,
-            option=option,
-            verbose=verbose,
+        img_ensemble.image_list[reference_image_id].photometry['x_fit'],
+        img_ensemble.image_list[reference_image_id].photometry['y_fit'],
+        ra_obj,
+        dec_obj,
+        img_ensemble.wcs,
+        seplimit=seplimit,
+        dcr=dcr,
+        option=option,
+        verbose=verbose,
     )
 
     ###
@@ -2207,8 +2208,8 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     #
     if count == 0:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \tERROR: The variable object was not "
-            f"detected in the reference image.\n\t-> EXIT{style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \tERROR: The variable object was not "
+            f"detected in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
         )
 
     ###
@@ -2222,7 +2223,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         ref_obj=[int(variable_id)],
         nmissed=nmissed,
         bfrac=bfrac,
-        s_ref_obj=s_refOBJ,
+        s_ref_obj=protect_reference_obj,
         correl_method=correl_method,
         seplimit=seplimit,
     )
@@ -2252,14 +2253,14 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     #
     if count == 0:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \tERROR: The variable was not detected "
-            f"in the reference image.\n\t-> EXIT{style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \tERROR: The variable was not detected "
+            f"in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
         )
 
     ###
     #   Plot image with the final positions overlaid (final version)
     #
-    aux.prepare_and_plot_starmap_final_3(
+    utilities.prepare_and_plot_starmap_final_3(
         img_ensemble,
         [x_obj],
         [y_obj],
@@ -2267,7 +2268,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     )
 
     #   Add ID of the variable star to the image ensemble
-    img_ensemble.variable_ID = variable_id
+    img_ensemble.variable_id = variable_id
 
 
 def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
@@ -2408,7 +2409,7 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
     #              multiprocessing
     #
     #   Initialize multiprocessing object
-    executor = aux.Executor(ncores)
+    executor = utilities.Executor(ncores)
 
     #   Main loop
     for image in img_ensemble.image_list:
@@ -2453,8 +2454,8 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
     #   Exit if exceptions occurred
     if executor.err is not None:
         raise RuntimeError(
-            f'\n{style.bcolors.FAIL}Extraction using multiprocessing failed '
-            f'for {filt} :({style.bcolors.ENDC}'
+            f'\n{style.Bcolors.FAIL}Extraction using multiprocessing failed '
+            f'for {filt} :({style.Bcolors.ENDC}'
         )
 
     #   Close multiprocessing pool and wait until it finishes
@@ -2770,8 +2771,8 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
 
     else:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nExtraction method ({photometry}) not "
-            f"valid: use either APER or PSF {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nExtraction method ({photometry}) not "
+            f"valid: use either APER or PSF {style.Bcolors.ENDC}"
         )
 
     #   Conversion of flux to magnitudes
@@ -2779,7 +2780,7 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
         image.photometry['flux_fit'],
         image.photometry['flux_unc']
     )
-    mags = aux.mag_u_arr(uflux_img)
+    mags = utilities.mag_u_arr(uflux_img)
 
     image.photometry['mags_fit'] = unumpy.nominal_values(mags)
     image.photometry['mags_unc'] = unumpy.std_devs(mags)
@@ -2788,7 +2789,7 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
     #   Plot images with extracted stars overlaid
     #
     if plot_ifi or (plot_test and image.pd == refid):
-        aux.prepare_and_plot_starmap(image, terminal_logger=log_terminal)
+        utilities.prepare_and_plot_starmap(image, terminal_logger=log_terminal)
 
     if multiprocessing:
         log_terminal.print_to_terminal('')
@@ -2805,7 +2806,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
                  frac_epsf_stars=0.2, oversampling=2, maxiters=7,
                  epsf_use_init_guesses=True, method='IRAF', multi=5.0,
                  multi_grouper=2.0, strict_cleaning=True, min_eps_stars=25,
-                 refid=0, strict_eps=True, photometry='PSF', rstars=5.,
+                 reference_image_id=0, strict_eps=True, photometry='PSF', rstars=5.,
                  rbg_in=7., rbg_out=10., r_unit='arcsec', rmcos=False,
                  objlim=5., readnoise=8., sigclip=4.5, satlevel=65535.,
                  plot_ifi=False, plot_test=True):
@@ -2814,56 +2815,55 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
 
         Parameters
         ----------
-        img_container   : `image.container`
+        img_container           : `image.container`
             Container object with image ensemble objects for each filter
 
-        filter_list     : `list` of `string`
+        filter_list             : `list` of `string`
             Filter list
 
-        name            : `string`
+        name                    : `string`
             Name of the object
 
-        img_paths       : `dictionary`
+        img_paths               : `dictionary`
             Paths to images: key - filter name; value - path
 
-        outdir          : `string`
+        outdir                  : `string`
             Path, where the output should be stored.
 
-        sigma_psf       : `dictionary`
+        sigma_psf               : `dictionary`
             Sigma of the objects PSF, assuming it is a Gaussian
 
-        wcs_method      : `string`, optional
+        wcs_method              : `string`, optional
             Method that should be used to determine the WCS.
             Default is ``'astrometry'``.
 
-
-        force_wcs_determ    : `boolean`, optional
+        force_wcs_determ        : `boolean`, optional
             If ``True`` a new WCS determination will be calculated even if
             a WCS is already present in the FITS Header.
             Default is ``False``.
 
-        sigma_bkg       : `float`, optional
+        sigma_bkg               : `float`, optional
             Sigma used for the sigma clipping of the background
             Default is ``5.``.
 
-        multi_start     : `float`, optional
+        multi_start             : `float`, optional
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
             Default is ``5.0``.
 
-        size_epsf       : `integer`, optional
+        size_epsf               : `integer`, optional
             Size of the extraction region in pixel
             Default is `25``.
 
-        frac_epsf_stars : `float`, optional
+        frac_epsf_stars         : `float`, optional
             Fraction of all stars that should be used to calculate the ePSF
             Default is ``0.2``.
 
-        oversampling    : `integer`, optional
+        oversampling            : `integer`, optional
             ePSF oversampling factor
             Default is ``2``.
 
-        maxiters        : `integer`, optional
+        maxiters                : `integer`, optional
             Number of ePSF iterations
             Default is ``7``.
 
@@ -2873,84 +2873,84 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
             will be identified by means of the ``method_finder`` method.
             Default is ``True``.
 
-        method         : `string`, optional
+        method                  : `string`, optional
             Finder method DAO or IRAF
             Default is ``IRAF``.
 
-        multi           : `float`, optional
+        multi                   : `float`, optional
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
             Default is ``5.0``.
 
-        multi_grouper   : `float`, optional
+        multi_grouper           : `float`, optional
             Multiplier for the DAO grouper
             Default is ``5.0``.
 
-        strict_cleaning : `boolean`, optional
+        strict_cleaning         : `boolean`, optional
             If True objects with negative flux uncertainties will be removed
             Default is ``True``.
 
-        min_eps_stars   : `integer`, optional
+        min_eps_stars           : `integer`, optional
             Minimal number of required ePSF stars
             Default is ``25``.
 
-        refid           : `integer`, optional
+        reference_image_id      : `integer`, optional
             ID of the reference image
             Default is ``0``.
 
-        photometry      : `string`, optional
+        photometry              : `string`, optional
             Switch between aperture and ePSF photometry.
             Possibilities: 'PSF' & 'APER'
             Default is ``PSF``.
 
-        rstars          : `float`, optional
+        rstars                  : `float`, optional
             Radius of the stellar aperture
             Default is ``5``.
 
-        rbg_in          : `float`, optional
+        rbg_in                  : `float`, optional
             Inner radius of the background annulus
             Default is ``7``.
 
-        rbg_out         : `float`, optional
+        rbg_out                 : `float`, optional
             Outer radius of the background annulus
             Default is ``10``.
 
-        r_unit          : `string`, optional
+        r_unit                  : `string`, optional
             Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
             Default is ``arcsec``.
 
-        strict_eps      ; `boolean`, optional
+        strict_eps              : `boolean`, optional
             If True a stringent test of the ePSF conditions is applied.
             Default is ``True``.
 
-        rmcos           : `bool`
+        rmcos                   : `bool`
             If True cosmic rays will be removed from the image.
             Default is ``False``.
 
-        objlim          : `float`, optional
+        objlim                  : `float`, optional
             Parameter for the cosmic ray removal: Minimum contrast between
             Laplacian image and the fine structure image.
             Default is ``5``.
 
-        readnoise       : `float`, optional
+        readnoise               : `float`, optional
             The read noise (e-) of the camera chip.
             Default is ``8`` e-.
 
-        sigclip         : `float`, optional
+        sigclip                 : `float`, optional
             Parameter for the cosmic ray removal: Fractional detection limit
             for neighboring pixels.
             Default is ``4.5``.
 
-        satlevel        : `float`, optional
+        satlevel                : `float`, optional
             Saturation limit of the camera chip.
             Default is ``65535``.
 
-        plot_ifi        : `boolean`, optional
+        plot_ifi                : `boolean`, optional
             If True star map plots for all stars are created
             Default is ``False``.
 
-        plot_test       : `boolean`, optional
-            If True a star map plots only for the reference image [refid] is
+        plot_test               : `boolean`, optional
+            If True a star map plots only for the reference image [reference_image_id] is
             created
             Default is ``True``.
     """
@@ -2973,7 +2973,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
         checks.check_file(img_paths[filt])
 
         #   Initialize image ensemble object
-        img_container.ensembles[filt] = current_ensemble = image_ensemble(
+        img_container.ensembles[filt] = current_ensemble = ImageEnsemble(
             filt,
             name,
             img_paths[filt],
@@ -2984,7 +2984,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
         #   Find the WCS solution for the image
         #
         try:
-            aux.find_wcs(
+            utilities.find_wcs(
                 current_ensemble,
                 reference_image_id=0,
                 method=wcs_method,
@@ -3012,7 +3012,7 @@ def extract_flux(img_container, filter_list, name, img_paths, outdir,
         #   Main extraction
         #
         main_extract(
-            current_ensemble.image_list[0],
+            current_ensemble.image_list[reference_image_id],
             sigma_psf[filt],
             sigma_bkg=sigma_bkg,
             multi_start=multi_start,
@@ -3078,7 +3078,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
                        strict_cleaning=True, min_eps_stars=25, strict_eps=True,
                        photometry='PSF', rstars=5., rbg_in=7., rbg_out=10.,
                        r_unit='arcsec', dcr=3., option=1, maxid=1, reference_image_id=0,
-                       nmissed=1, bfrac=1.0, s_refOBJ=True,
+                       nmissed=1, bfrac=1.0, protect_reference_obj=True,
                        correl_method='astropy', seplimit=2. * u.arcsec,
                        verbose=False, search_image=True, plot_ifi=False,
                        plot_test=True):
@@ -3224,7 +3224,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             objects with valid source positions.
             Default is ``1.0``.
 
-        s_refOBJ            : `boolean`, optional
+        protect_reference_obj            : `boolean`, optional
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
@@ -3275,7 +3275,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
         )
 
         #   Initialize image ensemble object
-        img_container.ensembles[filt] = image_ensemble(
+        img_container.ensembles[filt] = ImageEnsemble(
             filt,
             name,
             img_paths[filt],
@@ -3286,7 +3286,7 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
         ###
         #   Find the WCS solution for the image
         #
-        aux.find_wcs(
+        utilities.find_wcs(
             img_container.ensembles[filt],
             reference_image_id=reference_image_id,
             method=wcs_method,
@@ -3338,7 +3338,8 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
             reference_image_id=reference_image_id,
             nmissed=nmissed,
             bfrac=bfrac,
-            s_refOBJ=s_refOBJ,
+
+            protect_reference_obj=protect_reference_obj,
             verbose=verbose,
             plot_test=plot_test,
             correl_method=correl_method,
@@ -3348,9 +3349,9 @@ def extract_flux_multi(img_container, filter_list, name, img_paths, outdir,
 
 def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
                         ref_img=0, calib_method='APASS', vizier_dict=None,
-                        calib_file=None, ID=None, ra_unit=u.deg,
-                        dec_unit=u.deg, mag_range=(0., 18.5), Tcs=None,
-                        derive_Tcs=False, plot_sigma=False, photo_type='',
+                        calib_file=None, object_id=None, ra_unit=u.deg,
+                        dec_unit=u.deg, mag_range=(0., 18.5), tcs=None,
+                        derive_tcs=False, plot_sigma=False, photo_type='',
                         region=False, radius=600, data_cluster=False,
                         pm_median=False, max_distance_cluster=6.,
                         find_cluster_para_set=1, correl_method='astropy',
@@ -3393,7 +3394,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
             Path to the calibration file
             Default is ``None``.
 
-        ID                      : `integer` or `None`, optional
+        object_id                      : `integer` or `None`, optional
             ID of the object
             Default is ``None``.
 
@@ -3409,11 +3410,11 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
             Magnitude range
             Default is ``(0.,18.5)``.
 
-        Tcs                     : `dictionary`, optional
+        tcs                     : `dictionary`, optional
             Calibration coefficients for the magnitude transformation
             Default is ``None``.
 
-        derive_Tcs              : `boolean`, optional
+        derive_tcs              : `boolean`, optional
             If True the magnitude transformation coefficients will be
             calculated from the current data even if calibration coefficients
             are available in the database.
@@ -3499,7 +3500,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     #   Plot image with the final positions overlaid (final version)
     #
     if len(filter_list) > 1:
-        aux.prepare_and_plot_starmap_final(
+        utilities.prepare_and_plot_starmap_final(
             img_container,
             filter_list,
         )
@@ -3525,8 +3526,8 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     trans.apply_calib(
         img_container,
         filter_list,
-        tcs=Tcs,
-        derive_tcs=derive_Tcs,
+        tcs=tcs,
+        derive_tcs=derive_tcs,
         plot_sigma=plot_sigma,
         photo_type=photo_type,
         refid=ref_img,
@@ -3536,10 +3537,10 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     #   Restrict results to specific areas of the image and filter by means
     #   of proper motion and distance using Gaia
     #
-    aux.postprocess_results(
+    utilities.postprocess_results(
         img_container,
         filter_list,
-        id_object=ID,
+        id_object=object_id,
         photo_type=photo_type,
         region=region,
         radius=radius,
@@ -3554,7 +3555,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     ###
     #   Determine limiting magnitudes
     #
-    aux.derive_limiting_magnitude(
+    utilities.derive_limiting_magnitude(
         img_container,
         filter_list,
         ref_img,
@@ -3565,10 +3566,10 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
 
 def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                          outdir, transit_time, period, valid_calibs=None,
-                         binn=None, Tcs=None, derive_Tcs=False, reference_image_id=0,
+                         binn=None, tcs=None, derive_tcs=False, reference_image_id=0,
                          calib_method='APASS', vizier_dict=None, calib_file=None,
                          mag_range=(0., 18.5), dcr=3., option=1, maxid=1,
-                         nmissed=1, bfrac=1.0, s_refOBJ=True, photo_type='',
+                         nmissed=1, bfrac=1.0, protect_reference_obj=True, photo_type='',
                          correl_method='astropy', seplimit=2. * u.arcsec,
                          verbose=False, plot_test=True, plot_ifi=False,
                          plot_sigma=False):
@@ -3610,11 +3611,11 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
             Binning factor for the light curve.
             Default is ``None```.
 
-        Tcs                 : `dictionary`, optional
+        tcs                 : `dictionary`, optional
             Calibration coefficients for the magnitude transformation
             Default is ``None``.
 
-        derive_Tcs          : `boolean`, optional
+        derive_tcs          : `boolean`, optional
             If True the magnitude transformation coefficients will be
             calculated from the current data even if calibration coefficients
             are available in the database.
@@ -3665,7 +3666,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
             objects with valid source positions.
             Default is ``1.0``.
 
-        s_refOBJ            : `boolean`, optional
+        protect_reference_obj            : `boolean`, optional
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
@@ -3727,7 +3728,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         i = 1
 
                     #   Get object ID
-                    obj_id = img_container.ensembles[filt].variable_ID
+                    obj_id = img_container.ensembles[filt].variable_id
 
                     ###
                     #   Correlate star positions from the different filter
@@ -3741,19 +3742,18 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         ref_obj=[obj_id],
                         nmissed=nmissed,
                         bfrac=bfrac,
-                        s_ref_obj=s_refOBJ,
+                        s_ref_obj=protect_reference_obj,
                         correl_method=correl_method,
                         seplimit=seplimit,
                     )
 
                     ###
-                    #   Reidentify position of the variable star
+                    #   Re-identify position of the variable star
                     #
                     terminal_output.print_terminal(
                         string="Identify the variable star",
                     )
 
-                    #   TODO: Replace with function
                     obj_id, count, _, _ = correlate.identify_star_in_dataset(
                         img_container.ensembles[filt].image_list[reference_image_id].photometry['x_fit'],
                         img_container.ensembles[filt].image_list[reference_image_id].photometry['y_fit'],
@@ -3765,47 +3765,16 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         option=option,
                         verbose=verbose,
                     )
-                    # if correl_method == 'astropy':
-                    #     objID, count, _, _ = correlate.posi_obj_astropy(
-                    #         img_container.ensembles[filt].x_es,
-                    #         img_container.ensembles[filt].y_es,
-                    #         ra_obj,
-                    #         dec_obj,
-                    #         img_container.ensembles[filt].wcs,
-                    #         seplimit=seplimit,
-                    #     )
-                    #
-                    # elif correl_method == 'own':
-                    #     inds_obj, count, _, _ = correlate.posi_obj_srcor(
-                    #         img_container.ensembles[filt].x_es,
-                    #         img_container.ensembles[filt].y_es,
-                    #         ra_obj,
-                    #         dec_obj,
-                    #         img_container.ensembles[filt].wcs,
-                    #         dcr=dcr,
-                    #         option=option,
-                    #         verbose=verbose,
-                    #     )
-                    #     if verbose:
-                    #         terminal_output.print_terminal()
-                    #
-                    #     #   Current object ID
-                    #     objID = inds_obj[1]
-                    #
-                    # else:
-                    #     raise ValueError(
-                    #         f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.'
-                    #     )
 
                     #   Set new object ID
-                    img_container.ensembles[filt].variable_ID = obj_id
+                    img_container.ensembles[filt].variable_id = obj_id
 
                     #   Check if variable star was detected
                     if count == 0:
                         raise RuntimeError(
-                            f"{style.bcolors.FAIL} \tERROR: The variable "
+                            f"{style.Bcolors.FAIL} \tERROR: The variable "
                             "star was not detected in the reference image.\n"
-                            f"\t-> EXIT {style.bcolors.ENDC}"
+                            f"\t-> EXIT {style.Bcolors.ENDC}"
                         )
 
                     ###
@@ -3826,7 +3795,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                     terminal_output.print_terminal()
 
                     #   Stop here if calibration data is not available
-                    filter_calib = img_container.calib_parameters.column_names
+                    filter_calib = img_container.CalibParameters.column_names
                     if ('mag' + calib_fil[0] not in filter_calib or
                             'mag' + calib_fil[1] not in filter_calib):
                         err_filter = None
@@ -3856,8 +3825,8 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                     trans.apply_calib(
                         img_container,
                         calib_fil,
-                        tcs=Tcs,
-                        derive_tcs=derive_Tcs,
+                        tcs=tcs,
+                        derive_tcs=derive_tcs,
                         plot_mags=plot_mags,
                         photo_type=photo_type,
                         refid=reference_image_id,
@@ -3883,14 +3852,14 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                     #   Create mask for time series to remove images
                     #   without entries
                     # mask_ts = np.isin(
-                    ##cali_mags['med'][i][:,objID],
+                    # #cali_mags['med'][i][:,objID],
                     # cali_mags[i][:,objID],
                     # [0.],
                     # invert=True
                     # )
 
                     #   Create a time series object
-                    ts = aux.mk_ts(
+                    ts = utilities.mk_ts(
                         otime,
                         cali_mags[i],
                         filt,
@@ -3947,7 +3916,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
             )
 
             #   Check if calibration data is available
-            filter_calib = img_container.calib_parameters.column_names
+            filter_calib = img_container.CalibParameters.column_names
             if 'mag' + filt not in filter_calib:
                 terminal_output.print_terminal(
                     filt,
@@ -3992,11 +3961,11 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
             )
 
             #   Create a time series object
-            ts = aux.mk_ts(
+            ts = utilities.mk_ts(
                 otime,
                 plot_quantity,
                 filt,
-                img_container.ensembles[filt].variable_ID,
+                img_container.ensembles[filt].variable_id,
             )
 
             #   Write time series
@@ -4057,6 +4026,11 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
             Method that should be used to determine the WCS.
             Default is ``'astrometry'``.
 
+        plot_comp       : `boolean`, optional
+            If `True` a plot with the original and reference image will
+            be created.
+            Default is ``True``.
+
         hips_source     : `string`
             ID string of the image catalog that will be queried using the
             hips service.
@@ -4092,7 +4066,7 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
     img.meta['NAXIS2'] = ytrim
 
     #   Save trimmed file
-    basename = base_aux.get_basename(path)
+    basename = base_utilities.get_basename(path)
     file_name = basename + '_trimmed.fit'
     file_path = os.path.join(outdir, file_name)
     img.write(file_path, overwrite=True)
@@ -4100,7 +4074,7 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
     ###
     #   Initialize image ensemble object
     #
-    img_ensemble = image_ensemble(
+    img_ensemble = ImageEnsemble(
         filt,
         name,
         path,
@@ -4110,7 +4084,7 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
     ###
     #   Find the WCS solution for the image
     #
-    aux.find_wcs(
+    utilities.find_wcs(
         img_ensemble,
         reference_image_id=0,
         method=wcs_method,
@@ -4122,15 +4096,15 @@ def subtract_archive_img_from_img(filt, name, path, outdir,
     #
     # from astropy.utils import data
     # data.Conf.remote_timeout=600
-    hipsInstance = hips2fitsClass()
-    hipsInstance.timeout = 120000
+    hips_instance = hips2fitsClass()
+    hips_instance.timeout = 120000
     # hipsInstance.timeout = 1200000000
     # hipsInstance.timeout = (200000000, 200000000)
-    hipsInstance.server = "https://alaskybis.cds.unistra.fr/hips-image-services/hips2fits"
-    print(hipsInstance.timeout)
-    print(hipsInstance.server)
+    hips_instance.server = "https://alaskybis.cds.unistra.fr/hips-image-services/hips2fits"
+    print(hips_instance.timeout)
+    print(hips_instance.server)
     # hips_hdus = hips2fits.query_with_wcs(
-    hips_hdus = hipsInstance.query_with_wcs(
+    hips_hdus = hips_instance.query_with_wcs(
         hips=hips_source,
         wcs=img_ensemble.wcs,
         get_query_payload=False,

@@ -38,7 +38,7 @@ import multiprocessing as mp
 
 import scipy.optimize as optimization
 
-from .. import aux as base_aux
+from .. import utilities as base_aux
 
 from .. import checks, style, terminal_output, calibration_data
 
@@ -324,8 +324,8 @@ def find_wcs(image_ensemble, reference_image_id=None, method='astrometry', rmcos
             elif method == 'twirl':
                 if x is None or y is None:
                     raise RuntimeError(
-                        f"{style.bcolors.FAIL} \nException in find_wcs(): '"
-                        f"\n'x' or 'y' is None -> Exit {style.bcolors.ENDC}"
+                        f"{style.Bcolors.FAIL} \nException in find_wcs(): '"
+                        f"\n'x' or 'y' is None -> Exit {style.Bcolors.ENDC}"
                     )
                 image_ensemble.set_wcs(
                     base_aux.find_wcs_twirl(img, x, y, indent=indent)
@@ -333,9 +333,9 @@ def find_wcs(image_ensemble, reference_image_id=None, method='astrometry', rmcos
             #   Raise exception
             else:
                 raise RuntimeError(
-                    f"{style.bcolors.FAIL} \nException in find_wcs(): '"
+                    f"{style.Bcolors.FAIL} \nException in find_wcs(): '"
                     f"\nWCS method not known -> Supplied method was {method}"
-                    f"{style.bcolors.ENDC}"
+                    f"{style.Bcolors.ENDC}"
                 )
         else:
             image_ensemble.set_wcs(extract_wcs(wcs_file))
@@ -362,18 +362,18 @@ def find_wcs(image_ensemble, reference_image_id=None, method='astrometry', rmcos
                 elif method == 'twirl':
                     if x is None or y is None:
                         raise RuntimeError(
-                            f"{style.bcolors.FAIL} \nException in "
+                            f"{style.Bcolors.FAIL} \nException in "
                             "find_wcs(): ' \n'x' or 'y' is None -> Exit"
-                            f"{style.bcolors.ENDC}"
+                            f"{style.Bcolors.ENDC}"
                         )
                     w = base_aux.find_wcs_twirl(img, x, y, indent=indent)
 
                 #   Raise exception
                 else:
                     raise RuntimeError(
-                        f"{style.bcolors.FAIL} \nException in find_wcs(): '"
+                        f"{style.Bcolors.FAIL} \nException in find_wcs(): '"
                         "\nWCS method not known -> Supplied method was "
-                        f"{method} {style.bcolors.ENDC}"
+                        f"{method} {style.Bcolors.ENDC}"
                     )
             else:
                 w = wcs.WCS(fits.open(img.path)[0].header)
@@ -410,9 +410,9 @@ def extract_wcs(wcs_path, image_wcs=None, rmcos=False, filters=None):
         if rmcos:
             if filters is None:
                 raise Exception(
-                    f"{style.bcolors.FAIL} \nException in extract_wcs(): '"
+                    f"{style.Bcolors.FAIL} \nException in extract_wcs(): '"
                     "\n'rmcos=True' buit no 'filters' given -> Exit"
-                    f"{style.bcolors.ENDC}"
+                    f"{style.Bcolors.ENDC}"
                 )
             basename = f'img_cut_{filters[0]}_lacosmic'
         else:
@@ -682,8 +682,8 @@ def mag_arr(flux_arr):
 
     else:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nDimension of the flux array > 2. This "
-            f"is not supported. -> Exit {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nDimension of the flux array > 2. This "
+            f"is not supported. -> Exit {style.Bcolors.ENDC}"
         )
 
     ###
@@ -724,8 +724,8 @@ def mag_u_arr(flux):
     dim = len(shape)
     if 0 == dim or dim > 2:
         raise ValueError(
-            f"{style.bcolors.FAIL} \nDimension of the flux array > 2. This "
-            f"is not supported. -> Exit {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nDimension of the flux array > 2. This "
+            f"is not supported. -> Exit {style.Bcolors.ENDC}"
         )
 
     #   Calculate magnitudes
@@ -1626,9 +1626,9 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         'pm_DEC (mas/yr)',
         '_pm_',
         image.outpath.name,
-        oneTOone=False,
+        one_to_one=False,
     )
-    plot.D3_scatter(
+    plot.d3_scatter(
         [pm_ra],
         [pm_de],
         [distance],
@@ -1889,8 +1889,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         affinity = 'rbf'
     else:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo valid parameter set defined: "
-            f"Possibilities are 1, 2, or 3. {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nNo valid parameter set defined: "
+            f"Possibilities are 1, 2, or 3. {style.Bcolors.ENDC}"
         )
     spectral_cluster_model = SpectralClustering(
         # eigen_solver='lobpcg',
@@ -1917,7 +1917,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         pm_ra_group.append(group.pmRA.values)
         pm_de_group.append(group.pmDE.values)
         distance_group.append(group.distance.values)
-    plot.D3_scatter(
+    plot.d3_scatter(
         pm_ra_group,
         pm_de_group,
         distance_group,
@@ -1930,7 +1930,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         pmra=pmra,
         pmde=pmde,
     )
-    plot.D3_scatter(
+    plot.d3_scatter(
         pm_ra_group,
         pm_de_group,
         distance_group,
@@ -1959,9 +1959,9 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
 
     #   Get user input
     cluster_id, timed_out = timedInput(
-        style.bcolors.OKBLUE +
+        style.Bcolors.OKBLUE +
         "   Which one is the correct cluster (id)? "
-        + style.bcolors.ENDC,
+        + style.Bcolors.ENDC,
         timeout=300,
     )
     if timed_out or cluster_id == '':

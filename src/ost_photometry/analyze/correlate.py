@@ -5,7 +5,7 @@
 import numpy as np
 
 from .. import style, terminal_output
-from ..style import bcolors
+from ..style import Bcolors
 
 from astropy.coordinates import SkyCoord, matching
 import astropy.units as u
@@ -427,8 +427,8 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
         )
     else:
         raise ValueError(
-            f'{style.bcolors.FAIL}Correlation method not known. Expected: '
-            f'"own" or astropy, but got "{correl_method}"{style.bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}Correlation method not known. Expected: '
+            f'"own" or astropy, but got "{correl_method}"{style.Bcolors.ENDC}'
         )
 
     ###
@@ -437,13 +437,13 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
     #
     if count == 1:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nOnly one common object "
-            f"found! {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nOnly one common object "
+            f"found! {style.Bcolors.ENDC}"
         )
     elif count == 0:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo common objects "
-            f"found!{style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nNo common objects "
+            f"found!{style.Bcolors.ENDC}"
         )
     else:
         terminal_output.print_to_terminal(
@@ -485,8 +485,9 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
     return ind_sr, ref_ori_new, reject, count
 
 
-def astropycor(x, y, w, reference_image_id=0, reference_obj=[], nmissed=1, protect_reference_obj=True,
-               seplimit=2. * u.arcsec, cleanup_advanced=True):
+def astropycor(x, y, w, reference_image_id=0, reference_obj=[], nmissed=1,
+               protect_reference_obj=True, seplimit=2. * u.arcsec,
+               cleanup_advanced=True):
     """
         Correlation based on astropy matching algorithm
 
@@ -642,9 +643,9 @@ def astropycor(x, y, w, reference_image_id=0, reference_obj=[], nmissed=1, prote
         if np.any(ref_isin):
             if n <= 2:
                 raise RuntimeError(
-                    f"{style.bcolors.FAIL} \nReference object only found one "
+                    f"{style.Bcolors.FAIL} \nReference object only found one "
                     "or on no image at all. This is not sufficient. "
-                    f"=> Exit {style.bcolors.ENDC}"
+                    f"=> Exit {style.Bcolors.ENDC}"
                 )
             rej_obj = rowsrm[1]
             rej_obj = np.unique(rej_obj)
@@ -767,7 +768,7 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
       reject  - Vector with indexes of all origins which should be removed
       count   - Integer giving number of matches returned
     """
-    # print(bcolors.WARNING+indent+"Remove me if possible."+bcolors.ENDC)
+    # print(Bcolors.WARNING+indent+"Remove me if possible."+Bcolors.ENDC)
 
     ###
     #   Keywords.
@@ -777,7 +778,7 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
     if magnitude is not None:
         option = 4
     if option < 0 or option > 3:
-        print(bcolors.BOLD + indent + "Invalid option code." + bcolors.ENDC)
+        print(Bcolors.BOLD + indent + "Invalid option code." + Bcolors.ENDC)
 
     ###
     #   Set up some variables.
@@ -792,19 +793,19 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
     #   Debug output
     if not silent:
         print(
-            bcolors.BOLD
+            Bcolors.BOLD
             + indent + "   Option code = " + str(option).strip()
-            + bcolors.ENDC
+            + Bcolors.ENDC
         )
         print(
-            bcolors.BOLD
+            Bcolors.BOLD
             + indent + "   " + str(k).strip() + " origins (figures)"
-            + bcolors.ENDC
+            + Bcolors.ENDC
         )
         print(
-            bcolors.BOLD
+            Bcolors.BOLD
             + indent + "   max. number of objects " + str(n).strip()
-            + bcolors.ENDC
+            + Bcolors.ENDC
         )
 
     ###
@@ -909,11 +910,11 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
 
         if not silent:
             print(
-                bcolors.BOLD
+                Bcolors.BOLD
                 + indent + "   " + str(len(reject_obj))
                 + " objects removed because they are not found on >="
                 + str(nmissed) + " images"
-                + bcolors.ENDC
+                + Bcolors.ENDC
             )
 
         #   Discard objects that are on not enough images
@@ -922,9 +923,9 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
 
     if not silent:
         print(
-            bcolors.BOLD
+            Bcolors.BOLD
             + indent + f"   {count} matches found."
-            + bcolors.ENDC
+            + Bcolors.ENDC
         )
 
     if count > 0:
@@ -946,22 +947,22 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
     if not silent:
         if option == 4:
             print(
-                bcolors.BOLD
+                Bcolors.BOLD
                 + indent + "   Cleaning up output array using magnitudes."
-                + bcolors.ENDC
+                + Bcolors.ENDC
             )
         else:
             if option == 1:
                 print(
-                    bcolors.BOLD
+                    Bcolors.BOLD
                     + indent + "   Cleaning up output array (option = 1)."
-                    + bcolors.ENDC
+                    + Bcolors.ENDC
                 )
             else:
                 print(
-                    bcolors.BOLD
+                    Bcolors.BOLD
                     + indent + "   Cleaning up output array (option = 2)."
-                    + bcolors.ENDC
+                    + Bcolors.ENDC
                 )
 
     #   Loop over the origins
@@ -996,8 +997,8 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
                     #   Logical test
                     if len(d2) != ncount:
                         raise Exception(
-                            f"{style.bcolors.FAIL}\nLogic error 1"
-                            f"{style.bcolors.ENDC}"
+                            f"{style.Bcolors.FAIL}\nLogic error 1"
+                            f"{style.Bcolors.ENDC}"
                         )
 
                     #   Find the element with the minimum distance
@@ -1024,29 +1025,29 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
                 if option == 2:
                     if len(ind[j, :]) != (csave - ncount):
                         raise Exception(
-                            f"{style.bcolors.FAIL}\nLogic error 2"
-                            f"{style.bcolors.ENDC}"
+                            f"{style.Bcolors.FAIL}\nLogic error 2"
+                            f"{style.Bcolors.ENDC}"
                         )
                     if len(ind[reference_image_id, :]) != (csave - ncount):
                         raise Exception(
-                            f"{style.bcolors.FAIL}\nLogic error 3"
-                            f"{style.bcolors.ENDC}"
+                            f"{style.Bcolors.FAIL}\nLogic error 3"
+                            f"{style.Bcolors.ENDC}"
                         )
                 else:
                     if len(ind[j, :]) != (csave - ncount + 1):
                         raise Exception(
-                            f"{style.bcolors.FAIL}\nLogic error 2"
-                            f"{style.bcolors.ENDC}"
+                            f"{style.Bcolors.FAIL}\nLogic error 2"
+                            f"{style.Bcolors.ENDC}"
                         )
                     if len(ind[reference_image_id, :]) != (csave - ncount + 1):
                         raise Exception(
-                            f"{style.bcolors.FAIL}\nLogic error 3"
-                            f"{style.bcolors.ENDC}"
+                            f"{style.Bcolors.FAIL}\nLogic error 3"
+                            f"{style.Bcolors.ENDC}"
                         )
                 if len(ind[j, :]) != len(ind[reference_image_id, :]):
                     raise Exception(
-                        f"{style.bcolors.FAIL}\nLogic error 4"
-                        f"{style.bcolors.ENDC}"
+                        f"{style.Bcolors.FAIL}\nLogic error 4"
+                        f"{style.Bcolors.ENDC}"
                     )
 
     #   Determine the indexes of the images to be discarded
@@ -1057,10 +1058,10 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
 
     if not silent:
         print(
-            bcolors.OKGREEN
+            Bcolors.OKGREEN
             + indent + "       " + str(len(ind[reference_image_id, :])).strip()
             + " unique matches found."
-            + bcolors.ENDC
+            + Bcolors.ENDC
         )
 
     return ind, reject, count, reject_obj

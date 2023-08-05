@@ -37,7 +37,7 @@ from skimage.transform import warp
 import astroalign as aa
 
 from .. import style, checks, calibration_data, terminal_output
-from .. import aux as base_aux
+from .. import utilities as base_aux
 
 from . import plot
 
@@ -101,7 +101,7 @@ def inv_median(a):
 
 def get_instruments(ifc):
     """
-        Extract instrument informations.
+        Extract instrument information.
 
         Parameters
         ----------
@@ -260,7 +260,7 @@ def get_instrument_infos(ifc, temp_tolerence):
         )
     gain_setting = list(gain_settings)[0]
 
-    #   Get bit setting
+    #   Get the bit setting
     bit_pixs = set(ifc.summary['bitpix'])
     if len(bit_pixs) > 1:
         raise RuntimeError(
@@ -284,6 +284,7 @@ def get_instrument_infos(ifc, temp_tolerence):
     return instrument, redout_mode, gain_setting, bit_pix, temperature
 
 
+#   TODO: Check if the following function can be removed
 def get_imaging_soft(ifc):
     """
         Extract imaging software version.
@@ -594,7 +595,7 @@ def check_filter_keywords(path, image_type):
     if not ifc.files:
         return file_path
 
-    ##   Get and check imaging software
+    # #   Get and check imaging software
     # imaging_soft = get_imaging_soft(ifc)
     # if len(imaging_soft) > 1:
     # terminal_output.print_terminal(
@@ -698,7 +699,7 @@ def get_pixel_mask(out_path, shape):
             success = True
         else:
             terminal_output.print_terminal(
-                string="No default bad pixel mask available. Try to use " \
+                string="No default bad pixel mask available. Try to use "
                        "the mask calculated in the data reduction...",
                 indent=1,
                 style_name='WARNING',
@@ -869,7 +870,7 @@ def make_bad_pixel_mask(mask_list, outdir, verbose=False):
         mask_as_ccd.write(out_path / file_name, overwrite=True)
 
 
-def correl_images(img_a, img_b, xMax, yMax, debug):
+def correl_images(img_a, img_b, x_max, y_max, debug):
     """
         Cross correlation:
 
@@ -889,10 +890,10 @@ def correl_images(img_a, img_b, xMax, yMax, debug):
         img_b       : `numpy.ndarray`
             Data of second image
 
-        xMax        : `integer`
+        x_max        : `integer`
             Maximal allowed shift between the images in Pixel - X axis
 
-        yMax        : `integer`
+        y_max        : `integer`
             Maximal allowed shift between the images in Pixel - Y axis
 
         debug       : `boolean`
@@ -911,11 +912,11 @@ def correl_images(img_a, img_b, xMax, yMax, debug):
     cc = np.fft.fft2(fftcc)
     cc[0, 0] = 0.
 
-    for i in range(xMax, lx - xMax):
+    for i in range(x_max, lx - x_max):
         for j in range(0, ly):
             cc[j, i] = 0
     for i in range(0, lx):
-        for j in range(yMax, ly - yMax):
+        for j in range(y_max, ly - y_max):
             cc[j, i] = 0
 
     #   Debug plot showing the cc matrix
@@ -955,7 +956,7 @@ def correl_images(img_a, img_b, xMax, yMax, debug):
     return -ind1, -ind2
 
 
-def calc_min_max_shifts(shifts, pythonFORMAT=False):
+def calc_min_max_shifts(shifts, python_format=False):
     """
         Calculate shifts
 
@@ -964,7 +965,7 @@ def calc_min_max_shifts(shifts, pythonFORMAT=False):
         shifts              : `numpy.ndarray`
             2D numpy array with the image shifts in X and Y direction
 
-        pythonFORMAT        : `boolean`
+        python_format        : `boolean`
             If True the python style of image ordering is used. If False the
             natural/fortran style of image ordering is use.
             Default is ``False``.
@@ -986,7 +987,7 @@ def calc_min_max_shifts(shifts, pythonFORMAT=False):
 
     """
     #   Distinguish between python format and natural format
-    if pythonFORMAT:
+    if python_format:
         id_x = 1
         id_y = 0
     else:
@@ -1017,7 +1018,7 @@ def calculate_image_shifts_core(img_ccd, reff_ccd, img_id, fname,
             Image data of the reference image
 
         img_id              : `integer`
-            Id of the image
+            ID of the image
 
         fname               : `string`
             Name of the image
@@ -1098,7 +1099,7 @@ def calculate_image_shifts_core(img_ccd, reff_ccd, img_id, fname,
 
         #   Determine transformation between the images
         try:
-            p, (pos_img, pos_img_reff) = aa.find_transform(
+            p, (_, _) = aa.find_transform(
                 test_ccd,
                 reff_ccd,
                 detection_sigma=3.0,
@@ -1108,9 +1109,8 @@ def calculate_image_shifts_core(img_ccd, reff_ccd, img_id, fname,
         except:
             shift = (0., 0.)
             terminal_output.print_terminal(
-                img_id,
-                string="WARNING: Offset determination for image {}"
-                       " failed. Assume offset is 0.",
+                f"WARNING: Offset determination for image {img_id}"
+                " failed. Assume offset is 0.",
                 style_name='WARNING',
             )
     else:
@@ -1195,7 +1195,7 @@ def calculate_image_shifts(ifc, ref_img, comment, method='skimage'):
     )
 
     # from ..analyze import aux as aux_ana
-    ##   Initialize multiprocessing object
+    # #   Initialize multiprocessing object
     # ncores=6
     # ncores=3
     # ncores=2
@@ -1231,10 +1231,10 @@ def calculate_image_shifts(ifc, ref_img, comment, method='skimage'):
             # }
             # )
 
-    ##   Close multiprocessing pool and wait until it finishes
+    # #   Close multiprocessing pool and wait until it finishes
     # executor.wait()
 
-    ##   Exit if exceptions occurred
+    # #   Exit if exceptions occurred
     # if executor.err is not None:
     # raise RuntimeError(
     # f'\n{style.bcolors.FAIL}Image offset determination failed '
@@ -1242,14 +1242,14 @@ def calculate_image_shifts(ifc, ref_img, comment, method='skimage'):
     # )
 
     ####
-    ##   Sort multiprocessing results
-    ##
-    ##   Extract results
+    # #   Sort multiprocessing results
+    # #
+    # #   Extract results
     # res = executor.res
 
-    ##   Sort observation times and images & build dictionary for the
-    ##   tables with the extraction results
-    ##for j in range(0, nfiles):
+    # #   Sort observation times and images & build dictionary for the
+    # #   tables with the extraction results
+    # #for j in range(0, nfiles):
     # for ref_id, shift_i, flip_i in res:
     # print(ref_id, shift_i, flip_i)
     # shift[:,ref_id] = shift_i
@@ -1405,7 +1405,7 @@ def make_index_from_shifts(shift, i):
             pixel index in Y direction.
     """
     #   Calculate maximum and minimum shifts
-    minx, maxx, miny, maxy = calc_min_max_shifts(shift, pythonFORMAT=True)
+    minx, maxx, miny, maxy = calc_min_max_shifts(shift, python_format=True)
 
     #   Calculate indexes from image shifts
     if minx >= 0 and maxx >= 0:
@@ -1481,7 +1481,7 @@ def trim_core(img, i, nfiles, shift, method='skimage', verbose=False):
         #   Calculate maximum and minimum shifts
         minx, maxx, miny, maxy = calc_min_max_shifts(
             shift,
-            pythonFORMAT=True,
+            python_format=True,
         )
 
         #   Shift image on sub pixel basis
@@ -1902,7 +1902,7 @@ def check_master_on_disk(path, image_type, dark_times, filters,
 
         Returns
         -------
-        check_master    : 'boolean`
+        check_master    : `boolean`
             Is True if all required master files are already prepared.
     """
     #   Sanitize the provided paths
@@ -1931,6 +1931,7 @@ def check_master_on_disk(path, image_type, dark_times, filters,
             return False
 
         #   Prepare dict with master biases
+        #   TODO: Check why the following variable is not used.
         combined_bias = ifc_reduced.files_filtered(
             imagetyp=type_bias,
             combined=True,
@@ -1954,7 +1955,7 @@ def check_master_on_disk(path, image_type, dark_times, filters,
         )
     }
 
-    #   Check if master darks exists for all all exposure times
+    #   Check if master darks exists for all exposure times
     check_master = True
     for key in combined_darks.keys():
         if key not in dark_times:
@@ -1977,7 +1978,7 @@ def check_master_on_disk(path, image_type, dark_times, filters,
         )
     }
 
-    #   Check if master flats exists for all all filters
+    #   Check if master flats exists for all filters
     for key in combined_flats.keys():
         if key not in filters:
             check_master = False
@@ -2217,7 +2218,7 @@ def find_wcs(input_dir, output_dir, ref_id=0, force_wcs_determ=False,
     #
     reff_name = ifc_filtered.files[ref_id]
 
-    reff_img = base_aux.image(ref_id, filter_ref, 'target', reff_name, output_dir)
+    reff_img = base_aux.Image(ref_id, filter_ref, 'target', reff_name, output_dir)
 
     base_aux.cal_fov(reff_img)
 
@@ -2311,7 +2312,7 @@ def find_wcs_all_imgs(input_dir, output_dir, force_wcs_determ=False,
     #
     for i, (img_ccd, file_name) in enumerate(ifc.ccds(return_fname=True)):
         #   Prepare image object
-        img = base_aux.image(
+        img = base_aux.Image(
             i,
             'filt',
             'target',

@@ -55,7 +55,7 @@ def comp_img(outdir, o_image, c_image):
             Comparison image data
     """
     #   Prepare plot
-    fig = plt.figure(figsize=(12, 7))
+    plt.figure(figsize=(12, 7))
     ax1 = plt.subplot(1, 2, 1)
     ax2 = plt.subplot(1, 2, 2, sharex=ax1, sharey=ax1)
 
@@ -163,8 +163,8 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
         y_column = 'y_fit'
     else:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nNo valid X and Y column found for "
-            f"table 1. {style.bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nNo valid X and Y column found for "
+            f"table 1. {style.Bcolors.ENDC}"
         )
     #   Check if column with X and Y coordinates are available for table 2
     if tbl_2 is not None:
@@ -179,8 +179,8 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
             y_column_2 = 'yfit'
         else:
             raise RuntimeError(
-                f"{style.bcolors.FAIL} \nNo valid X and Y column found for "
-                f"table 2. {style.bcolors.ENDC}"
+                f"{style.Bcolors.FAIL} \nNo valid X and Y column found for "
+                f"table 2. {style.Bcolors.ENDC}"
             )
 
     #   Set layout of image
@@ -275,9 +275,9 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
             # str(tbl['id'][i]),
             # (tbl['xcentroid'][i], tbl['ycentroid'][i]),
             # xytext=(tbl['xcentroid'][i], tbl['ycentroid'][i]),
-            ##textcoords='offset points',
+            # #textcoords='offset points',
             # textcoords='offset pixels',
-            ##fontdict=font,
+            # #fontdict=font,
             # color='blue',
             # )
 
@@ -342,7 +342,7 @@ def plot_apertures(outdir, image, aperture, annulus_aperture, string):
     ###
     #   Make plot
     #
-    fig = plt.figure(figsize=(20, 9))
+    plt.figure(figsize=(20, 9))
 
     #   Normalize the image
     norm = ImageNormalize(image, interval=ZScaleInterval())
@@ -394,7 +394,7 @@ def plot_apertures(outdir, image, aperture, annulus_aperture, string):
 def plot_cutouts(outdir, stars, string, terminal_logger=None,
                  max_plot_stars=25, nameobj=None, indent=2):
     """
-        Plot the cutouts of the stars used to estimated the ePSF
+        Plot the cutouts of the stars used to estimate the ePSF
 
         Parameters
         ----------
@@ -590,7 +590,7 @@ def plot_residual(name, image_orig, residual_image, outdir,
         Parameters
         ----------
         name            : `string`
-            Name of the plot, can be name of the object
+            Name of the plot
 
         image_orig      : `dictionary` {`string`: `numpy.ndarray`}
             Original image data
@@ -1270,8 +1270,8 @@ def plot_transform(outdir, color1, color2, color_lit, fit_var, a, b, b_err,
     plt.close()
 
 
-def check_plot(size_x, size_y, mag_filt, mag_color, yRangeMax, yRangeMin,
-               xRangeMax, xRangeMin):
+def check_plot(size_x, size_y, mag_filt, mag_color, y_range_max, y_range_min,
+               x_range_max, x_range_min):
     """
         Check the plot dimensions and set defaults
 
@@ -1289,16 +1289,16 @@ def check_plot(size_x, size_y, mag_filt, mag_color, yRangeMax, yRangeMin,
         mag_color   : `numpy.ndarray`
             Color - 1D
 
-        yRangeMax   : `float`
+        y_range_max   : `float`
             The maximum of the plot range in Y direction
 
-        yRangeMin   : `float`
+        y_range_min   : `float`
             The minimum of the plot range in Y direction
 
-        xRangeMax   : `float`
+        x_range_max   : `float`
             The maximum of the plot range in X direction
 
-        xRangeMin   : `float`
+        x_range_min   : `float`
             The minimum of the plot range in X direction
     """
     #   Set figure size
@@ -1314,7 +1314,7 @@ def check_plot(size_x, size_y, mag_filt, mag_color, yRangeMax, yRangeMin,
     #   Set plot range -> automatic adjustment
     #   Y range
     try:
-        float(yRangeMax)
+        float(y_range_max)
     except ValueError:
         plt.ylim([float(np.max(mag_filt)) + 0.5, float(np.min(mag_filt)) - 0.5])
         terminal_output.print_terminal(
@@ -1323,7 +1323,7 @@ def check_plot(size_x, size_y, mag_filt, mag_color, yRangeMax, yRangeMin,
         )
     else:
         try:
-            float(yRangeMin)
+            float(y_range_min)
         except ValueError:
             plt.ylim([float(np.max(mag_filt)) + 0.5, float(np.min(mag_filt)) - 0.5])
             terminal_output.print_terminal(
@@ -1331,11 +1331,11 @@ def check_plot(size_x, size_y, mag_filt, mag_color, yRangeMax, yRangeMin,
                 style_name='WARNING',
             )
         else:
-            plt.ylim([float(yRangeMin), float(yRangeMax)])
+            plt.ylim([float(y_range_min), float(y_range_max)])
 
     #   X range
     try:
-        float(xRangeMax)
+        float(x_range_max)
     except ValueError:
         plt.xlim([float(np.min(mag_color)) - 0.5, float(np.max(mag_color)) + 0.5])
         terminal_output.print_terminal(
@@ -1344,7 +1344,7 @@ def check_plot(size_x, size_y, mag_filt, mag_color, yRangeMax, yRangeMin,
         )
     else:
         try:
-            float(xRangeMin)
+            float(x_range_min)
         except ValueError:
             plt.xlim(
                 [float(np.min(mag_color)) - 0.5, float(np.max(mag_color)) + 0.5]
@@ -1354,7 +1354,7 @@ def check_plot(size_x, size_y, mag_filt, mag_color, yRangeMax, yRangeMin,
                 style_name='WARNING',
             )
         else:
-            plt.xlim([float(xRangeMin), float(xRangeMax)])
+            plt.xlim([float(x_range_min), float(x_range_max)])
 
 
 def mk_ticks_labels(filt, color):
@@ -1384,7 +1384,7 @@ def mk_ticks_labels(filt, color):
     plt.ylabel(r'${}$'.format(filt))
 
 
-def fill_lists(liste, ISOcolumn, ISOcolumntype, filt_1, filt_2, iso_mag1,
+def fill_lists(liste, iso_column, iso_column_type, filt_1, filt_2, iso_mag1,
                iso_mag2, iso_color):
     """
         Sort magnitudes into lists and calculate the color if necessary
@@ -1394,12 +1394,12 @@ def fill_lists(liste, ISOcolumn, ISOcolumntype, filt_1, filt_2, iso_mag1,
         liste           : `list` of `string`
             List of strings
 
-        ISOcolumn       : `dictionary`
+        iso_column       : `dictionary`
             Columns to use from the ISO file.
             Keys = filter           : `string`
             Values = column numbers : `integer`
 
-        ISOcolumntype   : `dictionary`
+        iso_column_type   : `dictionary`
             Type of the columns from the ISO file
             Keys = filter : `string`
             Values = type : `string`
@@ -1430,26 +1430,26 @@ def fill_lists(liste, ISOcolumn, ISOcolumntype, filt_1, filt_2, iso_mag1,
         iso_color       : `list` of `float`
             Color list
     """
-    mag1 = float(liste[ISOcolumn[filt_1] - 1])
+    mag1 = float(liste[iso_column[filt_1] - 1])
     iso_mag1.append(mag1)
-    if ISOcolumntype[filt_2] == 'color':
-        color = float(liste[ISOcolumn[filt_2] - 1])
+    if iso_column_type[filt_2] == 'color':
+        color = float(liste[iso_column[filt_2] - 1])
         iso_color.append(color)
-    elif ISOcolumntype[filt_2] == 'single':
-        mag2 = float(liste[ISOcolumn[filt_2] - 1])
+    elif iso_column_type[filt_2] == 'single':
+        mag2 = float(liste[iso_column[filt_2] - 1])
         iso_mag2.append(mag2)
         iso_color.append(mag2 - mag1)
 
     return iso_mag1, iso_mag2, iso_color
 
 
-def mk_colormap(Niso):
+def mk_colormap(n_iso):
     """
         Make a color map e.g. for isochrones
 
         Parameters
         ----------
-        Niso    : `integer`
+        n_iso    : `integer`
             Number of isochrone files
     """
     #   Prepare colors for the isochrones
@@ -1467,7 +1467,7 @@ def mk_colormap(Niso):
          'saddlebrown',
          ]
     )
-    cnorm = mcol.Normalize(vmin=0, vmax=Niso)
+    cnorm = mcol.Normalize(vmin=0, vmax=n_iso)
     cpick = cm.ScalarMappable(norm=cnorm, cmap=cm1)
     cpick.set_array([])
 
@@ -1482,14 +1482,14 @@ def mk_cycler():
     return cycle(lines)
 
 
-def write_cmd(nameOfStarcluster, filename, filt_1, color, filetype, ptype,
+def write_cmd(name_of_star_cluster, filename, filt_1, color, filetype, ptype,
               outdir='output'):
     """
         Write plot to disk
 
         Parameters
         ----------
-        nameOfStarcluster   : `string`
+        name_of_star_cluster   : `string`
             Name of cluster
 
         filename            : `string`
@@ -1511,7 +1511,7 @@ def write_cmd(nameOfStarcluster, filename, filt_1, color, filetype, ptype,
             Output directory
             Default is ``output``.
     """
-    if nameOfStarcluster == "" or nameOfStarcluster == "?":
+    if name_of_star_cluster == "" or name_of_star_cluster == "?":
         terminal_output.print_terminal(
             outdir,
             filename,
@@ -1527,11 +1527,11 @@ def write_cmd(nameOfStarcluster, filename, filt_1, color, filetype, ptype,
             bbox_inches="tight",
         )
     else:
-        nameOfStarcluster = nameOfStarcluster.replace(' ', '_')
+        name_of_star_cluster = name_of_star_cluster.replace(' ', '_')
         terminal_output.print_terminal(
             outdir,
             filename,
-            nameOfStarcluster,
+            name_of_star_cluster,
             ptype,
             filt_1,
             color,
@@ -1539,7 +1539,7 @@ def write_cmd(nameOfStarcluster, filename, filt_1, color, filetype, ptype,
             string="Write plotfile: ./{}/{}_{}_{}_{}_{}.{}",
         )
         plt.savefig(
-            f'./{outdir}/{filename}_{nameOfStarcluster}_{ptype}_{filt_1}'
+            f'./{outdir}/{filename}_{name_of_star_cluster}_{ptype}_{filt_1}'
             f'_{color}.{filetype}',
             format=filetype,
             bbox_inches="tight",
@@ -1547,10 +1547,10 @@ def write_cmd(nameOfStarcluster, filename, filt_1, color, filetype, ptype,
 
 
 #   TODO: Make class for CMD plots and add associated functions
-def plot_apparent_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
+def plot_apparent_cmd(mag_color, mag_filt, name_of_star_cluster, filename,
                       filetype, filt_1, filt_2, size_x='', size_y='',
-                      yRangeMax='', yRangeMin='', xRangeMax='',
-                      xRangeMin='', outdir='output', mag_filt_err=None,
+                      y_range_max='', y_range_min='', x_range_max='',
+                      x_range_min='', outdir='output', mag_filt_err=None,
                       color_err=None):
     """
         Plot calibrated cmd with apparent magnitudes
@@ -1563,7 +1563,7 @@ def plot_apparent_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
         mag_filt            : `numpy.ndarray`
             Filter magnitude - 1D
 
-        nameOfStarcluster   : `string`
+        name_of_star_cluster   : `string`
             Name of cluster
 
         filename            : `string`
@@ -1584,16 +1584,16 @@ def plot_apparent_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
         size_y              : `float`
             Figure size in cm (y direction)
 
-        yRangeMax           : `float`
+        y_range_max           : `float`
             The maximum of the plot range in Y direction
 
-        yRangeMin           : `float`
+        y_range_min           : `float`
             The minimum of the plot range in Y direction
 
-        xRangeMax           : `float`
+        x_range_max           : `float`
             The maximum of the plot range in X direction
 
-        xRangeMin           : `float`
+        x_range_min           : `float`
             The minimum of the plot range in X direction
 
         outdir              : `string`, optional
@@ -1615,10 +1615,10 @@ def plot_apparent_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
         size_y,
         mag_filt,
         mag_color,
-        yRangeMax,
-        yRangeMin,
-        xRangeMax,
-        xRangeMin,
+        y_range_max,
+        y_range_min,
+        x_range_max,
+        x_range_min,
     )
 
     #   Plot the stars
@@ -1646,16 +1646,16 @@ def plot_apparent_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
     mk_ticks_labels(filt_1, color)
 
     #   Write plot to disk
-    write_cmd(nameOfStarcluster, filename, filt_1, color, filetype,
+    write_cmd(name_of_star_cluster, filename, filt_1, color, filetype,
               'apparent', outdir=outdir)
     plt.close()
 
 
-def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
+def plot_absolute_cmd(mag_color, mag_filt, name_of_star_cluster, filename,
                       filetype, filt_1, filt_2, isos, isotype,
-                      ISOcolumntype, ISOcolumn, logAGE, keyword, IsoLabels,
-                      size_x='', size_y='', yRangeMax='', yRangeMin='',
-                      xRangeMax='', xRangeMin='', outdir='output',
+                      iso_column_type, iso_column, log_age, keyword, iso_labels,
+                      size_x='', size_y='', y_range_max='', y_range_min='',
+                      x_range_max='', x_range_min='', outdir='output',
                       mag_filt_err=None, color_err=None):
     """
         Plot calibrated CMD with
@@ -1670,7 +1670,7 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
         mag_filt            : `numpy.ndarray`
             Filter magnitude - 1D
 
-        nameOfStarcluster   : `string`
+        name_of_star_cluster   : `string`
             Name of cluster
 
         filename            : `string`
@@ -1692,21 +1692,21 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
             Type of 'isos'
             Possibilities: 'directory' or 'file'
 
-        ISOcolumntype       : `dictionary`
+        iso_column_type       : `dictionary`
             Keys = filter : `string`
             Values = type : `string`
 
-        ISOcolumn           : `dictionary`
+        iso_column           : `dictionary`
             Keys = filter           : `string`
             Values = column numbers : `integer`
 
-        logAGE              : `boolean`
+        log_age              : `boolean`
             Logarithmic age
 
         keyword             : `string`
             Keyword to identify a new isochrone
 
-        IsoLabels           : `boolean`
+        iso_labels           : `boolean`
             If True plot legend for isochrones.
 
         size_x              : `float`, optional
@@ -1717,22 +1717,22 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
             Figure size in cm (y direction)
             Default is ````.
 
-        yRangeMax           : `float`, optional
+        y_range_max           : `float`, optional
             The maximum of the plot range in Y
                                 direction
             Default is ````.
 
-        yRangeMin           : `float`, optional
+        y_range_min           : `float`, optional
             The minimum of the plot range in Y
                                 direction
             Default is ````.
 
-        xRangeMax           : `float`, optional
+        x_range_max           : `float`, optional
             The maximum of the plot range in X
                                 direction
             Default is ````.
 
-        xRangeMin           : `float`, optional
+        x_range_min           : `float`, optional
             The minimum of the plot range in X direction
 
         outdir          : `string`, optional
@@ -1748,8 +1748,8 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
             Default is ``None``.
     """
     #   Check plot dimensions and set defaults
-    check_plot(size_x, size_y, mag_filt, mag_color, yRangeMax, yRangeMin,
-               xRangeMax, xRangeMin)
+    check_plot(size_x, size_y, mag_filt, mag_color, y_range_max, y_range_min,
+               x_range_max, x_range_min)
 
     #   Plot the stars
     terminal_output.print_terminal(string="Add stars")
@@ -1777,26 +1777,26 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
             isos = Path(isos).expanduser()
 
             #   Make list of isochrone files
-            fileList = os.listdir(isos)
+            file_list = os.listdir(isos)
 
             #   Number of isochrones
-            Niso = len(fileList)
+            n_iso = len(file_list)
             terminal_output.print_terminal(
-                Niso,
+                n_iso,
                 string="Plot {} isochrone(s)",
                 style_name='OKGREEN',
             )
 
             #   Make color map
-            cpick = mk_colormap(Niso)
+            cpick = mk_colormap(n_iso)
 
             #   Prepare cycler for the line styles
             linecycler = mk_cycler()
 
             #   Cycle through iso files
-            for i in range(0, Niso):
+            for i in range(0, n_iso):
                 #   Load file
-                isodata = open(isos / fileList[i])
+                isodata = open(isos / file_list[i])
 
                 #   Prepare variables for the isochrone data
                 iso_mag1 = []
@@ -1836,8 +1836,8 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
                     #   Fill lists
                     iso_mag1, iso_mag2, iso_color = fill_lists(
                         liste,
-                        ISOcolumn,
-                        ISOcolumntype,
+                        iso_column,
+                        iso_column_type,
                         filt_1,
                         filt_2,
                         iso_mag1,
@@ -1851,7 +1851,7 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
                     if age_unit != '':
                         lable += ' ' + age_unit
                 else:
-                    lable = os.path.splitext(fileList[i])[0]
+                    lable = os.path.splitext(file_list[i])[0]
 
                 #   Plot iso lines
                 plt.plot(
@@ -1902,7 +1902,7 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
 
                         #   Save age for the case where age is given as a
                         #   keyword and not as a column
-                        if ISOcolumn['AGE'] == 0:
+                        if iso_column['AGE'] == 0:
                             age = line.split('=')[1].split()[0]
 
                         #   Prepare/reset lists for the single isochrones
@@ -1922,13 +1922,13 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
                     continue
 
                 #   Fill lists
-                if ISOcolumn['AGE'] != 0:
-                    age = float(line_elements[ISOcolumn['AGE'] - 1])
+                if iso_column['AGE'] != 0:
+                    age = float(line_elements[iso_column['AGE'] - 1])
 
                 iso_mag1, iso_mag2, iso_color = fill_lists(
                     line_elements,
-                    ISOcolumn,
-                    ISOcolumntype,
+                    iso_column,
+                    iso_column_type,
                     filt_1,
                     filt_2,
                     iso_mag1,
@@ -1946,24 +1946,24 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
             isodata.close()
 
             #   Number of isochrones
-            Niso = len(iso_mag1_list)
+            n_iso = len(iso_mag1_list)
             terminal_output.print_terminal(
-                Niso,
+                n_iso,
                 string="Plot {} isochrone(s)",
                 style_name='OKGREEN',
             )
 
             #   Make color map
-            cpick = mk_colormap(Niso)
+            cpick = mk_colormap(n_iso)
 
             #   Prepare cycler for the line styles
             linecycler = mk_cycler()
 
             #   Cycle through iso lines
-            for i in range(0, Niso):
-                if logAGE:
+            for i in range(0, n_iso):
+                if log_age:
                     age_value = float(age_list[i])
-                    age_value = 10 ** (age_value) / 10 ** 9
+                    age_value = 10 ** age_value / 10 ** 9
                     age_value = round(age_value, 2)
                 else:
                     age_value = round(float(age_list[i]), 2)
@@ -1981,7 +1981,7 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
                 isodata.close()
 
         #   Plot legend
-        if IsoLabels:
+        if iso_labels:
             plt.legend(
                 bbox_to_anchor=(0., 1.02, 1.0, 0.102),
                 loc=3,
@@ -1995,13 +1995,13 @@ def plot_absolute_cmd(mag_color, mag_filt, nameOfStarcluster, filename,
     mk_ticks_labels(filt_1, color)
 
     #   Write plot to disk
-    write_cmd(nameOfStarcluster, filename, filt_1, color, filetype,
+    write_cmd(name_of_star_cluster, filename, filt_1, color, filetype,
               'absolut', outdir=outdir)
     plt.close()
 
 
 def comp_scatter(values_x, values_y, name_x, name_y, string, outdir,
-                 oneTOone=True):
+                 one_to_one=True):
     """
         Make a 2D scatter plot
 
@@ -2025,7 +2025,7 @@ def comp_scatter(values_x, values_y, name_x, name_y, string, outdir,
         outdir      : `string`
             Output directory
 
-        oneTOone   : `boolean`, optional
+        one_to_one   : `boolean`, optional
             If True a 1:1 line will be plotted.
             Default is ``True``.
     """
@@ -2038,7 +2038,7 @@ def comp_scatter(values_x, values_y, name_x, name_y, string, outdir,
     ###
     #   Make plot
     #
-    fig = plt.figure(figsize=(20, 9))
+    plt.figure(figsize=(20, 9))
 
     #   Determine boundaries for 1:1 line
     x_min = np.amin(values_x)
@@ -2056,7 +2056,7 @@ def comp_scatter(values_x, values_y, name_x, name_y, string, outdir,
     plt.ylabel(name_y)
 
     #   Plot the 1:1 line
-    if oneTOone:
+    if one_to_one:
         plt.plot(
             [min_plot, max_plot],
             [min_plot, max_plot],
@@ -2103,7 +2103,7 @@ def click_point(event):
     print('+++++++++++++++++++++')
 
 
-def D3_scatter(xs, ys, zs, outdir, color=None, name_x='', name_y='',
+def d3_scatter(xs, ys, zs, outdir, color=None, name_x='', name_y='',
                name_z='', string='_3D_', pmra=None, pmde=None,
                display=False):
     """
@@ -2119,6 +2119,9 @@ def D3_scatter(xs, ys, zs, outdir, color=None, name_x='', name_y='',
 
         zs          : `list` of `numpy.ndarray`s
             Z values
+
+        color       : `list` of `string`
+            Color definitions
 
         outdir      : `string`
             Output directory
@@ -2172,21 +2175,21 @@ def D3_scatter(xs, ys, zs, outdir, color=None, name_x='', name_y='',
     if display:
         if pmra is not None and pmde is not None:
             fig.suptitle(
-                'Proper motion vs. distance: Literature proper motion: ' \
-                '{:.1f}, {:.1f} - Choose a cluster then close the ' \
+                'Proper motion vs. distance: Literature proper motion: '
+                '{:.1f}, {:.1f} - Choose a cluster then close the '
                 'plot'.format(pmra, pmde),
                 fontsize=20,
             )
         else:
             fig.suptitle(
-                'Proper motion vs. distance: Literature proper motion: ' \
+                'Proper motion vs. distance: Literature proper motion: '
                 + '- Choose a cluster then close the plot',
                 fontsize=20,
             )
     else:
         if pmra is not None and pmde is not None:
             fig.suptitle(
-                'Proper motion vs. distance: Literature proper motion: ' \
+                'Proper motion vs. distance: Literature proper motion: '
                 '{:.1f}, {:.1f} '.format(pmra, pmde),
                 fontsize=20,
             )
@@ -2270,29 +2273,29 @@ def D3_scatter(xs, ys, zs, outdir, color=None, name_x='', name_y='',
 
         #   Plot data
         if color is None:
-            for i, x in enumerate(xs):
-                p = ax.scatter3D(
+            for j, x in enumerate(xs):
+                ax.scatter3D(
                     x,
-                    ys[i],
-                    zs[i],
+                    ys[j],
+                    zs[j],
                     # c=zs[i],
                     cmap='cividis',
                     # cmap='tab20',
-                    label='Cluster ' + str(i),
+                    label='Cluster ' + str(j),
                     # picker=True,
                     picker=5,
                 )
                 ax.legend()
         else:
-            for i, x in enumerate(xs):
-                p = ax.scatter3D(
+            for j, x in enumerate(xs):
+                ax.scatter3D(
                     x,
-                    ys[i],
-                    zs[i],
-                    c=color[i],
+                    ys[j],
+                    zs[j],
+                    c=color[j],
                     cmap='cividis',
                     # cmap='tab20',
-                    label='Cluster ' + str(i),
+                    label='Cluster ' + str(j),
                 )
                 ax.legend()
 
