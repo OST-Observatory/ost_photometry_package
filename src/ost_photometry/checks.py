@@ -6,7 +6,7 @@ import os
 
 from pathlib import Path
 
-from .style import bcolors
+from .style import Bcolors
 
 
 ############################################################################
@@ -24,8 +24,8 @@ def check_path(path):
     """
     if not os.path.isdir(path):
         raise RuntimeError(
-            f"{bcolors.FAIL} \n{path} not found -> Check file name! "
-            f"ABORT {bcolors.ENDC}"
+            f"{Bcolors.FAIL} \n{path} not found -> Check file name! "
+            f"ABORT {Bcolors.ENDC}"
         )
 
 
@@ -40,8 +40,8 @@ def check_file(test_file):
     """
     if not os.path.isfile(test_file):
         raise RuntimeError(
-            f"{bcolors.FAIL} \n{test_file} not found -> Check file name! "
-            f"ABORT {bcolors.ENDC}"
+            f"{Bcolors.FAIL} \n{test_file} not found -> Check file name! "
+            f"ABORT {Bcolors.ENDC}"
         )
 
 
@@ -89,8 +89,8 @@ def check_dir(path_dict):
             fail = True
     if fail:
         raise RuntimeError(
-            f"{bcolors.FAIL}\nNo valid {missing} files found "
-            f"-> Check directory! {bcolors.ENDC}"
+            f"{Bcolors.FAIL}\nNo valid {missing} files found "
+            f"-> Check directory! {Bcolors.ENDC}"
         )
 
 
@@ -135,8 +135,8 @@ def check_pathlib_path(path):
         return path
     else:
         raise RuntimeError(
-            f'{bcolors.FAIL}The provided path ({path}) is neither a String nor'
-            f' a pathlib.Path object. {bcolors.ENDC}'
+            f'{Bcolors.FAIL}The provided path ({path}) is neither a String nor'
+            f' a pathlib.Path object. {Bcolors.ENDC}'
         )
 
 
@@ -153,8 +153,8 @@ def check_out(*args):
             Path.mkdir(arg, exist_ok=True)
         else:
             raise RuntimeError(
-                f'{bcolors.FAIL}The provided path ({arg}) is neither a String '
-                f'nor a pathlib.Path object. {bcolors.ENDC}'
+                f'{Bcolors.FAIL}The provided path ({arg}) is neither a String '
+                f'nor a pathlib.Path object. {Bcolors.ENDC}'
             )
 
 

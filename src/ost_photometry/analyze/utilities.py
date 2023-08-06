@@ -1319,15 +1319,20 @@ def derive_limiting_magnitude(img_container, filt_list, ref_img, r_limit=4.,
         #   TODO: Change to reference image in the future
         photo = ensemble.image_list[0].photometry
 
-        tbl_mag = photo.group_by('mags_fit')
+        try:
+            magnitude_type = 'mag_cali_trans'
+            tbl_mag = photo.group_by(magnitude_type)
+        except:
+            magnitude_type = 'mag_cali'
+            tbl_mag = photo.group_by(magnitude_type)
 
         #   Remove implausible dark results
-        mask = tbl_mag['mags_fit'] < 30
+        mask = tbl_mag[magnitude_type] < 30
         tbl_mag = tbl_mag[mask]
 
         #   Plot star map
         if ref_img != '':
-            rts = 'mags_' + str(ref_img)
+            rts = f'mags_{ref_img}'
         else:
             rts = 'mags'
         p = mp.Process(
@@ -1358,12 +1363,12 @@ def derive_limiting_magnitude(img_container, filt_list, ref_img, r_limit=4.,
             string="Based on detected objects:",
         )
         terminal_output.print_terminal(
-            np.median(tbl_mag['mags_fit'][-10:]),
+            np.median(tbl_mag[magnitude_type][-10:]),
             indent=indent * 3,
             string="Median of the 10 faintest objects: {} mag",
         )
         terminal_output.print_terminal(
-            np.mean(tbl_mag['mags_fit'][-10:]),
+            np.mean(tbl_mag[magnitude_type][-10:]),
             indent=indent * 3,
             string="Mean of the 10 faintest objects: {} mag",
         )

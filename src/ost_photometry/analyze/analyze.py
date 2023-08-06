@@ -1662,7 +1662,7 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
 
     #   Remove negative flux values as they are not physical
     flux = np.array(phot['flux_fit'])
-    mask = np.where(flux > 0.).ravel()
+    mask = np.where(flux > 0.)
     phot = phot[mask]
 
     #   Add photometry to image class
