@@ -763,16 +763,16 @@ def find_filt(filt_list, in_dict, filt, camera, verbose=False, indent=2):
 
         Returns
         -------
-                        : `boolean`
+        variable_1      : `boolean`
             True if the filter 'filt` was successfully identified.
 
-                        : `dictionary`
+        variable_2      : `dictionary`
             Entry from dictionary 'in_dict' corresponding to filter 'filt'
 
-                        : `integer`
+        variable_3      : `integer`
             ID of filter 1
 
-                        : `integer`
+        variable_4      : `integer`
             ID of filter 2
     """
     #   Initialize list of bools

@@ -34,7 +34,7 @@ class CalibParameters:
         self.calib_tbl = calib_tbl
 
 
-def get_comp_stars(coord, filters=['B', 'V'], field_of_view=18.5,
+def get_comp_stars(coord, filters=None, field_of_view=18.5,
                    mag_range=(0., 18.5), indent=2):
     """
         Download calibration info for variable stars from AAVSO
@@ -44,9 +44,9 @@ def get_comp_stars(coord, filters=['B', 'V'], field_of_view=18.5,
         coord           : `astropy.coordinates.SkyCoord`
             Coordinates of the field of field_of_view
 
-        filters         : `list` of `string`, optional
+        filters         : `list` of `string` or `None`, optional
             Filter names
-            Default is ``['B','V']``.
+            Default is ``None``.
 
         field_of_view   : `float`, optional
             Field of view in arc minutes
@@ -72,6 +72,10 @@ def get_comp_stars(coord, filters=['B', 'V'], field_of_view=18.5,
         indent=indent,
         string="Downloading calibration data from www.aavso.org",
     )
+
+    #   Sanitize filter list
+    if filters is None:
+        filters = ['B', 'V']
 
     #   Prepare url
     ra = coord.ra.degree

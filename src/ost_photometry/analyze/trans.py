@@ -885,7 +885,7 @@ def trans_core(image, lit_mag_1, lit_mag_2, mag_cali_fit_1, mag_cali_fit_2,
             '_img_' + str(image.pd),
         )
 
-    #	Add calibrated photometry to table of Image object
+    #   Add calibrated photometry to table of Image object
     image.photometry['mag_cali_trans'] = mag_cali
 
     return mag_cali
@@ -1138,7 +1138,7 @@ def calibrate_simple_core(image, mag_arr):
     if np.all(zp == 0.):
         mag_cali = resha_mag - np.median(mag_arr)
 
-    #	Add calibrated photometry to table of Image object
+    #   Add calibrated photometry to table of Image object
     image.photometry['mag_cali'] = mag_cali
 
     return mag_cali

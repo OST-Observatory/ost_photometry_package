@@ -1699,8 +1699,9 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
 
 
 def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
-                           ref_obj=[], nmissed=1, bfrac=1.0, s_ref_obj=True,
-                           correl_method='astropy', seplimit=2. * u.arcsec):
+                           reference_obj=None, nmissed=1, bfrac=1.0,
+                           s_ref_obj=True, correl_method='astropy',
+                           seplimit=2. * u.arcsec):
     """
         Correlate object positions from all stars in the image ensemble to
         identify those objects that are visible on all images
@@ -1723,10 +1724,10 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             objects from a specific origin
             Default is ``1``.
 
-        ref_obj             : `list` of `integer`, optional
+        reference_obj       : `list` of `integer` or None, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
-            Default is ``[]``.
+            Default is ``None``.
 
         nmissed             : `integer`, optional
             Maximum number an object is allowed to be not detected in an
@@ -1781,7 +1782,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         n_objects,
         n_images,
         ref_ori=img_ensemble.reference_image_id,
-        ref_obj=ref_obj,
+        reference_obj=reference_obj,
         nmissed=nmissed,
         s_ref_obj=s_ref_obj,
         seplimit=seplimit,
@@ -1807,7 +1808,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
 
 
 def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
-                       ref_ori=0, ref_obj=[], nmissed=1, bfrac=1.0,
+                       ref_ori=0, reference_obj=None, nmissed=1, bfrac=1.0,
                        s_ref_obj=True, correl_method='astropy',
                        seplimit=2. * u.arcsec):
     """
@@ -1840,10 +1841,10 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             ID of the reference origin
             Default is ``0``.
 
-        ref_obj             : `list` of `integer`, optional
+        reference_obj       : `list` of `integer` or None, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
-            Default is ``[]``.
+            Default is ``None``.
 
         nmissed             : `integer`, optional
             Maximum number an object is allowed to be not detected in an
@@ -1911,7 +1912,7 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
         n_ensembles,
         dataset_type='ensemble',
         ref_ori=ref_ori,
-        ref_obj=ref_obj,
+        reference_obj=reference_obj,
         nmissed=nmissed,
         s_ref_obj=s_ref_obj,
         seplimit=seplimit,
@@ -2220,7 +2221,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         dcr=dcr,
         option=option,
         maxid=maxid,
-        ref_obj=[int(variable_id)],
+        reference_obj=[int(variable_id)],
         nmissed=nmissed,
         bfrac=bfrac,
         s_ref_obj=protect_reference_obj,
@@ -3739,7 +3740,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         dcr=dcr,
                         option=option,
                         maxid=maxid,
-                        ref_obj=[obj_id],
+                        reference_obj=[obj_id],
                         nmissed=nmissed,
                         bfrac=bfrac,
                         s_ref_obj=protect_reference_obj,

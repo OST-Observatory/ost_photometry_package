@@ -5,7 +5,6 @@
 import numpy as np
 
 from .. import style, terminal_output
-from ..style import Bcolors
 
 from astropy.coordinates import SkyCoord, matching
 import astropy.units as u
@@ -173,7 +172,7 @@ def posi_obj_srcor(xs, ys, ra_obj, dec_obj, w, dcr=3, option=1,
     inds, reject, count, reject_obj = newsrcor(
         xall,
         yall,
-        dcr,
+        dcr=dcr,
         option=option,
         silent=not verbose,
     )
@@ -289,7 +288,7 @@ def identify_star_in_dataset(x, y, ra_obj, dec_obj, w, ra_unit=u.hourangle,
 
 
 def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
-                       ref_ori=0, ref_obj=[], nmissed=1, s_ref_obj=True,
+                       ref_ori=0, reference_obj=None, nmissed=1, s_ref_obj=True,
                        seplimit=2. * u.arcsec, cleanup_advanced=True,
                        dcr=3., bfrac=1.0, option=1, maxid=1,
                        correl_method='astropy'):
@@ -322,10 +321,10 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
             ID of the reference origin
             Default is ``0``.
 
-        ref_obj             : `list` of `integer`, optional
+        reference_obj             : `list` of `integer` or `None`, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
-            Default is ``[]``.
+            Default is ``None``.
 
         nmissed             : `integer`, optional
             Maximum number an object is allowed to be not detected in an
@@ -395,7 +394,7 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
             y,
             w,
             reference_image_id=ref_ori,
-            reference_obj=ref_obj,
+            reference_obj=reference_obj,
             nmissed=nmissed,
             protect_reference_obj=s_ref_obj,
             seplimit=seplimit,
@@ -416,12 +415,12 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
         ind_sr, reject, count, rej_obj = newsrcor(
             xall,
             yall,
-            dcr,
+            dcr=dcr,
             bfrac=bfrac,
             option=option,
             maxid=maxid,
             reference_image_id=ref_ori,
-            reference_obj=ref_obj,
+            reference_obj=reference_obj,
             nmissed=nmissed,
             protect_reference_obj=s_ref_obj,
         )
@@ -485,7 +484,7 @@ def correlate_datasets(x, y, w, n_objects, n_images, dataset_type='image',
     return ind_sr, ref_ori_new, reject, count
 
 
-def astropycor(x, y, w, reference_image_id=0, reference_obj=[], nmissed=1,
+def astropycor(x, y, w, reference_image_id=0, reference_obj=None, nmissed=1,
                protect_reference_obj=True, seplimit=2. * u.arcsec,
                cleanup_advanced=True):
     """
@@ -506,10 +505,10 @@ def astropycor(x, y, w, reference_image_id=0, reference_obj=[], nmissed=1,
             ID of the reference origin
             Default is ``0``.
 
-        reference_obj           : `list` of `integer`, optional
+        reference_obj           : `list` of `integer` or None, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
-            Default is ``[]``.
+            Default is ``None``.
 
         nmissed                 : `integer`, optional
             Maximum number an object is allowed to be not detected in an
@@ -531,6 +530,10 @@ def astropycor(x, y, w, reference_image_id=0, reference_obj=[], nmissed=1,
             objects that are not on all datasets will be performed.
             Default is ``True``.
     """
+    #   Sanitize reference object
+    if reference_obj is None:
+        reference_obj = []
+
     #   Number of datasets/images
     n = len(x)
 
@@ -677,98 +680,129 @@ def astropycor(x, y, w, reference_image_id=0, reference_obj=[], nmissed=1,
     return idarray, rej_ori
 
 
-def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_obj=[],
-             nmissed=1, indent='   ', option=None, magnitude=None,
+def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_obj=None,
+             nmissed=1, indent=1, option=None, magnitude=None,
              silent=False, protect_reference_obj=True):
     """
-    NAME:
-    ----
-          NEWSRCOR
+        Correlate source positions from several origins (e.g., different images)
 
-    PURPOSE:
-    -------
-          Correlate source positions from several origins (e.g., different
-          images)
+        Source matching is done by finding objects within a specified
+        radius. The code is adapted from the standard srcor routine from
+        the IDL Astronomy User's Library. The normal srcor routine was
+        extended to fit the requirements of the C7 experiment within the
+        astrophysics lab course at Potsdam University.
 
-    SOURCE:
-    ------
-          Adapted from the IDL Astro Libary
+        SOURCE: Adapted from the IDL Astro Libary
 
-    EXPLANATION:
-    -----------
-          Source matching is done by finding objects within a specified
-          radius. The code is adapted from the standard srcor routine from
-          the IDL Astronomy User's Library. The normal srcor routine was
-          extended to fit the requirements of the C7 experiment within the
-          astrophysics lab course at Potsdam University.
+        Parameters
+        ----------
+        x                       : `numpy.ndarray`
 
-    CALLING SEQUENCE:
-    ----------------
-          srcor(x,y,dcr,bfrac,maxid,refORI,[option=,magnitude=,silent=]
+        y                       : `numpy.ndarray`
+            Arrays of x and y coordinates (several columns each). The
+            following syntax is expected: x[array of source
+            positions]. The program marches through the columns
+            element by element, looking for the closest match.
 
-    PARAMETERS:
-    ----------
-      x,y     - Arrays of x and y coordinates (several columns each). The
-                following syntax is expected: x[array of source
-                positions]. The program marches through the columns
-                element by element, looking for the closest match.
-      dcr     - Critical radius outside which correlations are rejected,
-                but see 'option' below.
-      bfrac   - Fraction of low quality source position origins, i.e., those
-                origins (columns in x and y), for which it is expected to
-                find a reduced number of objects with valid source
-                positions.
-      maxid   - Max. number of allowed identical cross identifications
-                between objects from a specific origin (columns in x and y)
-                and objects from the origin with the id 'refORI'. The origin
-                will be rejected, if this limit is reached.
-      reference_image_id  - ID of the reference origin (e.g., an image).
-      reference_obj  - Ids of the reference objects. The reference objects will not be
-                removed from the list of objects.
-      nmissed - Maximum number an object is allowed to be not detected in an
-                origin. If this limit is reached the object will be removed.
+        dcr                     : `float`, optional
+            Critical radius outside which correlations are rejected,
+            but see 'option' below.
+            Default is ````.
 
-    OPTIONAL KEYWORD PARAMETERS:
-    ---------------------------
-       option - Changes behavior of the program & description of output
-                lists slightly, as follows:
-          OPTION=0 | left out
-                For each object of the origin 'refORI' the closest match
-                from all other origins is found, but if none is found within
-                the distance of 'dcr', the match is thrown out. Thus, the
-                index of that object will not appear in the 'ind' output
-                array.
-          OPTION=1
-                Forces the output mapping to be one-to-one.  OPTION=0
-                results, in general, in a many-to-one mapping from the
-                origin 'refORI' to the all other origins. Under OPTION=1, a
-                further processing step is performed to keep only the
-                minimum-distance match, whenever an entry from the origin
-                'refORI' appears more than once in the initial mapping.
-                Caution: The entries that exceed the distance of the
-                         minimum-distance match will be removed from all
-                         origins. Hence, selection of 'refORI' matters.
-          OPTION=2
-                Same as OPTION=1, except that all entries which appears more
-                than once in the initial mapping will be removed from all
-                origins independent of distance.
-          OPTION=3
-                All matches that are within 'dcr' are returned
-    magnitude - An array of stellar magnitudes corresponding to x and y.
-                If magnitude is supplied, the brightest objects within 'dcr'
-                is taken as a match. The option keyword is set to 4
-                internally.
-    silent    - Suppresses output if True.
-    protect_reference_obj  - Also reference objects will be rejected if Falls.
+        bfrac                   : `float`, optional
+            Fraction of low quality source position origins, i.e., those
+            origins (columns in x and y), for which it is expected to
+            find a reduced number of objects with valid source
+            positions.
+            Default is ``1.0``.
 
-    Returns:
-    -------
-      ind     - Array of index positions of matched objects in the origins,
-                set to -1 if no matches are found
-      reject  - Vector with indexes of all origins which should be removed
-      count   - Integer giving number of matches returned
+        maxid                   : `integer`, optional
+            Max. number of allowed identical cross identifications
+            between objects from a specific origin (columns in x and y)
+            and objects from the origin with the id 'refORI'. The origin
+            will be rejected, if this limit is reached.
+            Default is ``1``.
+
+        reference_image_id      : `integer`, optional
+            ID of the reference origin (e.g., an image).
+            Default is ``0``.
+
+        reference_obj           : `integer`, optional
+            Ids of the reference objects. The reference objects will not be
+            removed from the list of objects.
+            Default is ``None``.
+
+        nmissed                 : `integer`, optional
+            Maximum number an object is allowed to be not detected in an
+            origin. If this limit is reached the object will be removed.
+            Default is ``1``.
+
+        indent                  : `integer`, optional
+            Indentation for the console output lines
+            Default is ``1``.
+
+        option                  : `integer`, optional
+            Changes behavior of the program & description of output
+            lists slightly, as follows:
+              OPTION=0 | left out
+                    For each object of the origin 'refORI' the closest match
+                    from all other origins is found, but if none is found within
+                    the distance of 'dcr', the match is thrown out. Thus, the
+                    index of that object will not appear in the 'ind' output
+                    array.
+              OPTION=1
+                    Forces the output mapping to be one-to-one.  OPTION=0
+                    results, in general, in a many-to-one mapping from the
+                    origin 'refORI' to the all other origins. Under OPTION=1, a
+                    further processing step is performed to keep only the
+                    minimum-distance match, whenever an entry from the origin
+                    'refORI' appears more than once in the initial mapping.
+                    Caution: The entries that exceed the distance of the
+                             minimum-distance match will be removed from all
+                             origins. Hence, selection of 'refORI' matters.
+              OPTION=2
+                    Same as OPTION=1, except that all entries which appears more
+                    than once in the initial mapping will be removed from all
+                    origins independent of distance.
+              OPTION=3
+                    All matches that are within 'dcr' are returned
+            Default is ``None``.
+
+        magnitude               : `nump.ndarray`, optional
+            An array of stellar magnitudes corresponding to x and y.
+            If magnitude is supplied, the brightest objects within 'dcr'
+            is taken as a match. The option keyword is set to 4
+            internally.
+            Default is ``None``.
+
+        silent                  : `boolean`, optional
+            Suppresses output if True.
+            Default is ``False``.
+
+        protect_reference_obj   : `boolean`, optional
+            Also reference objects will be rejected if Falls.
+            Default is ``True``.
+
+        Returns
+        -------
+        ind                     : `numpy.ndarray`
+            Array of index positions of matched objects in the origins,
+            set to -1 if no matches are found.
+
+        reject                  : `numpy.ndarray`
+            Vector with indexes of all origins which should be removed
+
+        count                   : `integer`
+            Integer giving number of matches returned
+
+        reject_obj              : `numpy.ndarray`
+            Vector with indexes of all objects which should be removed
     """
     # print(Bcolors.WARNING+indent+"Remove me if possible."+Bcolors.ENDC)
+
+    #   Sanitize reference object
+    if reference_obj is None:
+        reference_obj = []
 
     ###
     #   Keywords.
@@ -778,7 +812,7 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
     if magnitude is not None:
         option = 4
     if option < 0 or option > 3:
-        print(Bcolors.BOLD + indent + "Invalid option code." + Bcolors.ENDC)
+        terminal_output.print_to_terminal("Invalid option code.", indent=indent)
 
     ###
     #   Set up some variables.
@@ -792,21 +826,9 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
 
     #   Debug output
     if not silent:
-        print(
-            Bcolors.BOLD
-            + indent + "   Option code = " + str(option).strip()
-            + Bcolors.ENDC
-        )
-        print(
-            Bcolors.BOLD
-            + indent + "   " + str(k).strip() + " origins (figures)"
-            + Bcolors.ENDC
-        )
-        print(
-            Bcolors.BOLD
-            + indent + "   max. number of objects " + str(n).strip()
-            + Bcolors.ENDC
-        )
+        terminal_output.print_to_terminal(f"   Option code = {option}", indent=indent)
+        terminal_output.print_to_terminal(f"   {k} origins (figures)", indent=indent)
+        terminal_output.print_to_terminal(f"   max. number of objects {n}", indent=indent)
 
     ###
     #   The main loop.  Step through each index of origin with 'refORI',
@@ -902,19 +924,17 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
         rej_obj_tup = tuple(rej_obj)
 
         #   Exit loop if there are no objects to be removed
-        #   or it is the second iteration
+        #   or if it is the second iteration
         if len(rej_obj) == 0 or z == 1:
             break
 
         reject_obj = np.copy(rej_obj)
 
         if not silent:
-            print(
-                Bcolors.BOLD
-                + indent + "   " + str(len(reject_obj))
-                + " objects removed because they are not found on >="
-                + str(nmissed) + " images"
-                + Bcolors.ENDC
+            terminal_output.print_to_terminal(
+                f"   {len(reject_obj)} objects removed because "
+                f"they are not found on >={nmissed} images",
+                indent=indent,
             )
 
         #   Discard objects that are on not enough images
@@ -922,11 +942,7 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
         y[rej_obj_tup, reference_image_id] = 0.
 
     if not silent:
-        print(
-            Bcolors.BOLD
-            + indent + f"   {count} matches found."
-            + Bcolors.ENDC
-        )
+        terminal_output.print_to_terminal(f"   {count} matches found.", indent=indent)
 
     if count > 0:
         ind = ind[:, 0:count]
@@ -946,23 +962,20 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
     #
     if not silent:
         if option == 4:
-            print(
-                Bcolors.BOLD
-                + indent + "   Cleaning up output array using magnitudes."
-                + Bcolors.ENDC
+            terminal_output.print_to_terminal(
+                "   Cleaning up output array using magnitudes.",
+                indent=indent,
             )
         else:
             if option == 1:
-                print(
-                    Bcolors.BOLD
-                    + indent + "   Cleaning up output array (option = 1)."
-                    + Bcolors.ENDC
+                terminal_output.print_to_terminal(
+                    "   Cleaning up output array (option = 1).",
+                    indent=indent,
                 )
             else:
-                print(
-                    Bcolors.BOLD
-                    + indent + "   Cleaning up output array (option = 2)."
-                    + Bcolors.ENDC
+                terminal_output.print_to_terminal(
+                    "   Cleaning up output array (option = 2).",
+                    indent=indent,
                 )
 
     #   Loop over the origins
@@ -1057,11 +1070,10 @@ def newsrcor(x, y, dcr=3., bfrac=1.0, maxid=1, reference_image_id=0, reference_o
     count = len(ind[reference_image_id, :])
 
     if not silent:
-        print(
-            Bcolors.OKGREEN
-            + indent + "       " + str(len(ind[reference_image_id, :])).strip()
-            + " unique matches found."
-            + Bcolors.ENDC
+        terminal_output.print_to_terminal(
+            f"       {len(ind[reference_image_id, :])} unique matches found.",
+            indent=indent,
+            style_name='OKGREEN',
         )
 
     return ind, reject, count, reject_obj

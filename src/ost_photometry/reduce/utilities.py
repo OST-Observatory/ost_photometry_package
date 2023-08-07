@@ -116,8 +116,8 @@ def get_instruments(ifc):
     #   Except if no files are found
     if not ifc.files:
         raise RuntimeError(
-            f'{style.bcolors.FAIL}No images found -> EXIT\n'
-            f'\t=> Check paths to the images!{style.bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}No images found -> EXIT\n'
+            f'\t=> Check paths to the images!{style.Bcolors.ENDC}'
         )
 
     #   Get instruments (set() allows to return only unique values)
@@ -165,8 +165,8 @@ def get_instrument_infos(ifc, temp_tolerence):
     #   Except if no files are found
     if not ifc.files:
         raise RuntimeError(
-            f'{style.bcolors.FAIL}No images found -> EXIT\n'
-            f'\t=> Check paths to the images!{style.bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}No images found -> EXIT\n'
+            f'\t=> Check paths to the images!{style.Bcolors.ENDC}'
         )
 
     #   Get instruments (set() allows to return only unique values)
@@ -174,8 +174,8 @@ def get_instrument_infos(ifc, temp_tolerence):
 
     if len(instruments) > 1:
         raise RuntimeError(
-            f'{style.bcolors.FAIL}Multiple instruments detected.\n'
-            f'This is currently not supported -> EXIT \n{style.bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}Multiple instruments detected.\n'
+            f'This is currently not supported -> EXIT \n{style.Bcolors.ENDC}'
         )
         # terminal_output.print_terminal(
         #     instruments,
@@ -193,32 +193,32 @@ def get_instrument_infos(ifc, temp_tolerence):
         xdims = set(ifc.summary['naxis1'])
         if len(xdims) > 1:
             raise RuntimeError(
-                f'{style.bcolors.FAIL}Multiple image dimensions detected.\n'
-                f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+                f'{style.Bcolors.FAIL}Multiple image dimensions detected.\n'
+                f'This is not supported -> EXIT \n{style.Bcolors.ENDC}'
             )
         xdim = list(xdims)[0]
 
         ydims = set(ifc.summary['naxis2'])
         if len(ydims) > 1:
             raise RuntimeError(
-                f'{style.bcolors.FAIL}Multiple image dimensions detected.\n'
-                f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+                f'{style.Bcolors.FAIL}Multiple image dimensions detected.\n'
+                f'This is not supported -> EXIT \n{style.Bcolors.ENDC}'
             )
         ydim = list(ydims)[0]
 
         xbins = set(ifc.summary['xbinning'])
         if len(xbins) > 1:
             raise RuntimeError(
-                f'{style.bcolors.FAIL}Multiple binning values detected.\n'
-                f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+                f'{style.Bcolors.FAIL}Multiple binning values detected.\n'
+                f'This is not supported -> EXIT \n{style.Bcolors.ENDC}'
             )
         xbin = list(xbins)[0]
 
         ybins = set(ifc.summary['ybinning'])
         if len(ybins) > 1:
             raise RuntimeError(
-                f'{style.bcolors.FAIL}Multiple binning values detected.\n'
-                f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+                f'{style.Bcolors.FAIL}Multiple binning values detected.\n'
+                f'This is not supported -> EXIT \n{style.Bcolors.ENDC}'
             )
         ybin = list(ybins)[0]
 
@@ -247,16 +247,16 @@ def get_instrument_infos(ifc, temp_tolerence):
             redout_mode = 'Extend Fullwell 2CMS'
     else:
         raise RuntimeError(
-            f'{style.bcolors.FAIL}Multiple readout modes detected.\n'
-            f'This is currently not supported -> EXIT \n{style.bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}Multiple readout modes detected.\n'
+            f'This is currently not supported -> EXIT \n{style.Bcolors.ENDC}'
         )
 
     #   Get gain setting
     gain_settings = set(ifc.summary['gain'])
     if len(gain_settings) > 1:
         raise RuntimeError(
-            f'{style.bcolors.FAIL}Multiple gain values detected.\n'
-            f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}Multiple gain values detected.\n'
+            f'This is not supported -> EXIT \n{style.Bcolors.ENDC}'
         )
     gain_setting = list(gain_settings)[0]
 
@@ -264,8 +264,8 @@ def get_instrument_infos(ifc, temp_tolerence):
     bit_pixs = set(ifc.summary['bitpix'])
     if len(bit_pixs) > 1:
         raise RuntimeError(
-            f'{style.bcolors.FAIL}Multiple bit values detected.\n'
-            f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}Multiple bit values detected.\n'
+            f'This is not supported -> EXIT \n{style.Bcolors.ENDC}'
         )
     bit_pix = list(bit_pixs)[0]
 
@@ -275,9 +275,9 @@ def get_instrument_infos(ifc, temp_tolerence):
     temp_range = max(temp_list) - min(temp_list)
     if temp_range > temp_tolerence:
         raise RuntimeError(
-            f'{style.bcolors.FAIL}Significant difference detected between '
+            f'{style.Bcolors.FAIL}Significant difference detected between '
             f'the images: {temp_range}\n'
-            f'This is not supported -> EXIT \n{style.bcolors.ENDC}'
+            f'This is not supported -> EXIT \n{style.Bcolors.ENDC}'
         )
     temperature = np.median(temp_list)
 
@@ -302,8 +302,8 @@ def get_imaging_soft(ifc):
     #   Except if no files are found
     if not ifc.files:
         raise RuntimeError(
-            f'{style.bcolors.FAIL}No images found -> EXIT\n'
-            f'\t=> Check paths to the images!{style.bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}No images found -> EXIT\n'
+            f'\t=> Check paths to the images!{style.Bcolors.ENDC}'
         )
 
     #   Imaging software (set() allows to return only unique values)
@@ -337,9 +337,9 @@ def get_exposure_times(ifc, img_type):
     #   Except if no files are found in this directory
     if not np.any(mask):
         raise RuntimeError(
-            f'{style.bcolors.FAIL}No images with image type {img_type} '
+            f'{style.Bcolors.FAIL}No images with image type {img_type} '
             f'found -> EXIT\n\t=> Check paths to the images!'
-            f'{style.bcolors.ENDC}'
+            f'{style.Bcolors.ENDC}'
         )
 
     #   Exposure times (set() allows to return only unique values)
@@ -496,9 +496,9 @@ def check_dark_scaling(img_string, time, max_dark_time, bias_true):
     #   Raise exception if no bias frames are available
     if not bias_true:
         raise RuntimeError(
-            f'{style.bcolors.FAIL}No darks with a matching exposure time '
+            f'{style.Bcolors.FAIL}No darks with a matching exposure time '
             f'found for the {img_string} exposures with the following '
-            f'exposure time {time}s -> EXIT {style.bcolors.ENDC}'
+            f'exposure time {time}s -> EXIT {style.Bcolors.ENDC}'
         )
     #   Check if scaling is possible -> dark frames can only be scaled
     #   to a smaller exposure time and not to a larger one because this
@@ -507,11 +507,11 @@ def check_dark_scaling(img_string, time, max_dark_time, bias_true):
         return True
     else:
         raise RuntimeError(
-            f'{style.bcolors.FAIL}Scaling of the dark frames to the '
+            f'{style.Bcolors.FAIL}Scaling of the dark frames to the '
             f'exposure time of the {img_string} ({time}s) is not possible, '
             f'since the longest dark exposure is only {max_dark_time}s and '
             f'dark frames should not be scaled "up".'
-            f'-> EXIT{style.bcolors.ENDC}'
+            f'-> EXIT{style.Bcolors.ENDC}'
         )
 
 
@@ -584,8 +584,8 @@ def check_filter_keywords(path, image_type):
     #   Check weather path exists
     if not file_path.exists():
         raise RuntimeError(
-            f'{style.bcolors.FAIL}The provided path ({path}) does not '
-            f'exists {style.bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}The provided path ({path}) does not '
+            f'exists {style.Bcolors.ENDC}'
         )
 
     #   Create image collection
@@ -1116,8 +1116,8 @@ def calculate_image_shifts_core(img_ccd, reff_ccd, img_id, fname,
     else:
         #   This should not happen...
         raise RuntimeError(
-            f'{style.bcolors.FAIL}Image correlation method {method} not '
-            f'known\n {style.bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}Image correlation method {method} not '
+            f'known\n {style.Bcolors.ENDC}'
         )
     terminal_output.print_terminal(
         img_id,
@@ -1237,8 +1237,8 @@ def calculate_image_shifts(ifc, ref_img, comment, method='skimage'):
     # #   Exit if exceptions occurred
     # if executor.err is not None:
     # raise RuntimeError(
-    # f'\n{style.bcolors.FAIL}Image offset determination failed '
-    # f':({style.bcolors.ENDC}'
+    # f'\n{style.Bcolors.FAIL}Image offset determination failed '
+    # f':({style.Bcolors.ENDC}'
     # )
 
     ####
@@ -1514,9 +1514,9 @@ def trim_core(img, i, nfiles, shift, method='skimage', verbose=False):
             ye = int(math.ceil(np.abs(miny))) * -1
     else:
         raise ValueError(
-            f'{style.bcolors.FAIL}Shift method not known. Expected: '
+            f'{style.Bcolors.FAIL}Shift method not known. Expected: '
             f'"pixel" or "sub_pixel", but got '
-            f'"{method}" {style.bcolors.ENDC}'
+            f'"{method}" {style.Bcolors.ENDC}'
         )
 
     #   Trim the image
@@ -1661,8 +1661,8 @@ def prepare_reduction(outdir, bias, darks, flats, imgs, rawfiles, temp_dir,
         else:
             #   This should not happen...
             raise RuntimeError(
-                f'{style.bcolors.FAIL}Raw file path could not be '
-                f'decoded...\n {style.bcolors.ENDC}'
+                f'{style.Bcolors.FAIL}Raw file path could not be '
+                f'decoded...\n {style.Bcolors.ENDC}'
             )
 
     return rawfiles_path
@@ -1835,7 +1835,7 @@ def estimate_fwhm(path, outdir, image_type, plot_subplots=False,
             # plot_subplots = True
             if plot_subplots:
                 plot.subplots_stars_fwhm_estimate(
-                    outdir,
+                    out_path,
                     len(stars_tbl),
                     stars,
                     filt,
@@ -2406,8 +2406,8 @@ def find_wcs_distinguish(img, method='astrometry', x=None, y=None,
         try:
             if x is None or y is None:
                 raise RuntimeError(
-                    f'{style.bcolors.FAIL} \nException in find_wcs(): \n'
-                    f"'x' or 'y' is None -> Exit {style.bcolors.ENDC}"
+                    f'{style.Bcolors.FAIL} \nException in find_wcs(): \n'
+                    f"'x' or 'y' is None -> Exit {style.Bcolors.ENDC}"
                 )
             w = base_aux.find_wcs_twirl(img, x, y, indent=indent)
         except:
@@ -2421,9 +2421,9 @@ def find_wcs_distinguish(img, method='astrometry', x=None, y=None,
     #   Raise exception
     else:
         raise RuntimeError(
-            f"{style.bcolors.FAIL} \nException in find_wcs(): '"
+            f"{style.Bcolors.FAIL} \nException in find_wcs(): '"
             f"\nWCS method not known -> Supplied method was {method}"
-            f"{style.bcolors.ENDC}"
+            f"{style.Bcolors.ENDC}"
         )
 
     return w
