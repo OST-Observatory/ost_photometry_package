@@ -2471,10 +2471,15 @@ def extract_multiprocessing(img_ensemble, ncores, sigma_psf, sigma_bkg=5.,
     #   Sort observation times and images & build dictionary for the
     #   tables with the extraction results
     tmp_list = []
-    for j in range(0, img_ensemble.nfiles):
-        for img in res:
-            pd = img.pd
-            if pd == j:
+    # for j in range(0, img_ensemble.nfiles):
+    #     for img in res:
+    #         pd = img.pd
+    #         if pd == j:
+    #             tmp_list.append(img)
+    for img in img_ensemble.image_list:
+        for pd, tbl in res:
+            if pd == img.pd:
+                img.photometry = tbl
                 tmp_list.append(img)
 
     img_ensemble.image_list = tmp_list
@@ -2798,7 +2803,7 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
         terminal_output.print_to_terminal('')
 
     if multiprocessing:
-        return image
+        return image.pd, image.photometry
 
 
 def extract_flux(img_container, filter_list, name, img_paths, outdir,
