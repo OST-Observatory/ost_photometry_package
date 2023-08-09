@@ -4,6 +4,8 @@
 
 import os
 
+import copy
+
 import numpy as np
 
 from uncertainties import unumpy
@@ -273,6 +275,7 @@ class ImageEnsemble:
             string="Read images and calculate FOV, PIXEL scale, etc. ... ",
             indent=2,
         )
+        #   TODO: Convert image_list to dictionary
         for image_id, file_name in enumerate(file_list):
             self.image_list.append(
                 #   Prepare image class instance
@@ -960,7 +963,6 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
     #   Number of ePSF stars
     num_fit = len(tbl_posi)
 
-    #   TODO: Add check if minimal number of EPSF stars have been identified
     if num_fit < min_stars:
         terminal_logger.add_to_cache(
             f"The number of ePSF stars is less than required."
@@ -1700,7 +1702,7 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
 
 def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
                            reference_obj=None, nmissed=1, bfrac=1.0,
-                           s_ref_obj=True, correl_method='astropy',
+                           protect_reference_obj=True, correl_method='astropy',
                            seplimit=2. * u.arcsec):
     """
         Correlate object positions from all stars in the image ensemble to
@@ -1708,50 +1710,50 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
 
         Parameters
         ----------
-        img_ensemble        : `image ensemble`
+        img_ensemble            : `image ensemble`
             Ensemble of images, e.g., taken in one filter
 
-        dcr                 : `float`, optional
+        dcr                     : `float`, optional
             Maximal distance between two objects in Pixel
             Default is ``3``.
 
-        option              : `integer`, optional
+        option                  : `integer`, optional
             Option for the srcor correlation function
             Default is ``1``.
 
-        maxid               : `integer`, optional
+        maxid                   : `integer`, optional
             Max. number of allowed identical cross identifications between
             objects from a specific origin
             Default is ``1``.
 
-        reference_obj       : `list` of `integer` or None, optional
+        reference_obj           : `list` of `integer` or None, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``None``.
 
-        nmissed             : `integer`, optional
+        nmissed                 : `integer`, optional
             Maximum number an object is allowed to be not detected in an
             origin. If this limit is reached the object will be removed.
             Default is ``i`.
 
-        bfrac               : `float`, optional
+        bfrac                   : `float`, optional
             Fraction of low quality source position origins, i.e., those
             origins, for which it is expected to find a reduced number of
             objects with valid source positions.
             Default is ``1.0``.
 
-        s_ref_obj           : `boolean`, optional
+        protect_reference_obj   : `boolean`, optional
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
 
-        correl_method       : `string`, optional
+        correl_method           : `string`, optional
             Correlation method to be used to find the common objects on
             the images.
             Possibilities: ``astropy``, ``own``
             Default is ``astropy``.
 
-        seplimit            : `astropy.units`, optional
+        seplimit                : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
     """
@@ -1784,7 +1786,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
         ref_ori=img_ensemble.reference_image_id,
         reference_obj=reference_obj,
         nmissed=nmissed,
-        s_ref_obj=s_ref_obj,
+        s_ref_obj=protect_reference_obj,
         seplimit=seplimit,
         dcr=dcr,
         bfrac=bfrac,
@@ -1808,8 +1810,8 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
 
 
 def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
-                       ref_ori=0, reference_obj=None, nmissed=1, bfrac=1.0,
-                       s_ref_obj=True, correl_method='astropy',
+                       reference_image=0, reference_obj=None, nmissed=1, bfrac=1.0,
+                       protect_reference_obj=True, correl_method='astropy',
                        seplimit=2. * u.arcsec):
     """
         Correlate star lists from the stacked images of all filters to find
@@ -1817,58 +1819,57 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
 
         Parameters
         ----------
-        img_container       : `image.container`
+        img_container           : `image.container`
             Container object with image ensemble objects for each filter
 
-        filt_list           : `list` of `string`
+        filt_list               : `list` of `string`
             List with filter identifiers.
 
-        dcr                 : `float`, optional
+        dcr                     : `float`, optional
             Maximal distance between two objects in Pixel
             Default is ``3``.
 
-        option              : `integer`, optional
+        option                  : `integer`, optional
             Option for the srcor correlation function
             Default is ``1``.
 
-        maxid               : `integer`, optional
+        maxid                   : `integer`, optional
             Max. number of allowed identical cross identifications between
             objects from a specific origin
             Default is ``1``.
 
-        TODO: Remove ref_ori because it is already on the ensemble. Maybe here this is actually usefull...
-        ref_ori             : `integer`, optional
+        reference_image         : `integer`, optional
             ID of the reference origin
             Default is ``0``.
 
-        reference_obj       : `list` of `integer` or None, optional
+        reference_obj           : `list` of `integer` or None, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``None``.
 
-        nmissed             : `integer`, optional
+        nmissed                 : `integer`, optional
             Maximum number an object is allowed to be not detected in an
             origin. If this limit is reached the object will be removed.
             Default is ``i`.
 
-        bfrac               : `float`, optional
+        bfrac                   : `float`, optional
             Fraction of low quality source position origins, i.e., those
             origins, for which it is expected to find a reduced number of
             objects with valid source positions.
             Default is ``1.0``.
 
-        s_ref_obj           : `boolean`, optional
+        protect_reference_obj   : `boolean`, optional
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
 
-        correl_method       : `string`, optional
+        correl_method           : `string`, optional
             Correlation method to be used to find the common objects on
             the images.
             Possibilities: ``astropy``, ``own``
             Default is ``astropy``.
 
-        seplimit            : `astropy.units`, optional
+        seplimit                : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
     """
@@ -1907,14 +1908,14 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
     ind_sr, ref_ori_new, reject, count = correlate.correlate_datasets(
         x,
         y,
-        w[ref_ori],
+        w[reference_image],
         n_objects,
         n_ensembles,
         dataset_type='ensemble',
-        ref_ori=ref_ori,
+        ref_ori=reference_image,
         reference_obj=reference_obj,
         nmissed=nmissed,
-        s_ref_obj=s_ref_obj,
+        s_ref_obj=protect_reference_obj,
         seplimit=seplimit,
         cleanup_advanced=False,
         dcr=dcr,
@@ -1934,180 +1935,179 @@ def correlate_ensemble(img_container, filt_list, dcr=3., option=1, maxid=1,
             image.photometry = image.photometry[ind_sr[j, :]]
 
 
-#   TODO: Check if the following routine is still necessary? -> seems to be useful
-# def correlate_preserve_calibs(img_ensemble, filter_list,
-#                               calib_method='APASS', mag_range=(0., 18.5),
-#                               vizier_dict=None, calib_file=None, dcr=3,
-#                               option=1, verbose=False, maxid=1, reference_image_id=0,
-#                               nmissed=1, bfrac=1.0, s_refOBJ=True,
-#                               plot_test=True, correl_method='astropy',
-#                               seplimit=2. * u.arcsec):
-#     """
-#         Correlate results from all images, while preserving the calibration
-#         stars
-#
-#         Parameters
-#         ----------
-#         img_ensemble        : `image.ensemble` object
-#             Ensemble class object with all image data taken in a specific
-#             filter
-#
-#         filter_list         : `list` with `strings`
-#             Filter list
-#
-#         calib_method       : `string`, optional
-#             Calibration method
-#             Default is ``APASS``.
-#
-#         mag_range           : `tupel` or `float`, optional
-#             Magnitude range
-#             Default is ``(0.,18.5)``.
-#
-#         vizier_dict         : `dictionary` or None, optional
-#             Identifiers of catalogs, containing calibration data
-#             Default is ``None``.
-#
-#         calib_file          : `string`, optional
-#             Path to the calibration file
-#             Default is ``None``.
-#
-#         dcr             : `float`, optional
-#             Maximal distance between two objects in Pixel
-#             Default is ``3``.
-#
-#         option          : `integer`, optional
-#             Option for the srcor correlation function
-#             Default is ``1``.
-#
-#         verbose         : `boolean`, optional
-#             If True additional output will be printed to the command line.
-#             Default is ``False``.
-#
-#         maxid               : `integer`, optional
-#             Max. number of allowed identical cross identifications between
-#             objects from a specific origin
-#             Default is ``1``.
-#
-#         reference_image_id  : `integer`, optional
-#             ID of the reference origin
-#             Default is ``0``.
-#
-#         nmissed             : `integer`, optional
-#             Maximum number an object is allowed to be not detected in an
-#             origin. If this limit is reached the object will be removed.
-#             Default is ``i`.
-#
-#         bfrac               : `float`, optional
-#             Fraction of low quality source position origins, i.e., those
-#             origins, for which it is expected to find a reduced number of
-#             objects with valid source positions.
-#             Default is ``1.0``.
-#
-#         s_refOBJ            : `boolean`, optional
-#             If ``False`` also reference objects will be rejected, if they do
-#             not fulfill all criteria.
-#             Default is ``True``.
-#
-#         plot_test       : `boolean`, optional
-#             If True only the masterplot for the reference image will
-#             be created.
-#             Default is ``True``.
-#
-#         correl_method       : `string`, optional
-#             Correlation method to be used to find the common objects on
-#             the images.
-#             Possibilities: ``astropy``, ``own``
-#             Default is ``astropy``.
-#
-#         seplimit            : `astropy.units`, optional
-#             Allowed separation between objects.
-#             Default is ``2.*u.arcsec``.
-#     """
-#     ###
-#     #   Load calibration data
-#     #
-#     calib_tbl, col_names, ra_unit = calib.load_calib(
-#         img_ensemble.image_list[reference_image_id],
-#         filter_list,
-#         calib_method=calib_method,
-#         mag_range=mag_range,
-#         vizier_dict=vizier_dict,
-#         calib_file=calib_file,
-#     )
-#
-#     #   Number of calibration stars
-#     n_calib = len(calib_tbl)
-#
-#     if n_calib == 0:
-#         raise Exception(
-#             f"{style.Bcolors.FAIL} \nNo match between calibrations stars and "
-#             f"the\n extracted stars detected. -> EXIT {style.Bcolors.ENDC}"
-#         )
-#
-#     ###
-#     #   Find IDs of calibration stars to ensure they are not deleted in
-#     #   the correlation process
-#     #
-#     #   Lists for IDs, and xy coordinates
-#     calib_IDs = []
-#     calib_xs = []
-#     calib_ys = []
-#
-#     #   Loop over all calibration stars
-#     for k in range(0, n_calib):
-#         #   Find the calibration star
-#         inds_obj, ref_count, x_obj, y_obj = correlate.posi_obj_srcor_img(
-#             img_ensemble.image_list[reference_image_id],
-#             calib_tbl[col_names['ra']].data[k],
-#             calib_tbl[col_names['dec']].data[k],
-#             img_ensemble.wcs,
-#             dcr=dcr,
-#             option=option,
-#             ra_unit=ra_unit,
-#             verbose=verbose,
-#         )
-#         if verbose:
-#             terminal_output.print_terminal()
-#
-#         #   Add ID and coordinates of the calibration star to the lists
-#         if ref_count != 0:
-#             calib_IDs.append(inds_obj[1][0])
-#             calib_xs.append(x_obj)
-#             calib_ys.append(y_obj)
-#     terminal_output.print_terminal(
-#         len(calib_IDs),
-#         indent=3,
-#         string="{:d} matches",
-#         style_name='OKBLUE',
-#     )
-#     terminal_output.print_terminal()
-#
-#     ###
-#     #   Correlate the results from all images
-#     #
-#     correlate_ensemble_img(
-#         img_ensemble,
-#         dcr=dcr,
-#         option=option,
-#         maxid=maxid,
-#         ref_ori=reference_image_id,
-#         ref_obj=calib_IDs,
-#         nmissed=nmissed,
-#         bfrac=bfrac,
-#         s_ref_obj=s_refOBJ,
-#         correl_method=correl_method,
-#         seplimit=seplimit,
-#     )
-#
-#     ###
-#     #   Plot image with the final positions overlaid (final version)
-#     #
-#     utilities.prepare_and_plot_starmap_final_3(
-#         img_ensemble,
-#         calib_xs,
-#         calib_ys,
-#         plot_test=plot_test,
-#     )
+#   TODO: Check were this is used and if it is still functional, rename
+def correlate_preserve_calibs(img_ensemble, filter_list,
+                              calib_method='APASS', mag_range=(0., 18.5),
+                              vizier_dict=None, calib_file=None, dcr=3,
+                              option=1, verbose=False, maxid=1, reference_image_id=0,
+                              nmissed=1, bfrac=1.0, protect_reference_obj=True,
+                              plot_test=True, correl_method='astropy',
+                              seplimit=2. * u.arcsec):
+    """
+        Correlate results from all images, while preserving the calibration
+        stars
+
+        Parameters
+        ----------
+        img_ensemble        : `image.ensemble` object
+            Ensemble class object with all image data taken in a specific
+            filter
+
+        filter_list         : `list` with `strings`
+            Filter list
+
+        calib_method       : `string`, optional
+            Calibration method
+            Default is ``APASS``.
+
+        mag_range               : `tupel` or `float`, optional
+            Magnitude range
+            Default is ``(0.,18.5)``.
+
+        vizier_dict             : `dictionary` or None, optional
+            Identifiers of catalogs, containing calibration data
+            Default is ``None``.
+
+        calib_file              : `string`, optional
+            Path to the calibration file
+            Default is ``None``.
+
+        dcr                     : `float`, optional
+            Maximal distance between two objects in Pixel
+            Default is ``3``.
+
+        option                  : `integer`, optional
+            Option for the srcor correlation function
+            Default is ``1``.
+
+        verbose                 : `boolean`, optional
+            If True additional output will be printed to the command line.
+            Default is ``False``.
+
+        maxid                   : `integer`, optional
+            Max. number of allowed identical cross identifications between
+            objects from a specific origin
+            Default is ``1``.
+
+        reference_image_id      : `integer`, optional
+            ID of the reference origin
+            Default is ``0``.
+
+        nmissed                 : `integer`, optional
+            Maximum number an object is allowed to be not detected in an
+            origin. If this limit is reached the object will be removed.
+            Default is ``i`.
+
+        bfrac                   : `float`, optional
+            Fraction of low quality source position origins, i.e., those
+            origins, for which it is expected to find a reduced number of
+            objects with valid source positions.
+            Default is ``1.0``.
+
+        protect_reference_obj   : `boolean`, optional
+            If ``False`` also reference objects will be rejected, if they do
+            not fulfill all criteria.
+            Default is ``True``.
+
+        plot_test               : `boolean`, optional
+            If True only the masterplot for the reference image will
+            be created.
+            Default is ``True``.
+
+        correl_method           : `string`, optional
+            Correlation method to be used to find the common objects on
+            the images.
+            Possibilities: ``astropy``, ``own``
+            Default is ``astropy``.
+
+        seplimit                : `astropy.units`, optional
+            Allowed separation between objects.
+            Default is ``2.*u.arcsec``.
+    """
+    ###
+    #   Load calibration data
+    #
+    calib_tbl, col_names, ra_unit = calib.load_calib(
+        img_ensemble.image_list[reference_image_id],
+        filter_list,
+        calib_method=calib_method,
+        mag_range=mag_range,
+        vizier_dict=vizier_dict,
+        calib_file=calib_file,
+    )
+
+    #   Number of calibration stars
+    n_calib = len(calib_tbl)
+
+    if n_calib == 0:
+        raise Exception(
+            f"{style.Bcolors.FAIL} \nNo match between calibrations stars and "
+            f"the\n extracted stars detected. -> EXIT {style.Bcolors.ENDC}"
+        )
+
+    ###
+    #   Find IDs of calibration stars to ensure they are not deleted in
+    #   the correlation process
+    #
+    #   Lists for IDs, and xy coordinates
+    calib_stars_ids = []
+    calib_xs = []
+    calib_ys = []
+
+    #   Loop over all calibration stars
+    for k in range(0, n_calib):
+        #   Find the calibration star
+        inds_obj, ref_count, x_obj, y_obj = correlate.posi_obj_srcor_img(
+            img_ensemble.image_list[reference_image_id],
+            calib_tbl[col_names['ra']].data[k],
+            calib_tbl[col_names['dec']].data[k],
+            img_ensemble.wcs,
+            dcr=dcr,
+            option=option,
+            ra_unit=ra_unit,
+            verbose=verbose,
+        )
+        if verbose:
+            terminal_output.print_terminal()
+
+        #   Add ID and coordinates of the calibration star to the lists
+        if ref_count != 0:
+            calib_stars_ids.append(inds_obj[1][0])
+            calib_xs.append(x_obj)
+            calib_ys.append(y_obj)
+    terminal_output.print_terminal(
+        len(calib_stars_ids),
+        indent=3,
+        string="{:d} matches",
+        style_name='OKBLUE',
+    )
+    terminal_output.print_terminal()
+
+    ###
+    #   Correlate the results from all images
+    #
+    correlate_ensemble_img(
+        img_ensemble,
+        dcr=dcr,
+        option=option,
+        maxid=maxid,
+        reference_obj=calib_stars_ids,
+        nmissed=nmissed,
+        bfrac=bfrac,
+        protect_reference_obj=protect_reference_obj,
+        correl_method=correl_method,
+        seplimit=seplimit,
+    )
+
+    ###
+    #   Plot image with the final positions overlaid (final version)
+    #
+    utilities.prepare_and_plot_starmap_final_3(
+        img_ensemble,
+        calib_xs,
+        calib_ys,
+        plot_test=plot_test,
+    )
 
 
 def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
@@ -2224,7 +2224,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
         reference_obj=[int(variable_id)],
         nmissed=nmissed,
         bfrac=bfrac,
-        s_ref_obj=protect_reference_obj,
+        protect_reference_obj=protect_reference_obj,
         correl_method=correl_method,
         seplimit=seplimit,
     )
@@ -2803,7 +2803,7 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
         terminal_output.print_to_terminal('')
 
     if multiprocessing:
-        return image.pd, image.photometry
+        return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
 
 
 def extract_flux(img_container, filter_list, name, img_paths, outdir,
@@ -3748,7 +3748,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         reference_obj=[obj_id],
                         nmissed=nmissed,
                         bfrac=bfrac,
-                        s_ref_obj=protect_reference_obj,
+                        protect_reference_obj=protect_reference_obj,
                         correl_method=correl_method,
                         seplimit=seplimit,
                     )

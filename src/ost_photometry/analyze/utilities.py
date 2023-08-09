@@ -1003,7 +1003,7 @@ class Executor:
 
     def __init__(self, process_num):
         #   Init multiprocessing pool
-        self.pool = mp.Pool(process_num)
+        self.pool = mp.Pool(process_num, maxtaskperchild=6)
         #   Init variables
         self.res = []
         self.err = None
@@ -1038,9 +1038,13 @@ class Executor:
         """
             Call to apply_async
         """
-        self.pool.apply_async(function, args, kwargs,
-                              callback=self.collect_results,
-                              error_callback=self.callback_error)
+        self.pool.apply_async(
+            function,
+            args,
+            kwargs,
+            callback=self.collect_results,
+            error_callback=self.callback_error
+        )
 
     def wait(self):
         """

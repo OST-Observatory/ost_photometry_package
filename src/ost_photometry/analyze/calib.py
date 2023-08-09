@@ -26,7 +26,6 @@ from . import correlate, plot
 ############################################################################
 
 
-#   TODO: Remove this class?
 class CalibParameters:
     def __init__(self, inds, column_names, calib_tbl):
         self.inds = inds
@@ -512,8 +511,8 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
         style_name='OKBLUE',
     )
 
-    #   The next block is probably necessary for the magnitude
-    #   transformation but impedes calibration without -> needs to be rewritten
+    #   Remove masked columns from calibration table, since those could cause
+    #   problems during calibration
     for band in band_list:
         if 'mag' + band in col_names:
             #   Remove objects without magnitudes from the calibration list
@@ -611,7 +610,8 @@ def deter_calib(img_container, band_list, calib_method='APASS',
                 dcr=3., option=1, vizier_dict=None,
                 calib_file=None, id_obj=None, ra_unit=u.deg, dec_unit=u.deg,
                 mag_range=(0., 18.5), rm_obj_coord=None,
-                correl_method='astropy', seplimit=2. * u.arcsec, indent=1):
+                correl_method='astropy', seplimit=2. * u.arcsec,
+                reference_filter=None, indent=1):
     """
         Determine calibration information, find suitable calibration stars
         and determine calibration factors
@@ -624,7 +624,7 @@ def deter_calib(img_container, band_list, calib_method='APASS',
         band_list               : `list` of `string`
             Filter list
 
-        calib_method           : `string`, optional
+        calib_method            : `string`, optional
             Calibration method
             Default is ``APASS``.
 
@@ -666,15 +666,19 @@ def deter_calib(img_container, band_list, calib_method='APASS',
             the data.
             Default is ``None``.
 
-        correl_method       : `string`, optional
+        correl_method           : `string`, optional
             Correlation method to be used to find the common objects on
             the images.
             Possibilities: ``astropy``, ``own``
             Default is ``astropy``.
 
-        seplimit            : `astropy.units`, optional
+        seplimit                : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
+
+        reference_filter        : `string` or `None`, optional
+            Name of the reference filter
+            Default is ``None`
 
         indent                  : `integer`, optional
             Indentation for the console output lines
@@ -686,8 +690,9 @@ def deter_calib(img_container, band_list, calib_method='APASS',
     )
 
     #   Get one of image ensembles to extract wcs, positions, ect.
-    #   TODO: replace with reference filter or at all relevant infos to image container?
-    img_ensemble = img_container.ensembles[band_list[0]]
+    if reference_filter is None:
+        reference_filter = band_list[0]
+    img_ensemble = img_container.ensembles[reference_filter]
 
     #   Get wcs
     w = img_ensemble.wcs

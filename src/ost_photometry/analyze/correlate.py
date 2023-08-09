@@ -15,7 +15,6 @@ import astropy.units as u
 ############################################################################
 
 
-#   TODO: Unify the code in the following 4 functions.
 def posi_obj_astropy(xs, ys, ra_obj, dec_obj, w, ra_unit=u.hourangle,
                      dec_unit=u.deg, seplimit=2. * u.arcsec):
     """
