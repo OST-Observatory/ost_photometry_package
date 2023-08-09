@@ -1003,7 +1003,7 @@ class Executor:
 
     def __init__(self, process_num):
         #   Init multiprocessing pool
-        self.pool = mp.Pool(process_num, maxtaskperchild=6)
+        self.pool = mp.Pool(process_num, maxtasksperchild=6)
         #   Init variables
         self.res = []
         self.err = None
