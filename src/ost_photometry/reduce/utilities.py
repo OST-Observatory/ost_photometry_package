@@ -136,7 +136,7 @@ def get_instrument_infos(ifc, temp_tolerence):
 
         Parameters
         ----------
-        ifc             : `ccdproc.ImageFileCollection`
+        ifc                 : `ccdproc.ImageFileCollection`
             Image file collection with all images
 
         temp_tolerence      : `float`, optional
@@ -145,21 +145,21 @@ def get_instrument_infos(ifc, temp_tolerence):
 
         Returns
         -------
-        instruments           : `set`
+        instrument          : `string`
             List of instruments
 
-        redout_mode           : `string`
+        redout_mode         : `string`
             Mode used to readout the data from the camera chip.
 
-        gain_setting          : `integer` or `None`
+        gain_setting        : `integer` or `None`
             Gain used in the camera setting for cameras such as the QHYs.
             This is not the system gain, but it can be calculated from this
             value. See below.
 
-        bit_pix                 : `integer`
+        bit_pix             : `integer`
             Bit value of each pixel
 
-        temperature             : `float`
+        temperature         : `float`
             Temperature of the images
     """
     #   Except if no files are found
@@ -177,14 +177,6 @@ def get_instrument_infos(ifc, temp_tolerence):
             f'{style.Bcolors.FAIL}Multiple instruments detected.\n'
             f'This is currently not supported -> EXIT \n{style.Bcolors.ENDC}'
         )
-        # terminal_output.print_terminal(
-        #     instruments,
-        #     string="Images are taken with several instruments: {}. "\
-        #         "The pipeline cannot account for that, but will try anyway...",
-        #     indent=2,
-        #     style_name='WARNING',
-        #     )
-
     instrument = list(instruments)[0]
 
     #   Get the instrument in case of QHY cameras
@@ -1746,7 +1738,7 @@ def estimate_fwhm(path, outdir, image_type, plot_subplots=False,
         outdir          : `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type      : `string`
+        image_type      : `list`
             Header keyword characterizing the image type for which the
             shifts shall be determined
 
@@ -1884,7 +1876,7 @@ def check_master_on_disk(path, image_type, dark_times, filters,
 
         Parameters
         ----------
-        path            : `string`
+        path            : `string` or `pathlib.Path`
             Path to the images
 
         image_type      : `dictionary`
@@ -1894,7 +1886,7 @@ def check_master_on_disk(path, image_type, dark_times, filters,
         dark_times      : `list`
             Exposure times of the raw dark images
 
-        filters         : `list`
+        filters         : `list` or `set`
             Filter that have been used
 
         bias_bool       : `boolean`
@@ -1913,30 +1905,6 @@ def check_master_on_disk(path, image_type, dark_times, filters,
 
     if not ifc_reduced.files:
         return False
-
-    #   Load combined bias, darks, and flats in dictionary for easy
-    #   access
-    if bias_bool:
-        ###
-        #   Get master bias
-        #
-        type_bias = get_image_type(
-            ifc_reduced,
-            image_type,
-            image_class='bias',
-        )
-
-        #   Return if no flats found
-        if not type_bias:
-            return False
-
-        #   Prepare dict with master biases
-        #   TODO: Check why the following variable is not used.
-        combined_bias = ifc_reduced.files_filtered(
-            imagetyp=type_bias,
-            combined=True,
-            include_path=True,
-        )
 
     ###
     #   Get master dark
@@ -1981,6 +1949,30 @@ def check_master_on_disk(path, image_type, dark_times, filters,
     #   Check if master flats exists for all filters
     for key in combined_flats.keys():
         if key not in filters:
+            check_master = False
+
+    if bias_bool:
+        ###
+        #   Get master bias
+        #
+        type_bias = get_image_type(
+            ifc_reduced,
+            image_type,
+            image_class='bias',
+        )
+
+        #   Return if no flats found
+        if not type_bias:
+            return False
+
+        #   Prepare list with master biases
+        combined_bias = ifc_reduced.files_filtered(
+            imagetyp=type_bias,
+            combined=True,
+            include_path=True,
+        )
+
+        if not combined_bias:
             check_master = False
 
     return check_master

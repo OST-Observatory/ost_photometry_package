@@ -94,7 +94,15 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
 
         Returns
         -------
-        TODO: FILL
+        readnoise       : `float`
+            Read nosie
+
+        gain            : `float`
+            Gain factor
+
+        dark_rate       : `float`
+            Dark current
+
         d               : `integer`
             Width in pixel
 
@@ -173,7 +181,7 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
         terminal_output.print_to_terminal(
             f'Camera: {camera}\n'
             "   The dark current could not be determined... \n"
-            "   Use default value: 0.002"
+            "   Use default value: 0.002 e/s"
             f"   {e}\n",
             indent=1,
             style_name='WARNING'

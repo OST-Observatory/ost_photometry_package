@@ -256,6 +256,7 @@ class ImageEnsemble:
         self.filt = filt
 
         #   Set number of images
+        #   TODO: Make sure that this attribute is always up to date or replace with method
         self.nfiles = len(file_list)
 
         #   Set ID of the reference image
@@ -1679,7 +1680,7 @@ def aperture_extract(image, r, r_in, r_out, r_unit='pixel', bg_simple=False,
             data,
             aperture,
             annulus_aperture,
-            filt,
+            f'{filt}_{image.pd}',
         )
 
     #   Number of stars
@@ -1758,7 +1759,7 @@ def correlate_ensemble_img(img_ensemble, dcr=3., option=1, maxid=1,
             Default is ``2.*u.arcsec``.
     """
     #   Number of images
-    n_images = img_ensemble.nfiles
+    n_images = len(img_ensemble.image_list)
 
     #   Set proxy image position IDs
     arr_img_ids = np.arange(n_images)
@@ -2102,7 +2103,7 @@ def correlate_preserve_calibs(img_ensemble, filter_list,
     ###
     #   Plot image with the final positions overlaid (final version)
     #
-    utilities.prepare_and_plot_starmap_final_3(
+    utilities.prepare_and_plot_starmap_from_image_ensemble(
         img_ensemble,
         calib_xs,
         calib_ys,
@@ -2261,7 +2262,7 @@ def correlate_preserve_variable(img_ensemble, ra_obj, dec_obj, dcr=3.,
     ###
     #   Plot image with the final positions overlaid (final version)
     #
-    utilities.prepare_and_plot_starmap_final_3(
+    utilities.prepare_and_plot_starmap_from_image_ensemble(
         img_ensemble,
         [x_obj],
         [y_obj],
@@ -3506,7 +3507,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     #   Plot image with the final positions overlaid (final version)
     #
     if len(filter_list) > 1:
-        utilities.prepare_and_plot_starmap_final(
+        utilities.prepare_and_plot_starmap_from_image_container(
             img_container,
             filter_list,
         )

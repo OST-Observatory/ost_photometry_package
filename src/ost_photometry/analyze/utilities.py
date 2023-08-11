@@ -1100,7 +1100,7 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
                              label='Stars with photometric extractions',
                              add_image_id=True):
     """
-        Prepare table for star map and plot star map
+        Creates a star map using information from an Image object
 
         Parameters
         ----------
@@ -1166,9 +1166,9 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
     )
 
 
-def prepare_and_plot_starmap_final(img_container, filt_list):
+def prepare_and_plot_starmap_from_image_container(img_container, filt_list):
     """
-        Prepare table for star map and plot star map
+        Creates a star map using information from an image container
 
         Parameters
         ----------
@@ -1183,11 +1183,6 @@ def prepare_and_plot_starmap_final(img_container, filt_list):
         string="Plot star maps with positions from the final "
                "correlation",
     )
-    # #   Make position table
-    # tbl_xy_final = mk_posi_tbl(
-    #     img_container,
-    #     filt_list,
-    # )
 
     for filt in filt_list:
         if filt == filt_list[0]:
@@ -1218,11 +1213,10 @@ def prepare_and_plot_starmap_final(img_container, filt_list):
     terminal_output.print_terminal()
 
 
-#   TODO: Merge with the one above
-def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
-                                     plot_test=True):
+def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs, calib_ys,
+                                                 plot_test=True):
     """
-        Prepare table for star map and plot star map
+        Creates a star map using information from an image ensemble
 
         Parameters
         ----------
@@ -1230,11 +1224,11 @@ def prepare_and_plot_starmap_final_3(img_ensemble, calib_xs, calib_ys,
             Image img_ensemble class object
 
         calib_xs        : `numpy.ndarray` or `list` of `floats`
-            Position of the claibration objects on the image in pixel
+            Position of the calibration objects on the image in pixel
             in X direction
 
         calib_ys        : `numpy.ndarray` or `list`  of `floats`
-            Position of the claibration objects on the image in pixel
+            Position of the calibration objects on the image in pixel
             in Y direction
 
         plot_test       : `boolean`, optional

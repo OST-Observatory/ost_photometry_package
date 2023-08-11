@@ -1511,14 +1511,14 @@ def apply_calib(img_container, filter_list, tcs=None, derive_tcs=False,
             #   Get magnitude array for image i
             img_i_mags = utilities.magnitude_array_from_table(img_container, img_i)
 
-            #   TODO: Remove later
+            #   TODO: Remove later?
             #   Add magnitudes to image
             img_i.mags = img_i_mags
 
             #   Get extracted magnitudes of the calibration stars for the
             #   current image
             img_i_mags_calib = calib.get_observed_magnitudes_of_calibration_stars(img_i, img_i_mags, img_container)
-            #   TODO: Remove later
+            #   TODO: Remove later?
             img_i.mags_fit = img_i_mags_calib
 
             #   Prepare some variables and find corresponding image to img_i
@@ -1542,7 +1542,7 @@ def apply_calib(img_container, filter_list, tcs=None, derive_tcs=False,
 
                 #   Set values for mag_fit_1 and mag_fit_2 to allow
                 #   calculation of the correct color later on
-                #   TODO: Remove later
+                #   TODO: Remove later?
                 if filt_id_1 == filt_i:
                     img_i.mag_fit_1 = img_i_mags_calib
                     img_i.mag_fit_2 = img_o_mags_calib
@@ -1938,7 +1938,7 @@ def deter_trans(img_container, key_filt, filter_list, tbl_trans,
 
 def calculate_trans(img_container, key_filt, filt_list, tbl_trans,
                     weights=True, dcr=3., option=1, calib_method='APASS',
-                    vizier_dict={'APASS': 'II/336/apass9'}, calib_file=None,
+                    vizier_dict=None, calib_file=None,
                     mag_range=(0., 18.5)):
     """
         Calculate the transformation coefficients
@@ -1976,7 +1976,7 @@ def calculate_trans(img_container, key_filt, filt_list, tbl_trans,
         vizier_dict             : `dictionary` or `None`, optional
             Dictionary with identifiers of the Vizier catalogs with valid
             calibration data
-            Default is ``{'APASS':'II/336/apass9'}``.
+            Default is ``None``.
 
         calib_file              : `string`, optional
             Path to the calibration file
@@ -1986,6 +1986,10 @@ def calculate_trans(img_container, key_filt, filt_list, tbl_trans,
             Magnitude range
             Default is ``(0.,18.5)``.
     """
+    #   Sanitize dictionary with Vizier catalog information
+    if vizier_dict is None:
+        vizier_dict = {'APASS': 'II/336/apass9'}
+
     ###
     #   Correlate the results from the different filter
     #
@@ -2000,7 +2004,7 @@ def calculate_trans(img_container, key_filt, filt_list, tbl_trans,
     #   Plot image with the final positions overlaid
     #   (final version)
     #
-    utilities.prepare_and_plot_starmap_final(
+    utilities.prepare_and_plot_starmap_from_image_container(
         img_container,
         filt_list,
     )

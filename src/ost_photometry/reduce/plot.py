@@ -139,7 +139,7 @@ def plot_dark_with_distributions(img, rn, dark_rate, outdir, n_images=1,
 
         plt.plot(
             pois_x / n_images, pois.pmf(pois_x) / new_area,
-            label="Poisson dsitribution, mean of {:5.2f} counts"
+            label="Poisson distribution, mean of {:5.2f} counts"
             .format(expected_mean_dark),
         )
 

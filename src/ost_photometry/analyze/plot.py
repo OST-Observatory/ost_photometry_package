@@ -72,7 +72,11 @@ def comp_img(outdir, o_image, c_image):
     ax2.set_title('Downloaded image')
 
     #   Save the plot
-    plt.savefig(outdir + '/img_comparison.pdf', bbox_inches='tight', format='pdf')
+    plt.savefig(
+        f'{outdir}/img_comparison.pdf',
+        bbox_inches='tight',
+        format='pdf',
+    )
     plt.close()
 
 
@@ -202,8 +206,14 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
     norm = ImageNormalize(image, interval=ZScaleInterval())
 
     #   Display the actual image
-    plt.imshow(image, cmap='Greys', origin='lower', norm=norm,
-               interpolation='nearest')
+    plt.imshow(
+        image,
+        # cmap='Greys',
+        cmap='BuPu',
+        origin='lower',
+        norm=norm,
+        interpolation='nearest',
+    )
 
     #   Plot apertures
     plt.scatter(
@@ -211,7 +221,9 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
         tbl[y_column],
         s=40,
         facecolors='none',
-        edgecolors='#0547f9',
+        # edgecolors='#0547f9',
+        edgecolors='mediumblue',
+        alpha=0.5,
         lw=0.9,
         label=label,
     )
@@ -242,7 +254,7 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
             plt.text(
                 x[i],
                 y[i],
-                " " + str(f"{tbl['mags_fit'][i]:.1f}"),
+                f" {tbl['mags_fit'][i]:.1f}",
                 fontdict=style.font,
                 color='blue',
             )
@@ -251,7 +263,7 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
             plt.text(
                 x[i],
                 y[i],
-                " " + str(i),
+                f" {i}",
                 fontdict=style.font,
                 color='blue',
             )
@@ -260,7 +272,7 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
             plt.text(
                 x[i] + 6,
                 y[i] + 6,
-                " " + str(tbl['id'][i]),
+                f" {tbl['id'][i]}",
                 fontdict=style.font,
                 color='blue',
             )
@@ -297,13 +309,13 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
     #   Write the plot to disk
     if rts is None:
         plt.savefig(
-            outdir + '/starmaps/starmap_' + band + '.pdf',
+            f'{outdir}/starmaps/starmap_{band}.pdf',
             bbox_inches='tight',
             format='pdf',
         )
     else:
         plt.savefig(
-            outdir + '/starmaps/starmap_' + band + '_' + rts + '.pdf',
+            f'{outdir}/starmaps/starmap_{band}_{rts}.pdf',
             bbox_inches='tight',
             format='pdf',
         )
@@ -350,7 +362,8 @@ def plot_apertures(outdir, image, aperture, annulus_aperture, string):
     #   Plot the image
     plt.imshow(
         image,
-        cmap='Greys',
+        # cmap='Greys',
+        cmap='YlGnBu',
         origin='lower',
         norm=norm,
         interpolation='nearest',
@@ -384,7 +397,7 @@ def plot_apertures(outdir, image, aperture, annulus_aperture, string):
 
     #   Save figure
     plt.savefig(
-        outdir + '/aperture/aperture_' + str(string) + '.pdf',
+        f'{outdir}/aperture/aperture_{string}.pdf',
         bbox_inches='tight',
         format='pdf',
     )
@@ -477,8 +490,11 @@ def plot_cutouts(outdir, stars, string, terminal_logger=None,
         ax[i].set_xlabel("Pixel")
         ax[i].set_ylabel("Pixel")
         ax[i].imshow(data_image, norm=norm, origin='lower', cmap='viridis')
-    plt.savefig(outdir + '/cutouts/cutouts_' + str(string)
-                + '.pdf', bbox_inches='tight', format='pdf')
+    plt.savefig(
+        f'{outdir}/cutouts/cutouts_{string}.pdf',
+        bbox_inches='tight',
+        format='pdf',
+    )
     # plt.show()
     plt.close()
 
@@ -682,7 +698,7 @@ def plot_residual(name, image_orig, residual_image, outdir,
         )
 
         #   Set title of subplot
-        ax.set_title('Original Image (' + band + ')')
+        ax.set_title(f'Original Image ({band})')
 
         #   Set labels
         ax.set_xlabel("Pixel")
@@ -729,11 +745,17 @@ def plot_residual(name, image_orig, residual_image, outdir,
 
     #   Write the plot to disk
     if nplots == 1:
-        plt.savefig(outdir + '/residual/residual_images_multiple_filter.pdf',
-                    bbox_inches='tight', format='pdf')
+        plt.savefig(
+            f'{outdir}/residual/residual_images_multiple_filter.pdf',
+            bbox_inches='tight',
+            format='pdf',
+        )
     else:
-        plt.savefig(outdir + '/residual/residual_images.pdf',
-                    bbox_inches='tight', format='pdf')
+        plt.savefig(
+            f'{outdir}/residual/residual_images.pdf',
+            bbox_inches='tight',
+            format='pdf',
+        )
     # plt.show()
     plt.close()
 
@@ -779,8 +801,18 @@ def plot_mags(mag1, name1, mag2, name2, rts, outdir, err1=None, err2=None,
             Fit to plot
             Default is ``None``.
     """
-    scatter(mag1, name1 + " [mag]", mag2, name2 + " [mag]", rts, outdir, err1=err1,
-            err2=err2, nameobj=nameobj, fit=fit)
+    scatter(
+        mag1,
+        f"{name1} [mag]",
+        mag2,
+        f"{name2} [mag]",
+        rts,
+        outdir,
+        err1=err1,
+        err2=err2,
+        nameobj=nameobj,
+        fit=fit,
+    )
 
 
 #   TODO: Check if the following plot is used or not
@@ -854,12 +886,15 @@ def sigma_plot(bv, mags, bands, band, nr, outdir, nameobj=None, fit=None):
         )
 
     #   Set x and y axis label
-    plt.xlabel(str(band) + " [mag]")
-    plt.ylabel("Delta " + bands[0] + "-" + bands[1])
+    plt.xlabel(f"{band} [mag]")
+    plt.ylabel(f"Delta {bands[0]}-{bands[1]}")
 
     #   Save plot
-    plt.savefig(outdir + '/sigmag/' + str(nr) + '_' + str(band)
-                + '.png', bbox_inches='tight', format='png')
+    plt.savefig(
+        f'{outdir}/sigmag/{nr}_{band}.png',
+        bbox_inches='tight',
+        format='png',
+    )
     plt.close()
     # plt.show()
 
@@ -903,7 +938,7 @@ def light_curve_jd(ts, data_column, err_column, outdir, error_bars=True,
     fig = plt.figure(figsize=(20, 9))
 
     #   Plot grid
-    plt.grid(True)
+    plt.grid(True, color='lightgray', linestyle='--')
 
     #   Set title
     if nameobj is None:
@@ -920,9 +955,10 @@ def light_curve_jd(ts, data_column, err_column, outdir, error_bars=True,
             np.array(ts[data_column]),
             yerr=np.array(ts[err_column]),
             fmt='k.',
-            markersize=3,
+            markersize=4,
             capsize=2,
-            ecolor='lightgray',
+            ecolor='dodgerblue',
+            color='darkred',
         )
 
     #   Get median of the data
@@ -952,8 +988,8 @@ def light_curve_jd(ts, data_column, err_column, outdir, error_bars=True,
         ylabel_text = ' [flux] (normalized)'
 
     #   Set x and y axis label
-    plt.xlabel('Julian Date')
-    plt.ylabel(data_column + ylabel_text)
+    plt.xlabel('Julian Date', fontsize=15)
+    plt.ylabel(data_column + ylabel_text, fontsize=15)
 
     #   Save plot
     plt.savefig(
@@ -1018,6 +1054,9 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
     #
     fig = plt.figure(figsize=(20, 9))
 
+    #   Plot grid
+    plt.grid(True, color='lightgray', linestyle='--')
+
     #   Set title
     if nameobj is None:
         fig.suptitle('Folded light curve', fontsize=30)
@@ -1042,9 +1081,10 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
                 np.array(ts_binned[data_column][mask]),
                 yerr=np.array(ts_binned[err_column][mask]),
                 fmt='k.',
-                markersize=3,
+                markersize=4,
                 capsize=2,
-                ecolor='lightgray',
+                ecolor='tomato',
+                color='seagreen',
             )
         else:
             plt.plot(
@@ -1060,9 +1100,10 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
                 np.array(ts_folded[data_column]),
                 yerr=np.array(ts_folded[err_column]),
                 fmt='k.',
-                markersize=3,
+                markersize=4,
                 capsize=2,
-                ecolor='lightgray',
+                ecolor='tomato',
+                color='seagreen',
             )
         else:
             plt.plot(
@@ -1074,6 +1115,9 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
 
     #   Get median of the data
     median_data = np.median(ts_folded[data_column].value)
+    min_data = np.min(ts_folded[data_column].value)
+    max_data = np.max(ts_folded[data_column].value)
+
 
     #   Invert y-axis
     if median_data > 1.5 or median_data < 0.5:
@@ -1092,16 +1136,20 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
         ylabel_text = ' [mag] (Vega)'
     else:
         ylim = max_err * 1.3
-        plt.ylim([median_data - ylim, median_data + ylim])
+        # plt.ylim([median_data - ylim, median_data + ylim])
+        plt.ylim([min_data - ylim, max_data + ylim])
         ylabel_text = ' [flux] (normalized)'
 
     #   Set x and y axis label
-    plt.xlabel('Time (days)')
-    plt.ylabel(data_column + ylabel_text)
+    plt.xlabel('Time (days)', fontsize=15)
+    plt.ylabel(data_column + ylabel_text, fontsize=15)
 
     #   Save plot
-    plt.savefig(outdir + '/lightcurve/lightcurve_folded_' + str(data_column)
-                + '.pdf', bbox_inches='tight', format='pdf')
+    plt.savefig(
+        f'{outdir}/lightcurve/lightcurve_folded_{data_column}.pdf',
+        bbox_inches='tight',
+        format='pdf',
+    )
     plt.close()
 
 
@@ -1642,7 +1690,7 @@ def plot_apparent_cmd(mag_color, mag_filt, name_of_star_cluster, filename,
     )
 
     #   Set ticks and labels
-    color = filt_2 + '-' + filt_1
+    color = f'{filt_2}-{filt_1}'
     mk_ticks_labels(filt_1, color)
 
     #   Write plot to disk
@@ -1664,86 +1712,86 @@ def plot_absolute_cmd(mag_color, mag_filt, name_of_star_cluster, filename,
 
         Parameters
         ----------
-        mag_color           : `numpy.ndarray`
+        mag_color               : `numpy.ndarray`
             Color - 1D
 
-        mag_filt            : `numpy.ndarray`
+        mag_filt                : `numpy.ndarray`
             Filter magnitude - 1D
 
-        name_of_star_cluster   : `string`
+        name_of_star_cluster    : `string`
             Name of cluster
 
-        filename            : `string`
+        filename                : `string`
             Base name of the file to write
 
-        filetype            : `string`
+        filetype                : `string`
             File type
 
-        filt_1              : `string`
+        filt_1                  : `string`
             First filter
 
-        filt_2              : `string`
+        filt_2                  : `string`
             Second filter
 
-        isos                : `string`
+        isos                    : `string`
             Path to the isochrone directory or the isochrone file
 
-        isotype             : `string`
+        isotype                 : `string`
             Type of 'isos'
             Possibilities: 'directory' or 'file'
 
-        iso_column_type       : `dictionary`
+        iso_column_type         : `dictionary`
             Keys = filter : `string`
             Values = type : `string`
 
-        iso_column           : `dictionary`
+        iso_column              : `dictionary`
             Keys = filter           : `string`
             Values = column numbers : `integer`
 
-        log_age              : `boolean`
+        log_age                 : `boolean`
             Logarithmic age
 
-        keyword             : `string`
+        keyword                 : `string`
             Keyword to identify a new isochrone
 
-        iso_labels           : `boolean`
+        iso_labels              : `boolean`
             If True plot legend for isochrones.
 
-        size_x              : `float`, optional
+        size_x                  : `float`, optional
             Figure size in cm (x direction)
             Default is ````.
 
-        size_y              : `float`, optional
+        size_y                  : `float`, optional
             Figure size in cm (y direction)
             Default is ````.
 
-        y_range_max           : `float`, optional
+        y_range_max             : `float`, optional
             The maximum of the plot range in Y
                                 direction
             Default is ````.
 
-        y_range_min           : `float`, optional
+        y_range_min             : `float`, optional
             The minimum of the plot range in Y
                                 direction
             Default is ````.
 
-        x_range_max           : `float`, optional
+        x_range_max             : `float`, optional
             The maximum of the plot range in X
                                 direction
             Default is ````.
 
-        x_range_min           : `float`, optional
+        x_range_min             : `float`, optional
             The minimum of the plot range in X direction
 
-        outdir          : `string`, optional
+        outdir                  : `string`, optional
             Output directory
             Default is ``output``.
 
-        mag_filt_err        : `numpy.ndarray' or ``None``, optional
+        mag_filt_err            : `numpy.ndarray' or ``None``, optional
             Error for ``mag_filt``
             Default is ``None``.
 
-        color_err           : `numpy.ndarray' or ``None``, optional
+        color_err               : `numpy.ndarray' or ``None``, optional
             Error for ``mag_color``
             Default is ``None``.
     """
@@ -1849,7 +1897,7 @@ def plot_absolute_cmd(mag_color, mag_filt, name_of_star_cluster, filename,
                 if not isinstance(age_num, str):
                     lable = str(age_num)
                     if age_unit != '':
-                        lable += ' ' + age_unit
+                        lable += f' {age_unit}'
                 else:
                     lable = os.path.splitext(file_list[i])[0]
 
@@ -1967,7 +2015,7 @@ def plot_absolute_cmd(mag_color, mag_filt, name_of_star_cluster, filename,
                     age_value = round(age_value, 2)
                 else:
                     age_value = round(float(age_list[i]), 2)
-                agestr = str(age_value) + ' Gyr'
+                agestr = f'{age_value} Gyr'
 
                 #   Plot iso lines
                 plt.plot(
@@ -1991,7 +2039,7 @@ def plot_absolute_cmd(mag_color, mag_filt, name_of_star_cluster, filename,
             )
 
     #   Set ticks and labels
-    color = filt_2 + '-' + filt_1
+    color = f'{filt_2}-{filt_1}'
     mk_ticks_labels(filt_1, color)
 
     #   Write plot to disk
@@ -2066,7 +2114,7 @@ def comp_scatter(values_x, values_y, name_x, name_y, string, outdir,
 
     #   Save figure
     plt.savefig(
-        outdir + '/compare/compare' + str(string) + '.pdf',
+        f'{outdir}/compare/compare{string}.pdf',
         bbox_inches='tight',
         format='pdf',
     )
@@ -2281,7 +2329,7 @@ def d3_scatter(xs, ys, zs, outdir, color=None, name_x='', name_y='',
                     # c=zs[i],
                     cmap='cividis',
                     # cmap='tab20',
-                    label='Cluster ' + str(j),
+                    label=f'Cluster {j}',
                     # picker=True,
                     picker=5,
                 )
@@ -2295,7 +2343,7 @@ def d3_scatter(xs, ys, zs, outdir, color=None, name_x='', name_y='',
                     c=color[j],
                     cmap='cividis',
                     # cmap='tab20',
-                    label='Cluster ' + str(j),
+                    label=f'Cluster {j}',
                 )
                 ax.legend()
 
@@ -2313,7 +2361,7 @@ def d3_scatter(xs, ys, zs, outdir, color=None, name_x='', name_y='',
     else:
         #   Save image if it is not displayed directly
         plt.savefig(
-            outdir + '/compare/pm_vs_distance.pdf',
+            f'{outdir}/compare/pm_vs_distance.pdf',
             bbox_inches='tight',
             format='pdf',
         )
@@ -2412,7 +2460,7 @@ def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
 
     #   Save plot
     plt.savefig(
-        outdir + '/scatter/' + rts + '.pdf',
+        f'{outdir}/scatter/{rts}.pdf',
         bbox_inches='tight',
         format='pdf',
     )
@@ -2472,7 +2520,7 @@ def plot_limiting_mag_sky_apertures(outdir, img_data, mask, depth):
 
     #   Save plot
     plt.savefig(
-        outdir + '/limiting_mag/limiting_mag_sky_regions.pdf',
+        f'{outdir}/limiting_mag/limiting_mag_sky_regions.pdf',
         bbox_inches='tight',
         format='pdf',
     )

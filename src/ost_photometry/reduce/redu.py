@@ -597,7 +597,7 @@ def master_bias(path, outdir, img_type):
         path            : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string`
+        outdir          : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
         img_type        : `dictionary`
@@ -661,10 +661,10 @@ def reduce_dark(path, outdir, image_type, gain=None, readnoise=8.):
 
         Parameters
         ----------
-        path            : `string`
+        path            : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string`
+        outdir          : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
         image_type      : `dictionary`
@@ -734,7 +734,7 @@ def reduce_dark(path, outdir, image_type, gain=None, readnoise=8.):
         dark.write(dark_path / file_name, overwrite=True)
 
 
-def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr={0: 0.1},
+def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr=None,
                 mask=True, plots=False, verbose=False, debug=False, **kwargs):
     """
         This function calculates master darks from individual dark images
@@ -743,10 +743,10 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr={0: 0.1},
 
         Parameters
         ----------
-        path            : `string`
+        path            : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string`
+        outdir          : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
         image_type      : `dictionary`
@@ -762,10 +762,10 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr={0: 0.1},
             The read noise (e-) of the camera chip.
             Default is ``8`` e-.
 
-        dr              : `dictionary(float:float)`, optional
+        dr              : `dictionary(float:float)` or None, optional
             Temperature dependent dark rate in e-/pix/s:
             key = temperature, value = dark rate
-            Default is ``{0:0.1}``.
+            Default is ``None``.
 
         mask            : `boolean`, optional
             If True a hot pixel mask is created.
@@ -788,6 +788,15 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr={0: 0.1},
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(path)
     out_path = checks.check_pathlib_path(outdir)
+
+    #   Sanitize dark rate
+    if dr is None:
+        terminal_output.print_to_terminal(
+            f"Dark current not specified. Assume 0.1 e/s.",
+            indent=1,
+            style_name='WARNING',
+        )
+        dr = {0: 0.1}
 
     #   Create image collection
     try:
@@ -906,10 +915,10 @@ def reduce_flat(path, outdir, image_type, gain=None, readnoise=8.,
 
         Parameters
         ----------
-        path            : `string`
+        path            : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string`
+        outdir          : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
         image_type      : `dictionary`
@@ -1021,7 +1030,7 @@ def reduce_flat(path, outdir, image_type, gain=None, readnoise=8.,
         #   Find the correct dark exposure
         valid, closest_dark = utilities.find_nearest_exposure(
             flat,
-            combined_darks.keys(),
+            list(combined_darks.keys()),
             tolerance=tolerance,
         )
 
@@ -1055,10 +1064,10 @@ def master_flat(path, outdir, image_type, mask=True, plots=False,
 
         Parameters
         ----------
-        path            : `string`
+        path            : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string`
+        outdir          : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
         image_type      : `dictionary`
@@ -1192,10 +1201,10 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
 
         Parameters
         ----------
-        path            : `string`
+        path            : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string`
+        outdir          : `string` or `pathlib.Path`
             Path to the directory where the master files should be stored
 
         image_type      : `dictionary`
@@ -1269,13 +1278,21 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
 
     #   Return if image collection is empty
     if not ifc_lights.files:
-        return
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \tNo object image detected.\n\t"
+            f"-> EXIT{style.Bcolors.ENDC}"
+        )
+        # return
 
     #   Limit images to those of the target. If a target is given.
     if target is not None:
         ifc_lights = ifc_lights.filter(object=target)
 
-    # TODO: Check if ifc_lights is empty after previous filter
+    if not ifc_lights.files:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \tERROR: No image left after filtering by object name.\n\t"
+            f"-> EXIT{style.Bcolors.ENDC}"
+        )
 
     #   Find science images
     lights = [True if file in image_type['light'] else False for file in
@@ -1385,7 +1402,7 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
         #   Find the correct dark exposure
         valid, closest_dark = utilities.find_nearest_exposure(
             light,
-            combined_darks.keys(),
+            list(combined_darks.keys()),
             tolerance=tolerance,
         )
 
@@ -1411,10 +1428,10 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
         reduced.mask = reduced.mask | mask
 
         #   Get master flat field
-        master_flat = combined_flats[reduced.header['filter']]
+        flat_master = combined_flats[reduced.header['filter']]
 
         #   Divided science by the master flat
-        reduced = ccdp.flat_correct(reduced, master_flat)
+        reduced = ccdp.flat_correct(reduced, flat_master)
 
         if addmask:
             #   Get mask of bad and hot pixel
@@ -1564,6 +1581,12 @@ def shift_img_apply(img_ccd, reff_ccd, nfiles, shift, flip, img_id, out_path,
     #   Using astroalign to align the images
     elif shift_method == 'aa_true':
         img_out = utilities.shift_astroalign_method(reff_ccd, img_ccd)
+
+    else:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \nThe provided method to determine the shifts is not known. "
+            f"Got {shift_method}. Allowed: own, skimage, aa, flow, aa_true {style.Bcolors.ENDC}"
+        )
 
     #   Add Header keyword to mark the file as trimmed
     img_out.meta['trimmed'] = True
@@ -1749,13 +1772,13 @@ def shift_img(path, outdir, image_type, ref_img=0, shift_method='skimage',
 
         Parameters
         ----------
-        path                : `string`
+        path                : `string` or `pathlib.Path`
             Path to the images
 
-        outdir              : `string`
+        outdir              : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type          : `string`
+        image_type          : `list`
             Header keyword characterizing the image type for which the
             shifts shall be determined
 
@@ -1852,14 +1875,14 @@ def shift_img_all(path, outdir, image_type, ref_img=0,
 
         Parameters
         ----------
-        path                : `string`
+        path                : `string` or `pathlib.Path`
             Path to the images
 
-        outdir              : `string`
+        outdir              : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type          : `string`
-            Header keyword characterizing the image type for which the
+        image_type          : `list`
+            Header keywords characterizing the image type for which the
             shifts shall be determined
 
         ref_img             : `integer`, optional
@@ -1949,13 +1972,13 @@ def shift_stack_aa(path, outdir, image_type):
 
         Parameters
         ----------
-        path            : `string`
+        path            : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string`
+        outdir          :  `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type      : `string`
+        image_type      : `list`
             Header keyword characterizing the image type for which the
             shifts shall be determined
     """
@@ -2048,7 +2071,7 @@ def stack_img(path, outdir, image_type, method='average', dtype=None,
         outdir          : `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type      : `string`
+        image_type      : `list`
             Header keyword characterizing the image type for which the
             shifts shall be determined
 
@@ -2137,13 +2160,13 @@ def make_big(path, outdir, image_type, combined=True):
 
         Parameters
         ----------
-        path            : `string`
+        path            : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string`
+        outdir          : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type      : `string`
+        image_type      : `list`
             Header keyword characterizing the image type for which the
             shifts shall be determined
 
@@ -2228,13 +2251,13 @@ def trim_img(path, outdir, image_type, ref_img=0, enlarged=True,
 
         Parameters
         ----------
-        path                : `string`
+        path                : `string` or `pathlib.Path`
             Path to the images
 
-        outdir              : `string`
+        outdir              : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type          : `string`
+        image_type          : `list`
             Header keyword characterizing the image type for which the
             shifts shall be determined
 
