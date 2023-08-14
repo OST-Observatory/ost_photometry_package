@@ -209,7 +209,9 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
     plt.imshow(
         image,
         # cmap='Greys',
-        cmap='BuPu',
+        # cmap='PuBuGn',
+        # cmap='inferno',
+        cmap='magma',
         origin='lower',
         norm=norm,
         interpolation='nearest',
@@ -222,7 +224,8 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
         s=40,
         facecolors='none',
         # edgecolors='#0547f9',
-        edgecolors='mediumblue',
+        # edgecolors='mediumblue',
+        edgecolors='mediumturquoise',
         alpha=0.5,
         lw=0.9,
         label=label,
@@ -256,7 +259,8 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
                 y[i],
                 f" {tbl['mags_fit'][i]:.1f}",
                 fontdict=style.font,
-                color='blue',
+                # color='blue',
+                color='mediumturquoise',
             )
     elif mode == 'list':
         for i in range(0, len(x)):
@@ -265,7 +269,8 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
                 y[i],
                 f" {i}",
                 fontdict=style.font,
-                color='blue',
+                # color='blue',
+                color='mediumturquoise',
             )
     else:
         for i in range(0, len(x)):
@@ -274,7 +279,8 @@ def starmap(outdir, image, band, tbl, indent=2, tbl_2=None,
                 y[i] + 6,
                 f" {tbl['id'][i]}",
                 fontdict=style.font,
-                color='blue',
+                # color='blue',
+                color='mediumturquoise',
             )
             # plt.text(
             # tbl['xcentroid'][i],
@@ -363,7 +369,7 @@ def plot_apertures(outdir, image, aperture, annulus_aperture, string):
     plt.imshow(
         image,
         # cmap='Greys',
-        cmap='YlGnBu',
+        cmap='viridis',
         origin='lower',
         norm=norm,
         interpolation='nearest',
@@ -373,7 +379,7 @@ def plot_apertures(outdir, image, aperture, annulus_aperture, string):
     ap_patches = aperture.plot(
         color='red',
         lw=0.2,
-        label='Photometry aperture',
+        label='Object aperture',
     )
 
     #   Plot background apertures
@@ -940,6 +946,10 @@ def light_curve_jd(ts, data_column, err_column, outdir, error_bars=True,
     #   Plot grid
     plt.grid(True, color='lightgray', linestyle='--')
 
+    #   Set tick size
+    plt.tick_params(axis='x', labelsize=15)
+    plt.tick_params(axis='y', labelsize=15)
+
     #   Set title
     if nameobj is None:
         fig.suptitle(f'Light curve', fontsize=30)
@@ -1057,6 +1067,10 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
     #   Plot grid
     plt.grid(True, color='lightgray', linestyle='--')
 
+    #   Set tick size
+    plt.tick_params(axis='x', labelsize=15)
+    plt.tick_params(axis='y', labelsize=15)
+
     #   Set title
     if nameobj is None:
         fig.suptitle('Folded light curve', fontsize=30)
@@ -1080,11 +1094,18 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
                 ts_binned.time_bin_start.jd[mask],
                 np.array(ts_binned[data_column][mask]),
                 yerr=np.array(ts_binned[err_column][mask]),
-                fmt='k.',
-                markersize=4,
+                # fmt='k.',
+                marker='o',
+                ls='none',
+                elinewidth=1,
+                markersize=3,
                 capsize=2,
-                ecolor='tomato',
-                color='seagreen',
+                # ecolor='tomato',
+                # color='seagreen',
+                # color='tomato',
+                # ecolor='mediumblue',
+                ecolor='dodgerblue',
+                color='darkred',
             )
         else:
             plt.plot(
@@ -1099,11 +1120,18 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
                 ts_folded.time.jd,
                 np.array(ts_folded[data_column]),
                 yerr=np.array(ts_folded[err_column]),
-                fmt='k.',
-                markersize=4,
+                # fmt='k.',
+                marker='o',
+                ls='none',
+                elinewidth=1,
+                markersize=3,
                 capsize=2,
-                ecolor='tomato',
-                color='seagreen',
+                # ecolor='tomato',
+                # color='seagreen',
+                # color='tomato',
+                # ecolor='mediumblue',
+                ecolor='dodgerblue',
+                color='darkred',
             )
         else:
             plt.plot(
@@ -1141,8 +1169,8 @@ def light_curve_fold(ts, data_column, err_column, outdir, transit_time,
         ylabel_text = ' [flux] (normalized)'
 
     #   Set x and y axis label
-    plt.xlabel('Time (days)', fontsize=15)
-    plt.ylabel(data_column + ylabel_text, fontsize=15)
+    plt.xlabel('Time (days)', fontsize=16)
+    plt.ylabel(data_column + ylabel_text, fontsize=16)
 
     #   Save plot
     plt.savefig(
@@ -2048,77 +2076,77 @@ def plot_absolute_cmd(mag_color, mag_filt, name_of_star_cluster, filename,
     plt.close()
 
 
-def comp_scatter(values_x, values_y, name_x, name_y, string, outdir,
-                 one_to_one=True):
-    """
-        Make a 2D scatter plot
-
-        Parameters
-        ----------
-        values_x    : `numpy.ndarray`
-            X values to plot
-
-        values_y    : `numpy.ndarray`
-            Y values to plot
-
-        name_x      : `string`
-            Label for the X axis
-
-        name_y      : `string`
-            Label for the Y axis
-
-        string      : `string`
-            String characterizing the output file
-
-        outdir      : `string`
-            Output directory
-
-        one_to_one   : `boolean`, optional
-            If True a 1:1 line will be plotted.
-            Default is ``True``.
-    """
-    #   Check output directories
-    checks.check_out(
-        outdir,
-        os.path.join(outdir, 'compare'),
-    )
-
-    ###
-    #   Make plot
-    #
-    plt.figure(figsize=(20, 9))
-
-    #   Determine boundaries for 1:1 line
-    x_min = np.amin(values_x)
-    x_max = np.amax(values_x)
-    y_min = np.amin(values_y)
-    y_max = np.amax(values_y)
-    max_plot = np.max([x_max, y_max])
-    min_plot = np.min([x_min, y_min])
-
-    #   Plot the data
-    plt.scatter(values_x, values_y)
-
-    #   Set X & Y label
-    plt.xlabel(name_x)
-    plt.ylabel(name_y)
-
-    #   Plot the 1:1 line
-    if one_to_one:
-        plt.plot(
-            [min_plot, max_plot],
-            [min_plot, max_plot],
-            color='black',
-            lw=2,
-        )
-
-    #   Save figure
-    plt.savefig(
-        f'{outdir}/compare/compare{string}.pdf',
-        bbox_inches='tight',
-        format='pdf',
-    )
-    plt.close()
+# def comp_scatter(values_x, values_y, name_x, name_y, string, outdir,
+#                  one_to_one=True):
+#     """
+#         Make a 2D scatter plot
+#
+#         Parameters
+#         ----------
+#         values_x    : `numpy.ndarray`
+#             X values to plot
+#
+#         values_y    : `numpy.ndarray`
+#             Y values to plot
+#
+#         name_x      : `string`
+#             Label for the X axis
+#
+#         name_y      : `string`
+#             Label for the Y axis
+#
+#         string      : `string`
+#             String characterizing the output file
+#
+#         outdir      : `string`
+#             Output directory
+#
+#         one_to_one   : `boolean`, optional
+#             If True a 1:1 line will be plotted.
+#             Default is ``True``.
+#     """
+#     #   Check output directories
+#     checks.check_out(
+#         outdir,
+#         os.path.join(outdir, 'compare'),
+#     )
+#
+#     ###
+#     #   Make plot
+#     #
+#     plt.figure(figsize=(20, 9))
+#
+#     #   Determine boundaries for 1:1 line
+#     x_min = np.amin(values_x)
+#     x_max = np.amax(values_x)
+#     y_min = np.amin(values_y)
+#     y_max = np.amax(values_y)
+#     max_plot = np.max([x_max, y_max])
+#     min_plot = np.min([x_min, y_min])
+#
+#     #   Plot the data
+#     plt.scatter(values_x, values_y)
+#
+#     #   Set X & Y label
+#     plt.xlabel(name_x)
+#     plt.ylabel(name_y)
+#
+#     #   Plot the 1:1 line
+#     if one_to_one:
+#         plt.plot(
+#             [min_plot, max_plot],
+#             [min_plot, max_plot],
+#             color='black',
+#             lw=2,
+#         )
+#
+#     #   Save figure
+#     plt.savefig(
+#         f'{outdir}/compare/compare{string}.pdf',
+#         bbox_inches='tight',
+#         format='pdf',
+#     )
+#     plt.close()
 
 
 def onpick3(event):
@@ -2369,23 +2397,23 @@ def d3_scatter(xs, ys, zs, outdir, color=None, name_x='', name_y='',
 
 
 def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
-            nameobj=None, fit=None):
+            nameobj=None, fit=None, one_to_one=False):
     """
         Plot magnitudes
 
         Parameters
         ----------
         value1      : `numpy.ndarray`
-            Magnitudes of filter 1
+            Quantity 1
 
         name1       : `string`
-            Filter 1
+            Name of quantity 1
 
         value2      : `numpy.ndarray`
-            Magnitudes of filter 2
+            Quantity 2
 
         name2       : `string`
-            Filter 2
+            Name of quantity 2
 
         rts         : `string`
             Expression characterizing the plot
@@ -2408,6 +2436,10 @@ def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
         fit             : ` astropy.modeling.fitting` instance, optional
             Fit to plot
             Default is ``None``.
+
+        one_to_one   : `boolean`, optional
+            If True a 1:1 line will be plotted.
+            Default is ``False``.
     """
     #   Check output directories
     checks.check_out(
@@ -2417,6 +2449,7 @@ def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
 
     #   Plot magnitudes
     fig = plt.figure(figsize=(8, 8))
+    # plt.style.use('bmh')
 
     #   Set title
     if nameobj is None:
@@ -2434,14 +2467,24 @@ def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
         value2,
         xerr=err1,
         yerr=err2,
-        fmt='b.',
+        # fmt='b.',
+        # fmt='k.',
+        marker='o',
+        ls='none',
         markersize=3,
         capsize=2,
-        ecolor='lightgray',
+        # ecolor='lightgray',
+        # ecolor='mediumorchid',
+        # color='darkred',
+        ecolor='dodgerblue',
+        # ecolor='deepskyblue',
+        color='darkred',
+        elinewidth=1,
     )
 
     #   Add grid
-    plt.grid(color='0.95')
+    # plt.grid(color='0.95')
+    plt.grid(True, color='lightgray', linestyle='--', alpha=0.3)
 
     #   Plot fit
     if fit is not None:
@@ -2449,9 +2492,27 @@ def scatter(value1, name1, value2, name2, rts, outdir, err1=None, err2=None,
         plt.plot(
             value1_sort,
             fit(value1_sort),
-            color='r',
-            linewidth=3,
+            # color='r',
+            color='darkorange',
+            # color='indigo',
+            linewidth=1,
             label='Fit',
+        )
+
+    #   Plot the 1:1 line
+    if one_to_one:
+        x_min = np.amin(value1)
+        x_max = np.amax(value1)
+        y_min = np.amin(value2)
+        y_max = np.amax(value2)
+        max_plot = np.max([x_max, y_max])
+        min_plot = np.min([x_min, y_min])
+
+        plt.plot(
+            [min_plot, max_plot],
+            [min_plot, max_plot],
+            color='black',
+            lw=2,
         )
 
     #   Set x and y axis label

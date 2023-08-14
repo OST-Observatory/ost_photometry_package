@@ -1622,14 +1622,13 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
     )
 
     #   2D and 3D plot of the proper motion and the distance
-    plot.comp_scatter(
+    plot.scatter(
         pm_ra,
-        pm_de,
         'pm_RA * cos(DEC) (mas/yr)',
+        pm_de,
         'pm_DEC (mas/yr)',
-        '_pm_',
+        'compare_pm_',
         image.outpath.name,
-        one_to_one=False,
     )
     plot.d3_scatter(
         [pm_ra],
