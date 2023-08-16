@@ -843,7 +843,7 @@ def deter_calib(img_container, band_list, calib_method='APASS',
                     'label': 'downloaded calibration stars',
                     'label_2': 'matched calibration stars',
                     'rts': rts,
-                    'nameobj': img_ensemble.objname,
+                    'name_obj': img_ensemble.objname,
                 }
             )
             p.start()

@@ -1206,7 +1206,7 @@ def prepare_and_plot_starmap_from_image_container(img_container, filt_list):
                 'rts': rts,
                 'label': 'Stars identified in ' + str(filt_list[0])
                          + ' and ' + str(filt_list[1]) + ' filter',
-                'nameobj': image.objname,
+                'name_obj': image.objname,
             }
         )
         p.start()
@@ -1267,7 +1267,7 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs, calib_y
                 'rts': f'{image_id}_final',
                 'label': 'Stars identified in all images',
                 'label_2': 'Calibration stars',
-                'nameobj': img_ensemble.objname,
+                'name_obj': img_ensemble.objname,
             }
         )
         p.start()
@@ -1361,9 +1361,9 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id, f_list,
             out_dir,
         ),
         kwargs={
-            'nameobj': name_object,
-            'err1': [magnitudes_err],
-            'err2': [uncalibrated_magnitudes_err],
+            'name_obj': name_object,
+            'x_errors': [magnitudes_err],
+            'y_errors': [uncalibrated_magnitudes_err],
         }
     )
     p.start()
@@ -1372,7 +1372,8 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id, f_list,
     if plot_sigma:
         #   Make fit
         fit = fit_data_one_d(
-            magnitudes[ids_calibration_stars][mask],
+            # magnitudes[ids_calibration_stars][mask],
+            uncalibrated_magnitudes[ids_calibration_stars][mask],
             literature_magnitudes[mask],
             1,
         )
@@ -1380,7 +1381,12 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id, f_list,
         p = mp.Process(
             target=plot.scatter,
             args=(
-                [magnitudes[ids_calibration_stars], magnitudes[ids_calibration_stars][mask]],
+                [
+                    # magnitudes[ids_calibration_stars],
+                    uncalibrated_magnitudes[ids_calibration_stars],
+                    # magnitudes[ids_calibration_stars][mask]
+                    uncalibrated_magnitudes[ids_calibration_stars][mask]
+                ],
                 f'{filter_}_inst [mag]',
                 [literature_magnitudes, literature_magnitudes[mask]],
                 f'{filter_}_lit [mag]',
@@ -1388,10 +1394,22 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id, f_list,
                 out_dir,
             ),
             kwargs={
-                'nameobj': name_object,
-                'fit': fit,
-                'err1': [magnitudes[ids_calibration_stars], magnitudes[ids_calibration_stars][mask]],
-                'err2': [literature_magnitudes_err, literature_magnitudes_err[mask]],
+                'name_obj': name_object,
+                'fits': [None, fit],
+                'x_errors': [
+                    # magnitudes_err[ids_calibration_stars],
+                    uncalibrated_magnitudes_err[ids_calibration_stars],
+                    # magnitudes_err[ids_calibration_stars][mask]
+                    uncalibrated_magnitudes_err[ids_calibration_stars][mask]
+                ],
+                'y_errors': [
+                    literature_magnitudes_err,
+                    literature_magnitudes_err[mask]
+                ],
+                'dataset_label': [
+                    'without sigma clipping',
+                    'with sigma clipping',
+                ],
             }
         )
         p.start()
@@ -1407,9 +1425,13 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id, f_list,
                 out_dir,
             ),
             kwargs={
-                'nameobj': name_object,
-                'err1': [color_fit_err, color_fit_err[mask]],
-                'err2': [color_lit_err, color_lit_err[mask]],
+                'name_obj': name_object,
+                'x_errors': [color_fit_err, color_fit_err[mask]],
+                'y_errors': [color_lit_err, color_lit_err[mask]],
+                'dataset_label': [
+                    'without sigma clipping',
+                    'with sigma clipping',
+                ],
             }
         )
         p.start()
@@ -1443,8 +1465,8 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id, f_list,
             out_dir,
         ),
         kwargs={
-            'err1': [literature_magnitudes_err],
-            'err2': [err_prop(
+            'x_errors': [literature_magnitudes_err],
+            'y_errors': [err_prop(
                 magnitudes_err[ids_calibration_stars],
                 literature_magnitudes_err,
             )],
@@ -1524,7 +1546,7 @@ def derive_limiting_magnitude(img_container, filt_list, ref_img, r_limit=4.,
                 'label': '10 faintest stars',
                 'rts': rts,
                 'mode': 'mags',
-                'nameobj': image.objname,
+                'name_obj': image.objname,
             }
         )
         p.start()

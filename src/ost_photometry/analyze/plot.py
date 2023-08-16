@@ -204,15 +204,32 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     fig.suptitle(sub_title, fontsize=20)
 
     #   Set up normalization for the image
-    norm = ImageNormalize(image, interval=ZScaleInterval())
+    plot_image = image
+    # plot_image = image - np.median(image)
+    norm = ImageNormalize(plot_image, interval=ZScaleInterval(contrast=0.05,))
+
+    # plot_image = image - np.min(image)
 
     #   Display the actual image
     plt.imshow(
-        image,
+        plot_image,
         # cmap='Greys',
-        # cmap='PuBuGn',
+        # # # cmap='PuBuGn',
+        cmap='PuBu',
         # cmap='inferno',
-        cmap='magma',
+        # cmap='magma',
+        # cmap='PRGn',
+        # cmap='twilight',
+        # cmap='twilight_shifted',
+        # cmap='Purples',
+        # cmap='BuPu',
+        # cmap='GnBu',
+        # cmap='YlGnBu',
+        # cmap='gist_yarg',
+        # cmap='YlOrBr',
+        # cmap='Blues',
+        # cmap='Greens',
+        # # cmap='cividis',
         origin='lower',
         norm=norm,
         interpolation='nearest',
@@ -226,8 +243,9 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         facecolors='none',
         # edgecolors='#0547f9',
         # edgecolors='mediumblue',
-        edgecolors='mediumturquoise',
-        alpha=0.5,
+        # edgecolors='mediumturquoise',
+        edgecolors='purple',
+        alpha=0.7,
         lw=0.9,
         label=label,
     )
@@ -237,7 +255,17 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             tbl_2[y_column_2],
             s=40,
             facecolors='none',
-            edgecolors='red',
+            # edgecolors='coral',
+            # edgecolors='y',
+            # edgecolors='darkorange',
+            # edgecolors='olive',
+            # edgecolors='olivedrab',
+            # edgecolors='yellowgreen',
+            # edgecolors='greenyellow',
+            # edgecolors='forestgreen',
+            # # # # edgecolors='limegreen',
+            edgecolors='#02c14d',
+            # alpha=0.7,
             lw=0.9,
             label=label_2,
         )
@@ -260,8 +288,8 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
                 y[i],
                 f" {tbl['mags_fit'][i]:.1f}",
                 fontdict=style.font,
-                # color='blue',
-                color='mediumturquoise',
+                color='purple',
+                # color='mediumturquoise',
             )
     elif mode == 'list':
         for i in range(0, len(x)):
@@ -270,18 +298,18 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
                 y[i],
                 f" {i}",
                 fontdict=style.font,
-                # color='blue',
-                color='mediumturquoise',
+                color='purple',
+                # color='mediumturquoise',
             )
     else:
         for i in range(0, len(x)):
             plt.text(
-                x[i] + 6,
-                y[i] + 6,
+                x[i] + 11,
+                y[i] + 7,
                 f" {tbl['id'][i]}",
                 fontdict=style.font,
-                # color='blue',
-                color='mediumturquoise',
+                color='purple',
+                # color='mediumturquoise',
             )
             # plt.text(
             # tbl['xcentroid'][i],
@@ -1507,7 +1535,7 @@ def mk_color_cycler_symbols():
     """
         Make a color cycler
     """
-    colors = ['darkred', 'darkgreen', 'mediumblue', 'yellowgreen']
+    colors = ['darkgreen', 'darkred', 'mediumblue', 'yellowgreen']
     return cycle(colors)
 
 
@@ -1515,7 +1543,7 @@ def mk_color_cycler_error_bars():
     """
         Make a color cycler
     """
-    colors = ['dodgerblue', 'wheat', 'violet', 'gold']
+    colors = ['wheat', 'dodgerblue', 'violet', 'gold']
     return cycle(colors)
 
 
@@ -2284,7 +2312,8 @@ def d3_scatter(xs, ys, zs, output_dir, color=None, name_x='', name_y='',
 
 
 def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
-            y_errors=None, name_obj=None, fits=None, one_to_one=False):
+            y_errors=None, dataset_label=None, name_obj=None, fits=None,
+            one_to_one=False):
     """
         Plot magnitudes
 
@@ -2314,6 +2343,10 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
 
         y_errors        : `list` of `numpy.ndarray' or ``None``, optional
             Errors for the Y values
+            Default is ``None``.
+
+        dataset_label   : 'list` of 'string` or `None`, optional
+            Label for the datasets
             Default is ``None``.
 
         name_obj        : `string`, optional
@@ -2354,6 +2387,10 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
 
     #   Plot data
     for i, x in enumerate(x_values):
+        if dataset_label is None:
+            dataset_label_i = ''
+        else:
+            dataset_label_i = dataset_label[i]
         plt.errorbar(
             x,
             y_values[i],
@@ -2374,20 +2411,26 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
             color=next(color_cycler_symbols),
             ecolor=next(color_cycler_error_bars),
             elinewidth=1,
+            label=f'{dataset_label_i}'
         )
 
         #   Plot fit
         if fits is not None:
-            x_sort = np.sort(x)
-            plt.plot(
-                x_sort,
-                fits[i](x_sort),
-                # color='r',
-                color='darkorange',
-                # color='indigo',
-                linewidth=1,
-                label=f'Fit of dataset {i}',
-            )
+            if fits[i] is not None:
+                x_sort = np.sort(x)
+                plt.plot(
+                    x_sort,
+                    fits[i](x_sort),
+                    # color='r',
+                    color='darkorange',
+                    # color='indigo',
+                    linewidth=1,
+                    label=f'Fit to dataset {dataset_label_i}',
+                )
+
+    #   Add legend
+    if dataset_label is not None:
+        plt.legend()
 
     #   Add grid
     # plt.grid(color='0.95')
