@@ -184,162 +184,82 @@ def cal_err(mask, mags_fit, lit_mags, mags):
     return u
 
 
-#   TODO: Combine the following 2 functions
-def cal_sigma_plot(m_fit, masked, filt, m_lit, outdir, nameobj, rts,
-                   fit=None, m_fit_err=None, m_lit_err=None):
-    """
-        Set up multiprocessing for sigma clipped magnitude plots
-
-    Parameters
-    ----------
-        m_fit           : `numpy.ndarray` - `numpy.float64`
-            Numpy structured array with extracted magnitudes for the
-            calibration stars
-
-        masked          : `numpy.ndarray` - `boolean`
-            Mask of calibration stars that should be excluded
-
-        filt            : `string`
-            Filter used
-
-        m_lit           : `numpy.ndarray` - `numpy.float64`
-            Numpy structured array with literature magnitudes for the
-            calibration stars
-
-        outdir          : `string`
-            Output directory
-
-        nameobj         : `string`
-            Name of the object
-
-        rts             : `string`
-                Expression characterizing the plot
-
-        fit             : ` astropy.modeling.fitting` instance, optional
-            Fit to plot
-            Default is ``None``.
-
-        m_fit_err       : `numpy.ndarray' or ``None``, optional
-            Error for the magnitudes taken in filter 1
-
-        m_lit_err       : `numpy.ndarray' or ``None``, optional
-            Error in literature magnitudes for filter 1
-    """
-    p = mp.Process(
-        target=plot.plot_mags,
-        args=(
-            m_fit[masked],
-            filt + '_inst',
-            m_lit[masked],
-            filt + '_lit',
-            'mags_sigma_' + filt + rts,
-            outdir,
-        ),
-        kwargs={
-            'nameobj': nameobj,
-            'fit': fit,
-            'err1': m_fit_err[masked],
-            'err2': m_lit_err[masked],
-        }
-    )
-    p.start()
-    p = mp.Process(
-        target=plot.plot_mags,
-        args=(
-            m_fit,
-            filt + '_inst',
-            m_lit,
-            filt + '_lit',
-            'mags_no_sigma_' + filt + rts,
-            outdir,
-        ),
-        kwargs={
-            'nameobj': nameobj,
-            'err1': m_fit_err,
-            'err2': m_lit_err,
-        }
-    )
-    p.start()
-
-
-def cal_sigma_plot_color(filt, outdir, nameobj, f_list, id_1, id_2, mask,
-                         color_fit, color_lit, rts, color_fit_err=None,
-                         color_lit_err=None):
-    """
-        Set up multiprocessing for sigma plots
-
-    Parameters
-    ----------
-        filt            : `string`
-            Filter used
-
-        outdir          : `string`
-            Output directory
-
-        nameobj         : `string`
-            Name of the object
-
-        f_list          : `list` - `string`
-            Filter list
-
-        id_1            : `integer`
-            ID of filter 1
-
-        id_2            : `integer`
-            ID of filter 2
-
-        mask:           : `numpy.ndarray`
-            Mask of stars that should be excluded
-
-        color_fit       : `numpy.ndarray` - `numpy.float64`
-            Instrument color of the calibration stars
-
-        color_lit       : `numpy.ndarray` - `numpy.float64`
-            Literature color of the calibration stars
-
-        rts             : `string`
-                Expression characterizing the plot
-
-        color_fit_err       : `numpy.ndarray' or ``None``, optional
-            Uncertainty in the instrument color of the calibration stars
-
-        color_lit_err       : `numpy.ndarray' or ``None``, optional
-            Uncertainty in the literature color of the calibration stars
-    """
-    p = mp.Process(
-        target=plot.plot_mags,
-        args=(
-            color_fit[mask],
-            f'{f_list[id_1]}-{f_list[id_2]}_inst',
-            color_lit[mask],
-            f'{f_list[id_1]}-{f_list[id_2]}_lit',
-            f'color_sigma_{filt}{rts}',
-            outdir,
-        ),
-        kwargs={
-            'nameobj': nameobj,
-            'err1': color_fit_err[mask],
-            'err2': color_lit_err[mask],
-        }
-    )
-    p.start()
-    p = mp.Process(
-        target=plot.plot_mags,
-        args=(
-            color_fit,
-            f'{f_list[id_1]}-{f_list[id_2]}_inst',
-            color_lit,
-            f'{f_list[id_1]}-{f_list[id_2]}_lit',
-            f'color_no_sigma_{filt}{rts}',
-            outdir,
-        ),
-        kwargs={
-            'nameobj': nameobj,
-            'err1': color_fit_err,
-            'err2': color_lit_err,
-        }
-    )
-    p.start()
+# #   TODO: Combine the following 2 functions
+# def cal_sigma_plot(m_fit, masked, filt, m_lit, outdir, nameobj, rts,
+#                    fit=None, m_fit_err=None, m_lit_err=None):
+#     """
+#         Set up multiprocessing for sigma clipped magnitude plots
+#
+#     Parameters
+#     ----------
+#         m_fit           : `numpy.ndarray` - `numpy.float64`
+#             Numpy structured array with extracted magnitudes for the
+#             calibration stars
+#
+#         masked          : `numpy.ndarray` - `boolean`
+#             Mask of calibration stars that should be excluded
+#
+#         filt            : `string`
+#             Filter used
+#
+#         m_lit           : `numpy.ndarray` - `numpy.float64`
+#             Numpy structured array with literature magnitudes for the
+#             calibration stars
+#
+#         outdir          : `string`
+#             Output directory
+#
+#         nameobj         : `string`
+#             Name of the object
+#
+#         rts             : `string`
+#                 Expression characterizing the plot
+#
+#         fit             : ` astropy.modeling.fitting` instance, optional
+#             Fit to plot
+#             Default is ``None``.
+#
+#         m_fit_err       : `numpy.ndarray' or ``None``, optional
+#             Error for the magnitudes taken in filter 1
+#
+#         m_lit_err       : `numpy.ndarray' or ``None``, optional
+#             Error in literature magnitudes for filter 1
+#     """
+#     p = mp.Process(
+#         target=plot.scatter,
+#         args=(
+#             [m_fit, m_fit[masked]],
+#             f'{filt}_inst [mag]',
+#             [m_lit, m_lit[masked]],
+#             f'{filt}_lit [mag]',
+#             'mags_sigma_' + filt + rts,
+#             outdir,
+#         ),
+#         kwargs={
+#             'nameobj': nameobj,
+#             'fit': fit,
+#             'err1': [m_fit_err, m_fit_err[masked]],
+#             'err2': [m_lit_err, m_lit_err[masked]],
+#         }
+#     )
+#     p.start()
+#     # p = mp.Process(
+#     #     target=plot.scatter,
+#     #     args=(
+#     #         m_fit,
+#     #         f'{filt}_inst [mag]',
+#     #         m_lit,
+#     #         f'{filt}_lit [mag]',
+#     #         'mags_no_sigma_' + filt + rts,
+#     #         outdir,
+#     #     ),
+#     #     kwargs={
+#     #         'nameobj': nameobj,
+#     #         'err1': m_fit_err,
+#     #         'err2': m_lit_err,
+#     #     }
+#     # )
+#     # p.start()
 
 
 def prepare_trans_variables(img_container, id_img_i, filt_o, filt_i,
@@ -656,10 +576,10 @@ def derive_trans_onthefly(image, f_list, id_f, id_1, id_2, color_lit_clip,
         t_1_err,
         fit_func,
         image.air_mass,
-        filt=f_list[id_f],
+        filter_=f_list[id_f],
         color_lit_err=color_lit_err_plot,
         fit_var_err=z_1_err,
-        nameobj=image.objname,
+        name_obj=image.objname,
     )
 
     if id_f == id_1:
@@ -677,10 +597,10 @@ def derive_trans_onthefly(image, f_list, id_f, id_1, id_2, color_lit_clip,
         t_2_err,
         fit_func,
         image.air_mass,
-        filt=f_list[id_o],
+        filter_=f_list[id_o],
         color_lit_err=color_lit_err_plot,
         fit_var_err=z_2_err,
-        nameobj=image.objname,
+        name_obj=image.objname,
     )
 
     #   Return ufloat of normal float
@@ -977,40 +897,69 @@ def apply_trans_str(img_container, image, lit_m, id_f, id_i, id_1, id_2,
     )
 
     #   Comparison observed vs. literature magnitudes
-    p = mp.Process(
-        target=plot.plot_mags,
-        args=(
-            mag_cali,
-            f'{image.filt}_calib',
-            mags,
-            f'{image.filt}_no-calib',
-            f'mag-cali_mags_{image.filt}_img_{image.pd}',
-            image.outpath.name,
-        ),
-        kwargs={
-            'nameobj': image.objname,
-            'err1': img_container.cali['err'][id_f][id_i],
-            'err2': image.mags['err'],
-        }
-    )
-    p.start()
+    # p = mp.Process(
+    #     target=plot.plot_mags,
+    #     args=(
+    #         mag_cali,
+    #         f'{image.filt}_calib',
+    #         mags,
+    #         f'{image.filt}_no-calib',
+    #         f'mag-cali_mags_{image.filt}_img_{image.pd}',
+    #         image.outpath.name,
+    #     ),
+    #     kwargs={
+    #         'nameobj': image.objname,
+    #         'err1': img_container.cali['err'][id_f][id_i],
+    #         'err2': image.mags['err'],
+    #     }
+    # )
+    # p.start()
 
-    #   Sigma clipping plots based on the color
-    if plot_sigma:
-        cal_sigma_plot_color(
-            f_list[id_f],
-            image.outpath.name,
-            image.objname,
-            f_list,
-            id_1,
-            id_2,
-            image.ZP_mask,
-            color_fit,
-            color_lit,
-            f'_img_{image.pd}',
-            color_fit_err=utilities.err_prop(mag_cali_fit_1, mag_cali_fit_2),
-            color_lit_err=utilities.err_prop(lit_mag[id_1], lit_mag[id_2]),
-        )
+    #   Quality control plots
+    utilities.calibration_check_plots(
+        f_list[id_f],
+        image.outpath.name,
+        image.objname,
+        image.pd,
+        f_list,
+        id_1,
+        id_2,
+        image.ZP_mask,
+        color_fit,
+        color_lit,
+        img_container.CalibParameters.inds,
+        lit_mag[id_1],
+        mag_cali,
+        mags,
+        color_fit_err=utilities.err_prop(
+            image.mag_fit_1['err'],
+            image.mag_fit_2['err'],
+            ),
+        color_lit_err=utilities.err_prop(
+            lit_m['err'][id_1],
+            lit_m['err'][id_2],
+            ),
+        literature_magnitudes_err=lit_m['err'][id_1],
+        magnitudes_err=img_container.cali['err'][id_f][id_i],
+        uncalibrated_magnitudes_err=image.mags['err'],
+        plot_sigma=plot_sigma,
+    )
+    # #   Sigma clipping plots based on the color
+    # if plot_sigma:
+    #     calibration_check_plots(
+    #         f_list[id_f],
+    #         image.outpath.name,
+    #         image.objname,
+    #         image.pd,
+    #         f_list,
+    #         id_1,
+    #         id_2,
+    #         image.ZP_mask,
+    #         color_fit,
+    #         color_lit,
+    #         color_fit_err=utilities.err_prop(mag_cali_fit_1, mag_cali_fit_2),
+    #         color_lit_err=utilities.err_prop(lit_mag[id_1], lit_mag[id_2]),
+    #     )
 
 
 def apply_trans_unc(img_container, image, lit_m, id_f, id_i, id_1, id_2,
@@ -1106,64 +1055,62 @@ def apply_trans_unc(img_container, image, lit_m, id_f, id_i, id_1, id_2,
     )
 
     img_container.cali[id_f][id_i] = mag_cali
+    #
+    # #   Comparison observed vs. literature magnitudes
+    # p = mp.Process(
+    #     target=plot.plot_mags,
+    #     args=(
+    #         unumpy.nominal_values(mag_cali),
+    #         f'{image.filt}_calib',
+    #         unumpy.nominal_values(mags),
+    #         f'{image.filt}_no-calib',
+    #         f'mag-cali_mags_{image.filt}_img_{image.pd}',
+    #         image.outpath.name,
+    #     ),
+    #     kwargs={
+    #         'nameobj': image.objname,
+    #         'err1': unumpy.std_devs(mag_cali),
+    #         'err2': unumpy.std_devs(mags),
+    #     }
+    # )
+    # p.start()
 
-    #   Comparison observed vs. literature magnitudes
-    p = mp.Process(
-        target=plot.plot_mags,
-        args=(
-            unumpy.nominal_values(mag_cali),
-            f'{image.filt}_calib',
-            unumpy.nominal_values(mags),
-            f'{image.filt}_no-calib',
-            f'mag-cali_mags_{image.filt}_img_{image.pd}',
-            image.outpath.name,
-        ),
-        kwargs={
-            'nameobj': image.objname,
-            'err1': unumpy.std_devs(mag_cali),
-            'err2': unumpy.std_devs(mags),
-        }
+    #   Quality control plots
+    utilities.calibration_check_plots(
+        f_list[id_f],
+        image.outpath.name,
+        image.objname,
+        image.pd,
+        f_list,
+        id_1,
+        id_2,
+        image.ZP_mask,
+        unumpy.nominal_values(color_fit),
+        unumpy.nominal_values(color_lit),
+        img_container.CalibParameters.inds,
+        unumpy.nominal_values(lit_mag[id_1]),
+        unumpy.nominal_values(mag_cali),
+        unumpy.nominal_values(mags),
+        color_fit_err=unumpy.std_devs(color_fit),
+        color_lit_err=unumpy.std_devs(color_lit),
+        literature_magnitudes_err=unumpy.std_devs(lit_mag[id_1]),
+        magnitudes_err=unumpy.std_devs(mag_cali),
+        uncalibrated_magnitudes_err=unumpy.std_devs(mags),
+        plot_sigma=plot_sigma,
     )
-    p.start()
-
-    #   Sigma clipping plots based on the color
-    if plot_sigma:
-        cal_sigma_plot_color(
-            f_list[id_f],
-            image.outpath.name,
-            image.objname,
-            f_list,
-            id_1,
-            id_2,
-            image.ZP_mask,
-            unumpy.nominal_values(color_fit),
-            unumpy.nominal_values(color_lit),
-            f'_img_{image.pd}',
-            color_fit_err=unumpy.std_devs(color_fit),
-            color_lit_err=unumpy.std_devs(color_lit),
-        )
 
     #
-    ids_calibration_stars = img_container.CalibParameters.inds
-    # plot.comp_scatter(
+    # ids_calibration_stars = img_container.CalibParameters.inds
+    # plot.scatter(
     #     unumpy.nominal_values(lit_mag[id_1]),
+    #     f'{image.filt}_literature [mag]',
     #     unumpy.nominal_values(mag_cali[ids_calibration_stars] - lit_mag[id_1]),
     #     f'{image.filt}_observed - {image.filt}_literature [mag]',
-    #     f'{image.filt}_literature [mag]',
-    #     '_magnitues-literature-vs-observed',
+    #     'magnitues_literature-vs-observed',
     #     image.outpath.name,
-    #     one_to_one=False,
+    #     err1=unumpy.std_devs(lit_mag[id_1]),
+    #     err2=unumpy.std_devs(mag_cali[ids_calibration_stars] - lit_mag[id_1]),
     # )
-    plot.scatter(
-        unumpy.nominal_values(lit_mag[id_1]),
-        f'{image.filt}_literature [mag]',
-        unumpy.nominal_values(mag_cali[ids_calibration_stars] - lit_mag[id_1]),
-        f'{image.filt}_observed - {image.filt}_literature [mag]',
-        'magnitues_literature-vs-observed',
-        image.outpath.name,
-        err1=unumpy.std_devs(lit_mag[id_1]),
-        err2=unumpy.std_devs(mag_cali[ids_calibration_stars] - lit_mag[id_1]),
-    )
 
 
 def calibrate_simple(*args, **kwargs):
@@ -1431,39 +1378,40 @@ def prepare_zp(img_container, image, id_i, mag_lit, mag_fit_i,
     clip = sigma_clipping(clip_values, sigma=1.5)
     image.ZP_mask = np.invert(clip.recordmask)
 
+    # TODO: Move to other sigma plots
     #   Plot sigma clipping if it makes sense
-    if not np.all(mag_lit == 0.):
-        #   Make fit
-        zp_fit = utilities.fit_data_one_d(
-            mag_fit_i[image.ZP_mask],
-            mag_lit[id_i][image.ZP_mask],
-            1,
-        )
-
-        #   Get plot variables
-        if unc:
-            mag_fit_i_plot = unumpy.nominal_values(mag_fit_i)
-            mag_lit_plot = unumpy.nominal_values(mag_lit[id_i])
-            m_fit_err_plot = unumpy.std_devs(mag_fit_i)
-            m_lit_err_plot = unumpy.std_devs(mag_lit[id_i])
-        else:
-            mag_fit_i_plot = mag_fit_i
-            mag_lit_plot = mag_lit[id_i]
-            m_fit_err_plot = mag_fit_i_unc
-            m_lit_err_plot = mag_lit_unc[id_i]
-
-        cal_sigma_plot(
-            mag_fit_i_plot,
-            image.ZP_mask,
-            image.filt,
-            mag_lit_plot,
-            image.outpath.name,
-            image.objname,
-            '_img_' + str(image.pd),
-            fit=zp_fit,
-            m_fit_err=m_fit_err_plot,
-            m_lit_err=m_lit_err_plot,
-        )
+    # if not np.all(mag_lit == 0.):
+    #     #   Make fit
+    #     zp_fit = utilities.fit_data_one_d(
+    #         mag_fit_i[image.ZP_mask],
+    #         mag_lit[id_i][image.ZP_mask],
+    #         1,
+    #     )
+    #
+    #     #   Get plot variables
+    #     if unc:
+    #         mag_fit_i_plot = unumpy.nominal_values(mag_fit_i)
+    #         mag_lit_plot = unumpy.nominal_values(mag_lit[id_i])
+    #         m_fit_err_plot = unumpy.std_devs(mag_fit_i)
+    #         m_lit_err_plot = unumpy.std_devs(mag_lit[id_i])
+    #     else:
+    #         mag_fit_i_plot = mag_fit_i
+    #         mag_lit_plot = mag_lit[id_i]
+    #         m_fit_err_plot = mag_fit_i_unc
+    #         m_lit_err_plot = mag_lit_unc[id_i]
+    #
+    #     cal_sigma_plot(
+    #         mag_fit_i_plot,
+    #         image.ZP_mask,
+    #         image.filt,
+    #         mag_lit_plot,
+    #         image.outpath.name,
+    #         image.objname,
+    #         '_img_' + str(image.pd),
+    #         fit=zp_fit,
+    #         m_fit_err=m_fit_err_plot,
+    #         m_lit_err=m_lit_err_plot,
+    #     )
 
     #   Calculate zero points and clip
     image.ZP = mag_lit[id_i] - mag_fit_i
@@ -1902,7 +1850,7 @@ def deter_trans(img_container, key_filt, filter_list, tbl_trans,
             ensemble_dict[filter_list[0]].get_air_mass()[0],
             color_lit_err=color_lit_err_plot,
             fit_var_err=color_fit_err_plot,
-            nameobj=ensemble_dict[filter_list[0]].objname,
+            name_obj=ensemble_dict[filter_list[0]].objname,
         )
 
         #  Mag transform - Fit the data with fit_func
@@ -1939,10 +1887,10 @@ def deter_trans(img_container, key_filt, filter_list, tbl_trans,
             tmag_err,
             fit_func,
             ensemble_dict[filter_list[0]].get_air_mass()[0],
-            filt=key_filt,
+            filter_=key_filt,
             color_lit_err=color_lit_err_plot,
             fit_var_err=zero_err_plot,
-            nameobj=ensemble_dict[filter_list[0]].objname,
+            name_obj=ensemble_dict[filter_list[0]].objname,
         )
 
         #   Redefine variables -> shorter variables

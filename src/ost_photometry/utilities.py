@@ -204,8 +204,7 @@ def cal_fov(image, indent=2, verbose=True):
     image.instrument = instrument
 
 
-def mkfilelist(path, formats=[".FIT", ".fit", ".FITS", ".fits"], addpath=False,
-               sort=False):
+def mkfilelist(path, formats=None, addpath=False, sort=False):
     """
         Fill the file list
 
@@ -214,8 +213,9 @@ def mkfilelist(path, formats=[".FIT", ".fit", ".FITS", ".fits"], addpath=False,
         path        : `string`
             Path to the files
 
-        formats     : `list` of `string`
+        formats     : `list` of `string` or `None`, optional
             List of allowed Formats
+            Default is ``None``.
 
         addpath     : `boolean`, optional
             If `True` the path will be added to the file names.
@@ -233,6 +233,10 @@ def mkfilelist(path, formats=[".FIT", ".fit", ".FITS", ".fits"], addpath=False,
         nfiles      : `interger`
             Number of files
     """
+    #   Sanitize formats
+    if formats is None:
+        formats = [".FIT", ".fit", ".FITS", ".fits"]
+
     file_list = os.listdir(path)
     if sort:
         file_list.sort()

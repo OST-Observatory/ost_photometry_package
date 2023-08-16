@@ -1161,7 +1161,7 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
         tbl_xy,
         label=label,
         rts=rts_pre,
-        nameobj=name,
+        name_obj=name,
         terminal_logger=terminal_logger,
     )
 
@@ -1272,6 +1272,185 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs, calib_y
         )
         p.start()
         terminal_output.print_terminal()
+
+
+def calibration_check_plots(filter_, out_dir, name_object, image_id, f_list,
+                            id_1, id_2, mask, color_fit, color_lit,
+                            ids_calibration_stars, literature_magnitudes,
+                            magnitudes, uncalibrated_magnitudes,
+                            color_fit_err=None, color_lit_err=None,
+                            literature_magnitudes_err=None, magnitudes_err=None,
+                            uncalibrated_magnitudes_err=None, plot_sigma=False):
+    """
+        Useful plots to check the quality of the calibration process.
+
+        Parameters
+        ----------
+        filter_                     : `string`
+            Filter used
+
+        out_dir                     : `string`
+            Output directory
+
+        name_object                 : `string`
+            Name of the object
+
+        image_id                    : `string`
+                Expression characterizing the plot
+
+        f_list                      : `list` - `string`
+            Filter list
+
+        id_1                        : `integer`
+            ID of filter 1
+
+        id_2                        : `integer`
+            ID of filter 2
+
+        mask:                       : `numpy.ndarray`
+            Mask of stars that should be excluded
+
+        color_fit                   : `numpy.ndarray` - `numpy.float64`
+            Instrument color of the calibration stars
+
+        color_lit                   : `numpy.ndarray` - `numpy.float64`
+            Literature color of the calibration stars
+
+        ids_calibration_stars       : `numpy.ndarray`
+            IDs of the calibration stars
+
+        literature_magnitudes       : `numpy.ndarray`
+            Literature magnitudes of the objects that are used in the
+            calibration process
+
+        magnitudes                  : `numpy.ndarray`
+            Magnitudes of all observed objects
+
+        uncalibrated_magnitudes     : `numpy.ndarray`
+            Magnitudes of all observed objects but not calibrated yet
+
+        color_fit_err               : `numpy.ndarray' or ``None``, optional
+            Uncertainty in the instrument color of the calibration stars
+
+        color_lit_err               : `numpy.ndarray' or ``None``, optional
+            Uncertainty in the literature color of the calibration stars
+
+        literature_magnitudes_err   : `numpy.ndarray`
+            Uncertainty in the literature magnitudes of the objects that are
+            used in the calibration process
+
+        magnitudes_err              : `numpy.ndarray` or `None`, optional
+            Uncertainty in the magnitudes of the observed objects
+
+        uncalibrated_magnitudes_err : `numpy.ndarray` or `None`, optional
+            Uncertainty in the uncalibrated magnitudes of the observed objects
+
+        plot_sigma      : `boolean`, optional
+            If True sigma clipped magnitudes will be plotted.
+            Default is ``False``.
+    """
+    #   Comparison observed vs. literature magnitudes
+    p = mp.Process(
+        target=plot.scatter,
+        args=(
+            [magnitudes],
+            f'{filter_}_calib [mag]',
+            [uncalibrated_magnitudes],
+            f'{filter_}_no-calib [mag]',
+            f'mag-cali_mags_{filter_}_img_{image_id}',
+            out_dir,
+        ),
+        kwargs={
+            'nameobj': name_object,
+            'err1': [magnitudes_err],
+            'err2': [uncalibrated_magnitudes_err],
+        }
+    )
+    p.start()
+
+    #   Illustration of sigma clipping on calibration magnitudes
+    if plot_sigma:
+        #   Make fit
+        fit = fit_data_one_d(
+            magnitudes[ids_calibration_stars][mask],
+            literature_magnitudes[mask],
+            1,
+        )
+
+        p = mp.Process(
+            target=plot.scatter,
+            args=(
+                [magnitudes[ids_calibration_stars], magnitudes[ids_calibration_stars][mask]],
+                f'{filter_}_inst [mag]',
+                [literature_magnitudes, literature_magnitudes[mask]],
+                f'{filter_}_lit [mag]',
+                f'mags_sigma_{filter_}_img_{image_id}',
+                out_dir,
+            ),
+            kwargs={
+                'nameobj': name_object,
+                'fit': fit,
+                'err1': [magnitudes[ids_calibration_stars], magnitudes[ids_calibration_stars][mask]],
+                'err2': [literature_magnitudes_err, literature_magnitudes_err[mask]],
+            }
+        )
+        p.start()
+
+        p = mp.Process(
+            target=plot.scatter,
+            args=(
+                [color_fit, color_fit[mask]],
+                f'{f_list[id_1]}-{f_list[id_2]}_inst [mag]',
+                [color_lit, color_lit[mask]],
+                f'{f_list[id_1]}-{f_list[id_2]}_lit [mag]',
+                f'color_sigma_{filter_}_img_{image_id}',
+                out_dir,
+            ),
+            kwargs={
+                'nameobj': name_object,
+                'err1': [color_fit_err, color_fit_err[mask]],
+                'err2': [color_lit_err, color_lit_err[mask]],
+            }
+        )
+        p.start()
+        # p = mp.Process(
+        #     target=plot.scatter,
+        #     args=(
+        #         color_fit,
+        #         f'{f_list[id_1]}-{f_list[id_2]}_inst [mag]',
+        #         color_lit,
+        #         f'{f_list[id_1]}-{f_list[id_2]}_lit [mag]',
+        #         f'color_no_sigma_{filter_}_img_{image_id}',
+        #         out_dir,
+        #     ),
+        #     kwargs={
+        #         'nameobj': name_object,
+        #         'err1': color_fit_err,
+        #         'err2': color_lit_err,
+        #     }
+        # )
+        # p.start()
+
+    #   Difference between literature values and calibration results
+    p = mp.Process(
+        target=plot.scatter,
+        args=(
+            [literature_magnitudes],
+            f'{filter_}_literature [mag]',
+            [magnitudes[ids_calibration_stars] - literature_magnitudes],
+            f'{filter_}_observed - {filter_}_literature [mag]',
+            'magnitudes_literature-vs-observed',
+            out_dir,
+        ),
+        kwargs={
+            'err1': [literature_magnitudes_err],
+            'err2': [err_prop(
+                magnitudes_err[ids_calibration_stars],
+                literature_magnitudes_err,
+            )],
+        },
+    )
+    p.start()
 
 
 def derive_limiting_magnitude(img_container, filt_list, ref_img, r_limit=4.,
@@ -1623,9 +1802,9 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
 
     #   2D and 3D plot of the proper motion and the distance
     plot.scatter(
-        pm_ra,
+        [pm_ra],
         'pm_RA * cos(DEC) (mas/yr)',
-        pm_de,
+        [pm_de],
         'pm_DEC (mas/yr)',
         'compare_pm_',
         image.outpath.name,
@@ -1929,8 +2108,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
         string='_3D_cluster_',
-        pmra=pmra,
-        pmde=pmde,
+        pm_ra=pmra,
+        pm_dec=pmde,
     )
     plot.d3_scatter(
         pm_ra_group,
@@ -1942,8 +2121,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
         string='_3D_cluster_',
-        pmra=pmra,
-        pmde=pmde,
+        pm_ra=pmra,
+        pm_dec=pmde,
         display=True,
     )
 

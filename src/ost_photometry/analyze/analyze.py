@@ -1026,7 +1026,7 @@ def mk_epsf(image, size=25, oversampling=2, maxiters=7,
             outdir,
             stars,
             string,
-            nameobj=nameobj,
+            name_obj=nameobj,
             terminal_logger=terminal_logger,
         )
 
@@ -2699,7 +2699,7 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
                 label='identified stars',
                 label_2='stars used to determine the ePSF',
                 rts='initial-img-' + str(image.pd),
-                nameobj=image.objname,
+                name_obj=image.objname,
                 terminal_logger=log_terminal,
             )
 
@@ -2723,7 +2723,7 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
             image.outpath.name,
             {f'img-{image.pd}-{image.filt}': image.epsf},
             terminal_logger=log_terminal,
-            nameobj=image.objname,
+            name_obj=image.objname,
             indent=2,
         )
 
@@ -2752,7 +2752,7 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
             {f'{image.pd}-{image.filt}': image.residual_image},
             image.outpath.name,
             terminal_logger=log_terminal,
-            nameobj=image.objname,
+            name_obj=image.objname,
             indent=2,
         )
 
@@ -3891,7 +3891,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         filt,
                         filt + '_err',
                         outdir,
-                        nameobj=nameobj
+                        name_obj=nameobj
                     )
 
                     #   Plot the light curve folded on the period
@@ -3903,7 +3903,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                         transit_time,
                         period,
                         binn=binn,
-                        nameobj=nameobj,
+                        name_obj=nameobj,
                     )
 
                     success = True
@@ -3993,7 +3993,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                 filt,
                 filt + '_err',
                 outdir,
-                nameobj=nameobj)
+                name_obj=nameobj)
 
             #   Plot the light curve folded on the period
             plot.light_curve_fold(
@@ -4004,7 +4004,7 @@ def calibrate_data_mk_lc(img_container, filter_list, ra_obj, dec_obj, nameobj,
                 transit_time,
                 period,
                 binn=binn,
-                nameobj=nameobj,
+                name_obj=nameobj,
             )
 
 
