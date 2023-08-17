@@ -2783,11 +2783,12 @@ def main_extract(image, sigma_psf, multiprocessing=False, sigma_bkg=5.,
         )
 
     #   Conversion of flux to magnitudes
-    uflux_img = unumpy.uarray(
+    #   TODO: Should we also offer a classical method to calculate the magnitude plus uncertainty?
+    u_flux_img = unumpy.uarray(
         image.photometry['flux_fit'],
         image.photometry['flux_unc']
     )
-    mags = utilities.mag_u_arr(uflux_img)
+    mags = utilities.mag_u_arr(u_flux_img)
 
     image.photometry['mags_fit'] = unumpy.nominal_values(mags)
     image.photometry['mags_unc'] = unumpy.std_devs(mags)
@@ -3360,7 +3361,7 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
                         dec_unit=u.deg, mag_range=(0., 18.5), tcs=None,
                         derive_tcs=False, plot_sigma=False, photo_type='',
                         region=False, radius=600, data_cluster=False,
-                        pm_median=False, max_distance_cluster=6.,
+                        clean_objs_using_pm=False, max_distance_cluster=6.,
                         find_cluster_para_set=1, correl_method='astropy',
                         seplimit=2. * u.arcsec, r_limit=4., r_unit='arcsec',
                         convert_mags=False, target_filter_system='SDSS'):
@@ -3449,9 +3450,9 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
             will be identified.
             Default is ``False``.
 
-        pm_median               : `boolean`, optional
-            If True only the objects that are close to the median
-            proper motion will be returned.
+        clean_objs_using_pm     : `boolean`, optional
+            If True only the object list will be clean based on their
+            proper motion.
             Default is ``False``.
 
         max_distance_cluster    : `float`, optional
@@ -3544,15 +3545,15 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
     #   Restrict results to specific areas of the image and filter by means
     #   of proper motion and distance using Gaia
     #
-    utilities.postprocess_results(
+    utilities.post_process_results(
         img_container,
         filter_list,
         id_object=object_id,
-        photo_type=photo_type,
+        extraction_method=photo_type,
         region=region,
         radius=radius,
         data_cluster=data_cluster,
-        pm_median=pm_median,
+        clean_objs_using_pm=clean_objs_using_pm,
         max_distance_cluster=max_distance_cluster,
         find_cluster_para_set=find_cluster_para_set,
         convert_mags=convert_mags,
@@ -3566,8 +3567,8 @@ def correlate_calibrate(img_container, filter_list, dcr=3, option=1,
         img_container,
         filter_list,
         ref_img,
-        r_limit=r_limit,
-        r_unit=r_unit,
+        aperture_radius=r_limit,
+        radius_unit=r_unit,
     )
 
 

@@ -380,7 +380,7 @@ def prepare_trans(img_container, tcs, filter_list, filt_i, id_img_i,
     #   Check if transformation is possible with the calibration
     #   coefficients.
     if tcs is not None and not derive_tcs:
-        tc, filt_id_1, filt_id_2 = utilities.find_filt(
+        tc, filt_id_1, filt_id_2 = utilities.find_filter(
             filter_list,
             tcs,
             band,
@@ -896,25 +896,6 @@ def apply_trans_str(img_container, image, lit_m, id_f, id_i, id_1, id_2,
         air_mass=image.air_mass,
     )
 
-    #   Comparison observed vs. literature magnitudes
-    # p = mp.Process(
-    #     target=plot.plot_mags,
-    #     args=(
-    #         mag_cali,
-    #         f'{image.filt}_calib',
-    #         mags,
-    #         f'{image.filt}_no-calib',
-    #         f'mag-cali_mags_{image.filt}_img_{image.pd}',
-    #         image.outpath.name,
-    #     ),
-    #     kwargs={
-    #         'nameobj': image.objname,
-    #         'err1': img_container.cali['err'][id_f][id_i],
-    #         'err2': image.mags['err'],
-    #     }
-    # )
-    # p.start()
-
     #   Quality control plots
     utilities.calibration_check_plots(
         f_list[id_f],
@@ -942,24 +923,8 @@ def apply_trans_str(img_container, image, lit_m, id_f, id_i, id_1, id_2,
         literature_magnitudes_err=lit_m['err'][id_1],
         magnitudes_err=img_container.cali['err'][id_f][id_i],
         uncalibrated_magnitudes_err=image.mags['err'],
-        plot_sigma=plot_sigma,
+        plot_sigma_switch=plot_sigma,
     )
-    # #   Sigma clipping plots based on the color
-    # if plot_sigma:
-    #     calibration_check_plots(
-    #         f_list[id_f],
-    #         image.outpath.name,
-    #         image.objname,
-    #         image.pd,
-    #         f_list,
-    #         id_1,
-    #         id_2,
-    #         image.ZP_mask,
-    #         color_fit,
-    #         color_lit,
-    #         color_fit_err=utilities.err_prop(mag_cali_fit_1, mag_cali_fit_2),
-    #         color_lit_err=utilities.err_prop(lit_mag[id_1], lit_mag[id_2]),
-    #     )
 
 
 def apply_trans_unc(img_container, image, lit_m, id_f, id_i, id_1, id_2,
@@ -1055,25 +1020,6 @@ def apply_trans_unc(img_container, image, lit_m, id_f, id_i, id_1, id_2,
     )
 
     img_container.cali[id_f][id_i] = mag_cali
-    #
-    # #   Comparison observed vs. literature magnitudes
-    # p = mp.Process(
-    #     target=plot.plot_mags,
-    #     args=(
-    #         unumpy.nominal_values(mag_cali),
-    #         f'{image.filt}_calib',
-    #         unumpy.nominal_values(mags),
-    #         f'{image.filt}_no-calib',
-    #         f'mag-cali_mags_{image.filt}_img_{image.pd}',
-    #         image.outpath.name,
-    #     ),
-    #     kwargs={
-    #         'nameobj': image.objname,
-    #         'err1': unumpy.std_devs(mag_cali),
-    #         'err2': unumpy.std_devs(mags),
-    #     }
-    # )
-    # p.start()
 
     #   Quality control plots
     utilities.calibration_check_plots(
@@ -1096,21 +1042,8 @@ def apply_trans_unc(img_container, image, lit_m, id_f, id_i, id_1, id_2,
         literature_magnitudes_err=unumpy.std_devs(lit_mag[id_1]),
         magnitudes_err=unumpy.std_devs(mag_cali),
         uncalibrated_magnitudes_err=unumpy.std_devs(mags),
-        plot_sigma=plot_sigma,
+        plot_sigma_switch=plot_sigma,
     )
-
-    #
-    # ids_calibration_stars = img_container.CalibParameters.inds
-    # plot.scatter(
-    #     unumpy.nominal_values(lit_mag[id_1]),
-    #     f'{image.filt}_literature [mag]',
-    #     unumpy.nominal_values(mag_cali[ids_calibration_stars] - lit_mag[id_1]),
-    #     f'{image.filt}_observed - {image.filt}_literature [mag]',
-    #     'magnitues_literature-vs-observed',
-    #     image.outpath.name,
-    #     err1=unumpy.std_devs(lit_mag[id_1]),
-    #     err2=unumpy.std_devs(mag_cali[ids_calibration_stars] - lit_mag[id_1]),
-    # )
 
 
 def calibrate_simple(*args, **kwargs):
@@ -1148,14 +1081,14 @@ def calibrate_simple_core(image, mag_arr):
     zp = image.ZP_clip
 
     #   Reshape the magnitude array to allow broadcasting
-    resha_mag = mag_arr.reshape(mag_arr.size, 1)
+    reshaped_magnitudes_arr = mag_arr.reshape(mag_arr.size, 1)
 
     #   Calculate calibrated magnitudes
-    mag_cali = resha_mag + zp
+    mag_cali = reshaped_magnitudes_arr + zp
 
     #   If ZP is 0, calibrate with the median of all magnitudes
     if np.all(zp == 0.):
-        mag_cali = resha_mag - np.median(mag_arr)
+        mag_cali = reshaped_magnitudes_arr - np.median(mag_arr)
 
     #   Add calibrated photometry to table of Image object
     image.photometry['mag_cali'] = mag_cali
@@ -1377,41 +1310,6 @@ def prepare_zp(img_container, image, id_i, mag_lit, mag_fit_i,
         clip_values = del_col_calib
     clip = sigma_clipping(clip_values, sigma=1.5)
     image.ZP_mask = np.invert(clip.recordmask)
-
-    # TODO: Move to other sigma plots
-    #   Plot sigma clipping if it makes sense
-    # if not np.all(mag_lit == 0.):
-    #     #   Make fit
-    #     zp_fit = utilities.fit_data_one_d(
-    #         mag_fit_i[image.ZP_mask],
-    #         mag_lit[id_i][image.ZP_mask],
-    #         1,
-    #     )
-    #
-    #     #   Get plot variables
-    #     if unc:
-    #         mag_fit_i_plot = unumpy.nominal_values(mag_fit_i)
-    #         mag_lit_plot = unumpy.nominal_values(mag_lit[id_i])
-    #         m_fit_err_plot = unumpy.std_devs(mag_fit_i)
-    #         m_lit_err_plot = unumpy.std_devs(mag_lit[id_i])
-    #     else:
-    #         mag_fit_i_plot = mag_fit_i
-    #         mag_lit_plot = mag_lit[id_i]
-    #         m_fit_err_plot = mag_fit_i_unc
-    #         m_lit_err_plot = mag_lit_unc[id_i]
-    #
-    #     cal_sigma_plot(
-    #         mag_fit_i_plot,
-    #         image.ZP_mask,
-    #         image.filt,
-    #         mag_lit_plot,
-    #         image.outpath.name,
-    #         image.objname,
-    #         '_img_' + str(image.pd),
-    #         fit=zp_fit,
-    #         m_fit_err=m_fit_err_plot,
-    #         m_lit_err=m_lit_err_plot,
-    #     )
 
     #   Calculate zero points and clip
     image.ZP = mag_lit[id_i] - mag_fit_i
