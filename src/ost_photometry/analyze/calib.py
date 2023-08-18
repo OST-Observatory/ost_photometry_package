@@ -27,23 +27,23 @@ from . import correlate, plot
 
 
 class CalibParameters:
-    def __init__(self, inds, column_names, calib_tbl):
-        self.inds = inds
+    def __init__(self, index, column_names, calib_tbl):
+        self.inds = index
         self.column_names = column_names
         self.calib_tbl = calib_tbl
 
 
-def get_comp_stars(coord, filters=None, field_of_view=18.5,
-                   mag_range=(0., 18.5), indent=2):
+def get_comp_stars(coordinates_sky, filters=None, field_of_view=18.5,
+                   magnitude_range=(0., 18.5), indent=2):
     """
         Download calibration info for variable stars from AAVSO
 
         Parameters
         ----------
-        coord           : `astropy.coordinates.SkyCoord`
+        coordinates_sky  : `astropy.coordinates.SkyCoord`
             Coordinates of the field of field_of_view
 
-        filters         : `list` of `string` or `None`, optional
+        filters          : `list` of `string` or `None`, optional
             Filter names
             Default is ``None``.
 
@@ -51,7 +51,7 @@ def get_comp_stars(coord, filters=None, field_of_view=18.5,
             Field of view in arc minutes
             Default is ``18.5``.
 
-        mag_range       : `tupel` of `float`, optional
+        magnitude_range : `tupel` of `float`, optional
             Magnitude range
             Default is ``(0.,18.5)``.
 
@@ -77,13 +77,13 @@ def get_comp_stars(coord, filters=None, field_of_view=18.5,
         filters = ['B', 'V']
 
     #   Prepare url
-    ra = coord.ra.degree
-    dec = coord.dec.degree
+    ra = coordinates_sky.ra.degree
+    dec = coordinates_sky.dec.degree
     vsp_template = 'https://www.aavso.org/apps/vsp/api/chart/"\
         "?format=json&fov={}&maglimit={}&ra={}&dec={}&special=std_field'
 
     #   Download data
-    r = requests.get(vsp_template.format(field_of_view, mag_range[1], ra, dec))
+    r = requests.get(vsp_template.format(field_of_view, magnitude_range[1], ra, dec))
 
     #   Check status code
     status_code = r.status_code
@@ -99,9 +99,9 @@ def get_comp_stars(coord, filters=None, field_of_view=18.5,
         obj_ra = []
         obj_dec = []
         n_obj = len(r.json()['photometry'])
-        nfilt = len(filters)
-        mags = np.zeros((n_obj, nfilt))
-        errs = np.zeros((n_obj, nfilt))
+        n_filter = len(filters)
+        mags = np.zeros((n_obj, n_filter))
+        errs = np.zeros((n_obj, n_filter))
 
         #   Loop over stars
         for i, star in enumerate(r.json()['photometry']):
@@ -110,11 +110,11 @@ def get_comp_stars(coord, filters=None, field_of_view=18.5,
             obj_ra.append(star['ra'])
             obj_dec.append(star['dec'])
             #   Loop over required filters
-            for j, filt in enumerate(filters):
+            for j, filter_ in enumerate(filters):
                 #   Loop over filter from AAVSO
                 for band in star['bands']:
                     #   Check if AAVSO filter is the required filter
-                    if band['band'][0] == filt:
+                    if band['band'][0] == filter_:
                         #   Fill magnitude and uncertainty arrays
                         mags[i, j] = band['mag']
                         errs[i, j] = band['error']
@@ -128,21 +128,21 @@ def get_comp_stars(coord, filters=None, field_of_view=18.5,
         )
 
         #   Complete table & dictionary
-        for j, filt in enumerate(filters):
+        for j, filter_ in enumerate(filters):
             tbl.add_columns([
                 mags[:, j],
                 errs[:, j],
             ],
                 names=[
-                    'mag' + filt,
-                    'err' + filt,
+                    'mag' + filter_,
+                    'err' + filter_,
                 ]
             )
-            column_dict['mag' + filt] = 'mag' + filt
-            column_dict['err' + filt] = 'err' + filt
+            column_dict['mag' + filter_] = 'mag' + filter_
+            column_dict['err' + filter_] = 'err' + filter_
 
         #   Filter magnitudes: lower threshold
-        mask = tbl['magV'] >= mag_range[0]
+        mask = tbl['magV'] >= magnitude_range[0]
         tbl = tbl[mask]
 
         return tbl, column_dict
@@ -167,7 +167,8 @@ def get_catalog(bands, center, fov, catalog, mag_range=(0., 18.5),
         catalog         : `string`
             Catalog identifier
 
-        mag_range       : `tupel` of `float`, optional
+        mag_range       : `tu
+        pel` of `float`, optional
             Magnitude range
             Default is ``(0.,18.5)``.
 
@@ -475,7 +476,7 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
 
             filters=band_list,
             field_of_view=1.5 * image.fov,
-            mag_range=mag_range,
+            magnitude_range=mag_range,
             indent=indent + 1,
         )
         ra_unit = u.hourangle

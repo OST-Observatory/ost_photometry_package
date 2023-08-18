@@ -130,24 +130,24 @@ def cal_fov(image, indent=2, verbose=True):
 
     if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
         #   Physical chip dimensions in pixel
-        xdim_phy = n_pix_x * bin_x
-        ydim_phy = n_pix_y * bin_y
+        x_dim_phy = n_pix_x * bin_x
+        y_dim_phy = n_pix_y * bin_y
 
         #   Set instrument
-        if xdim_phy == 9576 and ydim_phy == 6388:
+        if x_dim_phy == 9576 and y_dim_phy == 6388:
             instrument = 'QHY600M'
-        elif xdim_phy == 6280 and ydim_phy == 4210:
+        elif x_dim_phy == 6280 and y_dim_phy == 4210:
             instrument = 'QHY268M'
-        elif xdim_phy == 3864 and ydim_phy == 2180:
+        elif x_dim_phy == 3864 and y_dim_phy == 2180:
             instrument = 'QHY485C'
         else:
             instrument = ''
 
     #   Calculate chip size in mm
     if 'XPIXSZ' in header:
-        pixwidth = header['XPIXSZ']
-        d = n_pix_x * pixwidth / 1000
-        h = n_pix_y * pixwidth / 1000
+        pixel_width = header['XPIXSZ']
+        d = n_pix_x * pixel_width / 1000
+        h = n_pix_y * pixel_width / 1000
     else:
         d, h = calibration_data.get_chip_dimensions(instrument)
 
@@ -160,7 +160,7 @@ def cal_fov(image, indent=2, verbose=True):
     fov_y = fov_y * 360. / 2. / np.pi * 60.
 
     #   Calculate pixel scale
-    pixscale = fov * 60 / n_pix_x
+    pixel_scale = fov * 60 / n_pix_x
 
     #   Create RectangleSkyRegion that covers the field of view
     # region_sky = RectangleSkyRegion(
@@ -181,7 +181,7 @@ def cal_fov(image, indent=2, verbose=True):
     image.fov = fov
     image.fov_y = fov_y
     image.instrument = instrument
-    image.pixscale = pixscale
+    image.pixscale = pixel_scale
     # image.region_sky  = region_sky
     image.region_pix = region_pix
 
