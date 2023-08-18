@@ -201,18 +201,14 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     else:
         sub_title = f'Star map ({filter_} band, {rts}) - {name_obj}'
 
-    fig.suptitle(sub_title, fontsize=20)
+    fig.suptitle(sub_title, fontsize=17)
 
     #   Set up normalization for the image
-    plot_image = image
-    # plot_image = image - np.median(image)
-    norm = ImageNormalize(plot_image, interval=ZScaleInterval(contrast=0.05,))
-
-    # plot_image = image - np.min(image)
+    norm = ImageNormalize(image, interval=ZScaleInterval(contrast=0.15,))
 
     #   Display the actual image
     plt.imshow(
-        plot_image,
+        image,
         # cmap='Greys',
         # # # cmap='PuBuGn',
         cmap='PuBu',
@@ -311,22 +307,6 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
                 color='purple',
                 # color='mediumturquoise',
             )
-            # plt.text(
-            # tbl['xcentroid'][i],
-            # tbl['ycentroid'][i],
-            # " "+str(tbl['id'][i]),
-            # fontdict=font,
-            # color='blue',
-            # )
-            # plt.annotate(
-            # str(tbl['id'][i]),
-            # (tbl['xcentroid'][i], tbl['ycentroid'][i]),
-            # xytext=(tbl['xcentroid'][i], tbl['ycentroid'][i]),
-            # #textcoords='offset points',
-            # textcoords='offset pixels',
-            # #fontdict=font,
-            # color='blue',
-            # )
 
     #   Define the ticks
     plt.tick_params(axis='both', which='both', top=True, right=True,
@@ -334,8 +314,8 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     plt.minorticks_on()
 
     #   Set labels
-    plt.xlabel("Pixel", fontsize=16)
-    plt.ylabel("Pixel", fontsize=16)
+    plt.xlabel("[pixel]", fontsize=16)
+    plt.ylabel("[pixel]", fontsize=16)
 
     #   Plot legend
     plt.legend(bbox_to_anchor=(0., 1.02, 1.0, 0.102), loc=3, ncol=2,
@@ -406,14 +386,19 @@ def plot_apertures(output_dir, image, aperture, annulus_aperture, filename_strin
 
     #   Plot stellar apertures
     ap_patches = aperture.plot(
-        color='red',
+        # color='white',
+        # color='darkviolet',
+        color='lightcyan',
+        # color='darkred',
+        # color='red',
         lw=0.2,
         label='Object aperture',
     )
 
     #   Plot background apertures
     ann_patches = annulus_aperture.plot(
-        color='blue',
+        # color='blue',
+        color='darkred',
         lw=0.2,
         label='Background annulus',
     )
@@ -436,6 +421,11 @@ def plot_apertures(output_dir, image, aperture, annulus_aperture, filename_strin
         bbox_inches='tight',
         format='pdf',
     )
+
+    #   Set labels
+    plt.xlabel("[pixel]", fontsize=16)
+    plt.ylabel("[pixel]", fontsize=16)
+
     plt.close()
 
 
@@ -511,7 +501,7 @@ def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
         sub_title = f'Cutouts of the {n_cutouts} faintest stars ({identifier})'
     else:
         sub_title = f'Cutouts of the {n_cutouts} faintest stars ({identifier}) - {name_obj}'
-    fig.suptitle(sub_title, fontsize=20)
+    fig.suptitle(sub_title, fontsize=17)
 
     ax = ax.ravel()  # flatten the image?
 
@@ -584,9 +574,9 @@ def plot_epsf(output_dir, epsf, name_obj=None, terminal_logger=None, indent=1):
 
     #   Set title of the complete plot
     if name_obj is None:
-        fig.suptitle('ePSF', fontsize=20)
+        fig.suptitle('ePSF', fontsize=17)
     else:
-        fig.suptitle(f'ePSF ({name_obj})', fontsize=20)
+        fig.suptitle(f'ePSF ({name_obj})', fontsize=17)
 
     #   Plot individual subplots
     for i, (band, eps) in enumerate(epsf.items()):
@@ -705,9 +695,9 @@ def plot_residual(name, image_orig, residual_image, output_dir,
 
     #   Set title of the complete plot
     if name_obj is None:
-        fig.suptitle(name, fontsize=20)
+        fig.suptitle(name, fontsize=17)
     else:
-        fig.suptitle(f'{name} ({name_obj})', fontsize=20)
+        fig.suptitle(f'{name} ({name_obj})', fontsize=17)
 
     i = 1
     for band, image in image_orig.items():
@@ -848,7 +838,7 @@ def plot_residual(name, image_orig, residual_image, output_dir,
 #         sub_titel = f'Sigma clipped magnitudes -- star: {nr}'
 #     else:
 #         sub_titel = f'Sigma clipped magnitudes -- star: {nr} ({nameobj})'
-#     fig.suptitle(sub_titel, fontsize=20)
+#     fig.suptitle(sub_titel, fontsize=17)
 #
 #     #   Plot data
 #     plt.plot(mags, bv, color='blue', marker='.', linestyle='none')
@@ -1255,10 +1245,10 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
     x_label = f'{filter_1}-{filter_2} [mag]'
 
     #   Make plot
-    fig = plt.figure(figsize=(20, 9))
+    fig = plt.figure(figsize=(15, 8))
 
     #   Set title
-    fig.suptitle(title, fontsize=30)
+    fig.suptitle(title, fontsize=20)
 
     #   Plot data
     plt.errorbar(
@@ -1266,9 +1256,14 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
         fit_variable,
         xerr=color_lit_err,
         yerr=fit_var_err,
-        color='blue',
-        marker='.',
-        mew=0.0,
+        # color='blue',
+        marker='o',
+        markersize=3,
+        capsize=2,
+        # mew=0.0,
+        color='darkgreen',
+        ecolor='wheat',
+        elinewidth=1,
         linestyle='none',
     )
 
@@ -1277,8 +1272,18 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
         x_lin,
         y_lin,
         linestyle='-',
-        color='red',
-        linewidth=0.8,
+        # color='darkorange',
+        # color='mediumaquamarine',
+        # color='mediumseagreen',
+        # color='purple',
+        # color='darkred',
+        # color='crimson',
+        # color='saddlebrown',
+        # color='chocolate',
+        color='maroon',
+        # color='red',
+        # linewidth=0.8,
+        linewidth=1.,
         label=p_label,
     )
 
@@ -1291,15 +1296,13 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
         borderaxespad=0.,
     )
 
-    #   Add grid
-    plt.grid(color='0.95')
-
     #   Set x and y axis label
-    plt.xlabel(x_label, fontsize=20)
-    plt.ylabel(y_label, fontsize=20)
+    plt.xlabel(x_label, fontsize=16)
+    plt.ylabel(y_label, fontsize=16)
 
     #   Add grid
-    plt.grid(color='0.95')
+    plt.grid(True, color='lightgray', linestyle='--', alpha=0.3)
+    # plt.grid(color='0.95')
 
     #   Get median of the data
     y_min = np.min(fit_variable)
@@ -2169,25 +2172,25 @@ def d3_scatter(xs, ys, zs, output_dir, color=None, name_x='', name_y='',
                 'Proper motion vs. distance: Literature proper motion: '
                 '{:.1f}, {:.1f} - Choose a cluster then close the '
                 'plot'.format(pm_ra, pm_dec),
-                fontsize=20,
+                fontsize=17,
             )
         else:
             fig.suptitle(
                 'Proper motion vs. distance: Literature proper motion: '
                 + '- Choose a cluster then close the plot',
-                fontsize=20,
+                fontsize=17,
             )
     else:
         if pm_ra is not None and pm_dec is not None:
             fig.suptitle(
                 'Proper motion vs. distance: Literature proper motion: '
                 '{:.1f}, {:.1f} '.format(pm_ra, pm_dec),
-                fontsize=20,
+                fontsize=17,
             )
         else:
             fig.suptitle(
                 'Proper motion vs. distance',
-                fontsize=20,
+                fontsize=17,
             )
 
     #   Switch to one subplot for direct display
@@ -2369,16 +2372,15 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
 
     #   Plot magnitudes
     fig = plt.figure(figsize=(8, 8))
-    # plt.style.use('bmh')
 
     #   Set title
     if name_obj is None:
-        sub_title = f'{name_x} vs. {name_y}:'
+        sub_title = f'{name_x} vs. {name_y}'
     else:
-        sub_title = f'{name_x} vs. {name_y} ({name_obj}):'
+        sub_title = f'{name_x} vs. {name_y} ({name_obj})'
     fig.suptitle(
         sub_title,
-        fontsize=20,
+        fontsize=17,
     )
 
     #   Initialize color cyclers
@@ -2396,18 +2398,10 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
             y_values[i],
             xerr=x_errors[i],
             yerr=y_errors[i],
-            # fmt='b.',
-            # fmt='k.',
             marker='o',
             ls='none',
             markersize=3,
             capsize=2,
-            # ecolor='lightgray',
-            # ecolor='mediumorchid',
-            # color='darkred',
-            # ecolor='deepskyblue',
-            # ecolor='dodgerblue',
-            # color='darkred',
             color=next(color_cycler_symbols),
             ecolor=next(color_cycler_error_bars),
             elinewidth=1,
@@ -2421,9 +2415,7 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
                 plt.plot(
                     x_sort,
                     fits[i](x_sort),
-                    # color='r',
                     color='darkorange',
-                    # color='indigo',
                     linewidth=1,
                     label=f'Fit to dataset {dataset_label_i}',
                 )
@@ -2433,7 +2425,6 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
         plt.legend()
 
     #   Add grid
-    # plt.grid(color='0.95')
     plt.grid(True, color='lightgray', linestyle='--', alpha=0.3)
 
     #   Plot the 1:1 line
@@ -2497,24 +2488,40 @@ def plot_limiting_mag_sky_apertures(output_dir, img_data, mask, image_depth):
     ax[1].set_title('Mask with blank apertures')
 
     #   Normalize the image data and plot
-    norm = simple_norm(img_data, 'sqrt', percent=99.)
-    ax[0].imshow(img_data, norm=norm)
+    norm = ImageNormalize(img_data, interval=ZScaleInterval(contrast=0.15,))
+    ax[0].imshow(
+        img_data,
+        norm=norm,
+        cmap='PuBu',
+        interpolation='nearest',
+        origin='lower',
+        )
 
     #   Plot mask with object positions
-    ax[1].imshow(mask, interpolation='none')
+    ax[1].imshow(
+        mask,
+        interpolation='none',
+        origin='lower',
+        )
 
     #   Plot apertures used to derive limiting magnitude
-    color = 'orange'
-    image_depth.apertures[0].plot(ax[0], color=color)
-    image_depth.apertures[0].plot(ax[1], color=color)
+    image_depth.apertures[0].plot(ax[0], color='purple', lw=0.2)
+    image_depth.apertures[0].plot(ax[1], color='orange', lw=0.2)
 
     plt.subplots_adjust(
         left=0.05,
         right=0.98,
         bottom=0.05,
         top=0.95,
-        wspace=0.15,
+        wspace=0.2,
     )
+
+    #   Set labels
+    lable_fontsize = 10
+    ax[0].set_xlabel("[pixel]", fontsize=lable_fontsize)
+    ax[0].set_ylabel("[pixel]", fontsize=lable_fontsize)
+    ax[1].set_xlabel("[pixel]", fontsize=lable_fontsize)
+    ax[1].set_ylabel("[pixel]", fontsize=lable_fontsize)
 
     #   Save plot
     plt.savefig(
