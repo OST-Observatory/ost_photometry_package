@@ -262,7 +262,8 @@ def get_instrument_infos(ifc, temp_tolerence):
     bit_pix = list(bit_pixs)[0]
 
     #   Get image temperature
-    temperatures = set(ifc.summary['ccd-temp'])
+    mask = ifc.summary['ccd-temp'].mask
+    temperatures = set(ifc.summary['ccd-temp'][np.invert(mask)])
     temp_list = list(temperatures)
     temp_range = max(temp_list) - min(temp_list)
     if temp_range > temp_tolerence:
