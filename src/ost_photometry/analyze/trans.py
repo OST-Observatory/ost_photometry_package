@@ -1488,7 +1488,7 @@ def apply_calib(img_container, filter_list,
                     filter_list,
                     trans_coefficients,
                     plot_sigma=plot_sigma,
-                    ttype=transformation_type,
+                    transformation_type=transformation_type,
                 )
 
             ###
