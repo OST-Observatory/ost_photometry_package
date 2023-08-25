@@ -42,20 +42,20 @@ class Image:
         Image object used to store and transport some data
     """
 
-    def __init__(self, pd, filt, name, path, outdir):
+    def __init__(self, pd, filter_, object_name, file_path, output_dir):
         self.pd = pd
-        self.filt = filt
-        self.objname = name
-        if isinstance(path, Path):
-            self.filename = path.name
-            self.path = path
+        self.filt = filter_
+        self.objname = object_name
+        if isinstance(file_path, Path):
+            self.filename = file_path.name
+            self.path = file_path
         else:
-            self.filename = path.split('/')[-1]
-            self.path = Path(path)
-        if isinstance(outdir, Path):
-            self.outpath = outdir
+            self.filename = file_path.split('/')[-1]
+            self.path = Path(file_path)
+        if isinstance(output_dir, Path):
+            self.outpath = output_dir
         else:
-            self.outpath = Path(outdir)
+            self.outpath = Path(output_dir)
 
     #   Read image
     def read_image(self):
@@ -70,7 +70,7 @@ class Image:
         return CCDData.read(self.path).data
 
 
-def cal_fov(image, indent=2, verbose=True):
+def calculate_field_of_view(image, indent=2, verbose=True):
     """
         Calculate field of view, pixel scale, etc. ...
 
@@ -88,57 +88,62 @@ def cal_fov(image, indent=2, verbose=True):
             Default is ``False``.
     """
     if verbose:
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
+            "Calculating FOV, PIXEL scale, etc. ... ",
             indent=indent,
-            string="Calculating FOV, PIXEL scale, etc. ... ",
         )
 
     #   Get header
     header = image.get_header()
 
     #   Read focal length - set default to 3454. mm
-    f = header.get('FOCALLEN', 3454.)
+    focal_length = header.get('FOCALLEN', 3454.)
 
     #   Read ra and dec of image center
     ra = header.get('OBJCTRA', '00 00 00')
     dec = header.get('OBJCTDEC', '+00 00 00')
 
     #   Convert ra & dec to degrees
-    coord_fov = SkyCoord(ra, dec, unit=(u.hourangle, u.deg), frame="icrs")
+    coordinates_sky = SkyCoord(
+        ra,
+        dec,
+        unit=(u.hourangle, u.deg),
+        frame="icrs",
+    )
 
     #   Number of pixels
-    n_pix_x = header.get('NAXIS1', 0)
-    n_pix_y = header.get('NAXIS2', 0)
+    n_pixel_x = header.get('NAXIS1', 0)
+    n_pixel_y = header.get('NAXIS2', 0)
 
-    if n_pix_x == 0:
+    if n_pixel_x == 0:
         raise ValueError(
             f"{style.Bcolors.FAIL}\nException in cal_fov(): X dimension of "
             f"the image is 0 {style.Bcolors.ENDC}"
         )
-    if n_pix_y == 0:
+    if n_pixel_y == 0:
         raise ValueError(
             f"{style.Bcolors.FAIL}\nException in cal_fov(): Y dimension of "
             f"the image is 0 {style.Bcolors.ENDC}"
         )
 
     #   Get binning
-    bin_x = header.get('XBINNING', 1)
-    bin_y = header.get('YBINNING', 1)
+    x_binning = header.get('XBINNING', 1)
+    y_binning = header.get('YBINNING', 1)
 
     #   Set instrument
     instrument = header.get('INSTRUME', '')
 
     if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
         #   Physical chip dimensions in pixel
-        x_dim_phy = n_pix_x * bin_x
-        y_dim_phy = n_pix_y * bin_y
+        physical_dimension_x = n_pixel_x * x_binning
+        physical_dimension_y = n_pixel_y * y_binning
 
         #   Set instrument
-        if x_dim_phy == 9576 and y_dim_phy == 6388:
+        if physical_dimension_x == 9576 and physical_dimension_y == 6388:
             instrument = 'QHY600M'
-        elif x_dim_phy == 6280 and y_dim_phy == 4210:
+        elif physical_dimension_x == 6280 and physical_dimension_y == 4210:
             instrument = 'QHY268M'
-        elif x_dim_phy == 3864 and y_dim_phy == 2180:
+        elif physical_dimension_x == 3864 and physical_dimension_y == 2180:
             instrument = 'QHY485C'
         else:
             instrument = ''
@@ -146,44 +151,46 @@ def cal_fov(image, indent=2, verbose=True):
     #   Calculate chip size in mm
     if 'XPIXSZ' in header:
         pixel_width = header['XPIXSZ']
-        d = n_pix_x * pixel_width / 1000
-        h = n_pix_y * pixel_width / 1000
+        chip_length = n_pixel_x * pixel_width / 1000
+        chip_height = n_pixel_y * pixel_width / 1000
     else:
-        d, h = calibration_data.get_chip_dimensions(instrument)
+        chip_length, chip_height = calibration_data.get_chip_dimensions(
+            instrument
+        )
 
     #   Calculate field of view
-    fov_x = 2 * np.arctan(d / 2 / f)
-    fov_y = 2 * np.arctan(h / 2 / f)
+    field_of_view_x = 2 * np.arctan(chip_length / 2 / focal_length)
+    field_of_view_y = 2 * np.arctan(chip_height / 2 / focal_length)
 
     #   Convert to arc min
-    fov = fov_x * 360. / 2. / np.pi * 60.
-    fov_y = fov_y * 360. / 2. / np.pi * 60.
+    field_of_view = field_of_view_x * 360. / 2. / np.pi * 60.
+    field_of_view_y = field_of_view_y * 360. / 2. / np.pi * 60.
 
     #   Calculate pixel scale
-    pixel_scale = fov * 60 / n_pix_x
+    pixel_scale = field_of_view * 60 / n_pixel_x
 
     #   Create RectangleSkyRegion that covers the field of view
     # region_sky = RectangleSkyRegion(
-    # center=coord_fov,
-    # width=fov_x * u.rad,
-    # height=fov_y * u.rad,
+    # center=coordinates_sky,
+    # width=field_of_view_x * u.rad,
+    # height=field_of_view_y * u.rad,
     # angle=0 * u.deg,
     # )
     #   Create RectanglePixelRegion that covers the field of view
-    region_pix = RectanglePixelRegion(
-        center=PixCoord(x=int(n_pix_x / 2), y=int(n_pix_y / 2)),
-        width=n_pix_x,
-        height=n_pix_y,
+    pixel_region = RectanglePixelRegion(
+        center=PixCoord(x=int(n_pixel_x / 2), y=int(n_pixel_y / 2)),
+        width=n_pixel_x,
+        height=n_pixel_y,
     )
 
     #   Add to image class
-    image.coord = coord_fov
-    image.fov = fov
-    image.fov_y = fov_y
+    image.coord = coordinates_sky
+    image.fov = field_of_view
+    image.fov_y = field_of_view_y
     image.instrument = instrument
     image.pixscale = pixel_scale
     # image.region_sky  = region_sky
-    image.region_pix = region_pix
+    image.region_pix = pixel_region
 
     #   Add JD (observation time) and air mass from Header to image class
     jd = header.get('JD', None)
@@ -204,50 +211,51 @@ def cal_fov(image, indent=2, verbose=True):
     image.instrument = instrument
 
 
-def mkfilelist(path, formats=None, addpath=False, sort=False):
+def mk_file_list(file_path, formats=None, add_path_to_file_names=False,
+                 sort=False):
     """
         Fill the file list
 
         Parameters
         ----------
-        path        : `string`
+        file_path               : `string`
             Path to the files
 
-        formats     : `list` of `string` or `None`, optional
+        formats                 : `list` of `string` or `None`, optional
             List of allowed Formats
             Default is ``None``.
 
-        addpath     : `boolean`, optional
+        add_path_to_file_names  : `boolean`, optional
             If `True` the path will be added to the file names.
             Default is ``False``.
 
-        sort        : `boolean`, optional
+        sort                    : `boolean`, optional
             If `True the file list will be sorted.
             Default is ``False``.
 
         Returns
         -------
-        fileList    : `list` of `string`
+        file_list               : `list` of `string`
             List with file names
 
-        nfiles      : `interger`
+        n_files                 : `integer`
             Number of files
     """
     #   Sanitize formats
     if formats is None:
         formats = [".FIT", ".fit", ".FITS", ".fits"]
 
-    file_list = os.listdir(path)
+    file_list = os.listdir(file_path)
     if sort:
         file_list.sort()
 
     #   Remove not TIFF entries
     temp_list = []
     for file_i in file_list:
-        for j, form in enumerate(formats):
-            if file_i.find(form) != -1:
-                if addpath:
-                    temp_list.append(os.path.join(path, file_i))
+        for j, format_ in enumerate(formats):
+            if file_i.find(format_) != -1:
+                if add_path_to_file_names:
+                    temp_list.append(os.path.join(file_path, file_i))
                 else:
                     temp_list.append(file_i)
 
@@ -299,17 +307,21 @@ def get_basename(path):
     return basename
 
 
-def timeis(func):
+def execution_time(function):
     """
         Decorator that reports the execution time
+        
+        Parameters
+        ----------
+        function        : `function`
     """
 
     def wrap(*args, **kwargs):
         start = time.time()
-        result = func(*args, **kwargs)
+        result = function(*args, **kwargs)
         end = time.time()
 
-        print(func.__name__, end - start)
+        print(function.__name__, end - start)
         return result
 
     return wrap
@@ -345,13 +357,13 @@ def end_progress():
     sys.stdout.flush()
 
 
-def indices_to_slices(a):
+def indices_to_slices(index_list):
     """
         Convert a list of indices to slices for an array
 
         Parameters
         ----------
-        a               : `list`
+        index_list      : `list`
             List of indices
 
         Returns
@@ -359,21 +371,21 @@ def indices_to_slices(a):
         slices          : `list`
             List of slices
     """
-    it = iter(a)
-    start = next(it)
+    index_iterator = iter(index_list)
+    start = next(index_iterator)
     slices = []
-    for i, x in enumerate(it):
-        if x - a[i] != 1:
-            end = a[i]
+    for i, x in enumerate(index_iterator):
+        if x - index_list[i] != 1:
+            end = index_list[i]
             if start == end:
                 slices.append([start])
             else:
                 slices.append([start, end])
             start = x
-    if a[-1] == start:
+    if index_list[-1] == start:
         slices.append([start])
     else:
-        slices.append([start, a[-1]])
+        slices.append([start, index_list[-1]])
 
     return slices
 
@@ -391,7 +403,7 @@ def link_files(output_path, file_list):
             List with file paths that should be linked to the target directory
     """
     #   Check and if necessary create output directory
-    checks.check_out(output_path)
+    checks.check_output_directories(output_path)
 
     for path in file_list:
         #   Make a Path object
@@ -407,64 +419,65 @@ def link_files(output_path, file_list):
         target_path.symlink_to(p.absolute())
 
 
-def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
-                        wcs_dir=None):
+def find_wcs_astrometry(image, cosmic_rays_removed=False,
+                        path_cosmic_cleaned_image=None, indent=2,
+                        wcs_working_dir=None):
     """
         Find WCS (using astrometry.net)
 
         Parameters
         ----------
-        image               : `image.class`
+        image                       : `image.class`
             Image class with all image specific properties
 
-        rmcos               : `boolean`, optional (obsolete)
+        cosmic_rays_removed         : `boolean`, optional (obsolete)
             If True the function assumes that the cosmic ray reduction
             function was run before this function
             Default is ``False``.
 
-        path_cos            : `string` (obsolete)
-            Path to the image in case 'rmcos' is True
+        path_cosmic_cleaned_image   : `string` (obsolete)
+            Path to the image in case 'cosmic_rays_removed' is True
             Default is ``None``.
 
-        indent              : `integer`, optional
+        indent                      : `integer`, optional
             Indentation for the console output lines
             Default is ``2``.
 
-        wcs_dir             : `string` or `None`
+        wcs_working_dir             : `string` or `None`
             Path to the working directory, where intermediate data will be
-            saved. If `None` a wcs_imgs` directory will be created in the
+            saved. If `None` a wcs_images directory will be created in the
             output directory.
             Default is ``None``.
 
         Returns
         -------
-        w                   : `astropy.wcs.WCS`
+        derived_wcs                   : `astropy.wcs.WCS`
             WCS information
     """
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
+        "Searching for a WCS solution (pixel to ra/dec conversion)",
         indent=indent,
-        string="Searching for a WCS solution (pixel to ra/dec conversion)",
     )
 
     #   Define WCS dir
-    if wcs_dir is None:
-        wcs_dir = (image.outpath / 'wcs_imgs')
+    if wcs_working_dir is None:
+        wcs_working_dir = (image.outpath / 'wcs_images')
     else:
-        wcs_dir = checks.check_pathlib_path(wcs_dir)
-        wcs_dir = wcs_dir / random_string_generator(7)
-        checks.check_out(wcs_dir)
+        wcs_working_dir = checks.check_pathlib_path(wcs_working_dir)
+        wcs_working_dir = wcs_working_dir / random_string_generator(7)
+        checks.check_output_directories(wcs_working_dir)
 
     #   Check output directories
-    checks.check_out(image.outpath, wcs_dir)
+    checks.check_output_directories(image.outpath, wcs_working_dir)
 
     #   RA & DEC
-    coord = image.coord
-    ra = coord.ra.deg
-    dec = coord.dec.deg
+    coordinates = image.coord
+    ra = coordinates.ra.deg
+    dec = coordinates.dec.deg
 
     #   Select file depending on whether cosmics were rm or not
-    if rmcos:
-        wcs_file = path_cos
+    if cosmic_rays_removed:
+        wcs_file = path_cosmic_cleaned_image
     else:
         wcs_file = image.path
 
@@ -473,7 +486,7 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
 
     #   Compose file name
     filename = basename + '.new'
-    filepath = Path(wcs_dir / filename)
+    filepath = Path(wcs_working_dir / filename)
 
     #   String passed to the shell
     # command=('solve-field --overwrite --scale-units arcsecperpix '
@@ -485,72 +498,79 @@ def find_wcs_astrometry(image, rmcos=False, path_cos=None, indent=2,
     command = (
         f'solve-field --overwrite --scale-units arcsecperpix --scale-low '
         f'{image.pixscale - 0.1} --scale-high {image.pixscale + 0.1} --ra {ra} '
-        f'--dec {dec} --radius 1.0 --dir {wcs_dir} --resort '
+        f'--dec {dec} --radius 1.0 --dir {wcs_working_dir} --resort '
         '{} --fits-image'.format(str(wcs_file).replace(" ", "\ "))
     )
 
     #   Running the command
-    cmd_output = subprocess.run(
+    command_result = subprocess.run(
         [command],
         shell=True,
         text=True,
         capture_output=True,
     )
 
-    rcode = cmd_output.returncode
-    rfind = cmd_output.stdout.find('Creating new FITS file')
-    if rcode != 0 or rfind == -1:
+    return_code = command_result.returncode
+    fits_created = command_result.stdout.find('Creating new FITS file')
+    if return_code != 0 or fits_created == -1:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
             f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"
             f"The command was:\n {command} \nDetailed error output:\n"
-            f"{style.Bcolors.ENDC}{cmd_output.stdout}{cmd_output.stderr}"
+            f"{style.Bcolors.ENDC}{command_result.stdout}{command_result.stderr}"
             f"{style.Bcolors.FAIL}Exit{style.Bcolors.ENDC}"
         )
 
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
+        "WCS solution found :)",
         indent=indent,
-        string="WCS solution found :)",
         style_name='OKGREEN',
     )
 
     #   Get image hdu list
-    hdulist = fits.open(filepath)
+    hdu_list = fits.open(filepath)
 
     #   Extract the WCS
-    w = wcs.WCS(hdulist[0].header)
+    derived_wcs = wcs.WCS(hdu_list[0].header)
 
-    image.wcs = w
-    return w
+    image.wcs = derived_wcs
+    return derived_wcs
 
 
-def find_wcs_twirl(image, x=None, y=None, indent=2):
+def find_wcs_twirl(image, object_pixel_position_x=None,
+                   object_pixel_position_y=None, indent=2):
     """
         Calculate WCS information from star positions
-        -> use twirl libary
+        -> use twirl library
 
         Parameters:
         -----------
-        image           : `image.class`
+        image                   : `image.class`
             Image class with all image specific properties
 
-        x, y            : `numpy.ndarray`, optional
+        object_pixel_position_x : `numpy.ndarray`, optional
             Pixel coordinates of the objects
             Default is ``None``.
 
-        indent          : `string`, optional
+        object_pixel_position_y : `numpy.ndarray`, optional
+            Pixel coordinates of the objects
+            Default is ``None``.
+
+        indent                  : `string`, optional
             Indentation for the console output lines
             Default is ``2``.
     """
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
+        "Searching for a WCS solution (pixel to ra/dec conversion)",
         indent=indent,
-        string="Searching for a WCS solution (pixel to ra/dec conversion)",
     )
 
     #   Arrange object positions
-    x = np.array(x)
-    y = np.array(y)
-    objects = np.column_stack((x, y))
+    object_pixel_position_x = np.array(object_pixel_position_x)
+    object_pixel_position_y = np.array(object_pixel_position_y)
+    objects = np.column_stack(
+        (object_pixel_position_x, object_pixel_position_y)
+    )
 
     #   Limit the number of objects to 50
     if len(objects) > 50:
@@ -559,49 +579,51 @@ def find_wcs_twirl(image, x=None, y=None, indent=2):
         n = len(objects)
     objects = objects[0:n]
 
-    coord = image.coord
-    fov = image.fov
-    print('n', n, 'fov', fov, coord.ra.deg, coord.dec.deg)
+    coordinates = image.coord
+    field_of_view = image.fov
+    print('n', n, 'field_of_view', field_of_view, coordinates.ra.deg, coordinates.dec.deg)
     #   Calculate WCS
-    gaias = twirl.gaia_radecs(
-        [coord.ra.deg, coord.dec.deg],
-        fov / 60,
+    gaia_twirl = twirl.gaia_radecs(
+        [coordinates.ra.deg, coordinates.dec.deg],
+        field_of_view / 60,
         # limit=n,
         limit=300,
     )
-    wcs = twirl._compute_wcs(objects, gaias, n=n)
+    derived_wcs = twirl._compute_wcs(objects, gaia_twirl, n=n)
 
-    gaias_pixel = np.array(SkyCoord(gaias, unit="deg").to_pixel(wcs)).T
-    print('gaias_pixel')
-    print(gaias_pixel)
-    print(gaias_pixel.T)
+    gaia_twirl_pixel = np.array(
+        SkyCoord(gaia_twirl, unit="deg").to_pixel(derived_wcs)
+    ).T
+    print('gaia_twirl_pixel')
+    print(gaia_twirl_pixel)
+    print(gaia_twirl_pixel.T)
     print('objects')
     print(objects)
 
     from matplotlib import pyplot as plt
     plt.figure(figsize=(8, 8))
     plt.plot(*objects.T, "o", fillstyle="none", c="b", ms=12)
-    plt.plot(*gaias_pixel.T, "o", fillstyle="none", c="C1", ms=18)
+    plt.plot(*gaia_twirl_pixel.T, "o", fillstyle="none", c="C1", ms=18)
     plt.savefig('/tmp/test_twirl.pdf', bbox_inches='tight', format='pdf')
     plt.show()
 
-    # #wcs = twirl.compute_wcs(
+    # #derived_wcs = twirl.compute_wcs(
     # objects,
-    # (coord.ra.deg, coord.dec.deg),
-    # fov/60,
+    # (coordinates.ra.deg, coordinates.dec.deg),
+    # field_of_view/60,
     # n=n,
     # )
 
-    print(wcs)
+    print(derived_wcs)
 
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
+        "WCS solution found :)",
         indent=indent,
-        string="WCS solution found :)",
         style_name='OKGREEN',
     )
 
-    image.wcs = wcs
-    return wcs
+    image.wcs = derived_wcs
+    return derived_wcs
 
 
 def find_wcs_astap(image, indent=2):
@@ -619,7 +641,7 @@ def find_wcs_astap(image, indent=2):
 
         Returns
         -------
-        w                   : `astropy.wcs.WCS`
+        derived_wcs                   : `astropy.wcs.WCS`
             WCS information
     """
     terminal_output.print_to_terminal(
@@ -629,49 +651,49 @@ def find_wcs_astap(image, indent=2):
     )
 
     #   FOV in degrees
-    fov = image.fov_y / 60.
+    field_of_view = image.fov_y / 60.
 
     #   Path to image
     wcs_file = image.path
 
     #   String passed to the shell
     command = (
-        'astap_cli -f {} -r 1 -fov {} -update'.format(wcs_file, fov)
+        'astap_cli -f {} -r 1 -fov {} -update'.format(wcs_file, field_of_view)
     )
 
     #   Running the command
-    cmd_output = subprocess.run(
+    command_result = subprocess.run(
         [command],
         shell=True,
         text=True,
         capture_output=True,
     )
 
-    rcode = cmd_output.returncode
-    rfind = cmd_output.stdout.find('Solution found:')
-    if rcode != 0 or rfind == -1:
+    return_code = command_result.returncode
+    solution_found = command_result.stdout.find('Solution found:')
+    if return_code != 0 or solution_found == -1:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
             f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"
             f"The command was:\n{command} \nDetailed error output:\n"
-            f"{style.Bcolors.ENDC}{cmd_output.stdout}{cmd_output.stderr}"
+            f"{style.Bcolors.ENDC}{command_result.stdout}{command_result.stderr}"
             f"{style.Bcolors.FAIL}Exit{style.Bcolors.ENDC}"
         )
 
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
+        "WCS solution found :)",
         indent=indent,
-        string="WCS solution found :)",
         style_name='OKGREEN',
     )
 
     #   Get image hdu list
-    hdulist = fits.open(wcs_file)
+    hdu_list = fits.open(wcs_file)
 
     #   Extract the WCS
-    w = wcs.WCS(hdulist[0].header)
+    derived_wcs = wcs.WCS(hdu_list[0].header)
 
-    image.wcs = w
-    return w
+    image.wcs = derived_wcs
+    return derived_wcs
 
 
 def check_wcs_exists(image, wcs_dir=None, indent=2):
@@ -685,7 +707,7 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
 
         wcs_dir             : `string` or `None`, optional
             Path to the working directory, where intermediate data will be
-            saved. If `None` a `wcs_imgs` directory will be created in the
+            saved. If `None` a wcs_images directory will be created in the
             output directory.
             Default is ``None``.
 
@@ -695,10 +717,10 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
 
         Returns
         -------
-                        : `boolean`
+                            : `boolean`
             Is `True` if the image header contains valid WCS information.
 
-        wcsFILE         : `string`
+        wcs_file            : `string`
             Path to the image with the WCS
     """
     #   Path to image
@@ -711,9 +733,9 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
     wcs_original_type = wcs_original.get_axis_types()[0]['coordinate_type']
 
     if wcs_original_type == 'celestial':
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
+            "Image contains already a valid WCS.",
             indent=indent,
-            string="Image contains already a valid WCS.",
             style_name='OKGREEN',
         )
         return True, wcs_file
@@ -723,13 +745,13 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
 
         #   Set WCS dir
         if wcs_dir is None:
-            wcs_dir = (image.outpath / 'wcs_imgs')
+            wcs_dir = (image.outpath / 'wcs_images')
 
         #   Get image base name
         basename = get_basename(image.path)
 
         #   Compose file name
-        filename = basename + '.new'
+        filename = f'{basename}.new'
         filepath = Path(wcs_dir / filename)
 
         if filepath.is_file():
@@ -742,9 +764,9 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
             ]
 
             if wcs_astronomy_net_type == 'celestial':
-                terminal_output.print_terminal(
+                terminal_output.print_to_terminal(
+                    "Image in the wcs_dir with a valid WCS found.",
                     indent=indent,
-                    string="Image in the wcs_dir with a valid WCS found.",
                     style_name='OKGREEN',
                 )
                 return True, filepath
@@ -752,13 +774,13 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
         return False, ''
 
 
-def read_params_from_json(jsonfile):
+def read_params_from_json(json_file):
     """
         Read data from JSON file
 
         Parameters
         ----------
-        jsonfile        : `string`
+        json_file       : `string`
             Path to the JSON file
 
         Returns
@@ -767,7 +789,7 @@ def read_params_from_json(jsonfile):
             Dictionary with the data from the JSON file
     """
     try:
-        with open(jsonfile) as file:
+        with open(json_file) as file:
             data = json.load(file)
     except:
         data = {}
@@ -775,13 +797,13 @@ def read_params_from_json(jsonfile):
     return data
 
 
-def read_params_from_yaml(yamlfile):
+def read_params_from_yaml(yaml_file):
     """
         Read data from YAML file
 
         Parameters
         ----------
-        yamlfile        : `string`
+        yaml_file       : `string`
             Path to the YAML file
 
         Returns
@@ -790,7 +812,7 @@ def read_params_from_yaml(yamlfile):
             Dictionary with the data from the YAML file
     """
     try:
-        with open(yamlfile, 'r') as file:
+        with open(yaml_file, 'r') as file:
             data = yaml.safe_load(file)
     except:
         data = {}

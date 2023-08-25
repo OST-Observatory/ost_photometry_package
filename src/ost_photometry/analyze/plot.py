@@ -39,7 +39,7 @@ plt.switch_backend('Agg')
 ############################################################################
 
 
-def comp_img(output_dir, original_image, comparison_image):
+def compare_images(output_dir, original_image, comparison_image):
     """
         Plot two images for comparison
 
@@ -136,7 +136,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             Default is ``2``.
     """
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'starmaps'),
     )
@@ -209,23 +209,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     #   Display the actual image
     plt.imshow(
         image,
-        # cmap='Greys',
-        # # # cmap='PuBuGn',
         cmap='PuBu',
-        # cmap='inferno',
-        # cmap='magma',
-        # cmap='PRGn',
-        # cmap='twilight',
-        # cmap='twilight_shifted',
-        # cmap='Purples',
-        # cmap='BuPu',
-        # cmap='GnBu',
-        # cmap='YlGnBu',
-        # cmap='gist_yarg',
-        # cmap='YlOrBr',
-        # cmap='Blues',
-        # cmap='Greens',
-        # # cmap='cividis',
         origin='lower',
         norm=norm,
         interpolation='nearest',
@@ -237,9 +221,6 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         tbl[y_column],
         s=40,
         facecolors='none',
-        # edgecolors='#0547f9',
-        # edgecolors='mediumblue',
-        # edgecolors='mediumturquoise',
         edgecolors='purple',
         alpha=0.7,
         lw=0.9,
@@ -251,15 +232,6 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             tbl_2[y_column_2],
             s=40,
             facecolors='none',
-            # edgecolors='coral',
-            # edgecolors='y',
-            # edgecolors='darkorange',
-            # edgecolors='olive',
-            # edgecolors='olivedrab',
-            # edgecolors='yellowgreen',
-            # edgecolors='greenyellow',
-            # edgecolors='forestgreen',
-            # # # # edgecolors='limegreen',
             edgecolors='#02c14d',
             # alpha=0.7,
             lw=0.9,
@@ -285,7 +257,6 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
                 f" {tbl['mags_fit'][i]:.1f}",
                 fontdict=style.font,
                 color='purple',
-                # color='mediumturquoise',
             )
     elif mode == 'list':
         for i in range(0, len(x)):
@@ -295,7 +266,6 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
                 f" {i}",
                 fontdict=style.font,
                 color='purple',
-                # color='mediumturquoise',
             )
     else:
         for i in range(0, len(x)):
@@ -305,7 +275,6 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
                 f" {tbl['id'][i]}",
                 fontdict=style.font,
                 color='purple',
-                # color='mediumturquoise',
             )
 
     #   Define the ticks
@@ -338,7 +307,8 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     plt.close()
 
 
-def plot_apertures(output_dir, image, aperture, annulus_aperture, filename_string):
+def plot_apertures(output_dir, image, aperture, annulus_aperture,
+                   filename_string):
     """
         Plot the apertures used for extracting the stellar fluxes
                (star map plot for aperture photometry)
@@ -361,7 +331,7 @@ def plot_apertures(output_dir, image, aperture, annulus_aperture, filename_strin
             String characterizing the output file
     """
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'aperture'),
     )
@@ -377,7 +347,6 @@ def plot_apertures(output_dir, image, aperture, annulus_aperture, filename_strin
     #   Plot the image
     plt.imshow(
         image,
-        # cmap='Greys',
         cmap='viridis',
         origin='lower',
         norm=norm,
@@ -386,18 +355,13 @@ def plot_apertures(output_dir, image, aperture, annulus_aperture, filename_strin
 
     #   Plot stellar apertures
     ap_patches = aperture.plot(
-        # color='white',
-        # color='darkviolet',
         color='lightcyan',
-        # color='darkred',
-        # color='red',
         lw=0.2,
         label='Object aperture',
     )
 
     #   Plot background apertures
     ann_patches = annulus_aperture.plot(
-        # color='blue',
         color='darkred',
         lw=0.2,
         label='Background annulus',
@@ -439,7 +403,7 @@ def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
         output_dir      : `string`
             Output directory
 
-        stars           : `nump.ndarray`
+        stars           : `numpy.ndarray`
             Numpy array with cutouts of the ePSF stars
 
         identifier      : `string`
@@ -463,7 +427,7 @@ def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
             Default is ``2``.
     """
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'cutouts'),
     )
@@ -550,7 +514,7 @@ def plot_epsf(output_dir, epsf, name_obj=None, terminal_logger=None, indent=1):
             Default is ``1``.
     """
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'epsfs'),
     )
@@ -656,7 +620,7 @@ def plot_residual(name, image_orig, residual_image, output_dir,
             Default is ``1``.
     """
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'residual'),
     )
@@ -897,7 +861,7 @@ def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
             Default is ``None``.
     """
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'lightcurve'),
     )
@@ -974,14 +938,15 @@ def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
     plt.close()
 
 
-def light_curve_fold(ts, data_column, err_column, output_dir, transit_time,
-                     period, binn=None, error_bars=True, name_obj=None):
+def light_curve_fold(time_series, data_column, err_column, output_dir,
+                     transit_time, period, binning_factor=None,
+                     error_bars=True, name_obj=None):
     """
         Plot a folded light curve
 
         Parameters
         ----------
-        ts              : `astropy.timeseries.TimeSeries`
+        time_series              : `astropy.timeseries.TimeSeries`
             Time series
 
         data_column     : `string`
@@ -999,7 +964,7 @@ def light_curve_fold(ts, data_column, err_column, output_dir, transit_time,
         period          : `float`
             Period in days
 
-        binn            : `float`, optional
+        binning_factor  : `float`, optional
             Light-curve binning-factor in days
             Default is ``None``.
 
@@ -1012,7 +977,7 @@ def light_curve_fold(ts, data_column, err_column, output_dir, transit_time,
             Default is ``None``.
     """
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'lightcurve'),
     )
@@ -1021,7 +986,10 @@ def light_curve_fold(ts, data_column, err_column, output_dir, transit_time,
     transit_time = Time(transit_time, format='isot', scale='utc')
 
     #   Fold lightcurve
-    ts_folded = ts.fold(period=period * u.day, epoch_time=transit_time)
+    ts_folded = time_series.fold(
+        period=period * u.day,
+        epoch_time=transit_time,
+    )
 
     ###
     #   Make plot
@@ -1042,10 +1010,10 @@ def light_curve_fold(ts, data_column, err_column, output_dir, transit_time,
         fig.suptitle(f'Folded light curve - {name_obj}', fontsize=30)
 
     #   Calculate binned lightcurve => plot
-    if binn is not None:
+    if binning_factor is not None:
         ts_binned = aggregate_downsample(
             ts_folded,
-            time_bin_size=binn * u.day,
+            time_bin_size=binning_factor * u.day,
         )
 
         #   Remove zero entries in case the binning time is smaller than the
@@ -1064,10 +1032,6 @@ def light_curve_fold(ts, data_column, err_column, output_dir, transit_time,
                 elinewidth=1,
                 markersize=3,
                 capsize=2,
-                # ecolor='tomato',
-                # color='seagreen',
-                # color='tomato',
-                # ecolor='mediumblue',
                 ecolor='dodgerblue',
                 color='darkred',
             )
@@ -1090,10 +1054,6 @@ def light_curve_fold(ts, data_column, err_column, output_dir, transit_time,
                 elinewidth=1,
                 markersize=3,
                 capsize=2,
-                # ecolor='tomato',
-                # color='seagreen',
-                # color='tomato',
-                # ecolor='mediumblue',
                 ecolor='dodgerblue',
                 color='darkred',
             )
@@ -1117,7 +1077,7 @@ def light_curve_fold(ts, data_column, err_column, output_dir, transit_time,
     # plt.y_lim([0.97,1.03])
 
     #   Set plot limits
-    y_err = ts[err_column].value
+    y_err = time_series[err_column].value
     y_err_sigma = sigma_clipping(y_err, sigma=1.5)
     max_err = np.max(y_err_sigma)
 
@@ -1202,7 +1162,7 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
             Default is ``None``.
     """
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'trans_plots'),
     )
@@ -1256,11 +1216,9 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
         fit_variable,
         xerr=color_lit_err,
         yerr=fit_var_err,
-        # color='blue',
         marker='o',
         markersize=3,
         capsize=2,
-        # mew=0.0,
         color='darkgreen',
         ecolor='wheat',
         elinewidth=1,
@@ -1272,17 +1230,7 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
         x_lin,
         y_lin,
         linestyle='-',
-        # color='darkorange',
-        # color='mediumaquamarine',
-        # color='mediumseagreen',
-        # color='purple',
-        # color='darkred',
-        # color='crimson',
-        # color='saddlebrown',
-        # color='chocolate',
         color='maroon',
-        # color='red',
-        # linewidth=0.8,
         linewidth=1.,
         label=p_label,
     )
@@ -1322,8 +1270,8 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
     plt.close()
 
 
-def check_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max, y_range_min,
-               x_range_max, x_range_min):
+def check_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
+               y_range_min, x_range_max, x_range_min):
     """
         Check the plot dimensions and set defaults
 
@@ -1368,7 +1316,10 @@ def check_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max, y_rang
     try:
         float(y_range_max)
     except ValueError:
-        plt.ylim([float(np.max(magnitudes)) + 0.5, float(np.min(magnitudes)) - 0.5])
+        plt.ylim([
+            float(np.max(magnitudes)) + 0.5,
+            float(np.min(magnitudes)) - 0.5
+        ])
         terminal_output.print_terminal(
             string="[Info] Use automatic plot range for Y",
             style_name='WARNING',
@@ -1377,7 +1328,10 @@ def check_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max, y_rang
         try:
             float(y_range_min)
         except ValueError:
-            plt.ylim([float(np.max(magnitudes)) + 0.5, float(np.min(magnitudes)) - 0.5])
+            plt.ylim([
+                float(np.max(magnitudes)) + 0.5,
+                float(np.min(magnitudes)) - 0.5
+            ])
             terminal_output.print_terminal(
                 string="[Info] Use automatic plot range for Y",
                 style_name='WARNING',
@@ -1389,7 +1343,10 @@ def check_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max, y_rang
     try:
         float(x_range_max)
     except ValueError:
-        plt.xlim([float(np.min(color_magnitudes)) - 0.5, float(np.max(color_magnitudes)) + 0.5])
+        plt.xlim([
+            float(np.min(color_magnitudes)) - 0.5,
+            float(np.max(color_magnitudes)) + 0.5
+        ])
         terminal_output.print_terminal(
             string="[Info] Use automatic plot range for Y",
             style_name='WARNING',
@@ -1398,9 +1355,10 @@ def check_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max, y_rang
         try:
             float(x_range_min)
         except ValueError:
-            plt.xlim(
-                [float(np.min(color_magnitudes)) - 0.5, float(np.max(color_magnitudes)) + 0.5]
-            )
+            plt.xlim([
+                float(np.min(color_magnitudes)) - 0.5,
+                float(np.max(color_magnitudes)) + 0.5
+            ])
             terminal_output.print_terminal(
                 string="[Info] Use automatic plot range for Y",
                 style_name='WARNING',
@@ -1436,8 +1394,8 @@ def mk_ticks_labels(filter_, color):
     plt.ylabel(r'${}$'.format(filter_))
 
 
-def fill_lists(list_, iso_column, iso_column_type, filter_1, filter_2, iso_mag1,
-               iso_mag2, iso_color):
+def fill_lists(list_, iso_column, iso_column_type, filter_1, filter_2,
+               iso_mag1, iso_mag2, iso_color):
     """
         Sort magnitudes into lists and calculate the color if necessary
 
@@ -1701,12 +1659,6 @@ def plot_apparent_cmd(mag_color, mag_filt, name_of_star_cluster, filename,
         markersize=3,
         capsize=2,
         ecolor='lightgray',
-        # ecolor='gainsboro',
-        # ecolor='silver',
-        # ecolor='linen',
-        # ecolor='beige',
-        # ecolor='lavender',
-        # ecolor='honeydew',
     )
 
     #   Set ticks and labels
@@ -2157,7 +2109,7 @@ def d3_scatter(xs, ys, zs, output_dir, color=None, name_x='', name_y='',
         plt.switch_backend('TkAgg')
 
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'compare'),
     )
@@ -2365,7 +2317,7 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
             Default is ``False``.
     """
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'scatter'),
     )
@@ -2475,7 +2427,7 @@ def plot_limiting_mag_sky_apertures(output_dir, img_data, mask, image_depth):
             Object used to derive the limiting magnitude
     """
     #   Check output directories
-    checks.check_out(
+    checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'limiting_mag'),
     )
@@ -2517,11 +2469,11 @@ def plot_limiting_mag_sky_apertures(output_dir, img_data, mask, image_depth):
     )
 
     #   Set labels
-    lable_fontsize = 10
-    ax[0].set_xlabel("[pixel]", fontsize=lable_fontsize)
-    ax[0].set_ylabel("[pixel]", fontsize=lable_fontsize)
-    ax[1].set_xlabel("[pixel]", fontsize=lable_fontsize)
-    ax[1].set_ylabel("[pixel]", fontsize=lable_fontsize)
+    label_font_size = 10
+    ax[0].set_xlabel("[pixel]", fontsize=label_font_size)
+    ax[0].set_ylabel("[pixel]", fontsize=label_font_size)
+    ax[1].set_xlabel("[pixel]", fontsize=label_font_size)
+    ax[1].set_ylabel("[pixel]", fontsize=label_font_size)
 
     #   Save plot
     plt.savefig(

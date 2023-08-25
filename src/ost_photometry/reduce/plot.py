@@ -18,61 +18,70 @@ from .. import checks
 ############################################################################
 
 
-def debug_plot_cc_matrix(img, cc):
+def cross_correlation_matrix(image_data, cross_correlation_data):
     """
         Debug plot showing the cc matrix, created during image correlation
 
         Parameters
         ----------
-        img         : `numpy.ndarray`
+        image_data              : `numpy.ndarray`
             Image data array
 
-        cc          : `numpy.ndarray`
+        cross_correlation_data  : `numpy.ndarray`
             Array with the data of the cc matrix
     """
     #   Norm of image
-    norm = simple_norm(img, 'log', percent=99.)
+    norm = simple_norm(image_data, 'log', percent=99.)
 
     #   Initialize sub plots
     plt.subplot(121)
 
     #   Plot image
-    plt.imshow(img, norm=norm, cmap='gray')
+    plt.imshow(image_data, norm=norm, cmap='gray')
 
     #   Set title & ticks
     plt.title('Input Image'), plt.xticks([]), plt.yticks([])
 
     #   Norm of cc matrix
-    norm = simple_norm(np.absolute(cc), 'log', percent=99.)
+    norm = simple_norm(
+        np.absolute(cross_correlation_data),
+        'log',
+        percent=99.,
+    )
 
     #   Plot cc matrix
-    plt.subplot(122), plt.imshow(np.absolute(cc), norm=norm, cmap='gray')
+    plt.subplot(122), plt.imshow(
+        np.absolute(cross_correlation_data),
+        norm=norm,
+        cmap='gray',
+    )
 
     #   Set title & ticks
     plt.title('cc'), plt.xticks([]), plt.yticks([])
     plt.show()
 
 
-def plot_dark_with_distributions(img, rn, dark_rate, outdir, n_images=1,
-                                 exposure=1, gain=1, show_poisson=True,
-                                 show_gaussian=True):
+def plot_dark_with_distributions(image_data, read_noise, dark_current,
+                                 output_dir, n_images=1, exposure_time=1,
+                                 gain=1, show_poisson_distribution=True,
+                                 show_gaussian_distribution=True):
     """
-        Plot the distribution of dark pixel values, optionally overplotting the
-        expected Poisson and normal distributions corresponding to dark current
-        only or read noise only.
+        Plot the distribution of dark pixel values, optionally over-plotting
+        the expected Poisson and normal distributions corresponding to dark
+        current only or read noise only.
 
         Parameters
         ----------
-        img             : `numpy.ndarray`
-            Dark frame to histogram
+        image_data             : `numpy.ndarray`
+            Image data
 
-        rn              : `float`
+        read_noise              : `float`
             The read noise, in electrons
 
-        dark_rate       : `float`
+        dark_current       : `float`
             The dark current in electrons/sec/pixel
 
-        outdir          : `pathlib.Path`
+        output_dir          : `pathlib.Path`
             Path pointing to the main storage location
 
         n_images        : `float`, optional
@@ -81,29 +90,29 @@ def plot_dark_with_distributions(img, rn, dark_rate, outdir, n_images=1,
             number of images, as does the expected standard deviation of the
             Gaussian.
 
-        exposure        : `float`, optional
+        exposure_time        : `float`, optional
             Exposure time, in seconds
 
         gain            : `float`, optional
             Gain of the camera, in electron/ADU
 
-        show_poisson    : `bool`, optional
-            If ``True``, overplot a Poisson distribution with mean equal to the
-            expected dark counts for the number of images
+        show_poisson_distribution    : `bool`, optional
+            If ``True``, over plot a Poisson distribution with mean equal to
+            the expected dark counts for the number of images
 
-        show_gaussian   : `bool`, optional
-            If ``True``, overplot a normal distribution with mean equal to the
+        show_gaussian_distribution   : `bool`, optional
+            If ``True``, over plot a normal distribution with mean equal to the
             expected dark counts and standard deviation equal to the read
             noise, scaled as appropriate for the number of images
     """
     #   Check output directories
-    checks.check_out(
-        outdir,
-        outdir / 'reduce_plots',
+    checks.check_output_directories(
+        output_dir,
+        output_dir / 'reduce_plots',
     )
 
     #   Scale image
-    img = img * gain / exposure
+    image_data = image_data * gain / exposure_time
 
     #   Use bmh style
     # plt.style.use('bmh')
@@ -113,7 +122,7 @@ def plot_dark_with_distributions(img, rn, dark_rate, outdir, n_images=1,
 
     #   Get
     h = plt.hist(
-        img.flatten(),
+        image_data.flatten(),
         bins=20,
         align='mid',
         density=True,
@@ -124,29 +133,34 @@ def plot_dark_with_distributions(img, rn, dark_rate, outdir, n_images=1,
     bins = h[1]
 
     #   Expected mean of the dark
-    expected_mean_dark = dark_rate * exposure / gain
+    expected_mean_dark = dark_current * exposure_time / gain
 
     #   Plot Poisson
-    if show_poisson:
+    if show_poisson_distribution:
         #   Account for number of exposures
-        pois = stats.poisson(expected_mean_dark * n_images)
+        poisson_distribution = stats.poisson(expected_mean_dark * n_images)
 
         #   X range
-        pois_x = np.arange(0, 300, 1)
+        x_axis_poisson = np.arange(0, 300, 1)
 
         #   Prepare normalization
-        new_area = np.sum(1 / n_images * pois.pmf(pois_x))
+        #   TODO: Check if this is correct
+        new_area = np.sum(
+            1 / n_images * poisson_distribution.pmf(x_axis_poisson)
+        )
 
         plt.plot(
-            pois_x / n_images, pois.pmf(pois_x) / new_area,
-            label="Poisson distribution, mean of {:5.2f} counts"
-            .format(expected_mean_dark),
+            x_axis_poisson / n_images,
+            poisson_distribution.pmf(x_axis_poisson) / new_area,
+            label=f"Poisson distribution, mean of {expected_mean_dark:5.2f} "
+                  f"counts",
         )
 
     #   Plot Gaussian
-    if show_gaussian:
+    if show_gaussian_distribution:
         #   The expected width of the Gaussian depends on the number of images
-        expected_scale = rn / gain * np.sqrt(n_images)
+        #   TODO: Check if this is correct
+        expected_scale = read_noise / gain * np.sqrt(n_images)
 
         #   Mean value is same as for the Poisson distribution (account for
         #   number of images)
@@ -156,62 +170,62 @@ def plot_dark_with_distributions(img, rn, dark_rate, outdir, n_images=1,
         gauss = stats.norm(loc=expected_mean, scale=expected_scale)
 
         #   X range
-        gauss_x = np.linspace(
+        x_axis_gauss = np.linspace(
             expected_mean - 5 * expected_scale,
             expected_mean + 5 * expected_scale,
             num=100,
         )
 
         plt.plot(
-            gauss_x / n_images,
-            gauss.pdf(gauss_x) * n_images,
+            x_axis_gauss / n_images,
+            gauss.pdf(x_axis_gauss) * n_images,
             label='Gaussian, standard dev is read noise in counts',
         )
 
     #   Labels
-    plt.xlabel("Dark counts in {} sec exposure".format(exposure))
+    plt.xlabel(f"Dark counts in {exposure_time} sec exposure")
     plt.ylabel("Fraction of pixels (area normalized to 1)")
     plt.grid()
     plt.legend()
 
     #   Write the plot to disk
     file_name = 'dark_with_distributions_{}.pdf'.format(
-        str(exposure).replace("''", "p")
+        str(exposure_time).replace("''", "p")
     )
     plt.savefig(
-        outdir / 'reduce_plots' / file_name,
+        output_dir / 'reduce_plots' / file_name,
         bbox_inches='tight',
         format='pdf',
     )
     plt.close()
 
 
-def plot_hist(img, outdir, gain, exposure):
+def plot_histogram(image_data, output_dir, gain, exposure_time):
     """
         Plot image histogram for dark images
 
         Parameters
         ----------
-        img         : `numpy.ndarray`
+        image_data      : `numpy.ndarray`
             Dark frame to histogram
 
-        outdir      : `pathlib.Path`
+        output_dir      : `pathlib.Path`
             Path pointing to the main storage location
 
-        gain        : `float`
+        gain            : `float`
             Gain of the camera, in electron/ADU
 
-        exposure    : `float`
+        exposure_time   : `float`
             Exposure time, in seconds
     """
     #   Check output directories
-    checks.check_out(
-        outdir,
-        outdir / 'reduce_plots',
+    checks.check_output_directories(
+        output_dir,
+        output_dir / 'reduce_plots',
     )
 
     #   Scale image
-    img = img * gain / exposure
+    image_data = image_data * gain / exposure_time
 
     #   Use bmh style
     # plt.style.use('bmh')
@@ -221,10 +235,10 @@ def plot_hist(img, outdir, gain, exposure):
 
     #   Create histogram
     hist(
-        img.flatten(),
+        image_data.flatten(),
         bins=5000,
         density=False,
-        label=str(exposure) + ' sec dark',
+        label=f'{exposure_time} sec dark',
         alpha=0.4,
     )
 
@@ -236,47 +250,50 @@ def plot_hist(img, outdir, gain, exposure):
     plt.legend()
 
     #   Write the plot to disk
-    file_name = 'dark_hist_{}.pdf'.format(str(exposure).replace("''", "p"))
+    file_name = 'dark_hist_{}.pdf'.format(
+        str(exposure_time).replace("''", "p")
+    )
     plt.savefig(
-        outdir / 'reduce_plots' / file_name,
+        output_dir / 'reduce_plots' / file_name,
         bbox_inches='tight',
         format='pdf',
     )
     plt.close()
 
 
-def plot_flat_median(ifc, image_type, outdir, filt):
+def plot_median_of_flat_fields(image_file_collection, image_type, output_dir,
+                               filter_):
     """
         Plot median and mean of each flat field in a file collection
 
         Parameters
         ----------
-        ifc             : `ccdproc.ImageFileCollection`
+        image_file_collection   : `ccdproc.ImageFileCollection`
             File collection with the flat fields to analyze
 
-        image_type      : `string`
+        image_type              : `string`
             Header keyword characterizing the flats
 
-        outdir          : `pathlib.Path`
+        output_dir              : `pathlib.Path`
             Path pointing to the main storage location
 
-        filt            : `string`
+        filter_                 : `string`
             Filter
 
         Idea/Reference
         --------------
-            https://www.astropy.org/ccd-reduction-and-photometry-guide/v/dev/notebooks/05-04-Combining-flats.html
+            # https://www.astropy.org/ccd-reduction-and-photometry-guide/v/dev/notebooks/05-04-Combining-flats.html
     """
     #   Check output directories
-    checks.check_out(
-        outdir,
-        outdir / 'reduce_plots',
+    checks.check_output_directories(
+        output_dir,
+        output_dir / 'reduce_plots',
     )
 
     #   Calculate median and mean for each image
     median_count = []
     mean_count = []
-    for data in ifc.data(imagetyp=image_type, filter=filt):
+    for data in image_file_collection.data(imagetyp=image_type, filter=filter_):
         median_count.append(np.median(data))
         mean_count.append(np.mean(data))
 
@@ -298,50 +315,51 @@ def plot_flat_median(ifc, image_type, outdir, filt):
     plt.legend()
 
     #   Write the plot to disk
-    file_name = 'flat_median_{}.pdf'.format(filt.replace("''", "p"))
+    file_name = 'flat_median_{}.pdf'.format(filter_.replace("''", "p"))
     plt.savefig(
-        outdir / 'reduce_plots' / file_name,
+        output_dir / 'reduce_plots' / file_name,
         bbox_inches='tight',
         format='pdf',
     )
     plt.close()
 
 
-def subplots_stars_fwhm_estimate(outdir, nstars, stars, filt, basename):
+def cutouts_fwhm_stars(output_dir, n_stars, sub_images_fwhm_stars, filter_,
+                       basename):
     """
         Plots cutouts around the stars used to estimate the FWHM
 
         Parameters
         ----------
-        outdir          : `pathlib.Path`
+        output_dir              : `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        nstars          : `integer`
+        n_stars                 : `integer`
             Number of stars
 
-        stars           : `photutils.psf.EPSFStars object
+        sub_images_fwhm_stars   : `photutils.psf.EPSFStars object
             Sub images (squares) extracted around the FWHM stars
 
-        filt            : `string`
+        filter_                 : `string`
             Filter name
 
-        basename        : `string`
+        basename                : `string`
             Name of the image file
     """
     #   Check output directories
-    checks.check_out(
-        outdir,
-        outdir / 'cutouts',
+    checks.check_output_directories(
+        output_dir,
+        output_dir / 'cutouts',
     )
 
     #   Set number of rows and columns for the plot
-    nrows = 5
-    ncols = 5
+    n_rows = 5
+    n_columns = 5
 
     #   Prepare plot
     fig, ax = plt.subplots(
-        nrows=nrows,
-        ncols=ncols,
+        nrows=n_rows,
+        ncols=n_columns,
         figsize=(20, 20),
         squeeze=True,
     )
@@ -349,20 +367,20 @@ def subplots_stars_fwhm_estimate(outdir, nstars, stars, filt, basename):
 
     #   Set title of the complete plot
     fig.suptitle(
-        'Cutouts of the FWHM stars (' + str(filt) + ', ' + str(basename) + ')',
+        f'Cutouts of the FWHM stars ({filter_}), {basename})',
         fontsize=20,
     )
 
     #   Loop over the cutouts (default: 25)
-    for i in range(nstars):
+    for i in range(n_stars):
         # Set up normalization for the image
-        norm = simple_norm(stars[i], 'log', percent=99.)
+        norm = simple_norm(sub_images_fwhm_stars[i], 'log', percent=99.)
 
         # Plot individual cutouts
-        ax[i].set_xlabel("Pixel")
-        ax[i].set_ylabel("Pixel")
+        ax[i].set_xlabel("[pixel]")
+        ax[i].set_ylabel("[pixel]")
         ax[i].imshow(
-            stars[i],
+            sub_images_fwhm_stars[i],
             norm=norm,
             origin='lower',
             cmap='viridis',
@@ -370,8 +388,7 @@ def subplots_stars_fwhm_estimate(outdir, nstars, stars, filt, basename):
 
     #   Write the plot to disk
     plt.savefig(
-        str(outdir) + '/cutouts/cutouts_FWHM-stars_' + str(filt) + '_' +
-        str(basename) + '.pdf',
+        f'{output_dir}/cutouts/cutouts_FWHM-stars_{filter_}_{basename}.pdf',
         bbox_inches='tight',
         format='pdf',
     )

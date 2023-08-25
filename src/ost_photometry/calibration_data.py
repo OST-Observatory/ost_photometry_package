@@ -15,7 +15,7 @@ from . import terminal_output
 ############################################################################
 
 
-def get_img_types():
+def get_image_types():
     """
         Get image type designator: The terms that are used to identify bias,
         darks, flats, etc. in the image Headers.
@@ -71,7 +71,7 @@ def chip_dimensions(camera):
     return d, h
 
 
-def camera_info(camera, redout_mode, temperature, gain_setting=None):
+def camera_info(camera, readout_mode, temperature, gain_setting=None):
     """
         Camera specific parameters
 
@@ -80,7 +80,7 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
         camera          : `string`
             Camera or camera type used to obtain the data
 
-        redout_mode     : `string`
+        readout_mode    : `string`
             Mode used to read out the data from the camera chip.
 
         temperature     : `float`
@@ -94,8 +94,8 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
 
         Returns
         -------
-        readnoise       : `float`
-            Read nosie
+        read_noise      : `float`
+            Read noise
 
         gain            : `float`
             Gain factor
@@ -111,21 +111,21 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
     """
     #   STF8300
     if camera in ['SBIG STF-8300 CCD Camera']:
-        readnoise = 9.3
+        read_noise = 9.3
         gain = None
         # dark_rate = {0:0.18, -10:0.04, -15.8:0.02}
 
     #   QHYs
     elif camera in ['QHY600M', 'QHY268M']:
         try:
-            read_noise_fit_parameters = gain_qhy[camera][redout_mode]
+            read_noise_fit_parameters = gain_qhy[camera][readout_mode]
             spline = interpolate.BSpline(
                 read_noise_fit_parameters['t'],
                 read_noise_fit_parameters['c'],
                 read_noise_fit_parameters['k'],
                 extrapolate=False,
             )
-            readnoise = spline(gain_setting)
+            read_noise = spline(gain_setting)
         except Exception as e:
             terminal_output.print_to_terminal(
                 f'Camera: {camera}\n'
@@ -135,10 +135,10 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
                 indent=1,
                 style_name='WARNING'
             )
-            readnoise = 7.904
+            read_noise = 7.904
 
         try:
-            gain_fit_parameters = gain_qhy[camera][redout_mode]
+            gain_fit_parameters = gain_qhy[camera][readout_mode]
             spline = interpolate.BSpline(
                 gain_fit_parameters['t'],
                 gain_fit_parameters['c'],
@@ -164,7 +164,7 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
             indent=1,
             style_name='WARNING'
         )
-        readnoise = 7.
+        read_noise = 7.
         gain = 1.
 
     #   Dark current
@@ -199,7 +199,7 @@ def camera_info(camera, redout_mode, temperature, gain_setting=None):
     #   Chip dimensions
     d, h = chip_dimensions(camera)
 
-    return readnoise, gain, dark_rate, d, h
+    return read_noise, gain, dark_rate, d, h
 
 
 def get_chip_dimensions(instrument):
@@ -599,12 +599,17 @@ vizier_dict = {
 #   Valid filter combinations to calculate magnitude transformation
 #   dict -> key = filter, value = list(first color, second color)
 #
-valid_calibs = [['U', 'V'], ['B', 'V'], ['V', 'R'], ['V', 'I']]
+valid_filter_combinations_for_transformation = [
+    ['U', 'V'],
+    ['B', 'V'],
+    ['V', 'R'],
+    ['V', 'I'],
+]
 
 ###
 #   Filter denomination vs. filter systems
 #
-filter_sytems = {
+filter_systems = {
     'U': 'bessell',
     'B': 'bessell',
     'V': 'bessell',
@@ -625,8 +630,8 @@ filter_sytems = {
 ###
 #   Filter system conversion functions
 #
-def Jordi_u(**kwargs):
-    if all(filt in kwargs for filt in ['U', 'B', 'V', 'g']):
+def jordi_u(**kwargs):
+    if all(filter_ in kwargs for filter_ in ['U', 'B', 'V', 'g']):
         U = kwargs.get("U")
         B = kwargs.get("B")
         V = kwargs.get("V")
@@ -637,21 +642,21 @@ def Jordi_u(**kwargs):
     return None
 
 
-def Jordi_g(**kwargs):
-    if all(filt in kwargs for filt in ['B', 'V']):
+def jordi_g(**kwargs):
+    if all(filter_ in kwargs for filter_ in ['B', 'V']):
         B = kwargs.get("B")
         V = kwargs.get("V")
 
         return ufloat(0.630, 0.002) * (B - V) - ufloat(0.124, 0.002) + V
 
-    if all(filt in kwargs for filt in ['V', 'R', 'r']):
+    if all(filter_ in kwargs for filter_ in ['V', 'R', 'r']):
         V = kwargs.get("V")
         R = kwargs.get("R")
         r = kwargs.get("r")
 
         return ufloat(1.646, 0.008) * (V - R) - ufloat(0.139, 0.004) + r
 
-    if all(filt in kwargs for filt in ['V', 'I', 'i']):
+    if all(filter_ in kwargs for filter_ in ['V', 'I', 'i']):
         V = kwargs.get("V")
         I = kwargs.get("I")
         i = kwargs.get("i")
@@ -664,8 +669,8 @@ def Jordi_g(**kwargs):
     return None
 
 
-def Jordi_r(**kwargs):
-    if all(filt in kwargs for filt in ['V', 'R']):
+def jordi_r(**kwargs):
+    if all(filter_ in kwargs for filter_ in ['V', 'R']):
         V = kwargs.get("V")
         R = kwargs.get("R")
 
@@ -674,21 +679,21 @@ def Jordi_r(**kwargs):
         else:
             return ufloat(0.77, 0.04) * (V - R) - ufloat(0.37, 0.04)
 
-    if all(filt in kwargs for filt in ['V', 'R', 'g']):
+    if all(filter_ in kwargs for filter_ in ['V', 'R', 'g']):
         V = kwargs.get("V")
         R = kwargs.get("R")
         g = kwargs.get("g")
 
         return g - ufloat(1.646, 0.008) * (V - R) + ufloat(0.139, 0.004)
 
-    if all(filt in kwargs for filt in ['I', 'R', 'i']):
+    if all(filter_ in kwargs for filter_ in ['I', 'R', 'i']):
         I = kwargs.get("I")
         R = kwargs.get("R")
         i = kwargs.get("i")
 
         return ufloat(1.007, 0.005) * (R - I) - ufloat(0.236, 0.003) + i
 
-    if all(filt in kwargs for filt in ['I', 'R', 'z']):
+    if all(filter_ in kwargs for filter_ in ['I', 'R', 'z']):
         I = kwargs.get("I")
         R = kwargs.get("R")
         z = kwargs.get("z")
@@ -698,14 +703,14 @@ def Jordi_r(**kwargs):
     return None
 
 
-def Jordi_i(**kwargs):
-    if all(filt in kwargs for filt in ['R', 'I']):
+def jordi_i(**kwargs):
+    if all(filter_ in kwargs for filter_ in ['R', 'I']):
         R = kwargs.get("R")
         I = kwargs.get("I")
 
         return ufloat(0.247, 0.003) * (R - I) + ufloat(0.329, 0.002) + I
 
-    if all(filt in kwargs for filt in ['V', 'I', 'g']):
+    if all(filter_ in kwargs for filter_ in ['V', 'I', 'g']):
         V = kwargs.get("V")
         I = kwargs.get("I")
         g = kwargs.get("g")
@@ -715,7 +720,7 @@ def Jordi_i(**kwargs):
         else:
             return g - ufloat(0.83, 0.01) * (V - I) - ufloat(0.60, 0.03)
 
-    if all(filt in kwargs for filt in ['I', 'R', 'r']):
+    if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
         I = kwargs.get("I")
         R = kwargs.get("R")
         r = kwargs.get("r")
@@ -725,8 +730,8 @@ def Jordi_i(**kwargs):
     return None
 
 
-def Jordi_z(**kwargs):
-    if all(filt in kwargs for filt in ['I', 'R', 'r']):
+def jordi_z(**kwargs):
+    if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
         I = kwargs.get("I")
         R = kwargs.get("R")
         r = kwargs.get("r")
@@ -742,11 +747,11 @@ def Jordi_z(**kwargs):
 filter_system_conversions = {
     'SDSS': {
         'Jordi_et_al_2005': {
-            'g': Jordi_g,
-            'u': Jordi_u,
-            'r': Jordi_r,
-            'i': Jordi_i,
-            'z': Jordi_z,
+            'g': jordi_g,
+            'u': jordi_u,
+            'r': jordi_r,
+            'i': jordi_i,
+            'z': jordi_z,
         }
     }
 }
@@ -769,7 +774,7 @@ Tcs_qhy600m_20220420 = {
         'T_2_err': 9.7904e-06,
         'k_2': -0.010063,
         'k_2_err': 5.0955e-06,
-        'type': 'airmass',
+        'type': 'air_mass',
         #   QHY600M
         'camera': ['QHY600M'],
     },
@@ -786,7 +791,7 @@ Tcs_qhy600m_20220420 = {
         'T_2_err': 9.7294e-06,
         'k_2': -0.010016,
         'k_2_err': 5.0477e-06,
-        'type': 'airmass',
+        'type': 'air_mass',
         #   QHY600M
         'camera': ['QHY600M'],
     },
@@ -805,7 +810,7 @@ Tcs_qhy600m_20080101 = {
         'T_2_err': 0.0080104,
         'k_2': -0.1143,
         'k_2_err': 0.0034039,
-        'type': 'airmass',
+        'type': 'air_mass',
         #   QHY600M
         'camera': ['QHY600M'],
     },
@@ -822,7 +827,7 @@ Tcs_qhy600m_20080101 = {
         'T_2_err': 0.0075941,
         'k_2': -0.11125,
         'k_2_err': 0.0031892,
-        'type': 'airmass',
+        'type': 'air_mass',
         #   QHY600M
         'camera': ['QHY600M'],
     },
@@ -844,13 +849,13 @@ Tcs = {
 }
 
 
-def get_tcs(observation_jd):
+def get_transformation_calibration_values(observation_jd):
     """
         Get the Tcs calibration values for the provided JD
 
         Parameters
         ----------
-        observation_jd           : `float`
+        observation_jd   : `float`
             JD of the observation
 
         Returns

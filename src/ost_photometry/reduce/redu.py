@@ -33,97 +33,101 @@ from .. import utilities as aux_general
 #                           Routines & definitions                         #
 ############################################################################
 
-def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
-                dr=None, cosmics=True, mask_cosmics=False, satlevel=None,
-                objlim=5., sigclip=4.0, scale_expo=True, ref_img=0,
-                bias_enforce=False, verbose=False, addmask=True,
-                shift_method='skimage', stack=True, estimate_fwhm=False,
-                shift_all=False, tolerance=0.5, stack_method='average',
-                dtype_stack=None, target=None, find_wcs=True,
-                wcs_method='astrometry', wcs_all=False, force_wcs_determ=False,
-                rm_outliers_shift=True, filter_window_shift=8,
-                threshold_shift=10., temp_tolerence=5, debug=False):
+def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
+                read_noise=None, dark_rate=None, rm_cosmic_rays=True,
+                mask_cosmic_rays=False, saturation_level=None,
+                limiting_contrast_rm_cosmic_rays=5.,
+                sigma_clipping_value_rm_cosmic_rays=4.0,
+                scale_image_with_exposure_time=True, reference_image_id=0,
+                enforce_bias=False, verbose=False, add_hot_bad_pixel_mask=True,
+                shift_method='skimage', stack_images=True, estimate_fwhm=False,
+                shift_all=False, exposure_time_tolerance=0.5,
+                stack_method='average', dtype_image_stacking=None,
+                target_name=None, find_wcs=True, wcs_method='astrometry',
+                find_wcs_of_all_images=False, force_wcs_determination=False,
+                rm_outliers_image_shifts=True, filter_window_image_shifts=8,
+                threshold_image_shifts=10., temperature_tolerance=5,
+                plot_dark_statistic_plots=False, plot_flat_statistic_plots=False,
+                debug=False):
     """
         Main reduction routine: Creates master images for bias, darks,
                                 flats, reduces the science images and trims
                                 them to the same filed of view.
 
-
-        Reduce the science images
-
         Parameters
         ----------
-        path                : `string`
+        image_path                          : `string`
             Path to the images
 
-        outdir              : `string`
+        output_dir                          : `string`
             Path to the directory where the master files should be stored
 
-        img_type            : `dictionary` of `string`, optional
+        image_type_dir                      : `dictionary` of `string`, optional
             Image types of the images. Possibilities: bias, dark, flat,
             light
             Default is ``None``.
 
-        gain                : `float` or `None`, optional
+        gain                                : `float` or `None`, optional
             The gain (e-/adu) of the camera chip. If set to `None` the gain
             will be extracted from the FITS header.
             Default is ``None``.
 
-        readnoise           : `float`, optional
+        read_noise                          : `float`, optional
             The read noise (e-) of the camera chip.
             Default is ``None``.
 
-        dr                  : `float`, optional
+        dark_rate                           : `float`, optional
             Dark rate in e-/pix/s:
             Default is ``None``.
 
-        cosmics             : `boolean`, optional
+        rm_cosmic_rays                      : `boolean`, optional
             If True cosmics rays will be removed.
             Default is ``True``.
 
-        mask_cosmics        : `boolean`, optional
+        mask_cosmic_rays                    : `boolean`, optional
             If True cosmics will ''only'' be masked. If False the
             cosmics will be removed from the input image and the mask will
             be added.
             Default is ``False``.
 
-        satlevel            : `float`, optional
+        saturation_level                    : `float`, optional
             Saturation limit of the camera chip.
             Default is ``None``.
 
-        objlim              : `float`, optional
+        limiting_contrast_rm_cosmic_rays    : `float`, optional
             Parameter for the cosmic ray removal: Minimum contrast between
             Laplacian image and the fine structure image.
             Default is ``5``.
 
-        sigclip             : `float`, optional
+        sigma_clipping_value_rm_cosmic_rays : `float`, optional
             Parameter for the cosmic ray removal: Fractional detection limit
             for neighboring pixels.
             Default is ``4.5``.
 
-        scale_expo          : `boolean`, optional
+        scale_image_with_exposure_time      : `boolean`, optional
             If True the image will be scaled with the exposure time.
             Default is ``True``.
 
-        ref_img             : `integer`, optional
+        reference_image_id                  : `integer`, optional
             ID of the image that should be used as a reference
             Default is ``0``.
 
-        bias_enforce        : 'boolean', optional
+        enforce_bias                        : 'boolean', optional
             If True the usage of bias frames during the reduction is
             enforced if possible.
             Default is ``False``.
 
-        verbose             : `boolean`, optional
+        # TODO: Combine with debug option
+        verbose                             : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
 
-        addmask             : `boolean`, optional
+        add_hot_bad_pixel_mask              : `boolean`, optional
             If True add hot and bad pixel mask to the reduced science
             images.
             Default is ``True``.
 
-        shift_method        :`string`, optional
+        shift_method                        : `string`, optional
             Method to use for image alignment.
             Possibilities: 'aa'      = astroalign module only accounting for
                                        xy shifts
@@ -135,75 +139,85 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
                            'skimage' = phase correlation with skimage
             Default is ``skimage``.
 
-        stack               : `boolean`, optional
+        stack_images                        : `boolean`, optional
             If True the individual images of each filter will be stacked and
             those images will be aligned to each other.
             Default is ``True``.
 
-        estimate_fwhm       : `boolean`, optional
+        estimate_fwhm                       : `boolean`, optional
             If True the FWHM of each image will be estimated.
             Default is ``False``.
 
-        shift_all           : `boolean`, optional
+        shift_all                           : `boolean`, optional
             If False shifts between images are only calculated for images of
             the same filter. If True shifts between all images are
             estimated.
             Default is ``False``.
 
-        tolerance           : `float`, optional
+        exposure_time_tolerance             : `float`, optional
             Tolerance between science and dark exposure times in s.
             Default is ``0.5``s.
 
-        stack_method        : `string`, optional
+        stack_method                        : `string`, optional
             Method used for combining the images.
             Possibilities: ``median`` or ``average`` or ``sum``
             Default is ``average`.
 
-        dtype_stack         : str or numpy.dtype, optional
+        dtype_image_stacking                : str or numpy.dtype, optional
             dtype that should be used while combining the images.
             Default is ''None'' -> None is equivalent to float64
 
-        target              : `string` or ``None``, optional
+        target_name                         : `string` or ``None``, optional
             Name of the target. Used for file selection.
             Default is ``None``.
 
-        find_wcs            : `boolean`, optional
+        find_wcs                            : `boolean`, optional
             If `True` the WCS will be determined for the images.
             Default is ``True``.
 
-        wcs_method          :   `string`, optional
+        wcs_method                          :   `string`, optional
             Method to use for WCS determination.
             Possibilities are 'astrometry', 'astap', and 'twirl'
             Default is ``astrometry``.
 
-        wcs_all             : `boolean`, optional
+        find_wcs_of_all_images              : `boolean`, optional
             If `True` the WCS will be calculated for each image
             individually.
             Default is ``False``.
 
-        force_wcs_determ    : `boolean`, optional
+        force_wcs_determination             : `boolean`, optional
             If ``True`` a new WCS determination will be calculated even if
             a WCS is already present in the FITS Header.
             Default is ``False``.
 
-        rm_outliers_shift   : `boolean`, optional
+        rm_outliers_image_shifts            : `boolean`, optional
             If True outliers in the image shifts will be detected and removed.
             Default is ``True``.
 
-        filter_window_shift : `integer`, optional
+        filter_window_image_shifts          : `integer`, optional
             Width of the median filter window
             Default is ``8``.
 
-        threshold_shift     : `float` or `integer`, optional
+        threshold_image_shifts              : `float` or `integer`, optional
             Difference above the running median above an element is
             considered to be an outlier.
             Default is ``10.``.
 
-        temp_tolerence      : `float`, optional
+        temperature_tolerance               : `float`, optional
             The images are required to have the temperature. This value
             specifies the temperature difference that is acceptable.
 
-        debug               : `boolean`, optional
+        plot_dark_statistic_plots            : `boolean`, optional
+            If True some plots showing some statistic on the dark frames are
+            created.
+            Default is ``False``
+
+        plot_flat_statistic_plots           : `boolean`, optional
+            If True some plots showing some statistic on the flat frames are
+            created.
+            Default is ``False``
+
+        debug                               : `boolean`, optional
             If `True` the intermediate files of the data reduction will not
             be removed.
             Default is ``False``.
@@ -213,162 +227,175 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
     #   Prepare reduction
     #
     #   Sanitize the provided paths
-    file_path = Path(path)
-    out_path = Path(outdir)
+    file_path = Path(image_path)
+    output_path = Path(output_dir)
 
     #   Get image file collection
-    ifc = ccdp.ImageFileCollection(file_path)
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Get image types
-    if img_type is None:
-        img_type = calibration_data.get_img_types()
+    if image_type_dir is None:
+        image_type_dir = calibration_data.get_image_types()
 
     #   Except if image collection is empty
-    if not ifc.files:
+    if not image_file_collection.files:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}No images found -> EXIT\n'
             f'\t=> Check paths to the images!{style.Bcolors.ENDC}'
         )
 
-    #   Get image types (set allows to return only unique values)
-    type_imgs = set(ifc.summary['imagetyp'])
+    #   Get image types
+    ifc_image_types = set(image_file_collection.summary['imagetyp'])
 
     #   Check exposure times:   Successful if dark frames with ~ the same
     #                           exposure time are available all flat and
     #                           science
     #   Dark times
-    dark_times = utilities.get_exposure_times(ifc, img_type['dark'])
+    dark_times = utilities.get_exposure_times(
+        image_file_collection,
+        image_type_dir['dark'],
+    )
 
     #   Flat times
-    flat_times = utilities.get_exposure_times(ifc, img_type['flat'])
+    flat_times = utilities.get_exposure_times(
+        image_file_collection,
+        image_type_dir['flat'],
+    )
 
     #   Science times
-    sciece_times = utilities.get_exposure_times(ifc, img_type['light'])
+    science_times = utilities.get_exposure_times(
+        image_file_collection,
+        image_type_dir['light'],
+    )
 
     #   Check if bias frames are available
     bias_true = np.any(
-        [True if t in type_imgs else False for t in img_type['bias']]
+        [True if t in ifc_image_types else False for t in image_type_dir['bias']]
     )
 
     #   Check flats
-    scale_necessary = utilities.check_exposure_times(
+    image_scaling_required = utilities.check_exposure_times(
         'flats',
         flat_times,
         dark_times,
         bias_true,
-        tolerance=tolerance,
+        exposure_time_tolerance=exposure_time_tolerance,
     )
 
     #   Check science exposures
-    scale_necessary = scale_necessary | utilities.check_exposure_times(
+    image_scaling_required = image_scaling_required | utilities.check_exposure_times(
         'science',
-        sciece_times,
+        science_times,
         dark_times,
         bias_true,
-        tolerance=tolerance,
+        exposure_time_tolerance=exposure_time_tolerance,
     )
 
     ###
     #   Get camera specific parameters
     #
-    img_parameters = utilities.get_instrument_infos(ifc, temp_tolerence)
-    instrument = img_parameters[0]
-    redout_mode = img_parameters[1]
-    gain_setting = img_parameters[2]
-    bit_pix = img_parameters[3]
-    temperature = img_parameters[4]
+    image_parameters = utilities.get_instrument_info(
+        image_file_collection,
+        temperature_tolerance,
+    )
+    instrument = image_parameters[0]
+    readout_mode = image_parameters[1]
+    gain_setting = image_parameters[2]
+    pixel_bit_value = image_parameters[3]
+    temperature = image_parameters[4]
 
-    if readnoise is None or gain is None or dr is None or satlevel is None:
+    if (read_noise is None or gain is None or dark_rate is None
+            or saturation_level is None):
         camera_info = calibration_data.camera_info(
             instrument,
-            redout_mode,
+            readout_mode,
             temperature,
             gain_setting=gain_setting,
         )
-        if readnoise is None:
-            readnoise = camera_info[0]
+        if read_noise is None:
+            read_noise = camera_info[0]
         if gain is None:
             gain = camera_info[1]
-        if dr is None:
-            dr = camera_info[2]
-        if satlevel is None:
-            satlevel = pow(2, bit_pix) - 1
+        if dark_rate is None:
+            dark_rate = camera_info[2]
+        if saturation_level is None:
+            saturation_level = pow(2, pixel_bit_value) - 1
 
     ###
     #   Check master files on disk
     #
     #   Get all filter
     filters = set(
-        ifc.summary['filter'][np.invert(ifc.summary['filter'].mask)]
+        image_file_collection.summary['filter'][
+            np.invert(image_file_collection.summary['filter'].mask)
+        ]
     )
 
     #   Check is master files already exist
-    check_master = utilities.check_master_on_disk(
-        out_path,
-        img_type,
+    master_available = utilities.check_master_files_on_disk(
+        output_path,
+        image_type_dir,
         dark_times,
         filters,
-        scale_necessary,
+        image_scaling_required,
     )
 
-    mk_new_master = True
-    if check_master:
+    mk_new_master_files = True
+    if master_available:
         user_input, timed_out = timedInput(
             f"{style.Bcolors.OKBLUE}   Master files are already calculated."
-            f" Should these files be used? {style.Bcolors.ENDC}",
+            f" Should these files be used? [yes/no]{style.Bcolors.ENDC}",
             timeout=30,
         )
         if timed_out:
             user_input = 'n'
 
         if user_input in ['y', 'yes']:
-            mk_new_master = False
+            mk_new_master_files = False
 
     #   Set master boolean for bias subtraction
-    rmbias = True if scale_necessary or bias_enforce else False
+    rm_bias = True if image_scaling_required or enforce_bias else False
 
-    if mk_new_master:
+    if mk_new_master_files:
         ###
         #   Reduce bias
         #
-        if rmbias:
-            terminal_output.print_terminal(
-                string="Create master bias...",
+        if rm_bias:
+            terminal_output.print_to_terminal(
+                "Create master bias...",
                 indent=1,
             )
-            master_bias(file_path, out_path, img_type)
+            master_bias(file_path, output_path, image_type_dir)
 
         ###
         #   Master dark and master flat darks
         #
-        terminal_output.print_terminal(
-            string="Create master darks...",
-            indent=1,
-        )
+        terminal_output.print_to_terminal("Create master darks...", indent=1)
 
-        if rmbias:
+        if rm_bias:
             #   Reduce dark frames and apply bias subtraction
             reduce_dark(
                 file_path,
-                out_path,
-                img_type,
+                output_path,
+                image_type_dir,
                 gain=gain,
-                readnoise=readnoise,
+                read_noise=read_noise,
             )
 
             #   Set dark path
-            dark_path = Path(out_path / 'dark')
+            dark_path = Path(output_path / 'dark')
         else:
             dark_path = file_path
 
         #   Create master dark
         master_dark(
             dark_path,
-            out_path,
-            img_type,
+            output_path,
+            image_type_dir,
             gain=gain,
-            readnoise=readnoise,
-            dr=dr,
+            read_noise=read_noise,
+            dark_rate=dark_rate,
+            plot_plots=plot_dark_statistic_plots,
             verbose=verbose,
             debug=debug,
         )
@@ -376,146 +403,141 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
         ###
         #   Master flat
         #
-        terminal_output.print_terminal(
-            string="Create master flat...",
-            indent=1,
-        )
+        terminal_output.print_to_terminal("Create master flat...", indent=1)
 
         #   Reduce flats
         reduce_flat(
             file_path,
-            out_path,
-            img_type,
+            output_path,
+            image_type_dir,
             gain=gain,
-            readnoise=readnoise,
-            rmbias=rmbias,
-            tolerance=tolerance,
+            read_noise=read_noise,
+            rm_bias=rm_bias,
+            exposure_time_tolerance=exposure_time_tolerance,
             debug=debug,
         )
 
         #   Create master flat
         master_flat(
-            Path(out_path / 'flat'),
-            out_path,
-            img_type,
+            Path(output_path / 'flat'),
+            output_path,
+            image_type_dir,
+            plot_plots=plot_flat_statistic_plots,
             verbose=verbose,
         )
 
     ###
     #   Image reduction & stacking (calculation of image shifts, etc. )
     #
-    terminal_output.print_terminal(
-        string="Reduce science images...",
-        indent=1,
-    )
+    terminal_output.print_to_terminal("Reduce science images...", indent=1)
 
     reduce_light(
         file_path,
-        out_path,
-        img_type,
-        cosmics=cosmics,
-        mask_cosmics=mask_cosmics,
+        output_path,
+        image_type_dir,
+        rm_cosmic_rays=rm_cosmic_rays,
+        mask_cosmics=mask_cosmic_rays,
         gain=gain,
-        readnoise=readnoise,
-        objlim=objlim,
-        sigclip=sigclip,
-        satlevel=satlevel,
-        rmbias=rmbias,
+        read_noise=read_noise,
+        limiting_contrast_rm_cosmic_rays=limiting_contrast_rm_cosmic_rays,
+        sigma_clipping_value_rm_cosmic_rays=sigma_clipping_value_rm_cosmic_rays,
+        saturation_level=saturation_level,
+        rm_bias=rm_bias,
         verbose=verbose,
-        addmask=addmask,
-        tolerance=tolerance,
-        target=target,
-        scale_expo=scale_expo,
+        add_hot_bad_pixel_mask=add_hot_bad_pixel_mask,
+        exposure_time_tolerance=exposure_time_tolerance,
+        target_name=target_name,
+        scale_image_with_exposure_time=scale_image_with_exposure_time,
     )
 
     ###
     #   Calculate and apply image shifts for individual filters or all
     #   images
     #
-    terminal_output.print_terminal(
-        string="Trim images to the same FOV...",
+    terminal_output.print_to_terminal(
+        "Trim images to the same FOV...",
         indent=1,
     )
     if shift_all:
-        shift_img_all(
-            out_path / 'light',
-            out_path,
-            img_type['light'],
-            ref_img=ref_img,
+        shift_all_images(
+            output_path / 'light',
+            output_path,
+            image_type_dir['light'],
+            reference_image_id=reference_image_id,
             shift_method=shift_method,
-            rm_outliers=rm_outliers_shift,
-            filter_window=filter_window_shift,
-            threshold=threshold_shift,
+            rm_outliers=rm_outliers_image_shifts,
+            filter_window=filter_window_image_shifts,
+            threshold=threshold_image_shifts,
             verbose=verbose,
             debug=debug,
         )
     else:
-        shift_img(
-            out_path / 'light',
-            out_path,
-            img_type['light'],
-            ref_img=ref_img,
+        shift_image(
+            output_path / 'light',
+            output_path,
+            image_type_dir['light'],
+            reference_image_id=reference_image_id,
             shift_method=shift_method,
-            rm_outliers=rm_outliers_shift,
-            filter_window=filter_window_shift,
-            threshold=threshold_shift,
+            rm_outliers=rm_outliers_image_shifts,
+            filter_window=filter_window_image_shifts,
+            threshold=threshold_image_shifts,
             verbose=verbose,
             debug=debug,
         )
 
-    if find_wcs and wcs_all:
+    if find_wcs and find_wcs_of_all_images:
         ###
         #   Determine WCS and add it to all reduced images
         #
-        terminal_output.print_terminal(string="Determine WCS ...", indent=1)
-        utilities.find_wcs_all_imgs(
-            out_path / 'cut',
-            out_path / 'cut',
-            method=wcs_method,
-            force_wcs_determ=force_wcs_determ,
+        terminal_output.print_to_terminal("Determine WCS ...", indent=1)
+        utilities.find_wcs_all_images(
+            output_path / 'cut',
+            output_path / 'cut',
+            wcs_method=wcs_method,
+            force_wcs_determination=force_wcs_determination,
         )
 
     if estimate_fwhm:
         ###
         #   Estimate FWHM
         #
-        terminal_output.print_terminal(string="Estimate FWHM ...", indent=1)
+        terminal_output.print_to_terminal("Estimate FWHM ...", indent=1)
         utilities.estimate_fwhm(
-            out_path / 'cut',
-            out_path,
-            img_type['light'],
+            output_path / 'cut',
+            output_path,
+            image_type_dir['light'],
         )
 
-    if stack:
+    if stack_images:
         ###
         #   Stack images of the individual filters
         #
-        terminal_output.print_terminal(
-            string="Combine the images of the individual filter...",
+        terminal_output.print_to_terminal(
+            "Combine the images of the individual filter...",
             indent=1,
         )
-        stack_img(
-            out_path / 'cut',
-            out_path,
-            img_type['light'],
-            method=stack_method,
-            dtype=dtype_stack,
+        stack_image(
+            output_path / 'cut',
+            output_path,
+            image_type_dir['light'],
+            stacking_method=stack_method,
+            dtype=dtype_image_stacking,
             debug=debug,
         )
 
-        if find_wcs and not wcs_all:
+        if find_wcs and not find_wcs_of_all_images:
             ###
             #   Determine WCS and add it to the stacked images
             #
-            terminal_output.print_terminal(string="Determine WCS ...", indent=1)
+            terminal_output.print_to_terminal("Determine WCS ...", indent=1)
 
-            utilities.find_wcs_all_imgs(
-                out_path,
-                out_path,
-                force_wcs_determ=force_wcs_determ,
-                method=wcs_method,
-                combined=True,
-                img_type=img_type['light'],
+            utilities.find_wcs_all_images(
+                output_path,
+                output_path,
+                force_wcs_determination=force_wcs_determination,
+                wcs_method=wcs_method,
+                only_combined_images=True,
+                image_type=image_type_dir['light'],
             )
 
         if not shift_all:
@@ -523,14 +545,22 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
                 ###
                 #   Trim stacked images using astroalign
                 #
-                shift_stack_aa(out_path, out_path, img_type['light'])
+                shift_stack_astroalign(
+                    output_path,
+                    output_path,
+                    image_type_dir['light'],
+                )
 
             elif shift_method in ['own', 'skimage', 'aa']:
                 ###
                 #   Make large images with the same dimensions to allow
                 #   cross correlation
                 #
-                make_big(out_path, out_path, img_type['light'])
+                make_big_images(
+                    output_path,
+                    output_path,
+                    image_type_dir['light'],
+                )
 
                 ###
                 #   Calculate and apply image shifts between filters
@@ -540,14 +570,14 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
                     indent=1,
                 )
 
-                trim_img(
-                    out_path,
-                    out_path,
-                    img_type['light'],
+                trim_image(
+                    output_path,
+                    output_path,
+                    image_type_dir['light'],
                     shift_method=shift_method,
-                    rm_outliers=rm_outliers_shift,
-                    filter_window=filter_window_shift,
-                    threshold=threshold_shift,
+                    rm_outliers=rm_outliers_image_shifts,
+                    filter_window=filter_window_image_shifts,
+                    threshold=threshold_image_shifts,
                     verbose=verbose,
                 )
 
@@ -559,65 +589,68 @@ def reduce_main(path, outdir, img_type=None, gain=None, readnoise=None,
 
     else:
         #   Sort files according to filter into subdirectories
-        light_type = utilities.get_image_type(
-            ifc,
-            img_type,
+        light_image_type = utilities.get_image_type(
+            image_file_collection,
+            image_type_dir,
             image_class='light',
         )
-        ifc_filter = ifc.filter(imagetyp=light_type)
+        ifc_filtered = image_file_collection.filter(imagetyp=light_image_type)
         filters = set(
-            ifc_filter.summary['filter'][
-                np.invert(ifc_filter.summary['filter'].mask)
+            ifc_filtered.summary['filter'][
+                np.invert(ifc_filtered.summary['filter'].mask)
             ]
         )
-        for filt in filters:
+        for filter_ in filters:
             #   Remove old files in the output directory
-            checks.clear_directory(out_path / filt)
+            checks.clear_directory(output_path / filter_)
 
             #   Set path to files
-            file_path = checks.check_pathlib_path(out_path / 'cut')
+            file_path = checks.check_pathlib_path(output_path / 'cut')
 
             #   New image collection for the images
-            ifc = ccdp.ImageFileCollection(file_path)
+            image_file_collection = ccdp.ImageFileCollection(file_path)
 
             #   Restrict to current filter
-            filt_files = ifc.files_filtered(filter=filt, include_path=True)
+            filtered_files = image_file_collection.files_filtered(
+                filter=filter_,
+                include_path=True,
+            )
 
             #   Link files to corresponding directory
-            aux_general.link_files(out_path / filt, filt_files)
+            aux_general.link_files(output_path / filter_, filtered_files)
 
 
-def master_bias(path, outdir, img_type):
+def master_bias(bias_path, output_dir, image_type):
     """
         This function calculates master biases from individual bias images
         located in one directory.
 
         Parameters
         ----------
-        path            : `string` or `pathlib.Path`
+        bias_path            : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string` or `pathlib.Path`
+        output_dir           : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        img_type        : `dictionary`
+        image_type           : `dictionary`
             Image types of the images. Possibilities: bias, dark, flat,
             light
     """
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    file_path = checks.check_pathlib_path(bias_path)
+    out_path = checks.check_pathlib_path(output_dir)
 
     #   Create image collection
-    ifc = ccdp.ImageFileCollection(file_path)
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Return if image collection is empty
-    if not ifc.files:
+    if not image_file_collection.files:
         return
 
     #   Get bias frames
-    bias_frames = ifc.files_filtered(
-        imagetyp=img_type['bias'],
+    bias_frames = image_file_collection.files_filtered(
+        imagetyp=image_type['bias'],
         include_path=True,
     )
 
@@ -655,66 +688,70 @@ def master_image_list(*args, **kwargs):
         master_flat(*args, **kwargs)
 
 
-def reduce_dark(path, outdir, image_type, gain=None, readnoise=8.):
+def reduce_dark(image_path, output_dir, image_type, gain=None, read_noise=8.):
     """
         Reduce dark images: This function reduces the raw dark frames
 
         Parameters
         ----------
-        path            : `string` or `pathlib.Path`
+        image_path          : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string` or `pathlib.Path`
+        output_dir          : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type      : `dictionary`
+        image_type          : `dictionary`
             Image types of the images. Possibilities: bias, dark, flat,
             light
 
-        gain            : `float` or `None`, optional
+        gain                : `float` or `None`, optional
             The gain (e-/adu) of the camera chip. If set to `None` the gain
             will be extracted from the FITS header.
             Default is ``None``.
 
-        readnoise       : `float`, optional
+        read_noise          : `float`, optional
             The read noise (e-) of the camera chip.
             Default is ``8`` e-.
     """
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    file_path = checks.check_pathlib_path(image_path)
+    out_path = checks.check_pathlib_path(output_dir)
 
-    #   Create image collection for the flats
-    ifc = ccdp.ImageFileCollection(file_path)
+    #   Create image collection for the raw data
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Create image collection for the reduced data
-    ifc_reduced = ccdp.ImageFileCollection(out_path)
+    image_file_collection_reduced = ccdp.ImageFileCollection(out_path)
 
     #   Get master bias
-    bias_type = utilities.get_image_type(
-        ifc_reduced,
+    bias_image_type = utilities.get_image_type(
+        image_file_collection_reduced,
         image_type,
         image_class='bias',
     )
-    combined_bias = CCDData.read(ifc_reduced.files_filtered(
-        imagetyp=bias_type,
-        combined=True,
-        include_path=True,
-    )[0]
-                                 )
+    stacked_bias = CCDData.read(
+        image_file_collection_reduced.files_filtered(
+            imagetyp=bias_image_type,
+            combined=True,
+            include_path=True,
+        )[0]
+    )
 
     #   Set new dark path
     dark_path = Path(out_path / 'dark')
     checks.clear_directory(dark_path)
 
     #   Loop over darks and reduce darks
-    dark_type = utilities.get_image_type(ifc, image_type, image_class='dark')
-    for dark, file_name in ifc.ccds(
-            imagetyp=dark_type,
+    dark_image_type = utilities.get_image_type(
+        image_file_collection,
+        image_type,
+        image_class='dark',
+    )
+    for dark, file_name in image_file_collection.ccds(
+            imagetyp=dark_image_type,
             ccd_kwargs={'unit': 'adu'},
             return_fname=True,
     ):
-
         #   Set gain _> get it from Header if not provided
         if gain is None:
             gain = dark.header['EGAIN']
@@ -723,19 +760,20 @@ def reduce_dark(path, outdir, image_type, gain=None, readnoise=8.):
         dark = ccdp.create_deviation(
             dark,
             gain=gain * u.electron / u.adu,
-            readnoise=readnoise * u.electron,
+            readnoise=read_noise * u.electron,
             disregard_nan=True,
         )
 
         # Subtract bias
-        dark = ccdp.subtract_bias(dark, combined_bias)
+        dark = ccdp.subtract_bias(dark, stacked_bias)
 
         #   Save the result
         dark.write(dark_path / file_name, overwrite=True)
 
 
-def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr=None,
-                mask=True, plots=False, verbose=False, debug=False, **kwargs):
+def master_dark(image_path, output_dir, image_type, gain=None, read_noise=8.,
+                dark_rate=None, mk_hot_pixel_mask=True, plot_plots=False,
+                verbose=False, debug=False, **kwargs):
     """
         This function calculates master darks from individual dark images
         located in one directory. The dark images are group according to
@@ -743,111 +781,117 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr=None,
 
         Parameters
         ----------
-        path            : `string` or `pathlib.Path`
+        image_path              : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string` or `pathlib.Path`
+        output_dir              : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type      : `dictionary`
+        image_type              : `dictionary`
             Image types of the images. Possibilities: bias, dark, flat,
             light
 
-        gain            : `float` or `None`, optional
+        gain                    : `float` or `None`, optional
             The gain (e-/adu) of the camera chip. If set to `None` the gain
             will be extracted from the FITS header.
             Default is ``None``.
 
-        readnoise       : `float`, optional
+        read_noise              : `float`, optional
             The read noise (e-) of the camera chip.
             Default is ``8`` e-.
 
-        dr              : `dictionary(float:float)` or None, optional
+        dark_rate               : `dictionary(float:float)` or None, optional
             Temperature dependent dark rate in e-/pix/s:
             key = temperature, value = dark rate
             Default is ``None``.
 
-        mask            : `boolean`, optional
+        mk_hot_pixel_mask       : `boolean`, optional
             If True a hot pixel mask is created.
             Default is ``True``.
 
-        plots           : `boolean`, optional
+        plot_plots              : `boolean`, optional
             If True some plots showing some statistic on the dark frames are
             created.
             Default is ``False``.
 
-        verbose         : `boolean`, optional
+        verbose                 : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
 
-        debug           : `boolean`, optional
+        debug                   : `boolean`, optional
             If `True` the intermediate files of the data reduction will not
             be removed.
             Default is ``False``.
     """
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    file_path = checks.check_pathlib_path(image_path)
+    out_path = checks.check_pathlib_path(output_dir)
 
     #   Sanitize dark rate
-    if dr is None:
+    if dark_rate is None:
         terminal_output.print_to_terminal(
             f"Dark current not specified. Assume 0.1 e/s.",
             indent=1,
             style_name='WARNING',
         )
-        dr = {0: 0.1}
+        dark_rate = {0: 0.1}
 
     #   Create image collection
     try:
-        ifc = ccdp.ImageFileCollection(out_path / 'dark')
+        image_file_collection = ccdp.ImageFileCollection(out_path / 'dark')
     except:
-        ifc = ccdp.ImageFileCollection(file_path)
+        image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Return if image collection is empty
-    if not ifc.files:
+    if not image_file_collection.files:
         return
 
     #   Find darks
     dark_mask = [True if file in image_type['dark'] else False
-                 for file in ifc.summary['imagetyp']]
-
-    #   Get all available shapes with exposure times
-    shape_expos = set(tuple(zip(
-        ifc.summary['naxis1'][dark_mask],
-        ifc.summary['naxis2'][dark_mask],
-        ifc.summary['exptime'][dark_mask]
-    )))
-
-    #   Get only the shapes
-    shapes = set(tuple(zip(
-        ifc.summary['naxis1'][dark_mask],
-        ifc.summary['naxis2'][dark_mask]
-    )))
-
-    #   Get the maximum exposure time for each shape
-    shape_maxexpo = []
-    for shape in shapes:
-        expo_times = []
-        for shape_expo in shape_expos:
-            if shape[0] == shape_expo[0] and shape[1] == shape_expo[1]:
-                expo_times.append(shape_expo[2])
-        shape_maxexpo.append((*shape, np.max(expo_times)))
+                 for file in image_file_collection.summary['imagetyp']]
 
     #   Return if no darks are found in this directory
     if not dark_mask:
         return
 
+    #   Get all available shapes with exposure times
+    all_available_image_shapes_and_exposure_times = set(tuple(zip(
+        image_file_collection.summary['naxis1'][dark_mask],
+        image_file_collection.summary['naxis2'][dark_mask],
+        image_file_collection.summary['exptime'][dark_mask]
+    )))
+
+    #   Get only the shapes
+    all_available_image_shapes = set(tuple(zip(
+        image_file_collection.summary['naxis1'][dark_mask],
+        image_file_collection.summary['naxis2'][dark_mask]
+    )))
+
+    #   Get the maximum exposure time for each shape
+    max_exposure_time_per_shape = []
+    for shape in all_available_image_shapes:
+        exposure_times = []
+        for shape_expo_time in all_available_image_shapes_and_exposure_times:
+            if shape[0] == shape_expo_time[0] and shape[1] == shape_expo_time[1]:
+                exposure_times.append(shape_expo_time[2])
+        max_exposure_time_per_shape.append((*shape, np.max(exposure_times)))
+
     #   Get exposure times (set allows to return only unique values)
-    dark_times = set(ifc.summary['exptime'][dark_mask])
+    dark_exposure_times = set(
+        image_file_collection.summary['exptime'][dark_mask]
+    )
 
     #   Loop over exposure times
-    dark_type = utilities.get_image_type(ifc, image_type, image_class='dark')
-    for exp_time in sorted(dark_times):
+    dark_image_type = utilities.get_image_type(
+        image_file_collection,
+        image_type,
+        image_class='dark',
+    )
+    for exposure_time in sorted(dark_exposure_times):
         #   Get only the darks with the correct exposure time
-        calibrated_darks = ifc.files_filtered(
-            imagetyp=dark_type,
-            exptime=exp_time,
+        calibrated_darks = image_file_collection.files_filtered(
+            imagetyp=dark_image_type,
+            exptime=exposure_time,
             include_path=True,
         )
 
@@ -871,7 +915,7 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr=None,
         combined_dark.meta['combined'] = True
 
         #   Write file to disk
-        dark_file_name = 'combined_dark_{:4.2f}.fit'.format(exp_time)
+        dark_file_name = f'combined_dark_{exposure_time:4.2f}.fit'
         combined_dark.write(out_path / dark_file_name, overwrite=True)
 
         #   Set gain _> get it from Header if not provided
@@ -879,21 +923,27 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr=None,
             gain = combined_dark.header['EGAIN']
 
         #   Plot histogram
-        if plots:
-            plot.plot_hist(combined_dark.data, out_path, gain, exp_time)
+        if plot_plots:
+            plot.plot_histogram(
+                combined_dark.data,
+                out_path,
+                gain,
+                exposure_time,
+            )
             plot.plot_dark_with_distributions(
                 combined_dark.data,
-                readnoise,
-                dr,
+                read_noise,
+                dark_rate,
                 out_path,
-                exposure=exp_time,
+                exposure_time=exposure_time,
                 gain=gain,
             )
 
         #   Create mask with hot pixels
-        shape1 = combined_dark.meta['naxis1']
-        shape2 = combined_dark.meta['naxis2']
-        if (shape1, shape2, exp_time) in shape_maxexpo and mask:
+        current_shape_x = combined_dark.meta['naxis1']
+        current_shape_y = combined_dark.meta['naxis2']
+        if ((current_shape_x, current_shape_y, exposure_time) in
+                max_exposure_time_per_shape and mk_hot_pixel_mask):
             utilities.make_hot_pixel_mask(
                 combined_dark,
                 gain,
@@ -906,8 +956,8 @@ def master_dark(path, outdir, image_type, gain=None, readnoise=8., dr=None,
         shutil.rmtree(out_path / 'dark', ignore_errors=True)
 
 
-def reduce_flat(path, outdir, image_type, gain=None, readnoise=8.,
-                rmbias=False, tolerance=0.5, **kwargs):
+def reduce_flat(image_path, output_dir, image_type, gain=None, read_noise=8.,
+                rm_bias=False, exposure_time_tolerance=0.5, **kwargs):
     """
         Reduce flat images: This function reduces the raw flat frames,
                             subtracts master dark and if necessary also
@@ -915,50 +965,50 @@ def reduce_flat(path, outdir, image_type, gain=None, readnoise=8.,
 
         Parameters
         ----------
-        path            : `string` or `pathlib.Path`
+        image_path              : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string` or `pathlib.Path`
+        output_dir              : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type      : `dictionary`
+        image_type              : `dictionary`
             Image types of the images. Possibilities: bias, dark, flat,
             light
 
-        gain            : `float` or `None`, optional
+        gain                    : `float` or `None`, optional
             The gain (e-/adu) of the camera. If set to `None` the gain will
             be extracted from the FITS header.
             Default is ``None``.
 
-        readnoise       : `float`, optional
+        read_noise              : `float`, optional
             The read noise (e-) of the camera.
             Default is 8 e-.
 
-        rmbias          : boolean`, optional
+        rm_bias                 : boolean`, optional
             If True the master bias image will be subtracted from the flats
             Default is ``False``.
 
-        tolerance           : `float` or `None`, optional
+        exposure_time_tolerance : `float` or `None`, optional
             Maximum difference, in seconds, between the image and the
             closest entry from the exposure time list. Set to ``None`` to
             skip the tolerance test.
             Default is ``0.5``.
     """
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    file_path = checks.check_pathlib_path(image_path)
+    out_path = checks.check_pathlib_path(output_dir)
 
     #   Create image collection for the flats
-    ifc_flats = ccdp.ImageFileCollection(file_path)
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Return if image collection is empty
-    if not ifc_flats.files:
+    if not image_file_collection.files:
         return
 
     #   Find flats
     flats = [
         True if file in image_type['flat'] else False for file in
-        ifc_flats.summary['imagetyp']
+        image_file_collection.summary['imagetyp']
     ]
 
     #   Return if no flats are found in this directory
@@ -966,47 +1016,49 @@ def reduce_flat(path, outdir, image_type, gain=None, readnoise=8.,
         return
 
     #   Get image collection for the reduced files
-    ifc_reduced = ccdp.ImageFileCollection(out_path)
+    image_file_collection_reduced = ccdp.ImageFileCollection(out_path)
 
     #   Get master dark
-    dark_type = utilities.get_image_type(
-        ifc_reduced,
+    dark_image_type = utilities.get_image_type(
+        image_file_collection_reduced,
         image_type,
         image_class='dark',
     )
     combined_darks = {
-        ccd.header['exptime']: ccd for ccd in ifc_reduced.ccds(
-            imagetyp=dark_type,
+        ccd.header['exptime']: ccd for ccd in image_file_collection_reduced.ccds(
+            imagetyp=dark_image_type,
             combined=True,
         )
     }
 
     #   Get master bias
-    bias_type = utilities.get_image_type(
-        ifc_reduced,
-        image_type,
-        image_class='bias',
-    )
-    if rmbias:
-        combined_bias = CCDData.read(ifc_reduced.files_filtered(
-            imagetyp=bias_type,
-            combined=True,
-            include_path=True,
-        )[0]
-                                     )
+    if rm_bias:
+        bias_image_type = utilities.get_image_type(
+            image_file_collection_reduced,
+            image_type,
+            image_class='bias',
+        )
+
+        combined_bias = CCDData.read(
+            image_file_collection_reduced.files_filtered(
+                imagetyp=bias_image_type,
+                combined=True,
+                include_path=True,
+            )[0]
+        )
 
     #   Set new flat path
     flat_path = Path(out_path / 'flat')
     checks.clear_directory(flat_path)
 
     #   Loop over flats and reduce flats
-    flat_type = utilities.get_image_type(
-        ifc_flats,
+    flat_image_type = utilities.get_image_type(
+        image_file_collection,
         image_type,
         image_class='flat',
     )
-    for flat, file_name in ifc_flats.ccds(
-            imagetyp=flat_type,
+    for flat, file_name in image_file_collection.ccds(
+            imagetyp=flat_image_type,
             ccd_kwargs={'unit': 'adu'},
             return_fname=True,
     ):
@@ -1019,44 +1071,44 @@ def reduce_flat(path, outdir, image_type, gain=None, readnoise=8.,
         flat = ccdp.create_deviation(
             flat,
             gain=gain * u.electron / u.adu,
-            readnoise=readnoise * u.electron,
+            readnoise=read_noise * u.electron,
             disregard_nan=True,
         )
 
         # Subtract bias
-        if rmbias:
+        if rm_bias:
             flat = ccdp.subtract_bias(flat, combined_bias)
 
         #   Find the correct dark exposure
-        valid, closest_dark = utilities.find_nearest_exposure(
+        valid_dark_available, closest_dark_exposure_time = utilities.find_nearest_exposure_time_to_reference_image(
             flat,
             list(combined_darks.keys()),
-            tolerance=tolerance,
+            time_tolerance=exposure_time_tolerance,
         )
 
         #   Exit if no dark with a similar exposure time have been found
-        if not valid and not rmbias:
+        if not valid_dark_available and not rm_bias:
             raise RuntimeError(
                 f"{style.Bcolors.FAIL}Closest dark exposure time is "
-                f"{closest_dark} for flat of exposure time "
+                f"{closest_dark_exposure_time} for flat of exposure time "
                 f"{flat.header['exptime']}. {style.Bcolors.ENDC}"
             )
 
         #   Subtract the dark current
         flat = ccdp.subtract_dark(
             flat,
-            combined_darks[closest_dark],
+            combined_darks[closest_dark_exposure_time],
             exposure_time='exptime',
             exposure_unit=u.second,
-            scale=rmbias,
+            scale=rm_bias,
         )
 
         #   Save the result
         flat.write(flat_path / file_name, overwrite=True)
 
 
-def master_flat(path, outdir, image_type, mask=True, plots=False,
-                verbose=False, debug=False, **kwargs):
+def master_flat(image_path, output_dir, image_type, mk_bad_pixel_mask=True,
+                plot_plots=False, verbose=False, debug=False, **kwargs):
     """
         This function calculates master flats from individual flat field
         images located in one directory. The flat field images are group
@@ -1064,60 +1116,60 @@ def master_flat(path, outdir, image_type, mask=True, plots=False,
 
         Parameters
         ----------
-        path            : `string` or `pathlib.Path`
+        image_path              : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string` or `pathlib.Path`
+        output_dir              : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type      : `dictionary`
+        image_type              : `dictionary`
             Image types of the images. Possibilities: bias, dark, flat,
             light
 
-        mask            : `boolean`, optional
+        mk_bad_pixel_mask       : `boolean`, optional
             If True a bad pixel mask is created.
             Default is ``True``.
 
-        plots           : `boolean`, optional
+        plot_plots              : `boolean`, optional
             If True some plots showing some statistic on the flat fields are
             created.
             Default is ``False``.
 
-        verbose         : `boolean`, optional
+        verbose                 : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
 
-        debug           : `boolean`, optional
+        debug                   : `boolean`, optional
             If `True` the intermediate files of the data reduction will not
             be removed.
             Default is ``False``.
     """
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    file_path = checks.check_pathlib_path(image_path)
+    out_path = checks.check_pathlib_path(output_dir)
 
     #   Create new image collection for the reduced flat images
-    ifc_flats = ccdp.ImageFileCollection(file_path)
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Determine filter
-    flat_type = utilities.get_image_type(
-        ifc_flats,
+    flat_image_type = utilities.get_image_type(
+        image_file_collection,
         image_type,
         image_class='flat',
     )
     filters = set(
-        h['filter'] for h in ifc_flats.headers(imagetyp=flat_type)
+        h['filter'] for h in image_file_collection.headers(imagetyp=flat_image_type)
     )
 
     #   List for the bad pixels masks
-    bpmask_list = []
+    bad_pixel_mask_list = []
 
     #   Combine flats for the individual filters
-    for filt in filters:
+    for filter_ in filters:
         #   Select flats to combine
-        to_combine = ifc_flats.files_filtered(
-            imagetyp=flat_type,
-            filter=filt,
+        flats_to_combine = image_file_collection.files_filtered(
+            imagetyp=flat_image_type,
+            filter=filter_,
             include_path=True,
         )
 
@@ -1126,9 +1178,9 @@ def master_flat(path, outdir, image_type, mask=True, plots=False,
         #                  frames so that they have the same median value
         #                  ('inv_median')
         combined_flat = ccdp.combine(
-            to_combine,
+            flats_to_combine,
             method='average',
-            scale=utilities.inv_median,
+            scale=utilities.inverse_median,
             sigma_clip=True,
             sigma_clip_low_thresh=5,
             sigma_clip_high_thresh=5,
@@ -1142,26 +1194,26 @@ def master_flat(path, outdir, image_type, mask=True, plots=False,
 
         #   Define name and write file to disk
         flat_file_name = 'combined_flat_filter_{}.fit'.format(
-            filt.replace("''", "p")
+            filter_.replace("''", "p")
         )
         combined_flat.write(out_path / flat_file_name, overwrite=True)
 
         #   Plot flat medians and means
-        if plots:
-            plot.plot_flat_median(
-                ifc_flats,
-                flat_type,
+        if plot_plots:
+            plot.plot_median_of_flat_fields(
+                image_file_collection,
+                flat_image_type,
                 out_path,
-                filt,
+                filter_,
             )
 
         #   Calculate bad pixel mask
-        if mask:
-            bpmask_list.append(ccdp.ccdmask(combined_flat.data))
+        if mk_bad_pixel_mask:
+            bad_pixel_mask_list.append(ccdp.ccdmask(combined_flat.data))
 
-    if mask:
+    if mk_bad_pixel_mask:
         utilities.make_bad_pixel_mask(
-            bpmask_list,
+            bad_pixel_mask_list,
             out_path,
             verbose=verbose,
         )
@@ -1192,92 +1244,95 @@ def reduce_master(paths, *args, **kwargs):
         )
 
 
-def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
-                 gain=None, readnoise=8., satlevel=65535., objlim=5.,
-                 sigclip=4.5, scale_expo=True, rmbias=False, verbose=False,
-                 addmask=True, tolerance=0.5, target=None):
+def reduce_light(image_path, output_dir, image_type, rm_cosmic_rays=True,
+                 mask_cosmics=False, gain=None, read_noise=8.,
+                 saturation_level=65535., limiting_contrast_rm_cosmic_rays=5.,
+                 sigma_clipping_value_rm_cosmic_rays=4.5,
+                 scale_image_with_exposure_time=True, rm_bias=False,
+                 verbose=False, add_hot_bad_pixel_mask=True,
+                 exposure_time_tolerance=0.5, target_name=None):
     """
         Reduce the science images
 
         Parameters
         ----------
-        path            : `string` or `pathlib.Path`
+        image_path                          : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string` or `pathlib.Path`
+        output_dir                          : `string` or `pathlib.Path`
             Path to the directory where the master files should be stored
 
-        image_type      : `dictionary`
+        image_type                          : `dictionary`
             Image types of the images. Possibilities: bias, dark, flat,
             light
 
-        cosmics         : `boolean`, optional
+        rm_cosmic_rays                      : `boolean`, optional
             If True cosmic rays will be removed.
             Default is ``True``.
 
-        mask_cosmics    : `boolean`, optional
+        mask_cosmics                        : `boolean`, optional
             If True cosmics will ''only'' be masked. If False the
             cosmics will be removed from the input image and the mask will
             be added.
             Default is ``False``.
 
-        gain            : `float` or `None`, optional
+        gain                                : `float` or `None`, optional
             The gain (e-/adu) of the camera chip. If set to `None` the gain
             will be extracted from the FITS header.
             Default is ``None``.
 
-        readnoise       : `float`, optional
+        read_noise                          : `float`, optional
             The read noise (e-) of the camera chip.
             Default is ``8`` e-.
 
-        satlevel        : `float`, optional
+        saturation_level                    : `float`, optional
             Saturation limit of the camera chip.
             Default is ``65535``.
 
-        objlim          : `float`, optional
+        limiting_contrast_rm_cosmic_rays    : `float`, optional
             Parameter for the cosmic ray removal: Minimum contrast between
             Laplacian image and the fine structure image.
             Default is ``5``.
 
-        sigclip         : `float`, optional
+        sigma_clipping_value_rm_cosmic_rays : `float`, optional
             Parameter for the cosmic ray removal: Fractional detection limit
             for neighboring pixels.
             Default is ``4.5``.
 
-        scale_expo      : `boolean`, optional
+        scale_image_with_exposure_time      : `boolean`, optional
             If True the image will be scaled with the exposure time.
             Default is ``True``.
 
-        rmbias          : boolean`, optional
+        rm_bias                             : boolean`, optional
             If True the master bias image will be subtracted from the flats
             Default is ``False``.
 
-        verbose         : `boolean`, optional
+        verbose                             : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
 
-        addmask         : `boolean`, optional
+        add_hot_bad_pixel_mask              : `boolean`, optional
             If True add hot and bad pixel mask to the reduced science
             images.
             Default is ``True``.
 
-        tolerance       : `float`, optional
+        exposure_time_tolerance             : `float`, optional
             Tolerance between science and dark exposure times in s.
             Default is ``0.5``s.
 
-        target          : `string` or ``None``, optional
+        target_name                         : `string` or ``None``, optional
             Name of the target. Used for file selection.
             Default is ``None``.
     """
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    file_path = checks.check_pathlib_path(image_path)
+    out_path = checks.check_pathlib_path(output_dir)
 
     #   Get image collection for the science images
-    ifc_lights = ccdp.ImageFileCollection(file_path)
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Return if image collection is empty
-    if not ifc_lights.files:
+    if not image_file_collection.files:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \tNo object image detected.\n\t"
             f"-> EXIT{style.Bcolors.ENDC}"
@@ -1285,68 +1340,72 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
         # return
 
     #   Limit images to those of the target. If a target is given.
-    if target is not None:
-        ifc_lights = ifc_lights.filter(object=target)
+    if target_name is not None:
+        image_file_collection = image_file_collection.filter(
+            object=target_name
+        )
 
-    if not ifc_lights.files:
+    if not image_file_collection.files:
         raise RuntimeError(
-            f"{style.Bcolors.FAIL} \tERROR: No image left after filtering by object name.\n\t"
-            f"-> EXIT{style.Bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \tERROR: No image left after filtering by "
+            f"object name.\n\t-> EXIT{style.Bcolors.ENDC}"
         )
 
     #   Find science images
     lights = [True if file in image_type['light'] else False for file in
-              ifc_lights.summary['imagetyp']]
+              image_file_collection.summary['imagetyp']]
 
     #   Return if no science images are found in this directory
     if not lights:
         return
 
     #   Get image collection for the reduced files
-    ifc_reduced = ccdp.ImageFileCollection(out_path)
+    image_file_collection_reduced = ccdp.ImageFileCollection(out_path)
 
     #   Load combined darks and flats in dictionary for easy access
-    dark_type = utilities.get_image_type(
-        ifc_reduced,
+    dark_image_type = utilities.get_image_type(
+        image_file_collection_reduced,
         image_type,
         image_class='dark',
     )
     combined_darks = {
-        ccd.header['exptime']: ccd for ccd in ifc_reduced.ccds(
-            imagetyp=dark_type,
+        ccd.header['exptime']: ccd for ccd in image_file_collection_reduced.ccds(
+            imagetyp=dark_image_type,
             combined=True,
         )
     }
-    flat_type = utilities.get_image_type(
-        ifc_reduced,
+    flat_image_type = utilities.get_image_type(
+        image_file_collection_reduced,
         image_type,
         image_class='flat',
     )
     combined_flats = {
-        ccd.header['filter']: ccd for ccd in ifc_reduced.ccds(
-            imagetyp=flat_type,
+        ccd.header['filter']: ccd for ccd in image_file_collection_reduced.ccds(
+            imagetyp=flat_image_type,
             combined=True,
         )
     }
 
     #   Get master bias
-    bias_type = utilities.get_image_type(
-        ifc_reduced,
-        image_type,
-        image_class='bias',
-    )
-    if rmbias:
-        combined_bias = CCDData.read(ifc_reduced.files_filtered(
-            imagetyp=bias_type,
-            combined=True,
-            include_path=True,
-        )[0]
-                                     )
+    if rm_bias:
+        bias_image_type = utilities.get_image_type(
+            image_file_collection_reduced,
+            image_type,
+            image_class='bias',
+        )
+
+        combined_bias = CCDData.read(
+            image_file_collection_reduced.files_filtered(
+                imagetyp=bias_image_type,
+                combined=True,
+                include_path=True,
+            )[0]
+        )
 
     #   Set science image path
     light_path = Path(out_path / 'light')
 
-    dir_empty = checks.check_dir_empty(light_path)
+    dir_empty = checks.check_if_directory_is_empty(light_path)
 
     if not dir_empty:
         user_input, timed_out = timedInput(
@@ -1363,17 +1422,16 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
     checks.clear_directory(light_path)
 
     #   Reduce science images and save to an extra directory
-    light_type = utilities.get_image_type(
-        ifc_lights,
+    light_image_type = utilities.get_image_type(
+        image_file_collection,
         image_type,
         image_class='light',
     )
-    for light, file_name in ifc_lights.ccds(
-            imagetyp=light_type,
+    for light, file_name in image_file_collection.ccds(
+            imagetyp=light_image_type,
             return_fname=True,
             ccd_kwargs=dict(unit='adu'),
     ):
-
         #   Set gain _> get it from Header if not provided
         if gain is None:
             try:
@@ -1387,40 +1445,40 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
                     indent=2,
                 )
 
-        #   Calculated uncertainty dd
+        #   Calculated uncertainty
         light = ccdp.create_deviation(
             light,
             gain=gain * u.electron / u.adu,
-            readnoise=readnoise * u.electron,
+            readnoise=read_noise * u.electron,
             disregard_nan=True,
         )
 
         #   Subtract bias
-        if rmbias:
+        if rm_bias:
             light = ccdp.subtract_bias(light, combined_bias)
 
         #   Find the correct dark exposure
-        valid, closest_dark = utilities.find_nearest_exposure(
+        valid_dark_available, closest_dark_exposure_time = utilities.find_nearest_exposure_time_to_reference_image(
             light,
             list(combined_darks.keys()),
-            tolerance=tolerance,
+            time_tolerance=exposure_time_tolerance,
         )
 
         #   Exit if no dark with a similar exposure time have been found
-        if not valid and not rmbias:
+        if not valid_dark_available and not rm_bias:
             raise RuntimeError(
                 f"{style.Bcolors.FAIL}Closest dark exposure time is "
-                f"{closest_dark} for science image of exposure "
+                f"{closest_dark_exposure_time} for science image of exposure "
                 f"time {light.header['exptime']}. {style.Bcolors.ENDC}"
             )
 
         #   Subtract dark
         reduced = ccdp.subtract_dark(
             light,
-            combined_darks[closest_dark],
+            combined_darks[closest_dark_exposure_time],
             exposure_time='exptime',
             exposure_unit=u.second,
-            scale=rmbias,
+            scale=rm_bias,
         )
 
         #   Mask negative pixel
@@ -1433,67 +1491,65 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
         #   Divided science by the master flat
         reduced = ccdp.flat_correct(reduced, flat_master)
 
-        if addmask:
+        if add_hot_bad_pixel_mask:
             #   Get mask of bad and hot pixel
-            badpix, badmask = utilities.get_pixel_mask(
+            mask_available, bad_hot_pixel_mask = utilities.get_pixel_mask(
                 out_path,
                 reduced.shape,
             )
 
             #   Add bad pixel mask: If there was already a mask, keep it
-            if badpix:
+            if mask_available:
                 if reduced.mask is not None:
-                    reduced.mask = reduced.mask | badmask
+                    reduced.mask = reduced.mask | bad_hot_pixel_mask
                 else:
-                    reduced.mask = badmask
+                    reduced.mask = bad_hot_pixel_mask
 
         #   Gain correct data
         reduced = ccdp.gain_correct(reduced, gain * u.electron / u.adu)
 
         #   Remove cosmic rays
-        if cosmics:
+        if rm_cosmic_rays:
             if verbose:
-                sys.stdout.write(
-                    f'\r\tRemove cosmic rays from image {file_name}\n'
-                )
-                sys.stdout.flush()
-            no_cosm = ccdp.cosmicray_lacosmic(
+                print(f'Remove cosmic rays from image {file_name}')
+            reduced_without_cosmics = ccdp.cosmicray_lacosmic(
                 reduced,
-                objlim=objlim,
-                readnoise=readnoise,
-                sigclip=sigclip,
-                satlevel=satlevel,
+                objlim=limiting_contrast_rm_cosmic_rays,
+                readnoise=read_noise,
+                sigclip=sigma_clipping_value_rm_cosmic_rays,
+                satlevel=saturation_level,
                 verbose=verbose,
             )
 
             if mask_cosmics:
-                if addmask:
-                    reduced.mask = reduced.mask | no_cosm.mask
+                if add_hot_bad_pixel_mask:
+                    reduced.mask = reduced.mask | reduced_without_cosmics.mask
 
                     #   Add Header keyword to mark the file as combined
                     reduced.meta['cosmic_mas'] = True
             else:
-                reduced = no_cosm
-                if not addmask:
+                reduced = reduced_without_cosmics
+                if not add_hot_bad_pixel_mask:
                     reduced.mask = np.zeros(reduced.shape, dtype=bool)
 
                 #   Add Header keyword to mark the file as combined
                 reduced.meta['cosmics_rm'] = True
 
             if verbose:
-                terminal_output.print_terminal()
+                terminal_output.print_to_terminal('')
 
         #   Scale image with exposure time
-        if scale_expo:
+        if scale_image_with_exposure_time:
             #   Get exposure time and all meta data
-            exposure = reduced.header['exptime']
+            exposure_time = reduced.header['exptime']
             reduced_meta = reduced.meta
 
             #   Scale image
-            reduced = reduced.divide(exposure * u.second)
+            reduced = reduced.divide(exposure_time * u.second)
 
             #   Put metadata back on the image, because it is lost while
             #   dividing
+            #   TODO: Set exposure time to 1 in header?
             reduced.meta = reduced_meta
             reduced.meta['HIERARCH'] = 'Image scaled by exposure time:'
 
@@ -1501,39 +1557,40 @@ def reduce_light(path, outdir, image_type, cosmics=True, mask_cosmics=False,
         reduced.write(light_path / file_name, overwrite=True)
 
 
-def shift_img_apply(img_ccd, reff_ccd, nfiles, shift, flip, img_id, out_path,
-                    fname, shift_method='skimage', modify_file_name=False,
-                    enlarged=False, verbose=False):
+def shift_img_apply(current_image_ccd, reference_image_ccd, n_images,
+                    image_shifts, image_flips, image_id, output_path,
+                    image_name, shift_method='skimage', modify_file_name=False,
+                    rm_enlarged_keyword=False, verbose=False):
     """
         Apply shift to an individual image
 
         Parameters
         ----------
-        img_ccd             : `astropy.nddata.CCDData` object
+        current_image_ccd       : `astropy.nddata.CCDData` object
             Image data
 
-        reff_ccd            : `astropy.nddata.CCDData` object
+        reference_image_ccd     : `astropy.nddata.CCDData` object
             Data of the reference image
 
-        nfiles              : `integer`
+        n_images                : `integer`
             Number of images
 
-        shift               : `numpy.ndarray`
+        image_shifts            : `numpy.ndarray`
             Shifts of the images in X and Y direction
 
-        flip                : `numpy.ndarray`
+        image_flips             : `numpy.ndarray`
             Flip necessary to account for pier flips
 
-        img_id              : `integer`
+        image_id                : `integer`
             ID of the image
 
-        out_path            : `pathlib.Path` object
+        output_path             : `pathlib.Path` object
             Path to the output directory
 
-        fname               : `string`
+        image_name              : `string`
             Name of the image
 
-        shift_method        : `string`, optional
+        shift_method            : `string`, optional
             Method to use for image alignment.
             Possibilities: 'aa'      = astroalign module only accounting for
                                        xy shifts
@@ -1548,62 +1605,73 @@ def shift_img_apply(img_ccd, reff_ccd, nfiles, shift, flip, img_id, out_path,
                                        implementation by skimage
             Default is ``skimage``.
 
-        modify_file_name    : `boolean`, optional
+        modify_file_name        : `boolean`, optional
             It true the trimmed image will be saved, using a modified file
             name.
             Default is ``False``.
 
-        enlarged            : `boolean`, optional
+        rm_enlarged_keyword     : `boolean`, optional
             It true the header keyword 'enlarged' will be removed.
             Default is ``False``.
 
-        verbose             : `boolean`, optional
+        verbose                 : `boolean`, optional
             If True additional output will be printed to the console
             Default is ``False``.
     """
     #   Trim images
     if shift_method in ['own', 'skimage', 'aa']:
         #   Flip image if pier side changed
-        if flip[img_id]:
-            img_ccd = ccdp.transform_image(img_ccd, np.flip, axis=(0, 1))
+        if image_flips[image_id]:
+            current_image_ccd = ccdp.transform_image(
+                current_image_ccd,
+                np.flip,
+                axis=(0, 1),
+            )
 
-        img_out = utilities.trim_core(
-            img_ccd,
-            img_id,
-            nfiles,
-            shift,
-            method=shift_method,
+        output_image = utilities.trim_image(
+            current_image_ccd,
+            image_id,
+            n_images,
+            image_shifts,
+            correlation_method=shift_method,
             verbose=verbose,
         )
     elif shift_method == 'flow':
-        img_out = utilities.shift_optical_flow_method(reff_ccd, img_ccd)
+        output_image = utilities.image_shift_optical_flow_method(
+            reference_image_ccd,
+            current_image_ccd,
+        )
 
     #   Using astroalign to align the images
     elif shift_method == 'aa_true':
-        img_out = utilities.shift_astroalign_method(reff_ccd, img_ccd)
+        output_image = utilities.image_shift_astroalign_method(
+            reference_image_ccd,
+            current_image_ccd,
+        )
 
     else:
         raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nThe provided method to determine the shifts is not known. "
-            f"Got {shift_method}. Allowed: own, skimage, aa, flow, aa_true {style.Bcolors.ENDC}"
+            f"{style.Bcolors.FAIL} \nThe provided method to determine the "
+            f"shifts is not known. Got {shift_method}. Allowed: own, "
+            f"skimage, aa, flow, aa_true {style.Bcolors.ENDC}"
         )
 
     #   Add Header keyword to mark the file as trimmed
-    img_out.meta['trimmed'] = True
-    if enlarged:
-        img_out.meta.remove('enlarged')
+    output_image.meta['trimmed'] = True
+    if rm_enlarged_keyword:
+        output_image.meta.remove('enlarged')
 
     if modify_file_name:
         #   Get filter
-        filt = img_out.meta['filter']
+        filter_ = output_image.meta['filter']
 
         #   Define name and write trimmed image to disk
-        fname = 'combined_trimmed_filter_{}.fit'.format(
-            filt.replace("''", "p")
+        image_name = 'combined_trimmed_filter_{}.fit'.format(
+            filter_.replace("''", "p")
         )
 
     #   Write trimmed image to disk
-    img_out.write(out_path / fname, overwrite=True)
+    output_image.write(output_path / image_name, overwrite=True)
 
 
 def detect_outlier(data, filter_window=8, threshold=10.):
@@ -1639,23 +1707,25 @@ def detect_outlier(data, filter_window=8, threshold=10.):
     return np.argwhere(score > threshold)
 
 
-def shift_img_core(ifc, out_path, shift_method='skimage', ref_img=0,
-                   shift_text='\tImage displacement:', enlarged=False,
-                   modify_file_name=False, rm_outliers=True, filter_window=8,
-                   threshold=10., verbose=False):
+def shift_image_core(image_file_collection, output_path,
+                     shift_method='skimage', reference_image_id=0,
+                     shift_terminal_comment='\tImage displacement:',
+                     rm_enlarged_keyword=False, modify_file_name=False,
+                     rm_outliers=True, filter_window=8, threshold=10.,
+                     verbose=False):
     """
         Core steps of the image shift calculations and trimming to a
         common filed of view
 
         Parameters
         ----------
-        ifc                 : `ccdproc.ImageFileCollection`
+        image_file_collection   : `ccdproc.ImageFileCollection`
             Image file collection with all images
 
-        out_path            : `pathlib.Path` object
+        output_path             : `pathlib.Path` object
             Path to the output directory
 
-        shift_method        : `string`, optional
+        shift_method            : `string`, optional
             Method to use for image alignment.
             Possibilities: 'aa'      = astroalign module only accounting for
                                        xy shifts
@@ -1670,54 +1740,54 @@ def shift_img_core(ifc, out_path, shift_method='skimage', ref_img=0,
                                        implementation by skimage
             Default is ``skimage``.
 
-        ref_img             : `integer`, optional
+        reference_image_id      : `integer`, optional
             ID of the image that should be used as a reference
             Default is ``0``.
 
-        shift_text          : `string`, optional
+        shift_terminal_comment  : `string`, optional
             Text string that is used to label the output.
             Default is ``Image displacement:``.
 
-        enlarged            : `boolean`, optional
+        rm_enlarged_keyword     : `boolean`, optional
             It True the header keyword 'enlarged' will be removed.
             Default is ``False``.
 
-        modify_file_name    : `boolean`, optional
+        modify_file_name        : `boolean`, optional
             It True the trimmed image will be saved, using a modified file
             name.
             Default is ``False``.
 
-        rm_outliers         : `boolean`, optional
+        rm_outliers             : `boolean`, optional
             If True outliers in the image shifts will be detected and removed.
             Default is ``True``.
 
-        filter_window       : `integer`, optional
+        filter_window           : `integer`, optional
             Width of the median filter window
             Default is ``8``.
 
-        threshold           : `float` or `integer`, optional
+        threshold               : `float` or `integer`, optional
             Difference above the running median above an element is
             considered to be an outlier.
             Default is ``10.``.
 
-        verbose             : `boolean`, optional
+        verbose                 : `boolean`, optional
             If True additional output will be printed to the console
             Default is ``False``.
     """
     #   Calculate image shifts
     if shift_method in ['own', 'skimage', 'aa']:
-        shift, flip = utilities.calculate_image_shifts(
-            ifc,
-            ref_img,
-            shift_text,
-            method=shift_method,
+        image_shifts, image_flips = utilities.calculate_image_shifts(
+            image_file_collection,
+            reference_image_id,
+            shift_terminal_comment,
+            correlation_method=shift_method,
         )
-        reff_ccd = None
+        reference_image_ccd = None
     elif shift_method in ['aa_true', 'flow']:
-        reff_name = ifc.files[ref_img]
-        reff_ccd = CCDData.read(reff_name)
-        shift = None
-        flip = None
+        reference_file_name = image_file_collection.files[reference_image_id]
+        reference_image_ccd = CCDData.read(reference_file_name)
+        image_shifts = None
+        image_flips = None
     else:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Method {shift_method} not known '
@@ -1725,47 +1795,47 @@ def shift_img_core(ifc, out_path, shift_method='skimage', ref_img=0,
         )
 
     #   Number of images
-    nimg = len(ifc.files)
+    n_images = len(image_file_collection.files)
 
     #   Find IDs of potential outlier
-    if rm_outliers and shift is not None:
-        outliers = detect_outlier(
-            shift,
+    if rm_outliers and image_shifts is not None:
+        outlier_ids = detect_outlier(
+            image_shifts,
             filter_window=filter_window,
             threshold=threshold,
         )
-        if outliers.size:
+        if outlier_ids.size:
             terminal_output.print_to_terminal(
                 "The images with the following IDs will be removed "
-                f"because of not reliable shifts:\n {outliers.ravel()}.",
+                f"because of not reliable shifts:\n {outlier_ids.ravel()}.",
                 indent=2,
                 style_name='WARNING',
             )
     else:
-        outliers = []
+        outlier_ids = []
 
     #   Loop over and trim all images
-    for i, (img_ccd, fname) in enumerate(ifc.ccds(return_fname=True)):
-        if i not in outliers:
+    for current_image_id, (current_image_ccd, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
+        if current_image_id not in outlier_ids:
             shift_img_apply(
-                img_ccd,
-                reff_ccd,
-                nimg,
-                shift,
-                flip,
-                i,
-                out_path,
-                fname,
+                current_image_ccd,
+                reference_image_ccd,
+                n_images,
+                image_shifts,
+                image_flips,
+                current_image_id,
+                output_path,
+                file_name,
                 shift_method=shift_method,
                 modify_file_name=modify_file_name,
-                enlarged=enlarged,
+                rm_enlarged_keyword=rm_enlarged_keyword,
                 verbose=verbose,
             )
 
 
-def shift_img(path, outdir, image_type, ref_img=0, shift_method='skimage',
-              rm_outliers=True, filter_window=8, threshold=10., verbose=False,
-              debug=False):
+def shift_image(path, output_dir, image_type_list, reference_image_id=0,
+                shift_method='skimage', rm_outliers=True, filter_window=8,
+                threshold=10., verbose=False, debug=False):
     """
         Calculate shift between images taken in the same filter
         and trim those to the save field of view
@@ -1775,14 +1845,14 @@ def shift_img(path, outdir, image_type, ref_img=0, shift_method='skimage',
         path                : `string` or `pathlib.Path`
             Path to the images
 
-        outdir              : `string` or `pathlib.Path`
+        output_dir          : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type          : `list`
+        image_type_list     : `list`
             Header keyword characterizing the image type for which the
             shifts shall be determined
 
-        ref_img             : `integer`, optional
+        reference_image_id  : `integer`, optional
             ID of the image that should be used as a reference
             Default is ``0``.
 
@@ -1822,39 +1892,44 @@ def shift_img(path, outdir, image_type, ref_img=0, shift_method='skimage',
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    out_path = checks.check_pathlib_path(output_dir)
 
     #   New image collection for the images
-    ifc = ccdp.ImageFileCollection(file_path)
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
-    #   Check if ifc is not empty
-    if not ifc.files:
+    #   Check if image_file_collection is not empty
+    if not image_file_collection.files:
         raise RuntimeError(
             f"{style.Bcolors.FAIL}No FITS files found in {file_path}. "
             f"=> EXIT {style.Bcolors.ENDC}"
         )
 
     #   Determine filter
-    img_type = utilities.get_image_type(ifc, image_type)
-    filters = set(h['filter'] for h in ifc.headers(imagetyp=img_type))
+    image_type = utilities.get_image_type(
+        image_file_collection,
+        image_type_list,
+    )
+    filters = set(
+        h['filter'] for h in image_file_collection.headers(imagetyp=image_type)
+    )
 
     #   Set science image path
     trim_path = Path(out_path / 'cut')
     checks.clear_directory(trim_path)
 
     #   Calculate shifts for the images in the individual filters
-    for filt in filters:
+    for filter_ in filters:
         #   Restrict image collection to those images with the correct
         #   filter
-        ifc_filter = ifc.filter(filter=filt)
+        ifc_filter = image_file_collection.filter(filter=filter_)
 
         #   Calculate image shifts and trim images accordingly
-        shift_img_core(
+        shift_image_core(
             ifc_filter,
             trim_path,
             shift_method=shift_method,
-            ref_img=ref_img,
-            shift_text=f'\tDisplacement for images in filter: {filt}',
+            reference_image_id=reference_image_id,
+            shift_terminal_comment=f'\tDisplacement for images in filter: {filter_}',
             rm_outliers=rm_outliers,
             filter_window=filter_window,
             threshold=threshold,
@@ -1866,30 +1941,31 @@ def shift_img(path, outdir, image_type, ref_img=0, shift_method='skimage',
         shutil.rmtree(file_path, ignore_errors=True)
 
 
-def shift_img_all(path, outdir, image_type, ref_img=0,
-                  shift_method='skimage', rm_outliers=True, filter_window=8,
-                  threshold=10., verbose=False, debug=False):
+def shift_all_images(image_path, output_dir, image_type_list,
+                     reference_image_id=0, shift_method='skimage',
+                     rm_outliers=True, filter_window=8, threshold=10.,
+                     verbose=False, debug=False):
     """
         Calculate shift between images and trim those to the save field of
         view
 
         Parameters
         ----------
-        path                : `string` or `pathlib.Path`
+        image_path              : `string` or `pathlib.Path`
             Path to the images
 
-        outdir              : `string` or `pathlib.Path`
+        output_dir              : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type          : `list`
+        image_type_list         : `list`
             Header keywords characterizing the image type for which the
             shifts shall be determined
 
-        ref_img             : `integer`, optional
+        reference_image_id      : `integer`, optional
             ID of the image that should be used as a reference
             Default is ``0``.
 
-        shift_method        : `string`, optional
+        shift_method            : `string`, optional
             Method to use for image alignment.
             Possibilities: 'aa'      = astroalign module only accounting for
                                        xy shifts
@@ -1901,59 +1977,62 @@ def shift_img_all(path, outdir, image_type, ref_img=0,
                            'skimage' = phase correlation with skimage
             Default is ``skimage``.
 
-        rm_outliers         : `boolean`, optional
+        rm_outliers             : `boolean`, optional
             If True outliers in the image shifts will be detected and removed.
             Default is ``True``.
 
-        filter_window       : `integer`, optional
+        filter_window           : `integer`, optional
             Width of the median filter window
             Default is ``8``.
 
-        threshold           : `float` or `integer`, optional
+        threshold               : `float` or `integer`, optional
             Difference above the running median above an element is
             considered to be an outlier.
             Default is ``10.``.
 
-        verbose             : `boolean`, optional
+        verbose                 : `boolean`, optional
             If True additional output will be printed to the console
             Default is ``False``.
 
-        debug               : `boolean`, optional
+        debug                   : `boolean`, optional
             If `True` the intermediate files of the data reduction will not
             be removed.
             Default is ``False``.
     """
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    file_path = checks.check_pathlib_path(image_path)
+    out_path = checks.check_pathlib_path(output_dir)
 
     #   New image collection for the images
-    ifc = ccdp.ImageFileCollection(file_path)
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
-    #   Check if ifc is not empty
-    if not ifc.files:
+    #   Check if image_file_collection is not empty
+    if not image_file_collection.files:
         raise RuntimeError(
             f"{style.Bcolors.FAIL}No FITS files found in {file_path}. "
             f"=> EXIT {style.Bcolors.ENDC}"
         )
 
-    #   Apply ifc filter to the image collection
+    #   Apply image_file_collection filter to the image collection
     #   -> This is necessary so that the path to the image directory is
     #      added to the file names. This is required for
     #      `shift_img_core`.
-    img_type = utilities.get_image_type(ifc, image_type)
-    ifc_mod = ifc.filter(imagetyp=img_type)
+    image_type = utilities.get_image_type(
+        image_file_collection,
+        image_type_list,
+    )
+    ifc_filtered = image_file_collection.filter(imagetyp=image_type)
 
     #   Set output path
     trim_path = Path(out_path / 'cut')
     checks.clear_directory(trim_path)
 
     #   Calculate image shifts and trim images accordingly
-    shift_img_core(
-        ifc_mod,
+    shift_image_core(
+        ifc_filtered,
         trim_path,
         shift_method=shift_method,
-        ref_img=ref_img,
+        reference_image_id=reference_image_id,
         rm_outliers=rm_outliers,
         filter_window=filter_window,
         threshold=threshold,
@@ -1965,7 +2044,7 @@ def shift_img_all(path, outdir, image_type, ref_img=0,
         shutil.rmtree(file_path, ignore_errors=True)
 
 
-def shift_stack_aa(path, outdir, image_type):
+def shift_stack_astroalign(path, output_dir, image_type):
     """
         Calculate shift between stacked images and trim those
         to the save field of view
@@ -1975,7 +2054,7 @@ def shift_stack_aa(path, outdir, image_type):
         path            : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          :  `pathlib.Path`
+        output_dir      :  `pathlib.Path`
             Path to the directory where the master files should be saved to
 
         image_type      : `list`
@@ -1983,14 +2062,17 @@ def shift_stack_aa(path, outdir, image_type):
             shifts shall be determined
     """
     #   New image collection for the images
-    ifc = ccdp.ImageFileCollection(path)
-    img_type = utilities.get_image_type(ifc, image_type)
-    ifc_mod = ifc.filter(combined=True, imagetyp=img_type)
+    image_file_collection = ccdp.ImageFileCollection(path)
+    img_type = utilities.get_image_type(image_file_collection, image_type)
+    ifc_filtered = image_file_collection.filter(
+        combined=True,
+        imagetyp=img_type,
+    )
 
-    for i, (img_ccd, fname) in enumerate(ifc_mod.ccds(return_fname=True)):
-        if i == 0:
-            reff_ccd = img_ccd
-            img_out = reff_ccd
+    for current_image_id, (current_image_ccd, file_name) in enumerate(ifc_filtered.ccds(return_fname=True)):
+        if current_image_id == 0:
+            reference_image_ccd = current_image_ccd
+            image_out = reference_image_ccd
         else:
             #   Byte order of the system
             sbo = sys.byteorder
@@ -2002,130 +2084,134 @@ def shift_stack_aa(path, outdir, image_type):
                 '=': sbo,
                 '|': 'not applicable',
             }
-            if endian_map[img_ccd.data.dtype.byteorder] != sbo:
-                img_ccd.data = img_ccd.data.byteswap().newbyteorder()
-                reff_ccd.data = reff_ccd.data.byteswap().newbyteorder()
-                img_ccd.uncertainty = StdDevUncertainty(
-                    img_ccd.uncertainty.array.byteswap().newbyteorder()
+            if endian_map[current_image_ccd.data.dtype.byteorder] != sbo:
+                current_image_ccd.data = current_image_ccd.data.byteswap().newbyteorder()
+                reference_image_ccd.data = reference_image_ccd.data.byteswap().newbyteorder()
+                current_image_ccd.uncertainty = StdDevUncertainty(
+                    current_image_ccd.uncertainty.array.byteswap().newbyteorder()
                 )
-                reff_ccd.uncertainty = StdDevUncertainty(
-                    reff_ccd.uncertainty.array.byteswap().newbyteorder()
+                reference_image_ccd.uncertainty = StdDevUncertainty(
+                    reference_image_ccd.uncertainty.array.byteswap().newbyteorder()
                 )
 
             #   Determine transformation between the images
-            p, (_, _) = aa.find_transform(
-                img_ccd,
-                reff_ccd,
+            transformation_parameter, (_, _) = aa.find_transform(
+                current_image_ccd,
+                reference_image_ccd,
                 max_control_points=100,
                 detection_sigma=3.0,
             )
 
             #   Transform image data
-            img_data, footprint = aa.apply_transform(
-                p,
-                img_ccd,
-                reff_ccd,
+            image_data, footprint = aa.apply_transform(
+                transformation_parameter,
+                current_image_ccd,
+                reference_image_ccd,
                 propagate_mask=True,
             )
 
             #   Transform uncertainty array
-            img_uncert, footprint_uncert = aa.apply_transform(
-                p,
-                img_ccd.uncertainty.array,
-                reff_ccd.uncertainty.array,
+            image_uncertainty, _ = aa.apply_transform(
+                transformation_parameter,
+                current_image_ccd.uncertainty.array,
+                reference_image_ccd.uncertainty.array,
             )
 
             #   Build new CCDData object
-            img_out = CCDData(
-                img_data,
+            image_out = CCDData(
+                image_data,
                 mask=footprint,
-                meta=img_ccd.meta,
-                unit=img_ccd.unit,
-                wcs=img_ccd.wcs,
-                uncertainty=StdDevUncertainty(img_uncert),
+                meta=current_image_ccd.meta,
+                unit=current_image_ccd.unit,
+                wcs=current_image_ccd.wcs,
+                uncertainty=StdDevUncertainty(image_uncertainty),
             )
 
         #   Get filter
-        filt = img_out.meta['filter']
+        filter_ = image_out.meta['filter']
 
-        img_out.meta['trimmed'] = True
-        img_out.meta.remove('combined')
+        image_out.meta['trimmed'] = True
+        image_out.meta.remove('combined')
 
         #   Define name and write trimmed image to disk
         file_name = 'combined_trimmed_filter_{}.fit'.format(
-            filt.replace("''", "p")
+            filter_.replace("''", "p")
         )
-        img_out.write(outdir / file_name, overwrite=True)
+        image_out.write(output_dir / file_name, overwrite=True)
 
 
-def stack_img(path, outdir, image_type, method='average', dtype=None,
-              new_target_name=None, debug=False):
+def stack_image(image_path, output_dir, image_type_list,
+                stacking_method='average', dtype=None, new_target_name=None,
+                debug=False):
     """
         Combine images
 
         Parameters
         ----------
-        path            : `pathlib.Path`
+        image_path          : `pathlib.Path`
             Path to the images
 
-        outdir          : `pathlib.Path`
+        output_dir          : `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type      : `list`
+        image_type_list     : `list`
             Header keyword characterizing the image type for which the
             shifts shall be determined
 
-        method          : `string`, optional
+        stacking_method     : `string`, optional
             Method used for combining the images.
             Possibilities: ``median`` or ``average`` or ``sum``
             Default is ``average`.
 
-        dtype           : str or numpy.dtype, optional
+        dtype               : str or numpy.dtype, optional
             dtype that should be used while combining the images.
             Default is ''None'' -> None is equivalent to float64
 
-        new_target_name : str or None, optional
+        new_target_name     : str or None, optional
             Name of the target. If not None, this target name will be written
             to the FITS header.
             Default is ``None``.
 
-        debug           : `boolean`, optional
+        debug               : `boolean`, optional
             If `True` the intermediate files of the data reduction will not
             be removed.
             Default is ``False``.
     """
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    file_path = checks.check_pathlib_path(image_path)
+    out_path = checks.check_pathlib_path(output_dir)
 
     #   New image collection for the images
-    ifc = ccdp.ImageFileCollection(file_path)
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
-    #   Check if ifc is not empty
-    if not ifc.files:
+    #   Check if image_file_collection is not empty
+    if not image_file_collection.files:
         raise RuntimeError(
             f"{style.Bcolors.FAIL}No FITS files found in {file_path}. "
             f"=> EXIT {style.Bcolors.ENDC}"
         )
 
     #   Determine filter
-    img_type = utilities.get_image_type(ifc, image_type)
-    filters = set(h['filter'] for h in ifc.headers(imagetyp=img_type))
+    image_type = utilities.get_image_type(
+        image_file_collection,
+        image_type_list,
+    )
+    filters = set(h['filter'] for h in image_file_collection.headers(imagetyp=image_type))
 
     #   Combine images for the individual filters
-    for filt in filters:
+    for filter_ in filters:
         #   Select images to combine
-        to_combine = ifc.files_filtered(
-            imagetyp=img_type,
-            filter=filt,
+        images_to_combine = image_file_collection.files_filtered(
+            imagetyp=image_type,
+            filter=filter_,
             include_path=True,
         )
 
         #   Combine darks: Average images + sigma clipping to remove
         #                  outliers, set memory limit to 15GB
-        combined_img = ccdp.combine(
-            to_combine,
-            method=method,
+        combined_image = ccdp.combine(
+            images_to_combine,
+            method=stacking_method,
             sigma_clip=True,
             sigma_clip_low_thresh=5,
             sigma_clip_high_thresh=5,
@@ -2137,140 +2223,145 @@ def stack_img(path, outdir, image_type, method='average', dtype=None,
 
         #   Update Header keywords
         utilities.update_header_information(
-            combined_img,
-            len(to_combine),
+            combined_image,
+            len(images_to_combine),
             new_target_name,
         )
 
         #   Define name and write file to disk
         file_name = 'combined_filter_{}.fit'.format(
-            filt.replace("''", "p")
+            filter_.replace("''", "p")
         )
-        combined_img.write(out_path / file_name, overwrite=True)
+        combined_image.write(out_path / file_name, overwrite=True)
 
     #   Remove individual reduced images
     if not debug:
         shutil.rmtree(file_path, ignore_errors=True)
 
 
-def make_big(path, outdir, image_type, combined=True):
+def make_big_images(image_path, output_dir, image_type_list,
+                    combined_only=True):
     """
         Image size unification:
             Find the largest image and use this for all other images
 
         Parameters
         ----------
-        path            : `string` or `pathlib.Path`
+        image_path          : `string` or `pathlib.Path`
             Path to the images
 
-        outdir          : `string` or `pathlib.Path`
+        output_dir          : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type      : `list`
+        image_type_list     : `list`
             Header keyword characterizing the image type for which the
             shifts shall be determined
 
-        combined        : `boolean`, optional
+        combined_only       : `boolean`, optional
             It true the file selection will be restricted to images with a
             header keyword 'combined' that is set to True.
             Default is ``True``.
 
     """
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    file_path = checks.check_pathlib_path(image_path)
+    out_path = checks.check_pathlib_path(output_dir)
 
     #   New image collection for the images
-    ifc = ccdp.ImageFileCollection(file_path)
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Image list
-    img_type = utilities.get_image_type(ifc, image_type)
-    img_dict = {file_name: ccd for ccd, file_name in ifc.ccds(
-        imagetyp=img_type,
-        return_fname=True,
-        combined=combined,
+    image_type = utilities.get_image_type(
+        image_file_collection,
+        image_type_list,
     )
-                }
+    img_dict = {
+        file_name: ccd for ccd, file_name in image_file_collection.ccds(
+            imagetyp=image_type,
+            return_fname=True,
+            combined=combined_only,
+        )
+    }
 
     #   Image list
-    imgs = list(img_dict.values())
+    image_list = list(img_dict.values())
 
     #   File name list
     file_names = list(img_dict.keys())
 
     #   Number of images
-    nimg = len(file_names)
+    n_images = len(file_names)
 
     #   Get image dimensions
-    nx = np.zeros(nimg, dtype='int')
-    ny = np.zeros(nimg, dtype='int')
-    for i, img in enumerate(imgs):
+    image_shape_array_x = np.zeros(n_images, dtype='int')
+    image_shape_array_y = np.zeros(n_images, dtype='int')
+    for i, current_image in enumerate(image_list):
         #   Original image dimension
-        nx[i] = img.shape[1]
-        ny[i] = img.shape[0]
+        image_shape_array_x[i] = current_image.shape[1]
+        image_shape_array_y[i] = current_image.shape[0]
 
     #   Maximum size
-    nxmax = np.max(nx)
-    nymax = np.max(ny)
+    image_shape_x_max = np.max(image_shape_array_x)
+    image_shape_y_max = np.max(image_shape_array_y)
 
-    for i, img in enumerate(imgs):
+    for i, current_image in enumerate(image_list):
         #   Make big image ans mask
-        big_img = np.zeros((nymax, nxmax))
-        big_mask = np.ones((nymax, nxmax), dtype=bool)
-        big_uncert = np.zeros((nymax, nxmax))
+        big_image = np.zeros((image_shape_y_max, image_shape_x_max))
+        big_mask = np.ones((image_shape_y_max, image_shape_x_max), dtype=bool)
+        big_uncertainty = np.zeros((image_shape_y_max, image_shape_x_max))
 
         #   Fill image and mask
-        big_img[0:ny[i], 0:nx[i]] = img.data
-        big_mask[0:ny[i], 0:nx[i]] = img.mask
-        big_uncert[0:ny[i], 0:nx[i]] = img.uncertainty.array
+        big_image[0:image_shape_array_y[i], 0:image_shape_array_x[i]] = current_image.data
+        big_mask[0:image_shape_array_y[i], 0:image_shape_array_x[i]] = current_image.mask
+        big_uncertainty[0:image_shape_array_y[i], 0:image_shape_array_x[i]] = current_image.uncertainty.array
 
         #   Replace
-        img.data = big_img
-        img.mask = big_mask
-        img.uncertainty.array = big_uncert
+        current_image.data = big_image
+        current_image.mask = big_mask
+        current_image.uncertainty.array = big_uncertainty
 
         #   Add Header keyword to mark the file as a Master
-        img.meta['enlarged'] = True
-        img.meta.remove('combined')
+        current_image.meta['enlarged'] = True
+        current_image.meta.remove('combined')
 
         #   Get filter
-        filt = img.meta['filter']
+        filter_ = current_image.meta['filter']
 
         #   Define name and write trimmed image to disk
         file_name = 'combined_enlarged_filter_{}.fit'.format(
-            filt.replace("''", "p")
+            filter_.replace("''", "p")
         )
-        img.write(out_path / file_name, overwrite=True)
+        current_image.write(out_path / file_name, overwrite=True)
 
 
-def trim_img(path, outdir, image_type, ref_img=0, enlarged=True,
-             shift_method='skimage', rm_outliers=True, filter_window=8,
-             threshold=10., verbose=False):
+def trim_image(image_path, output_dir, image_type_list, reference_image_id=0,
+               enlarged_only=True, shift_method='skimage', rm_outliers=True,
+               filter_window=8, threshold=10., verbose=False):
     """
         Trim images to the same field of view
 
         Parameters
         ----------
-        path                : `string` or `pathlib.Path`
+        image_path                  : `string` or `pathlib.Path`
             Path to the images
 
-        outdir              : `string` or `pathlib.Path`
+        output_dir                  : `string` or `pathlib.Path`
             Path to the directory where the master files should be saved to
 
-        image_type          : `list`
+        image_type_list             : `list`
             Header keyword characterizing the image type for which the
             shifts shall be determined
 
-        ref_img             : `integer`, optional
+        reference_image_id          : `integer`, optional
             ID of the image that should be used as a reference
             Default is ``0``.
 
-        enlarged            : `boolean`, optional
+        enlarged_only               : `boolean`, optional
             It true the file selection will be restricted to images with a
             header keyword 'enlarged' that is set to True.
             Default is ``True``.
 
-        shift_method        :`string`, optional
+        shift_method                :`string`, optional
             Method to use for image alignment.
             Possibilities: 'aa'      = astroalign module only accounting for
                                        xy shifts
@@ -2282,43 +2373,49 @@ def trim_img(path, outdir, image_type, ref_img=0, enlarged=True,
                            'skimage' = phase correlation with skimage
             Default is ``skimage``.
 
-        rm_outliers         : `boolean`, optional
+        rm_outliers                 : `boolean`, optional
             If True outliers in the image shifts will be detected and removed.
             Default is ``True``.
 
-        filter_window   : `integer`, optional
+        filter_window               : `integer`, optional
             Width of the median filter window
             Default is ``8``.
 
-        threshold       : `float` or `integer`, optional
+        threshold                   : `float` or `integer`, optional
             Difference above the running median above an element is
             considered to be an outlier.
             Default is ``10.``.
 
-        verbose             : `boolean`, optional
+        verbose                     : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
     """
     #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(outdir)
+    file_path = checks.check_pathlib_path(image_path)
+    out_path = checks.check_pathlib_path(output_dir)
 
     #   New image collection for the images
-    ifc = ccdp.ImageFileCollection(file_path)
+    image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Restrict image collection to those images with the correct image
     #   type and the 'enlarged' Header keyword
-    img_type = utilities.get_image_type(ifc, image_type)
-    ifc_filtered = ifc.filter(imagetyp=img_type, enlarged=enlarged)
+    image_type = utilities.get_image_type(
+        image_file_collection,
+        image_type_list,
+    )
+    ifc_filtered = image_file_collection.filter(
+        imagetyp=image_type,
+        enlarged=enlarged_only,
+    )
 
     #   Calculate image shifts and trim images accordingly
-    shift_img_core(
+    shift_image_core(
         ifc_filtered,
         out_path,
         shift_method=shift_method,
-        ref_img=ref_img,
-        shift_text='\tDisplacement between the images of the different filters',
-        enlarged=enlarged,
+        reference_image_id=reference_image_id,
+        shift_terminal_comment='\tDisplacement between the images of the different filters',
+        rm_enlarged_keyword=enlarged_only,
         modify_file_name=True,
         rm_outliers=rm_outliers,
         filter_window=filter_window,

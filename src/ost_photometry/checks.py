@@ -19,8 +19,8 @@ def check_path(path):
 
         Parameters
         ----------
-            path        : `string`
-                Path to check
+        path        : `string`
+            Path to check
     """
     if not os.path.isdir(path):
         raise RuntimeError(
@@ -29,23 +29,23 @@ def check_path(path):
         )
 
 
-def check_file(test_file):
+def check_file(file_path):
     """
         Check if file exists
 
         Parameters
         ----------
-        test_file        : `string`
-                File to check
+        file_path        : `string`
+            File to check
     """
-    if not os.path.isfile(test_file):
+    if not os.path.isfile(file_path):
         raise RuntimeError(
-            f"{Bcolors.FAIL} \n{test_file} not found -> Check file name! "
+            f"{Bcolors.FAIL} \n{file_path} not found -> Check file name! "
             f"ABORT {Bcolors.ENDC}"
         )
 
 
-def list_subdir(path):
+def list_subdirectories(path):
     """
         List subdirectories
 
@@ -61,14 +61,14 @@ def list_subdir(path):
             List with the original path and paths to the subdirectories
     """
     #   List sub directories
-    subs = os.listdir(path)
+    subdirectories = os.listdir(path)
 
-    # result = [os.path.join(path,element) for element in subs]
+    # result = [os.path.join(path,element) for element in subdirectories]
     result = []
-    for element in subs:
-        newpath = os.path.join(path, element)
-        if os.path.isdir(newpath):
-            result.append(newpath)
+    for element in subdirectories:
+        new_path = os.path.join(path, element)
+        if os.path.isdir(new_path):
+            result.append(new_path)
     return [path] + result
 
 
@@ -140,7 +140,7 @@ def check_pathlib_path(path):
         )
 
 
-def check_out(*args):
+def check_output_directories(*args):
     """
         Check whether the provided paths exist
             -> Create new directories if not
@@ -178,7 +178,7 @@ def clear_directory(path):
         path.mkdir(exist_ok=True)
 
 
-def check_dir_empty(path):
+def check_if_directory_is_empty(path):
     """
         Check if path is a directory and if it is empty.
 

@@ -51,7 +51,7 @@ def get_comp_stars(coordinates_sky, filters=None, field_of_view=18.5,
             Field of view in arc minutes
             Default is ``18.5``.
 
-        magnitude_range : `tupel` of `float`, optional
+        magnitude_range : `tuple` of `float`, optional
             Magnitude range
             Default is ``(0.,18.5)``.
 
@@ -148,60 +148,58 @@ def get_comp_stars(coordinates_sky, filters=None, field_of_view=18.5,
         return tbl, column_dict
 
 
-def get_catalog(bands, center, fov, catalog, mag_range=(0., 18.5),
+def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, magnitude_range=(0., 18.5),
                 indent=2):
     """
         Download catalog with calibration info from Vizier
 
         Parameters
         ----------
-        bands           : `list` of `string`
+        filter_list                 : `list` of `string`
             Filter names
 
-        center          : `astropy.coordinates.SkyCoord`
+        coordinates_image_center    : `astropy.coordinates.SkyCoord`
             Coordinates of the field of field_of_view
 
-        fov             : `float`
+        fov                         : `float`
             Field of view in arc minutes
 
-        catalog         : `string`
+        catalog_identifier         : `string`
             Catalog identifier
 
-        mag_range       : `tu
-        pel` of `float`, optional
+        magnitude_range             : `tuple` of `float`, optional
             Magnitude range
             Default is ``(0.,18.5)``.
 
-        indent          : `integer`, optional
+        indent                      : `integer`, optional
             Indentation for the console output
             Default is ``2``.
 
         Returns
         -------
-        tbl             : `astropy.table.Table`
+        tbl                         : `astropy.table.Table`
             Table with calibration information
 
-        column_dict     : `dictionary` - 'string':`string`
+        column_dict                 : `dictionary` - 'string':`string`
             Dictionary with column names vs default names
     """
-    terminal_output.print_terminal(
-        catalog,
+    terminal_output.print_to_terminal(
+        f"Downloading calibration data from Vizier: {catalog_identifier}",
         indent=indent,
-        string="Downloading calibration data from Vizier: {}",
     )
 
     #   Define and combine columns
-    if catalog == 'II/168/ubvmeans':
-        radec_col = ['_RA', '_DE']
+    if catalog_identifier == 'II/168/ubvmeans':
+        ra_dec_columns = ['_RA', '_DE']
     else:
-        radec_col = ['RAJ2000', 'DEJ2000']
-    default_col = {
+        ra_dec_columns = ['RAJ2000', 'DEJ2000']
+    default_columns = {
         'columns': ["Bmag", "Vmag", "rmag", "imag"],
         'err_columns': ["e_Bmag", "e_Vmag", "e_rmag", "e_imag"],
     }
-    catalog_col = {
-        'I/329': default_col,
-        'I/322A': default_col,
+    catalog_columns_dict = {
+        'I/329': default_columns,
+        'I/322A': default_columns,
         'II/336/apass9': {
             'columns': ["Bmag", "Vmag", "r'mag", "i'mag"],
             'err_columns': ["e_Bmag", "e_Vmag", "e_r'mag", "e_i'mag"],
@@ -236,72 +234,72 @@ def get_catalog(bands, center, fov, catalog, mag_range=(0., 18.5),
             'err_columns': [],
         },
     }
-    columns = radec_col + catalog_col[catalog]['columns']
-    columns = columns + catalog_col[catalog]['err_columns']
+    columns = ra_dec_columns + catalog_columns_dict[catalog_identifier]['columns']
+    columns = columns + catalog_columns_dict[catalog_identifier]['err_columns']
 
     #   Define astroquery instance
     v = Vizier(
         columns=columns,
         row_limit=1e6,
-        catalog=catalog,
+        catalog=catalog_identifier,
     )
 
     #   Get data from the corresponding catalog
-    tablelist = v.query_region(
-        center,
+    table_list = v.query_region(
+        coordinates_image_center,
         radius=fov * u.arcmin,
     )
 
     #   Chose first table
-    if not tablelist:
-        terminal_output.print_terminal(
+    if not table_list:
+        terminal_output.print_to_terminal(
+            "No calibration data available",
             indent=indent + 1,
-            string="No calibration data available",
             style_name='WARNING',
         )
         return Table(), {}
 
-    result = tablelist[0]
+    result = table_list[0]
 
     #   Rename columns to default names
-    if catalog == 'II/370/xmmom5s':
+    if catalog_identifier == 'II/370/xmmom5s':
         result.rename_column("UmAB", "Umag")
         result.rename_column("BmAB", "Bmag")
         result.rename_column("VmAB", "Vmag")
         result.rename_column("e_UmAB", "e_Umag")
         result.rename_column("e_BmAB", "e_Bmag")
         result.rename_column("e_VmAB", "e_Vmag")
-    if catalog == 'II/339/uvotssc1':
+    if catalog_identifier == 'II/339/uvotssc1':
         result.rename_column("U-AB", "Umag")
         result.rename_column("B-AB", "Bmag")
         result.rename_column("V-AB", "Vmag")
-    if catalog == 'I/284/out':
+    if catalog_identifier == 'I/284/out':
         result.rename_column("B1mag", "Bmag")
         result.rename_column("R1mag", "Rmag")
-    if catalog == 'II/336/apass9':
+    if catalog_identifier == 'II/336/apass9':
         result.rename_column("r_mag", "Rmag")
         result.rename_column("i_mag", "Imag")
         result.rename_column("e_r_mag", "e_Rmag")
         result.rename_column("e_i_mag", "e_Imag")
 
     #   Calculate B, U, etc. if only B-V, U-B, etc are given
-    if catalog in ['II/168/ubvmeans']:
+    if catalog_identifier in ['II/168/ubvmeans']:
         result['Bmag'] = result['B-V'] + result['Vmag']
         result['e_Bmag'] = result['e_B-V'] + result['e_Vmag']
         result['Umag'] = result['U-B'] + result['Bmag']
         result['e_Umag'] = result['e_U-B'] + result['e_Bmag']
 
-    #   Filter magnitudes: upper and lower threshold
+    #   Restrict magnitudes to requested range
     if 'Vmag' in result.keys():
-        filmag = 'Vmag'
+        preferred_filer = 'Vmag'
     elif 'Rmag' in result.keys():
-        filmag = 'Rmag'
+        preferred_filer = 'Rmag'
     elif 'Bmag' in result.keys():
-        filmag = 'Bmag'
+        preferred_filer = 'Bmag'
     elif 'Imag' in result.keys():
-        filmag = 'Imag'
+        preferred_filer = 'Imag'
     elif 'Umag' in result.keys():
-        filmag = 'Umag'
+        preferred_filer = 'Umag'
     else:
         #   This should never happen
         terminal_output.print_to_terminal(
@@ -311,141 +309,139 @@ def get_catalog(bands, center, fov, catalog, mag_range=(0., 18.5),
         )
         raise RuntimeError
 
-    mask = (result[filmag] <= mag_range[1]) & (result[filmag] >= mag_range[0])
+    mask = (result[preferred_filer] <= magnitude_range[1]) & (result[preferred_filer] >= magnitude_range[0])
     result = result[mask]
 
     #   Define dict with column names
-    if catalog == 'II/168/ubvmeans':
+    if catalog_identifier == 'II/168/ubvmeans':
         column_dict = {'ra': '_RA', 'dec': '_DE'}
     else:
         column_dict = {'ra': 'RAJ2000', 'dec': 'DEJ2000'}
-    for band in bands:
-        if band + 'mag' in result.colnames:
-            column_dict['mag' + band] = band + 'mag'
+    for filter_ in filter_list:
+        if f'{filter_}mag' in result.colnames:
+            column_dict[f'mag{filter_}'] = f'{filter_}mag'
 
             #   Check if catalog contains magnitude errors
-            if 'e_' + band + 'mag' in result.colnames:
-                column_dict['err' + band] = 'e_' + band + 'mag'
+            if f'e_{filter_}mag' in result.colnames:
+                column_dict[f'err{filter_}'] = f'e_{filter_}mag'
         else:
-            terminal_output.print_terminal(
-                band,
+            terminal_output.print_to_terminal(
+                f"No calibration data for {filter_} band",
                 indent=indent + 1,
-                string="No calibration data for {} band",
                 style_name='WARNING',
             )
 
     return result, column_dict
 
 
-def read_votable_simbad(calib_file, band_list, mag_range=(0., 18.5),
+def read_votable_simbad(path_calibration_file, filter_list, magnitude_range=(0., 18.5),
                         indent=2):
     """
         Read table in VO format already downloaded from Simbad
 
         Parameters
         ----------
-        calib_file      : `string`
+        path_calibration_file   : `string`
             Path to the calibration file
 
-        band_list       : `list` of `string`
+        filter_list             : `list` of `string`
             Filter names
 
-        mag_range       : `tupel` of `float`, optional
+        magnitude_range         : `tuple` of `float`, optional
             Magnitude range
             Default is ``(0.,18.5)``.
 
-        indent          : `integer`, optional
+        indent                  : `integer`, optional
             Indentation for the console output
             Default is ``2``.
 
         Returns
         -------
-        tbl             : `astropy.table.Table`
+        tbl                     : `astropy.table.Table`
             Table with calibration information
 
-        column_dict     : `dictionary` - 'string':`string`
+        column_dict             : `dictionary` - 'string':`string`
             Dictionary with column names vs default names
     """
     terminal_output.print_terminal(
-        calib_file,
+        path_calibration_file,
         indent=indent,
         string="Read calibration data from a VO table: {}",
     )
 
     #   Read table
-    calib_tbl = Table.read(calib_file, format='votable')
+    calib_tbl = Table.read(path_calibration_file, format='votable')
 
     #   Filter magnitudes: lower and upper threshold
-    mask = calib_tbl['FLUX_V'] >= mag_range[0]
-    mask = mask * calib_tbl['FLUX_V'] <= mag_range[1]
+    mask = calib_tbl['FLUX_V'] >= magnitude_range[0]
+    mask = mask * calib_tbl['FLUX_V'] <= magnitude_range[1]
     calib_tbl = calib_tbl[mask]
 
     #   Define dict with column names
     column_dict = {'ra': 'RA_d', 'dec': 'DEC_d'}
 
-    for band in band_list:
-        if 'FLUX_' + band in calib_tbl.colnames:
-            #   Check for variability and multiplicity flags
-            ind_rm = np.where(calib_tbl['FLUX_MULT_' + band].mask)
-            calib_tbl.remove_rows(ind_rm)
-            ind_rm = np.nonzero(calib_tbl['FLUX_MULT_' + band])
-            calib_tbl.remove_rows(ind_rm)
-            ind_rm = np.where(calib_tbl['FLUX_VAR_' + band].mask)
-            calib_tbl.remove_rows(ind_rm)
-            ind_rm = np.nonzero(calib_tbl['FLUX_VAR_' + band])
-            calib_tbl.remove_rows(ind_rm)
+    for filter_ in filter_list:
+        if 'FLUX_' + filter_ in calib_tbl.colnames:
+            #   Clean calibration table based on variability and multiplicity flags
+            index_bad_objects = np.where(calib_tbl['FLUX_MULT_' + filter_].mask)
+            calib_tbl.remove_rows(index_bad_objects)
+            index_bad_objects = np.nonzero(calib_tbl['FLUX_MULT_' + filter_])
+            calib_tbl.remove_rows(index_bad_objects)
+            index_bad_objects = np.where(calib_tbl['FLUX_VAR_' + filter_].mask)
+            calib_tbl.remove_rows(index_bad_objects)
+            index_bad_objects = np.nonzero(calib_tbl['FLUX_VAR_' + filter_])
+            calib_tbl.remove_rows(index_bad_objects)
 
             if not calib_tbl:
                 raise Exception(
                     f"{style.Bcolors.FAIL}\nAll calibration stars in the "
-                    f"{band} removed because of variability and multiplicity "
+                    f"{filter_} removed because of variability and multiplicity "
                     f"citeria. -> EXIT {style.Bcolors.ENDC}"
                 )
 
-            column_dict['mag' + band] = 'FLUX_' + band
-            column_dict['err' + band] = 'FLUX_ERROR_' + band
-            column_dict['qua' + band] = 'FLUX_QUAL_' + band
+            column_dict['mag' + filter_] = 'FLUX_' + filter_
+            column_dict['err' + filter_] = 'FLUX_ERROR_' + filter_
+            column_dict['qua' + filter_] = 'FLUX_QUAL_' + filter_
         else:
-            terminal_output.print_terminal(
-                band,
+            terminal_output.print_to_terminal(
+                f"No calibration data for {filter_} band",
                 indent=indent + 1,
-                string="No calibration data for {} band",
                 style_name='WARNING',
             )
 
     return calib_tbl, column_dict
 
 
-def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
-               vizier_dict=None, calib_file=None, ra_unit=u.deg, indent=1):
+def load_calib(image, filter_list, calibration_method='APASS', magnitude_range=(0., 18.5),
+               vizier_dict=None, path_calibration_file=None, ra_unit=u.deg, indent=1):
     """
         Load calibration information
 
         Parameters
         ----------
-        image           : `image.class` or `image.ensemble`
+        image                   : `image.class` or `image.ensemble`
             Class object with all image specific properties
 
-        band_list       : `list` with `strings`
+        filter_list             : `list` with `strings`
             Filter list
 
-        calib_method       : `string`, optional
+        calibration_method      : `string`, optional
             Calibration method
             Default is ``APASS``.
 
-        mag_range       : `tupel` or `float`, optional
+        magnitude_range         : `tuple` or `float`, optional
             Magnitude range
             Default is ``(0.,18.5)``.
 
-        vizier_dict     : `dictionary` or None, optional
+        vizier_dict             : `dictionary` or None, optional
             Identifiers of catalogs, containing calibration data
             Default is ``None``.
 
-        calib_file      : `string`, optional
+        path_calibration_file   : `string`, optional
             Path to the calibration file
             Default is ``None``.
 
-        ra_unit         : `astropy.unit`, optional
+        ra_unit                 : `astropy.unit`, optional
             Right ascension unit
             Default is ``u.deg``.
 
@@ -458,7 +454,7 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
         calib_tbl       : `astropy.table.Table`
             Astropy table with the calibration data
 
-        col_names       : `dictionary`
+        column_names    : `dictionary`
             Column names versus the internal default names
 
         ra_unit         : `astropy.unit`
@@ -469,33 +465,32 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
         vizier_dict = calibration_data.vizier_dict
 
     #   Read calibration table
-    if calib_method == 'vsp':
+    if calibration_method == 'vsp':
         #   Load calibration info from AAVSO for variable stars
-        calib_tbl, col_names = get_comp_stars(
+        calib_tbl, column_names = get_comp_stars(
             image.coord,
-
-            filters=band_list,
+            filters=filter_list,
             field_of_view=1.5 * image.fov,
-            magnitude_range=mag_range,
+            magnitude_range=magnitude_range,
             indent=indent + 1,
         )
         ra_unit = u.hourangle
-    elif calib_method == 'simbad_vot' and calib_file is not None:
+    elif calibration_method == 'simbad_vot' and path_calibration_file is not None:
         #   Load info from data file in VO format downloaded from Simbad
-        calib_tbl, col_names = read_votable_simbad(
-            calib_file,
-            band_list,
-            mag_range=mag_range,
+        calib_tbl, column_names = read_votable_simbad(
+            path_calibration_file,
+            filter_list,
+            magnitude_range=magnitude_range,
             indent=indent + 1,
         )
-    elif calib_method in vizier_dict.keys():
+    elif calibration_method in vizier_dict.keys():
         #   Load info from Vizier
-        calib_tbl, col_names = get_catalog(
-            band_list,
+        calib_tbl, column_names = get_catalog(
+            filter_list,
             image.coord,
             image.fov,
-            vizier_dict[calib_method],
-            mag_range=mag_range,
+            vizier_dict[calibration_method],
+            magnitude_range=magnitude_range,
             indent=indent + 1,
         )
     else:
@@ -505,19 +500,18 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
             f"-> EXIT {style.Bcolors.ENDC}"
         )
 
-    terminal_output.print_terminal(
-        len(calib_tbl),
+    terminal_output.print_to_terminal(
+        f"{len(calib_tbl)} calibration stars downloaded",
         indent=indent + 2,
-        string="{} calibration stars downloaded",
         style_name='OKBLUE',
     )
 
     #   Remove masked columns from calibration table, since those could cause
     #   problems during calibration
-    for band in band_list:
-        if 'mag' + band in col_names:
+    for filter_ in filter_list:
+        if f'mag{filter_}' in column_names:
             #   Remove objects without magnitudes from the calibration list
-            arr = calib_tbl[col_names['mag' + band]]
+            arr = calib_tbl[column_names[f'mag{filter_}']]
             if hasattr(arr, 'mask'):
                 ind_rm = np.where(arr.mask)
                 #   TODO: Add a test to check whether the following line is working or not.
@@ -525,20 +519,19 @@ def load_calib(image, band_list, calib_method='APASS', mag_range=(0., 18.5),
 
     if not calib_tbl:
         raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNo calibration star with {band_list} "
+            f"{style.Bcolors.FAIL} \nNo calibration star with {filter_list} "
             f"magnitudes found. -> EXIT {style.Bcolors.ENDC}"
         )
-    terminal_output.print_terminal(
-        len(calib_tbl),
+    terminal_output.print_to_terminal(
+        f"Of these {len(calib_tbl)} are useful",
         indent=indent + 2,
-        string="Of these {} are useful",
         style_name='OKBLUE',
     )
 
-    return calib_tbl, col_names, ra_unit
+    return calib_tbl, column_names, ra_unit
 
 
-def get_observed_magnitudes_of_calibration_stars(img, mags, img_container):
+def get_observed_magnitudes_of_calibration_stars(image, magnitude_array, img_container):
     """
         Sort and rearrange input numpy array with extracted magnitude
         data, such that the returned numpy array contains the extracted
@@ -546,10 +539,10 @@ def get_observed_magnitudes_of_calibration_stars(img, mags, img_container):
 
         Parameters
         ----------
-        img             : `image class`
+        image           : `image class`
             Image class object
 
-        mags            : `numpy.ndarray` or `unumpy.uarray`
+        magnitude_array : `numpy.ndarray` or `unumpy.uarray`
             Array with image magnitudes
 
         img_container   : `image.container`
@@ -557,15 +550,15 @@ def get_observed_magnitudes_of_calibration_stars(img, mags, img_container):
 
         Returns
         -------
-        mags_fit        : `numpy.ndarray` or `unumpy.uarray`
+        magnitudes_calibration_fit        : `numpy.ndarray` or `unumpy.uarray`
             Rearrange array with magnitudes
     """
     #   Get calibration data
-    ind_fit = img_container.CalibParameters.inds
+    index_calibration_stars = img_container.CalibParameters.inds
     col_names = img_container.CalibParameters.column_names
 
     #   Convert index array of the calibration stars to a list
-    ind_list = list(ind_fit)
+    ind_list = list(index_calibration_stars)
 
     #   Calculate number of calibration stars
     count_cali = len(ind_list)
@@ -580,11 +573,11 @@ def get_observed_magnitudes_of_calibration_stars(img, mags, img_container):
     #   unumpy.uarray
     if unc:
         #   Check if we have calibration data for the current filter/image
-        if f'mag{getattr(img, "filt", "?")}' in col_names:
+        if f'mag{getattr(image, "filt", "?")}' in col_names:
             #   Sort
-            mags_fit = mags[ind_list]
+            magnitudes_calibration_fit = magnitude_array[ind_list]
         else:
-            mags_fit = unumpy.uarray(
+            magnitudes_calibration_fit = unumpy.uarray(
                 np.zeros(count_cali),
                 np.zeros(count_cali)
             )
@@ -592,209 +585,210 @@ def get_observed_magnitudes_of_calibration_stars(img, mags, img_container):
     #   numpy structured array
     else:
         #   Define array for the magnitudes of the calibration stars
-        mags_fit = np.zeros(
+        magnitudes_calibration_fit = np.zeros(
             count_cali,
             dtype=[('mag', 'f8'), ('err', 'f8')],
         )
 
         #   Check if we have calibration data for the current filter/image
-        if f'mag{getattr(img, "filt", "?")}' in col_names:
+        if f'mag{getattr(image, "filt", "?")}' in col_names:
             #   Sort
-            mags_fit['mag'] = mags['mag'][ind_list]
-            mags_fit['err'] = mags['err'][ind_list]
+            magnitudes_calibration_fit['mag'] = magnitude_array['mag'][ind_list]
+            magnitudes_calibration_fit['err'] = magnitude_array['err'][ind_list]
 
     #   Add array with magnitudes to the image
-    return mags_fit
+    return magnitudes_calibration_fit
 
 
-def deter_calib(img_container, band_list, calib_method='APASS',
-                dcr=3., option=1, vizier_dict=None,
-                calib_file=None, id_obj=None, ra_unit=u.deg, dec_unit=u.deg,
-                mag_range=(0., 18.5), rm_obj_coord=None,
-                correl_method='astropy', seplimit=2. * u.arcsec,
-                reference_filter=None, indent=1):
+def deter_calib(img_container, filter_list, calibration_method='APASS',
+                max_pixel_between_objects=3., own_correlation_option=1,
+                vizier_dict=None, path_calibration_file=None, id_object=None,
+                ra_unit=u.deg, dec_unit=u.deg, magnitude_range=(0., 18.5),
+                coordinates_obj_to_rm=None, correlation_method='astropy',
+                separation_limit=2. * u.arcsec, reference_filter=None,
+                indent=1):
     """
         Determine calibration information, find suitable calibration stars
         and determine calibration factors
 
         Parameters
         ----------
-        img_container           : `image.container`
+        img_container               : `image.container`
             Container object with image ensemble objects for each filter
 
-        band_list               : `list` of `string`
+        filter_list                 : `list` of `string`
             Filter list
 
-        calib_method            : `string`, optional
+        calibration_method          : `string`, optional
             Calibration method
             Default is ``APASS``.
 
-        dcr                     : `float`, optional
+        max_pixel_between_objects   : `float`, optional
             Maximal distance between two objects in Pixel
             Default is ``3``.
 
-        option                  : `integer`, optional
+        own_correlation_option      : `integer`, optional
             Option for the srcor correlation function
             Default is ``1``.
 
-        vizier_dict             : `dictionary` or `None`, optional
+        vizier_dict                 : `dictionary` or `None`, optional
             Dictionary with identifiers of the Vizier catalogs with valid
             calibration data
             Default is ``None``.
 
-        calib_file              : `string`, optional
+        path_calibration_file            : `string`, optional
             Path to the calibration file
             Default is ``None``.
 
-        id_obj                  : `integer`, optional
+        id_object                   : `integer`, optional
             ID of the object
             Default is ``None``.
 
-        ra_unit                 : `astropy.unit`, optional
+        ra_unit                     : `astropy.unit`, optional
             Right ascension unit
             Default is ``u.deg``.
 
-        dec_unit                : `astropy.unit`, optional
+        dec_unit                    : `astropy.unit`, optional
             Declination unit
             Default is ``u.deg``.
 
-        mag_range               : `tupel` or `float`, optional
+        magnitude_range             : `tuple` or `float`, optional
             Magnitude range
             Default is ``(0.,18.5)``.
 
-        rm_obj_coord            : `astropy.coordinates.SkyCoord`, optional
+        coordinates_obj_to_rm       : `astropy.coordinates.SkyCoord`, optional
             Coordinates of an object that should not be used for calibrating
             the data.
             Default is ``None``.
 
-        correl_method           : `string`, optional
+        correlation_method          : `string`, optional
             Correlation method to be used to find the common objects on
             the images.
             Possibilities: ``astropy``, ``own``
             Default is ``astropy``.
 
-        seplimit                : `astropy.units`, optional
+        separation_limit            : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
 
-        reference_filter        : `string` or `None`, optional
+        reference_filter            : `string` or `None`, optional
             Name of the reference filter
             Default is ``None`
 
-        indent                  : `integer`, optional
+        indent                      : `integer`, optional
             Indentation for the console output lines
             Default is ``1``.
     """
     terminal_output.print_to_terminal(
-        f"Get calibration star magnitudes (filter: {tuple(band_list)})",
+        f"Get calibration star magnitudes (filter: {tuple(filter_list)})",
         indent=indent,
     )
 
     #   Get one of image ensembles to extract wcs, positions, ect.
     if reference_filter is None:
-        reference_filter = band_list[0]
+        reference_filter = filter_list[0]
     img_ensemble = img_container.ensembles[reference_filter]
 
     #   Get wcs
-    w = img_ensemble.wcs
+    wcs = img_ensemble.wcs
 
     #   Load calibration data
-    calib_tbl, col_names, ra_unit = load_calib(
+    calib_tbl, column_names, ra_unit = load_calib(
         img_ensemble,
-        band_list,
-        calib_method=calib_method,
-        mag_range=mag_range,
+        filter_list,
+        calibration_method=calibration_method,
+        magnitude_range=magnitude_range,
         vizier_dict=vizier_dict,
-        calib_file=calib_file,
+        path_calibration_file=path_calibration_file,
         indent=indent,
         ra_unit=ra_unit,
     )
 
     #   Convert coordinates of the calibration stars to SkyCoord object
-    coord_calib = SkyCoord(
-        calib_tbl[col_names['ra']].data,
-        calib_tbl[col_names['dec']].data,
+    calib_coordinates = SkyCoord(
+        calib_tbl[column_names['ra']].data,
+        calib_tbl[column_names['dec']].data,
         unit=(ra_unit, dec_unit),
         frame="icrs"
     )
 
     #   Get PixelRegion of the field of view and convert it SkyRegion
     region_pix = img_ensemble.region_pix
-    region_sky = region_pix.to_sky(w)
+    region_sky = region_pix.to_sky(wcs)
 
     #   Remove calibration stars that are not within the field of view
-    mask = region_sky.contains(coord_calib, w)
-    coord_calib = coord_calib[mask]
+    mask = region_sky.contains(calib_coordinates, wcs)
+    calib_coordinates = calib_coordinates[mask]
     calib_tbl = calib_tbl[mask]
 
     #   Remove a specific star from the loaded calibration stars
-    if rm_obj_coord is not None:
-        mask = coord_calib.separation(rm_obj_coord) < 1 * u.arcsec
+    if coordinates_obj_to_rm is not None:
+        mask = calib_coordinates.separation(coordinates_obj_to_rm) < 1 * u.arcsec
         mask = np.invert(mask)
-        coord_calib = coord_calib[mask]
+        calib_coordinates = calib_coordinates[mask]
 
     #   Calculate object positions in pixel coordinates
-    x_cali, y_cali = coord_calib.to_pixel(w)
+    pixel_position_cali_x, pixel_position_cali_y = calib_coordinates.to_pixel(wcs)
 
     #   Remove nans that are caused by missing ra/dec entries
-    x_cali = x_cali[~np.isnan(x_cali)]
-    y_cali = y_cali[~np.isnan(y_cali)]
-    calib_tbl = calib_tbl[~np.isnan(y_cali)]
+    pixel_position_cali_x = pixel_position_cali_x[~np.isnan(pixel_position_cali_x)]
+    pixel_position_cali_y = pixel_position_cali_y[~np.isnan(pixel_position_cali_y)]
+    calib_tbl = calib_tbl[~np.isnan(pixel_position_cali_y)]
 
     #   X & Y pixel positions
-    x = img_ensemble.image_list[0].photometry['x_fit']
-    y = img_ensemble.image_list[0].photometry['y_fit']
+    pixel_position_obj_x = img_ensemble.image_list[0].photometry['x_fit']
+    pixel_position_obj_y = img_ensemble.image_list[0].photometry['y_fit']
 
-    if correl_method == 'astropy':
+    if correlation_method == 'astropy':
         #   Create coordinates object
-        coords_objs = SkyCoord.from_pixel(
-            x,
-            y,
-            w,
+        object_coordinates = SkyCoord.from_pixel(
+            pixel_position_obj_x,
+            pixel_position_obj_y,
+            wcs,
         )
 
         #   Find matches between the datasets
-        ind_fit, ind_lit, _, _ = matching.search_around_sky(
-            coords_objs,
-            coord_calib,
-            seplimit,
+        index_obj_instrument, index_obj_literature, _, _ = matching.search_around_sky(
+            object_coordinates,
+            calib_coordinates,
+            separation_limit,
         )
 
-        count_cali = len(ind_lit)
+        n_identified_literature_objs = len(index_obj_literature)
 
-    elif correl_method == 'own':
+    elif correlation_method == 'own':
         #   Max. number of objects
-        nmax = np.max(len(x), len(x_cali))
+        n_obj_max = np.max(len(pixel_position_obj_x), len(pixel_position_cali_x))
 
         #   Define and fill new arrays
-        xall = np.zeros((nmax, 2))
-        yall = np.zeros((nmax, 2))
-        xall[0:len(x), 0] = x
-        xall[0:len(x_cali), 1] = x_cali
-        yall[0:len(y), 0] = y
-        yall[0:len(y_cali), 1] = y_cali
+        pixel_position_all_x = np.zeros((n_obj_max, 2))
+        pixel_position_all_y = np.zeros((n_obj_max, 2))
+        pixel_position_all_x[0:len(pixel_position_obj_x), 0] = pixel_position_obj_x
+        pixel_position_all_x[0:len(pixel_position_cali_x), 1] = pixel_position_cali_x
+        pixel_position_all_y[0:len(pixel_position_obj_y), 0] = pixel_position_obj_y
+        pixel_position_all_y[0:len(pixel_position_cali_y), 1] = pixel_position_cali_y
 
         #   Correlate calibration stars with stars on the image
-        inds, reject, count_cali, reject_obj = correlate.newsrcor(
-            xall,
-            yall,
-            dcr=dcr,
-            option=option,
+        correlated_indexes, rejected_images, n_identified_literature_objs, rejected_obj = correlate.correlation_own(
+            pixel_position_all_x,
+            pixel_position_all_y,
+            max_pixel_between_objects=max_pixel_between_objects,
+            option=own_correlation_option,
         )
-        ind_fit = inds[0]
-        ind_lit = inds[1]
+        index_obj_instrument = correlated_indexes[0]
+        index_obj_literature = correlated_indexes[1]
 
     else:
         raise ValueError(
-            f'The correlation method needs to either "astropy" or "own". Got {correl_method} instead.'
+            f'The correlation method needs to either "astropy" or "own". Got {correlation_method} instead.'
         )
 
-    if count_cali == 0:
+    if n_identified_literature_objs == 0:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nNo calibration star was identified "
             f"-> EXIT {style.Bcolors.ENDC}"
         )
-    if count_cali == 1:
+    if n_identified_literature_objs == 1:
         raise RuntimeError(
             f"{style.Bcolors.FAIL}\nOnly one calibration star was identified\n"
             "Unfortunately, that is not enough at the moment\n"
@@ -802,41 +796,41 @@ def deter_calib(img_container, band_list, calib_method='APASS',
         )
 
     #   Limit calibration table to common objects
-    calib_tbl_sort = calib_tbl[ind_lit]
+    calib_tbl_sort = calib_tbl[index_obj_literature]
 
     ###
     #   Plots
     #
     #   Make new arrays based on the correlation results
-    x_fit = x[list(ind_fit)]
-    y_fit = y[list(ind_fit)]
-    indnew_fit = np.arange(count_cali)
+    pixel_position_common_objs_x = pixel_position_obj_x[list(index_obj_instrument)]
+    pixel_position_common_objs_y = pixel_position_obj_y[list(index_obj_instrument)]
+    index_common_new = np.arange(n_identified_literature_objs)
 
     #   Add pixel positions and object ids to the calibration table
     calib_tbl_sort.add_columns(
-        [np.intc(indnew_fit), x_fit, y_fit],
+        [np.intc(index_common_new), pixel_position_common_objs_x, pixel_position_common_objs_y],
         names=['id', 'xcentroid', 'ycentroid']
     )
 
     calib_tbl.add_columns(
-        [np.arange(0, len(y_cali)), x_cali, y_cali],
+        [np.arange(0, len(pixel_position_cali_y)), pixel_position_cali_x, pixel_position_cali_y],
         names=['id', 'xcentroid', 'ycentroid']
     )
 
     #   Plot star map with calibration stars
-    if id_obj is not None:
-        rts = 'calib_' + str(id_obj)
+    if id_object is not None:
+        rts = f'calib_{id_object}'
     else:
         rts = 'calib'
-    for band in band_list:
-        if 'mag' + band in col_names:
+    for filter_ in filter_list:
+        if 'mag' + filter_ in column_names:
             p = mp.Process(
                 target=plot.starmap,
                 args=(
                     img_ensemble.outpath.name,
                     #   Replace with reference image in the future
                     img_ensemble.image_list[0].get_data(),
-                    band,
+                    filter_,
                     calib_tbl,
                 ),
                 kwargs={
@@ -851,8 +845,8 @@ def deter_calib(img_container, band_list, calib_method='APASS',
 
     #   Add calibration data to image container
     img_container.CalibParameters = CalibParameters(
-        ind_fit,
-        col_names,
+        index_obj_instrument,
+        column_names,
         calib_tbl_sort,
     )
 
@@ -863,15 +857,15 @@ def magnitude_array_from_calibration_table(img_container, filter_list):
 
         Parameters
         ----------
-        img_container   : `image.container`
+        img_container           : `image.container`
             Container object with image ensemble objects for each filter
 
-        filter_list     : `list` of `string`
+        filter_list             : `list` of `string`
             Filter names
 
         Returns
         -------
-        lit_mags        : `numpy.ndarray` or `uncertainties.unumpy.uarray`
+        literature_magnitudes   : `numpy.ndarray` or `uncertainties.unumpy.uarray`
             Array with literature magnitudes
     """
     #   Number of filter
@@ -881,75 +875,75 @@ def magnitude_array_from_calibration_table(img_container, filter_list):
     calib_tbl = img_container.CalibParameters.calib_tbl
     calib_column_names = img_container.CalibParameters.column_names
 
-    count_cali = len(calib_tbl)
+    n_calib_stars = len(calib_tbl)
 
-    #   unmpy.array or default numpy.ndarray
+    #   unumpy.array or default numpy.ndarray
     unc = getattr(img_container, 'unc', True)
     if unc:
         #   Create uncertainties array with the literature magnitudes
-        lit_mags = unumpy.uarray(
-            np.zeros((n_filter, count_cali)),
-            np.zeros((n_filter, count_cali))
+        literature_magnitudes = unumpy.uarray(
+            np.zeros((n_filter, n_calib_stars)),
+            np.zeros((n_filter, n_calib_stars))
         )
 
         #
-        for z, band in enumerate(filter_list):
-            if 'mag' + band in calib_column_names:
+        for z, filter_ in enumerate(filter_list):
+            if f'mag{filter_}' in calib_column_names:
                 #   Check if errors for the calibration magnitudes exist
-                if 'err' + band in calib_column_names:
+                if f'err{filter_}' in calib_column_names:
                     err = np.array(
-                        calib_tbl[calib_column_names['err' + band]]
+                        calib_tbl[calib_column_names[f'err{filter_}']]
                     )
 
                     #   Check if errors are nice floats
                     if err.dtype in (float, np.float32, np.float64):
-                        valerr = err
+                        err_value = err
                     else:
-                        valerr = 0.
+                        err_value = 0.
                 else:
-                    valerr = 0.
+                    err_value = 0.
 
                 #   Extract magnitudes
-                lit_mags[z] = unumpy.uarray(
-                    calib_tbl[calib_column_names['mag' + band]],
-                    valerr
+                literature_magnitudes[z] = unumpy.uarray(
+                    calib_tbl[calib_column_names[f'mag{filter_}']],
+                    err_value
                 )
 
     #   Default numpy.ndarray
     else:
         #   Define new arrays
-        lit_mags = np.zeros(n_filter, dtype=[('mag', 'f8', count_cali),
-                                             ('err', 'f8', count_cali),
-                                             ('qua', 'U1', count_cali),
-                                             ]
-                            )
+        literature_magnitudes = np.zeros(n_filter, dtype=[('mag', 'f8', n_calib_stars),
+                                                          ('err', 'f8', n_calib_stars),
+                                                          ('qua', 'U1', n_calib_stars),
+                                                          ]
+                                         )
 
         #
-        for z, band in enumerate(filter_list):
-            if 'mag' + band in calib_column_names:
+        for z, filter_ in enumerate(filter_list):
+            if f'mag{filter_}' in calib_column_names:
                 #   Extract magnitudes
                 col_mags = np.array(
-                    calib_tbl[calib_column_names['mag' + band]]
+                    calib_tbl[calib_column_names[f'mag{filter_}']]
                 )
-                lit_mags['mag'][z] = col_mags
+                literature_magnitudes['mag'][z] = col_mags
 
                 #   Check if errors for the calibration magnitudes exist
-                if 'err' + band in calib_column_names:
-                    valerr = np.array(
-                        calib_tbl[calib_column_names['err' + band]]
+                if f'err{filter_}' in calib_column_names:
+                    err_value = np.array(
+                        calib_tbl[calib_column_names[f'err{filter_}']]
                     )
                 else:
-                    valerr = np.zeros(count_cali)
+                    err_value = np.zeros(n_calib_stars)
 
                 #   Check if errors are nice floats
-                if valerr.dtype in (np.float, np.float32, np.float64):
-                    lit_mags['err'][z] = valerr
+                if err_value.dtype in (np.float, np.float32, np.float64):
+                    literature_magnitudes['err'][z] = err_value
 
                 #   Add quality flag, if it exists
-                if 'qua' + band in calib_column_names:
-                    valqua = np.array(
-                        calib_tbl[calib_column_names['qua' + band]]
+                if f'qua{filter_}' in calib_column_names:
+                    quality_value = np.array(
+                        calib_tbl[calib_column_names[f'qua{filter_}']]
                     )
-                    lit_mags['qua'][z] = valqua
+                    literature_magnitudes['qua'][z] = quality_value
 
-    return lit_mags
+    return literature_magnitudes
