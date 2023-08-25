@@ -326,6 +326,11 @@ def prepare_transformation(img_container, trans_coefficients, filter_list, curre
 
     #   Check if transformation is possible with the calibration
     #   coefficients.
+    type_transformation = None
+    second_filter_id = None
+    id_color_filter_1 = None
+    id_color_filter_2 = None
+    trans_coefficients_selection = None
     if trans_coefficients is not None and not derive_trans_coefficients:
         trans_coefficients_selection, id_color_filter_1, id_color_filter_2 = utilities.find_filter(
             filter_list,
@@ -363,10 +368,6 @@ def prepare_transformation(img_container, trans_coefficients, filter_list, curre
 
     elif len(filter_list) >= 2:
         type_transformation = 'derive'
-        trans_coefficients = None
-        second_filter_id = None
-        id_color_filter_1 = None
-        id_color_filter_2 = None
 
         #   Check if calibration data is available for the
         #   filter in``filter_list`
@@ -388,12 +389,6 @@ def prepare_transformation(img_container, trans_coefficients, filter_list, curre
                 id_color_filter_2 = id_color_filter_1 - 1
 
             second_filter_id = id_color_filter_2
-
-    if type_transformation is None:
-        second_filter_id = None
-        id_color_filter_1 = None
-        id_color_filter_2 = None
-        trans_coefficients = None
 
     if type_transformation == 'simple':
         string = "Apply simple magnitude transformation"

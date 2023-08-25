@@ -2883,8 +2883,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
 
 
 def extract_flux(image_container, filter_list, object_name, image_paths,
-                 output_dir,
-                 sigma_object_psf, wcs_method='astrometry',
+                 output_dir, sigma_object_psf, wcs_method='astrometry',
                  force_wcs_determ=False, sigma_value_background_clipping=5.,
                  multiplier_background_rms=5., size_epsf_region=25,
                  fraction_epsf_stars=0.2, oversampling_factor_epsf=2,
