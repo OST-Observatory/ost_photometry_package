@@ -317,7 +317,7 @@ def identify_star_in_dataset(x_pixel_positions, y_pixel_positions, ra_obj,
 
 def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
                        n_images, dataset_type='image', reference_image_id=0,
-                       reference_obj_id=None, protect_reference_obj=True,
+                       reference_obj_ids=None, protect_reference_obj=True,
                        n_allowed_non_detections_object=1,
                        separation_limit=2. * u.arcsec, advanced_cleanup=True,
                        max_pixel_between_objects=3.,
@@ -353,7 +353,7 @@ def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
             ID of the reference image
             Default is ``0``.
 
-        reference_obj_id                : `list` of `integer` or `None`, optional
+        reference_obj_ids               : `list` of `integer` or `None`, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``None``.
@@ -426,7 +426,7 @@ def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
             y_pixel_positions,
             wcs,
             reference_image_id=reference_image_id,
-            reference_obj_id=reference_obj_id,
+            reference_obj_ids=reference_obj_ids,
             expected_bad_image_fraction=n_allowed_non_detections_object,
             protect_reference_obj=protect_reference_obj,
             separation_limit=separation_limit,
@@ -452,7 +452,7 @@ def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
             option=own_correlation_option,
             cross_identification_limit=cross_identification_limit,
             reference_image_id=reference_image_id,
-            reference_obj_id=reference_obj_id,
+            reference_obj_id=reference_obj_ids,
             n_allowed_non_detections_object=n_allowed_non_detections_object,
             protect_reference_obj=protect_reference_obj,
         )
@@ -516,7 +516,7 @@ def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
 
 
 def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
-                        reference_image_id=0, reference_obj_id=None,
+                        reference_image_id=0, reference_obj_ids=None,
                         expected_bad_image_fraction=1,
                         protect_reference_obj=True,
                         separation_limit=2. * u.arcsec, advanced_cleanup=True):
@@ -538,7 +538,7 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
             ID of the reference image
             Default is ``0``.
 
-        reference_obj_id            : `list` of `integer` or None, optional
+        reference_obj_ids           : `list` of `integer` or None, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``None``.
@@ -572,8 +572,8 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
             IDs of the images that were rejected because of insufficient quality
     """
     #   Sanitize reference object
-    if reference_obj_id is None:
-        reference_obj_id = []
+    if reference_obj_ids is None:
+        reference_obj_ids = []
 
     #   Number of datasets/images
     n_images = len(x_pixel_positions)
@@ -647,23 +647,29 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
         ids_rejected_objects = np.argwhere(
             n_times_to_rm >= expected_bad_image_fraction
         )
-        rejected_objects = objects_to_rm[ids_rejected_objects].flatten()
+        rejected_object_ids = objects_to_rm[ids_rejected_objects].flatten()
 
         #   Check if reference objects are within the "bad" objects
-        ref_is_in = np.isin(rejected_objects, reference_obj_id)
+        ref_is_in = np.isin(rejected_object_ids, reference_obj_ids)
 
         #   If YES remove reference objects from the "bad" objects
         if protect_reference_obj and np.any(ref_is_in):
-            reference_obj_id = np.argwhere(rejected_objects == reference_obj_id)
-            rejected_objects = np.delete(rejected_objects, reference_obj_id)
+            id_reference_obj_in_rejected_objects = np.argwhere(
+                rejected_object_ids == reference_obj_ids
+            )
+            rejected_object_ids = np.delete(
+                rejected_object_ids,
+                id_reference_obj_in_rejected_objects
+            )
 
         #   Remove "bad" objects
-        index_array = np.delete(index_array, rejected_objects, 1)
+        index_array = np.delete(index_array, rejected_object_ids, 1)
 
         #   Calculate new reference object position
-        shift_obj = np.argwhere(rejected_objects < reference_obj_id)
+        #   TODO: Check if this needs to adjusted to account for multiple reference objects
+        shift_obj = np.argwhere(rejected_object_ids < reference_obj_ids)
         n_shift = len(shift_obj)
-        reference_obj_id = np.array(reference_obj_id) - n_shift
+        reference_obj_ids = np.array(reference_obj_ids) - n_shift
 
         #   2. Remove bad images
 
@@ -695,7 +701,7 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
 
     if protect_reference_obj:
         #   Check if reference objects are within the "bad" objects
-        ref_is_in = np.isin(rows_to_rm[1], reference_obj_id)
+        ref_is_in = np.isin(rows_to_rm[1], reference_obj_ids)
 
         #   If YES remove reference objects from "bad" objects and remove
         #   the datasets on which they were not detected instead.
@@ -706,13 +712,18 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
                     "or on no image at all. This is not sufficient. "
                     f"=> Exit {style.Bcolors.ENDC}"
                 )
-            rejected_objects = rows_to_rm[1]
-            rejected_objects = np.unique(rejected_objects)
-            reference_obj_id = np.argwhere(rejected_objects == reference_obj_id)
-            rejected_objects = np.delete(rejected_objects, reference_obj_id)
+            rejected_object_ids = rows_to_rm[1]
+            rejected_object_ids = np.unique(rejected_object_ids)
+            id_reference_obj_in_rejected_objects = np.argwhere(
+                rejected_object_ids == reference_obj_ids
+            )
+            rejected_object_ids = np.delete(
+                rejected_object_ids,
+                id_reference_obj_in_rejected_objects
+            )
 
             #   Remove remaining bad objects
-            index_array = np.delete(index_array, rejected_objects, 1)
+            index_array = np.delete(index_array, rejected_object_ids, 1)
 
             #   Remove datasets
             rows_to_rm = np.where(index_array == -1)

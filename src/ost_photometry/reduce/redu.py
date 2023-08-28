@@ -344,7 +344,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
     if master_available:
         user_input, timed_out = timedInput(
             f"{style.Bcolors.OKBLUE}   Master files are already calculated."
-            f" Should these files be used? [yes/no]{style.Bcolors.ENDC}",
+            f" Should these files be used? [yes/no] {style.Bcolors.ENDC}",
             timeout=30,
         )
         if timed_out:

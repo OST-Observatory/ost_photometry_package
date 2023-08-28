@@ -117,13 +117,13 @@ def calculate_field_of_view(image, indent=2, verbose=True):
 
     if n_pixel_x == 0:
         raise ValueError(
-            f"{style.Bcolors.FAIL}\nException in cal_fov(): X dimension of "
-            f"the image is 0 {style.Bcolors.ENDC}"
+            f"{style.Bcolors.FAIL}\nException in calculate_field_of_view(): X "
+            f"dimension of the image is 0 {style.Bcolors.ENDC}"
         )
     if n_pixel_y == 0:
         raise ValueError(
-            f"{style.Bcolors.FAIL}\nException in cal_fov(): Y dimension of "
-            f"the image is 0 {style.Bcolors.ENDC}"
+            f"{style.Bcolors.FAIL}\nException in calculate_field_of_view(): Y "
+            f"dimension of the image is 0 {style.Bcolors.ENDC}"
         )
 
     #   Get binning

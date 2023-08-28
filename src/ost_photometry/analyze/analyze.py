@@ -1731,7 +1731,7 @@ def extraction_aperture(image, radius_aperture, inner_annulus_radius,
 def correlate_ensemble_images(img_ensemble, max_pixel_between_objects=3.,
                               own_correlation_option=1,
                               cross_identification_limit=1,
-                              reference_obj_id=None,
+                              reference_obj_ids=None,
                               n_allowed_non_detections_object=1,
                               expected_bad_image_fraction=1.0,
                               protect_reference_obj=True,
@@ -1760,7 +1760,7 @@ def correlate_ensemble_images(img_ensemble, max_pixel_between_objects=3.,
             rejected when this limit is reached.
             Default is ``1``.
 
-        reference_obj_id                : `list` of `integer` or None, optional
+        reference_obj_ids               : `list` of `integer` or None, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``None``.
@@ -1816,7 +1816,7 @@ def correlate_ensemble_images(img_ensemble, max_pixel_between_objects=3.,
         n_objects,
         n_images,
         reference_image_id=img_ensemble.reference_image_id,
-        reference_obj_id=reference_obj_id,
+        reference_obj_ids=reference_obj_ids,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         protect_reference_obj=protect_reference_obj,
         separation_limit=separation_limit,
@@ -1952,7 +1952,7 @@ def correlate_ensembles(img_container, filter_list,
         n_ensembles,
         dataset_type='ensemble',
         reference_image_id=reference_image_id,
-        reference_obj_id=reference_obj_id,
+        reference_obj_ids=reference_obj_id,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         protect_reference_obj=protect_reference_obj,
         separation_limit=separation_limit,
@@ -2137,7 +2137,7 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         cross_identification_limit=cross_identification_limit,
-        reference_obj_id=calib_stars_ids,
+        reference_obj_ids=calib_stars_ids,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         expected_bad_image_fraction=expected_bad_image_fraction,
         protect_reference_obj=protect_reference_obj,
@@ -2243,7 +2243,7 @@ def correlate_preserve_variable(image_ensemble, ra_obj, dec_obj,
         indent=1,
     )
 
-    variable_id, n_detections, x_position_obj, y_position_obj = correlate.identify_star_in_dataset(
+    variable_id, n_detections, _, _ = correlate.identify_star_in_dataset(
         image_ensemble.image_list[reference_image_id].photometry['x_fit'],
         image_ensemble.image_list[reference_image_id].photometry['y_fit'],
         ra_obj,
@@ -2272,7 +2272,7 @@ def correlate_preserve_variable(image_ensemble, ra_obj, dec_obj,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         cross_identification_limit=cross_identification_limit,
-        reference_obj_id=[int(variable_id)],
+        reference_obj_ids=variable_id,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         expected_bad_image_fraction=expected_bad_image_fraction,
         protect_reference_obj=protect_reference_obj,
@@ -2582,7 +2582,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
         multiplier_background_rms       : `float`, optional
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
-            Default is ``7``.
+            Default is ``5``.
 
         size_epsf_region                : `integer`, optional
             Size of the extraction region in pixel
