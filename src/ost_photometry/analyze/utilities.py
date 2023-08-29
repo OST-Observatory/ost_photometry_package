@@ -741,8 +741,8 @@ def mag_u_arr(flux):
 def find_filter(filter_list, tsc_parameter_dict, filter_, camera,
                 verbose=False, indent=2):
     """
-        Find the position of the filter from the internal dictionary
-        in the 'in_dict' dictionary with reference to 'filter_list'
+        Find the position of the filter from the 'tsc_parameter_dict'
+        dictionary with reference to 'filter_list'
 
         Parameters
         ----------
@@ -2292,7 +2292,8 @@ def save_magnitudes_ascii(container, tbl, trans=False, id_object=None, rts='',
 def post_process_results(img_container, filter_list, id_object=None,
                          extraction_method='',
                          extract_only_circular_region=False, region_radius=600,
-                         data_cluster=False, clean_objs_using_pm=False,
+                         data_cluster=False,
+                         clean_objects_using_proper_motion=False,
                          max_distance_cluster=6., find_cluster_para_set=1,
                          convert_magnitudes=False, target_filter_system='SDSS',
                          tbl_list=None):
@@ -2302,67 +2303,67 @@ def post_process_results(img_container, filter_list, id_object=None,
 
         Parameters
         ----------
-        img_container                   : `image.container`
+        img_container                       : `image.container`
             Image container object with image ensemble objects for each
             filter
 
-        filter_list                     : `list` of `string`
+        filter_list                         : `list` of `string`
             Filter names
 
-        id_object                       : `integer` or `None`, optional
+        id_object                           : `integer` or `None`, optional
             ID of the object
             Default is ``None``.
 
-        extraction_method               : `string`, optional
+        extraction_method                   : `string`, optional
             Applied extraction method. Possibilities: ePSF or APER`
             Default is ``''``.
 
-        extract_only_circular_region    : `boolean`, optional
+        extract_only_circular_region        : `boolean`, optional
             If True the extracted objects will be filtered such that only
             objects with ``radius`` will be returned.
             Default is ``False``.
 
-        region_radius                  : `float`, optional
+        region_radius                       : `float`, optional
             Radius around the object in arcsec.
             Default is ``600``.
 
-        data_cluster                    : `boolean`, optional
+        data_cluster                        : `boolean`, optional
             If True cluster in the Gaia distance and proper motion data
             will be identified.
             Default is ``False``.
 
-        clean_objs_using_pm             : `boolean`, optional
+        clean_objects_using_proper_motion   : `boolean`, optional
             If True only the object list will be clean based on their
             proper motion.
             Default is ``False``.
 
-        max_distance_cluster            : `float`, optional
+        max_distance_cluster                : `float`, optional
             Expected maximal distance of the cluster in kpc. Used to
             restrict the parameter space to facilitate an easy
             identification of the star cluster.
             Default is ``6``.
 
-        find_cluster_para_set           : `integer`, optional
+        find_cluster_para_set               : `integer`, optional
             Parameter set used to identify the star cluster in proper
             motion and distance data.
 
-        convert_magnitudes              : `boolean`, optional
+        convert_magnitudes                  : `boolean`, optional
             If True the magnitudes will be converted to another
             filter systems specified in `target_filter_system`.
             Default is ``False``.
 
-        target_filter_system            : `string`, optional
+        target_filter_system                : `string`, optional
             Photometric system the magnitudes should be converted to
             Default is ``SDSS``.
 
-        tbl_list                        : `[astropy.table.Table]` or None, optional
+        tbl_list                            : `[astropy.table.Table]` or None, optional
             List with Tables containing magnitudes etc. If None are provided,
             the tables will be read from the image container.
             Default is ``None``.
 
     """
     #   Do nothing if no post process method were defined
-    if (not extract_only_circular_region and not clean_objs_using_pm
+    if (not extract_only_circular_region and not clean_objects_using_proper_motion
             and not data_cluster and not convert_magnitudes):
         return
 
@@ -2418,7 +2419,7 @@ def post_process_results(img_container, filter_list, id_object=None,
 
         #   Clean objects according to proper motion (Gaia)
         #   TODO: Check if this is still a useful option
-        if clean_objs_using_pm:
+        if clean_objects_using_proper_motion:
             if any(x is None for x in [img_id_pm, mask_pm]):
                 tbl, img_id_pm, mask_pm = proper_motion_selection(
                     img_ensembles[filter_list[0]],
@@ -2429,7 +2430,7 @@ def post_process_results(img_container, filter_list, id_object=None,
 
         #   Convert magnitudes to a different filter system
         if convert_magnitudes:
-            tbl = convert_magnitudes(tbl, target_filter_system)
+            tbl = convert_magnitudes_to_other_system(tbl, target_filter_system)
 
         ###
         #   Save results as ASCII files
@@ -2535,7 +2536,8 @@ def magnitude_array_from_table(img_container, image):
     return image_mags
 
 
-def convert_magnitudes(tbl: Table, target_filter_system: str) -> Table:
+def convert_magnitudes_to_other_system(tbl: Table,
+                                       target_filter_system: str) -> Table:
     """
         Convert magnitudes from one magnitude system to another
 

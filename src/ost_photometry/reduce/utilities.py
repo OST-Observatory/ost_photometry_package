@@ -1190,7 +1190,7 @@ def calculate_image_shifts(image_file_collection, id_reference_image, comment,
         '\t----------------------------------------',
         indent=0,
     )
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
         f'\t{id_reference_image}\t{0:+.1f}\t{0:+.1f}\t'
         f'{reference_file_name.split("/")[-1]}',
         indent=0,
@@ -1659,7 +1659,7 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
         raw_files_path = checks.list_subdirectories(raw_files_path)
 
         if len(raw_files_path) == 1:
-            raw_files_path = raw_files_path
+            raw_files_path = raw_files_path[0]
         elif len(raw_files_path) > 1:
             #   Link all files to the temporary directory
             make_symbolic_links(raw_files_path, temp_dir)
