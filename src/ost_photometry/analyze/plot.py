@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 
 plt.switch_backend('Agg')
 
+
 # plt.switch_backend('TkAgg')
 
 ############################################################################
@@ -204,7 +205,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     fig.suptitle(sub_title, fontsize=17)
 
     #   Set up normalization for the image
-    norm = ImageNormalize(image, interval=ZScaleInterval(contrast=0.15,))
+    norm = ImageNormalize(image, interval=ZScaleInterval(contrast=0.15, ))
 
     #   Display the actual image
     plt.imshow(
@@ -298,8 +299,10 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             format='pdf',
         )
     else:
+        replace_dict = {',': '', '.': '', '\\': '', '[': '', '&': '', ' ': '_'}
+        rts = rts.replace(replace_dict)
         plt.savefig(
-            f'{output_dir}/starmaps/starmap_{filter_}_{rts}.pdf',
+            f"{output_dir}/starmaps/starmap_{filter_}_{rts}.pdf",
             bbox_inches='tight',
             format='pdf',
         )
@@ -1185,7 +1188,7 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
         path = f'{output_dir}/trans_plots/{filter_1.lower() + filter_2.lower()}' \
                + f'_{filter_1 + filter_2}.pdf'
         p_label = f'slope = {b_fit}, T{filter_1.lower()}{filter_2.lower()}' \
-                 + f' = {1. / b_fit} +/- {b_err_fit}'
+                  + f' = {1. / b_fit} +/- {b_err_fit}'
     else:
         #   coeff  = b
         if name_obj is None:
@@ -1201,7 +1204,7 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
         path = f'{output_dir}/trans_plots/{filter_}{filter_.lower()}' \
                + f'_{filter_1}{filter_2}.pdf'
         p_label = f'slope = {b_fit}, C{filter_.lower()}_' \
-                 + f'{filter_1.lower()}{filter_2.lower()} = {b_fit} +/- {b_err_fit}'
+                  + f'{filter_1.lower()}{filter_2.lower()} = {b_fit} +/- {b_err_fit}'
     x_label = f'{filter_1}-{filter_2} [mag]'
 
     #   Make plot
@@ -2044,6 +2047,7 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
     )
     plt.close()
 
+
 def onpick3(event):
     print('---------------------')
     print(dir(event))
@@ -2465,21 +2469,21 @@ def plot_limiting_mag_sky_apertures(output_dir, img_data, mask, image_depth):
     ax[1].set_title('Mask with blank apertures')
 
     #   Normalize the image data and plot
-    norm = ImageNormalize(img_data, interval=ZScaleInterval(contrast=0.15,))
+    norm = ImageNormalize(img_data, interval=ZScaleInterval(contrast=0.15, ))
     ax[0].imshow(
         img_data,
         norm=norm,
         cmap='PuBu',
         interpolation='nearest',
         origin='lower',
-        )
+    )
 
     #   Plot mask with object positions
     ax[1].imshow(
         mask,
         interpolation='none',
         origin='lower',
-        )
+    )
 
     #   Plot apertures used to derive limiting magnitude
     image_depth.apertures[0].plot(ax[0], color='purple', lw=0.2)
