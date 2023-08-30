@@ -2007,14 +2007,14 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
     custom_simbad.add_votable_fields('pm')
 
     result_simbad = custom_simbad.query_object(ensemble.objname)
-    pm_ra = result_simbad['PMRA'].value[0]
-    pm_de = result_simbad['PMDEC'].value[0]
-    if pm_ra != '--' and pm_de != '--':
+    pm_ra_object = result_simbad['PMRA'].value[0]
+    pm_de_object = result_simbad['PMDEC'].value[0]
+    if pm_ra_object != '--' and pm_de_object != '--':
         pm_m = 3.
-        mask_de = ((result['pmDE'] <= pm_de - pm_m) |
-                   (result['pmDE'] >= pm_de + pm_m))
-        mask_ra = ((result['pmRA'] <= pm_ra - pm_m) |
-                   (result['pmRA'] >= pm_ra + pm_m))
+        mask_de = ((result['pmDE'] <= pm_de_object - pm_m) |
+                   (result['pmDE'] >= pm_de_object + pm_m))
+        mask_ra = ((result['pmRA'] <= pm_ra_object - pm_m) |
+                   (result['pmRA'] >= pm_ra_object + pm_m))
         mask = np.invert(mask_de | mask_ra)
         result = result[mask]
 
@@ -2044,8 +2044,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
     #
 
     #   Proper motion of the common objects
-    pm_de = result['pmDE'][id_calib]
-    pm_ra = result['pmRA'][id_calib]
+    pm_de_common_objects = result['pmDE'][id_calib]
+    pm_ra_common_objects = result['pmRA'][id_calib]
 
     #   Parallax
     parallax = result['Plx'][id_calib].data / 1000 * u.arcsec
@@ -2063,7 +2063,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
 
     #   Calculate a mask accounting for NaNs in proper motion and the
     #   distance estimates
-    mask = np.invert(pm_ra.mask | pm_de.mask | distance_mask)
+    mask = np.invert(pm_de_common_objects.mask | pm_ra_common_objects.mask
+                     | distance_mask)
 
     #   Convert astropy table to pandas data frame and add distance
     pd_result = result[id_calib].to_pandas()
@@ -2127,8 +2128,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
         string='_3D_cluster_',
-        pm_ra=pm_ra,
-        pm_dec=pm_de,
+        pm_ra=pm_ra_object,
+        pm_dec=pm_de_object,
     )
     plot.d3_scatter(
         pm_ra_group,
@@ -2140,8 +2141,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
         string='_3D_cluster_',
-        pm_ra=pm_ra,
-        pm_dec=pm_de,
+        pm_ra=pm_ra_object,
+        pm_dec=pm_de_object,
         display=True,
     )
 
