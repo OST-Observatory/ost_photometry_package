@@ -820,9 +820,9 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
 
     #   Plot star map with calibration stars
     if id_object is not None:
-        rts = f'calib_{id_object}'
+        rts = f'calibration - object: {id_object}'
     else:
-        rts = 'calib'
+        rts = 'calibration'
     for filter_ in filter_list:
         if 'mag' + filter_ in column_names:
             p = mp.Process(

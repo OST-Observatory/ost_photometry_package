@@ -1608,7 +1608,7 @@ def extraction_aperture(image, radius_aperture, inner_annulus_radius,
     #   Extract photometry
     #
     #   Extract aperture
-    photo_tbl = aperture_photometry(
+    photometry_tbl = aperture_photometry(
         data,
         aperture,
         mask=ccd.mask,
@@ -1620,10 +1620,10 @@ def extraction_aperture(image, radius_aperture, inner_annulus_radius,
         bkg_median, bkg_err = background_simple(image, annulus_aperture)
 
         #   Add median background to the output table
-        photo_tbl['annulus_median'] = bkg_median
+        photometry_tbl['annulus_median'] = bkg_median
 
         #   Calculate background for the apertures add to the output table
-        photo_tbl['aper_bkg'] = bkg_median * aperture.area
+        photometry_tbl['aper_bkg'] = bkg_median * aperture.area
     else:
         bkg_phot = aperture_photometry(
             data,
@@ -1633,31 +1633,31 @@ def extraction_aperture(image, radius_aperture, inner_annulus_radius,
         )
 
         #   Calculate aperture background and the corresponding error
-        photo_tbl['aper_bkg'] = (bkg_phot['aperture_sum']
+        photometry_tbl['aper_bkg'] = (bkg_phot['aperture_sum']
                                  * aperture.area / annulus_aperture.area)
 
-        photo_tbl['aper_bkg_err'] = (bkg_phot['aperture_sum_err']
+        photometry_tbl['aper_bkg_err'] = (bkg_phot['aperture_sum_err']
                                      * aperture.area / annulus_aperture.area)
 
-        bkg_err = photo_tbl['aper_bkg_err']
+        bkg_err = photometry_tbl['aper_bkg_err']
 
     #   Subtract background from aperture flux and add it to the
     #   output table
-    photo_tbl['aper_sum_bkgsub'] = (photo_tbl['aperture_sum']
-                                    - photo_tbl['aper_bkg'])
+    photometry_tbl['aper_sum_bkgsub'] = (photometry_tbl['aperture_sum']
+                                    - photometry_tbl['aper_bkg'])
 
     #   Define flux column
     #   (necessary to have the same column names for aperture and PSF
     #   photometry)
-    photo_tbl['flux_fit'] = photo_tbl['aper_sum_bkgsub']
+    photometry_tbl['flux_fit'] = photometry_tbl['aper_sum_bkgsub']
 
     # Error estimate
     if uncertainty is not None:
-        err_column = photo_tbl['aperture_sum_err']
+        err_column = photometry_tbl['aperture_sum_err']
     else:
-        err_column = photo_tbl['flux_fit'] ** 0.5
+        err_column = photometry_tbl['flux_fit'] ** 0.5
 
-    photo_tbl['flux_unc'] = compute_photometric_uncertainties(
+    photometry_tbl['flux_unc'] = compute_photometric_uncertainties(
         err_column,
         aperture.area,
         annulus_aperture.area,
@@ -1665,8 +1665,8 @@ def extraction_aperture(image, radius_aperture, inner_annulus_radius,
     )
 
     #   Rename position columns
-    photo_tbl.rename_column('xcenter', 'x_fit')
-    photo_tbl.rename_column('ycenter', 'y_fit')
+    photometry_tbl.rename_column('xcenter', 'x_fit')
+    photometry_tbl.rename_column('ycenter', 'y_fit')
 
     #   Convert distance/radius to the border to pixel.
     if radii_unit == 'pixel':
@@ -1683,20 +1683,20 @@ def extraction_aperture(image, radius_aperture, inner_annulus_radius,
         )
 
     #   Remove objects that are too close to the image edges
-    photo_tbl = utilities.rm_edge_objects(
-        photo_tbl,
+    photometry_tbl = utilities.rm_edge_objects(
+        photometry_tbl,
         data,
         required_distance_to_edge,
         terminal_logger=terminal_logger,
     )
 
     #   Remove negative flux values as they are not physical
-    flux = np.array(photo_tbl['flux_fit'])
+    flux = np.array(photometry_tbl['flux_fit'])
     mask = np.where(flux > 0.)
-    photo_tbl = photo_tbl[mask]
+    photometry_tbl = photometry_tbl[mask]
 
     #   Add photometry to image class
-    image.photometry = photo_tbl
+    image.photometry = photometry_tbl
 
     ###
     #   Plot star map with aperture overlay
@@ -2767,7 +2767,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
                 tbl_2=image.positions_epsf,
                 label='identified stars',
                 label_2='stars used to determine the ePSF',
-                rts=f'initial-img-{image.pd}',
+                rts=f'Initial image: {image.pd}',
                 name_obj=image.objname,
                 terminal_logger=terminal_logger,
             )

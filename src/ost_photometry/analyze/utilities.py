@@ -1110,7 +1110,7 @@ def mk_ds9_region(x_pixel_positions, y_pixel_positions, pixel_radius, filename,
 
 
 def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
-                             x_name='x_fit', y_name='y_fit', rts_pre='img',
+                             x_name='x_fit', y_name='y_fit', rts_pre='Image',
                              label='Stars with photometric extractions',
                              add_image_id=True):
     """
@@ -1165,7 +1165,7 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
 
     #   Prepare string for file name
     if add_image_id:
-        rts_pre += f'-{image.pd}'
+        rts_pre += f': {image.pd}'
 
     #   Plot star map
     plot.starmap(
@@ -1192,17 +1192,16 @@ def prepare_and_plot_starmap_from_image_container(img_container, filter_list):
         filter_list       : `list` of `strings`
             List with filter names
     """
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
+        "Plot star maps with positions from the final correlation",
         indent=1,
-        string="Plot star maps with positions from the final "
-               "correlation",
     )
 
     for filter_ in filter_list:
         if filter_ == filter_list[0]:
-            rts = f'{filter_list[1]}_final'
+            rts = f'{filter_list[1]} [final version]'
         else:
-            rts = f'{filter_list[0]}_final'
+            rts = f'{filter_list[0]} [final version]'
 
         #   Get reference image
         image = img_container.ensembles[filter_].ref_img
@@ -1211,7 +1210,7 @@ def prepare_and_plot_starmap_from_image_container(img_container, filter_list):
         p = mp.Process(
             target=plot.starmap,
             args=(
-                str(image.outpath / 'final'),
+                image.outpath.name,
                 image.get_data(),
                 filter_,
                 image.photometry,
@@ -1224,7 +1223,7 @@ def prepare_and_plot_starmap_from_image_container(img_container, filter_list):
             }
         )
         p.start()
-    terminal_output.print_terminal()
+    terminal_output.print_to_terminal('')
 
 
 def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
@@ -1279,7 +1278,7 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
             ),
             kwargs={
                 'tbl_2': tbl_xy_calib,
-                'rts': f'{image_id}_final',
+                'rts': f'{image_id} [final]',
                 'label': 'Stars identified in all images',
                 'label_2': 'Calibration stars',
                 'name_obj': img_ensemble.objname,
@@ -1470,20 +1469,21 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
     p.start()
 
 
-def derive_limiting_magnitude(img_container, filter_list, reference_img,
+def derive_limiting_magnitude(image_container, filter_list, reference_img,
                               aperture_radius=4., radii_unit='arcsec',
                               indent=1):
     """
         Determine limiting magnitude
 
         Parameters
-        img_container       : `image.container`
+        ----------
+        image_container     : `image.container`
             Container object with image ensemble objects for each filter
 
         filter_list         : `list` of `strings`
             List with filter names
 
-        ref_img             : `integer`, optional
+        reference_img       : `integer`, optional
             ID of the reference image
             Default is ``0``.
 
@@ -1491,7 +1491,7 @@ def derive_limiting_magnitude(img_container, filter_list, reference_img,
             Radius of the aperture used to derive the limiting magnitude
             Default is ``4``.
 
-        radius_unit         : `string`, optional
+        radii_unit          : `string`, optional
             Unit of the radii above. Permitted are ``pixel`` and ``arcsec``.
             Default is ``arcsec``.
 
@@ -1500,7 +1500,7 @@ def derive_limiting_magnitude(img_container, filter_list, reference_img,
             Default is ``1``.
     """
     #   Get image ensembles
-    img_ensembles = img_container.ensembles
+    img_ensembles = image_container.ensembles
 
     #   Get magnitudes of reference image
     for i, filter_ in enumerate(filter_list):
@@ -1511,8 +1511,7 @@ def derive_limiting_magnitude(img_container, filter_list, reference_img,
         image = ensemble.image_list[reference_img]
 
         #   Get object position and magnitudes
-        #   TODO: Change to reference image in the future
-        photo = ensemble.image_list[0].photometry
+        photo = ensemble.image_list[reference_img].photometry
 
         try:
             magnitude_type = 'mag_cali_trans'
@@ -1527,9 +1526,9 @@ def derive_limiting_magnitude(img_container, filter_list, reference_img,
 
         #   Plot star map
         if reference_img != '':
-            rts = f'mags_{reference_img}'
+            rts = f'faintest objects [Image: {reference_img}]'
         else:
-            rts = 'mags'
+            rts = 'faintest objects'
         p = mp.Process(
             target=plot.starmap,
             args=(
@@ -1539,7 +1538,7 @@ def derive_limiting_magnitude(img_container, filter_list, reference_img,
                 tbl_mag[:][-10:],
             ),
             kwargs={
-                'label': '10 faintest stars',
+                'label': '10 faintest objects',
                 'rts': rts,
                 'mode': 'mags',
                 'name_obj': image.objname,
@@ -1548,24 +1547,24 @@ def derive_limiting_magnitude(img_container, filter_list, reference_img,
         p.start()
 
         #   Print result
-        terminal_output.print_terminal(
-            filter_,
+        terminal_output.print_to_terminal(
+            f"Determine limiting magnitude for filter: {filter_}",
             indent=indent,
-            string="Determine limiting magnitude for filter: {}",
         )
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
+            "Based on detected objects:",
             indent=indent * 2,
-            string="Based on detected objects:",
         )
-        terminal_output.print_terminal(
-            np.median(tbl_mag[magnitude_type][-10:]),
+        median_faintest_objects = np.median(tbl_mag[magnitude_type][-10:])
+        terminal_output.print_to_terminal(
+            f"Median of the 10 faintest objects: "
+            f"{median_faintest_objects} mag",
             indent=indent * 3,
-            string="Median of the 10 faintest objects: {} mag",
         )
+        mean_faintest_objects = np.mean(tbl_mag[magnitude_type][-10:])
         terminal_output.print_terminal(
-            np.mean(tbl_mag[magnitude_type][-10:]),
+            f"Mean of the 10 faintest objects: {mean_faintest_objects} mag",
             indent=indent * 3,
-            string="Mean of the 10 faintest objects: {} mag",
         )
 
         #   Convert object positions to pixel index values
@@ -1604,14 +1603,13 @@ def derive_limiting_magnitude(img_container, filter_list, reference_img,
         p.start()
 
         #   Print results
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
+            "Based on the ImageDepth (photutils) routine:",
             indent=indent * 2,
-            string="Based on the ImageDepth (photutils) routine:",
         )
-        terminal_output.print_terminal(
-            mag_limit,
+        terminal_output.print_to_terminal(
+            f"500 apertures, 5 sigma, 2 iterations: {mag_limit} mag",
             indent=indent * 3,
-            string="500 apertures, 5 sigma, 2 iterations: {} mag",
         )
 
 
@@ -1814,7 +1812,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
     prepare_and_plot_starmap(
         image,
         tbl=Table(names=['x_fit', 'y_fit'], data=[x_obj, y_obj]),
-        rts_pre='img-pmGaia-',
+        rts_pre='Proper motion [Gaia]',
         label='Stars selected according to proper motion',
     )
 
@@ -1897,8 +1895,8 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
     prepare_and_plot_starmap(
         ensemble.ref_img,
         tbl=Table(names=['x_fit', 'y_fit'], data=[tbl['x'], tbl['y']]),
-        rts_pre='img-selection-',
-        label='Stars selected within {}'.format(radius),
+        rts_pre='Distance selection, Image: ',
+        label=f'Stars selected within {radius}''',
     )
 
     return tbl, mask
@@ -2184,8 +2182,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         tbl=tbl,
         x_name='x',
         y_name='y',
-        rts_pre='img-pmGaia-distance-cluster',
-        label='Cluster members based on proper motion and distance',
+        rts_pre='Proper motion [Gaia] & distance selection',
+        label='Cluster members based on proper motion and distance selection',
         add_image_id=False,
     )
 
