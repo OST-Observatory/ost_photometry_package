@@ -2146,22 +2146,22 @@ def d3_scatter(xs, ys, zs, output_dir, color=None, name_x='', name_y='',
     if display:
         if pm_ra is not None and pm_dec is not None:
             fig.suptitle(
-                'Proper motion vs. distance: Literature proper motion: '
-                '{:.1f}, {:.1f} - Choose a cluster then close the '
-                'plot'.format(pm_ra, pm_dec),
+                f'Proper motion vs. distance: Literature proper motion: '
+                f'{pm_ra:.1f}, {pm_dec:.1f} - Choose a cluster then close the '
+                f'plot',
                 fontsize=17,
             )
         else:
             fig.suptitle(
                 'Proper motion vs. distance: Literature proper motion: '
-                + '- Choose a cluster then close the plot',
+                '- Choose a cluster then close the plot',
                 fontsize=17,
             )
     else:
         if pm_ra is not None and pm_dec is not None:
             fig.suptitle(
-                'Proper motion vs. distance: Literature proper motion: '
-                '{:.1f}, {:.1f} '.format(pm_ra, pm_dec),
+                f'Proper motion vs. distance: Literature proper motion: '
+                f'{pm_ra:.1f}, {pm_dec:.1f} ',
                 fontsize=17,
             )
         else:
