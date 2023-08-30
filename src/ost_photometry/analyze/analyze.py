@@ -3466,7 +3466,7 @@ def correlate_calibrate(image_container, filter_list,
                         max_distance_cluster=6., find_cluster_para_set=1,
                         correlation_method='astropy',
                         separation_limit=2. * u.arcsec, aperture_radius=4.,
-                        radius_unit='arcsec', convert_magnitudes=False,
+                        radii_unit='arcsec', convert_magnitudes=False,
                         target_filter_system='SDSS'):
     """
         Correlate photometric extraction results from 2 images and calibrate
@@ -3582,7 +3582,7 @@ def correlate_calibrate(image_container, filter_list,
             Radius of the aperture used to derive the limiting magnitude
             Default is ``4``.
 
-        radius_unit                         : `string`, optional
+        radii_unit                          : `string`, optional
             Unit of the radii above. Permitted values are
             ``pixel`` and ``arcsec``.
             Default is ``arcsec``.
@@ -3621,7 +3621,7 @@ def correlate_calibrate(image_container, filter_list,
     #   Calibrate the magnitudes
     #
     #   Load calibration information
-    calib.deter_calib(
+    calib.derive_calibration(
         image_container,
         filter_list,
         calibration_method=calibration_method,
@@ -3671,7 +3671,7 @@ def correlate_calibrate(image_container, filter_list,
         filter_list,
         reference_image_id,
         aperture_radius=aperture_radius,
-        radius_unit=radius_unit,
+        radii_unit=radii_unit,
     )
 
 
@@ -3894,7 +3894,7 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                     ###
                     #   Load calibration information
                     #
-                    calib.deter_calib(
+                    calib.derive_calibration(
                         image_container,
                         valid_calibration_filters,
                         calibration_method=calibration_method,
@@ -3906,7 +3906,7 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                         correlation_method=correlation_method,
                         separation_limit=separation_limit,
                     )
-                    terminal_output.print_terminal()
+                    terminal_output.print_to_terminal('')
 
                     #   Stop here if calibration data is not available
                     calibration_filters = image_container.CalibParameters.column_names
@@ -4013,7 +4013,7 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
 
         if not success:
             #   Load calibration information
-            calib.deter_calib(
+            calib.derive_calibration(
                 image_container,
                 [filter_],
                 calibration_method=calibration_method,

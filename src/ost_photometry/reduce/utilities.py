@@ -271,8 +271,8 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
     temperature_range = max(temperature_list) - min(temperature_list)
     if temperature_range > temperature_tolerance:
         raise RuntimeError(
-            f'{style.Bcolors.FAIL}Significant difference detected between '
-            f'the images: {temperature_range}\n'
+            f'{style.Bcolors.FAIL}Significant temperature difference '
+            f'detected between the images: {temperature_range}\n'
             f'This is not supported -> EXIT \n{style.Bcolors.ENDC}'
         )
     temperature = np.median(temperature_list)

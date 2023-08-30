@@ -1897,7 +1897,7 @@ def calculate_trans(img_container, key_filter, filter_list,
     ###
     #   Calibrate transformation coefficients
     #
-    calib.deter_calib(
+    calib.derive_calibration(
         img_container,
         filter_list,
         calibration_method=calibration_method,

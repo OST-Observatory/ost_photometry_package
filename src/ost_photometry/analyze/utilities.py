@@ -1471,7 +1471,7 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
 
 
 def derive_limiting_magnitude(img_container, filter_list, reference_img,
-                              aperture_radius=4., radius_unit='arcsec',
+                              aperture_radius=4., radii_unit='arcsec',
                               indent=1):
     """
         Determine limiting magnitude
@@ -1578,7 +1578,7 @@ def derive_limiting_magnitude(img_container, filter_list, reference_img,
 
         #   Set radius for the apertures
         radius = aperture_radius
-        if radius_unit == 'arcsec':
+        if radii_unit == 'arcsec':
             radius = radius / image.pixscale
 
         #   Setup ImageDepth object from the photutils package

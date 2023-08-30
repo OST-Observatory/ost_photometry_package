@@ -600,13 +600,14 @@ def get_observed_magnitudes_of_calibration_stars(image, magnitude_array, img_con
     return magnitudes_calibration_fit
 
 
-def deter_calib(img_container, filter_list, calibration_method='APASS',
-                max_pixel_between_objects=3., own_correlation_option=1,
-                vizier_dict=None, path_calibration_file=None, id_object=None,
-                ra_unit=u.deg, dec_unit=u.deg, magnitude_range=(0., 18.5),
-                coordinates_obj_to_rm=None, correlation_method='astropy',
-                separation_limit=2. * u.arcsec, reference_filter=None,
-                indent=1):
+def derive_calibration(img_container, filter_list, calibration_method='APASS',
+                       max_pixel_between_objects=3., own_correlation_option=1,
+                       vizier_dict=None, path_calibration_file=None,
+                       id_object=None, ra_unit=u.deg, dec_unit=u.deg,
+                       magnitude_range=(0., 18.5), coordinates_obj_to_rm=None,
+                       correlation_method='astropy',
+                       separation_limit=2. * u.arcsec, reference_filter=None,
+                       indent=1):
     """
         Determine calibration information, find suitable calibration stars
         and determine calibration factors
