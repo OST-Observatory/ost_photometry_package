@@ -1110,7 +1110,7 @@ def mk_ds9_region(x_pixel_positions, y_pixel_positions, pixel_radius, filename,
 
 
 def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
-                             x_name='x_fit', y_name='y_fit', rts_pre='Image',
+                             x_name='x_fit', y_name='y_fit', rts_pre='image',
                              label='Stars with photometric extractions',
                              add_image_id=True):
     """
@@ -1198,10 +1198,11 @@ def prepare_and_plot_starmap_from_image_container(img_container, filter_list):
     )
 
     for filter_ in filter_list:
-        if filter_ == filter_list[0]:
-            rts = f'{filter_list[1]} [final version]'
-        else:
-            rts = f'{filter_list[0]} [final version]'
+        # if filter_ == filter_list[0]:
+        #     rts = f'{filter_list[1]} [final version]'
+        # else:
+        #     rts = f'{filter_list[0]} [final version]'
+        rts = 'final version'
 
         #   Get reference image
         image = img_container.ensembles[filter_].ref_img
@@ -1526,7 +1527,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
 
         #   Plot star map
         if reference_img != '':
-            rts = f'faintest objects [Image: {reference_img}]'
+            rts = f'faintest objects, image: {reference_img}'
         else:
             rts = 'faintest objects'
         p = mp.Process(
@@ -1813,8 +1814,8 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
     prepare_and_plot_starmap(
         image,
         tbl=Table(names=['x_fit', 'y_fit'], data=[x_obj, y_obj]),
-        rts_pre='Proper motion [Gaia]',
-        label='Stars selected according to proper motion',
+        rts_pre='proper motion [Gaia]',
+        label='Objects selected based on proper motion',
     )
 
     #   2D and 3D plot of the proper motion and the distance
@@ -1896,8 +1897,8 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
     prepare_and_plot_starmap(
         ensemble.ref_img,
         tbl=Table(names=['x_fit', 'y_fit'], data=[tbl['x'], tbl['y']]),
-        rts_pre='Distance selection, Image: ',
-        label=f'Stars selected within {radius}''',
+        rts_pre='radius selection, image: ',
+        label=f"Objects selected within {radius}'' of the target",
     )
 
     return tbl, mask
@@ -2183,8 +2184,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         tbl=tbl,
         x_name='x',
         y_name='y',
-        rts_pre='Proper motion [Gaia] & distance selection',
-        label='Cluster members based on proper motion and distance selection',
+        rts_pre='selected cluster members',
+        label='Cluster members based on proper motion and distance evaluation',
         add_image_id=False,
     )
 
@@ -2556,7 +2557,7 @@ def convert_magnitudes_to_other_system(tbl: Table,
     if target_filter_system not in ['SDSS', 'AB', 'BESSELL']:
         terminal_output.print_terminal(
             target_filter_system,
-            string='Magnitude conversion not possible.Unfortunately, '
+            string='Magnitude conversion not possible. Unfortunately, '
                    'there is currently no conversion formula for this '
                    'photometric system: {}.',
             style_name='WARNING',

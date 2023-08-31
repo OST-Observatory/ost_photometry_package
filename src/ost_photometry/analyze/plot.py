@@ -194,13 +194,13 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
 
     #   Set title of the complete plot
     if rts is None and name_obj is None:
-        sub_title = f'Star map ({filter_} band)'
+        sub_title = f'Star map ({filter_} filter)'
     elif rts is None:
-        sub_title = f'Star map ({filter_} band) - {name_obj}'
+        sub_title = f'Star map ({filter_} filter) - {name_obj}'
     elif name_obj is None:
-        sub_title = f'Star map ({filter_} band, {rts})'
+        sub_title = f'Star map ({filter_} filter, {rts})'
     else:
-        sub_title = f'Star map ({filter_} band, {rts}) - {name_obj}'
+        sub_title = f'Star map ({filter_} filter, {rts}) - {name_obj}'
 
     fig.suptitle(sub_title, fontsize=17)
 
@@ -299,7 +299,8 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             format='pdf',
         )
     else:
-        replace_dict = {',': '', '.': '', '\\': '', '[': '', '&': '', ' ': '_'}
+        replace_dict = {',': '', '.': '', '\\': '', '[': '', '&': '', ' ': '_',
+                        ':': '', ']': '', '{': '', '}': ''}
         for key, value in replace_dict.items():
             rts = rts.replace(key, value)
         rts = rts.lower()
@@ -548,7 +549,7 @@ def plot_epsf(output_dir, epsf, name_obj=None, terminal_logger=None, indent=1):
         fig.suptitle(f'ePSF ({name_obj})', fontsize=17)
 
     #   Plot individual subplots
-    for i, (band, eps) in enumerate(epsf.items()):
+    for i, (filter_, eps) in enumerate(epsf.items()):
         #   Remove bad pixels that would spoil the image normalization
         epsf_clean = np.where(eps.data <= 0, 1E-7, eps.data)
         #   Set up normalization for the image
@@ -567,7 +568,7 @@ def plot_epsf(output_dir, epsf, name_obj=None, terminal_logger=None, indent=1):
                         cmap='viridis')
 
         #   Set title of subplot
-        ax.set_title(band)
+        ax.set_title(filter_)
 
         #   Set labels
         ax.set_xlabel("Pixel")
@@ -669,7 +670,7 @@ def plot_residual(name, image_orig, residual_image, output_dir,
         fig.suptitle(f'{name} ({name_obj})', fontsize=17)
 
     i = 1
-    for band, image in image_orig.items():
+    for filter_, image in image_orig.items():
         #   Plot original image
         #   Set up normalization for the image
         norm = ImageNormalize(image, interval=ZScaleInterval())
@@ -692,7 +693,7 @@ def plot_residual(name, image_orig, residual_image, output_dir,
         )
 
         #   Set title of subplot
-        ax.set_title(f'Original Image ({band})')
+        ax.set_title(f'Original Image ({filter_})')
 
         #   Set labels
         ax.set_xlabel("Pixel")
@@ -705,7 +706,7 @@ def plot_residual(name, image_orig, residual_image, output_dir,
 
         #   Plot residual image
         #   Set up normalization for the image
-        norm = ImageNormalize(residual_image[band],
+        norm = ImageNormalize(residual_image[filter_],
                               interval=ZScaleInterval())
 
         if n_plots == 1:
@@ -717,7 +718,7 @@ def plot_residual(name, image_orig, residual_image, output_dir,
 
         #   Plot image
         im2 = ax.imshow(
-            residual_image[band],
+            residual_image[filter_],
             norm=norm,
             cmap='viridis',
             aspect=1,
@@ -726,7 +727,7 @@ def plot_residual(name, image_orig, residual_image, output_dir,
         )
 
         #   Set title of subplot
-        ax.set_title(f'Residual Image ({band})')
+        ax.set_title(f'Residual Image ({filter_})')
 
         #   Set labels
         ax.set_xlabel("Pixel")
@@ -1655,7 +1656,9 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
         fmt='b.',
         markersize=3,
         capsize=2,
-        ecolor='lightgray',
+        # ecolor='lightgray',
+        ecolor='dodgerblue',
+        color='darkred',
     )
 
     #   Set ticks and labels
@@ -1797,7 +1800,9 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
         fmt='b.',
         markersize=3,
         capsize=2,
-        ecolor='lightgray',
+        # ecolor='lightgray',
+        ecolor='dodgerblue',
+        color='darkred',
     )
 
     ###
