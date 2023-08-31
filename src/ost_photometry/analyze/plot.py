@@ -300,7 +300,9 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         )
     else:
         replace_dict = {',': '', '.': '', '\\': '', '[': '', '&': '', ' ': '_'}
-        rts = rts.replace(replace_dict)
+        for key, value in replace_dict.items():
+            rts = rts.replace(key, value)
+        rts = rts.lower()
         plt.savefig(
             f"{output_dir}/starmaps/starmap_{filter_}_{rts}.pdf",
             bbox_inches='tight',
@@ -1541,35 +1543,25 @@ def write_cmd(name_of_star_cluster, filename, filter_, color, file_type,
             Default is ``output``.
     """
     if name_of_star_cluster == "" or name_of_star_cluster == "?":
-        terminal_output.print_terminal(
-            output_dir,
-            filename,
-            plot_type,
-            filter_,
-            color,
-            file_type,
-            string="Write plotfile: ./{}/{}_{}_{}_{}.{}",
+        path = (f'./{output_dir}/{filename}_{plot_type}_{filter_}_{color}'
+                f'.{file_type}')
+        terminal_output.print_to_terminal(
+            f"Save CMD plot ({file_type}): {path}",
         )
         plt.savefig(
-            f'./{output_dir}/{filename}_{plot_type}_{filter_}_{color}.{file_type}',
+            path,
             format=file_type,
             bbox_inches="tight",
         )
     else:
         name_of_star_cluster = name_of_star_cluster.replace(' ', '_')
-        terminal_output.print_terminal(
-            output_dir,
-            filename,
-            name_of_star_cluster,
-            plot_type,
-            filter_,
-            color,
-            file_type,
-            string="Write plotfile: ./{}/{}_{}_{}_{}_{}.{}",
+        path = (f'./{output_dir}/{filename}_{name_of_star_cluster}_{plot_type}'
+                f'_{filter_}_{color}.{file_type}')
+        terminal_output.print_to_terminal(
+            f"Save CMD plot ({file_type}): {path}",
         )
         plt.savefig(
-            f'./{output_dir}/{filename}_{name_of_star_cluster}_{plot_type}_{filter_}'
-            f'_{color}.{file_type}',
+            path,
             format=file_type,
             bbox_inches="tight",
         )
@@ -1668,7 +1660,7 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
 
     #   Set ticks and labels
     color = f'{filter_2}-{filter_1}'
-    mk_ticks_labels(filter_1, color)
+    mk_ticks_labels(f'{filter_1} [mag]', f'{color} [mag]')
 
     #   Write plot to disk
     write_cmd(

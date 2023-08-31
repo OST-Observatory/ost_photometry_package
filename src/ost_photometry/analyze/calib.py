@@ -781,7 +781,8 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
 
     else:
         raise ValueError(
-            f'The correlation method needs to either "astropy" or "own". Got {correlation_method} instead.'
+            f'The correlation method needs to either "astropy" or "own". Got '
+            f'{correlation_method} instead.'
         )
 
     if n_identified_literature_objs == 0:
@@ -820,9 +821,9 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
 
     #   Plot star map with calibration stars
     if id_object is not None:
-        rts = f'calibration - object: {id_object}'
+        rts = f'Calibration - object: {id_object}'
     else:
-        rts = 'calibration'
+        rts = 'Calibration'
     for filter_ in filter_list:
         if 'mag' + filter_ in column_names:
             p = mp.Process(

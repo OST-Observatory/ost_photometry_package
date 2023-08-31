@@ -1558,12 +1558,13 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
         median_faintest_objects = np.median(tbl_mag[magnitude_type][-10:])
         terminal_output.print_to_terminal(
             f"Median of the 10 faintest objects: "
-            f"{median_faintest_objects} mag",
+            f"{median_faintest_objects:.1f} mag",
             indent=indent * 3,
         )
         mean_faintest_objects = np.mean(tbl_mag[magnitude_type][-10:])
         terminal_output.print_to_terminal(
-            f"Mean of the 10 faintest objects: {mean_faintest_objects} mag",
+            f"Mean of the 10 faintest objects: "
+            f"{mean_faintest_objects:.1f} mag",
             indent=indent * 3,
         )
 

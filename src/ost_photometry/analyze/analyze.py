@@ -2767,7 +2767,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
                 tbl_2=image.positions_epsf,
                 label='identified stars',
                 label_2='stars used to determine the ePSF',
-                rts=f'Initial image: {image.pd}',
+                rts=f'Initial object identification [Image: {image.pd}]',
                 name_obj=image.objname,
                 terminal_logger=terminal_logger,
             )
