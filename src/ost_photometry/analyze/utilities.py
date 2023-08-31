@@ -1897,7 +1897,7 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
     prepare_and_plot_starmap(
         ensemble.ref_img,
         tbl=Table(names=['x_fit', 'y_fit'], data=[tbl['x'], tbl['y']]),
-        rts_pre='radius selection, image: ',
+        rts_pre='radius selection, image',
         label=f"Objects selected within {radius}'' of the target",
     )
 

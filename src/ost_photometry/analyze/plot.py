@@ -1276,10 +1276,10 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
     plt.close()
 
 
-def check_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
-               y_range_min, x_range_max, x_range_min):
+def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
+                   y_range_min, x_range_max, x_range_min):
     """
-        Check the plot dimensions and set defaults
+        Check the CMD plot dimensions and set defaults
 
         Parameters
         ----------
@@ -1316,6 +1316,9 @@ def check_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
         plt.figure(figsize=(8, 8))
     else:
         plt.figure(figsize=(int(size_x), int(size_y)))
+
+    #   Plot grid
+    plt.grid(True, color='lightgray', linestyle='--')
 
     #   Set plot range -> automatic adjustment
     #   Y range
@@ -1634,7 +1637,7 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
 
     """
     #   Check plot dimensions and set defaults
-    check_plot(
+    check_cmd_plot(
         figure_size_x,
         figure_size_y,
         magnitude_filter_1,
@@ -1652,8 +1655,11 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
         magnitude_filter_1,
         xerr=magnitude_filter_1_err,
         yerr=color_err,
-        mew=0.0,
-        fmt='b.',
+        # mew=0.0,
+        # fmt='b.',
+        marker='o',
+        ls='none',
+        elinewidth=0.5,
         markersize=3,
         capsize=2,
         # ecolor='lightgray',
@@ -1778,7 +1784,7 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
             Default is ``None``.
     """
     #   Check plot dimensions and set defaults
-    check_plot(
+    check_cmd_plot(
         figure_size_x,
         figure_size_y,
         magnitude_filter_1,
