@@ -217,7 +217,7 @@ class ImageEnsemble:
         an image series taken in a specific filter
     """
 
-    def __init__(self, filt, obj_name, path, outdir, reference_image_id=0):
+    def __init__(self, filter_, obj_name, path, output_dir, reference_image_id=0):
         ###
         #   Get file list, if path is a directory, if path is a file put
         #   base name of this file in a list
@@ -253,7 +253,7 @@ class ImageEnsemble:
             )
 
         #   Set filter
-        self.filt = filt
+        self.filt = filter_
 
         #   Set number of images
         #   TODO: Make sure that this attribute is always up to date or replace with method
@@ -266,21 +266,21 @@ class ImageEnsemble:
         self.image_list = []
 
         #   Set path to output directory
-        self.outpath = Path(outdir)
+        self.outpath = Path(output_dir)
 
         #   Set object name
         self.objname = obj_name
 
         #   Fill image list
-        terminal_output.print_terminal(
-            string="Read images and calculate FOV, PIXEL scale, etc. ... ",
+        terminal_output.print_to_terminal(
+            "Read images and calculate FOV, PIXEL scale, etc. ... ",
             indent=2,
         )
         #   TODO: Convert image_list to dictionary
         for image_id, file_name in enumerate(file_list):
             self.image_list.append(
                 #   Prepare image class instance
-                self.Image(image_id, filt, obj_name, path, file_name, outdir)
+                self.Image(image_id, filter_, obj_name, path, file_name, output_dir)
             )
 
             #   Calculate field of view and additional quantities and add
@@ -318,11 +318,11 @@ class ImageEnsemble:
 
     #   Image class
     class Image:
-        def __init__(self, pd, filt, obj_name, path, file_name, outdir):
+        def __init__(self, pd, filter_, obj_name, path, file_name, output_dir):
             #   Set image ID
             self.pd = pd
             #   Set filter
-            self.filt = filt
+            self.filt = filter_
             #   Set object name
             self.objname = obj_name
             #   Set file name
@@ -330,7 +330,7 @@ class ImageEnsemble:
             #   Set complete path
             self.path = Path(Path(path) / file_name)
             #   Set path to output directory
-            self.outpath = Path(outdir)
+            self.outpath = Path(output_dir)
 
         #   Read image
         def read_image(self):
@@ -976,7 +976,7 @@ def determine_epsf(image, size_epsf_region=25, oversampling_factor=2,
         )
 
     #   Get object name
-    name_obj = image.objname
+    name_object = image.objname
 
     if terminal_logger is not None:
         terminal_logger.add_to_cache(
@@ -1021,7 +1021,7 @@ def determine_epsf(image, size_epsf_region=25, oversampling_factor=2,
         p = mp.Process(
             target=plot.plot_cutouts,
             args=(output_dir, stars, string),
-            kwargs={'nameobj': name_obj, }
+            kwargs={'name_object': name_object, }
         )
         p.start()
     else:
@@ -1029,7 +1029,7 @@ def determine_epsf(image, size_epsf_region=25, oversampling_factor=2,
             output_dir,
             stars,
             string,
-            name_obj=name_obj,
+            name_object=name_object,
             terminal_logger=terminal_logger,
         )
 
@@ -1277,6 +1277,16 @@ def extraction_epsf(image, sigma_object_psf, sigma_background=5.,
             result_tbl['flux_fit'] - result_tbl['flux_0']
         )
         result_tbl.add_column(estimated_uncertainty, name='flux_unc')
+
+    #   Clean output for objects with NANs in uncertainties
+    try:
+        uncertainty_mask = np.invert(np.isnan(result_tbl['flux_unc'].value))
+        result_tbl = result_tbl[uncertainty_mask]
+    except:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \nProblem with cleanup of NANs in "
+            f"uncertainties... {style.Bcolors.ENDC}"
+        )
 
     #   Clean output for objects with negative uncertainties
     try:
@@ -2821,7 +2831,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
             {f'{image.pd}-{image.filt}': image.residual_image},
             image.outpath.name,
             terminal_logger=terminal_logger,
-            name_obj=image.objname,
+            name_object=image.objname,
             indent=2,
         )
 
@@ -3158,7 +3168,7 @@ def extract_flux(image_container, filter_list, object_name, image_paths,
                 output_dir,
             ),
             kwargs={
-                'nameobj': 'reference image'
+                'name_object': 'reference image'
             }
         )
         p.start()
@@ -3864,8 +3874,8 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                     ###
                     #   Re-identify position of the variable star
                     #
-                    terminal_output.print_terminal(
-                        string="Identify the variable star",
+                    terminal_output.print_to_terminal(
+                        "Identify the variable star",
                     )
 
                     object_id, count, _, _ = correlate.identify_star_in_dataset(

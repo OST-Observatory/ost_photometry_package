@@ -468,6 +468,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
             rm_outliers=rm_outliers_image_shifts,
             filter_window=filter_window_image_shifts,
             threshold=threshold_image_shifts,
+            instrument=instrument,
             verbose=verbose,
             debug=debug,
         )
@@ -481,6 +482,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
             rm_outliers=rm_outliers_image_shifts,
             filter_window=filter_window_image_shifts,
             threshold=threshold_image_shifts,
+            instrument=instrument,
             verbose=verbose,
             debug=debug,
         )
@@ -1560,7 +1562,7 @@ def reduce_light(image_path, output_dir, image_type, rm_cosmic_rays=True,
 def shift_img_apply(current_image_ccd, reference_image_ccd, n_images,
                     image_shifts, image_flips, image_id, output_path,
                     image_name, shift_method='skimage', modify_file_name=False,
-                    rm_enlarged_keyword=False, verbose=False):
+                    rm_enlarged_keyword=False, instrument=None, verbose=False):
     """
         Apply shift to an individual image
 
@@ -1614,6 +1616,10 @@ def shift_img_apply(current_image_ccd, reference_image_ccd, n_images,
             It true the header keyword 'enlarged' will be removed.
             Default is ``False``.
 
+        instrument              : `string`, optional
+            Instrument used
+            Default is ``None``.
+
         verbose                 : `boolean`, optional
             If True additional output will be printed to the console
             Default is ``False``.
@@ -1655,6 +1661,10 @@ def shift_img_apply(current_image_ccd, reference_image_ccd, n_images,
             f"shifts is not known. Got {shift_method}. Allowed: own, "
             f"skimage, aa, flow, aa_true {style.Bcolors.ENDC}"
         )
+
+    #   Reset the device as it may have been updated
+    if instrument is not None:
+        output_image.meta['INSTRUME'] = instrument
 
     #   Add Header keyword to mark the file as trimmed
     output_image.meta['trimmed'] = True
@@ -1712,7 +1722,7 @@ def shift_image_core(image_file_collection, output_path,
                      shift_terminal_comment='\tImage displacement:',
                      rm_enlarged_keyword=False, modify_file_name=False,
                      rm_outliers=True, filter_window=8, threshold=10.,
-                     verbose=False):
+                     instrument=None, verbose=False):
     """
         Core steps of the image shift calculations and trimming to a
         common filed of view
@@ -1769,6 +1779,10 @@ def shift_image_core(image_file_collection, output_path,
             Difference above the running median above an element is
             considered to be an outlier.
             Default is ``10.``.
+
+        instrument              : `string`, optional
+            Instrument used
+            Default is ``None``.
 
         verbose                 : `boolean`, optional
             If True additional output will be printed to the console
@@ -1829,13 +1843,15 @@ def shift_image_core(image_file_collection, output_path,
                 shift_method=shift_method,
                 modify_file_name=modify_file_name,
                 rm_enlarged_keyword=rm_enlarged_keyword,
+                instrument=instrument,
                 verbose=verbose,
             )
 
 
 def shift_image(path, output_dir, image_type_list, reference_image_id=0,
                 shift_method='skimage', rm_outliers=True, filter_window=8,
-                threshold=10., verbose=False, debug=False):
+                threshold=10., instrument=None, verbose=False,
+                debug=False):
     """
         Calculate shift between images taken in the same filter
         and trim those to the save field of view
@@ -1880,6 +1896,10 @@ def shift_image(path, output_dir, image_type_list, reference_image_id=0,
             Difference above the running median above an element is
             considered to be an outlier.
             Default is ``10.``.
+
+        instrument              : `string`, optional
+            Instrument used
+            Default is ``None``.
 
         verbose             : `boolean`, optional
             If True additional output will be printed to the console
@@ -1932,6 +1952,7 @@ def shift_image(path, output_dir, image_type_list, reference_image_id=0,
             shift_terminal_comment=f'\tDisplacement for images in filter: {filter_}',
             rm_outliers=rm_outliers,
             filter_window=filter_window,
+            instrument=instrument,
             threshold=threshold,
             verbose=verbose,
         )
@@ -1944,7 +1965,7 @@ def shift_image(path, output_dir, image_type_list, reference_image_id=0,
 def shift_all_images(image_path, output_dir, image_type_list,
                      reference_image_id=0, shift_method='skimage',
                      rm_outliers=True, filter_window=8, threshold=10.,
-                     verbose=False, debug=False):
+                     instrument=None, verbose=False, debug=False):
     """
         Calculate shift between images and trim those to the save field of
         view
@@ -1989,6 +2010,10 @@ def shift_all_images(image_path, output_dir, image_type_list,
             Difference above the running median above an element is
             considered to be an outlier.
             Default is ``10.``.
+
+        instrument              : `string`, optional
+            Instrument used
+            Default is ``None``.
 
         verbose                 : `boolean`, optional
             If True additional output will be printed to the console
@@ -2035,6 +2060,7 @@ def shift_all_images(image_path, output_dir, image_type_list,
         reference_image_id=reference_image_id,
         rm_outliers=rm_outliers,
         filter_window=filter_window,
+        instrument=instrument,
         threshold=threshold,
         verbose=verbose,
     )

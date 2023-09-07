@@ -196,11 +196,14 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     if rts is None and name_obj is None:
         sub_title = f'Star map ({filter_} filter)'
     elif rts is None:
-        sub_title = f'Star map ({filter_} filter) - {name_obj}'
+        # sub_title = f'Star map ({filter_} filter) - {name_obj}'
+        sub_title = f'{name_obj} - {filter_} filter'
     elif name_obj is None:
-        sub_title = f'Star map ({filter_} filter, {rts})'
+        sub_title = f'{filter_} filter, {rts}'
+        # sub_title = f'Star map ({filter_} filter, {rts})'
     else:
-        sub_title = f'Star map ({filter_} filter, {rts}) - {name_obj}'
+        sub_title = f'{name_obj} - {filter_} filter, {rts}'
+        # sub_title = f'Star map ({filter_} filter, {rts}) - {name_obj}'
 
     fig.suptitle(sub_title, fontsize=17)
 
@@ -251,11 +254,15 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         x = tbl[x_column]
         y = tbl[y_column]
     if mode == 'mags':
+        try:
+            magnitudes = tbl['mag_cali_trans']
+        except:
+            magnitudes = tbl['mag_cali']
         for i in range(0, len(x)):
             plt.text(
-                x[i],
-                y[i],
-                f" {tbl['mags_fit'][i]:.1f}",
+                x[i] + 11,
+                y[i] + 8,
+                f" {magnitudes[i]:.1f}",
                 fontdict=style.font,
                 color='purple',
             )
@@ -272,7 +279,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         for i in range(0, len(x)):
             plt.text(
                 x[i] + 11,
-                y[i] + 7,
+                y[i] + 8,
                 f" {tbl['id'][i]}",
                 fontdict=style.font,
                 color='purple',
@@ -376,6 +383,10 @@ def plot_apertures(output_dir, image, aperture, annulus_aperture,
     #
     handles = (ap_patches[0], ann_patches[0])
 
+    #   Set labels
+    plt.xlabel("[pixel]", fontsize=16)
+    plt.ylabel("[pixel]", fontsize=16)
+
     #   Plot legend
     plt.legend(
         loc=(0.17, 0.05),
@@ -400,7 +411,7 @@ def plot_apertures(output_dir, image, aperture, annulus_aperture,
 
 
 def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
-                 max_plot_stars=25, name_obj=None, indent=2):
+                 max_plot_stars=25, name_object=None, indent=2):
     """
         Plot the cutouts of the stars used to estimate the ePSF
 
@@ -424,7 +435,7 @@ def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
             Maximum number of cutouts to plot
             Default is ``25``.
 
-        name_obj        : `string`, optional
+        name_object     : `string`, optional
             Name of the object
             Default is ``None``.
 
@@ -467,10 +478,10 @@ def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
                         wspace=None, hspace=0.25)
 
     #   Set title of the complete plot
-    if name_obj is None:
+    if name_object is None:
         sub_title = f'Cutouts of the {n_cutouts} faintest stars ({identifier})'
     else:
-        sub_title = f'Cutouts of the {n_cutouts} faintest stars ({identifier}) - {name_obj}'
+        sub_title = f'Cutouts of the {n_cutouts} faintest stars ({identifier}) - {name_object}'
     fig.suptitle(sub_title, fontsize=17)
 
     ax = ax.ravel()  # flatten the image?
@@ -594,7 +605,7 @@ def plot_epsf(output_dir, epsf, name_obj=None, terminal_logger=None, indent=1):
 
 
 def plot_residual(name, image_orig, residual_image, output_dir,
-                  name_obj=None, terminal_logger=None, indent=1):
+                  name_object=None, terminal_logger=None, indent=1):
     """
         Plot the original and the residual image
 
@@ -612,7 +623,7 @@ def plot_residual(name, image_orig, residual_image, output_dir,
         output_dir          : `string`
             Output directory
 
-        name_obj         : `string`, optional
+        name_object         : `string`, optional
             Name of the object
             Default is ``None``.
 
@@ -664,10 +675,10 @@ def plot_residual(name, image_orig, residual_image, output_dir,
     )
 
     #   Set title of the complete plot
-    if name_obj is None:
+    if name_object is None:
         fig.suptitle(name, fontsize=17)
     else:
-        fig.suptitle(f'{name} ({name_obj})', fontsize=17)
+        fig.suptitle(f'{name} ({name_object})', fontsize=17)
 
     i = 1
     for filter_, image in image_orig.items():
@@ -952,7 +963,7 @@ def light_curve_fold(time_series, data_column, err_column, output_dir,
 
         Parameters
         ----------
-        time_series              : `astropy.timeseries.TimeSeries`
+        time_series     : `astropy.timeseries.TimeSeries`
             Time series
 
         data_column     : `string`
@@ -993,7 +1004,7 @@ def light_curve_fold(time_series, data_column, err_column, output_dir,
 
     #   Fold lightcurve
     ts_folded = time_series.fold(
-        period=period * u.day,
+        period=float(period) * u.day,
         epoch_time=transit_time,
     )
 
@@ -1183,31 +1194,31 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
         #   coeff  = 1./b
         if name_obj is None:
             title = f'Color transform ({filter_1.lower()}-{filter_2.lower()}' \
-                    + f' vs. {filter_1}-{filter_2}) (X = {air_mass})'
+                    f' vs. {filter_1}-{filter_2}) (X = {air_mass})'
         else:
             title = f'Color transform ({filter_1.lower()}-{filter_2.lower()}' \
-                    + f' vs. {filter_1}-{filter_2}) - {name_obj} (X = {air_mass})'
+                    f' vs. {filter_1}-{filter_2}) - {name_obj} (X = {air_mass})'
         y_label = f'{filter_1.lower()}-{filter_2.lower()} [mag]'
-        path = f'{output_dir}/trans_plots/{filter_1.lower() + filter_2.lower()}' \
-               + f'_{filter_1 + filter_2}.pdf'
-        p_label = f'slope = {b_fit}, T{filter_1.lower()}{filter_2.lower()}' \
-                  + f' = {1. / b_fit} +/- {b_err_fit}'
+        path = f'{output_dir}/trans_plots/{filter_1.lower()}{filter_2.lower()}' \
+               f'_{filter_1}{filter_2}.pdf'
+        p_label = (f'slope = {b_fit:.5f}, T{filter_1.lower()}'
+                   f'{filter_2.lower()} = {1. / b_fit:.5f} +/- {b_err_fit:.5f}')
     else:
         #   coeff  = b
         if name_obj is None:
             title = f'{filter_}{filter_1.lower()}{filter_2.lower()}' \
-                    + f'-mag transform ({filter_}-{filter_.lower()}' \
-                    + f' vs. {filter_1}-{filter_2}) (X = {air_mass})'
+                    f'-mag transform ({filter_}-{filter_.lower()}' \
+                    f' vs. {filter_1}-{filter_2}) (X = {air_mass})'
         else:
             title = f'{filter_}{filter_1.lower()}{filter_2.lower()}' \
-                    + f'-mag transform ({filter_}-{filter_.lower()}' \
-                    + f' vs. {filter_1}-{filter_2}) - {name_obj}' \
-                    + f' (X = {air_mass})'
+                    f'-mag transform ({filter_}-{filter_.lower()}' \
+                    f' vs. {filter_1}-{filter_2}) - {name_obj}' \
+                    f' (X = {air_mass})'
         y_label = f'{filter_}-{filter_.lower()} [mag]'
         path = f'{output_dir}/trans_plots/{filter_}{filter_.lower()}' \
-               + f'_{filter_1}{filter_2}.pdf'
-        p_label = f'slope = {b_fit}, C{filter_.lower()}_' \
-                  + f'{filter_1.lower()}{filter_2.lower()} = {b_fit} +/- {b_err_fit}'
+               f'_{filter_1}{filter_2}.pdf'
+        p_label = (f'slope = {b_fit:.5f}, C{filter_.lower()}_{filter_1.lower()}'
+                   f'{filter_2.lower()} = {b_fit:.5f} +/- {b_err_fit:.5f}')
     x_label = f'{filter_1}-{filter_2} [mag]'
 
     #   Make plot
@@ -1660,8 +1671,8 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
         elinewidth=0.5,
         markersize=2,
         capsize=2,
-        # ecolor='lightgray',
-        ecolor='dodgerblue',
+        ecolor='#ccdbfd',
+        # ecolor='dodgerblue',
         color='darkred',
     )
 
@@ -1805,8 +1816,8 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
         elinewidth=0.5,
         markersize=2,
         capsize=2,
-        # ecolor='lightgray',
-        ecolor='dodgerblue',
+        ecolor='#ccdbfd',
+        # ecolor='dodgerblue',
         color='darkred',
         alpha=0.8,
     )

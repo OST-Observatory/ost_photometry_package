@@ -708,8 +708,8 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
         if np.any(ref_is_in):
             if n_images <= 2:
                 raise RuntimeError(
-                    f"{style.Bcolors.FAIL} \nReference object only found one "
-                    "or on no image at all. This is not sufficient. "
+                    f"{style.Bcolors.FAIL} \nReference object only found on "
+                    "one or on none image at all. This is not sufficient. "
                     f"=> Exit {style.Bcolors.ENDC}"
                 )
             rejected_object_ids = rows_to_rm[1]

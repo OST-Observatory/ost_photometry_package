@@ -802,14 +802,11 @@ def find_filter(filter_list, tsc_parameter_dict, filter_, camera,
                         return value_inner, id_1, id_2
                     else:
                         if verbose:
-                            terminal_output.print_terminal(
-                                f1,
-                                f2,
-                                filter_list,
+                            terminal_output.print_to_terminal(
+                                'Magnitude transformation coefficients'
+                                ' do not apply. Wrong filter '
+                                'combination: {f1} & {f2} vs. {filter_list}',
                                 indent=indent,
-                                string='Magnitude transformation coefficients'
-                                       ' do not apply. Wrong filter '
-                                       'combination: {} & {} vs. {}',
                                 style_name='WARNING',
                             )
 
@@ -818,12 +815,11 @@ def find_filter(filter_list, tsc_parameter_dict, filter_, camera,
             cam_bools.append(False)
 
     if not any(cam_bools):
-        terminal_output.print_terminal(
-            camera,
+        terminal_output.print_to_terminal(
+            f'Determined camera ({camera}) not consistent with the'
+            ' one given in the dictionary with the transformation'
+            ' coefficients.',
             indent=indent,
-            string='Determined camera {} not consistent with the'
-                   ' one given in the dictionary with the transformation'
-                   ' coefficients.',
             style_name='WARNING',
         )
 
@@ -1279,14 +1275,15 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
             ),
             kwargs={
                 'tbl_2': tbl_xy_calib,
-                'rts': f'{image_id} [final]',
+                'rts': f'image: {image_id}, final version',
                 'label': 'Stars identified in all images',
-                'label_2': 'Calibration stars',
+                # 'label_2': 'Calibration stars',
+                'label_2': 'Variable object',
                 'name_obj': img_ensemble.objname,
             }
         )
         p.start()
-        terminal_output.print_terminal()
+        terminal_output.print_to_terminal('')
 
 
 def calibration_check_plots(filter_, out_dir, name_object, image_id,
@@ -1371,9 +1368,9 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         target=plot.scatter,
         args=(
             [magnitudes],
-            f'{filter_}_calib [mag]',
+            f'{filter_}_calibration [mag]',
             [uncalibrated_magnitudes],
-            f'{filter_}_no-calib [mag]',
+            f'{filter_}_no-calibration [mag]',
             f'mag-cali_mags_{filter_}_img_{image_id}',
             out_dir,
         ),
@@ -1401,9 +1398,9 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
                     uncalibrated_magnitudes[ids_calibration_stars],
                     uncalibrated_magnitudes[ids_calibration_stars][mask]
                 ],
-                f'{filter_}_inst [mag]',
+                f'{filter_}_measured [mag]',
                 [literature_magnitudes, literature_magnitudes[mask]],
-                f'{filter_}_lit [mag]',
+                f'{filter_}_literature [mag]',
                 f'mags_sigma_{filter_}_img_{image_id}',
                 out_dir,
             ),
@@ -1430,9 +1427,9 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
             target=plot.scatter,
             args=(
                 [color_fit, color_fit[mask]],
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_inst [mag]',
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
                 [color_lit, color_lit[mask]],
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_lit [mag]',
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
                 f'color_sigma_{filter_}_img_{image_id}',
                 out_dir,
             ),
@@ -1590,7 +1587,8 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             niters=2,
             overlap=False,
             # seed=123,
-            zeropoint=np.median(image.ZP_clip),
+            # zeropoint=np.median(image.ZP_clip),
+            zeropoint=np.median(image.ZP_clip.value),
             progress_bar=False,
         )
 

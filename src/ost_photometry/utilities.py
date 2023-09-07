@@ -139,7 +139,7 @@ def calculate_field_of_view(image, indent=2, verbose=True):
         physical_dimension_y = n_pixel_y * y_binning
 
         #   Set instrument
-        if physical_dimension_x == 9576 and physical_dimension_y == 6388:
+        if physical_dimension_x == 9576 and physical_dimension_y in [6387, 6388]:
             instrument = 'QHY600M'
         elif physical_dimension_x == 6280 and physical_dimension_y == 4210:
             instrument = 'QHY268M'

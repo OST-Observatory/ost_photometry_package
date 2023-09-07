@@ -665,7 +665,7 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
             Calibrated magnitudes
     """
     #   Get clipped zero points
-    zp = image.ZP_clip
+    zp_clipped = image.ZP_clip
 
     #   Get mask from sigma clipping that needs to be applied to the data
     mask = image.ZP_mask
@@ -674,7 +674,7 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
     color_observed = (calib_magnitudes_observed_fiter_1 -
                       calib_magnitudes_observed_fiter_2)
     #   Mask data according to sigma clipping
-    color_observed_clip = color_observed[mask]
+    color_observed_clipped = color_observed[mask]
 
     #   Literature color of the calibration objects
     color_lit = (calib_magnitudes_literature_filter_1 -
@@ -738,7 +738,8 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
             )
 
     #   Calculate calibrated magnitudes
-    mag_cali = magnitudes + np.median(zp - c * color_observed_clip) + c * color
+    mag_cali = (magnitudes + c * color
+                + np.median((zp_clipped - c * color_observed_clipped).value))
 
     #   Add calibrated photometry to table of Image object
     image.photometry['mag_cali_trans'] = mag_cali
