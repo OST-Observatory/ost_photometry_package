@@ -1410,8 +1410,8 @@ def mk_ticks_labels(filter_, color):
     plt.minorticks_on()
 
     #   Set labels
-    plt.xlabel(r'${}$'.format(color))
-    plt.ylabel(r'${}$'.format(filter_))
+    plt.xlabel(rf'${color}$ [mag]')
+    plt.ylabel(rf'${filter_}$ [mag]')
 
 
 def fill_lists(list_, iso_column, iso_column_type, filter_1, filter_2,
@@ -1674,11 +1674,12 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
         ecolor='#ccdbfd',
         # ecolor='dodgerblue',
         color='darkred',
+        alpha=0.3,
     )
 
     #   Set ticks and labels
     color = f'{filter_2}-{filter_1}'
-    mk_ticks_labels(f'{filter_1} [mag]', f'{color} [mag]')
+    mk_ticks_labels(f'{filter_1}', f'{color}')
 
     #   Write plot to disk
     write_cmd(
@@ -1819,7 +1820,7 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
         ecolor='#ccdbfd',
         # ecolor='dodgerblue',
         color='darkred',
-        alpha=0.8,
+        alpha=0.3,
     )
 
     ###
@@ -1915,7 +1916,7 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
                     isochrone_magnitude_1,
                     linestyle=next(line_cycler),
                     color=color_pick.to_rgba(i),
-                    linewidth=0.8,
+                    linewidth=1.2,
                     label=label,
                 )
 
@@ -2030,7 +2031,7 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
                     isochrone_magnitude_1_list[i],
                     linestyle=next(line_cycler),
                     color=color_pick.to_rgba(i),
-                    linewidth=0.8,
+                    linewidth=1.2,
                     label=age_string,
                 )
                 isochrone_data.close()
@@ -2047,7 +2048,7 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
 
     #   Set ticks and labels
     color = f'{filter_2}-{filter_1}'
-    mk_ticks_labels(filter_1, color)
+    mk_ticks_labels(f'{filter_1}', f'{color}')
 
     #   Write plot to disk
     write_cmd(
