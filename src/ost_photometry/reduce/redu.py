@@ -1663,7 +1663,7 @@ def shift_img_apply(current_image_ccd, reference_image_ccd, n_images,
         )
 
     #   Reset the device as it may have been updated
-    if instrument is not None:
+    if instrument is not None and instrument != '':
         output_image.meta['INSTRUME'] = instrument
 
     #   Add Header keyword to mark the file as trimmed

@@ -220,11 +220,11 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         y_dimension_physical = y_dimension * y_bin
 
         #   Set instrument
-        if x_dimension_physical == 9576 and y_dimension_physical == 6388:
+        if x_dimension_physical == 9576 and y_dimension_physical in [6388, 6787]:
             instrument = 'QHY600M'
-        elif x_dimension_physical == 6280 and y_dimension_physical == 4210:
+        elif x_dimension_physical in [6280, 6279] and y_dimension_physical in [4210, 4209]:
             instrument = 'QHY268M'
-        elif x_dimension_physical == 3864 and y_dimension_physical == 2180:
+        elif x_dimension_physical == 3864 and y_dimension_physical == [2180, 2178]:
             instrument = 'QHY485C'
         else:
             instrument = ''
