@@ -159,8 +159,8 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
 
     else:
         #   Default: modern CMOS camera assumption
-        terminal_output.print_terminal(
-            string="Camera not recognized. Assuming a modern CMOS camera ... ",
+        terminal_output.print_to_terminal(
+            "Camera not recognized. Assuming a modern CMOS camera ... ",
             indent=1,
             style_name='WARNING'
         )

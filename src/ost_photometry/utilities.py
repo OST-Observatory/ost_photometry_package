@@ -141,9 +141,9 @@ def calculate_field_of_view(image, indent=2, verbose=True):
         #   Set instrument
         if physical_dimension_x == 9576 and physical_dimension_y in [6387, 6388]:
             instrument = 'QHY600M'
-        elif physical_dimension_x == 6280 and physical_dimension_y == 4210:
+        elif physical_dimension_x in [6280, 6279] and physical_dimension_y in [4210, 4209]:
             instrument = 'QHY268M'
-        elif physical_dimension_x == 3864 and physical_dimension_y == 2180:
+        elif physical_dimension_x == 3864 and physical_dimension_y in [2180, 2178]:
             instrument = 'QHY485C'
         else:
             instrument = ''

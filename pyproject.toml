@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ost_photometry"
-version = "0.1.7"
+version = "0.1.8"
 authors = [
   { name="Rainer Hainich", email="rhainich@astro.physik.uni-potsdam.de" },
 ]
