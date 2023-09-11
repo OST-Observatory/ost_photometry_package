@@ -2042,7 +2042,7 @@ def flip_image(image_file_collection, output_path):
     return ccdp.ImageFileCollection(output_path_flipped)
 
 
-def image_binning(image_file_collection, output_path, binning_value):
+def bin_image(image_file_collection, output_path, binning_value):
     """
         Bin images in X and Y direction
 
@@ -2063,14 +2063,14 @@ def image_binning(image_file_collection, output_path, binning_value):
                                 : `ccdproc.ImageFileCollection`
             Image file collection pointing to the binned images
     """
-    terminal_output.print_terminal("Bin images", indent=2)
+    terminal_output.print_to_terminal("Bin images", indent=2)
 
     #   Check directory
     checks.check_output_directories(output_path)
     output_path_binned = output_path / 'binned'
     checks.check_output_directories(output_path_binned)
 
-    for image, file_name in image_file_collection.ccds(
+        for image, file_name in image_file_collection.ccds(
             ccd_kwargs={'unit': 'adu'},
             return_fname=True,
             ):

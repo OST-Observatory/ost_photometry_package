@@ -130,7 +130,7 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
             terminal_output.print_to_terminal(
                 f'Camera: {camera}\n'
                 "   The read noise could not be determined... \n"
-                "   Use default value: 7.904"
+                "   Use default value: 7.904\n"
                 f"  Readout mode was {e}\n",
                 indent=1,
                 style_name='WARNING'
@@ -150,7 +150,7 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
             terminal_output.print_to_terminal(
                 f'Camera: {camera}\n'
                 "   The true gain factor could not be determined... \n"
-                "   Use default value: 1.292"
+                "   Use default value: 1.292\n"
                 f"   Readout mode was {e}\n",
                 indent=1,
                 style_name='WARNING'
