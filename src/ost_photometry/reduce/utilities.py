@@ -2070,7 +2070,7 @@ def bin_image(image_file_collection, output_path, binning_value):
     output_path_binned = output_path / 'binned'
     checks.check_output_directories(output_path_binned)
 
-        for image, file_name in image_file_collection.ccds(
+    for image, file_name in image_file_collection.ccds(
             ccd_kwargs={'unit': 'adu'},
             return_fname=True,
             ):
