@@ -841,14 +841,14 @@ def check_epsf_stars(image, size_epsf_region=25, minimum_n_stars=25,
 
     #   Exclude stars that are too close to the image boarder
     #   Size of the extraction box around each star
-    hsize = (size_epsf_region - 1) / 2
+    half_size_epsf_region = (size_epsf_region - 1) / 2
 
     #   New lists with x and y positions
     x = tbl_epsf_stars['xcentroid']
     y = tbl_epsf_stars['ycentroid']
 
-    mask = ((x > hsize) & (x < (image_data.shape[1] - 1 - hsize)) &
-            (y > hsize) & (y < (image_data.shape[0] - 1 - hsize)))
+    mask = ((x > half_size_epsf_region) & (x < (image_data.shape[1] - 1 - half_size_epsf_region)) &
+            (y > half_size_epsf_region) & (y < (image_data.shape[0] - 1 - half_size_epsf_region)))
 
     #   Updated positions table
     tbl_epsf_stars = tbl_epsf_stars[:][mask]
@@ -1185,7 +1185,7 @@ def extraction_epsf(image, sigma_object_psf, sigma_background=5.,
     #   Fitter used
     fitter = LevMarLSQFitter()
 
-    #   Size of the extraction region
+    #   Make sure the size of the extraction region is uneven
     if size_epsf_region % 2 == 0:
         size_extraction_region = size_epsf_region + 1
     else:
@@ -2751,6 +2751,10 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
         )
 
     if photometry_extraction_method == 'PSF':
+        #   Check size of ePSF extraction region
+        if size_epsf_region % 2 == 0:
+            size_epsf_region = size_epsf_region + 1
+
         ###
         #   Check if enough stars have been detected to allow ePSF
         #   calculations
