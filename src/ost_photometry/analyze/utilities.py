@@ -901,17 +901,17 @@ def check_variable_apparent_cmd(filename, filetype, filter_1, filter_2,
     """
     #   Set figure type
     if filename == "?" or filename == "":
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
+            '[Warning] No filename given, us default (cmd)',
             indent=1,
-            string='[Warning] No filename given, us default (cmd)',
             style_name='WARNING',
         )
         filename = 'cmd'
 
     if filetype == '?' or filetype == '':
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
+            '[Warning] No filetype given, use default (pdf)',
             indent=1,
-            string='[Warning] No filetype given, use default (pdf)',
             style_name='WARNING',
         )
         filetype = 'pdf'
@@ -919,10 +919,9 @@ def check_variable_apparent_cmd(filename, filetype, filter_1, filter_2,
     #   Check if file type is valid and set default
     filetype_list = ['pdf', 'png', 'eps', 'ps', 'svg']
     if filetype not in filetype_list:
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
+            '[Warning] Unknown filetype given, use default instead (pdf)',
             indent=1,
-            string='[Warning] Unknown filetype given, use default instead '
-                   '(pdf)',
             style_name='WARNING',
         )
         filetype = 'pdf'
@@ -931,18 +930,18 @@ def check_variable_apparent_cmd(filename, filetype, filter_1, filter_2,
     #   filter
     if len(filter_2) + len(filter_1) != len(zero_points_dict):
         if len(filter_2) + len(filter_1) > len(zero_points_dict):
-            terminal_output.print_terminal(
+            terminal_output.print_to_terminal(
+                "[Error] More filter ('filter_2') specified than zero"
+                " points ('zero_points_dict')",
                 indent=1,
-                string="[Error] More filter ('filter_2') specified than zero"
-                       " points ('zero_points_dict')",
                 style_name='WARNING',
             )
             sys.exit()
         else:
-            terminal_output.print_terminal(
+            terminal_output.print_to_terminal(
+                "[Error] More zero points ('zero_points_dict') "
+                "specified than filter ('filter_2')",
                 indent=1,
-                string="[Error] More zero points ('zero_points_dict') "
-                       "specified than filter ('filter_2')",
                 style_name='WARNING',
             )
             sys.exit()
@@ -971,31 +970,28 @@ def check_variable_absolute_cmd(filter_1, filter_2, iso_column_type,
     """
     #   Check if the column declaration for the isochrones fits to the
     #   specified filter
-    for fil in filter_2:
-        if fil not in iso_column_type.keys():
-            terminal_output.print_terminal(
-                fil,
+    for filer_ in filter_2:
+        if filer_ not in iso_column_type.keys():
+            terminal_output.print_to_terminal(
+                f"[Error] No entry for filter {filer_} specified in "
+                f"'ISOcolumntype'",
                 indent=1,
-                string="[Error] No entry for filter {:d} specified in"
-                       " 'ISOcolumntype'",
                 style_name='WARNING',
             )
             sys.exit()
-        if fil not in iso_column.keys():
-            terminal_output.print_terminal(
-                fil,
+        if filer_ not in iso_column.keys():
+            terminal_output.print_to_terminal(
+                f"[Error] No entry for filter {filer_} specified in"
+                " 'ISOcolumn'",
                 indent=1,
-                string="[Error] No entry for filter {:d} specified in"
-                       " 'ISOcolumn'",
                 style_name='WARNING',
             )
             sys.exit()
     if filter_1 not in iso_column.keys():
-        terminal_output.print_terminal(
-            filter_1,
+        terminal_output.print_to_terminal(
+            f"[Error] No entry for filter {filter_1} specified in"
+            " 'ISOcolumn'",
             indent=1,
-            string="[Error] No entry for filter {:d} specified in"
-                   " 'ISOcolumn'",
             style_name='WARNING',
         )
         sys.exit()
