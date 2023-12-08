@@ -593,6 +593,8 @@ vizier_dict = {
     'XMM-OM': 'II/370/xmmom5s',
     'VRI-NCC': 'J/MNRAS/443/725/catalog',
     'USNO-B1.0': 'I/284/out',
+    'Stetson_2019': 'J/MNRAS/485/3042/table4',
+    'Pancino_2022': 'J/A+A/664/A109/table5',
 }
 
 ###
