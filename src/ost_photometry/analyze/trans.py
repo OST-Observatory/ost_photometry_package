@@ -1825,7 +1825,8 @@ def calculate_trans(img_container, key_filter, filter_list,
                     apply_uncertainty_weights=True,
                     max_pixel_between_objects=3., own_correlation_option=1,
                     calibration_method='APASS', vizier_dict=None,
-                    calibration_file=None, magnitude_range=(0., 18.5)):
+                    calibration_file=None, magnitude_range=(0., 18.5),
+                    region_to_select_calibration_stars=None):
     """
         Calculate the transformation coefficients
 
@@ -1871,6 +1872,12 @@ def calculate_trans(img_container, key_filter, filter_list,
         magnitude_range                 : `tuple` or `float`, optional
             Magnitude range
             Default is ``(0.,18.5)``.
+
+        region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
+            Region in which to select calibration stars. This is a useful
+            feature in instances where not the entire field of view can be
+            utilized for calibration purposes.
+            Default is ``None``.
     """
     #   Sanitize dictionary with Vizier catalog information
     if vizier_dict is None:
@@ -1907,6 +1914,7 @@ def calculate_trans(img_container, key_filter, filter_list,
         vizier_dict=vizier_dict,
         path_calibration_file=calibration_file,
         magnitude_range=magnitude_range,
+        region_to_select_calibration_stars=region_to_select_calibration_stars,
     )
     terminal_output.print_to_terminal('')
 

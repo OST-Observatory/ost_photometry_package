@@ -3481,7 +3481,8 @@ def correlate_calibrate(image_container, filter_list,
                         correlation_method='astropy',
                         separation_limit=2. * u.arcsec, aperture_radius=4.,
                         radii_unit='arcsec', convert_magnitudes=False,
-                        target_filter_system='SDSS'):
+                        target_filter_system='SDSS',
+                        region_to_select_calibration_stars=None):
     """
         Correlate photometric extraction results from 2 images and calibrate
         the magnitudes.
@@ -3609,6 +3610,12 @@ def correlate_calibrate(image_container, filter_list,
         target_filter_system                : `string`, optional
             Photometric system the magnitudes should be converted to
             Default is ``SDSS``.
+
+        region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
+            Region in which to select calibration stars. This is a useful
+            feature in instances where not the entire field of view can be
+            utilized for calibration purposes.
+            Default is ``None``.
     """
     ###
     #   Correlate the stellar positions from the different filter
@@ -3646,6 +3653,7 @@ def correlate_calibrate(image_container, filter_list,
         magnitude_range=magnitude_range,
         ra_unit=ra_unit,
         dec_unit=dec_unit,
+        region_to_select_calibration_stars=region_to_select_calibration_stars,
     )
 
     #   Apply calibration and perform magnitude transformation
@@ -3709,7 +3717,8 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                                   photometry_extraction_method='',
                                   correlation_method='astropy',
                                   separation_limit=2. * u.arcsec,
-                                  verbose=False, plot_sigma=False):
+                                  verbose=False, plot_sigma=False,
+                                  region_to_select_calibration_stars=None):
     """
         Calculate magnitudes, calibrate, and plot light curves
 
@@ -3830,6 +3839,11 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
             If True sigma clipped magnitudes will be plotted.
             Default is ``False``.
 
+        region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
+            Region in which to select calibration stars. This is a useful
+            feature in instances where not the entire field of view can be
+            utilized for calibration purposes.
+            Default is ``None``.
     """
     if valid_filter_combinations is None:
         valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
@@ -3919,6 +3933,7 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                         magnitude_range=magnitude_range,
                         correlation_method=correlation_method,
                         separation_limit=separation_limit,
+                        region_to_select_calibration_stars=region_to_select_calibration_stars,
                     )
                     terminal_output.print_to_terminal('')
 
@@ -4036,6 +4051,7 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                 vizier_dict=vizier_dict,
                 path_calibration_file=path_calibration_file,
                 magnitude_range=magnitude_range,
+                region_to_select_calibration_stars=region_to_select_calibration_stars,
             )
 
             #   Check if calibration data is available
