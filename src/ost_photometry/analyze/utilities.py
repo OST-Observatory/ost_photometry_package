@@ -862,13 +862,12 @@ def check_variable(filename, filetype, filter_1, filter_2, zero_points_dict,
         filename,
         filetype,
         filter_1,
-        filter_2,
+        [filter_2],
         zero_points_dict,
     )
 
     check_variable_absolute_cmd(
-        filter_1,
-        filter_2,
+        [filter_1, filter_2],
         iso_column_type,
         iso_column,
     )
@@ -876,27 +875,26 @@ def check_variable(filename, filetype, filter_1, filter_2, zero_points_dict,
     return filename, filetype
 
 
-def check_variable_apparent_cmd(filename, filetype, filter_1, filter_2,
+def check_variable_apparent_cmd(filename, filetype, filter_1, filter_list,
                                 zero_points_dict):
     """
         Check variables and set defaults for CMDs and isochrone plots
 
         Parameters
         ----------
-        filename              : `string`
+        filename                : `string`
             Specified file name - can also be empty -> set default
 
-
-        filetype              : `string`
+        filetype                : `string`
             Specified file type - can also be empty -> set default
 
-        filter_1              : `string`
+        filter_1                : `string`
             First filter
 
-        filter_2              : `string`
-            Second filter
+        filter_list             : `list`
+            Filter list
 
-        zero_points_dict      : `dictionary`
+        zero_points_dict        : `dictionary`
             Keys = filter - Values = zero points
     """
     #   Set figure type
@@ -928,10 +926,10 @@ def check_variable_apparent_cmd(filename, filetype, filter_1, filter_2,
 
     #   Check if calibration parameter is consistent with the number of
     #   filter
-    if len(filter_2) + len(filter_1) != len(zero_points_dict):
-        if len(filter_2) + len(filter_1) > len(zero_points_dict):
+    if len(filter_list) != len(zero_points_dict):
+        if len(filter_list) > len(zero_points_dict):
             terminal_output.print_to_terminal(
-                "[Error] More filter ('filter_2') specified than zero"
+                "[Error] More filter ('filter') specified than zero"
                 " points ('zero_points_dict')",
                 indent=1,
                 style_name='WARNING',
@@ -940,27 +938,42 @@ def check_variable_apparent_cmd(filename, filetype, filter_1, filter_2,
         else:
             terminal_output.print_to_terminal(
                 "[Error] More zero points ('zero_points_dict') "
-                "specified than filter ('filter_2')",
+                "specified than filter ('filter')",
                 indent=1,
                 style_name='WARNING',
             )
             sys.exit()
 
-    return filename, filetype
+    #   Valid filter combinations
+    valid_filter_combination = {
+        'U': 'B',
+        'B': 'V',
+        'V': 'R',
+        'R': 'I',
+        'H': 'J',
+        'J': 'K',
+    }
+    if filter_1 in valid_filter_combination.keys():
+        second_filter = valid_filter_combination[filter_1]
+        if second_filter in filter_list:
+            return filename, filetype, second_filter
+        else:
+            index_filter_1 = filter_list.index(filter_1)
+            if index_filter_1+1 <= len(filter_list):
+                return filename, filetype, filter_list[index_filter_1+1]
+
+    return filename, filetype, False
 
 
-def check_variable_absolute_cmd(filter_1, filter_2, iso_column_type,
+def check_variable_absolute_cmd(filter_list, iso_column_type,
                                 iso_column):
     """
         Check variables and set defaults for CMDs and isochrone plots
 
         Parameters
         ----------
-        filter_1              : `string`
-            First filter
-
-        filter_2              : `string`
-            Second filter
+        filter_list           : `list` of `string`
+            Filter list
 
         iso_column_type       : `dictionary`
             Keys = filter - Values = type
@@ -970,31 +983,23 @@ def check_variable_absolute_cmd(filter_1, filter_2, iso_column_type,
     """
     #   Check if the column declaration for the isochrones fits to the
     #   specified filter
-    for filer_ in filter_2:
-        if filer_ not in iso_column_type.keys():
+    for filter_ in filter_list:
+        if filter_ not in iso_column_type.keys():
             terminal_output.print_to_terminal(
-                f"[Error] No entry for filter {filer_} specified in "
+                f"[Error] No entry for filter {filter_} specified in "
                 f"'ISOcolumntype'",
                 indent=1,
                 style_name='WARNING',
             )
             sys.exit()
-        if filer_ not in iso_column.keys():
+        if filter_ not in iso_column.keys():
             terminal_output.print_to_terminal(
-                f"[Error] No entry for filter {filer_} specified in"
+                f"[Error] No entry for filter {filter_} specified in"
                 " 'ISOcolumn'",
                 indent=1,
                 style_name='WARNING',
             )
             sys.exit()
-    if filter_1 not in iso_column.keys():
-        terminal_output.print_to_terminal(
-            f"[Error] No entry for filter {filter_1} specified in"
-            " 'ISOcolumn'",
-            indent=1,
-            style_name='WARNING',
-        )
-        sys.exit()
 
 
 class Executor:
