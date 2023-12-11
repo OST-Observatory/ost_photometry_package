@@ -579,8 +579,10 @@ dark_current = {
 }
 
 ###
-#   Dictionary with Vizier catalog identifiers
+#   Catalog specific definitions
 #
+
+#   Dictionary with Vizier catalog identifiers
 vizier_dict = {
     'UCAC4': 'I/322A',
     'GSC2.3': 'I/305',
@@ -596,6 +598,59 @@ vizier_dict = {
     'Stetson_2019': 'J/MNRAS/485/3042/table4',
     'Pancino_2022': 'J/A+A/664/A109/table5',
 }
+
+default_columns = {
+    'columns': ["Bmag", "Vmag", "rmag", "imag"],
+    'err_columns': ["e_Bmag", "e_Vmag", "e_rmag", "e_imag"],
+}
+
+#   Catalog specific columns
+catalog_columns_dict = {
+    'I/329': default_columns,
+    'I/322A': default_columns,
+    'II/336/apass9': {
+        'columns': ["Bmag", "Vmag", "r'mag", "i'mag"],
+        'err_columns': ["e_Bmag", "e_Vmag", "e_r'mag", "e_i'mag"],
+    },
+    'I/297': {'columns': ["Bmag", "Vmag", "Rmag"], 'err_columns': []},
+    'I/305': {
+        'columns': ["Umag", "Bmag", "Vmag"],
+        'err_columns': ["e_Umag", "e_Bmag", "e_Vmag"],
+    },
+    'II/168/ubvmeans': {
+        'columns': ["Vmag", "B-V", "U-B"],
+        'err_columns': ["e_Vmag", "e_B-V", "e_U-B"],
+    },
+    'II/272/gspc24': {
+        'columns': ["Bmag", "Vmag", "Rmag"],
+        'err_columns': ["e_Bmag", "e_Vmag", "e_Rmag"],
+    },
+    'II/339/uvotssc1': {
+        'columns': ["U-AB", "B-AB", "V-AB"],
+        'err_columns': [],
+    },
+    'II/370/xmmom5s': {
+        'columns': ["UmAB", "BmAB", "VmAB"],
+        'err_columns': ["e_UmAB", "e_BmAB", "e_VmAB"],
+    },
+    'J/MNRAS/443/725/catalog': {
+        'columns': ["Vmag", "Rmag", "Imag"],
+        'err_columns': ["e_Vmag", "e_Rmag", "e_Imag"],
+    },
+    'I/284/out': {
+        'columns': ["B1mag", "R1mag", "Imag"],
+        'err_columns': [],
+    },
+    'J/MNRAS/485/3042/table4': {
+        'columns': ["Umag", "Bmag", "Vmag", "Rmag", "Imag"],
+        'err_columns': ["e_Umag", "e_Bmag", "e_Vmag", "e_Rmag", "e_Imag"],
+    },
+    'J/A+A/664/A109/table5': {
+        'columns': ["Umag", "Bmag", "Vmag", "Rmag", "Imag"],
+        'err_columns': ["e_Umag", "e_Bmag", "e_Vmag", "e_Rmag", "e_Imag"],
+    }
+}
+
 
 ###
 #   Valid filter combinations to calculate magnitude transformation

@@ -959,7 +959,7 @@ def check_variable_apparent_cmd(filename, filetype, filter_1, filter_list,
             return filename, filetype, second_filter
         else:
             index_filter_1 = filter_list.index(filter_1)
-            if index_filter_1+1 <= len(filter_list):
+            if index_filter_1+1 < len(filter_list):
                 return filename, filetype, filter_list[index_filter_1+1]
 
     return filename, filetype, False
