@@ -367,6 +367,7 @@ gain_qhy = {
     },
 }
 
+
 ###
 #   Readout noise vs. gain -> QHY data
 #
@@ -555,6 +556,7 @@ read_noise_qhy = {
     },
 }
 
+
 ###
 #   Dark current vs. temperature in C -> QHY data
 #
@@ -577,6 +579,7 @@ dark_current = {
         'k': 1,
     },
 }
+
 
 ###
 #   Catalog specific definitions
@@ -663,6 +666,7 @@ valid_filter_combinations_for_transformation = [
     ['V', 'I'],
 ]
 
+
 ###
 #   Filter denomination vs. filter systems
 #
@@ -682,6 +686,57 @@ filter_systems = {
     # 'Green':
     # 'Red':
 }
+
+
+###
+#   Filter effective wavelength
+#
+filter_effective_wavelength = {
+    'U': 3659.88,
+    'B': 4380.74,
+    'V': 5445.43,
+    'R': 6411.47,
+    'I': 7982.09,
+}
+
+
+def fitzpatrick_extinction_curve(r):
+    """
+        Fitzpatrick's extinction curve - A(lambda)/E(B-V) vs. 1/lambda [1/mym]
+        This version is not valid for wavelengths below 2600AA.
+
+        Parameters
+        ----------
+        r               : `float`
+        Ration between absolute and relative extinction in the V band.
+
+        Returns
+        -------
+        cubic_spline    : `scipy.interpolate.CubicSpline`
+        Cubic spline to the Fitzpatrick anchor points
+
+    """
+    #   Spline anchor points (Fitzpatrick 1999)
+    #   x = 1/lambda
+    x = [0., 0.377, 0.820, 1.667, 1.828, 2.141, 2.433, 3.704, 3.846]
+
+    #   y = A(lambda)/E(B-V)
+    #   Coefficients for UV anchor points (fitting function: Fitzpatrick & Massa 1990)
+    c2 = -0.824 + 4.717 / r
+    c1 = 2.030 - 3.007 * c2
+    y = [
+        0.,
+        0.265 * r/3.1,
+        0.829 * r/3.1,
+        -0.426 + 1.0044 * r,
+        -0.050 + 1.0016 * r,
+        0.701 + 1.0016 * r,
+        -1.208 + 1.0032 * r - 0.00033 * r * r,
+        r + c1 + c2 * 3.704 + 0.6492006,
+        r + c1 + c2 * 3.846 + 0.8752775,
+    ]
+
+    return interpolate.CubicSpline(x, y)
 
 
 ###

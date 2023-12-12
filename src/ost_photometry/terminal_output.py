@@ -36,7 +36,7 @@ def print_terminal(*args, string='', condense=False, indent=1,
     if style_name == 'HEADER':
         out_string += style.Bcolors.HEADER
 
-    elif style_name == 'FAIL':
+    elif style_name in ['FAIL', 'ERROR']:
         out_string += style.Bcolors.FAIL
 
     elif style_name == 'WARNING':

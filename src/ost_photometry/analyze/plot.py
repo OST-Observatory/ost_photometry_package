@@ -1558,7 +1558,7 @@ def write_cmd(name_of_star_cluster, filename, filter_, color, file_type,
             Default is ``output``.
     """
     if name_of_star_cluster == "" or name_of_star_cluster == "?":
-        path = (f'./{output_dir}/{filename}_{plot_type}_{filter_}_{color}'
+        path = (f'{output_dir}/{filename}_{plot_type}_{filter_}_{color}'
                 f'.{file_type}')
         terminal_output.print_to_terminal(
             f"Save CMD plot ({file_type}): {path}",
@@ -1570,7 +1570,7 @@ def write_cmd(name_of_star_cluster, filename, filter_, color, file_type,
         )
     else:
         name_of_star_cluster = name_of_star_cluster.replace(' ', '_')
-        path = (f'./{output_dir}/{filename}_{name_of_star_cluster}_{plot_type}'
+        path = (f'{output_dir}/{filename}_{name_of_star_cluster}_{plot_type}'
                 f'_{filter_}_{color}.{file_type}')
         terminal_output.print_to_terminal(
             f"Save CMD plot ({file_type}): {path}",

@@ -932,7 +932,7 @@ def check_variable_apparent_cmd(filename, filetype, filter_1, filter_list,
                 "[Error] More filter ('filter') specified than zero"
                 " points ('zero_points_dict')",
                 indent=1,
-                style_name='WARNING',
+                style_name='ERROR',
             )
             sys.exit()
         else:
@@ -940,7 +940,7 @@ def check_variable_apparent_cmd(filename, filetype, filter_1, filter_list,
                 "[Error] More zero points ('zero_points_dict') "
                 "specified than filter ('filter')",
                 indent=1,
-                style_name='WARNING',
+                style_name='ERROR',
             )
             sys.exit()
 
@@ -989,7 +989,7 @@ def check_variable_absolute_cmd(filter_list, iso_column_type,
                 f"[Error] No entry for filter {filter_} specified in "
                 f"'ISOcolumntype'",
                 indent=1,
-                style_name='WARNING',
+                style_name='FAIL',
             )
             sys.exit()
         if filter_ not in iso_column.keys():
@@ -997,7 +997,7 @@ def check_variable_absolute_cmd(filter_list, iso_column_type,
                 f"[Error] No entry for filter {filter_} specified in"
                 " 'ISOcolumn'",
                 indent=1,
-                style_name='WARNING',
+                style_name='FAIL',
             )
             sys.exit()
 
