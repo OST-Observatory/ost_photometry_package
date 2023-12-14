@@ -2562,9 +2562,12 @@ def extinction_curves(rv):
         fitzpatrick_extinction_curve(x),
         color='darkorange',
         linewidth=1,
-        label=fr'Fitzpatrick: $R_V = $ {rv}',
+        label=r'Fitzpatrick: $R_\mathrm{V} = $'+f'{rv}',
     )
 
+    #   Set x and y-axis label and legend
+    plt.xlabel(r'1/$\lambda$ ($\mu\mathrm{m}^(-1)$)', fontsize=16)
+    plt.ylabel(r'A($\lambda$)/E(B-V)', fontsize=16)
     plt.legend()
 
     #   Add grid
