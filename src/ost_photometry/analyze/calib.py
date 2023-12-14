@@ -182,23 +182,22 @@ def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, 
 
         column_dict                 : `dictionary` - 'string':`string`
             Dictionary with column names vs default names
+
+        ra_unit
     """
     terminal_output.print_to_terminal(
         f"Downloading calibration data from Vizier: {catalog_identifier}",
         indent=indent,
     )
 
-    #   Define and combine columns
-    if catalog_identifier == 'II/168/ubvmeans':
-        ra_dec_columns = ['_RA', '_DE']
-    else:
-        ra_dec_columns = ['RAJ2000', 'DEJ2000']
-
     #   Get catalog specific columns
-    catalog_columns_dict = calibration_data.catalog_columns_dict
+    catalog_properties_dict = calibration_data.catalog_properties_dict[catalog_identifier]
 
-    columns = ra_dec_columns + catalog_columns_dict[catalog_identifier]['columns']
-    columns = columns + catalog_columns_dict[catalog_identifier]['err_columns']
+    #   Combine columns
+    columns = (catalog_properties_dict['ra_dec_columns']
+               + catalog_properties_dict['columns']
+               + catalog_properties_dict['err_columns']
+               )
 
     #   Define astroquery instance
     v = Vizier(
@@ -224,34 +223,40 @@ def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, 
 
     result = table_list[0]
 
-    #   TODO: Move to calibration data file
+    #   TODO: Remove comment lines when changes have proven successful.
     #   Rename columns to default names
-    if catalog_identifier == 'II/370/xmmom5s':
-        result.rename_column("UmAB", "Umag")
-        result.rename_column("BmAB", "Bmag")
-        result.rename_column("VmAB", "Vmag")
-        result.rename_column("e_UmAB", "e_Umag")
-        result.rename_column("e_BmAB", "e_Bmag")
-        result.rename_column("e_VmAB", "e_Vmag")
-    if catalog_identifier == 'II/339/uvotssc1':
-        result.rename_column("U-AB", "Umag")
-        result.rename_column("B-AB", "Bmag")
-        result.rename_column("V-AB", "Vmag")
-    if catalog_identifier == 'I/284/out':
-        result.rename_column("B1mag", "Bmag")
-        result.rename_column("R1mag", "Rmag")
-    if catalog_identifier == 'II/336/apass9':
-        result.rename_column("r_mag", "Rmag")
-        result.rename_column("i_mag", "Imag")
-        result.rename_column("e_r_mag", "e_Rmag")
-        result.rename_column("e_i_mag", "e_Imag")
+    if 'column_rename' in catalog_properties_dict:
+        for element in catalog_properties_dict['column_rename']:
+            result.rename_column(element[0], element[1])
+    # if catalog_identifier == 'II/370/xmmom5s':
+    #     result.rename_column("UmAB", "Umag")
+    #     result.rename_column("BmAB", "Bmag")
+    #     result.rename_column("VmAB", "Vmag")
+    #     result.rename_column("e_UmAB", "e_Umag")
+    #     result.rename_column("e_BmAB", "e_Bmag")
+    #     result.rename_column("e_VmAB", "e_Vmag")
+    # if catalog_identifier == 'II/339/uvotssc1':
+    #     result.rename_column("U-AB", "Umag")
+    #     result.rename_column("B-AB", "Bmag")
+    #     result.rename_column("V-AB", "Vmag")
+    # if catalog_identifier == 'I/284/out':
+    #     result.rename_column("B1mag", "Bmag")
+    #     result.rename_column("R1mag", "Rmag")
+    # if catalog_identifier == 'II/336/apass9':
+    #     result.rename_column("r_mag", "Rmag")
+    #     result.rename_column("i_mag", "Imag")
+    #     result.rename_column("e_r_mag", "e_Rmag")
+    #     result.rename_column("e_i_mag", "e_Imag")
 
     #   Calculate B, U, etc. if only B-V, U-B, etc are given
-    if catalog_identifier in ['II/168/ubvmeans']:
-        result['Bmag'] = result['B-V'] + result['Vmag']
-        result['e_Bmag'] = result['e_B-V'] + result['e_Vmag']
-        result['Umag'] = result['U-B'] + result['Bmag']
-        result['e_Umag'] = result['e_U-B'] + result['e_Bmag']
+    if 'magnitude_arithmetic' in catalog_properties_dict:
+        for element in catalog_properties_dict['magnitude_arithmetic']:
+            result[element[0]] = result[element[1]] + result[element[2]]
+    # if catalog_identifier in ['II/168/ubvmeans']:
+    #     result['Bmag'] = result['B-V'] + result['Vmag']
+    #     result['e_Bmag'] = result['e_B-V'] + result['e_Vmag']
+    #     result['Umag'] = result['U-B'] + result['Bmag']
+    #     result['e_Umag'] = result['e_U-B'] + result['e_Bmag']
 
     #   Restrict magnitudes to requested range
     if 'Vmag' in result.keys():
@@ -277,10 +282,15 @@ def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, 
     result = result[mask]
 
     #   Define dict with column names
-    if catalog_identifier == 'II/168/ubvmeans':
-        column_dict = {'ra': '_RA', 'dec': '_DE'}
-    else:
-        column_dict = {'ra': 'RAJ2000', 'dec': 'DEJ2000'}
+    column_dict = {
+        'ra': catalog_properties_dict['ra_dec_columns'][0],
+        'dec': catalog_properties_dict['ra_dec_columns'][1]
+    }
+    # if catalog_identifier == 'II/168/ubvmeans':
+    #     column_dict = {'ra': '_RA', 'dec': '_DE'}
+    # else:
+    #     column_dict = {'ra': 'RAJ2000', 'dec': 'DEJ2000'}
+    
     for filter_ in filter_list:
         if f'{filter_}mag' in result.colnames:
             column_dict[f'mag{filter_}'] = f'{filter_}mag'
@@ -295,7 +305,7 @@ def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, 
                 style_name='WARNING',
             )
 
-    return result, column_dict
+    return result, column_dict, catalog_properties_dict['ra_unit']
 
 
 def read_votable_simbad(path_calibration_file, filter_list, magnitude_range=(0., 18.5),
@@ -398,7 +408,7 @@ def load_calib(image, filter_list, calibration_method='APASS', magnitude_range=(
             Default is ``(0.,18.5)``.
 
         vizier_dict             : `dictionary` or None, optional
-            Identifiers of catalogs, containing calibration data
+            Vizier identifiers of catalogs that can be used for calibration.
             Default is ``None``.
 
         path_calibration_file   : `string`, optional
@@ -449,7 +459,7 @@ def load_calib(image, filter_list, calibration_method='APASS', magnitude_range=(
         )
     elif calibration_method in vizier_dict.keys():
         #   Load info from Vizier
-        calib_tbl, column_names = get_catalog(
+        calib_tbl, column_names, ra_unit = get_catalog(
             filter_list,
             image.coord,
             image.fov,
@@ -664,6 +674,7 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
     wcs = img_ensemble.wcs
 
     #   Load calibration data
+    #   TODO: Check this routine - It gets and returns ra_unit
     calib_tbl, column_names, ra_unit = load_calib(
         img_ensemble,
         filter_list,

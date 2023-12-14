@@ -3,6 +3,7 @@
 ############################################################################
 
 from astropy.time import Time
+import astropy.units as u
 
 from uncertainties import ufloat
 
@@ -603,54 +604,111 @@ vizier_dict = {
 }
 
 default_columns = {
+    'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
     'columns': ["Bmag", "Vmag", "rmag", "imag"],
     'err_columns': ["e_Bmag", "e_Vmag", "e_rmag", "e_imag"],
 }
 
-#   Catalog specific columns
-catalog_columns_dict = {
-    'I/329': default_columns,
-    'I/322A': default_columns,
+default_ra_unit = u.deg
+
+#   Catalog properties
+catalog_properties_dict = {
+    'I/329': default_columns | {'ra_unit': default_ra_unit},
+    'I/322A': default_columns | {'ra_unit': default_ra_unit},
     'II/336/apass9': {
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
         'columns': ["Bmag", "Vmag", "r'mag", "i'mag"],
         'err_columns': ["e_Bmag", "e_Vmag", "e_r'mag", "e_i'mag"],
+        'ra_unit': default_ra_unit,
+        'column_rename': [
+            ("r_mag", "Rmag"),
+            ("i_mag", "Imag"),
+            ("e_r_mag", "e_Rmag"),
+            ("e_i_mag", "e_Imag")
+        ],
     },
-    'I/297': {'columns': ["Bmag", "Vmag", "Rmag"], 'err_columns': []},
+    'I/297': {
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
+        'columns': ["Bmag", "Vmag", "Rmag"],
+        'err_columns': [],
+        'ra_unit': default_ra_unit,
+    },
     'I/305': {
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
         'columns': ["Umag", "Bmag", "Vmag"],
         'err_columns': ["e_Umag", "e_Bmag", "e_Vmag"],
+        'ra_unit': default_ra_unit,
     },
     'II/168/ubvmeans': {
+        'ra_dec_columns': ['_RA', '_DE'],
         'columns': ["Vmag", "B-V", "U-B"],
         'err_columns': ["e_Vmag", "e_B-V", "e_U-B"],
+        'ra_unit': default_ra_unit,
+        'magnitude_arithmetic': [
+            ('Bmag', 'B-V', 'Vmag'),
+            ('e_Bmag', 'e_B-V', 'e_Vmag'),
+            ('Umag', 'U-B', 'Bmag'),
+            ('e_Umag', 'e_U-B', 'e_Bmag')
+        ],
     },
     'II/272/gspc24': {
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
         'columns': ["Bmag", "Vmag", "Rmag"],
         'err_columns': ["e_Bmag", "e_Vmag", "e_Rmag"],
+        'ra_unit': default_ra_unit,
     },
     'II/339/uvotssc1': {
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
         'columns': ["U-AB", "B-AB", "V-AB"],
         'err_columns': [],
+        'ra_unit': default_ra_unit,
+        'column_rename': [
+            ("U-AB", "Umag"),
+            ("B-AB", "Bmag"),
+            ("V-AB", "Vmag")
+        ],
     },
     'II/370/xmmom5s': {
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
         'columns': ["UmAB", "BmAB", "VmAB"],
         'err_columns': ["e_UmAB", "e_BmAB", "e_VmAB"],
+        'ra_unit': default_ra_unit,
+        'column_rename': [
+            ("UmAB", "Umag"),
+            ("BmAB", "Bmag"),
+            ("VmAB", "Vmag"),
+            ("e_UmAB", "e_Umag"),
+            ("e_BmAB", "e_Bmag"),
+            ("e_VmAB", "e_Vmag")
+        ],
     },
     'J/MNRAS/443/725/catalog': {
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
         'columns': ["Vmag", "Rmag", "Imag"],
         'err_columns': ["e_Vmag", "e_Rmag", "e_Imag"],
+        'ra_unit': default_ra_unit,
     },
     'I/284/out': {
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
         'columns': ["B1mag", "R1mag", "Imag"],
         'err_columns': [],
+        'ra_unit': default_ra_unit,
+        'column_rename': [
+            ("B1mag", "Bmag"),
+            ("R1mag", "Rmag")
+        ],
     },
     'J/MNRAS/485/3042/table4': {
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
         'columns': ["Umag", "Bmag", "Vmag", "Rmag", "Imag"],
         'err_columns': ["e_Umag", "e_Bmag", "e_Vmag", "e_Rmag", "e_Imag"],
+        'ra_unit': u.hourangle,
     },
     'J/A+A/664/A109/table5': {
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
         'columns': ["Umag", "Bmag", "Vmag", "Rmag", "Imag"],
         'err_columns': ["e_Umag", "e_Bmag", "e_Vmag", "e_Rmag", "e_Imag"],
+        'ra_unit': default_ra_unit,
     }
 }
 

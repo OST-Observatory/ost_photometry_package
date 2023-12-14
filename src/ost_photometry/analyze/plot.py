@@ -23,7 +23,7 @@ import astropy.units as u
 
 from itertools import cycle
 
-from .. import checks, style, terminal_output
+from .. import checks, style, terminal_output, calibration_data
 
 import matplotlib.colors as mcol
 import matplotlib.cm as cm
@@ -2525,4 +2525,50 @@ def plot_limiting_mag_sky_apertures(output_dir, img_data, mask, image_depth):
         bbox_inches='tight',
         format='pdf',
     )
+    plt.close()
+
+
+def extinction_curves(rv):
+    """
+        Plots extinction curves
+        Currently only Fitzpatrick (without most of the UV range) is supported
+
+        Parameters
+        ----------
+        rv              : `float`
+        Ration of absolute to relative extinction: AV/E(B-V)
+
+        Returns
+        -------
+
+    """
+    #   Get Fitzpatrick law
+    fitzpatrick_extinction_curve = calibration_data.fitzpatrick_extinction_curve(rv)
+
+    #   Get x (1/lambda) range
+    x = np.arange(0, 4, 0.1)
+
+    #   Plot dimension
+    fig = plt.figure(figsize=(8, 8))
+
+    #   Set title
+    fig.suptitle(
+        "Extinction curves",
+        fontsize=17,
+    )
+
+    plt.plot(
+        x,
+        fitzpatrick_extinction_curve(x),
+        color='darkorange',
+        linewidth=1,
+        label=fr'Fitzpatrick: $R_V = $ {rv}',
+    )
+
+    plt.legend()
+
+    #   Add grid
+    plt.grid(True, color='lightgray', linestyle='--', alpha=0.3)
+
+    plt.show()
     plt.close()
