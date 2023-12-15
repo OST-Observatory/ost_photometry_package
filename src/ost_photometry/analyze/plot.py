@@ -1414,8 +1414,8 @@ def mk_ticks_labels(filter_, color):
     plt.ylabel(rf'${filter_}$ [mag]')
 
 
-def fill_lists(list_, iso_column, iso_column_type, filter_1, filter_2,
-               iso_mag1, iso_mag2, iso_color):
+def fill_lists(list_, iso_column, iso_column_type, filter_2, filter_1,
+               iso_mag_2, iso_mag_1, iso_color):
     """
         Sort magnitudes into lists and calculate the color if necessary
 
@@ -1434,16 +1434,16 @@ def fill_lists(list_, iso_column, iso_column_type, filter_1, filter_2,
             Keys = filter : `string`
             Values = type : `string`
 
-        filter_1        : `string`
+        filter_2        : `string`
             First filter
 
-        filter_2        : `string`
+        filter_1        : `string`
             Second filter
 
-        iso_mag1        : `list` of `float`
+        iso_mag_2       : `list` of `float`
             Magnitude list (first filter)
 
-        iso_mag2        : `list` of `float`
+        iso_mag_1       : `list` of `float`
             Magnitude list (second filter)
 
         iso_color       : `list` of `float`
@@ -1451,26 +1451,26 @@ def fill_lists(list_, iso_column, iso_column_type, filter_1, filter_2,
 
         Returns
         -------
-        iso_mag1        : `list` of `float`
+        iso_mag_2       : `list` of `float`
             Magnitude list (first filter)
 
-        iso_mag2        : `list` of `float`
+        iso_mag_1       : `list` of `float`
             Magnitude list (second filter)
 
         iso_color       : `list` of `float`
             Color list
     """
-    mag1 = float(list_[iso_column[filter_1] - 1])
-    iso_mag1.append(mag1)
-    if iso_column_type[filter_2] == 'color':
-        color = float(list_[iso_column[filter_2] - 1])
+    mag_2 = float(list_[iso_column[filter_2] - 1])
+    iso_mag_2.append(mag_2)
+    if iso_column_type[filter_1] == 'color':
+        color = float(list_[iso_column[filter_1] - 1])
         iso_color.append(color)
-    elif iso_column_type[filter_2] == 'single':
-        mag2 = float(list_[iso_column[filter_2] - 1])
-        iso_mag2.append(mag2)
-        iso_color.append(mag2 - mag1)
+    elif iso_column_type[filter_1] == 'single':
+        mag_1 = float(list_[iso_column[filter_1] - 1])
+        iso_mag_1.append(mag_1)
+        iso_color.append(mag_1 - mag_2)
 
-    return iso_mag1, iso_mag2, iso_color
+    return iso_mag_2, iso_mag_1, iso_color
 
 
 def mk_colormap(n_iso):
@@ -1583,12 +1583,12 @@ def write_cmd(name_of_star_cluster, filename, filter_, color, file_type,
 
 
 #   TODO: Make class for CMD plots and add associated functions
-def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
-                      name_of_star_cluster, file_name, file_type, filter_1,
-                      filter_2, figure_size_x='', figure_size_y='',
+def plot_apparent_cmd(magnitude_color, magnitude_filter_2,
+                      name_of_star_cluster, file_name, file_type, filter_2,
+                      filter_1, figure_size_x='', figure_size_y='',
                       y_plot_range_max='', y_plot_range_min='',
                       x_plot_range_max='', x_plot_range_min='',
-                      output_dir='output', magnitude_filter_1_err=None,
+                      output_dir='output', magnitude_filter_2_err=None,
                       color_err=None):
     """
         Plot calibrated cmd with apparent magnitudes
@@ -1598,7 +1598,7 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
         magnitude_color             : `numpy.ndarray`
             Color - 1D
 
-        magnitude_filter_1          : `numpy.ndarray`
+        magnitude_filter_2          : `numpy.ndarray`
             Filter magnitude - 1D
 
         name_of_star_cluster        : `string`
@@ -1610,10 +1610,10 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
         file_type                   : `string`
             File type
 
-        filter_1                    : `string`
+        filter_2                    : `string`
             First filter
 
-        filter_2                    : `string`
+        filter_1                    : `string`
             Second filter
 
         figure_size_x               : `float`
@@ -1638,8 +1638,8 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
             Output directory
             Default is ``output``.
 
-        magnitude_filter_1_err      : `numpy.ndarray' or ``None``, optional
-            Error for ``magnitude_filter_1``
+        magnitude_filter_2_err      : `numpy.ndarray' or ``None``, optional
+            Error for ``magnitude_filter_2``
             Default is ``None``.
 
         color_err                   : `numpy.ndarray' or ``None``, optional
@@ -1651,7 +1651,7 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
     check_cmd_plot(
         figure_size_x,
         figure_size_y,
-        magnitude_filter_1,
+        magnitude_filter_2,
         magnitude_color,
         y_plot_range_max,
         y_plot_range_min,
@@ -1663,8 +1663,8 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
     terminal_output.print_to_terminal("Add stars", indent=1)
     plt.errorbar(
         magnitude_color,
-        magnitude_filter_1,
-        xerr=magnitude_filter_1_err,
+        magnitude_filter_2,
+        xerr=magnitude_filter_2_err,
         yerr=color_err,
         marker='o',
         ls='none',
@@ -1678,14 +1678,14 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
     )
 
     #   Set ticks and labels
-    color = f'{filter_2}-{filter_1}'
-    mk_ticks_labels(f'{filter_1}', f'{color}')
+    color = f'{filter_1}-{filter_2}'
+    mk_ticks_labels(f'{filter_2}', f'{color}')
 
     #   Write plot to disk
     write_cmd(
         name_of_star_cluster,
         file_name,
-        filter_1,
+        filter_2,
         color,
         file_type,
         'apparent',
@@ -1694,15 +1694,15 @@ def plot_apparent_cmd(magnitude_color, magnitude_filter_1,
     plt.close()
 
 
-def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
-                      name_of_star_cluster, file_name, file_type, filter_1,
-                      filter_2, isochrones, isochrone_type,
+def plot_absolute_cmd(magnitude_color, magnitude_filter_2,
+                      name_of_star_cluster, file_name, file_type, filter_2,
+                      filter_1, isochrones, isochrone_type,
                       isochrone_column_type, isochrone_column,
                       isochrone_log_age, isochrone_keyword, isochrone_legend,
                       figure_size_x='', figure_size_y='', y_plot_range_max='',
                       y_plot_range_min='', x_plot_range_max='',
                       x_plot_range_min='', output_dir='output',
-                      magnitude_filter_1_err=None, color_err=None):
+                      magnitude_filter_2_err=None, color_err=None):
     """
         Plot calibrated CMD with
             * magnitudes corrected for reddening and distance
@@ -1713,7 +1713,7 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
         magnitude_color             : `numpy.ndarray`
             Color - 1D
 
-        magnitude_filter_1          : `numpy.ndarray`
+        magnitude_filter_2          : `numpy.ndarray`
             Filter magnitude - 1D
 
         name_of_star_cluster        : `string`
@@ -1725,10 +1725,10 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
         file_type                   : `string`
             File type
 
-        filter_1                    : `string`
+        filter_2                    : `string`
             First filter
 
-        filter_2                    : `string`
+        filter_1                    : `string`
             Second filter
 
         isochrones                  : `string`
@@ -1785,8 +1785,8 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
             Output directory
             Default is ``output``.
 
-        magnitude_filter_1_err      : `numpy.ndarray' or ``None``, optional
-            Error for ``magnitude_filter_1``
+        magnitude_filter_2_err      : `numpy.ndarray' or ``None``, optional
+            Error for ``magnitude_filter_2``
             Default is ``None``.
 
         color_err                   : `numpy.ndarray' or ``None``, optional
@@ -1797,7 +1797,7 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
     check_cmd_plot(
         figure_size_x,
         figure_size_y,
-        magnitude_filter_1,
+        magnitude_filter_2,
         magnitude_color,
         y_plot_range_max,
         y_plot_range_min,
@@ -1809,8 +1809,8 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
     terminal_output.print_to_terminal("Add stars")
     plt.errorbar(
         magnitude_color,
-        magnitude_filter_1,
-        xerr=magnitude_filter_1_err,
+        magnitude_filter_2,
+        xerr=magnitude_filter_2_err,
         yerr=color_err,
         marker='o',
         ls='none',
@@ -1856,8 +1856,8 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
                 isochrone_data = open(isochrones / file_list[i])
 
                 #   Prepare variables for the isochrone data
-                isochrone_magnitude_1 = []
                 isochrone_magnitude_2 = []
+                isochrone_magnitude_1 = []
                 isochrone_color = []
                 age_value = ''
                 age_unit = ''
@@ -1891,14 +1891,14 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
                         continue
 
                     #   Fill lists
-                    isochrone_magnitude_1, isochrone_magnitude_2, isochrone_color = fill_lists(
+                    isochrone_magnitude_2, isochrone_magnitude_1, isochrone_color = fill_lists(
                         line_elements,
                         isochrone_column,
                         isochrone_column_type,
-                        filter_1,
                         filter_2,
-                        isochrone_magnitude_1,
+                        filter_1,
                         isochrone_magnitude_2,
+                        isochrone_magnitude_1,
                         isochrone_color,
                     )
 
@@ -1913,7 +1913,7 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
                 #   Plot iso lines
                 plt.plot(
                     isochrone_color,
-                    isochrone_magnitude_1,
+                    isochrone_magnitude_2,
                     linestyle=next(line_cycler),
                     color=color_pick.to_rgba(i),
                     linewidth=1.2,
@@ -1933,8 +1933,8 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
 
             #   Overall lists for the isochrones
             age_list = []
-            isochrone_magnitude_1_list = []
             isochrone_magnitude_2_list = []
+            isochrone_magnitude_1_list = []
             isochrone_color_list = []
 
             #   Number of detected isochrones
@@ -1953,8 +1953,8 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
                             #   This part is only active after an isochrone has been detected.
                             #   The variables are then assigned.
                             age_list.append(age)
-                            isochrone_magnitude_1_list.append(isochrone_magnitude_1)
                             isochrone_magnitude_2_list.append(isochrone_magnitude_2)
+                            isochrone_magnitude_1_list.append(isochrone_magnitude_1)
                             isochrone_color_list.append(isochrone_color)
 
                         #   Save age for the case where age is given as a
@@ -1963,8 +1963,8 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
                             age = line.split('=')[1].split()[0]
 
                         #   Prepare/reset lists for the single isochrones
-                        isochrone_magnitude_1 = []
                         isochrone_magnitude_2 = []
+                        isochrone_magnitude_1 = []
                         isochrone_color = []
 
                         n_isochrones += 1
@@ -1982,28 +1982,28 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
                 if isochrone_column['AGE'] != 0:
                     age = float(line_elements[isochrone_column['AGE'] - 1])
 
-                isochrone_magnitude_1, isochrone_magnitude_2, isochrone_color = fill_lists(
+                isochrone_magnitude_2, isochrone_magnitude_1, isochrone_color = fill_lists(
                     line_elements,
                     isochrone_column,
                     isochrone_column_type,
-                    filter_1,
                     filter_2,
-                    isochrone_magnitude_1,
+                    filter_1,
                     isochrone_magnitude_2,
+                    isochrone_magnitude_1,
                     isochrone_color,
                 )
 
             #   Add last isochrone to overall lists
             age_list.append(age)
-            isochrone_magnitude_1_list.append(isochrone_magnitude_1)
             isochrone_magnitude_2_list.append(isochrone_magnitude_2)
+            isochrone_magnitude_1_list.append(isochrone_magnitude_1)
             isochrone_color_list.append(isochrone_color)
 
             #   Close isochrone file
             isochrone_data.close()
 
             #   Number of isochrones
-            n_isochrones = len(isochrone_magnitude_1_list)
+            n_isochrones = len(isochrone_magnitude_2_list)
             terminal_output.print_to_terminal(
                 f"Plot {n_isochrones} isochrone(s)",
                 style_name='OKGREEN',
@@ -2028,7 +2028,7 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
                 #   Plot iso lines
                 plt.plot(
                     isochrone_color_list[i],
-                    isochrone_magnitude_1_list[i],
+                    isochrone_magnitude_2_list[i],
                     linestyle=next(line_cycler),
                     color=color_pick.to_rgba(i),
                     linewidth=1.2,
@@ -2047,14 +2047,14 @@ def plot_absolute_cmd(magnitude_color, magnitude_filter_1,
             )
 
     #   Set ticks and labels
-    color = f'{filter_2}-{filter_1}'
-    mk_ticks_labels(f'{filter_1}', f'{color}')
+    color = f'{filter_1}-{filter_2}'
+    mk_ticks_labels(filter_2, color)
 
     #   Write plot to disk
     write_cmd(
         name_of_star_cluster,
         file_name,
-        filter_1,
+        filter_2,
         color,
         file_type,
         'absolut',
@@ -2566,7 +2566,7 @@ def extinction_curves(rv):
     )
 
     #   Set x and y-axis label and legend
-    plt.xlabel(r'1/$\lambda$ ($\mu\mathrm{m}^(-1)$)', fontsize=16)
+    plt.xlabel(r'1/$\lambda$ ($\mu\mathrm{m}^{-1}$)', fontsize=16)
     plt.ylabel(r'A($\lambda$)/E(B-V)', fontsize=16)
     plt.legend()
 
