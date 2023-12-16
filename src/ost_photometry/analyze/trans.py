@@ -1349,11 +1349,12 @@ def apply_calib(img_container, filter_list,
     #   Get image ensembles
     img_ensembles = img_container.ensembles
 
-    #   Get object indices and X & Y pixel positions
+    #   Get object indices, X & Y pixel positions and wcs
     #   Assumes that the image ensembles are already correlated
     object_index = img_ensembles[filter_list[0]].image_list[0].photometry['id']
     pixel_position_x = img_ensembles[filter_list[0]].image_list[0].photometry['x_fit']
     pixel_position_y = img_ensembles[filter_list[0]].image_list[0].photometry['y_fit']
+    wcs = img_ensembles[filter_list[0]].wcs
 
     #   Number of filter
     n_filter = len(filter_list)
@@ -1522,6 +1523,7 @@ def apply_calib(img_container, filter_list,
             img_container.cali,
             filter_list,
             tuple_transformation_ids,
+            wcs,
         )
 
         #   Add table to container
@@ -1552,6 +1554,7 @@ def apply_calib(img_container, filter_list,
         img_container.noT,
         filter_list,
         tuple_no_transformation_ids,
+        wcs,
     )
 
     #   Add table to container

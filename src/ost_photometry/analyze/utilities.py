@@ -90,7 +90,7 @@ def mk_magnitudes_table(*args, **kwargs):
 
 
 def mk_mags_table_from_structured_array(index_objects, x_positions, y_positions,
-                                        magnitudes, list_bands, id_tuples):
+                                        magnitudes, list_bands, id_tuples, wcs):
     """
         Create and export astropy table with object positions and magnitudes
         Input magnitude array is expected to be a numpy structured array.
@@ -118,6 +118,9 @@ def mk_mags_table_from_structured_array(index_objects, x_positions, y_positions,
                       for the color calculation, ID of the images to
                       position 2)
 
+        wcs             : `astropy.wcs`
+            WCS
+
         Returns
         -------
         tbl             : `astropy.table.Table`
@@ -132,6 +135,12 @@ def mk_mags_table_from_structured_array(index_objects, x_positions, y_positions,
             y_positions,
         ]
     )
+
+    #   Convert Pixel to sky coordinates
+    sky = wcs.pixel_to_world(x_positions, y_positions)
+
+    #   Add sky coordinates to table
+    tbl['coordinates'] = sky
 
     #   Set name of the magnitude field
     name_mag = 'mag'
@@ -183,7 +192,7 @@ def mk_mags_table_from_structured_array(index_objects, x_positions, y_positions,
 
 
 def mk_mags_table_unumpy_array(index_objects, x_positions, y_positions,
-                               magnitudes, list_bands, id_tuples):
+                               magnitudes, list_bands, id_tuples, wcs):
     """
         Create and export astropy table with object positions and magnitudes
         Input magnitude array is expected to be an unumpy uarray.
@@ -210,6 +219,9 @@ def mk_mags_table_unumpy_array(index_objects, x_positions, y_positions,
                       for the color calculation, ID of the images to
                       position 2)
 
+        wcs             : `astropy.wcs`
+            WCS
+
         Returns
         -------
         tbl             : `astropy.table.Table`
@@ -224,6 +236,12 @@ def mk_mags_table_unumpy_array(index_objects, x_positions, y_positions,
             y_positions,
         ]
     )
+
+    #   Convert Pixel to sky coordinates
+    sky = wcs.pixel_to_world(x_positions, y_positions)
+
+    #   Add sky coordinates to table
+    tbl['coordinates'] = sky
 
     #   Add magnitude columns to table
     for ids in id_tuples:
