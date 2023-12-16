@@ -2290,7 +2290,8 @@ def save_magnitudes_ascii(container, tbl, trans=False, id_object=None, rts='',
 
     #   Set default
     for column_name in column_names:
-        tbl[column_name].info.format = '{:12.3f}'
+        if column_name == 'coordinates':
+            tbl[column_name].info.format = '{:12.3f}'
 
     #   Reset for x and y column
     formats = {
