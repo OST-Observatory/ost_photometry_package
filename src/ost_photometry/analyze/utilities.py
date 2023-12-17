@@ -140,7 +140,8 @@ def mk_mags_table_from_structured_array(index_objects, x_positions, y_positions,
     sky = wcs.pixel_to_world(x_positions, y_positions)
 
     #   Add sky coordinates to table
-    tbl['ra, dec (deg)'] = sky
+    tbl['ra (deg)'] = sky.ra
+    tbl['dec (deg)'] = sky.dec
 
     #   Set name of the magnitude field
     name_mag = 'mag'
@@ -241,7 +242,8 @@ def mk_mags_table_unumpy_array(index_objects, x_positions, y_positions,
     sky = wcs.pixel_to_world(x_positions, y_positions)
 
     #   Add sky coordinates to table
-    tbl['ra, dec (deg)'] = sky
+    tbl['ra (deg)'] = sky.ra
+    tbl['dec (deg)'] = sky.dec
 
     #   Add magnitude columns to table
     for ids in id_tuples:
@@ -2290,7 +2292,7 @@ def save_magnitudes_ascii(container, tbl, trans=False, id_object=None, rts='',
 
     #   Set default
     for column_name in column_names:
-        if column_name != 'ra, dec (deg)':
+        if column_name not in ['ra (deg)', 'dec (deg)']:
             tbl[column_name].info.format = '{:12.3f}'
 
     #   Reset for x and y column
