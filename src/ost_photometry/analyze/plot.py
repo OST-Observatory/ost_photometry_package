@@ -1368,7 +1368,7 @@ def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
             float(np.max(color_magnitudes)) + 0.5
         ])
         terminal_output.print_terminal(
-            string="[Info] Use automatic plot range for Y",
+            string="[Info] Use automatic plot range for X",
             style_name='WARNING',
         )
     else:
@@ -1380,7 +1380,7 @@ def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
                 float(np.max(color_magnitudes)) + 0.5
             ])
             terminal_output.print_terminal(
-                string="[Info] Use automatic plot range for Y",
+                string="[Info] Use automatic plot range for X",
                 style_name='WARNING',
             )
         else:

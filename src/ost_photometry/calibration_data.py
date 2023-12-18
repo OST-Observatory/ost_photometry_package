@@ -601,6 +601,7 @@ vizier_dict = {
     'USNO-B1.0': 'I/284/out',
     'Stetson_2019': 'J/MNRAS/485/3042/table4',
     'Pancino_2022': 'J/A+A/664/A109/table5',
+    'APOP_Qi_2015': 'I/331/apop',
 }
 
 default_columns = {
@@ -708,6 +709,12 @@ catalog_properties_dict = {
         'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
         'columns': ["Umag", "Bmag", "Vmag", "Rmag", "Imag"],
         'err_columns': ["e_Umag", "e_Bmag", "e_Vmag", "e_Rmag", "e_Imag"],
+        'ra_unit': default_ra_unit,
+    },
+    'I/331/apop': {
+        'ra_dec_columns': ['RAICRS', 'DEICRS'],
+        'columns': ["Bmag", "Vmag", "Rmag"],
+        'err_columns': [],
         'ra_unit': default_ra_unit,
     }
 }
