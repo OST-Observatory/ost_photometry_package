@@ -1466,6 +1466,32 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         )
         p.start()
 
+        p = mp.Process(
+            target=plot.scatter,
+            args=(
+                [color_lit, color_lit[mask]],
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
+                [color_fit - color_lit, color_fit[mask] - color_lit[mask]],
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured - '
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
+                f'delta_color_sigma_{filter_}_img_{image_id}',
+                out_dir,
+            ),
+            kwargs={
+                'name_obj': name_object,
+                'x_errors': [color_lit_err, color_lit_err[mask]],
+                'y_errors': [
+                    err_prop(color_fit_err, color_lit_err),
+                    err_prop(color_fit_err[mask], color_lit_err[mask])
+                ],
+                'dataset_label': [
+                    'without sigma clipping',
+                    'with sigma clipping',
+                ],
+            }
+        )
+        p.start()
+
     #   Difference between literature values and calibration results
     p = mp.Process(
         target=plot.scatter,
