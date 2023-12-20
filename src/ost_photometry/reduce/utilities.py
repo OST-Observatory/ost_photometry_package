@@ -514,7 +514,7 @@ def check_dark_scaling_possible(image_file_collection, image_id, image_type,
             for type_ in image_file_collection.summary['imagetyp']]
 
     #   Get filename
-    filename = image_file_collection.summary['file'][mask]
+    filename = image_file_collection.summary['file'][image_id]
 
     #   Raise exception if no bias frames are available
     if not bias_available:
