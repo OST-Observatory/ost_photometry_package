@@ -1283,15 +1283,6 @@ def prepare_zero_point(img_container, image, id_filter_1,
     else:
         clip_values = delta_color
     clip = sigma_clipping(clip_values, sigma=1.5)
-
-    mask = clip.recordmask
-    #   Make fit for test purposes
-    # fit = utilities.fit_data_one_d(
-    #     color_fit,
-    #     color_lit,
-    #     1,
-    # )
-
     image.ZP_mask = np.invert(clip.recordmask)
 
     #   Calculate zero points and clip

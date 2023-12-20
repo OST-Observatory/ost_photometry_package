@@ -1444,10 +1444,10 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         )
         p.start()
 
-        #   Make fit for test purposes TODO: Remove when no longer needed.
+        #   Make fit for test purposes TODO: Check that the settings are correct.
         fit = fit_data_one_d(
-            color_literature,
-            color_observed,
+            color_literature[mask],
+            color_observed[mask],
             1,
         )
         p = mp.Process(
@@ -1468,20 +1468,51 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
                     'without sigma clipping',
                     'with sigma clipping',
                 ],
-                'fits': [fit, None],
+                'fits': [fit, fit],
             }
         )
         p.start()
+
+        # p = mp.Process(
+        #     target=plot.scatter,
+        #     args=(
+        #         [color_literature, color_literature[mask]],
+        #         f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
+        #         [color_literature - color_observed, color_literature[mask] - color_observed[mask]],
+        #         f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature - '
+        #         f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
+        #         f'delta_color_sigma_{filter_}_img_{image_id}',
+        #         out_dir,
+        #     ),
+        #     kwargs={
+        #         'name_obj': name_object,
+        #         'x_errors': [color_lit_err, color_lit_err[mask]],
+        #         'y_errors': [
+        #             err_prop(color_fit_err, color_lit_err),
+        #             err_prop(color_fit_err[mask], color_lit_err[mask])
+        #         ],
+        #         'dataset_label': [
+        #             'without sigma clipping',
+        #             'with sigma clipping',
+        #         ],
+        #     }
+        # )
+        # p.start()
 
         p = mp.Process(
             target=plot.scatter,
             args=(
                 [color_literature, color_literature[mask]],
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
-                [color_literature - color_observed, color_literature[mask] - color_observed[mask]],
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature - '
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
-                f'delta_color_sigma_{filter_}_img_{image_id}',
+                [
+                    2 * literature_magnitudes - color_literature -
+                    2 * magnitudes[ids_calibration_stars] + color_observed,
+                    2 * literature_magnitudes[mask] - color_literature[mask] -
+                    2 * magnitudes[ids_calibration_stars][mask] + color_observed[mask]
+                ],
+                f'{filter_list[id_filter_1]} + {filter_list[id_filter_2]}_measured [mag]'
+                f' - {filter_list[id_filter_1]} - {filter_list[id_filter_2]}_literature',
+                f'delta_magnitudes_sigma_{filter_}_img_{image_id}',
                 out_dir,
             ),
             kwargs={
@@ -1499,54 +1530,30 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         )
         p.start()
 
-        p = mp.Process(
-            target=plot.scatter,
-            args=(
-                [color_literature, color_literature[mask]],
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
-                [
-                    2 * literature_magnitudes - color_literature - 2 * magnitudes[ids_calibration_stars] + color_observed,
-                    2 * literature_magnitudes[mask] - color_literature[mask] - 2 * magnitudes[ids_calibration_stars][mask] + color_observed[mask]
-                    ],
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature - '
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
-                f'delta_color_true_sigma_{filter_}_img_{image_id}',
-                out_dir,
-            ),
-            kwargs={
-                'name_obj': name_object,
-                'x_errors': [color_lit_err, color_lit_err[mask]],
-                'y_errors': [
-                    None,
-                    None
-                    # err_prop(color_fit_err, color_lit_err),
-                    # err_prop(color_fit_err[mask], color_lit_err[mask])
-                ],
-                'dataset_label': [
-                    'without sigma clipping',
-                    'with sigma clipping',
-                ],
-            }
-        )
-        p.start()
-
     #   Difference between literature values and calibration results
     p = mp.Process(
         target=plot.scatter,
         args=(
-            [literature_magnitudes],
+            [literature_magnitudes, literature_magnitudes[mask]],
             f'{filter_}_literature [mag]',
-            [magnitudes[ids_calibration_stars] - literature_magnitudes],
+            [
+                magnitudes[ids_calibration_stars] - literature_magnitudes,
+                magnitudes[ids_calibration_stars][mask] - literature_magnitudes[mask]
+            ],
             f'{filter_}_observed - {filter_}_literature [mag]',
             'magnitudes_literature-vs-observed',
             out_dir,
         ),
         kwargs={
-            'x_errors': [literature_magnitudes_err],
-            'y_errors': [err_prop(
-                magnitudes_err[ids_calibration_stars],
-                literature_magnitudes_err,
-            )],
+            'x_errors': [literature_magnitudes_err, literature_magnitudes_err[mask]],
+            'y_errors': [
+                err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
+                err_prop(magnitudes_err[ids_calibration_stars][mask], literature_magnitudes_err[mask]),
+            ],
+            'dataset_label': [
+                'without sigma clipping',
+                'with sigma clipping',
+            ],
         },
     )
     p.start()
