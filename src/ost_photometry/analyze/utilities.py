@@ -1447,17 +1447,17 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         p = mp.Process(
             target=plot.scatter,
             args=(
-                [color_fit, color_fit[mask]],
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
                 [color_lit, color_lit[mask]],
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
+                [color_fit, color_fit[mask]],
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
                 f'color_sigma_{filter_}_img_{image_id}',
                 out_dir,
             ),
             kwargs={
                 'name_obj': name_object,
-                'x_errors': [color_fit_err, color_fit_err[mask]],
-                'y_errors': [color_lit_err, color_lit_err[mask]],
+                'x_errors': [color_lit_err, color_lit_err[mask]],
+                'y_errors': [color_fit_err, color_fit_err[mask]],
                 'dataset_label': [
                     'without sigma clipping',
                     'with sigma clipping',
@@ -1471,9 +1471,9 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
             args=(
                 [color_lit, color_lit[mask]],
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
-                [color_fit - color_lit, color_fit[mask] - color_lit[mask]],
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured - '
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
+                [color_lit - color_fit, color_lit[mask] - color_fit[mask]],
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature - '
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
                 f'delta_color_sigma_{filter_}_img_{image_id}',
                 out_dir,
             ),

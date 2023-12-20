@@ -476,7 +476,8 @@ def get_image_type(image_file_collection, image_type_dict, image_class=None):
         return image_type_dict[image_class][id_image_type]
 
 
-def check_dark_scaling_possible(image_type, exposure_time, maximal_dark_time,
+def check_dark_scaling_possible(image_file_collection, image_id, image_type,
+                                exposure_time, maximum_dark_time,
                                 bias_available):
     """
         Check if scaling of dark frames to the given exposure time 'time' is
@@ -484,54 +485,72 @@ def check_dark_scaling_possible(image_type, exposure_time, maximal_dark_time,
 
         Parameters
         ----------
-        image_type          : `string`
+        image_file_collection   : `ccdproc.ImageFileCollection`
+            File collection with all images
+
+        image_id                : `integer`
+            ID of the image
+
+        image_type              : `string`
             String that characterizes the image type, such as 'science' or
             'flat'. This is used in the exception messages.
 
-        exposure_time       : `float`
+        exposure_time           : `float`
             Exposure time that should be checked
 
-        maximal_dark_time   : `float`
+        maximum_dark_time       : `float`
             Longest dark time that is available
 
-        bias_available      : `boolean`
+        bias_available          : `boolean`
             True if bias frames are available
 
         Returns
         -------
-                            : `boolean`
+                                : `boolean`
             True if dark scaling is possible
     """
+    #   Calculate mask to restrict images to the provided image type
+    mask = [True if type_ in image_type else False
+            for type_ in image_file_collection.summary['imagetyp']]
+
+    #   Get filename
+    filename = image_file_collection.summary['file'][mask]
+
     #   Raise exception if no bias frames are available
     if not bias_available:
         raise RuntimeError(
-            f'{style.Bcolors.FAIL}No darks with a matching exposure time '
-            f'found for the {image_type} exposures with the following '
-            f'exposure time {exposure_time}s -> EXIT {style.Bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}No darks with matching exposure time '
+            f'found for image: {filename} ({image_type}, exposure time = '
+            f'{exposure_time}s). {style.Bcolors.ENDC}'
         )
+
     #   Check if scaling is possible -> dark frames can only be scaled
     #   to a smaller exposure time and not to a larger one because this
     #   most likely will amplify read noise
-    if exposure_time < maximal_dark_time:
+    if exposure_time < maximum_dark_time:
         return True
     else:
         raise RuntimeError(
-            f'{style.Bcolors.FAIL}Scaling of the dark frames to the exposure '
-            f'time of the {image_type} ({exposure_time}s) is not possible, '
-            f'since the longest dark exposure is only {maximal_dark_time}s and'
-            f' dark frames should not be scaled "up".'
-            f'-> EXIT{style.Bcolors.ENDC}'
+            f'{style.Bcolors.FAIL}Scaling the dark frames to the exposure time'
+            f' of the image {filename} ({image_type}, exposure time = '
+            f'{exposure_time}s) is not possible because the longest dark '
+            f'exposure is only {maximum_dark_time}s and dark frames should not'
+            f' be scaled "up". {style.Bcolors.ENDC}'
         )
 
 
-def check_exposure_times(image_type, exposure_times, dark_times,
-                         bias_available, exposure_time_tolerance=0.5):
+def check_exposure_times(image_file_collection, image_type, exposure_times,
+                         dark_times, bias_available,
+                         exposure_time_tolerance=0.5):
     """
         Check if relevant dark exposures are available for the exposure
         times in the supplied list
 
         Parameters
         ----------
+        image_file_collection   : `ccdproc.ImageFileCollection`
+            File collection with all images
+
         image_type              : `string`
             String that characterizes the image type, such as 'science' or
             'flat'. This is used in the exception messages.
@@ -555,7 +574,7 @@ def check_exposure_times(image_type, exposure_times, dark_times,
             True if dark scaling is possible
     """
     #   Loop over exposure times
-    for time in exposure_times:
+    for image_id, time in enumerate(exposure_times):
         #   Find nearest dark frame
         valid, closest_dark = find_nearest_exposure_time(
             time,
@@ -565,6 +584,8 @@ def check_exposure_times(image_type, exposure_times, dark_times,
         #   In case there is no valid dark, check if scaling is possible
         if not valid:
             scale_necessary = check_dark_scaling_possible(
+                image_file_collection,
+                image_id,
                 image_type,
                 time,
                 np.max(dark_times),
