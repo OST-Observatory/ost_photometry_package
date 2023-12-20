@@ -611,13 +611,13 @@ def plot_residual(name, image_orig, residual_image, output_dir,
 
         Parameters
         ----------
-        name            : `string`
+        name                : `string`
             Name of the plot
 
-        image_orig      : `dictionary` {`string`: `numpy.ndarray`}
+        image_orig          : `dictionary` {`string`: `numpy.ndarray`}
             Original image data
 
-        residual_image  : `dictionary` {`string`: `numpy.ndarray`}
+        residual_image      : `dictionary` {`string`: `numpy.ndarray`}
             Residual image data
 
         output_dir          : `string`
@@ -627,12 +627,12 @@ def plot_residual(name, image_orig, residual_image, output_dir,
             Name of the object
             Default is ``None``.
 
-        terminal_logger : `terminal_output.TerminalLog` or None, optional
+        terminal_logger     : `terminal_output.TerminalLog` or None, optional
             Logger object. If provided, the terminal output will be directed
             to this object.
             Default is ``None``.
 
-        indent          : `integer`, optional
+        indent              : `integer`, optional
             Indentation for the console output lines
             Default is ``1``.
     """
@@ -752,7 +752,8 @@ def plot_residual(name, image_orig, residual_image, output_dir,
     #   Write the plot to disk
     if n_plots == 1:
         plt.savefig(
-            f'{output_dir}/residual/residual_images_multiple_filter.pdf',
+            f'{output_dir}/residual/residual_images_{filter_}.pdf'.replace(":", "")
+            .replace(",", "").replace(" ", "_"),
             bbox_inches='tight',
             format='pdf',
         )

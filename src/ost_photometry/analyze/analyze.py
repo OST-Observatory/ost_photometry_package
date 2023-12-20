@@ -2831,8 +2831,8 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
         #
         plot.plot_residual(
             image.objname,
-            {f'{image.pd}-{image.filt}': image.get_data()},
-            {f'{image.pd}-{image.filt}': image.residual_image},
+            {f'{image.filt}, Image ID: {image.pd}': image.get_data()},
+            {f'{image.filt}, Image ID: {image.pd}': image.residual_image},
             image.outpath.name,
             terminal_logger=terminal_logger,
             name_object=image.objname,
