@@ -1446,8 +1446,8 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
 
         #   Make fit for test purposes TODO: Remove when no longer needed.
         fit = fit_data_one_d(
-            color_observed,
             color_literature,
+            color_observed,
             1,
         )
         p = mp.Process(
@@ -1505,8 +1505,8 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
                 [color_literature, color_literature[mask]],
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
                 [
-                    2 * literature_magnitudes - color_literature - 2 * magnitudes + color_observed,
-                    2 * literature_magnitudes[mask] - color_literature[mask] - 2 * magnitudes[mask] + color_observed[mask]
+                    2 * literature_magnitudes - color_literature - 2 * magnitudes[ids_calibration_stars] + color_observed,
+                    2 * literature_magnitudes[mask] - color_literature[mask] - 2 * magnitudes[ids_calibration_stars][mask] + color_observed[mask]
                     ],
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature - '
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
@@ -1517,6 +1517,8 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
                 'name_obj': name_object,
                 'x_errors': [color_lit_err, color_lit_err[mask]],
                 'y_errors': [
+                    None,
+                    None
                     # err_prop(color_fit_err, color_lit_err),
                     # err_prop(color_fit_err[mask], color_lit_err[mask])
                 ],
