@@ -1444,6 +1444,12 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         )
         p.start()
 
+        #   Make fit for test purposes TODO: Remove when no longer needed.
+        fit = fit_data_one_d(
+            color_fit,
+            color_lit,
+            1,
+        )
         p = mp.Process(
             target=plot.scatter,
             args=(
@@ -1462,6 +1468,7 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
                     'without sigma clipping',
                     'with sigma clipping',
                 ],
+                'fits': [fit, None],
             }
         )
         p.start()
