@@ -495,8 +495,8 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
         #
         terminal_output.print_to_terminal("Determine WCS ...", indent=1)
         utilities.find_wcs_all_images(
-            output_path / 'cut',
-            output_path / 'cut',
+            output_path / 'shifted_and_trimmed',
+            output_path / 'shifted_and_trimmed',
             wcs_method=wcs_method,
             force_wcs_determination=force_wcs_determination,
         )
@@ -507,7 +507,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
         #
         terminal_output.print_to_terminal("Estimate FWHM ...", indent=1)
         utilities.estimate_fwhm(
-            output_path / 'cut',
+            output_path / 'shifted_and_trimmed',
             output_path,
             image_type_dir['light'],
         )
@@ -521,7 +521,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
             indent=1,
         )
         stack_image(
-            output_path / 'cut',
+            output_path / 'shifted_and_trimmed',
             output_path,
             image_type_dir['light'],
             stacking_method=stack_method,
@@ -609,7 +609,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
             checks.clear_directory(output_path / filter_)
 
             #   Set path to files
-            file_path = checks.check_pathlib_path(output_path / 'cut')
+            file_path = checks.check_pathlib_path(output_path / 'shifted_and_trimmed')
 
             #   New image collection for the images
             image_file_collection = ccdp.ImageFileCollection(file_path)
@@ -1937,7 +1937,7 @@ def shift_image(path, output_dir, image_type_list, reference_image_id=0,
     )
 
     #   Set science image path
-    trim_path = Path(out_path / 'cut')
+    trim_path = Path(out_path / 'shifted_and_trimmed')
     checks.clear_directory(trim_path)
 
     #   Calculate shifts for the images in the individual filters
@@ -2052,7 +2052,7 @@ def shift_all_images(image_path, output_dir, image_type_list,
     ifc_filtered = image_file_collection.filter(imagetyp=image_type)
 
     #   Set output path
-    trim_path = Path(out_path / 'cut')
+    trim_path = Path(out_path / 'shifted_and_trimmed')
     checks.clear_directory(trim_path)
 
     #   Calculate image shifts and trim images accordingly
