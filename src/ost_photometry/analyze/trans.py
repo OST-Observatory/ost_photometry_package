@@ -588,8 +588,8 @@ def apply_transformation(*args, **kwargs):
 #   TODO: Convert arrays to index lists/arrays?
 def transformation_core(image, calib_magnitudes_literature_filter_1,
                         calib_magnitudes_literature_filter_2,
-                        calib_magnitudes_observed_fiter_1,
-                        calib_magnitudes_observed_fiter_2, magnitudes_filter_1,
+                        calib_magnitudes_observed_filter_1,
+                        calib_magnitudes_observed_filter_2, magnitudes_filter_1,
                         magnitudes_filter_2, magnitudes, tc_c, tc_color, tc_t1,
                         tc_k1, tc_t2, tc_k2, id_current_filter, id_filter_1,
                         id_filter_2, filter_list, transformation_type='derive'):
@@ -609,10 +609,10 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
             Magnitudes of calibration stars from the literature
             for filter 1.
 
-        calib_magnitudes_observed_fiter_1    : `numpy.ndarray` or `unumpy.uarray`
+        calib_magnitudes_observed_filter_1    : `numpy.ndarray` or `unumpy.uarray`
             Extracted magnitudes of the calibration stars from filter 1
 
-        calib_magnitudes_observed_fiter_2    : `numpy.ndarray` or `unumpy.uarray`
+        calib_magnitudes_observed_filter_2    : `numpy.ndarray` or `unumpy.uarray`
             Extracted magnitudes of the calibration stars from filter 2
 
         magnitudes_filter_1                  : `numpy.ndarray` or `unumpy.uarray`
@@ -671,8 +671,8 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
     mask = image.ZP_mask
 
     #   Instrument color of the calibration objects
-    color_observed = (calib_magnitudes_observed_fiter_1 -
-                      calib_magnitudes_observed_fiter_2)
+    color_observed = (calib_magnitudes_observed_filter_1 -
+                      calib_magnitudes_observed_filter_2)
     #   Mask data according to sigma clipping
     color_observed_clipped = color_observed[mask]
 
@@ -709,8 +709,8 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
             color_lit_clip,
             calib_magnitudes_literature_filter_1[mask],
             calib_magnitudes_literature_filter_2[mask],
-            calib_magnitudes_observed_fiter_1[mask],
-            calib_magnitudes_observed_fiter_2[mask],
+            calib_magnitudes_observed_filter_1[mask],
+            calib_magnitudes_observed_filter_2[mask],
         )
 
     else:
@@ -818,7 +818,7 @@ def apply_transformation_structured(img_container, image, calib_magnitudes_liter
         tc_k2 = transformation_coefficients['k_2']
 
     #   Apply magnitude transformation
-    mag_cali, color_fit, color_lit = transformation_core(
+    magnitudes_calibrated, color_observed, color_literature = transformation_core(
         image,
         magnitudes_literature[id_filter_1],
         magnitudes_literature[id_filter_2],
@@ -840,7 +840,7 @@ def apply_transformation_structured(img_container, image, calib_magnitudes_liter
         transformation_type=transformation_type,
     )
 
-    img_container.cali['mag'][id_current_filter][id_current_image] = mag_cali
+    img_container.cali['mag'][id_current_filter][id_current_image] = magnitudes_calibrated
 
     #   Calculate uncertainties
     img_container.cali['err'][id_current_filter][id_current_image] = calculate_err_transformation(
@@ -865,11 +865,11 @@ def apply_transformation_structured(img_container, image, calib_magnitudes_liter
         id_filter_1,
         id_filter_2,
         image.ZP_mask,
-        color_fit,
-        color_lit,
+        color_observed,
+        color_literature,
         img_container.CalibParameters.inds,
         magnitudes_literature[id_filter_1],
-        mag_cali,
+        magnitudes_calibrated,
         magnitudes,
         color_fit_err=utilities.err_prop(
             image.mag_fit_1['err'],
@@ -1283,6 +1283,15 @@ def prepare_zero_point(img_container, image, id_filter_1,
     else:
         clip_values = delta_color
     clip = sigma_clipping(clip_values, sigma=1.5)
+
+    mask = clip.recordmask
+    #   Make fit for test purposes
+    fit = utilities.fit_data_one_d(
+        color_fit,
+        color_lit,
+        1,
+    )
+
     image.ZP_mask = np.invert(clip.recordmask)
 
     #   Calculate zero points and clip

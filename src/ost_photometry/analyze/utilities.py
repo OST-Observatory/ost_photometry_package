@@ -1309,7 +1309,7 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
 
 def calibration_check_plots(filter_, out_dir, name_object, image_id,
                             filter_list, id_filter_1, id_filter_2, mask,
-                            color_fit, color_lit, ids_calibration_stars,
+                            color_observed, color_literature, ids_calibration_stars,
                             literature_magnitudes, magnitudes,
                             uncalibrated_magnitudes, color_fit_err=None,
                             color_lit_err=None, literature_magnitudes_err=None,
@@ -1345,10 +1345,10 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         mask:                       : `numpy.ndarray`
             Mask of stars that should be excluded
 
-        color_fit                   : `numpy.ndarray` - `numpy.float64`
+        color_observed                   : `numpy.ndarray` - `numpy.float64`
             Instrument color of the calibration stars
 
-        color_lit                   : `numpy.ndarray` - `numpy.float64`
+        color_literature                   : `numpy.ndarray` - `numpy.float64`
             Literature color of the calibration stars
 
         ids_calibration_stars       : `numpy.ndarray`
@@ -1446,16 +1446,16 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
 
         #   Make fit for test purposes TODO: Remove when no longer needed.
         fit = fit_data_one_d(
-            color_fit,
-            color_lit,
+            color_observed,
+            color_literature,
             1,
         )
         p = mp.Process(
             target=plot.scatter,
             args=(
-                [color_lit, color_lit[mask]],
+                [color_literature, color_literature[mask]],
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
-                [color_fit, color_fit[mask]],
+                [color_observed, color_observed[mask]],
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
                 f'color_sigma_{filter_}_img_{image_id}',
                 out_dir,
@@ -1476,9 +1476,9 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         p = mp.Process(
             target=plot.scatter,
             args=(
-                [color_lit, color_lit[mask]],
+                [color_literature, color_literature[mask]],
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
-                [color_lit - color_fit, color_lit[mask] - color_fit[mask]],
+                [color_literature - color_observed, color_literature[mask] - color_observed[mask]],
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature - '
                 f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
                 f'delta_color_sigma_{filter_}_img_{image_id}',
@@ -1490,6 +1490,35 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
                 'y_errors': [
                     err_prop(color_fit_err, color_lit_err),
                     err_prop(color_fit_err[mask], color_lit_err[mask])
+                ],
+                'dataset_label': [
+                    'without sigma clipping',
+                    'with sigma clipping',
+                ],
+            }
+        )
+        p.start()
+
+        p = mp.Process(
+            target=plot.scatter,
+            args=(
+                [color_literature, color_literature[mask]],
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
+                [
+                    2 * literature_magnitudes - color_literature - 2 * magnitudes + color_observed,
+                    2 * literature_magnitudes[mask] - color_literature[mask] - 2 * magnitudes[mask] + color_observed[mask]
+                    ],
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature - '
+                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
+                f'delta_color_true_sigma_{filter_}_img_{image_id}',
+                out_dir,
+            ),
+            kwargs={
+                'name_obj': name_object,
+                'x_errors': [color_lit_err, color_lit_err[mask]],
+                'y_errors': [
+                    # err_prop(color_fit_err, color_lit_err),
+                    # err_prop(color_fit_err[mask], color_lit_err[mask])
                 ],
                 'dataset_label': [
                     'without sigma clipping',

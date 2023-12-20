@@ -1490,6 +1490,7 @@ def reduce_light(image_path, output_dir, image_type, rm_cosmic_rays=True,
         reduced.mask = reduced.mask | mask
 
         #   Get master flat field
+        #   TODO: Added ability to skip if filter not found. Add warning about which file will be skipped.
         flat_master = combined_flats[reduced.header['filter']]
 
         #   Divided science by the master flat

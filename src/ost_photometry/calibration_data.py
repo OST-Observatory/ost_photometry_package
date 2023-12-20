@@ -747,6 +747,9 @@ filter_systems = {
     'i`': 'sdss',
     'z-s`': 'sdss',
     'y`': 'sdss',
+    'Halpha`': 'narrow_band',
+    'SII': 'narrow_band',
+    'OIII': 'narrow_band',
     # 'Blue':
     # 'Green':
     # 'Red':
