@@ -513,18 +513,18 @@ def get_observed_magnitudes_of_calibration_stars(image, magnitude_array, img_con
 
         Parameters
         ----------
-        image           : `image class`
+        image                           : `image class`
             Image class object
 
-        magnitude_array : `numpy.ndarray` or `unumpy.uarray`
+        magnitude_array                 : `numpy.ndarray` or `unumpy.uarray`
             Array with image magnitudes
 
-        img_container   : `image.container`
+        img_container                   : `image.container`
             Container object with image ensemble objects for each filter
 
         Returns
         -------
-        magnitudes_calibration_fit        : `numpy.ndarray` or `unumpy.uarray`
+        magnitudes_calibration_observed : `numpy.ndarray` or `unumpy.uarray`
             Rearrange array with magnitudes
     """
     #   Get calibration data
@@ -549,9 +549,9 @@ def get_observed_magnitudes_of_calibration_stars(image, magnitude_array, img_con
         #   Check if we have calibration data for the current filter/image
         if f'mag{getattr(image, "filt", "?")}' in col_names:
             #   Sort
-            magnitudes_calibration_fit = magnitude_array[ind_list]
+            magnitudes_calibration_observed = magnitude_array[ind_list]
         else:
-            magnitudes_calibration_fit = unumpy.uarray(
+            magnitudes_calibration_observed = unumpy.uarray(
                 np.zeros(count_cali),
                 np.zeros(count_cali)
             )
@@ -559,7 +559,7 @@ def get_observed_magnitudes_of_calibration_stars(image, magnitude_array, img_con
     #   numpy structured array
     else:
         #   Define array for the magnitudes of the calibration stars
-        magnitudes_calibration_fit = np.zeros(
+        magnitudes_calibration_observed = np.zeros(
             count_cali,
             dtype=[('mag', 'f8'), ('err', 'f8')],
         )
@@ -567,11 +567,11 @@ def get_observed_magnitudes_of_calibration_stars(image, magnitude_array, img_con
         #   Check if we have calibration data for the current filter/image
         if f'mag{getattr(image, "filt", "?")}' in col_names:
             #   Sort
-            magnitudes_calibration_fit['mag'] = magnitude_array['mag'][ind_list]
-            magnitudes_calibration_fit['err'] = magnitude_array['err'][ind_list]
+            magnitudes_calibration_observed['mag'] = magnitude_array['mag'][ind_list]
+            magnitudes_calibration_observed['err'] = magnitude_array['err'][ind_list]
 
     #   Add array with magnitudes to the image
-    return magnitudes_calibration_fit
+    return magnitudes_calibration_observed
 
 
 def derive_calibration(img_container, filter_list, calibration_method='APASS',

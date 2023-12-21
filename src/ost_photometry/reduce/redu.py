@@ -1489,8 +1489,18 @@ def reduce_light(image_path, output_dir, image_type, rm_cosmic_rays=True,
         mask = reduced.data < 0.
         reduced.mask = reduced.mask | mask
 
-        #   Get master flat field
+        #   Check if the "FILTER" keyword is set in Header
         #   TODO: Added ability to skip if filter not found. Add warning about which file will be skipped.
+        #   TODO: Check if this works...
+        if 'filter' not in reduced.header:
+            terminal_output.print_to_terminal(
+                f"WARNING: FILTER keyword not found in HEADER. \n Skip file: {file_name}.",
+                style_name='WARNING',
+                indent=2,
+            )
+            continue
+
+        #   Get master flat field
         flat_master = combined_flats[reduced.header['filter']]
 
         #   Divided science by the master flat
@@ -1834,21 +1844,30 @@ def shift_image_core(image_file_collection, output_path,
     #   Loop over and trim all images
     for current_image_id, (current_image_ccd, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
         if current_image_id not in outlier_ids:
-            shift_img_apply(
-                current_image_ccd,
-                reference_image_ccd,
-                n_images,
-                image_shifts,
-                image_flips,
-                current_image_id,
-                output_path,
-                file_name,
-                shift_method=shift_method,
-                modify_file_name=modify_file_name,
-                rm_enlarged_keyword=rm_enlarged_keyword,
-                instrument=instrument,
-                verbose=verbose,
-            )
+            try:
+                shift_img_apply(
+                    current_image_ccd,
+                    reference_image_ccd,
+                    n_images,
+                    image_shifts,
+                    image_flips,
+                    current_image_id,
+                    output_path,
+                    file_name,
+                    shift_method=shift_method,
+                    modify_file_name=modify_file_name,
+                    rm_enlarged_keyword=rm_enlarged_keyword,
+                    instrument=instrument,
+                    verbose=verbose,
+                )
+                # TODO: Check if RuntimeError is applicable.
+            except RuntimeError as e:
+                terminal_output.print_to_terminal(
+                    f"WARNING: Failed to calculate image offset for image"
+                    f" {file_name} with ERROR code: \n\n {e} \n Skip file.",
+                    style_name='WARNING',
+                    indent=2,
+                )
 
 
 def shift_image(path, output_dir, image_type_list, reference_image_id=0,
@@ -2068,7 +2087,7 @@ def shift_all_images(image_path, output_dir, image_type_list,
         verbose=verbose,
     )
 
-    #   Remove reduced dark files if they exist
+    #   Remove reduced files if they exist
     if not debug:
         shutil.rmtree(file_path, ignore_errors=True)
 

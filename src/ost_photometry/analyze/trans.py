@@ -1215,38 +1215,36 @@ def flux_normalization_ensemble(image_ensemble):
 
 
 def prepare_zero_point(img_container, image, id_filter_1,
-                       calib_magnitudes_literature,
-                       calib_magnitudes_observed_filter_1,
-                       id_filter_2=None,
-                       calib_magnitudes_observed_filter_2=None):
+                       magnitudes_literature, magnitudes_observed_filter_1,
+                       id_filter_2=None, magnitudes_observed_filter_2=None):
     """
         Prepare some values necessary for the magnitude calibration and add
         them to the image class
 
         Parameters
         ----------
-        img_container                      : `image.container`
+        img_container                   : `image.container`
             Container object with image ensemble objects for each filter
 
-        image                              : `image.class`
+        image                           : `image.class`
             Image class with all image specific properties
 
-        id_filter_1                        : `integer`
+        id_filter_1                     : `integer`
             ID of the filter
 
-        calib_magnitudes_literature        : `numpy.ndarray` or `unumpy.uarray`
+        magnitudes_literature           : `numpy.ndarray` or `unumpy.uarray`
             Literature magnitudes
 
-        calib_magnitudes_observed_filter_1 : `numpy.ndarray` or `unumpy.uarray`
+        magnitudes_observed_filter_1    : `numpy.ndarray` or `unumpy.uarray`
             Observed magnitudes of the objects that were used for the
             calibration from the image of filter 1
 
-        id_filter_2                        : `integer`, optional
+        id_filter_2                     : `integer`, optional
             ID of the `second` image/filter that is used for the magnitude
             transformation.
             Default is ``None``.
 
-        calib_magnitudes_observed_filter_2 : `numpy.ndarray` or `unumpy.uarray`, optional
+        magnitudes_observed_filter_2    : `numpy.ndarray` or `unumpy.uarray`, optional
             Observed magnitudes of the objects that were used for the
             calibration from the image of filter 2
             Default is ``None``.
@@ -1257,25 +1255,25 @@ def prepare_zero_point(img_container, image, id_filter_1,
 
     #   Set array with literature magnitudes for the calibration stars
     if not unc:
-        calib_magnitudes_literature = calib_magnitudes_literature['mag']
+        magnitudes_literature = magnitudes_literature['mag']
 
         #   Get extracted magnitudes
-        calib_magnitudes_observed_filter_1 = calib_magnitudes_observed_filter_1['mag']
+        magnitudes_observed_filter_1 = magnitudes_observed_filter_1['mag']
 
         if id_filter_2 is not None:
-            calib_magnitudes_observed_filter_2 = calib_magnitudes_observed_filter_2['mag']
+            magnitudes_observed_filter_2 = magnitudes_observed_filter_2['mag']
 
     #   Calculated color. For two filter calculate delta color
     if id_filter_2 is not None:
-        delta_color = (calib_magnitudes_observed_filter_1 +
-                       calib_magnitudes_observed_filter_2 -
-                       calib_magnitudes_literature[id_filter_1] -
-                       calib_magnitudes_literature[id_filter_2]
+        delta_color = (magnitudes_observed_filter_1 +
+                       magnitudes_observed_filter_2 -
+                       magnitudes_literature[id_filter_1] -
+                       magnitudes_literature[id_filter_2]
                        )
 
     else:
-        delta_color = (calib_magnitudes_observed_filter_1 -
-                       calib_magnitudes_literature[id_filter_1])
+        delta_color = (magnitudes_observed_filter_1 -
+                       magnitudes_literature[id_filter_1])
 
     #   Calculate mask according to sigma clipping
     if unc:
@@ -1286,8 +1284,15 @@ def prepare_zero_point(img_container, image, id_filter_1,
     image.ZP_mask = np.invert(clip.recordmask)
 
     #   Calculate zero points and clip
-    image.ZP = (calib_magnitudes_literature[id_filter_1] -
-                calib_magnitudes_observed_filter_1)
+    #   TODO: Add random selection of calibration stars -> calculate variance
+    import random
+    print(magnitudes_literature[id_filter_1].shape)
+    print(type(magnitudes_literature[id_filter_1].shape))
+    # for i in range(0, 100):
+    #     random_index = random.sample(range(0, 1000), 10)
+
+    image.ZP = (magnitudes_literature[id_filter_1] -
+                magnitudes_observed_filter_1)
     image.ZP_clip = image.ZP[image.ZP_mask]
 
 
@@ -1472,7 +1477,7 @@ def apply_calib(img_container, filter_list,
                 literature_magnitudes,
                 calib_magnitudes_current_image,
                 id_filter_2=second_filter_id,
-                calib_magnitudes_observed_filter_2=calib_magnitudes_second_image,
+                magnitudes_observed_filter_2=calib_magnitudes_second_image,
             )
 
             ###

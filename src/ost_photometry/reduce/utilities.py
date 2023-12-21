@@ -262,14 +262,37 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         )
     pixel_bit_value = list(pixel_bit_set)[0]
 
-    #   Get image temperature
+    #   Get image temperature and avoid images without temperature in HEADER.
     mask = image_file_collection.summary['ccd-temp'].mask
-    temperatures = set(
-        image_file_collection.summary['ccd-temp'][np.invert(mask)]
-    )
-    temperature_list = list(temperatures)
-    temperature_range = max(temperature_list) - min(temperature_list)
+    #   TODO: Add warning with file names of images without temperature information.
+    #   TODO: Check if this works...
+    files_without_ccd_temperature = image_file_collection.summary['file'][mask]
+    for file_name in files_without_ccd_temperature:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without temperature information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    files_with_ccd_temperature = image_file_collection.summary['file'][mask]
+    temperatures = image_file_collection.summary['ccd-temp'][np.invert(mask)]
+    temperatures_set = set(temperatures)
+    temperature_list = list(temperatures_set)
+    max_temperature = max(temperature_list)
+    min_temperature = min(temperature_list)
+    temperature_range = max_temperature - min_temperature
+    #   TODO: Finish option to detect outliers.
     if temperature_range > temperature_tolerance:
+        index_max_temperature = temperatures.index(max_temperature)
+        index_min_temperature = temperatures.index(min_temperature)
+
+        objects_with_max_temperature = files_with_ccd_temperature[index_max_temperature]
+        objects_with_min_temperature = files_with_ccd_temperature[index_min_temperature]
+
+        print(objects_with_max_temperature)
+        print(objects_with_min_temperature)
+
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Significant temperature difference '
             f'detected between the images: {temperature_range}\n'
@@ -514,7 +537,7 @@ def check_dark_scaling_possible(image_file_collection, image_id, image_type,
             for type_ in image_file_collection.summary['imagetyp']]
 
     #   Get filename
-    filename = image_file_collection.summary['file'][image_id]
+    filename = image_file_collection.summary['file'][mask][image_id]
 
     #   Raise exception if no bias frames are available
     if not bias_available:
