@@ -1309,10 +1309,11 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
 
 def calibration_check_plots(filter_, out_dir, name_object, image_id,
                             filter_list, id_filter_1, id_filter_2, mask,
-                            color_observed, color_literature, ids_calibration_stars,
-                            literature_magnitudes, magnitudes,
-                            uncalibrated_magnitudes, color_fit_err=None,
-                            color_lit_err=None, literature_magnitudes_err=None,
+                            color_observed, color_literature,
+                            ids_calibration_stars, literature_magnitudes,
+                            magnitudes, uncalibrated_magnitudes,
+                            color_observed_err=None, color_literature_err=None,
+                            literature_magnitudes_err=None,
                             magnitudes_err=None,
                             uncalibrated_magnitudes_err=None,
                             plot_sigma_switch=False):
@@ -1364,10 +1365,10 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         uncalibrated_magnitudes     : `numpy.ndarray`
             Magnitudes of all observed objects but not calibrated yet
 
-        color_fit_err               : `numpy.ndarray' or ``None``, optional
+        color_observed_err               : `numpy.ndarray' or ``None``, optional
             Uncertainty in the instrument color of the calibration stars
 
-        color_lit_err               : `numpy.ndarray' or ``None``, optional
+        color_literature_err               : `numpy.ndarray' or ``None``, optional
             Uncertainty in the literature color of the calibration stars
 
         literature_magnitudes_err   : `numpy.ndarray`
@@ -1462,8 +1463,8 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
             ),
             kwargs={
                 'name_obj': name_object,
-                'x_errors': [color_lit_err, color_lit_err[mask]],
-                'y_errors': [color_fit_err, color_fit_err[mask]],
+                'x_errors': [color_literature_err, color_literature_err[mask]],
+                'y_errors': [color_observed_err, color_observed_err[mask]],
                 'dataset_label': [
                     'without sigma clipping',
                     'with sigma clipping',
@@ -1517,10 +1518,10 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
             ),
             kwargs={
                 'name_obj': name_object,
-                'x_errors': [color_lit_err, color_lit_err[mask]],
+                'x_errors': [color_literature_err, color_literature_err[mask]],
                 'y_errors': [
-                    err_prop(color_fit_err, color_lit_err),
-                    err_prop(color_fit_err[mask], color_lit_err[mask])
+                    err_prop(color_observed_err, color_literature_err),
+                    err_prop(color_observed_err[mask], color_literature_err[mask])
                 ],
                 'dataset_label': [
                     'without sigma clipping',

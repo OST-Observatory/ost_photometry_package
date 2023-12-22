@@ -1122,9 +1122,9 @@ def light_curve_fold(time_series, data_column, err_column, output_dir,
     plt.close()
 
 
-def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
+def plot_transform(output_dir, filter_1, filter_2, color_literature, fit_variable,
                    a_fit, b_fit, b_err_fit, fit_function, air_mass,
-                   filter_=None, color_lit_err=None, fit_var_err=None,
+                   filter_=None, color_literature_err=None, fit_variable_err=None,
                    name_obj=None):
     """
         Plots illustrating magnitude transformation results
@@ -1140,7 +1140,7 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
         filter_2            : `string`
             Filter 2
 
-        color_lit           : `numpy.ndarray`
+        color_literature           : `numpy.ndarray`
             Colors of the calibration stars
 
         fit_variable        : `numpy.ndarray`
@@ -1167,11 +1167,11 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
             Filter, used to distinguish between the different plot options
             Default is ``None``
 
-        color_lit_err       : `numpy.ndarray`, optional
+        color_literature_err       : `numpy.ndarray`, optional
             Color errors of the calibration stars
             Default is ``None``.
 
-        fit_var_err         : `numpy.ndarray`, optional
+        fit_variable_err         : `numpy.ndarray`, optional
             Fit variable errors
             Default is ``None``.
 
@@ -1186,7 +1186,7 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
     )
 
     #   Fit data
-    x_lin = np.sort(color_lit)
+    x_lin = np.sort(color_literature)
     y_lin = fit_function(x_lin, a_fit, b_fit)
 
     #   Set labels etc.
@@ -1230,10 +1230,10 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
 
     #   Plot data
     plt.errorbar(
-        color_lit,
+        color_literature,
         fit_variable,
-        xerr=color_lit_err,
-        yerr=fit_var_err,
+        xerr=color_literature_err,
+        yerr=fit_variable_err,
         marker='o',
         markersize=3,
         capsize=2,
@@ -1275,8 +1275,8 @@ def plot_transform(output_dir, filter_1, filter_2, color_lit, fit_variable,
     y_max = np.max(fit_variable)
 
     #   Set plot limits
-    if fit_var_err is not None:
-        y_err = fit_var_err
+    if fit_variable_err is not None:
+        y_err = fit_variable_err
         y_err_sigma = sigma_clipping(y_err, sigma=1.5)
         max_err = np.max(y_err_sigma)
 
