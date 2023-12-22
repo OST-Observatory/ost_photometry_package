@@ -742,6 +742,22 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
             magnitudes + c * color
             + np.median((zp_clipped - c * color_observed_clipped).value))
 
+    #   TODO: Add random selection of calibration stars -> calculate variance
+    import random
+    print(zp_clipped.shape)
+    print(zp_clipped.ndim)
+    print(type(zp_clipped))
+
+    n_calibration_objects = zp_clipped.shape[0]
+    if n_calibration_objects > 20:
+        for i in range(0, 10):
+            random_index = random.sample(
+                range(0, n_calibration_objects),
+                int(n_calibration_objects * 0.66)
+            )
+            print(random_index)
+            print(zp_clipped[random_index])
+
     #   Add calibrated photometry to table of Image object
     image.photometry['mag_cali_trans'] = calibrated_magnitudes
 
@@ -1285,13 +1301,6 @@ def prepare_zero_point(img_container, image, id_filter_1,
     image.ZP_mask = np.invert(clip.recordmask)
 
     #   Calculate zero points and clip
-    #   TODO: Add random selection of calibration stars -> calculate variance
-    import random
-    print(magnitudes_literature[id_filter_1].shape)
-    print(type(magnitudes_literature[id_filter_1]))
-    # for i in range(0, 100):
-    #     random_index = random.sample(range(0, 1000), 10)
-
     image.ZP = (magnitudes_literature[id_filter_1] -
                 magnitudes_observed_filter_1)
     image.ZP_clip = image.ZP[image.ZP_mask]
