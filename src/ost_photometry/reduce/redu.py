@@ -276,7 +276,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
     #   Check flats
     image_scaling_required = utilities.check_exposure_times(
         image_file_collection,
-        'flats',
+        image_type_dir['flat'],
         flat_times,
         dark_times,
         bias_true,
@@ -286,7 +286,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
     #   Check science exposures
     image_scaling_required = image_scaling_required | utilities.check_exposure_times(
         image_file_collection,
-        'science',
+        image_type_dir['light'],
         science_times,
         dark_times,
         bias_true,

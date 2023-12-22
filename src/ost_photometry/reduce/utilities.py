@@ -341,7 +341,7 @@ def get_exposure_times(image_file_collection, image_type):
         image_file_collection   : `ccdproc.ImageFileCollection`
             Image file collection with all images
 
-        image_type              : `string`
+        image_type              : `list` of `string`
             Image type to select. Possibilities: bias, dark, flat, light
 
         Returns
@@ -514,7 +514,7 @@ def check_dark_scaling_possible(image_file_collection, image_id, image_type,
         image_id                : `integer`
             ID of the image
 
-        image_type              : `string`
+        image_type              : `list` of `string`
             String that characterizes the image type, such as 'science' or
             'flat'. This is used in the exception messages.
 
@@ -574,7 +574,7 @@ def check_exposure_times(image_file_collection, image_type, exposure_times,
         image_file_collection   : `ccdproc.ImageFileCollection`
             File collection with all images
 
-        image_type              : `string`
+        image_type              : `list` of `string`
             String that characterizes the image type, such as 'science' or
             'flat'. This is used in the exception messages.
 
