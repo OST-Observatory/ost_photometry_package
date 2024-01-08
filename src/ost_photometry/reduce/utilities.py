@@ -16,7 +16,7 @@ from scipy.ndimage import shift as shift_scipy
 
 from astropy.nddata import CCDData, StdDevUncertainty
 import astropy.units as u
-from astropy.stats import sigma_clipped_stats
+from astropy.stats import sigma_clip, sigma_clipped_stats
 from astropy.table import Table
 from astropy.time import Time
 
@@ -275,32 +275,23 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
             indent=2,
         )
 
-    files_with_ccd_temperature = image_file_collection.summary['file'][mask]
+    files_with_ccd_temperature = image_file_collection.files[mask]
     temperatures = image_file_collection.summary['ccd-temp'][np.invert(mask)]
-    temperatures_set = set(temperatures)
-    temperature_list = list(temperatures_set)
-    max_temperature = max(temperature_list)
-    min_temperature = min(temperature_list)
-    temperature_range = max_temperature - min_temperature
-    #   TODO: Finish option to detect outliers.
-    if temperature_range > temperature_tolerance:
-        index_max_temperature = temperatures.index(max_temperature)
-        index_min_temperature = temperatures.index(min_temperature)
+    clipped_temperatures_mask = sigma_clip(temperatures).mask
+    median_temperature = np.median(temperatures)
 
-        objects_with_max_temperature = files_with_ccd_temperature[index_max_temperature]
-        objects_with_min_temperature = files_with_ccd_temperature[index_min_temperature]
-
-        print(objects_with_max_temperature)
-        print(objects_with_min_temperature)
+    if np.any(clipped_temperatures_mask):
+        clipped_temperatures = temperatures[clipped_temperatures_mask]
+        clipped_images = files_with_ccd_temperature[clipped_temperatures_mask]
 
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Significant temperature difference '
-            f'detected between the images: {temperature_range}\n'
-            f'This is not supported -> EXIT \n{style.Bcolors.ENDC}'
+            f'detected. The median temperature is {median_temperature}°C.'
+            f'The following images have temperatures of: '
+            f'{clipped_temperatures}°C \n {clipped_images} \n{style.Bcolors.ENDC}'
         )
-    temperature = np.median(temperature_list)
 
-    return instrument, readout_mode, gain_setting, pixel_bit_value, temperature
+    return instrument, readout_mode, gain_setting, pixel_bit_value, median_temperature
 
 
 #   TODO: Check if the following function can be removed
@@ -543,7 +534,7 @@ def check_dark_scaling_possible(image_file_collection, image_id, image_type,
     if not bias_available:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}No darks with matching exposure time '
-            f'found for image: {filename} ({image_type}, exposure time = '
+            f'found for image: {filename} (exposure time = '
             f'{exposure_time}s). {style.Bcolors.ENDC}'
         )
 
