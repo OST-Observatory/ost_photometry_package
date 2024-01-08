@@ -264,9 +264,7 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
 
     #   Get image temperature and avoid images without temperature in HEADER.
     mask = image_file_collection.summary['ccd-temp'].mask
-    #   TODO: Add warning with file names of images without temperature information.
-    #   TODO: Check if this works...
-    files_without_ccd_temperature = image_file_collection.summary['file'][mask]
+    files_without_ccd_temperature = np.array(image_file_collection.files)[mask]
     for file_name in files_without_ccd_temperature:
         terminal_output.print_to_terminal(
             f"WARNING: Found file without temperature information: \n "
@@ -275,7 +273,7 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
             indent=2,
         )
 
-    files_with_ccd_temperature = image_file_collection.files[mask]
+    files_with_ccd_temperature = np.array(image_file_collection.files)[np.invert(mask)]
     temperatures = image_file_collection.summary['ccd-temp'][np.invert(mask)]
     clipped_temperatures_mask = sigma_clip(temperatures).mask
     median_temperature = np.median(temperatures)
