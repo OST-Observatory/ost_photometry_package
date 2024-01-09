@@ -253,6 +253,14 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         )
     gain_setting = list(gain_settings)[0]
 
+    #   Offset settings
+    offset_settings = set(image_file_collection.summary['offset'])
+    if len(offset_settings) > 1:
+        raise RuntimeError(
+            f'{style.Bcolors.FAIL}Multiple offset values detected.\n'
+            f'This is not supported -> EXIT \n{style.Bcolors.ENDC}'
+        )
+
     #   Get the bit setting
     pixel_bit_set = set(image_file_collection.summary['bitpix'])
     if len(pixel_bit_set) > 1:
@@ -285,8 +293,8 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Significant temperature difference '
             f'detected. The median temperature is {median_temperature}°C.'
-            f'The following images have temperatures of: '
-            f'{clipped_temperatures}°C \n {clipped_images} \n{style.Bcolors.ENDC}'
+            f'The following images have temperatures (°C) of: \n'
+            f'{clipped_temperatures.value} \n {clipped_images} \n{style.Bcolors.ENDC}'
         )
 
     return instrument, readout_mode, gain_setting, pixel_bit_value, median_temperature
