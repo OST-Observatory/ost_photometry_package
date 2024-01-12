@@ -1680,8 +1680,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             niters=2,
             overlap=False,
             # seed=123,
-            # zeropoint=np.median(image.ZP_clip),
-            zeropoint=np.median(image.ZP_clip.value),
+            zeropoint=np.median(image.ZP_clip),
             progress_bar=False,
         )
 

@@ -372,8 +372,8 @@ def prepare_transformation(img_container, trans_coefficients, filter_list, curre
         #   Check if calibration data is available for the
         #   filter in``filter_list`
         filter_calib = img_container.CalibParameters.column_names
-        for filter_ in filter_list:
-            if 'mag' + filter_ not in filter_calib:
+        for second_filter_ in filter_list:
+            if 'mag' + second_filter_ not in filter_calib:
                 type_transformation = None
 
         if type_transformation is not None:
