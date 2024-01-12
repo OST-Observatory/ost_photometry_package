@@ -1321,8 +1321,8 @@ def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
     """
     #   Set figure size
     if size_x == "" or size_x == "?" or size_y == "" or size_y == "?":
-        terminal_output.print_terminal(
-            string="[Info] No Plot figure size given, use default: 8cm x 8cm",
+        terminal_output.print_to_terminal(
+            "[Info] No Plot figure size given, use default: 8cm x 8cm",
             style_name='WARNING',
         )
         plt.figure(figsize=(8, 8))
@@ -1341,8 +1341,8 @@ def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
             float(np.max(magnitudes)) + 0.5,
             float(np.min(magnitudes)) - 0.5
         ])
-        terminal_output.print_terminal(
-            string="[Info] Use automatic plot range for Y",
+        terminal_output.print_to_terminal(
+            "[Info] Use automatic plot range for Y",
             style_name='WARNING',
         )
     else:
@@ -1353,8 +1353,8 @@ def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
                 float(np.max(magnitudes)) + 0.5,
                 float(np.min(magnitudes)) - 0.5
             ])
-            terminal_output.print_terminal(
-                string="[Info] Use automatic plot range for Y",
+            terminal_output.print_to_terminal(
+                "[Info] Use automatic plot range for Y",
                 style_name='WARNING',
             )
         else:
@@ -1368,8 +1368,8 @@ def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
             float(np.min(color_magnitudes)) - 0.5,
             float(np.max(color_magnitudes)) + 0.5
         ])
-        terminal_output.print_terminal(
-            string="[Info] Use automatic plot range for X",
+        terminal_output.print_to_terminal(
+            "[Info] Use automatic plot range for X",
             style_name='WARNING',
         )
     else:
@@ -1380,8 +1380,8 @@ def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
                 float(np.min(color_magnitudes)) - 0.5,
                 float(np.max(color_magnitudes)) + 0.5
             ])
-            terminal_output.print_terminal(
-                string="[Info] Use automatic plot range for X",
+            terminal_output.print_to_terminal(
+                "[Info] Use automatic plot range for X",
                 style_name='WARNING',
             )
         else:

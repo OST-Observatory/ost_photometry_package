@@ -5,6 +5,7 @@ from . import style
 ############################################################################
 
 
+#   TODO: Remove this function is the future
 def print_terminal(*args, string='', condense=False, indent=1,
                    style_name='BOLD'):
     """

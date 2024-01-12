@@ -1226,10 +1226,10 @@ def extraction_epsf(image, sigma_object_psf, sigma_background=5.,
             result_tbl = photometry(image=data)
     except RuntimeError as e:
         if multiplier_dao_grouper != 1.:
-            terminal_output.print_terminal(
+            terminal_output.print_to_terminal(
+                "IterativelySubtractedPSFPhotometry failed. "
+                "Will try again with 'multi_grouper' set to 1...",
                 indent=indent,
-                string="IterativelySubtractedPSFPhotometry failed. "
-                       "Will try again with 'multi_grouper' set to 1...",
                 style_name='WARNING',
             )
             multiplier_dao_grouper = 1.
@@ -2137,7 +2137,7 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
         indent=3,
         style_name='OKBLUE',
     )
-    terminal_output.print_terminal()
+    terminal_output.print_to_terminal()
 
     ###
     #   Correlate the results from all images

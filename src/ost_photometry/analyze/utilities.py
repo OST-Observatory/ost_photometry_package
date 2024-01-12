@@ -979,8 +979,8 @@ def check_variable_apparent_cmd(filename, filetype, filter_1, filter_list,
             return filename, filetype, second_filter
         else:
             index_filter_1 = filter_list.index(filter_1)
-            if index_filter_1+1 < len(filter_list):
-                return filename, filetype, filter_list[index_filter_1+1]
+            if index_filter_1 + 1 < len(filter_list):
+                return filename, filetype, filter_list[index_filter_1 + 1]
 
     return filename, filetype, False
 
@@ -2614,8 +2614,8 @@ def magnitude_array_from_table(img_container, image):
     if unc:
         #   Create uncertainties array with the literature magnitudes
         image_mags = unumpy.uarray(
-            image.photometry['mags_fit'],
-            image.photometry['mags_unc']
+            image.photometry['mags_fit'].value,
+            image.photometry['mags_unc'].value
         )
     else:
         #   Overall array for the flux and uncertainty
@@ -2648,11 +2648,10 @@ def convert_magnitudes_to_other_system(tbl: Table,
 
     #   Checks
     if target_filter_system not in ['SDSS', 'AB', 'BESSELL']:
-        terminal_output.print_terminal(
-            target_filter_system,
-            string='Magnitude conversion not possible. Unfortunately, '
-                   'there is currently no conversion formula for this '
-                   'photometric system: {}.',
+        terminal_output.print_to_terminal(
+            f'Magnitude conversion not possible. Unfortunately, '
+            f'there is currently no conversion formula for this '
+            f'photometric system: {target_filter_system}.',
             style_name='WARNING',
         )
 

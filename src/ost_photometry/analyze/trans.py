@@ -405,7 +405,7 @@ def prepare_transformation(img_container, trans_coefficients, filter_list, curre
         )
 
     if type_transformation is not None:
-        terminal_output.print_terminal(indent=3, string=string)
+        terminal_output.print_to_terminal(string, indent=3)
 
     #   Save filter and image ID configuration to allow
     #   for a better color calculation later on
@@ -1290,23 +1290,42 @@ def prepare_zero_point(img_container, image, id_filter_1,
     image.ZP_clip = image.ZP[image.ZP_mask]
 
     #   TODO: Add random selection of calibration stars -> calculate variance
-    import random
-    # print(zp_clipped.shape)
-    # print(zp_clipped.ndim)
-    # print(type(zp_clipped))
-
     n_calibration_objects = image.ZP_clip.shape[0]
     if n_calibration_objects > 20:
-        for i in range(0, 10):
-            random_index = random.sample(
-                range(0, n_calibration_objects),
-                int(n_calibration_objects * 0.66)
-            )
-            # print(random_index)
-            # print(zp_clipped[random_index])
-            sample = image.ZP_clip[random_index]
-            print('==================')
-            print(np.mean(sample), np.median(sample), np.var(sample), np.std(sample))
+        #   Number of samples
+        n_samples = 10000
+
+        #   Create samples using numpy's random number generator to generate
+        #   an index array
+        n_objects_sample = int(n_calibration_objects * 0.6)
+        rng = np.random.default_rng()
+        random_index = rng.integers(
+            0,
+            high=n_calibration_objects,
+            size=(n_samples, n_objects_sample),
+        )
+
+        samples = image.ZP_clip[random_index]
+
+        #   Get nominal values if uncertainty package is used
+        if unc:
+            sample_values = unumpy.nominal_values(samples)
+        else:
+            sample_values = samples
+
+        #   Get statistic
+        mean = np.mean(sample_values, axis=1)
+        median = np.median(sample_values, axis=1)
+        standard_deviation = np.std(sample_values, axis=1)
+
+        terminal_output.print_to_terminal(
+            f"Based on {n_samples} randomly selected sub-samples, the "
+            f"following statistic is obtained for the zero points: \n "
+            f"mean = {mean} \n median = {median} \n "
+            f"standard deviation = {standard_deviation}",
+            indent=3,
+            style_name='UNDERLINE'
+        )
 
 
 def apply_calib(img_container, filter_list,
@@ -1414,7 +1433,7 @@ def apply_calib(img_container, filter_list,
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
-            #   Get magnitude array for image i
+            #   Get magnitude array for image 1
             magnitudes_current_image = utilities.magnitude_array_from_table(
                 img_container,
                 current_image,
@@ -1426,13 +1445,13 @@ def apply_calib(img_container, filter_list,
 
             #   Get extracted magnitudes of the calibration stars for the
             #   current image
-            calib_magnitudes_current_image = calib.get_observed_magnitudes_of_calibration_stars(
+            magnitudes_calibration_stars_current_image = calib.get_observed_magnitudes_of_calibration_stars(
                 current_image,
                 magnitudes_current_image,
                 img_container,
             )
             #   TODO: Remove later?
-            current_image.mags_fit = calib_magnitudes_current_image
+            current_image.mags_fit = magnitudes_calibration_stars_current_image
 
             #   Prepare some variables and find corresponding image to
             #   current_image
@@ -1455,7 +1474,7 @@ def apply_calib(img_container, filter_list,
                 #   Get extracted magnitudes of the calibration stars
                 #   for the image in the second filter
                 #   -> required for magnitude transformation
-                calib_magnitudes_second_image = calib.get_observed_magnitudes_of_calibration_stars(
+                magnitudes_calibration_stars_second_image = calib.get_observed_magnitudes_of_calibration_stars(
                     second_image,
                     magnitudes_second_image,
                     img_container,
@@ -1465,20 +1484,20 @@ def apply_calib(img_container, filter_list,
                 #   calculation of the correct color later on
                 #   TODO: Remove later?
                 if id_color_filter_1 == current_filter:
-                    current_image.mag_fit_1 = calib_magnitudes_current_image
-                    current_image.mag_fit_2 = calib_magnitudes_second_image
+                    current_image.mag_fit_1 = magnitudes_calibration_stars_current_image
+                    current_image.mag_fit_2 = magnitudes_calibration_stars_second_image
 
                     current_image.mags_1 = magnitudes_current_image
                     current_image.mags_2 = magnitudes_second_image
                 else:
-                    current_image.mag_fit_1 = calib_magnitudes_second_image
-                    current_image.mag_fit_2 = calib_magnitudes_current_image
+                    current_image.mag_fit_1 = magnitudes_calibration_stars_second_image
+                    current_image.mag_fit_2 = magnitudes_calibration_stars_current_image
 
                     current_image.mags_1 = magnitudes_second_image
                     current_image.mags_2 = magnitudes_current_image
 
             else:
-                calib_magnitudes_second_image = None
+                magnitudes_calibration_stars_second_image = None
 
             #   Prepare ZP for the magnitude calibration and perform
             #   sigma clipping on the delta color or color, depending on
@@ -1488,9 +1507,9 @@ def apply_calib(img_container, filter_list,
                 current_image,
                 current_filter,
                 literature_magnitudes,
-                calib_magnitudes_current_image,
+                magnitudes_calibration_stars_current_image,
                 id_filter_2=second_filter_id,
-                magnitudes_observed_filter_2=calib_magnitudes_second_image,
+                magnitudes_observed_filter_2=magnitudes_calibration_stars_second_image,
             )
 
             ###
@@ -1817,27 +1836,27 @@ def determine_transformation(img_container, current_filter, filter_list,
             "###############################################",
             indent=indent,
         )
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
             f"Colortransform ({f_0_l}-{f_1_l} vs. {f_0}-{f_1}):",
             indent=indent,
         )
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
             f"T{f_0_l}{f_1_l} = {tcolor:.5f} +/- {tcolor_err:.5f}",
             indent=indent + 1,
         )
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
             f"{current_filter}-mag transform ({current_filter}-"
             f"{key_filter_l} vs. {f_0}-{f_1}):",
             indent=indent,
         )
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
             f"T{key_filter_l}_{f_0_l}{f_1_l} = {t_mag:.5f} "
             f"+/- {t_mag_err:.5f}",
             indent=indent + 1,
         )
-        terminal_output.print_terminal(
+        terminal_output.print_to_terminal(
+            "###############################################",
             indent=indent,
-            string="###############################################",
         )
 
 

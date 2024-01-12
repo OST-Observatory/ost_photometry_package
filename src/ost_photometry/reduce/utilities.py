@@ -2132,7 +2132,7 @@ def bin_image(image_file_collection, output_path, binning_value):
     return ccdp.ImageFileCollection(output_path_binned)
 
 
-#   TODO: Check if this function can be merged with `trim_image`
+#   TODO: Check if this function can be merged with `trim_image` -> Used by N1 script
 def trim_image_simple(image_file_collection, output_path,
                       redundant_pixel_x_start=100, redundant_pixel_x_end=100,
                       redundant_pixel_y_start=100, redundant_pixel_y_end=100):

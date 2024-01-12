@@ -67,9 +67,9 @@ def get_comp_stars(coordinates_sky, filters=None, field_of_view=18.5,
         column_dict     : `dictionary` - 'string':`string`
             Dictionary with column names vs default names
     """
-    terminal_output.print_terminal(
+    terminal_output.print_to_terminal(
+        "Downloading calibration data from www.aavso.org",
         indent=indent,
-        string="Downloading calibration data from www.aavso.org",
     )
 
     #   Sanitize filter list
@@ -337,10 +337,9 @@ def read_votable_simbad(path_calibration_file, filter_list, magnitude_range=(0.,
         column_dict             : `dictionary` - 'string':`string`
             Dictionary with column names vs default names
     """
-    terminal_output.print_terminal(
-        path_calibration_file,
+    terminal_output.print_to_terminal(
+        f"Read calibration data from a VO table: {path_calibration_file}",
         indent=indent,
-        string="Read calibration data from a VO table: {}",
     )
 
     #   Read table
