@@ -395,8 +395,8 @@ def prepare_transformation(img_container, trans_coefficients, filter_list, curre
     elif type_transformation == 'air_mass':
         string = "Apply magnitude transformation accounting for air_mass"
     elif type_transformation == 'derive':
-        string = "Derive and apply magnitude transformation based on " \
-                 "current image"
+        string = f"Derive and apply magnitude transformation based on " \
+                 f"{filter_} image"
     else:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nNo valid transformation type. Got "
@@ -1316,22 +1316,22 @@ def prepare_zero_point(img_container, image, id_filter_1,
         #   Get statistic
         # mean_samples = np.mean(sample_values, axis=1)
         median_samples = np.median(sample_values, axis=1)
-        median_over_samples = np.median(median_samples, axis=1)
-        standard_deviation_over_samples = np.std(median_samples, axis=1)
+        median_over_samples = np.median(median_samples)
+        standard_deviation_over_samples = np.std(median_samples)
 
         terminal_output.print_to_terminal(
-            f"Based on {n_samples} randomly selected sub-samples, \n",
+            f"Based on {n_samples} randomly selected sub-samples, the ",
             indent=3,
             style_name='UNDERLINE'
         )
         terminal_output.print_to_terminal(
-            f"the following statistic is obtained for the zero points: \n ",
+            f"following statistic is obtained for the zero points:",
             indent=3,
             style_name='UNDERLINE'
         )
         terminal_output.print_to_terminal(
-            f"median = {median_over_samples} - "
-            f"standard deviation = {standard_deviation_over_samples}",
+            f"median = {median_over_samples:5.3f} - "
+            f"standard deviation = {standard_deviation_over_samples:5.3f}",
             indent=3,
             style_name='UNDERLINE'
         )
