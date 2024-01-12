@@ -1335,6 +1335,11 @@ def prepare_zero_point(img_container, image, id_filter_1,
             indent=3,
             style_name='UNDERLINE'
         )
+        terminal_output.print_to_terminal(
+            f"The sample size was {n_objects_sample}.",
+            indent=3,
+            style_name='UNDERLINE'
+        )
 
 
 def apply_calib(img_container, filter_list,

@@ -393,3 +393,122 @@ def cutouts_fwhm_stars(output_dir, n_stars, sub_images_fwhm_stars, filter_,
         format='pdf',
     )
     plt.close()
+
+
+def aberration_inspector(image_data, output_dir, filter_,
+                         cutout_size_percent=15, border_cutouts_percent=3):
+    """
+    Crop and display the edges and center of an image
+
+    Parameters
+    ----------
+    image_data              : `numpy.ndarray`
+        2D image data array
+
+    output_dir              : `pathlib.Path`
+        Path to the directory where the master files should be saved to
+
+    filter_                 : `string`
+        Filter name
+
+    cutout_size_percent     : `float` or `integer`
+        Cutout size as a percentage of the Y dimension of the image
+
+    border_cutouts_percent  : `float` or `integer`
+        Size of the borders around the cutouts as a percentage of the
+        Y dimension of the image
+    """
+    #   Image dimensions and center
+    data_shape = image_data.shape
+    y_dimension = data_shape[0]
+    x_dimension = data_shape[1]
+
+    y_center = int(y_dimension / 2)
+    x_center = int(x_dimension / 2)
+
+    #   Cutout dimension
+    cutout_fraction = cutout_size_percent / 100
+    cutout_dimension = int(data_shape[0] * cutout_fraction)
+    half_cutout_dimension = int(cutout_dimension / 2)
+
+    #   Cutouts
+    upper_left_edge = image_data[0:cutout_dimension, 0:cutout_dimension]
+    upper_right_edge = image_data[0:cutout_dimension, -cutout_dimension:]
+    lower_right_edge = image_data[-cutout_dimension:, -cutout_dimension:]
+    lower_left_edge = image_data[-cutout_dimension:, 0:cutout_dimension]
+    center = image_data[
+             y_center - half_cutout_dimension:y_center + half_cutout_dimension,
+             x_center - half_cutout_dimension:x_center + half_cutout_dimension
+             ]
+
+    #   Size of the borders between cutouts
+    border_cutouts_scale_factor = border_cutouts_percent / 100
+    half_border_size = cutout_dimension * border_cutouts_scale_factor
+
+    #   New array to plot
+    dimension_cutout_array = int(
+        2 * cutout_dimension + cutout_dimension * border_cutouts_scale_factor
+    )
+    cutout_array = np.ones((dimension_cutout_array, dimension_cutout_array))
+
+    #   Fill new array with cutouts
+    cutout_array[0:cutout_dimension, 0:cutout_dimension] = upper_left_edge
+    cutout_array[0:cutout_dimension, -cutout_dimension:] = upper_right_edge
+    cutout_array[-cutout_dimension:, -cutout_dimension:] = lower_right_edge
+    cutout_array[-cutout_dimension:, 0:cutout_dimension] = lower_left_edge
+
+    if dimension_cutout_array % 2 == 0:
+        xy_center_cutout_array = int(dimension_cutout_array / 2 + 1)
+    else:
+        xy_center_cutout_array = int((dimension_cutout_array - 1) / 2 + 1)
+
+    center_start = xy_center_cutout_array - half_cutout_dimension
+    center_end = xy_center_cutout_array + half_cutout_dimension
+    cutout_array[center_start:center_end, center_start:center_end] = center
+
+    #   Add borders to central cutout
+
+    cutout_array[
+        int(center_start - half_border_size / 2):int(center_start + half_border_size / 2),
+        int(center_start - half_border_size / 2):int(center_end + half_border_size / 2)
+    ] = 1.
+    cutout_array[
+        int(center_end - half_border_size / 2):int(center_end + half_border_size / 2),
+        int(center_start - half_border_size / 2):int(center_end + half_border_size / 2)
+    ] = 1.
+    cutout_array[
+        center_start:center_end,
+        int(center_start - half_border_size / 2):int(center_start + half_border_size / 2)
+    ] = 1.
+    cutout_array[
+        center_start:center_end,
+        int(center_end - half_border_size / 2):int(center_end + half_border_size / 2)
+    ] = 1.
+
+    #   Define figure
+    plt.figure(figsize=(12, 12))
+
+    #   Image normalization
+    image_normalization = simple_norm(
+        cutout_array,
+        stretch='log',
+        min_percent=1,
+        percent=99.9,
+    )
+
+    #   Plot data
+    plt.imshow(
+        cutout_array,
+        norm=image_normalization,
+        cmap='Greys',
+    )
+
+    plt.axis('off')
+
+    #   Write the plot to disk
+    plt.savefig(
+        f'{output_dir}/cutouts/aberration_control_cutouts_{filter_}.pdf',
+        bbox_inches='tight',
+        format='pdf',
+    )
+    plt.close()
