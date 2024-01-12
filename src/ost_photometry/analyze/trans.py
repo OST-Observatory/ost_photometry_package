@@ -740,7 +740,7 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
     #   Calculate calibrated magnitudes
     calibrated_magnitudes = (
             magnitudes + c * color
-            + np.median((zp_clipped - c * color_observed_clipped).value))
+            + np.median((zp_clipped - c * color_observed_clipped)))
 
     #   Add calibrated photometry to table of Image object
     image.photometry['mag_cali_trans'] = calibrated_magnitudes
@@ -1314,15 +1314,24 @@ def prepare_zero_point(img_container, image, id_filter_1,
             sample_values = samples
 
         #   Get statistic
-        mean = np.mean(sample_values, axis=1)
-        median = np.median(sample_values, axis=1)
-        standard_deviation = np.std(sample_values, axis=1)
+        # mean_samples = np.mean(sample_values, axis=1)
+        median_samples = np.median(sample_values, axis=1)
+        median_over_samples = np.median(median_samples, axis=1)
+        standard_deviation_over_samples = np.std(median_samples, axis=1)
 
         terminal_output.print_to_terminal(
-            f"Based on {n_samples} randomly selected sub-samples, the "
-            f"following statistic is obtained for the zero points: \n "
-            f"mean = {mean} \n median = {median} \n "
-            f"standard deviation = {standard_deviation}",
+            f"Based on {n_samples} randomly selected sub-samples, \n",
+            indent=3,
+            style_name='UNDERLINE'
+        )
+        terminal_output.print_to_terminal(
+            f"the following statistic is obtained for the zero points: \n ",
+            indent=3,
+            style_name='UNDERLINE'
+        )
+        terminal_output.print_to_terminal(
+            f"median = {median_over_samples} - "
+            f"standard deviation = {standard_deviation_over_samples}",
             indent=3,
             style_name='UNDERLINE'
         )
