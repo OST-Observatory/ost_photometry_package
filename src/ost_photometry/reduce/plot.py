@@ -501,13 +501,14 @@ def aberration_inspector(image_data, output_dir, filter_,
         cutout_array,
         norm=image_normalization,
         cmap='Greys',
+        origin='lower',
     )
 
     plt.axis('off')
 
     #   Write the plot to disk
     plt.savefig(
-        f'{output_dir}/cutouts/aberration_control_cutouts_{filter_}.pdf',
+        f'{output_dir}/aberration/aberration_control_cutouts_{filter_}.pdf',
         bbox_inches='tight',
         format='pdf',
     )

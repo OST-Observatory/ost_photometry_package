@@ -30,6 +30,8 @@ import matplotlib.cm as cm
 from matplotlib import rcParams
 import matplotlib.pyplot as plt
 
+from scipy.spatial import KDTree
+
 plt.switch_backend('Agg')
 
 
@@ -2576,3 +2578,101 @@ def extinction_curves(rv):
 
     plt.show()
     plt.close()
+
+
+def filled_iso_contours(object_table, shape_image, filter_, output_dir='./',
+                        fraction_bright_objects_to_use=0.2,
+                        spacing_grid_positions=20, object_property='fwhm'):
+    """
+    Filled iso contour surfaces
+
+    Parameter
+    ---------
+    object_table                    : `astropy.table.Table`
+        Table with object positions (XY) in Pixel
+
+    shape_image                     : `tuple` of integer`
+        Dimension of the input image
+
+    filter_                         : `string`
+        Filter name
+
+    output_dir                      : `pathlib.Path`, optional
+        Path to the directory where the master files should be saved to
+        Default is ``.``.
+
+    fraction_bright_objects_to_use  : `float`, optional
+        Fraction of bright objects to use for iso contour determination
+        Default is ``0.2``
+
+    spacing_grid_positions          : `integer`, optional
+        Spacing between grid positions, usually in Pixel.
+        Default is ``20``
+
+    object_property                 : `string`, optional
+        Property of the objects used to derive the iso contour levels
+        Default is ``fwhm``
+    """
+    #   Limit object table to the most
+    n_sources = len(object_table)
+    object_table.sort('flux', reverse=True)
+    object_table = object_table[0:int(n_sources * fraction_bright_objects_to_use)]
+
+    #   Define positions and apertures
+    xy_object_position = np.transpose(
+        (object_table['ycentroid'], object_table['xcentroid'])
+    )
+
+    #   Set up mesh and define grid positions
+    x, y = np.meshgrid(
+        np.arange(0, shape_image[1], spacing_grid_positions),
+        np.arange(0, shape_image[0], spacing_grid_positions)
+    )
+    xy_grid_shape = x.shape
+    xy_grid_positions = np.array([y.ravel(), x.ravel()]).T
+
+    #   Find matches between object and grid positions and assign z values
+    object_tree = KDTree(xy_object_position, leafsize=100)
+    _, nearst_neighbour_indexes = object_tree.query(xy_grid_positions, k=1)
+
+    if object_property in object_table.colnames:
+        z = object_table[object_property].value[nearst_neighbour_indexes]
+    else:
+        print(f'{object_property} is not available. Try roundness instead.')
+        if 'roundness' in object_table.colnames:
+            z = object_table['roundness'].value[nearst_neighbour_indexes]
+            object_property = 'roundness'
+        elif 'roundness1' in object_table.colnames:
+            z = object_table['roundness1'].value[nearst_neighbour_indexes]
+            object_property = 'roundness1'
+        else:
+            raise RuntimeError('Roundness is also not available.')
+    z = z.reshape(xy_grid_shape)
+
+    #   Setup plot
+    fig, ax = plt.subplots(figsize=(20, 20))
+
+    #   Plot contours
+    cs = ax.contourf(x, y, z)
+    ax.contour(
+        cs,
+        colors='k',
+        origin='lower',
+    )
+    # ax.clabel(cs, inline=True, fontsize=10)
+    ax.set_title(object_property.upper())
+
+    #   Add color bar
+    fig.colorbar(cs)
+
+    # Plot grid
+    ax.grid(c='k', ls='-', alpha=0.3)
+
+    #   Save plot
+    plt.savefig(
+        f'{output_dir}/aberration/aberration_iso_contours_{filter_}.pdf',
+        bbox_inches='tight',
+        format='pdf',
+    )
+    plt.close()
+    # plt.show()
