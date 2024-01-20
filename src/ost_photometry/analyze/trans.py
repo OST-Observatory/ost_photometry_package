@@ -1421,6 +1421,11 @@ def apply_calib(img_container, filter_list,
     tuple_no_transformation_ids = []
 
     #   Get calibration magnitudes
+    literature_magnitudes = calib.distribution_from_calibration_table(
+        img_container.CalibParameters.calib_tbl,
+        filter_list,
+    )
+    print(literature_magnitudes)
     literature_magnitudes = calib.magnitude_array_from_calibration_table(
         img_container,
         filter_list,

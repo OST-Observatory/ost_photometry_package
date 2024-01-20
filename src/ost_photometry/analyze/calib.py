@@ -13,6 +13,7 @@ from astroquery.vizier import Vizier
 from astropy.table import Table
 import astropy.units as u
 from astropy.coordinates import SkyCoord, matching
+from astropy import uncertainty as unc
 
 import multiprocessing as mp
 
@@ -385,8 +386,10 @@ def read_votable_simbad(path_calibration_file, filter_list, magnitude_range=(0.,
     return calib_tbl, column_dict
 
 
-def load_calib(image, filter_list, calibration_method='APASS', magnitude_range=(0., 18.5),
-               vizier_dict=None, path_calibration_file=None, ra_unit=u.deg, indent=1):
+def load_calibration_data_table(image, filter_list, calibration_method='APASS',
+                                magnitude_range=(0., 18.5), vizier_dict=None,
+                                path_calibration_file=None, ra_unit=u.deg,
+                                indent=1):
     """
         Load calibration information
 
@@ -674,7 +677,7 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
 
     #   Load calibration data
     #   TODO: Check this routine - It gets and returns ra_unit
-    calib_tbl, column_names, ra_unit = load_calib(
+    calib_tbl, column_names, ra_unit = load_calibration_data_table(
         img_ensemble,
         filter_list,
         calibration_method=calibration_method,
@@ -839,6 +842,47 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
         column_names,
         calib_tbl_sort,
     )
+
+
+def distribution_from_calibration_table(calibration_data_table, filter_list):
+    """
+        Arrange the literature values in a numpy array or uncertainty array.
+
+        Parameters
+        ----------
+        calibration_data_table  : `image.container`
+            Container object with image ensemble objects for each filter
+
+        filter_list             : `list` of `string`
+            Filter names
+
+        Returns
+        -------
+        distribution_list       : `list` of `astropy.uncertainty.normal`
+            Normal distribution representing literature magnitudes
+    """
+    #   Get column names
+    calib_column_names = calibration_data_table.column_names
+
+    distribution_list = []
+    for z, filter_ in enumerate(filter_list):
+        calibration_magnitudes = calibration_data_table[
+            calib_column_names[f'mag{filter_}']
+        ]
+        calibration_magnitudes_err = calibration_data_table[
+            calib_column_names[f'err{filter_}']
+        ]
+
+        literature_magnitudes_distribution = unc.normal(
+            calibration_magnitudes * u.mag,
+            std=calibration_magnitudes_err * u.mag,
+            n_samples=1000,
+        )
+        distribution_list.append(
+            literature_magnitudes_distribution
+        )
+
+    return distribution_list
 
 
 def magnitude_array_from_calibration_table(img_container, filter_list):

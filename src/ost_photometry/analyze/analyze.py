@@ -2083,7 +2083,7 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
     ###
     #   Load calibration data
     #
-    calib_tbl, column_names, ra_unit = calib.load_calib(
+    calib_tbl, column_names, ra_unit = calib.load_calibration_data_table(
         image_ensemble.image_list[reference_image_id],
         filter_list,
         calibration_method=calib_method,
