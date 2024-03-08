@@ -1849,6 +1849,10 @@ class MakeCMDs:
 
         #   Plot the stars
         terminal_output.print_to_terminal("Add stars")
+        print('self.magnitude_color')
+        print(self.magnitude_color)
+        print('self.magnitude_filter_2')
+        print(self.magnitude_filter_2)
         ax0.errorbar(
             self.magnitude_color,
             self.magnitude_filter_2,
@@ -2483,10 +2487,11 @@ def mk_ticks_labels(y_axis_lable, x_axis_lable, ax):
         direction='in',
     )
     ax.minorticks_on()
+    ax.grid(True, color='lightgray', linestyle='--')
 
     #   Set labels
-    ax.xlabel(x_axis_lable)
-    ax.ylabel(y_axis_lable)
+    ax.set_xlabel(x_axis_lable)
+    ax.set_ylabel(y_axis_lable)
 
 
 class MaxRecursionError(Exception):
