@@ -1344,9 +1344,10 @@ class MakeCMDs:
         self.file_type = file_type
         self.filter_2 = filter_2
         self.filter_1 = filter_1
+        self.color = f'{filter_1}-{filter_2}'
         self.magnitude_color = magnitude_color
         self.magnitude_filter_2 = magnitude_filter_2
-        self.color_err = color_err
+        self.magnitude_color_err = color_err
         self.magnitude_filter_2_err = magnitude_filter_2_err
         self.output_dir = output_dir
 
@@ -1378,8 +1379,8 @@ class MakeCMDs:
             float(y_range_max)
         except ValueError:
             ax.set_ylim([
-                float(np.max(self.magnitudes)) + 0.5,
-                float(np.min(self.magnitudes)) - 0.5
+                float(np.max(self.magnitude_filter_2)) + 0.5,
+                float(np.min(self.magnitude_filter_2)) - 0.5
             ])
             terminal_output.print_to_terminal(
                 "[Info] Use automatic plot range for Y",
@@ -1390,8 +1391,8 @@ class MakeCMDs:
                 float(y_range_min)
             except ValueError:
                 ax.set_ylim([
-                    float(np.max(self.magnitudes)) + 0.5,
-                    float(np.min(self.magnitudes)) - 0.5
+                    float(np.max(self.magnitude_filter_2)) + 0.5,
+                    float(np.min(self.magnitude_filter_2)) - 0.5
                 ])
                 terminal_output.print_to_terminal(
                     "[Info] Use automatic plot range for Y",
@@ -1405,8 +1406,8 @@ class MakeCMDs:
             float(x_range_max)
         except ValueError:
             ax.set_xlim([
-                float(np.min(self.color_magnitudes)) - 0.5,
-                float(np.max(self.color_magnitudes)) + 0.5
+                float(np.min(self.magnitude_color)) - 0.5,
+                float(np.max(self.magnitude_color)) + 0.5
             ])
             terminal_output.print_to_terminal(
                 "[Info] Use automatic plot range for X",
@@ -1417,8 +1418,8 @@ class MakeCMDs:
                 float(x_range_min)
             except ValueError:
                 ax.set_xlim([
-                    float(np.min(self.color_magnitudes)) - 0.5,
-                    float(np.max(self.color_magnitudes)) + 0.5
+                    float(np.min(self.magnitude_color)) - 0.5,
+                    float(np.max(self.magnitude_color)) + 0.5
                 ])
                 terminal_output.print_to_terminal(
                     "[Info] Use automatic plot range for X",
@@ -1427,21 +1428,18 @@ class MakeCMDs:
             else:
                 ax.set_xlim([float(x_range_min), float(x_range_max)])
 
-    def write_cmd(self, filter_, plot_type):
+    def write_cmd(self, plot_type):
         """
         Write plot to disk
 
         Parameters
         ----------
-        filter_                 : `string`
-
-
         plot_type                   : `string`
             Plot type
         """
         if self.name_of_star_cluster == "" or self.name_of_star_cluster == "?":
-            path = (f'{self.output_dir}/{self.filename}_{plot_type}'
-                    f'_{filter_}_{self.color}.{self.file_type}')
+            path = (f'{self.output_dir}/{self.file_name}_{plot_type}'
+                    f'_{self.filter_2}_{self.color}.{self.file_type}')
             terminal_output.print_to_terminal(
                 f"Save CMD plot ({self.file_type}): {path}",
             )
@@ -1455,8 +1453,8 @@ class MakeCMDs:
                 ' ',
                 '_',
             )
-            path = (f'{self.output_dir}/{self.filename}_{name_of_star_cluster}'
-                    f'_{plot_type}_{filter_}_{self.color}'
+            path = (f'{self.output_dir}/{self.file_name}_{name_of_star_cluster}'
+                    f'_{plot_type}_{self.filter_2}_{self.color}'
                     f'.{self.file_type}')
             terminal_output.print_to_terminal(
                 f"Save CMD plot ({self.file_type}): {path}",
@@ -1685,7 +1683,7 @@ class MakeCMDs:
             self.magnitude_color,
             self.magnitude_filter_2,
             yerr=self.magnitude_filter_2_err,
-            xerr=self.color_err,
+            xerr=self.magnitude_color_err,
             marker='o',
             ls='none',
             elinewidth=0.5,
@@ -1697,11 +1695,14 @@ class MakeCMDs:
         )
 
         #   Set ticks and labels
-        color = f'{self.filter_1}-{self.filter_2}'
-        mk_ticks_labels(rf'${self.filter_2}$ [mag]', rf'${color}$ [mag]')
+        mk_ticks_labels(
+            rf'${self.filter_2}$ [mag]',
+            rf'${self.color}$ [mag]',
+            ax0,
+        )
 
         #   Write plot to disk
-        self.write_cmd(color, 'apparent')
+        self.write_cmd('apparent')
         plt.close()
 
     def plot_absolute_cmd(self, isochrones, isochrone_type,
@@ -1852,7 +1853,7 @@ class MakeCMDs:
             self.magnitude_color,
             self.magnitude_filter_2,
             yerr=self.magnitude_filter_2_err,
-            xerr=self.color_err,
+            xerr=self.magnitude_color_err,
             marker='o',
             ls='none',
             elinewidth=0.5,
@@ -2332,21 +2333,15 @@ class MakeCMDs:
                 ax2.set_xlabel(f'Age [{age_unit}]')
                 ax2.set_ylabel(f'$\chi^2$ ')
 
-                #   Set ticks and labels for CMD
-        color = f'{self.filter_1}-{self.filter_2}'
-        ax0.tick_params(
-            axis='both',
-            which='both',
-            top=True,
-            right=True,
-            direction='in',
+        #   Set ticks and labels for CMD
+        mk_ticks_labels(
+            rf'${self.filter_2}$ [mag]',
+            rf'${self.color}$ [mag]',
+            ax0,
         )
-        ax0.minorticks_on()
-        ax0.set_xlabel(rf'${color}$ [mag]')
-        ax0.set_ylabel(rf'${self.filter_2}$ [mag]')
-
+        
         #   Write plot to disk
-        self.write_cmd(color,'absolut')
+        self.write_cmd('absolut')
         plt.close()
 
 
@@ -2464,7 +2459,7 @@ def initialize_plot(size_x, size_y):
 #             ax.set_xlim([float(x_range_min), float(x_range_max)])
 
 
-def mk_ticks_labels(y_axis_lable, x_axis_lable):
+def mk_ticks_labels(y_axis_lable, x_axis_lable, ax):
     """
         Set default ticks and labels
 
@@ -2475,24 +2470,28 @@ def mk_ticks_labels(y_axis_lable, x_axis_lable):
 
         x_axis_lable    : `string`
             Color
+
+        ax                  : `matplotlib.pyplot.subplot`
+            Subplot
     """
     #   Set ticks
-    plt.tick_params(
+    ax.tick_params(
         axis='both',
         which='both',
         top=True,
         right=True,
         direction='in',
     )
-    plt.minorticks_on()
+    ax.minorticks_on()
 
     #   Set labels
-    plt.xlabel(x_axis_lable)
-    plt.ylabel(y_axis_lable)
+    ax.xlabel(x_axis_lable)
+    ax.ylabel(y_axis_lable)
 
 
 class MaxRecursionError(Exception):
     pass
+
 
 #
 # def decode_isochrone_filter_relation(isochrone_column_type, isochrone_column,
