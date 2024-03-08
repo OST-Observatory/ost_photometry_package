@@ -1705,13 +1705,13 @@ class MakeCMDs:
         self.write_cmd('apparent')
         plt.close()
 
-    def plot_absolute_cmd(self, isochrones, isochrone_type,
+    def plot_absolute_cmd(self, e_b_v, m_m, isochrones, isochrone_type,
                           isochrone_column_type, isochrone_column,
                           isochrone_log_age, isochrone_keyword,
                           isochrone_legend, figure_size_x='', figure_size_y='',
                           y_plot_range_max='', y_plot_range_min='',
                           x_plot_range_max='', x_plot_range_min='',
-                          fit_isochrone=False,
+                          rv=3.1, fit_isochrone=False,
                           magnitude_fit_range=(None, None),
                           n_bin_observation=40,
                           fiduciary_points_observation=None,
@@ -1724,6 +1724,12 @@ class MakeCMDs:
 
             Parameters
             ----------
+            e_b_v                       : `float`
+                Relative extinction between B and V band
+
+            m_m                         : `float`
+                Distance modulus
+
             isochrones                  : `string`
                 Path to the isochrone directory or the isochrone file
 
@@ -1747,6 +1753,10 @@ class MakeCMDs:
 
             isochrone_legend            : `boolean`
                 If True plot legend for isochrones.
+
+            rv                          : `float`, optional
+                Ration between absolute and relative extinction
+                Default is ``3.1``.
 
             figure_size_x               : `float`, optional
                 Figure size in cm (x direction)
@@ -1811,6 +1821,30 @@ class MakeCMDs:
                 to `simple`.
                 Default is ``None``.
         """
+        #   Correct for reddening and distance
+        if self.filter_1 == 'B' and self.filter_2 == 'V':
+            a_filter_2 = rv * e_b_v
+            relative_extinction = e_b_v
+        else:
+            #   Get effective filter wavelengths
+            filter_1_effective_wavelength = calibration_data.filter_effective_wavelength[self.filter_1]
+            filter_2_effective_wavelength = calibration_data.filter_effective_wavelength[self.filter_2]
+
+            #   Get Fitzpatrick's extinction curve
+            extinction_curve = calibration_data.fitzpatrick_extinction_curve(rv)
+
+            #   Get absolute extinction in the filter
+            a_filter_1 = extinction_curve(10000. / filter_1_effective_wavelength) * e_b_v
+            a_filter_2 = extinction_curve(10000. / filter_2_effective_wavelength) * e_b_v
+
+            #   Calculate relative extinction
+            relative_extinction = a_filter_1 - a_filter_2
+
+        #   TODO: Add error propagation
+        #   Apply extinction correction (and distance) to magnitudes and color
+        magnitude_filter_2 = self.magnitude_filter_2 - a_filter_2 - m_m
+        magnitude_color = self.magnitude_color - relative_extinction
+
         #   Plot fiduciary points if isochrone fit is performed
         if fiduciary_points_observation is None and fit_isochrone:
             fiduciary_points_observation = True
@@ -1849,13 +1883,9 @@ class MakeCMDs:
 
         #   Plot the stars
         terminal_output.print_to_terminal("Add stars")
-        print('self.magnitude_color')
-        print(self.magnitude_color)
-        print('self.magnitude_filter_2')
-        print(self.magnitude_filter_2)
         ax0.errorbar(
-            self.magnitude_color,
-            self.magnitude_filter_2,
+            magnitude_color,
+            magnitude_filter_2,
             yerr=self.magnitude_filter_2_err,
             xerr=self.magnitude_color_err,
             marker='o',
@@ -1873,14 +1903,13 @@ class MakeCMDs:
             #   Check if fit range is defined. If not, minimum and maximum
             #   values of the data are used.
             if magnitude_fit_range[0] is None:
-                min_magnitude_filter_2 = np.min(self.magnitude_filter_2)
+                min_magnitude_filter_2 = np.min(magnitude_filter_2)
             else:
                 min_magnitude_filter_2 = magnitude_fit_range[0]
             if magnitude_fit_range[1] is None:
-                max_magnitude_filter_2 = np.max(self.magnitude_filter_2)
+                max_magnitude_filter_2 = np.max(magnitude_filter_2)
             else:
                 max_magnitude_filter_2 = magnitude_fit_range[1]
-            print(min_magnitude_filter_2, max_magnitude_filter_2)
 
             #   Define bins
             bins = np.linspace(
@@ -1890,13 +1919,13 @@ class MakeCMDs:
             )
 
             #   Perform binning
-            digitized = np.digitize(self.magnitude_filter_2, bins)
+            digitized = np.digitize(magnitude_filter_2, bins)
             #   TODO: Rewrite to make it easier to read
-            magnitude_filter_2_binned = [sigma_clipped_stats(self.magnitude_filter_2[digitized == i]) for i in
-                                         range(1, len(bins)) if len(self.magnitude_filter_2[digitized == i]) != 0]
+            magnitude_filter_2_binned = [sigma_clipped_stats(magnitude_filter_2[digitized == i]) for i in
+                                         range(1, len(bins)) if len(magnitude_filter_2[digitized == i]) != 0]
             magnitude_filter_2_binned = np.array(magnitude_filter_2_binned)
-            magnitude_color_binned = [sigma_clipped_stats(self.magnitude_color[digitized == i]) for i in
-                                      range(1, len(bins)) if len(self.magnitude_color[digitized == i]) != 0]
+            magnitude_color_binned = [sigma_clipped_stats(magnitude_color[digitized == i]) for i in
+                                      range(1, len(bins)) if len(magnitude_color[digitized == i]) != 0]
             magnitude_color_binned = np.array(magnitude_color_binned)
             magnitude_binned_array = np.array([magnitude_filter_2_binned[:, 1], magnitude_color_binned[:, 1]]).T
 
