@@ -258,7 +258,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     if mode == 'mags':
         try:
             magnitudes = tbl['mag_cali_trans']
-        except:
+        except KeyError:
             magnitudes = tbl['mag_cali']
         for i in range(0, len(x)):
             plt.text(
@@ -767,90 +767,6 @@ def plot_residual(name, image_orig, residual_image, output_dir,
         )
     # plt.show()
     plt.close()
-
-
-#   TODO: Check if the following plot is used or not
-# def sigma_plot(bv, mags, bands, band, nr, outdir, nameobj=None, fit=None):
-#     """
-#         Illustrate sigma clipping of magnitudes
-#
-#         Parameters
-#         ----------
-#         bv          : `numpy.ndarray`
-#             Delta color - (mag_2-mag_1)_observed - (mag_2-mag_1)_literature
-#
-#         mags        : `numpy.ndarray`
-#             Magnitudes
-#
-#         bands       : `list` of `string`
-#             Filter list
-#
-#         band        : `list` of `string`
-#             Filter name
-#
-#         nr          : `integer`
-#             Number of the star to plot
-#
-#         outdir      : `string`
-#             Output directory
-#
-#         nameobj     : `string`, optional
-#             Name of the object
-#             Default is ``None``.
-#
-#         fit             : ` astropy.modeling.fitting` instance, optional
-#             Fit to plot
-#             Default is ``None``.
-#     """
-#     #   Check output directories
-#     checks.check_out(
-#         outdir,
-#         os.path.join(outdir, 'sigmag'),
-#     )
-#
-#     #   Sigma clip magnitudes
-#     clip = sigma_clipping(mags, sigma=1.5)
-#     mask = np.invert(clip.recordmask)
-#     clip_bv = bv[mask]
-#     mag_clip = mags[mask]
-#
-#     #   Plot sigma clipped magnitudes
-#     fig = plt.figure(figsize=(8, 8))
-#
-#     #   Set title
-#     if nameobj is None:
-#         sub_titel = f'Sigma clipped magnitudes -- star: {nr}'
-#     else:
-#         sub_titel = f'Sigma clipped magnitudes -- star: {nr} ({nameobj})'
-#     fig.suptitle(sub_titel, fontsize=17)
-#
-#     #   Plot data
-#     plt.plot(mags, bv, color='blue', marker='.', linestyle='none')
-#     plt.plot(mag_clip, clip_bv, color='red', marker='.', linestyle='none')
-#
-#     #   Plot fit
-#     if fit is not None:
-#         mags_sort = np.sort(mags)
-#         plt.plot(
-#             mags_sort,
-#             fit(mags_sort),
-#             color='r',
-#             linewidth=3,
-#             label='Polynomial fit',
-#         )
-#
-#     #   Set x and y axis label
-#     plt.xlabel(f"{band} [mag]")
-#     plt.ylabel(f"Delta {bands[0]}-{bands[1]}")
-#
-#     #   Save plot
-#     plt.savefig(
-#         f'{outdir}/sigmag/{nr}_{band}.png',
-#         bbox_inches='tight',
-#         format='png',
-#     )
-#     plt.close()
-#     # plt.show()
 
 
 def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
@@ -1666,7 +1582,7 @@ class MakeCMDs:
 
         chi_square_color                : `numpy.ndarray`
             Chi square based on object color
-            
+
         chi_square_list                 : `list` of `float`
             See above
 
@@ -1711,7 +1627,7 @@ class MakeCMDs:
             The minimum of the plot range in X direction
         """
         #   Initialize, set defaults and check plot dimensions
-        fig = initialize_plot(
+        initialize_plot(
             figure_size_x,
             figure_size_y,
         )
@@ -1981,11 +1897,6 @@ class MakeCMDs:
                     magnitude_color_binned.append(
                         sigma_clipped_stats(magnitude_color[digitized == i])
                     )
-            # magnitude_filter_2_binned = [sigma_clipped_stats(magnitude_filter_2[digitized == i]) for i in
-            #                              range(1, len(bins)) if len(magnitude_filter_2[digitized == i]) != 0]
-            # magnitude_color_binned = [sigma_clipped_stats(magnitude_color[digitized == i]) for i in
-            #                           range(1, len(bins)) if len(magnitude_color[digitized == i]) != 0]
-            #
             magnitude_filter_2_binned = np.array(magnitude_filter_2_binned)
             magnitude_color_binned = np.array(magnitude_color_binned)
             magnitude_binned_array = np.array([magnitude_filter_2_binned[:, 1], magnitude_color_binned[:, 1]]).T
@@ -2201,8 +2112,6 @@ class MakeCMDs:
                 isochrone_data = open(isochrones)
 
                 #   Overall lists for the isochrones
-                isochrone_magnitude_2_list = []
-                isochrone_color_list = []
                 nearst_neighbour_indexes_list = []
 
                 #   Number of detected isochrones
@@ -2225,10 +2134,6 @@ class MakeCMDs:
                                     [isochrone_magnitude_2, isochrone_color]
                                 ).T
                                 isochrones_list.append(isochrone_array)
-                                # isochrone_magnitude_2_list.append(
-                                #     isochrone_magnitude_2
-                                # )
-                                # isochrone_color_list.append(isochrone_color)
 
                                 #   Find points to compare with binned observations
                                 if fit_isochrone:
@@ -2279,8 +2184,6 @@ class MakeCMDs:
                 #   Add last isochrone to overall lists
                 #   TODO: Rearrange code so that the following block is not necessary
                 age_list.append(age)
-                # isochrone_magnitude_2_list.append(isochrone_magnitude_2)
-                # isochrone_color_list.append(isochrone_color)
                 isochrone_array = np.array(
                     [isochrone_magnitude_2, isochrone_color]
                 ).T
