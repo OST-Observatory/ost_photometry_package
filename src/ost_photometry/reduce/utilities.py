@@ -170,8 +170,22 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
             f'\t=> Check paths to the images!{style.Bcolors.ENDC}'
         )
 
-    #   Get instruments (set() allows to return only unique values)
-    instruments = set(image_file_collection.summary['instrume'])
+    #   Get instruments
+    instrument_mask = image_file_collection.summary['instrume'].mask
+    files_without_instrument = np.array(
+        image_file_collection.files
+    )[instrument_mask]
+    for file_name in files_without_instrument:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without instrument information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    instruments = set(
+        image_file_collection.summary['instrume'][np.invert(instrument_mask)]
+    )
 
     if len(instruments) > 1:
         raise RuntimeError(
@@ -230,12 +244,29 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
             instrument = ''
 
     #   Get readout mode
-    readout_modes = set(image_file_collection.summary['readoutm'])
+    readout_mode_mask = image_file_collection.summary['readoutm'].mask
+    files_without_readout_mode = np.array(
+        image_file_collection.files
+    )[readout_mode_mask]
+    for file_name in files_without_readout_mode:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without readout mode information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    readout_modes = set(
+        image_file_collection.summary['readoutm'][np.invert(readout_mode_mask)]
+    )
+
     if not readout_modes:
         readout_mode = 'Extend Fullwell 2CMS'
     elif len(readout_modes) == 1:
         readout_mode = list(readout_modes)[0]
 
+        #   This is a dirty fix for the inadequacy of Maxim-DL to write
+        #   the correct readout mode in the Header.
         if readout_mode in ['Fast', 'Slow']:
             readout_mode = 'Extend Fullwell 2CMS'
     else:
@@ -245,7 +276,22 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         )
 
     #   Get gain setting
-    gain_settings = set(image_file_collection.summary['gain'])
+    gain_mask = image_file_collection.summary['gain'].mask
+    files_without_gain = np.array(
+        image_file_collection.files
+    )[gain_mask]
+    for file_name in files_without_gain:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without gain information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    gain_settings = set(
+        image_file_collection.summary['gain'][np.invert(gain_mask)]
+    )
+
     if len(gain_settings) > 1:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Multiple gain values detected.\n'
@@ -254,7 +300,22 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
     gain_setting = list(gain_settings)[0]
 
     #   Offset settings
-    offset_settings = set(image_file_collection.summary['offset'])
+    offset_mask = image_file_collection.summary['offset'].mask
+    files_without_offset = np.array(
+        image_file_collection.files
+    )[offset_mask]
+    for file_name in files_without_offset:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without offset information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    offset_settings = set(
+        image_file_collection.summary['offset'][np.invert(offset_mask)]
+    )
+
     if len(offset_settings) > 1:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Multiple offset values detected.\n'
@@ -262,7 +323,22 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         )
 
     #   Get the bit setting
-    pixel_bit_set = set(image_file_collection.summary['bitpix'])
+    pixel_bit_mask = image_file_collection.summary['bitpix'].mask
+    files_without_pixel_bit = np.array(
+        image_file_collection.files
+    )[pixel_bit_mask]
+    for file_name in files_without_pixel_bit:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without pixel bit information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    pixel_bit_set = set(
+        image_file_collection.summary['bitpix'][np.invert(pixel_bit_mask)]
+    )
+
     if len(pixel_bit_set) > 1:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Multiple bit values detected.\n'
@@ -618,8 +694,7 @@ def check_exposure_times(image_file_collection, image_type, exposure_times,
 def check_filter_keywords(path, image_type):
     """
         Consistency check - Check if the image type of the images in 'path'
-        fit
-                            to one supplied with 'image_type'.
+                            fit to one supplied with 'image_type'.
         Parameters
         ----------
         path            : `string`
@@ -671,6 +746,7 @@ def check_filter_keywords(path, image_type):
     #   -> Compare image file collection with 'image_with_correct_image_type'
     list_1 = list(image_file_collection.files)
     list_2 = image_with_correct_image_type
+    # TODO: Check if there is a bug here when image_with_correct_image_type is a list of lists
     result = [x for x in list_1 + list_2 if x not in list_1 or x not in list_2]
 
     #   TODO: Replace '_str' methods
