@@ -1373,7 +1373,7 @@ class MakeCMDs:
                     f'_{plot_type}_{self.filter_2}_{self.color}'
                     f'.{self.file_type}')
             terminal_output.print_to_terminal(
-                f"Save CMD plot ({self.file_type}): {path}",
+                f"Save CMD plot ({self.file_type}): {path}\n",
             )
             plt.savefig(
                 path,
@@ -1553,8 +1553,7 @@ class MakeCMDs:
 
     @staticmethod
     def calculate_chi_square(magnitude_filter_2, magnitude_color,
-                             isochrone_array, nearst_neighbour_indexes,
-                             chi_square_list):
+                             isochrone_array, nearst_neighbour_indexes):
         """
 
         Parameters
@@ -1571,9 +1570,6 @@ class MakeCMDs:
         nearst_neighbour_indexes        : `list` of `integer`
             Indexes of the nearest isochrone points to the reference points
             of the observed objects.
-
-        chi_square_list                 : `list` of `float`
-            List with the calculated chi square values
 
         Returns
         -------
@@ -1594,11 +1590,9 @@ class MakeCMDs:
         chi_square_color = np.square(
             magnitude_color[:, 1] - isochrone_array[:, 1][nearst_neighbour_indexes]
         ).sum()
-        chi_square_list.append(
-            chi_square_magnitude_2 + chi_square_color
-        )
+        chi_square_total = chi_square_magnitude_2 + chi_square_color
 
-        return chi_square_magnitude_2, chi_square_color, chi_square_list
+        return chi_square_magnitude_2, chi_square_color, chi_square_total
 
     def plot_apparent_cmd(self, figure_size_x='', figure_size_y='',
                           y_plot_range_max='', y_plot_range_min='',
@@ -1942,15 +1936,17 @@ class MakeCMDs:
             )
 
             #   Initialize chi square subplots
-            if chi_square_plot_mode == 'detailed':
+            if chi_square_plot_mode == 'detailed' and fit_isochrone:
                 ax1 = fig.add_subplot(spec[1])
                 ax2 = fig.add_subplot(spec[2])
-            elif chi_square_plot_mode == 'simple':
+            elif chi_square_plot_mode == 'simple' and fit_isochrone:
                 ax2 = fig.add_subplot(spec[2])
 
             #   Prepare list for chi square values
             age_list = []
             chi_square_list = []
+            chi_square_magnitude_2_list = []
+            chi_square_color_list = []
             isochrones_list = []
 
             #   OPTION I: Individual isochrone files in a specific directory
@@ -1998,7 +1994,7 @@ class MakeCMDs:
                             if 'Age' in line_elements or 'age' in line_elements:
                                 try:
                                     age_index = line_elements.index('age')
-                                except IndexError:
+                                except ValueError:
                                     age_index = line_elements.index('Age')
 
                                 for string in line_elements[age_index + 1:]:
@@ -2008,8 +2004,12 @@ class MakeCMDs:
                                     #   Find age value
                                     try:
                                         if isinstance(age_value, str):
-                                            #   TODO: Check why is here int(float())?
-                                            age_value = int(float(string))
+                                            age_value = float(string)
+                                            if age_value >= 1000. and age_unit.rfind('Myr') != -1:
+                                                age_value /= 1000.
+                                                age_unit = 'Gyr'
+                                            if age_unit.rfind('Myr') != -1:
+                                                age_unit = 'Myr'
                                             age_list.append(age_value)
                                     except (TypeError, ValueError):
                                         pass
@@ -2073,27 +2073,33 @@ class MakeCMDs:
 
                     if fit_isochrone:
                         #   Calculate chi square
-                        chi_square_magnitude_2, chi_square_color, chi_square_list = self.calculate_chi_square(
+                        chi_square_magnitude_2, chi_square_color, chi_square_total = self.calculate_chi_square(
                             magnitude_filter_2_binned,
                             magnitude_color_binned,
                             isochrone_array,
                             nearst_neighbour_indexes,
-                            chi_square_list,
                         )
+                        chi_square_magnitude_2_list.append(
+                            chi_square_magnitude_2
+                        )
+                        chi_square_color_list.append(chi_square_color)
+                        chi_square_list.append(chi_square_total)
 
                         #   Plot chi square values
                         if chi_square_plot_mode == 'detailed':
                             ax1.scatter(
-                                chi_square_color,
+                                chi_square_magnitude_2,
                                 age_value,
                                 color=color_pick.to_rgba(i),
                                 marker='o',
+                                alpha=0.2,
                             )
                             ax2.scatter(
                                 age_value,
-                                chi_square_magnitude_2,
+                                chi_square_color,
                                 color=color_pick.to_rgba(i),
                                 marker='o',
+                                alpha=0.2,
                             )
                         elif chi_square_plot_mode == 'simple':
                             ax2.scatter(
@@ -2101,6 +2107,7 @@ class MakeCMDs:
                                 chi_square_color + chi_square_magnitude_2,
                                 color=color_pick.to_rgba(i),
                                 marker='o',
+                                alpha=0.2,
                             )
 
             #   OPTION II: Isochrone file containing many individual isochrones
@@ -2129,7 +2136,7 @@ class MakeCMDs:
                             if n_isochrones:
                                 #   This part is only active after an isochrone has
                                 #   been detected. The variables are then assigned.
-                                age_list.append(age)
+                                age_list.append(float(age))
                                 isochrone_array = np.array(
                                     [isochrone_magnitude_2, isochrone_color]
                                 ).T
@@ -2183,7 +2190,7 @@ class MakeCMDs:
 
                 #   Add last isochrone to overall lists
                 #   TODO: Rearrange code so that the following block is not necessary
-                age_list.append(age)
+                age_list.append(float(age))
                 isochrone_array = np.array(
                     [isochrone_magnitude_2, isochrone_color]
                 ).T
@@ -2215,11 +2222,10 @@ class MakeCMDs:
                 #   Cycle through iso lines
                 for i in range(0, n_isochrones):
                     if isochrone_log_age:
-                        age_value = float(age_list[i])
-                        age_value = 10 ** age_value / 10 ** 9
+                        age_value = 10 ** age_list[i] / 10 ** 9
                         age_value = round(age_value, 3)
                     else:
-                        age_value = round(float(age_list[i]), 3)
+                        age_value = round(age_list[i], 3)
                     age_unit = 'Gyr'
                     age_string = f'{age_value} {age_unit}'
 
@@ -2249,29 +2255,35 @@ class MakeCMDs:
 
                     if fit_isochrone:
                         #   Calculate chi square
-                        chi_square_magnitude_2, chi_square_color, chi_square_list = self.calculate_chi_square(
+                        chi_square_magnitude_2, chi_square_color, chi_square_total = self.calculate_chi_square(
                             magnitude_filter_2_binned,
                             magnitude_color_binned,
                             isochrones_list[i],
                             nearst_neighbour_indexes_list[i],
-                            chi_square_list,
                         )
+                        chi_square_magnitude_2_list.append(
+                            chi_square_magnitude_2
+                        )
+                        chi_square_color_list.append(chi_square_color)
+                        chi_square_list.append(chi_square_total)
+
 
                         #   Plot chi square values
                         if chi_square_plot_mode == 'detailed':
-                            ax1.scatter(
-                                chi_square_color,
-                                age_value,
-                                color=color_pick.to_rgba(i),
-                                marker='o',
-                                alpha=0.6,
-                            )
-                            ax2.scatter(
-                                age_value,
+                            ax1.plot(
                                 chi_square_magnitude_2,
+                                age_value,
                                 color=color_pick.to_rgba(i),
                                 marker='o',
-                                alpha=0.6,
+                                alpha=0.2,
+                            )
+                            ax2.plot(
+                                age_value,
+                                chi_square_color,
+                                ls='none',
+                                color=color_pick.to_rgba(i),
+                                marker='o',
+                                alpha=0.2,
                             )
                         elif chi_square_plot_mode == 'simple':
                             ax2.scatter(
@@ -2279,25 +2291,27 @@ class MakeCMDs:
                                 chi_square_color + chi_square_magnitude_2,
                                 color=color_pick.to_rgba(i),
                                 marker='o',
-                                alpha=0.6,
+                                alpha=0.2,
                             )
 
             #   Plot legend
             if isochrone_legend:
-                ax0.legend(
+                legend_ = ax0.legend(
                     bbox_to_anchor=(0., 1.02, 1.0, 0.102),
                     loc=3,
                     ncol=4,
                     mode='expand',
                     borderaxespad=0.,
                 )
+                for element in legend_.legendHandles:
+                    element.set_alpha(0.6)
 
         if fit_isochrone:
             #   Evaluate chi square
             min_chi_square_id = np.argmin(chi_square_list)
 
             terminal_output.print_to_terminal(
-                f'Best fitting isochrone: {float(age_list[min_chi_square_id]):.1f} '
+                f'Best fitting isochrone: {age_list[min_chi_square_id]:.1f} '
                 f'{age_unit} with chi^2 = {chi_square_list[min_chi_square_id]:.3f}',
                 # indent=2,
                 style_name="GOOD",
@@ -2314,19 +2328,43 @@ class MakeCMDs:
 
             #   Finish chi square plots
             if chi_square_plot_mode == 'detailed':
-                ax1.minorticks_on()
-                ax1.grid(True, color='lightgray', linestyle='--')
-                ax1.set_ylabel(f'Age [{age_unit}]')
-                ax1.set_xlabel(f'$\chi^2$ ')
-                ax2.minorticks_on()
-                ax2.grid(True, color='lightgray', linestyle='--')
-                ax2.set_xlabel(f'Age [{age_unit}]')
-                ax2.set_ylabel(f'$\chi^2$ ')
+                ax1.scatter(
+                    chi_square_magnitude_2_list[min_chi_square_id],
+                    age_list[min_chi_square_id],
+                    color=color_pick.to_rgba(min_chi_square_id),
+                    marker='o',
+                    alpha=1.0,
+                )
+                ax2.scatter(
+                    age_list[min_chi_square_id],
+                    chi_square_color_list[min_chi_square_id],
+                    color=color_pick.to_rgba(min_chi_square_id),
+                    marker='o',
+                    alpha=1.0,
+                )
+                mk_ticks_labels(
+                    f'Age [{age_unit}]',
+                    f'$\chi^2$ ',
+                    ax1,
+                )
+                mk_ticks_labels(
+                    f'$\chi^2$ ',
+                    f'Age [{age_unit}]',
+                    ax2,
+                )
             elif chi_square_plot_mode == 'simple':
-                ax2.minorticks_on()
-                ax2.grid(True, color='lightgray', linestyle='--')
-                ax2.set_xlabel(f'Age [{age_unit}]')
-                ax2.set_ylabel(f'$\chi^2$ ')
+                ax2.scatter(
+                    age_list[min_chi_square_id],
+                    chi_square_magnitude_2_list[min_chi_square_id] + chi_square_color_list[min_chi_square_id],
+                    color=color_pick.to_rgba(min_chi_square_id),
+                    marker='o',
+                    alpha=1.0,
+                )
+                mk_ticks_labels(
+                    f'$\chi^2$ ',
+                    f'Age [{age_unit}]',
+                    ax2,
+                )
 
         #   Set ticks and labels for CMD
         mk_ticks_labels(
