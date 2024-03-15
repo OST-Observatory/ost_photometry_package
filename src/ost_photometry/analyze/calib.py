@@ -9,6 +9,7 @@ import numpy as np
 from uncertainties import unumpy
 
 from astroquery.vizier import Vizier
+from astroquery.simbad import Simbad
 
 from astropy.table import Table
 import astropy.units as u
@@ -33,8 +34,8 @@ class CalibParameters:
         self.calib_tbl = calib_tbl
 
 
-def get_comp_stars(coordinates_sky, filters=None, field_of_view=18.5,
-                   magnitude_range=(0., 18.5), indent=2):
+def get_comp_stars_aavso(coordinates_sky, filters=None, field_of_view=18.5,
+                         magnitude_range=(0., 18.5), indent=2):
     """
         Download calibration info for variable stars from AAVSO
 
@@ -148,8 +149,100 @@ def get_comp_stars(coordinates_sky, filters=None, field_of_view=18.5,
         return tbl, column_dict
 
 
-def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, magnitude_range=(0., 18.5),
-                indent=2):
+def get_comp_stars_simbad(coordinates_sky, filters=None, field_of_view=18.5,
+                          magnitude_range=(0., 18.5), indent=2):
+    """
+        Download calibration info from Simbad
+
+        Parameters
+        ----------
+        coordinates_sky  : `astropy.coordinates.SkyCoord`
+            Coordinates of the field of field_of_view
+
+        filters          : `list` of `string` or `None`, optional
+            Filter names
+            Default is ``None``.
+
+        field_of_view   : `float`, optional
+            Field of view in arc minutes
+            Default is ``18.5``.
+
+        magnitude_range : `tuple` of `float`, optional
+            Magnitude range
+            Default is ``(0.,18.5)``.
+
+        indent          : `integer`, optional
+            Indentation for the console output
+            Default is ``2``.
+
+        Returns
+        -------
+        tbl             : `astropy.table.Table`
+            Table with calibration information
+
+        column_dict     : `dictionary` - 'string':`string`
+            Dictionary with column names vs default names
+    """
+    terminal_output.print_to_terminal(
+        "Downloading calibration data from Simbad",
+        indent=indent,
+    )
+
+    #   Sanitize filter list
+    if filters is None:
+        filters = ['B', 'V']
+
+    #   Initialize Simbad instance
+    my_simbad = Simbad()
+    print(my_simbad.list_votable_fields())
+
+    for filter_ in filters:
+        my_simbad.add_votable_fields(f'flux({filter_})')
+
+    simbad_query = my_simbad.query_region('m11', radius=20 * u.arcmin)
+    print("[INFO] Found", len(simbad_query), "with the SIMBAD query")
+    import sys
+    sys.exit()
+    # # print(S_query.colnames)
+    # S_query['xpos'] = [wcs.world_to_pixel(
+    #     coord.SkyCoord(ra=Angle(S_query['RA'][i], unit=u.hourangle), dec=Angle(S_query['DEC'][i], unit=u.deg),
+    #                    frame='icrs'))[0] + xoffset for i in range(len(S_query))]
+    # S_query['ypos'] = [wcs.world_to_pixel(
+    #     coord.SkyCoord(ra=Angle(S_query['RA'][i], unit=u.hourangle), dec=Angle(S_query['DEC'][i], unit=u.deg),
+    #                    frame='icrs'))[1] + yoffset for i in range(len(S_query))]
+    #
+    #     #   Initialize dictionary with column names
+    #     column_dict = {'id': 'id', 'ra': 'ra', 'dec': 'dec'}
+    #     #   Initialize table
+    #     tbl = Table(
+    #         names=['id', 'ra', 'dec', ],
+    #         data=[obj_id, obj_ra, obj_dec, ]
+    #     )
+    #
+    #     #   Complete table & dictionary
+    #     for j, filter_ in enumerate(filters):
+    #         tbl.add_columns([
+    #             mags[:, j],
+    #             errs[:, j],
+    #         ],
+    #             names=[
+    #                 'mag' + filter_,
+    #                 'err' + filter_,
+    #             ]
+    #         )
+    #         column_dict['mag' + filter_] = 'mag' + filter_
+    #         column_dict['err' + filter_] = 'err' + filter_
+    #
+    #     #   Filter magnitudes: lower threshold
+    #     mask = tbl['magV'] >= magnitude_range[0]
+    #     tbl = tbl[mask]
+    #
+    #     return tbl, column_dict
+
+
+def get_vizier_catalog(filter_list, coordinates_image_center, fov,
+                       catalog_identifier, magnitude_range=(0., 18.5),
+                       indent=2):
     """
         Download catalog with calibration info from Vizier
 
@@ -440,7 +533,7 @@ def load_calib(image, filter_list, calibration_method='APASS', magnitude_range=(
     #   Read calibration table
     if calibration_method == 'vsp':
         #   Load calibration info from AAVSO for variable stars
-        calib_tbl, column_names = get_comp_stars(
+        calib_tbl, column_names = get_comp_stars_aavso(
             image.coord,
             filters=filter_list,
             field_of_view=1.5 * image.fov,
@@ -448,6 +541,7 @@ def load_calib(image, filter_list, calibration_method='APASS', magnitude_range=(
             indent=indent + 1,
         )
         ra_unit = u.hourangle
+
     elif calibration_method == 'simbad_vot' and path_calibration_file is not None:
         #   Load info from data file in VO format downloaded from Simbad
         calib_tbl, column_names = read_votable_simbad(
@@ -456,9 +550,21 @@ def load_calib(image, filter_list, calibration_method='APASS', magnitude_range=(
             magnitude_range=magnitude_range,
             indent=indent + 1,
         )
+        ra_unit = u.hourangle
+
+    elif calibration_method == 'simbad':
+        calib_tbl, column_names = get_comp_stars_simbad(
+            image.coord,
+            filters=filter_list,
+            field_of_view=1.5 * image.fov,
+            magnitude_range=magnitude_range,
+            indent=indent + 1,
+        )
+        ra_unit = u.hourangle
+
     elif calibration_method in vizier_dict.keys():
         #   Load info from Vizier
-        calib_tbl, column_names, ra_unit = get_catalog(
+        calib_tbl, column_names, ra_unit = get_vizier_catalog(
             filter_list,
             image.coord,
             image.fov,
