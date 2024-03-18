@@ -226,9 +226,8 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         tbl[x_column],
         tbl[y_column],
         s=40,
-        facecolors='none',
-        edgecolors='purple',
-        alpha=0.7,
+        facecolors=(0.5, 0., 0.5, 0.2),
+        edgecolors=(0.5, 0., 0.5, 0.7),
         lw=0.9,
         label=label,
     )
@@ -237,9 +236,8 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             tbl_2[x_column_2],
             tbl_2[y_column_2],
             s=40,
-            facecolors='none',
-            edgecolors='#02c14d',
-            # alpha=0.7,
+            facecolors=(0., 0.7, 0.35, 0.2),
+            edgecolors=(0., 0.7, 0.35, 0.7),
             lw=0.9,
             label=label_2,
         )
@@ -1353,8 +1351,11 @@ class MakeCMDs:
         plot_type                   : `string`
             Plot type
         """
+        cmd_dir = f'{self.output_dir}/cmds'
+        checks.check_output_directories(cmd_dir)
+
         if self.name_of_star_cluster == "" or self.name_of_star_cluster == "?":
-            path = (f'{self.output_dir}/{self.file_name}_{plot_type}'
+            path = (f'{cmd_dir}/{self.file_name}_{plot_type}'
                     f'_{self.filter_2}_{self.color}.{self.file_type}')
             terminal_output.print_to_terminal(
                 f"Save CMD plot ({self.file_type}): {path}",
@@ -1369,7 +1370,7 @@ class MakeCMDs:
                 ' ',
                 '_',
             )
-            path = (f'{self.output_dir}/{self.file_name}_{name_of_star_cluster}'
+            path = (f'{cmd_dir}/{self.file_name}_{name_of_star_cluster}'
                     f'_{plot_type}_{self.filter_2}_{self.color}'
                     f'.{self.file_type}')
             terminal_output.print_to_terminal(

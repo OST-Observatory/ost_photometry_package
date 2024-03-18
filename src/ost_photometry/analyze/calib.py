@@ -146,6 +146,12 @@ def get_comp_stars_aavso(coordinates_sky, filters=None, field_of_view=18.5,
         mask = tbl['magV'] >= magnitude_range[0]
         tbl = tbl[mask]
 
+        terminal_output.print_to_terminal(
+            f"{len(tbl)} calibration objects remaining after magnitude "
+            "filtering",
+            indent=indent,
+        )
+    
         return tbl, column_dict
 
 
@@ -193,54 +199,87 @@ def get_comp_stars_simbad(coordinates_sky, filters=None, field_of_view=18.5,
         filters = ['B', 'V']
 
     #   Initialize Simbad instance
-    my_simbad = Simbad()
-    print(my_simbad.list_votable_fields())
+    my_simbad = Simbad(
+        # ROW_LIMIT=1e6,
+    )
 
     for filter_ in filters:
         my_simbad.add_votable_fields(f'flux({filter_})')
+        my_simbad.add_votable_fields(f'flux_error({filter_})')
 
-    simbad_query = my_simbad.query_region('m11', radius=20 * u.arcmin)
-    print("[INFO] Found", len(simbad_query), "with the SIMBAD query")
-    import sys
-    sys.exit()
-    # # print(S_query.colnames)
-    # S_query['xpos'] = [wcs.world_to_pixel(
-    #     coord.SkyCoord(ra=Angle(S_query['RA'][i], unit=u.hourangle), dec=Angle(S_query['DEC'][i], unit=u.deg),
-    #                    frame='icrs'))[0] + xoffset for i in range(len(S_query))]
-    # S_query['ypos'] = [wcs.world_to_pixel(
-    #     coord.SkyCoord(ra=Angle(S_query['RA'][i], unit=u.hourangle), dec=Angle(S_query['DEC'][i], unit=u.deg),
-    #                    frame='icrs'))[1] + yoffset for i in range(len(S_query))]
-    #
-    #     #   Initialize dictionary with column names
-    #     column_dict = {'id': 'id', 'ra': 'ra', 'dec': 'dec'}
-    #     #   Initialize table
-    #     tbl = Table(
-    #         names=['id', 'ra', 'dec', ],
-    #         data=[obj_id, obj_ra, obj_dec, ]
-    #     )
-    #
-    #     #   Complete table & dictionary
-    #     for j, filter_ in enumerate(filters):
-    #         tbl.add_columns([
-    #             mags[:, j],
-    #             errs[:, j],
-    #         ],
-    #             names=[
-    #                 'mag' + filter_,
-    #                 'err' + filter_,
-    #             ]
-    #         )
-    #         column_dict['mag' + filter_] = 'mag' + filter_
-    #         column_dict['err' + filter_] = 'err' + filter_
-    #
-    #     #   Filter magnitudes: lower threshold
-    #     mask = tbl['magV'] >= magnitude_range[0]
-    #     tbl = tbl[mask]
-    #
-    #     return tbl, column_dict
+    simbad_table = my_simbad.query_region(
+        coordinates_sky, 
+        radius=field_of_view * 0.66 * u.arcmin,
+    )
+    terminal_output.print_to_terminal(
+        f"Found {len(simbad_table)} with the SIMBAD query",
+        indent=indent,
+    )
+
+    #   Stop here if Table is empty
+    if not simbad_table:
+        terminal_output.print_to_terminal(
+            "No calibration data available",
+            indent=indent + 1,
+            style_name='WARNING',
+        )
+        return Table(), {}
+
+    #   Rename columns to default names
+    for filter_ in filters:
+        simbad_table.rename_column(f'FLUX_{filter_}', f'{filter_}mag')
+        simbad_table.rename_column(f'FLUX_ERROR_{filter_}', f'e_{filter_}mag')
+    
+    #   Restrict magnitudes to requested range
+    if 'Vmag' in simbad_table.keys():
+        preferred_filer = 'Vmag'
+    elif 'Rmag' in simbad_table.keys():
+        preferred_filer = 'Rmag'
+    elif 'Bmag' in simbad_table.keys():
+        preferred_filer = 'Bmag'
+    elif 'Imag' in simbad_table.keys():
+        preferred_filer = 'Imag'
+    elif 'Umag' in simbad_table.keys():
+        preferred_filer = 'Umag'
+    else:
+        #   This should never happen
+        terminal_output.print_to_terminal(
+            "Calibration issue: Threshold magnitude not recognized",
+            indent=indent + 1,
+            style_name='ERROR',
+        )
+        raise RuntimeError
+    
+    mask = (simbad_table[preferred_filer] <= magnitude_range[1]) & (simbad_table[preferred_filer] >= magnitude_range[0])
+    simbad_table = simbad_table[mask]
+
+    terminal_output.print_to_terminal(
+        f"{len(simbad_table)} calibration objects remaining after magnitude "
+        "filtering",
+        indent=indent,
+    )
+    
+    #   Define dict with column names
+    column_dict = {'ra': 'RA', 'dec': 'DEC'}
+    
+    for filter_ in filters:
+        if f'{filter_}mag' in simbad_table.colnames:
+            column_dict[f'mag{filter_}'] = f'{filter_}mag'
+
+            #   Check if catalog contains magnitude errors
+            if f'e_{filter_}mag' in simbad_table.colnames:
+                column_dict[f'err{filter_}'] = f'e_{filter_}mag'
+        else:
+            terminal_output.print_to_terminal(
+                f"No calibration data for {filter_} band",
+                indent=indent + 1,
+                style_name='WARNING',
+            )
+
+    return simbad_table, column_dict
 
 
-def get_vizier_catalog(filter_list, coordinates_image_center, fov,
+def get_vizier_catalog(filter_list, coordinates_image_center, field_of_view,
                        catalog_identifier, magnitude_range=(0., 18.5),
                        indent=2):
     """
@@ -254,10 +293,10 @@ def get_vizier_catalog(filter_list, coordinates_image_center, fov,
         coordinates_image_center    : `astropy.coordinates.SkyCoord`
             Coordinates of the field of field_of_view
 
-        fov                         : `float`
+        field_of_view               : `float`
             Field of view in arc minutes
 
-        catalog_identifier         : `string`
+        catalog_identifier          : `string`
             Catalog identifier
 
         magnitude_range             : `tuple` of `float`, optional
@@ -302,7 +341,7 @@ def get_vizier_catalog(filter_list, coordinates_image_center, fov,
     #   Get data from the corresponding catalog
     table_list = v.query_region(
         coordinates_image_center,
-        radius=fov * u.arcmin,
+        radius=field_of_view * u.arcmin,
     )
 
     #   Chose first table
@@ -349,6 +388,12 @@ def get_vizier_catalog(filter_list, coordinates_image_center, fov,
 
     mask = (result[preferred_filer] <= magnitude_range[1]) & (result[preferred_filer] >= magnitude_range[0])
     result = result[mask]
+
+    terminal_output.print_to_terminal(
+        f"{len(result)} calibration objects remaining after magnitude "
+        "filtering",
+        indent=indent,
+    )
 
     #   Define dict with column names
     column_dict = {
@@ -565,7 +610,12 @@ def load_calib(image, filter_list, calibration_method='APASS', magnitude_range=(
             arr = calib_tbl[column_names[f'mag{filter_}']]
             if hasattr(arr, 'mask'):
                 ind_rm = np.where(arr.mask)
-                #   TODO: Add a test to check whether the following line is working or not.
+                calib_tbl.remove_rows(ind_rm)
+
+            #   Remove objects without errors from the calibration list
+            arr = calib_tbl[column_names[f'err{filter_}']]
+            if hasattr(arr, 'mask'):
+                ind_rm = np.where(arr.mask)
                 calib_tbl.remove_rows(ind_rm)
 
     if not calib_tbl:
