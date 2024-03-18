@@ -89,7 +89,7 @@ def calculate_field_of_view(image, indent=2, verbose=True):
     """
     if verbose:
         terminal_output.print_to_terminal(
-            "Calculating FOV, PIXEL scale, etc. ... ",
+            "Calculating field of view, PIXEL scale, etc. ... ",
             indent=indent,
         )
 
@@ -641,7 +641,7 @@ def find_wcs_astap(image, indent=2):
 
         Returns
         -------
-        derived_wcs                   : `astropy.wcs.WCS`
+        derived_wcs         : `astropy.wcs.WCS`
             WCS information
     """
     terminal_output.print_to_terminal(
@@ -650,7 +650,7 @@ def find_wcs_astap(image, indent=2):
         indent=indent,
     )
 
-    #   FOV in degrees
+    #   Field of view in degrees
     field_of_view = image.fov_y / 60.
 
     #   Path to image

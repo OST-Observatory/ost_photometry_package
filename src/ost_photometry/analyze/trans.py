@@ -1215,6 +1215,7 @@ def flux_normalization_ensemble(image_ensemble):
     image_ensemble.uflux_norm = flux / normalization_factor
 
 
+#   TODO: Check if image is here the correct property
 def prepare_zero_point(img_container, image, id_filter_1,
                        magnitudes_literature, magnitudes_observed_filter_1,
                        id_filter_2=None, magnitudes_observed_filter_2=None):
@@ -1288,6 +1289,21 @@ def prepare_zero_point(img_container, image, id_filter_1,
     image.ZP = (magnitudes_literature[id_filter_1] -
                 magnitudes_observed_filter_1)
     image.ZP_clip = image.ZP[image.ZP_mask]
+
+    #   Plot zero point statistics
+    plot.histogram_statistic(
+        [image.ZP],
+        [image.ZP_clip],
+        f'Zero point ({image.filt}) [mag]',
+        '',
+        'histogram_zero_point_{image.filt}',
+        image.outpath,
+        dataset_label=[
+            'All calibration objects',
+            'Sigma clipped calibration objects',
+        ],
+        name_obj=image.objname,
+    )
 
     #   TODO: Add random selection of calibration stars -> calculate variance
     n_calibration_objects = image.ZP_clip.shape[0]

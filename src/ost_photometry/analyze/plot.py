@@ -85,7 +85,7 @@ def compare_images(output_dir, original_image, comparison_image):
 
 def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             label='Identified stars', label_2='Identified stars (set 2)',
-            rts=None, mode=None, name_obj=None, terminal_logger=None,
+            rts=None, mode=None, name_obj=None, wcs=None, terminal_logger=None,
             indent=2):
     """
         Plot star maps  -> overlays of the determined star positions on FITS
@@ -117,16 +117,20 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             Identifier for the objects in `tbl_2`
             Default is ``Identified stars (set 2)``
 
-        rts             : `string`, optional
+        rts             : `string` or None, optional
             Expression characterizing the plot
             Default is ``None``
 
-        mode            : `string`, optional
+        mode            : `string` or None, optional
             String used to switch between different plot modes
             Default is ``None``
 
-        name_obj        : `string`, optional
+        name_obj        : `string` or None, optional
             Name of the object
+            Default is ``None``
+
+        wcs             : `astropy.wcs.WCS` or None, optional
+            WCS information
             Default is ``None``
 
         terminal_logger : `terminal_output.TerminalLog` or None, optional
@@ -191,8 +195,13 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
                 f"table 2. {style.Bcolors.ENDC}"
             )
 
-    #   Set layout of image
+    #   Set layout
     fig = plt.figure(figsize=(20, 9))
+
+    if wcs is not None:
+        ax = fig.add_subplot(projection=wcs)
+    else:
+        ax = fig.add_subplot()
 
     #   Set title of the complete plot
     if rts is None and name_obj is None:
@@ -291,8 +300,16 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     plt.minorticks_on()
 
     #   Set labels
-    plt.xlabel("[pixel]", fontsize=16)
-    plt.ylabel("[pixel]", fontsize=16)
+    if wcs is not None:
+        plt.xlabel("Right ascension", fontsize=16)
+        plt.ylabel("Deklination", fontsize=16)
+    else:
+        plt.xlabel("[pixel]", fontsize=16)
+        plt.ylabel("[pixel]", fontsize=16)
+
+    #   Enable grid for WCS
+    if wcs is not None:
+        plt.grid(True, color='lightgray', linestyle='--')
 
     #   Plot legend
     plt.legend(bbox_to_anchor=(0., 1.02, 1.0, 0.102), loc=3, ncol=2,
@@ -3108,3 +3125,98 @@ def filled_iso_contours(object_table, shape_image, filter_, output_dir='./',
     )
     plt.close()
     # plt.show()
+
+
+def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
+                        rts, output_dir, dataset_label, name_obj=None):
+    """
+    Plots histogram statistics on properties such as the zero point
+
+    Parameters
+    ----------
+    parameter_list_0    : `list` of `numpy.ndarray`
+        List of arrays with parameters to plot
+
+    parameter_list_1    : `list` of `numpy.ndarray`
+        Second list of arrays with parameters to plot such as sigma
+        clipped values of parameter_list_0
+
+    name_x              : `string`
+        Name of quantity 1
+
+    name_y              : `string`
+        Name of quantity 2
+
+    rts                 : `string`
+        Expression characterizing the plot
+
+    output_dir          : `string`
+        Output directory
+
+    dataset_label       : 'list` of 'string` or `None`, optional
+        Label for the datasets
+        Default is ``None``.
+
+    name_obj            : `string`, optional
+        Name of the object
+        Default is ``None``
+    """
+    #   Check output directories
+    checks.check_output_directories(
+        output_dir,
+        os.path.join(output_dir, 'calibration'),
+    )
+
+    #   Plot magnitudes
+    fig = plt.figure(figsize=(8, 8))
+
+    #   Set title
+    if name_obj is None:
+        sub_title = f'{name_x} histogram'
+    else:
+        sub_title = f'{name_x} histogram ({name_obj})'
+    fig.suptitle(
+        sub_title,
+        fontsize=17,
+    )
+
+    #   Make color map
+    color_pick = mk_colormap(len(parameter_list_0))
+
+    for i, parameter in enumerate(parameter_list_0):
+        plt.hist(
+            parameter,
+            bins=40,
+            alpha=0.25,
+            color=color_pick.to_rgba(i),
+            label=f'{dataset_label[i]}',
+        )
+    for i, parameter in enumerate(parameter_list_1):
+        plt.hist(
+            parameter,
+            bins=10,
+            alpha=0.5,
+            color=color_pick.to_rgba(i),
+            label=f'{dataset_label[i]}',
+        )
+        median_parameter = np.ma.median(parameter)
+        plt.axvline(
+            median_parameter,
+            color='g',
+        )
+
+    #   Add legend
+    if dataset_label is not None:
+        plt.legend()
+
+    #   Set x and y axis label
+    plt.ylabel(name_y)
+    plt.xlabel(name_x)
+
+    #   Save plot
+    plt.savefig(
+        f'{output_dir}/calibration/{rts}.pdf',
+        bbox_inches='tight',
+        format='pdf',
+    )
+    plt.close()

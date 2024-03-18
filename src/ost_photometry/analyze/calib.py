@@ -957,6 +957,7 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
                     'label_2': 'matched calibration stars',
                     'rts': rts,
                     'name_obj': img_ensemble.objname,
+                    'wcs': img_ensemble.wcs,
                 }
             )
             p.start()
