@@ -321,35 +321,11 @@ def get_vizier_catalog(filter_list, coordinates_image_center, fov,
     if 'column_rename' in catalog_properties_dict:
         for element in catalog_properties_dict['column_rename']:
             result.rename_column(element[0], element[1])
-    # if catalog_identifier == 'II/370/xmmom5s':
-    #     result.rename_column("UmAB", "Umag")
-    #     result.rename_column("BmAB", "Bmag")
-    #     result.rename_column("VmAB", "Vmag")
-    #     result.rename_column("e_UmAB", "e_Umag")
-    #     result.rename_column("e_BmAB", "e_Bmag")
-    #     result.rename_column("e_VmAB", "e_Vmag")
-    # if catalog_identifier == 'II/339/uvotssc1':
-    #     result.rename_column("U-AB", "Umag")
-    #     result.rename_column("B-AB", "Bmag")
-    #     result.rename_column("V-AB", "Vmag")
-    # if catalog_identifier == 'I/284/out':
-    #     result.rename_column("B1mag", "Bmag")
-    #     result.rename_column("R1mag", "Rmag")
-    # if catalog_identifier == 'II/336/apass9':
-    #     result.rename_column("r_mag", "Rmag")
-    #     result.rename_column("i_mag", "Imag")
-    #     result.rename_column("e_r_mag", "e_Rmag")
-    #     result.rename_column("e_i_mag", "e_Imag")
 
     #   Calculate B, U, etc. if only B-V, U-B, etc are given
     if 'magnitude_arithmetic' in catalog_properties_dict:
         for element in catalog_properties_dict['magnitude_arithmetic']:
             result[element[0]] = result[element[1]] + result[element[2]]
-    # if catalog_identifier in ['II/168/ubvmeans']:
-    #     result['Bmag'] = result['B-V'] + result['Vmag']
-    #     result['e_Bmag'] = result['e_B-V'] + result['e_Vmag']
-    #     result['Umag'] = result['U-B'] + result['Bmag']
-    #     result['e_Umag'] = result['e_U-B'] + result['e_Bmag']
 
     #   Restrict magnitudes to requested range
     if 'Vmag' in result.keys():
@@ -379,10 +355,6 @@ def get_vizier_catalog(filter_list, coordinates_image_center, fov,
         'ra': catalog_properties_dict['ra_dec_columns'][0],
         'dec': catalog_properties_dict['ra_dec_columns'][1]
     }
-    # if catalog_identifier == 'II/168/ubvmeans':
-    #     column_dict = {'ra': '_RA', 'dec': '_DE'}
-    # else:
-    #     column_dict = {'ra': 'RAJ2000', 'dec': 'DEJ2000'}
     
     for filter_ in filter_list:
         if f'{filter_}mag' in result.colnames:
