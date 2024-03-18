@@ -1686,7 +1686,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             indent=indent * 2,
         )
         terminal_output.print_to_terminal(
-            f"500 apertures, 5 sigma, 2 iterations: {mag_limit} mag",
+                f"500 apertures, 5 sigma, 2 iterations: {mag_limit:6.2f} mag",
             indent=indent * 3,
         )
 
