@@ -10,6 +10,8 @@ from pathlib import Path
 
 import itertools
 
+from uncertainties import unumpy
+
 from astropy.visualization import (
     ImageNormalize,
     ZScaleInterval,
@@ -142,6 +144,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             Indentation for the console output lines
             Default is ``2``.
     """
+    wcs = None
     #   Check output directories
     checks.check_output_directories(
         output_dir,
@@ -199,7 +202,9 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     fig = plt.figure(figsize=(20, 9))
 
     if wcs is not None:
-        ax = fig.add_subplot(projection=wcs)
+        # ax = fig.add_subplot(projection=wcs)
+        ax = plt.subplot(projection=wcs)
+        # ax = plt.subplot(projection=wcs)
     else:
         ax = fig.add_subplot()
 
@@ -217,12 +222,13 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         # sub_title = f'Star map ({filter_} filter, {rts}) - {name_obj}'
 
     fig.suptitle(sub_title, fontsize=17)
+    # ax.set_title(sub_title, fontsize=17)
 
     #   Set up normalization for the image
     norm = ImageNormalize(image, interval=ZScaleInterval(contrast=0.15, ))
 
     #   Display the actual image
-    plt.imshow(
+    ax.imshow(
         image,
         cmap='PuBu',
         origin='lower',
@@ -231,7 +237,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     )
 
     #   Plot apertures
-    plt.scatter(
+    ax.scatter(
         tbl[x_column],
         tbl[y_column],
         s=40,
@@ -241,7 +247,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         label=label,
     )
     if tbl_2 is not None:
-        plt.scatter(
+        ax.scatter(
             tbl_2[x_column_2],
             tbl_2[y_column_2],
             s=40,
@@ -252,8 +258,10 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         )
 
     #   Set plot limits
-    plt.xlim(0, image.shape[1] - 1)
-    plt.ylim(0, image.shape[0] - 1)
+    # plt.xlim(0, image.shape[1] - 1)
+    # plt.ylim(0, image.shape[0] - 1)
+    ax.set_xlim(0, image.shape[1] - 1)
+    ax.set_ylim(0, image.shape[0] - 1)
 
     # Plot labels next to the apertures
     if isinstance(tbl[x_column], u.quantity.Quantity):
@@ -268,7 +276,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         except KeyError:
             magnitudes = tbl['mag_cali']
         for i in range(0, len(x)):
-            plt.text(
+            ax.text(
                 x[i] + 11,
                 y[i] + 8,
                 f" {magnitudes[i]:.1f}",
@@ -277,7 +285,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             )
     elif mode == 'list':
         for i in range(0, len(x)):
-            plt.text(
+            ax.text(
                 x[i],
                 y[i],
                 f" {i}",
@@ -286,7 +294,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             )
     else:
         for i in range(0, len(x)):
-            plt.text(
+            ax.text(
                 x[i] + 11,
                 y[i] + 8,
                 f" {tbl['id'][i]}",
@@ -295,24 +303,36 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             )
 
     #   Define the ticks
-    plt.tick_params(axis='both', which='both', top=True, right=True,
-                    direction='in')
-    plt.minorticks_on()
+    ax.tick_params(
+        axis='both', 
+        which='both', 
+        # top=True, 
+        # right=True,
+        direction='in',
+    )
+    ax.minorticks_on()
 
     #   Set labels
     if wcs is not None:
-        plt.xlabel("Right ascension", fontsize=16)
-        plt.ylabel("Deklination", fontsize=16)
+        ax.set_xlabel("Right ascension", fontsize=16)
+        ax.set_ylabel("Declination", fontsize=16)
+        # ax.coords[0].set_axislabel("Right ascension", fontsize=16)
+        # ax.coords[1].set_axislabel("Deklination", fontsize=16)
+        # plt.xlabel("Right ascension", fontsize=16)
+        # plt.ylabel("Deklination", fontsize=16)
     else:
-        plt.xlabel("[pixel]", fontsize=16)
-        plt.ylabel("[pixel]", fontsize=16)
+        ax.set_xlabel("[pixel]", fontsize=16)
+        ax.set_ylabel("[pixel]", fontsize=16)
+        # plt.xlabel("[pixel]", fontsize=16)
+        # plt.ylabel("[pixel]", fontsize=16)
 
     #   Enable grid for WCS
-    if wcs is not None:
-        plt.grid(True, color='lightgray', linestyle='--')
+    # if wcs is not None:
+    # ax.grid(True, color='lightgray', linestyle='--')
+    ax.grid(True, color='white', linestyle='--')
 
     #   Plot legend
-    plt.legend(bbox_to_anchor=(0., 1.02, 1.0, 0.102), loc=3, ncol=2,
+    ax.legend(bbox_to_anchor=(0., 1.02, 1.0, 0.102), loc=3, ncol=2,
                mode='expand', borderaxespad=0.)
 
     #   Write the plot to disk
@@ -3185,24 +3205,25 @@ def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
 
     for i, parameter in enumerate(parameter_list_0):
         plt.hist(
-            parameter,
+            unumpy.nominal_values(parameter),
             bins=40,
             alpha=0.25,
             color=color_pick.to_rgba(i),
-            label=f'{dataset_label[i]}',
+            label=f'{dataset_label[0][i]}',
         )
     for i, parameter in enumerate(parameter_list_1):
         plt.hist(
-            parameter,
+            unumpy.nominal_values(parameter),
             bins=10,
             alpha=0.5,
             color=color_pick.to_rgba(i),
-            label=f'{dataset_label[i]}',
+            label=f'{dataset_label[1][i]}',
         )
         median_parameter = np.ma.median(parameter)
         plt.axvline(
-            median_parameter,
-            color='g',
+            unumpy.nominal_values(median_parameter),
+            # color='g',
+            color=color_pick.to_rgba(i),
         )
 
     #   Add legend

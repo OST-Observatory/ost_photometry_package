@@ -1294,13 +1294,13 @@ def prepare_zero_point(img_container, image, id_filter_1,
     plot.histogram_statistic(
         [image.ZP],
         [image.ZP_clip],
-        f'Zero point ({image.filt}) [mag]',
+        f'Zero point ({image.filt})',
         '',
-        'histogram_zero_point_{image.filt}',
+        f'histogram_zero_point_{image.filt}',
         image.outpath,
         dataset_label=[
-            'All calibration objects',
-            'Sigma clipped calibration objects',
+            ['All calibration objects'],
+            ['Sigma clipped calibration objects'],
         ],
         name_obj=image.objname,
     )
