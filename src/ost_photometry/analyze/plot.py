@@ -863,8 +863,9 @@ def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
             ts.time.jd,
             np.array(ts[data_column]),
             yerr=np.array(ts[err_column]),
-            fmt='k.',
+            marker='.',
             markersize=4,
+            linestyle='none',
             capsize=2,
             ecolor='dodgerblue',
             color='darkred',
@@ -1324,14 +1325,22 @@ class MakeCMDs:
             ax                  : `matplotlib.pyplot.subplot`
                 Subplot
         """
+        #   Check for absolute vs. apparent CMD
+        try:
+            magnitude_2 = self.magnitude_filter_2_absolute
+            color = self.magnitude_color_absolute
+        except AttributeError:
+            magnitude_2 = self.magnitude_filter_2
+            color = self.magnitude_color
+
         #   Set plot range -> automatic adjustment
         #   Y range
         try:
             float(y_range_max)
         except ValueError:
             ax.set_ylim([
-                float(np.max(self.magnitude_filter_2)) + 0.5,
-                float(np.min(self.magnitude_filter_2)) - 0.5
+                float(np.max(magnitude_2)) + 0.5,
+                float(np.min(magnitude_2)) - 0.5
             ])
             terminal_output.print_to_terminal(
                 "[Info] Use automatic plot range for Y",
@@ -1342,8 +1351,8 @@ class MakeCMDs:
                 float(y_range_min)
             except ValueError:
                 ax.set_ylim([
-                    float(np.max(self.magnitude_filter_2)) + 0.5,
-                    float(np.min(self.magnitude_filter_2)) - 0.5
+                    float(np.max(magnitude_2)) + 0.5,
+                    float(np.min(magnitude_2)) - 0.5
                 ])
                 terminal_output.print_to_terminal(
                     "[Info] Use automatic plot range for Y",
@@ -1357,8 +1366,8 @@ class MakeCMDs:
             float(x_range_max)
         except ValueError:
             ax.set_xlim([
-                float(np.min(self.magnitude_color)) - 0.5,
-                float(np.max(self.magnitude_color)) + 0.5
+                float(np.min(color)) - 0.5,
+                float(np.max(color)) + 0.5
             ])
             terminal_output.print_to_terminal(
                 "[Info] Use automatic plot range for X",
@@ -1369,8 +1378,8 @@ class MakeCMDs:
                 float(x_range_min)
             except ValueError:
                 ax.set_xlim([
-                    float(np.min(self.magnitude_color)) - 0.5,
-                    float(np.max(self.magnitude_color)) + 0.5
+                    float(np.min(color)) - 0.5,
+                    float(np.max(color)) + 0.5
                 ])
                 terminal_output.print_to_terminal(
                     "[Info] Use automatic plot range for X",
@@ -1841,6 +1850,8 @@ class MakeCMDs:
         #   Apply extinction correction (and distance) to magnitudes and color
         magnitude_filter_2 = self.magnitude_filter_2 - a_filter_2 - m_m
         magnitude_color = self.magnitude_color - relative_extinction
+        self.magnitude_filter_2_absolute = magnitude_filter_2
+        self.magnitude_color_absolute = magnitude_color
 
         #   Plot fiduciary points if isochrone fit is performed
         if fiduciary_points_observation is None and fit_isochrone:
@@ -2258,6 +2269,7 @@ class MakeCMDs:
                 line_cycler = mk_line_cycler()
 
                 #   Cycle through iso lines
+                age_list_new = []
                 for i in range(0, n_isochrones):
                     if isochrone_log_age:
                         age_value = 10 ** age_list[i] / 10 ** 9
@@ -2266,6 +2278,7 @@ class MakeCMDs:
                         age_value = round(age_list[i], 3)
                     age_unit = 'Gyr'
                     age_string = f'{age_value} {age_unit}'
+                    age_list_new.append(age_value)
 
                     #   Plot iso lines
                     if fiduciary_points_isochrones:
@@ -2331,6 +2344,7 @@ class MakeCMDs:
                                 marker='o',
                                 alpha=0.2,
                             )
+                age_list = age_list_new
 
             #   Plot legend
             if isochrone_legend:

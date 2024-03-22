@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ost_photometry"
-version = "0.1.10"
+version = "0.1.12"
 authors = [
   { name="Rainer Hainich", email="rhainich@astro.physik.uni-potsdam.de" },
 ]
@@ -33,6 +33,7 @@ dependencies = [
     "regions>=0.6",
     "scikit-learn>=1.1",
     "twirl>=0.1",
+    "pandas",
 ]
 
 [project.urls]
