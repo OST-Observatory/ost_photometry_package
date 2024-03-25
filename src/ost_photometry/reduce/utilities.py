@@ -748,18 +748,17 @@ def check_filter_keywords(path, temp_dir, image_type):
     #   Find all images that have the correct image type
     image_with_correct_image_type = []
     for type_img in image_type:
-        image_with_correct_image_type.append(
-            list(image_file_collection.files_filtered(imagetyp=type_img))
+        image_with_correct_image_type += list(
+            image_file_collection.files_filtered(imagetyp=type_img)
         )
 
     #   Find those images with a wrong image type
     #   -> Compare image file collection with 'image_with_correct_image_type'
     list_1 = list(image_file_collection.files)
     list_2 = image_with_correct_image_type
-    # TODO: Check if there is a bug here when image_with_correct_image_type is a list of lists
-    result = [x for x in list_1 + list_2 if x not in list_1 or x not in list_2]
+    result = [x for x in list_1 if x not in list_2]
 
-    if result:
+    if result: 
         sanitize_image_types(file_path, temp_dir, image_type)
         return None
 
@@ -1722,59 +1721,63 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
             bias_path_new = []
             for path in bias_path:
                 if image_type is not None:
-                    new_bias_path = check_filter_keywords(
-                        path,
-                        temp_dir,
-                        image_type['bias'],
-                    )
-                    if isinstance(new_bias_path, str):
-                        bias_path_new.append(new_bias_path)
+                    image_type_keyword = image_type['bias']
                 else:
-                    bias_path_new.append(check_filter_keywords(path, 'bias'))
+                    image_type_keyword = 'bias'
+                new_bias_path = check_filter_keywords(
+                    path,
+                    temp_dir,
+                    image_type_keyword,
+                )
+                if isinstance(new_bias_path, str):
+                    bias_path_new.append(new_bias_path)
             bias_path = bias_path_new
 
         darks_path_new = []
         for path in darks_path:
             if image_type is not None:
-                new_darks_path = check_filter_keywords(
-                    path,
-                    temp_dir,
-                    image_type['dark'],
-                )
-                if isinstance(new_darks_path, str):
-                    darks_path_new.append(new_darks_path)
+                image_type_keyword =  image_type['dark']
             else:
-                darks_path_new.append(check_filter_keywords(path, 'dark'))
+                image_type_keyword = 'dark'
+            new_darks_path = check_filter_keywords(
+                path,
+                temp_dir,
+                image_type_keyword,
+            )
+            if isinstance(new_darks_path, str):
+                darks_path_new.append(new_darks_path)
         darks_path = darks_path_new
 
         flats_path_new = []
         for path in flats_path:
             if image_type is not None:
-                new_flats_path = check_filter_keywords(
-                    path,
-                    temp_dir,
-                    image_type['flat'],
-                )
-                if isinstance(new_flats_path, str):
-                    flats_path_new.append(new_flats_path)
+                image_type_keyword = image_type['flat']
             else:
-                flats_path_new.append(check_filter_keywords(path, 'flat'))
+                image_type_keyword = 'flat'
+            new_flats_path = check_filter_keywords(
+                path,
+                temp_dir,
+                image_type_keyword,
+            )
+            if isinstance(new_flats_path, str):
+                flats_path_new.append(new_flats_path)
         flats_path = flats_path_new
 
         images_path_new = []
         for path in images_path:
             if image_type is not None:
-                new_images_path = check_filter_keywords(
-                    path,
-                    temp_dir,
-                    image_type['light'],
-                )
-                if isinstance(new_images_path, str):
-                    images_path_new.append(new_images_path)
+                image_type_keyword = image_type['light']
             else:
-                images_path_new.append(check_filter_keywords(path, 'light'))
+                image_type_keyword = 'light'
+            new_images_path = check_filter_keywords(
+                path,
+                temp_dir,
+                image_type_keyword,
+            )
+            if isinstance(new_images_path, str):
+                images_path_new.append(new_images_path)
         images_path = images_path_new
-
+    
     ###
     #   Prepare temporary directory, if individual
     #   directories were defined above
