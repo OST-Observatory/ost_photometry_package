@@ -698,7 +698,7 @@ def check_exposure_times(image_file_collection, image_type, exposure_times,
         return False
 
 
-def check_filter_keywords(path, image_type):
+def check_filter_keywords(path, temp_dir, image_type):
     """
         Consistency check - Check if the image type of the images in 'path'
                             fit to one supplied with 'image_type'.
@@ -706,6 +706,9 @@ def check_filter_keywords(path, image_type):
         ----------
         path            : `string`
             File path to check
+
+        temp_dir        : `tempfile.TemporaryDirectory`
+            Temporary directory to store the symbolic links to the images
 
         image_type      : `string`
             Internal image type of the images in 'path' should have
@@ -756,19 +759,14 @@ def check_filter_keywords(path, image_type):
     # TODO: Check if there is a bug here when image_with_correct_image_type is a list of lists
     result = [x for x in list_1 + list_2 if x not in list_1 or x not in list_2]
 
-    #   TODO: Replace '_str' methods
     if result:
-        return sanitize_image_types(file_path, image_type)._str
-        # raise RuntimeError(
-        # 'The following images do not have the correct '
-        # 'image type: \n {} \n Expected: {} \n Got: \n {} \n Path: {} '
-        # ''.format(result, image_type, image_file_collection.summary['file', 'imagetyp'], path)
-        # )
+        sanitize_image_types(file_path, temp_dir, image_type)
+        return None
 
-    return file_path._str
+    return str(file_path)
 
 
-def sanitize_image_types(file_path, image_type):
+def sanitize_image_types(file_path, temp_dir, image_type):
     """
         Sanitize image types according to prerequisites
 
@@ -776,14 +774,12 @@ def sanitize_image_types(file_path, image_type):
         ----------
         file_path           : `pathlib.Path`
 
+        temp_dir            : `tempfile.TemporaryDirectory`
+            Temporary directory to store the symbolic links to the images
+
         image_type          : `string` or `list`
             Expected image type
     """
-    #   Set path
-    path = Path('/tmp')
-    path = path / base_aux.random_string_generator(7)
-    checks.check_output_directories(path)
-
     #   Sanitize
     image_file_collection = ccdp.ImageFileCollection(file_path)
 
@@ -793,9 +789,7 @@ def sanitize_image_types(file_path, image_type):
         else:
             image_ccd.meta['imagetyp'] = image_type
 
-        image_ccd.write(path / file_name)
-
-    return path
+        image_ccd.write(temp_dir.name + '/' + file_name)
 
 
 def get_pixel_mask(out_path, shape):
@@ -1728,9 +1722,13 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
             bias_path_new = []
             for path in bias_path:
                 if image_type is not None:
-                    bias_path_new.append(
-                        check_filter_keywords(path, image_type['bias'])
+                    new_bias_path = check_filter_keywords(
+                        path,
+                        temp_dir,
+                        image_type['bias'],
                     )
+                    if isinstance(new_bias_path, str):
+                        bias_path_new.append(new_bias_path)
                 else:
                     bias_path_new.append(check_filter_keywords(path, 'bias'))
             bias_path = bias_path_new
@@ -1738,9 +1736,13 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
         darks_path_new = []
         for path in darks_path:
             if image_type is not None:
-                darks_path_new.append(
-                    check_filter_keywords(path, image_type['dark'])
+                new_darks_path = check_filter_keywords(
+                    path,
+                    temp_dir,
+                    image_type['dark'],
                 )
+                if isinstance(new_darks_path, str):
+                    darks_path_new.append(new_darks_path)
             else:
                 darks_path_new.append(check_filter_keywords(path, 'dark'))
         darks_path = darks_path_new
@@ -1748,9 +1750,13 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
         flats_path_new = []
         for path in flats_path:
             if image_type is not None:
-                flats_path_new.append(
-                    check_filter_keywords(path, image_type['flat'])
+                new_flats_path = check_filter_keywords(
+                    path,
+                    temp_dir,
+                    image_type['flat'],
                 )
+                if isinstance(new_flats_path, str):
+                    flats_path_new.append(new_flats_path)
             else:
                 flats_path_new.append(check_filter_keywords(path, 'flat'))
         flats_path = flats_path_new
@@ -1758,9 +1764,13 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
         images_path_new = []
         for path in images_path:
             if image_type is not None:
-                images_path_new.append(
-                    check_filter_keywords(path, image_type['light'])
+                new_images_path = check_filter_keywords(
+                    path,
+                    temp_dir,
+                    image_type['light'],
                 )
+                if isinstance(new_images_path, str):
+                    images_path_new.append(new_images_path)
             else:
                 images_path_new.append(check_filter_keywords(path, 'light'))
         images_path = images_path_new
