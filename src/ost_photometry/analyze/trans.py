@@ -1438,7 +1438,7 @@ def apply_calib(img_container, filter_list,
 
     #   Get calibration magnitudes
     literature_magnitudes = calib.distribution_from_calibration_table(
-        img_container.CalibParameters.calib_tbl,
+        img_container.CalibParameters,
         filter_list,
     )
     print(literature_magnitudes)

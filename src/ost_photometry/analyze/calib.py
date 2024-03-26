@@ -973,14 +973,14 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
     )
 
 
-def distribution_from_calibration_table(calibration_data_table, filter_list):
+def distribution_from_calibration_table(calibration_parameters, filter_list):
     """
         Arrange the literature values in a numpy array or uncertainty array.
 
         Parameters
         ----------
-        calibration_data_table  : `image.container`
-            Container object with image ensemble objects for each filter
+        calibration_parameters  : `CalibParameters` instance
+            Class instance with calibration data
 
         filter_list             : `list` of `string`
             Filter names
@@ -991,7 +991,10 @@ def distribution_from_calibration_table(calibration_data_table, filter_list):
             Normal distribution representing literature magnitudes
     """
     #   Get column names
-    calib_column_names = calibration_data_table.column_names
+    calib_column_names = calibration_parameters.column_names
+
+    #   Get calibration table
+    calibration_data_table = calibration_parameters.calib_tbl
 
     distribution_list = []
     for z, filter_ in enumerate(filter_list):
