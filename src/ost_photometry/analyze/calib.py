@@ -9,6 +9,7 @@ import numpy as np
 from uncertainties import unumpy
 
 from astroquery.vizier import Vizier
+from astroquery.simbad import Simbad
 
 from astropy.table import Table
 import astropy.units as u
@@ -34,8 +35,8 @@ class CalibParameters:
         self.calib_tbl = calib_tbl
 
 
-def get_comp_stars(coordinates_sky, filters=None, field_of_view=18.5,
-                   magnitude_range=(0., 18.5), indent=2):
+def get_comp_stars_aavso(coordinates_sky, filters=None, field_of_view=18.5,
+                         magnitude_range=(0., 18.5), indent=2):
     """
         Download calibration info for variable stars from AAVSO
 
@@ -146,11 +147,142 @@ def get_comp_stars(coordinates_sky, filters=None, field_of_view=18.5,
         mask = tbl['magV'] >= magnitude_range[0]
         tbl = tbl[mask]
 
+        terminal_output.print_to_terminal(
+            f"{len(tbl)} calibration objects remaining after magnitude "
+            "filtering",
+            indent=indent,
+        )
+    
         return tbl, column_dict
 
 
-def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, magnitude_range=(0., 18.5),
-                indent=2):
+def get_comp_stars_simbad(coordinates_sky, filters=None, field_of_view=18.5,
+                          magnitude_range=(0., 18.5), indent=2):
+    """
+        Download calibration info from Simbad
+
+        Parameters
+        ----------
+        coordinates_sky  : `astropy.coordinates.SkyCoord`
+            Coordinates of the field of field_of_view
+
+        filters          : `list` of `string` or `None`, optional
+            Filter names
+            Default is ``None``.
+
+        field_of_view   : `float`, optional
+            Field of view in arc minutes
+            Default is ``18.5``.
+
+        magnitude_range : `tuple` of `float`, optional
+            Magnitude range
+            Default is ``(0.,18.5)``.
+
+        indent          : `integer`, optional
+            Indentation for the console output
+            Default is ``2``.
+
+        Returns
+        -------
+        tbl             : `astropy.table.Table`
+            Table with calibration information
+
+        column_dict     : `dictionary` - 'string':`string`
+            Dictionary with column names vs default names
+    """
+    terminal_output.print_to_terminal(
+        "Downloading calibration data from Simbad",
+        indent=indent,
+    )
+
+    #   Sanitize filter list
+    if filters is None:
+        filters = ['B', 'V']
+
+    #   Initialize Simbad instance
+    my_simbad = Simbad(
+        # ROW_LIMIT=1e6,
+    )
+
+    for filter_ in filters:
+        my_simbad.add_votable_fields(f'flux({filter_})')
+        my_simbad.add_votable_fields(f'flux_error({filter_})')
+
+    simbad_table = my_simbad.query_region(
+        coordinates_sky, 
+        radius=field_of_view * 0.66 * u.arcmin,
+    )
+    terminal_output.print_to_terminal(
+        f"Found {len(simbad_table)} with the SIMBAD query",
+        indent=indent,
+    )
+
+    #   Stop here if Table is empty
+    if not simbad_table:
+        terminal_output.print_to_terminal(
+            "No calibration data available",
+            indent=indent + 1,
+            style_name='WARNING',
+        )
+        return Table(), {}
+
+    #   Rename columns to default names
+    for filter_ in filters:
+        simbad_table.rename_column(f'FLUX_{filter_}', f'{filter_}mag')
+        simbad_table.rename_column(f'FLUX_ERROR_{filter_}', f'e_{filter_}mag')
+    
+    #   Restrict magnitudes to requested range
+    if 'Vmag' in simbad_table.keys():
+        preferred_filer = 'Vmag'
+    elif 'Rmag' in simbad_table.keys():
+        preferred_filer = 'Rmag'
+    elif 'Bmag' in simbad_table.keys():
+        preferred_filer = 'Bmag'
+    elif 'Imag' in simbad_table.keys():
+        preferred_filer = 'Imag'
+    elif 'Umag' in simbad_table.keys():
+        preferred_filer = 'Umag'
+    else:
+        #   This should never happen
+        terminal_output.print_to_terminal(
+            "Calibration issue: Threshold magnitude not recognized",
+            indent=indent + 1,
+            style_name='ERROR',
+        )
+        raise RuntimeError
+    
+    mask = (simbad_table[preferred_filer] <= magnitude_range[1]) & (simbad_table[preferred_filer] >= magnitude_range[0])
+    simbad_table = simbad_table[mask]
+
+    terminal_output.print_to_terminal(
+        f"{len(simbad_table)} calibration objects remaining after magnitude "
+        "filtering",
+        indent=indent,
+    )
+    
+    #   Define dict with column names
+    column_dict = {'ra': 'RA', 'dec': 'DEC'}
+    
+    for filter_ in filters:
+        if f'{filter_}mag' in simbad_table.colnames:
+            column_dict[f'mag{filter_}'] = f'{filter_}mag'
+
+            #   Check if catalog contains magnitude errors
+            if f'e_{filter_}mag' in simbad_table.colnames:
+                column_dict[f'err{filter_}'] = f'e_{filter_}mag'
+        else:
+            terminal_output.print_to_terminal(
+                f"No calibration data for {filter_} band",
+                indent=indent + 1,
+                style_name='WARNING',
+            )
+
+    return simbad_table, column_dict
+
+
+def get_vizier_catalog(filter_list, coordinates_image_center, field_of_view,
+                       catalog_identifier, magnitude_range=(0., 18.5),
+                       indent=2):
     """
         Download catalog with calibration info from Vizier
 
@@ -162,10 +294,10 @@ def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, 
         coordinates_image_center    : `astropy.coordinates.SkyCoord`
             Coordinates of the field of field_of_view
 
-        fov                         : `float`
+        field_of_view               : `float`
             Field of view in arc minutes
 
-        catalog_identifier         : `string`
+        catalog_identifier          : `string`
             Catalog identifier
 
         magnitude_range             : `tuple` of `float`, optional
@@ -210,7 +342,7 @@ def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, 
     #   Get data from the corresponding catalog
     table_list = v.query_region(
         coordinates_image_center,
-        radius=fov * u.arcmin,
+        radius=field_of_view * u.arcmin,
     )
 
     #   Chose first table
@@ -229,35 +361,11 @@ def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, 
     if 'column_rename' in catalog_properties_dict:
         for element in catalog_properties_dict['column_rename']:
             result.rename_column(element[0], element[1])
-    # if catalog_identifier == 'II/370/xmmom5s':
-    #     result.rename_column("UmAB", "Umag")
-    #     result.rename_column("BmAB", "Bmag")
-    #     result.rename_column("VmAB", "Vmag")
-    #     result.rename_column("e_UmAB", "e_Umag")
-    #     result.rename_column("e_BmAB", "e_Bmag")
-    #     result.rename_column("e_VmAB", "e_Vmag")
-    # if catalog_identifier == 'II/339/uvotssc1':
-    #     result.rename_column("U-AB", "Umag")
-    #     result.rename_column("B-AB", "Bmag")
-    #     result.rename_column("V-AB", "Vmag")
-    # if catalog_identifier == 'I/284/out':
-    #     result.rename_column("B1mag", "Bmag")
-    #     result.rename_column("R1mag", "Rmag")
-    # if catalog_identifier == 'II/336/apass9':
-    #     result.rename_column("r_mag", "Rmag")
-    #     result.rename_column("i_mag", "Imag")
-    #     result.rename_column("e_r_mag", "e_Rmag")
-    #     result.rename_column("e_i_mag", "e_Imag")
 
     #   Calculate B, U, etc. if only B-V, U-B, etc are given
     if 'magnitude_arithmetic' in catalog_properties_dict:
         for element in catalog_properties_dict['magnitude_arithmetic']:
             result[element[0]] = result[element[1]] + result[element[2]]
-    # if catalog_identifier in ['II/168/ubvmeans']:
-    #     result['Bmag'] = result['B-V'] + result['Vmag']
-    #     result['e_Bmag'] = result['e_B-V'] + result['e_Vmag']
-    #     result['Umag'] = result['U-B'] + result['Bmag']
-    #     result['e_Umag'] = result['e_U-B'] + result['e_Bmag']
 
     #   Restrict magnitudes to requested range
     if 'Vmag' in result.keys():
@@ -282,15 +390,17 @@ def get_catalog(filter_list, coordinates_image_center, fov, catalog_identifier, 
     mask = (result[preferred_filer] <= magnitude_range[1]) & (result[preferred_filer] >= magnitude_range[0])
     result = result[mask]
 
+    terminal_output.print_to_terminal(
+        f"{len(result)} calibration objects remaining after magnitude "
+        "filtering",
+        indent=indent,
+    )
+
     #   Define dict with column names
     column_dict = {
         'ra': catalog_properties_dict['ra_dec_columns'][0],
         'dec': catalog_properties_dict['ra_dec_columns'][1]
     }
-    # if catalog_identifier == 'II/168/ubvmeans':
-    #     column_dict = {'ra': '_RA', 'dec': '_DE'}
-    # else:
-    #     column_dict = {'ra': 'RAJ2000', 'dec': 'DEJ2000'}
     
     for filter_ in filter_list:
         if f'{filter_}mag' in result.colnames:
@@ -443,7 +553,7 @@ def load_calibration_data_table(image, filter_list, calibration_method='APASS',
     #   Read calibration table
     if calibration_method == 'vsp':
         #   Load calibration info from AAVSO for variable stars
-        calib_tbl, column_names = get_comp_stars(
+        calib_tbl, column_names = get_comp_stars_aavso(
             image.coord,
             filters=filter_list,
             field_of_view=1.5 * image.fov,
@@ -451,6 +561,7 @@ def load_calibration_data_table(image, filter_list, calibration_method='APASS',
             indent=indent + 1,
         )
         ra_unit = u.hourangle
+
     elif calibration_method == 'simbad_vot' and path_calibration_file is not None:
         #   Load info from data file in VO format downloaded from Simbad
         calib_tbl, column_names = read_votable_simbad(
@@ -459,9 +570,21 @@ def load_calibration_data_table(image, filter_list, calibration_method='APASS',
             magnitude_range=magnitude_range,
             indent=indent + 1,
         )
+        ra_unit = u.hourangle
+
+    elif calibration_method == 'simbad':
+        calib_tbl, column_names = get_comp_stars_simbad(
+            image.coord,
+            filters=filter_list,
+            field_of_view=1.5 * image.fov,
+            magnitude_range=magnitude_range,
+            indent=indent + 1,
+        )
+        ra_unit = u.hourangle
+
     elif calibration_method in vizier_dict.keys():
         #   Load info from Vizier
-        calib_tbl, column_names, ra_unit = get_catalog(
+        calib_tbl, column_names, ra_unit = get_vizier_catalog(
             filter_list,
             image.coord,
             image.fov,
@@ -490,7 +613,12 @@ def load_calibration_data_table(image, filter_list, calibration_method='APASS',
             arr = calib_tbl[column_names[f'mag{filter_}']]
             if hasattr(arr, 'mask'):
                 ind_rm = np.where(arr.mask)
-                #   TODO: Add a test to check whether the following line is working or not.
+                calib_tbl.remove_rows(ind_rm)
+
+            #   Remove objects without errors from the calibration list
+            arr = calib_tbl[column_names[f'err{filter_}']]
+            if hasattr(arr, 'mask'):
+                ind_rm = np.where(arr.mask)
                 calib_tbl.remove_rows(ind_rm)
 
     if not calib_tbl:
@@ -832,6 +960,7 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
                     'label_2': 'matched calibration stars',
                     'rts': rts,
                     'name_obj': img_ensemble.objname,
+                    'wcs': img_ensemble.wcs,
                 }
             )
             p.start()

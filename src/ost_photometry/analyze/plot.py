@@ -10,16 +10,20 @@ from pathlib import Path
 
 import itertools
 
+from uncertainties import unumpy
+
 from astropy.visualization import (
     ImageNormalize,
     ZScaleInterval,
     simple_norm,
 )
-
 from astropy.stats import sigma_clip as sigma_clipping
+from astropy.stats import sigma_clipped_stats
 from astropy.time import Time
 from astropy.timeseries import aggregate_downsample
 import astropy.units as u
+
+from scipy.spatial import KDTree
 
 from itertools import cycle
 
@@ -27,10 +31,8 @@ from .. import checks, style, terminal_output, calibration_data
 
 import matplotlib.colors as mcol
 import matplotlib.cm as cm
-from matplotlib import rcParams
+from matplotlib import rcParams, gridspec
 import matplotlib.pyplot as plt
-
-from scipy.spatial import KDTree
 
 plt.switch_backend('Agg')
 
@@ -85,7 +87,7 @@ def compare_images(output_dir, original_image, comparison_image):
 
 def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             label='Identified stars', label_2='Identified stars (set 2)',
-            rts=None, mode=None, name_obj=None, terminal_logger=None,
+            rts=None, mode=None, name_obj=None, wcs=None, terminal_logger=None,
             indent=2):
     """
         Plot star maps  -> overlays of the determined star positions on FITS
@@ -117,16 +119,20 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             Identifier for the objects in `tbl_2`
             Default is ``Identified stars (set 2)``
 
-        rts             : `string`, optional
+        rts             : `string` or None, optional
             Expression characterizing the plot
             Default is ``None``
 
-        mode            : `string`, optional
+        mode            : `string` or None, optional
             String used to switch between different plot modes
             Default is ``None``
 
-        name_obj        : `string`, optional
+        name_obj        : `string` or None, optional
             Name of the object
+            Default is ``None``
+
+        wcs             : `astropy.wcs.WCS` or None, optional
+            WCS information
             Default is ``None``
 
         terminal_logger : `terminal_output.TerminalLog` or None, optional
@@ -138,6 +144,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             Indentation for the console output lines
             Default is ``2``.
     """
+    wcs = None
     #   Check output directories
     checks.check_output_directories(
         output_dir,
@@ -191,8 +198,15 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
                 f"table 2. {style.Bcolors.ENDC}"
             )
 
-    #   Set layout of image
+    #   Set layout
     fig = plt.figure(figsize=(20, 9))
+
+    if wcs is not None:
+        # ax = fig.add_subplot(projection=wcs)
+        ax = plt.subplot(projection=wcs)
+        # ax = plt.subplot(projection=wcs)
+    else:
+        ax = fig.add_subplot()
 
     #   Set title of the complete plot
     if rts is None and name_obj is None:
@@ -208,12 +222,13 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
         # sub_title = f'Star map ({filter_} filter, {rts}) - {name_obj}'
 
     fig.suptitle(sub_title, fontsize=17)
+    # ax.set_title(sub_title, fontsize=17)
 
     #   Set up normalization for the image
     norm = ImageNormalize(image, interval=ZScaleInterval(contrast=0.15, ))
 
     #   Display the actual image
-    plt.imshow(
+    ax.imshow(
         image,
         cmap='PuBu',
         origin='lower',
@@ -222,31 +237,31 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     )
 
     #   Plot apertures
-    plt.scatter(
+    ax.scatter(
         tbl[x_column],
         tbl[y_column],
         s=40,
-        facecolors='none',
-        edgecolors='purple',
-        alpha=0.7,
+        facecolors=(0.5, 0., 0.5, 0.2),
+        edgecolors=(0.5, 0., 0.5, 0.7),
         lw=0.9,
         label=label,
     )
     if tbl_2 is not None:
-        plt.scatter(
+        ax.scatter(
             tbl_2[x_column_2],
             tbl_2[y_column_2],
             s=40,
-            facecolors='none',
-            edgecolors='#02c14d',
-            # alpha=0.7,
+            facecolors=(0., 0.7, 0.35, 0.2),
+            edgecolors=(0., 0.7, 0.35, 0.7),
             lw=0.9,
             label=label_2,
         )
 
     #   Set plot limits
-    plt.xlim(0, image.shape[1] - 1)
-    plt.ylim(0, image.shape[0] - 1)
+    # plt.xlim(0, image.shape[1] - 1)
+    # plt.ylim(0, image.shape[0] - 1)
+    ax.set_xlim(0, image.shape[1] - 1)
+    ax.set_ylim(0, image.shape[0] - 1)
 
     # Plot labels next to the apertures
     if isinstance(tbl[x_column], u.quantity.Quantity):
@@ -258,10 +273,10 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     if mode == 'mags':
         try:
             magnitudes = tbl['mag_cali_trans']
-        except:
+        except KeyError:
             magnitudes = tbl['mag_cali']
         for i in range(0, len(x)):
-            plt.text(
+            ax.text(
                 x[i] + 11,
                 y[i] + 8,
                 f" {magnitudes[i]:.1f}",
@@ -270,7 +285,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             )
     elif mode == 'list':
         for i in range(0, len(x)):
-            plt.text(
+            ax.text(
                 x[i],
                 y[i],
                 f" {i}",
@@ -279,7 +294,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             )
     else:
         for i in range(0, len(x)):
-            plt.text(
+            ax.text(
                 x[i] + 11,
                 y[i] + 8,
                 f" {tbl['id'][i]}",
@@ -288,16 +303,36 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             )
 
     #   Define the ticks
-    plt.tick_params(axis='both', which='both', top=True, right=True,
-                    direction='in')
-    plt.minorticks_on()
+    ax.tick_params(
+        axis='both', 
+        which='both', 
+        # top=True, 
+        # right=True,
+        direction='in',
+    )
+    ax.minorticks_on()
 
     #   Set labels
-    plt.xlabel("[pixel]", fontsize=16)
-    plt.ylabel("[pixel]", fontsize=16)
+    if wcs is not None:
+        ax.set_xlabel("Right ascension", fontsize=16)
+        ax.set_ylabel("Declination", fontsize=16)
+        # ax.coords[0].set_axislabel("Right ascension", fontsize=16)
+        # ax.coords[1].set_axislabel("Deklination", fontsize=16)
+        # plt.xlabel("Right ascension", fontsize=16)
+        # plt.ylabel("Deklination", fontsize=16)
+    else:
+        ax.set_xlabel("[pixel]", fontsize=16)
+        ax.set_ylabel("[pixel]", fontsize=16)
+        # plt.xlabel("[pixel]", fontsize=16)
+        # plt.ylabel("[pixel]", fontsize=16)
+
+    #   Enable grid for WCS
+    # if wcs is not None:
+    # ax.grid(True, color='lightgray', linestyle='--')
+    ax.grid(True, color='white', linestyle='--')
 
     #   Plot legend
-    plt.legend(bbox_to_anchor=(0., 1.02, 1.0, 0.102), loc=3, ncol=2,
+    ax.legend(bbox_to_anchor=(0., 1.02, 1.0, 0.102), loc=3, ncol=2,
                mode='expand', borderaxespad=0.)
 
     #   Write the plot to disk
@@ -769,90 +804,6 @@ def plot_residual(name, image_orig, residual_image, output_dir,
     plt.close()
 
 
-#   TODO: Check if the following plot is used or not
-# def sigma_plot(bv, mags, bands, band, nr, outdir, nameobj=None, fit=None):
-#     """
-#         Illustrate sigma clipping of magnitudes
-#
-#         Parameters
-#         ----------
-#         bv          : `numpy.ndarray`
-#             Delta color - (mag_2-mag_1)_observed - (mag_2-mag_1)_literature
-#
-#         mags        : `numpy.ndarray`
-#             Magnitudes
-#
-#         bands       : `list` of `string`
-#             Filter list
-#
-#         band        : `list` of `string`
-#             Filter name
-#
-#         nr          : `integer`
-#             Number of the star to plot
-#
-#         outdir      : `string`
-#             Output directory
-#
-#         nameobj     : `string`, optional
-#             Name of the object
-#             Default is ``None``.
-#
-#         fit             : ` astropy.modeling.fitting` instance, optional
-#             Fit to plot
-#             Default is ``None``.
-#     """
-#     #   Check output directories
-#     checks.check_out(
-#         outdir,
-#         os.path.join(outdir, 'sigmag'),
-#     )
-#
-#     #   Sigma clip magnitudes
-#     clip = sigma_clipping(mags, sigma=1.5)
-#     mask = np.invert(clip.recordmask)
-#     clip_bv = bv[mask]
-#     mag_clip = mags[mask]
-#
-#     #   Plot sigma clipped magnitudes
-#     fig = plt.figure(figsize=(8, 8))
-#
-#     #   Set title
-#     if nameobj is None:
-#         sub_titel = f'Sigma clipped magnitudes -- star: {nr}'
-#     else:
-#         sub_titel = f'Sigma clipped magnitudes -- star: {nr} ({nameobj})'
-#     fig.suptitle(sub_titel, fontsize=17)
-#
-#     #   Plot data
-#     plt.plot(mags, bv, color='blue', marker='.', linestyle='none')
-#     plt.plot(mag_clip, clip_bv, color='red', marker='.', linestyle='none')
-#
-#     #   Plot fit
-#     if fit is not None:
-#         mags_sort = np.sort(mags)
-#         plt.plot(
-#             mags_sort,
-#             fit(mags_sort),
-#             color='r',
-#             linewidth=3,
-#             label='Polynomial fit',
-#         )
-#
-#     #   Set x and y axis label
-#     plt.xlabel(f"{band} [mag]")
-#     plt.ylabel(f"Delta {bands[0]}-{bands[1]}")
-#
-#     #   Save plot
-#     plt.savefig(
-#         f'{outdir}/sigmag/{nr}_{band}.png',
-#         bbox_inches='tight',
-#         format='png',
-#     )
-#     plt.close()
-#     # plt.show()
-
-
 def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
                    name_obj=None):
     """
@@ -912,8 +863,9 @@ def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
             ts.time.jd,
             np.array(ts[data_column]),
             yerr=np.array(ts[err_column]),
-            fmt='k.',
+            marker='.',
             markersize=4,
+            linestyle='none',
             capsize=2,
             ecolor='dodgerblue',
             color='darkred',
@@ -1290,10 +1242,1197 @@ def plot_transform(output_dir, filter_1, filter_2, color_literature, fit_variabl
     plt.close()
 
 
-def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
-                   y_range_min, x_range_max, x_range_min):
+class MakeCMDs:
     """
-        Check the CMD plot dimensions and set defaults
+    This class contains the necessary functionality for color magnitude plots.
+    It allows:
+        * to create apparent CMDs
+        * to create absolute CMDs
+        * to plot isochrones
+        * to fit isochrone to the absolute CMD
+    """
+
+    def __init__(self, name_of_star_cluster, file_name, file_type, filter_2,
+                 filter_1, magnitude_color, magnitude_filter_2, color_err=None,
+                 magnitude_filter_2_err=None, output_dir='output'):
+        """
+        Parameters
+        ----------
+        name_of_star_cluster        : `string`
+            Name of cluster
+
+        file_name                   : `string`
+            Base name of the file to write
+
+        file_type                   : `string`
+            File type
+
+        filter_2                    : `string`
+            First filter
+
+        filter_1                    : `string`
+            Second filter
+
+        magnitude_color             : `numpy.ndarray`
+            Color - 1D
+
+        magnitude_filter_2          : `numpy.ndarray`
+            Filter magnitude - 1D
+
+        color_err                   : `numpy.ndarray' or ``None``, optional
+            Error for ``mag_color``
+            Default is ``None``.
+
+        magnitude_filter_2_err      : `numpy.ndarray' or ``None``, optional
+            Error for ``magnitude_filter_2``
+            Default is ``None``.
+
+        output_dir                  : `string`, optional
+            Output directory
+            Default is ``output``.
+        """
+        self.name_of_star_cluster = name_of_star_cluster
+        self.file_name = file_name
+        self.file_type = file_type
+        self.filter_2 = filter_2
+        self.filter_1 = filter_1
+        self.color = f'{filter_1}-{filter_2}'
+        self.magnitude_color = magnitude_color
+        self.magnitude_filter_2 = magnitude_filter_2
+        self.magnitude_color_err = color_err
+        self.magnitude_filter_2_err = magnitude_filter_2_err
+        self.output_dir = output_dir
+
+    def set_cmd_plot_details(self, y_range_max, y_range_min,
+                             x_range_max, x_range_min, ax):
+        """
+            Check the CMD plot dimensions and set defaults
+
+            Parameters
+            ----------
+            y_range_max         : `float`
+                The maximum of the plot range in Y direction
+
+            y_range_min         : `float`
+                The minimum of the plot range in Y direction
+
+            x_range_max         : `float`
+                The maximum of the plot range in X direction
+
+            x_range_min         : `float`
+                The minimum of the plot range in X direction
+
+            ax                  : `matplotlib.pyplot.subplot`
+                Subplot
+        """
+        #   Check for absolute vs. apparent CMD
+        try:
+            magnitude_2 = self.magnitude_filter_2_absolute
+            color = self.magnitude_color_absolute
+        except AttributeError:
+            magnitude_2 = self.magnitude_filter_2
+            color = self.magnitude_color
+
+        #   Set plot range -> automatic adjustment
+        #   Y range
+        try:
+            float(y_range_max)
+        except ValueError:
+            ax.set_ylim([
+                float(np.max(magnitude_2)) + 0.5,
+                float(np.min(magnitude_2)) - 0.5
+            ])
+            terminal_output.print_to_terminal(
+                "[Info] Use automatic plot range for Y",
+                style_name='WARNING',
+            )
+        else:
+            try:
+                float(y_range_min)
+            except ValueError:
+                ax.set_ylim([
+                    float(np.max(magnitude_2)) + 0.5,
+                    float(np.min(magnitude_2)) - 0.5
+                ])
+                terminal_output.print_to_terminal(
+                    "[Info] Use automatic plot range for Y",
+                    style_name='WARNING',
+                )
+            else:
+                ax.set_ylim([float(y_range_min), float(y_range_max)])
+
+        #   X range
+        try:
+            float(x_range_max)
+        except ValueError:
+            ax.set_xlim([
+                float(np.min(color)) - 0.5,
+                float(np.max(color)) + 0.5
+            ])
+            terminal_output.print_to_terminal(
+                "[Info] Use automatic plot range for X",
+                style_name='WARNING',
+            )
+        else:
+            try:
+                float(x_range_min)
+            except ValueError:
+                ax.set_xlim([
+                    float(np.min(color)) - 0.5,
+                    float(np.max(color)) + 0.5
+                ])
+                terminal_output.print_to_terminal(
+                    "[Info] Use automatic plot range for X",
+                    style_name='WARNING',
+                )
+            else:
+                ax.set_xlim([float(x_range_min), float(x_range_max)])
+
+    def write_cmd(self, plot_type):
+        """
+        Write plot to disk
+
+        Parameters
+        ----------
+        plot_type                   : `string`
+            Plot type
+        """
+        cmd_dir = f'{self.output_dir}/cmds'
+        checks.check_output_directories(cmd_dir)
+
+        if self.name_of_star_cluster == "" or self.name_of_star_cluster == "?":
+            path = (f'{cmd_dir}/{self.file_name}_{plot_type}'
+                    f'_{self.filter_2}_{self.color}.{self.file_type}')
+            terminal_output.print_to_terminal(
+                f"Save CMD plot ({self.file_type}): {path}",
+            )
+            plt.savefig(
+                path,
+                format=self.file_type,
+                bbox_inches="tight",
+            )
+        else:
+            name_of_star_cluster = self.name_of_star_cluster.replace(
+                ' ',
+                '_',
+            )
+            path = (f'{cmd_dir}/{self.file_name}_{name_of_star_cluster}'
+                    f'_{plot_type}_{self.filter_2}_{self.color}'
+                    f'.{self.file_type}')
+            terminal_output.print_to_terminal(
+                f"Save CMD plot ({self.file_type}): {path}\n",
+            )
+            plt.savefig(
+                path,
+                format=self.file_type,
+                bbox_inches="tight",
+            )
+
+    def decode_isochrone_filter_relation(self, isochrone_column_type,
+                                         isochrone_column, current_filter,
+                                         relation_list, recursion_number):
+        """
+        Decodes relationship between isochrone entries. It fills a list with
+        tuples of two in integer each. The first integer gives the ID of the filter
+        and the second one specifies how the magnitude is derived from the
+        relationships. The second integer can be 1 or -1 and determines whether the
+        isochrone magnitude of this particular relationship must be added or
+        subtracted.
+
+        Parameter
+        ---------
+        isochrone_column_type   : `dictionary`
+            Type of the columns from the ISO file
+            Keys = filter : `string`
+            Values = type : `string`
+
+        isochrone_column        : `dictionary`
+            Columns to use from the ISO file.
+            Keys = filter           : `string`
+            Values = column numbers : `integer`
+
+        current_filter          : `string`
+            Current filter
+
+        relation_list           : `list` of `tuple` of `integer`
+            List with relations. Each tuple is one relationship. In each tuple the
+            first integer gives the ID of the filter and the second one determines
+            how the magnitude is derived from the relationships. The second integer
+            can be 1 or -1 and determines whether the isochrone magnitude of this
+            particular relationship must be added or subtracted.
+
+        recursion_number        : `integer`
+
+        Returns
+        -------
+        relation_list           : `list` of `tuple` of `integer`
+            See above
+        """
+        #   Exit if recursion is two high
+        if recursion_number > 10:
+            raise MaxRecursionError(
+                f'Could not decode magnitudes from isochrone file '
+                f'because maximum number of recursions reached during '
+                f'color calculation'
+            )
+
+        #   Distinguish between color and 'single' magnitude entries
+        if isochrone_column_type[current_filter][0] == 'single':
+            relation_list.append(
+                (isochrone_column[current_filter], 1)
+            )
+            return relation_list
+        else:
+            #   Set filter from color
+            next_filter = isochrone_column_type[current_filter][2]
+
+            #   Repeat until a single magnitude is found
+            relation_list = self.decode_isochrone_filter_relation(
+                isochrone_column_type,
+                isochrone_column,
+                next_filter,
+                relation_list,
+                recursion_number + 1,
+            )
+
+            #   Now we have to distinguish between, e.g., B-V vs. V-B
+            if isochrone_column_type[current_filter][1] == 0:
+                relation_list.append(
+                    (isochrone_column[current_filter], 1)
+                )
+
+            else:
+                relation_list.append(
+                    (isochrone_column[current_filter], -1)
+                )
+
+            return relation_list
+
+    @staticmethod
+    def apply_isochrone_filter_relation(relation_list, iso_data_line):
+        """
+        Uses isochrone filter relation such as color to derive individual
+        magnitudes
+
+        Parameter
+        ---------
+        relation_list       : `list` of `tuple` of `integer`
+            List with relations. Each tuple is one relationship. In each tuple the
+            first integer gives the ID of the filter and the second one determines
+            how the magnitude is derived from the relationships. The second integer
+            can be 1 or -1 and determines whether the isochrone magnitude of this
+            particular relationship must be added or subtracted.
+
+        iso_data_line       : `list` of `string`
+            Line with iso data - list of strings
+
+        Returns
+        -------
+        target_magnitude    : `float`
+            Calculated magnitude
+        """
+        target_magnitude = 0.
+
+        #   Calculate magnitude
+        for relation in relation_list:
+            relation_magnitude = float(iso_data_line[relation[0] - 1]) * relation[1]
+            target_magnitude = target_magnitude + relation_magnitude
+
+        return target_magnitude
+
+    def fill_lists_with_isochrone_magnitudes(self, isochrone_data_line,
+                                             isochrone_relation_filter_1,
+                                             isochrone_relation_filter_2,
+                                             isochrone_magnitude_2,
+                                             isochrone_color):
+        """
+        Sort magnitudes and colors from isochrone files into lists and calculate
+        the required color if necessary
+
+        Parameter
+        ---------
+        isochrone_data_line     : `list` of `string`
+            Line with iso data - list of strings
+
+        isochrone_relation_filter_1  : `list` of `tuple` of `integer`
+            List with relation for filter 1. Each tuple is one relationship. In
+            each tuple the first integer gives the ID of the filter and the second
+            one determines how the magnitude is derived from the relationships. The
+            second integer can be 1 or -1 and determines whether the isochrone
+            magnitude of this particular relationship must be added or subtracted.
+
+        isochrone_relation_filter_2  : `list` of `tuple` of `integer`
+            List with relation for filter 2. Each tuple is one relationship. In
+            each tuple the first integer gives the ID of the filter and the second
+            one determines how the magnitude is derived from the relationships. The
+            second integer can be 1 or -1 and determines whether the isochrone
+            magnitude of this particular relationship must be added or subtracted.
+
+        isochrone_magnitude_2   : `list` of `float`
+            List to fill with magnitudes (second filter)
+
+        isochrone_color         : `list` of `float`
+            List to fill with color values
+
+        Returns
+        -------
+        isochrone_magnitude_2   : `list` of `float`
+            Magnitude list (second filter)
+
+        isochrone_color         : `list` of `float`
+            Color list
+        """
+        #   Calculate magnitudes and color
+        magnitude_1 = self.apply_isochrone_filter_relation(
+            isochrone_relation_filter_1,
+            isochrone_data_line,
+        )
+        magnitude_2 = self.apply_isochrone_filter_relation(
+            isochrone_relation_filter_2,
+            isochrone_data_line,
+        )
+        color = magnitude_1 - magnitude_2
+
+        isochrone_magnitude_2.append(magnitude_2)
+        isochrone_color.append(color)
+
+        return isochrone_magnitude_2, isochrone_color
+
+    @staticmethod
+    def calculate_chi_square(magnitude_filter_2, magnitude_color,
+                             isochrone_array, nearst_neighbour_indexes):
+        """
+
+        Parameters
+        ----------
+        magnitude_filter_2              : `numpy.ndarray`
+            Object magnitudes of filter 2
+
+        magnitude_color                 : `numpy.ndarray`
+            Object colors
+
+        isochrone_array                 : `numpy.ndarray`
+            Array with isochrone data
+
+        nearst_neighbour_indexes        : `list` of `integer`
+            Indexes of the nearest isochrone points to the reference points
+            of the observed objects.
+
+        Returns
+        -------
+        chi_square_magnitude_2          : `numpy.ndarray`
+            Chi square based on object magnitudes
+
+        chi_square_color                : `numpy.ndarray`
+            Chi square based on object color
+
+        chi_square_list                 : `list` of `float`
+            See above
+
+        """
+        #   Calculate chi square
+        chi_square_magnitude_2 = np.square(
+            magnitude_filter_2[:, 1] - isochrone_array[:, 0][nearst_neighbour_indexes]
+        ).sum()
+        chi_square_color = np.square(
+            magnitude_color[:, 1] - isochrone_array[:, 1][nearst_neighbour_indexes]
+        ).sum()
+        chi_square_total = chi_square_magnitude_2 + chi_square_color
+
+        return chi_square_magnitude_2, chi_square_color, chi_square_total
+
+    def plot_apparent_cmd(self, figure_size_x='', figure_size_y='',
+                          y_plot_range_max='', y_plot_range_min='',
+                          x_plot_range_max='', x_plot_range_min=''):
+        """
+        Plot calibrated cmd with apparent magnitudes
+
+        Parameters
+        ----------
+        figure_size_x               : `float`
+            Figure size in cm (x direction)
+
+        figure_size_y               : `float`
+            Figure size in cm (y direction)
+
+        y_plot_range_max            : `float`
+            The maximum of the plot range in Y direction
+
+        y_plot_range_min            : `float`
+            The minimum of the plot range in Y direction
+
+        x_plot_range_max            : `float`
+            The maximum of the plot range in X direction
+
+        x_plot_range_min            : `float`
+            The minimum of the plot range in X direction
+        """
+        #   Initialize, set defaults and check plot dimensions
+        initialize_plot(
+            figure_size_x,
+            figure_size_y,
+        )
+
+        ax0 = plt.subplot(1, 1, 1)
+
+        self.set_cmd_plot_details(
+            y_plot_range_max,
+            y_plot_range_min,
+            x_plot_range_max,
+            x_plot_range_min,
+            ax0,
+        )
+
+        #   Plot the stars
+        terminal_output.print_to_terminal("Add stars", indent=1)
+        ax0.errorbar(
+            self.magnitude_color,
+            self.magnitude_filter_2,
+            yerr=self.magnitude_filter_2_err,
+            xerr=self.magnitude_color_err,
+            marker='o',
+            ls='none',
+            elinewidth=0.5,
+            markersize=2,
+            capsize=2,
+            ecolor='#ccdbfd',
+            color='darkred',
+            alpha=0.4,
+        )
+
+        #   Set ticks and labels
+        mk_ticks_labels(
+            rf'${self.filter_2}$ [mag]',
+            rf'${self.color}$ [mag]',
+            ax0,
+        )
+
+        #   Write plot to disk
+        self.write_cmd('apparent')
+        plt.close()
+
+    def plot_absolute_cmd(self, e_b_v, m_m, isochrones, isochrone_type,
+                          isochrone_column_type, isochrone_column,
+                          isochrone_log_age, isochrone_keyword,
+                          isochrone_legend, figure_size_x='', figure_size_y='',
+                          y_plot_range_max='', y_plot_range_min='',
+                          x_plot_range_max='', x_plot_range_min='',
+                          rv=3.1, fit_isochrone=False,
+                          magnitude_fit_range=(None, None),
+                          n_bin_observation=40,
+                          fiduciary_points_observation=None,
+                          fiduciary_points_isochrones=False,
+                          chi_square_plot_mode=None):
+        """
+            Plot calibrated CMD with
+                * magnitudes corrected for reddening and distance
+                * isochrones
+
+            Parameters
+            ----------
+            e_b_v                       : `float`
+                Relative extinction between B and V band
+
+            m_m                         : `float`
+                Distance modulus
+
+            isochrones                  : `string`
+                Path to the isochrone directory or the isochrone file
+
+            isochrone_type              : `string`
+                Type of 'isochrones'
+                Possibilities: 'directory' or 'file'
+
+            isochrone_column_type       : `dictionary`
+                Keys = filter : `string`
+                Values = type : `string`
+
+            isochrone_column            : `dictionary`
+                Keys = filter           : `string`
+                Values = column numbers : `integer`
+
+            isochrone_log_age           : `boolean`
+                Logarithmic age
+
+            isochrone_keyword           : `string`
+                Keyword to identify a new isochrone
+
+            isochrone_legend            : `boolean`
+                If True plot legend for isochrones.
+
+            rv                          : `float`, optional
+                Ration between absolute and relative extinction
+                Default is ``3.1``.
+
+            figure_size_x               : `float`, optional
+                Figure size in cm (x direction)
+                Default is ````.
+
+            figure_size_y               : `float`, optional
+                Figure size in cm (y direction)
+                Default is ````.
+
+            y_plot_range_max            : `float`, optional
+                The maximum of the plot range in Y
+                                    direction
+                Default is ````.
+
+            y_plot_range_min            : `float`, optional
+                The minimum of the plot range in Y
+                                    direction
+                Default is ````.
+
+            x_plot_range_max            : `float`, optional
+                The maximum of the plot range in X
+                                    direction
+                Default is ````.
+
+            x_plot_range_min            : `float`, optional
+                The minimum of the plot range in X direction
+
+            fit_isochrone               : `bool`, optional
+                If `True`, the best fitting isochrone will be determined.
+                Default is ``False``.
+
+            magnitude_fit_range         : `tuple` of `float` or `None`
+                Magnitude range to be used for the isochrone fitting and binning
+                of the observations. If set to None, the minimum and maximum
+                value are used.
+                Default is ``(None, None)``,
+
+            n_bin_observation           : `integer`, optional
+                Number of bins into which the observation data will be combined.
+                Default is ``40``.
+
+            fiduciary_points_observation : `bool` or `None`, optional
+                Determined if the binned observation will be plotted. Is set to
+                `True` if fit_isochrone is `True` with the exception that
+                fiduciary_points_observation is explicitly set to `False`.
+                Default is ``None``.
+
+            fiduciary_points_isochrones  : `bool`, optional
+                If 'True', the isochrone points closest to the fiduciary observation
+                points will be plotted.
+                Default is ``False``.
+
+            chi_square_plot_mode        : `string` or None, optional
+                Mode to plot the chi square values from the isochrone fits.
+                Possibilities: 1. simple   -> Combined chi square values shown on
+                                              the right hand side.
+                               2. detailed -> Chi square values split according
+                                              to X and Y contributions. Plots are
+                                              on top and on the right hand side of
+                                              the CMD
+                If `None` and fit_isochrone is `True` chi_square_plot_mode is set
+                to `simple`.
+                Default is ``None``.
+        """
+        #   Correct for reddening and distance
+        if self.filter_1 == 'B' and self.filter_2 == 'V':
+            a_filter_2 = rv * e_b_v
+            relative_extinction = e_b_v
+        else:
+            #   Get effective filter wavelengths
+            filter_1_effective_wavelength = calibration_data.filter_effective_wavelength[self.filter_1]
+            filter_2_effective_wavelength = calibration_data.filter_effective_wavelength[self.filter_2]
+
+            #   Get Fitzpatrick's extinction curve
+            extinction_curve = calibration_data.fitzpatrick_extinction_curve(rv)
+
+            #   Get absolute extinction in the filter
+            a_filter_1 = extinction_curve(10000. / filter_1_effective_wavelength) * e_b_v
+            a_filter_2 = extinction_curve(10000. / filter_2_effective_wavelength) * e_b_v
+
+            #   Calculate relative extinction
+            relative_extinction = a_filter_1 - a_filter_2
+
+        #   TODO: Add error propagation
+        #   Apply extinction correction (and distance) to magnitudes and color
+        magnitude_filter_2 = self.magnitude_filter_2 - a_filter_2 - m_m
+        magnitude_color = self.magnitude_color - relative_extinction
+        self.magnitude_filter_2_absolute = magnitude_filter_2
+        self.magnitude_color_absolute = magnitude_color
+
+        #   Plot fiduciary points if isochrone fit is performed
+        if fiduciary_points_observation is None and fit_isochrone:
+            fiduciary_points_observation = True
+        #   Plot chi square deviation of isochrones from fiduciary points if fit is
+        #   performed
+        if fit_isochrone and chi_square_plot_mode is None:
+            chi_square_plot_mode = 'simple'
+
+        #   Initialize plot and check plot dimensions
+        fig = initialize_plot(
+            figure_size_x,
+            figure_size_y,
+        )
+
+        #   Create grid for different subplots
+        spec = gridspec.GridSpec(
+            ncols=2,
+            nrows=2,
+            width_ratios=[4, 1],
+            wspace=0.3,
+            hspace=0.2,
+            height_ratios=[4, 1],
+        )
+
+        #   Add main plot to plot grid
+        ax0 = fig.add_subplot(spec[0])
+
+        #   Set plot details
+        self.set_cmd_plot_details(
+            y_plot_range_max,
+            y_plot_range_min,
+            x_plot_range_max,
+            x_plot_range_min,
+            ax0,
+        )
+
+        #   Plot the stars
+        terminal_output.print_to_terminal("Add stars")
+        ax0.errorbar(
+            magnitude_color,
+            magnitude_filter_2,
+            yerr=self.magnitude_filter_2_err,
+            xerr=self.magnitude_color_err,
+            marker='o',
+            ls='none',
+            elinewidth=0.5,
+            markersize=2,
+            capsize=2,
+            ecolor='#ccdbfd',
+            color='darkred',
+            alpha=0.3,
+        )
+
+        #   Bin observation
+        if fiduciary_points_observation or fit_isochrone:
+            #   Check if fit range is defined. If not, minimum and maximum
+            #   values of the data are used.
+            if magnitude_fit_range[0] is None:
+                min_magnitude_filter_2 = np.min(magnitude_filter_2)
+            else:
+                min_magnitude_filter_2 = magnitude_fit_range[0]
+            if magnitude_fit_range[1] is None:
+                max_magnitude_filter_2 = np.max(magnitude_filter_2)
+            else:
+                max_magnitude_filter_2 = magnitude_fit_range[1]
+
+            #   Define bins
+            bins = np.linspace(
+                min_magnitude_filter_2,
+                max_magnitude_filter_2,
+                n_bin_observation,
+            )
+
+            #   Perform binning
+            digitized = np.digitize(magnitude_filter_2, bins)
+            #   TODO: Rewrite to make it easier to read
+            magnitude_filter_2_binned = []
+            magnitude_color_binned = []
+            for i in range(1, len(bins)):
+                if len(magnitude_filter_2[digitized == i]) != 0:
+                    magnitude_filter_2_binned.append(
+                        sigma_clipped_stats(magnitude_filter_2[digitized == i])
+                    )
+                if len(magnitude_color[digitized == i]) != 0:
+                    magnitude_color_binned.append(
+                        sigma_clipped_stats(magnitude_color[digitized == i])
+                    )
+            magnitude_filter_2_binned = np.array(magnitude_filter_2_binned)
+            magnitude_color_binned = np.array(magnitude_color_binned)
+            magnitude_binned_array = np.array([magnitude_filter_2_binned[:, 1], magnitude_color_binned[:, 1]]).T
+
+            if fiduciary_points_observation:
+                ax0.errorbar(
+                    magnitude_color_binned[:, 1],
+                    magnitude_filter_2_binned[:, 1],
+                    xerr=magnitude_color_binned[:, 2],
+                    yerr=magnitude_filter_2_binned[:, 2],
+                    marker='o',
+                    ls='none',
+                    elinewidth=1.0,
+                    markersize=5,
+                    capsize=3,
+                    ecolor='#338af7',
+                    color='#F8B195',
+                    alpha=0.9,
+                    zorder=99.,
+                )
+
+        ###
+        #   Plot isochrones
+        #
+
+        #   Check if isochrones are specified
+        if isochrones != '' and isochrones != '?':
+            #   Decode relationships between isochrone magnitudes such as color
+            #   relationships
+            isochrone_magnitude_relation_filter_1 = self.decode_isochrone_filter_relation(
+                isochrone_column_type,
+                isochrone_column,
+                self.filter_1,
+                [],
+                0,
+            )
+            isochrone_magnitude_relation_filter_2 = self.decode_isochrone_filter_relation(
+                isochrone_column_type,
+                isochrone_column,
+                self.filter_2,
+                [],
+                0,
+            )
+
+            #   Initialize chi square subplots
+            if chi_square_plot_mode == 'detailed' and fit_isochrone:
+                ax1 = fig.add_subplot(spec[1])
+                ax2 = fig.add_subplot(spec[2])
+            elif chi_square_plot_mode == 'simple' and fit_isochrone:
+                ax2 = fig.add_subplot(spec[2])
+
+            #   Prepare list for chi square values
+            age_list = []
+            chi_square_list = []
+            chi_square_magnitude_2_list = []
+            chi_square_color_list = []
+            isochrones_list = []
+
+            #   OPTION I: Individual isochrone files in a specific directory
+            if isochrone_type == 'directory':
+                #   Resolve iso path
+                isochrones = Path(isochrones).expanduser()
+
+                #   Make list of isochrone files
+                file_list = os.listdir(isochrones)
+
+                #   Number of isochrones
+                n_isochrones = len(file_list)
+                terminal_output.print_to_terminal(
+                    f"Plot {n_isochrones} isochrone(s)",
+                    style_name='OKGREEN',
+                )
+
+                #   Make color map
+                color_pick = mk_colormap(n_isochrones)
+
+                #   Prepare cycler for the line styles
+                line_cycler = mk_line_cycler()
+
+                #   Cycle through iso files
+                for i in range(0, n_isochrones):
+                    #   Load file
+                    isochrone_data = open(isochrones / file_list[i])
+
+                    #   Prepare variables for the isochrone data
+                    isochrone_magnitude_2 = []
+                    isochrone_color = []
+                    age_value = ''
+                    age_unit = ''
+
+                    #   Extract B and V values & make lists
+                    #   Loop over all lines in the file
+                    for line in isochrone_data:
+                        line_elements = line.split()
+
+                        #   Check that the entries are not HEADER keywords
+                        try:
+                            float(line_elements[0])
+                        except (ValueError, IndexError):
+                            #   Try to find and extract age information
+                            if 'Age' in line_elements or 'age' in line_elements:
+                                try:
+                                    age_index = line_elements.index('age')
+                                except ValueError:
+                                    age_index = line_elements.index('Age')
+
+                                for string in line_elements[age_index + 1:]:
+                                    #   Find age unit
+                                    if string.rfind("yr") != -1:
+                                        age_unit = string
+                                    #   Find age value
+                                    try:
+                                        if isinstance(age_value, str):
+                                            age_value = float(string)
+                                            if age_value >= 1000. and age_unit.rfind('Myr') != -1:
+                                                age_value /= 1000.
+                                                age_unit = 'Gyr'
+                                            if age_unit.rfind('Myr') != -1:
+                                                age_unit = 'Myr'
+                                            age_list.append(age_value)
+                                    except (TypeError, ValueError):
+                                        pass
+                            continue
+
+                        #   Fill lists
+                        isochrone_magnitude_2, isochrone_color = self.fill_lists_with_isochrone_magnitudes(
+                            line_elements,
+                            isochrone_magnitude_relation_filter_1,
+                            isochrone_magnitude_relation_filter_2,
+                            isochrone_magnitude_2,
+                            isochrone_color,
+                        )
+
+                    #   Close file with the iso data
+                    isochrone_data.close()
+
+                    #   Construct label
+                    if not isinstance(age_value, str):
+                        label = str(age_value)
+                        if age_unit != '':
+                            label += f' {age_unit}'
+                    else:
+                        label = os.path.splitext(file_list[i])[0]
+
+                    if fit_isochrone:
+                        #   Find points to compare with binned observations
+                        isochrone_array = np.array(
+                            [isochrone_magnitude_2, isochrone_color]
+                        ).T
+                        isochrones_list.append(isochrone_array)
+                        isochrone_tree = KDTree(isochrone_array, leafsize=100)
+                        _, nearst_neighbour_indexes = isochrone_tree.query(
+                            magnitude_binned_array,
+                            k=1,
+                        )
+
+                    #   Plot iso lines
+                    if fiduciary_points_isochrones:
+                        ax0.plot(
+                            isochrone_array[:, 1][nearst_neighbour_indexes],
+                            isochrone_array[:, 0][nearst_neighbour_indexes],
+                            marker='o',
+                            ls='none',
+                            color=color_pick.to_rgba(i),
+                            alpha=0.5,
+                        )
+                    if fit_isochrone:
+                        alpha_isochrone = 0.2
+                    else:
+                        alpha_isochrone = 0.5
+                    ax0.plot(
+                        isochrone_color,
+                        isochrone_magnitude_2,
+                        linestyle=next(line_cycler),
+                        color=color_pick.to_rgba(i),
+                        linewidth=1.2,
+                        label=label,
+                        alpha=alpha_isochrone,
+                    )
+
+                    if fit_isochrone:
+                        #   Calculate chi square
+                        chi_square_magnitude_2, chi_square_color, chi_square_total = self.calculate_chi_square(
+                            magnitude_filter_2_binned,
+                            magnitude_color_binned,
+                            isochrone_array,
+                            nearst_neighbour_indexes,
+                        )
+                        chi_square_magnitude_2_list.append(
+                            chi_square_magnitude_2
+                        )
+                        chi_square_color_list.append(chi_square_color)
+                        chi_square_list.append(chi_square_total)
+
+                        #   Plot chi square values
+                        if chi_square_plot_mode == 'detailed':
+                            ax1.scatter(
+                                chi_square_magnitude_2,
+                                age_value,
+                                color=color_pick.to_rgba(i),
+                                marker='o',
+                                alpha=0.2,
+                            )
+                            ax2.scatter(
+                                age_value,
+                                chi_square_color,
+                                color=color_pick.to_rgba(i),
+                                marker='o',
+                                alpha=0.2,
+                            )
+                        elif chi_square_plot_mode == 'simple':
+                            ax2.scatter(
+                                age_value,
+                                chi_square_color + chi_square_magnitude_2,
+                                color=color_pick.to_rgba(i),
+                                marker='o',
+                                alpha=0.2,
+                            )
+
+            #   OPTION II: Isochrone file containing many individual isochrones
+            if isochrone_type == 'file':
+                #   Resolve iso path
+                isochrones = Path(isochrones).expanduser()
+
+                #   Load file
+                isochrone_data = open(isochrones)
+
+                #   Overall lists for the isochrones
+                nearst_neighbour_indexes_list = []
+
+                #   Number of detected isochrones
+                n_isochrones = 0
+
+                #   Loop over all lines in the file
+                for line in isochrone_data:
+                    line_elements = line.split()
+
+                    #   Check for a key word to distinguish the isochrones
+                    try:
+                        if line[0:len(isochrone_keyword)] == isochrone_keyword:
+                            #   Add data from the last isochrone to the overall
+                            #   lists for the isochrones.
+                            if n_isochrones:
+                                #   This part is only active after an isochrone has
+                                #   been detected. The variables are then assigned.
+                                age_list.append(float(age))
+                                isochrone_array = np.array(
+                                    [isochrone_magnitude_2, isochrone_color]
+                                ).T
+                                isochrones_list.append(isochrone_array)
+
+                                #   Find points to compare with binned observations
+                                if fit_isochrone:
+                                    isochrone_tree = KDTree(
+                                        isochrone_array,
+                                        leafsize=100,
+                                    )
+                                    _, nearst_neighbour_indexes = isochrone_tree.query(
+                                        magnitude_binned_array,
+                                        k=1,
+                                    )
+                                    nearst_neighbour_indexes_list.append(
+                                        nearst_neighbour_indexes
+                                    )
+
+                            #   Save age for the case where age is given as a
+                            #   keyword and not as a column
+                            if isochrone_column['AGE'] == 0:
+                                age = line.split('=')[1].split()[0]
+
+                            #   Prepare/reset lists for the single isochrones
+                            isochrone_magnitude_2 = []
+                            isochrone_color = []
+
+                            n_isochrones += 1
+                            continue
+                    except RuntimeError:
+                        continue
+
+                    #   Check that the entries are not HEADER keywords
+                    try:
+                        float(line_elements[0])
+                    except (ValueError, IndexError):
+                        continue
+
+                    if isochrone_column['AGE'] != 0:
+                        age = float(line_elements[isochrone_column['AGE'] - 1])
+
+                    #   Fill lists
+                    isochrone_magnitude_2, isochrone_color = self.fill_lists_with_isochrone_magnitudes(
+                        line_elements,
+                        isochrone_magnitude_relation_filter_1,
+                        isochrone_magnitude_relation_filter_2,
+                        isochrone_magnitude_2,
+                        isochrone_color,
+                    )
+
+                #   Add last isochrone to overall lists
+                #   TODO: Rearrange code so that the following block is not necessary
+                age_list.append(float(age))
+                isochrone_array = np.array(
+                    [isochrone_magnitude_2, isochrone_color]
+                ).T
+                isochrones_list.append(isochrone_array)
+                if fit_isochrone:
+                    isochrone_tree = KDTree(isochrone_array, leafsize=100)
+                    _, nearst_neighbour_indexes = isochrone_tree.query(
+                        magnitude_binned_array,
+                        k=1,
+                    )
+                    nearst_neighbour_indexes_list.append(nearst_neighbour_indexes)
+
+                #   Close isochrone file
+                isochrone_data.close()
+
+                #   Number of isochrones
+                n_isochrones = len(isochrones_list)
+                terminal_output.print_to_terminal(
+                    f"Plot {n_isochrones} isochrone(s)",
+                    style_name='OKGREEN',
+                )
+
+                #   Make color map
+                color_pick = mk_colormap(n_isochrones)
+
+                #   Prepare cycler for the line styles
+                line_cycler = mk_line_cycler()
+
+                #   Cycle through iso lines
+                age_list_new = []
+                for i in range(0, n_isochrones):
+                    if isochrone_log_age:
+                        age_value = 10 ** age_list[i] / 10 ** 9
+                        age_value = round(age_value, 3)
+                    else:
+                        age_value = round(age_list[i], 3)
+                    age_unit = 'Gyr'
+                    age_string = f'{age_value} {age_unit}'
+                    age_list_new.append(age_value)
+
+                    #   Plot iso lines
+                    if fiduciary_points_isochrones:
+                        ax0.plot(
+                            isochrones_list[i][:, 1][nearst_neighbour_indexes_list[i]],
+                            isochrones_list[i][:, 0][nearst_neighbour_indexes_list[i]],
+                            marker='o',
+                            ls='none',
+                            color=color_pick.to_rgba(i),
+                            alpha=0.5,
+                        )
+                    if fit_isochrone:
+                        alpha_isochrone = 0.2
+                    else:
+                        alpha_isochrone = 0.5
+                    ax0.plot(
+                        isochrones_list[i][:, 1],
+                        isochrones_list[i][:, 0],
+                        linestyle=next(line_cycler),
+                        color=color_pick.to_rgba(i),
+                        linewidth=1.2,
+                        label=age_string,
+                        alpha=alpha_isochrone,
+                    )
+
+                    if fit_isochrone:
+                        #   Calculate chi square
+                        chi_square_magnitude_2, chi_square_color, chi_square_total = self.calculate_chi_square(
+                            magnitude_filter_2_binned,
+                            magnitude_color_binned,
+                            isochrones_list[i],
+                            nearst_neighbour_indexes_list[i],
+                        )
+                        chi_square_magnitude_2_list.append(
+                            chi_square_magnitude_2
+                        )
+                        chi_square_color_list.append(chi_square_color)
+                        chi_square_list.append(chi_square_total)
+
+
+                        #   Plot chi square values
+                        if chi_square_plot_mode == 'detailed':
+                            ax1.plot(
+                                chi_square_magnitude_2,
+                                age_value,
+                                color=color_pick.to_rgba(i),
+                                marker='o',
+                                alpha=0.2,
+                            )
+                            ax2.plot(
+                                age_value,
+                                chi_square_color,
+                                ls='none',
+                                color=color_pick.to_rgba(i),
+                                marker='o',
+                                alpha=0.2,
+                            )
+                        elif chi_square_plot_mode == 'simple':
+                            ax2.scatter(
+                                age_value,
+                                chi_square_color + chi_square_magnitude_2,
+                                color=color_pick.to_rgba(i),
+                                marker='o',
+                                alpha=0.2,
+                            )
+                age_list = age_list_new
+
+            #   Plot legend
+            if isochrone_legend:
+                legend_ = ax0.legend(
+                    bbox_to_anchor=(0., 1.02, 1.0, 0.102),
+                    loc=3,
+                    ncol=4,
+                    mode='expand',
+                    borderaxespad=0.,
+                )
+                for element in legend_.legendHandles:
+                    element.set_alpha(0.6)
+
+        if fit_isochrone:
+            #   Evaluate chi square
+            min_chi_square_id = np.argmin(chi_square_list)
+
+            terminal_output.print_to_terminal(
+                f'Best fitting isochrone: {age_list[min_chi_square_id]:.1f} '
+                f'{age_unit} with chi^2 = {chi_square_list[min_chi_square_id]:.3f}',
+                # indent=2,
+                style_name="GOOD",
+            )
+
+            #   Plot best isochrone
+            ax0.plot(
+                isochrones_list[min_chi_square_id][:, 1],
+                isochrones_list[min_chi_square_id][:, 0],
+                linestyle='-',
+                color=color_pick.to_rgba(min_chi_square_id),
+                linewidth=2,
+            )
+
+            #   Finish chi square plots
+            if chi_square_plot_mode == 'detailed':
+                ax1.scatter(
+                    chi_square_magnitude_2_list[min_chi_square_id],
+                    age_list[min_chi_square_id],
+                    color=color_pick.to_rgba(min_chi_square_id),
+                    marker='o',
+                    alpha=1.0,
+                )
+                ax2.scatter(
+                    age_list[min_chi_square_id],
+                    chi_square_color_list[min_chi_square_id],
+                    color=color_pick.to_rgba(min_chi_square_id),
+                    marker='o',
+                    alpha=1.0,
+                )
+                mk_ticks_labels(
+                    f'Age [{age_unit}]',
+                    f'$\chi^2$ ',
+                    ax1,
+                )
+                mk_ticks_labels(
+                    f'$\chi^2$ ',
+                    f'Age [{age_unit}]',
+                    ax2,
+                )
+            elif chi_square_plot_mode == 'simple':
+                ax2.scatter(
+                    age_list[min_chi_square_id],
+                    chi_square_magnitude_2_list[min_chi_square_id] + chi_square_color_list[min_chi_square_id],
+                    color=color_pick.to_rgba(min_chi_square_id),
+                    marker='o',
+                    alpha=1.0,
+                )
+                mk_ticks_labels(
+                    f'$\chi^2$ ',
+                    f'Age [{age_unit}]',
+                    ax2,
+                )
+
+        #   Set ticks and labels for CMD
+        mk_ticks_labels(
+            rf'${self.filter_2}$ [mag]',
+            rf'${self.color}$ [mag]',
+            ax0,
+        )
+
+        #   Write plot to disk
+        self.write_cmd('absolut')
+        plt.close()
+
+
+def initialize_plot(size_x, size_y):
+    """
+        Check the plot dimensions and set defaults
 
         Parameters
         ----------
@@ -1303,23 +2442,10 @@ def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
         size_y              : `float`
             Figure size in cm (y direction)
 
-        magnitudes          : `numpy.ndarray`
-            Filter magnitude - 1D
-
-        color_magnitudes    : `numpy.ndarray`
-            Color - 1D
-
-        y_range_max         : `float`
-            The maximum of the plot range in Y direction
-
-        y_range_min         : `float`
-            The minimum of the plot range in Y direction
-
-        x_range_max         : `float`
-            The maximum of the plot range in X direction
-
-        x_range_min         : `float`
-            The minimum of the plot range in X direction
+        Returns
+        -------
+        fig                 : `matplotlib.pyplot.figure`
+            Figure object
     """
     #   Set figure size
     if size_x == "" or size_x == "?" or size_y == "" or size_y == "?":
@@ -1327,166 +2453,58 @@ def check_cmd_plot(size_x, size_y, magnitudes, color_magnitudes, y_range_max,
             "[Info] No Plot figure size given, use default: 8cm x 8cm",
             style_name='WARNING',
         )
-        plt.figure(figsize=(8, 8))
+        fig = plt.figure(figsize=(8, 8))
     else:
-        plt.figure(figsize=(int(size_x), int(size_y)))
+        fig = plt.figure(figsize=(int(size_x), int(size_y)))
 
-    #   Plot grid
-    plt.grid(True, color='lightgray', linestyle='--')
-
-    #   Set plot range -> automatic adjustment
-    #   Y range
-    try:
-        float(y_range_max)
-    except ValueError:
-        plt.ylim([
-            float(np.max(magnitudes)) + 0.5,
-            float(np.min(magnitudes)) - 0.5
-        ])
-        terminal_output.print_to_terminal(
-            "[Info] Use automatic plot range for Y",
-            style_name='WARNING',
-        )
-    else:
-        try:
-            float(y_range_min)
-        except ValueError:
-            plt.ylim([
-                float(np.max(magnitudes)) + 0.5,
-                float(np.min(magnitudes)) - 0.5
-            ])
-            terminal_output.print_to_terminal(
-                "[Info] Use automatic plot range for Y",
-                style_name='WARNING',
-            )
-        else:
-            plt.ylim([float(y_range_min), float(y_range_max)])
-
-    #   X range
-    try:
-        float(x_range_max)
-    except ValueError:
-        plt.xlim([
-            float(np.min(color_magnitudes)) - 0.5,
-            float(np.max(color_magnitudes)) + 0.5
-        ])
-        terminal_output.print_to_terminal(
-            "[Info] Use automatic plot range for X",
-            style_name='WARNING',
-        )
-    else:
-        try:
-            float(x_range_min)
-        except ValueError:
-            plt.xlim([
-                float(np.min(color_magnitudes)) - 0.5,
-                float(np.max(color_magnitudes)) + 0.5
-            ])
-            terminal_output.print_to_terminal(
-                "[Info] Use automatic plot range for X",
-                style_name='WARNING',
-            )
-        else:
-            plt.xlim([float(x_range_min), float(x_range_max)])
+    return fig
 
 
-def mk_ticks_labels(filter_, color):
+def mk_ticks_labels(y_axis_lable, x_axis_lable, ax):
     """
         Set default ticks and labels
 
         Parameters
         ----------
-        filter_ : `string`
+        y_axis_lable    : `string`
             Filter
 
-        color   : `string`
+        x_axis_lable    : `string`
             Color
+
+        ax                  : `matplotlib.pyplot.subplot`
+            Subplot
     """
     #   Set ticks
-    plt.tick_params(
+    ax.tick_params(
         axis='both',
         which='both',
         top=True,
         right=True,
         direction='in',
     )
-    plt.minorticks_on()
+    ax.minorticks_on()
+    ax.grid(True, color='lightgray', linestyle='--')
 
     #   Set labels
-    plt.xlabel(rf'${color}$ [mag]')
-    plt.ylabel(rf'${filter_}$ [mag]')
+    ax.set_xlabel(x_axis_lable)
+    ax.set_ylabel(y_axis_lable)
 
 
-def fill_lists(list_, iso_column, iso_column_type, filter_2, filter_1,
-               iso_mag_2, iso_mag_1, iso_color):
-    """
-        Sort magnitudes into lists and calculate the color if necessary
-
-        Parameters
-        ----------
-        list_           : `list` of `string`
-            List of strings
-
-        iso_column      : `dictionary`
-            Columns to use from the ISO file.
-            Keys = filter           : `string`
-            Values = column numbers : `integer`
-
-        iso_column_type : `dictionary`
-            Type of the columns from the ISO file
-            Keys = filter : `string`
-            Values = type : `string`
-
-        filter_2        : `string`
-            First filter
-
-        filter_1        : `string`
-            Second filter
-
-        iso_mag_2       : `list` of `float`
-            Magnitude list (first filter)
-
-        iso_mag_1       : `list` of `float`
-            Magnitude list (second filter)
-
-        iso_color       : `list` of `float`
-            Color list
-
-        Returns
-        -------
-        iso_mag_2       : `list` of `float`
-            Magnitude list (first filter)
-
-        iso_mag_1       : `list` of `float`
-            Magnitude list (second filter)
-
-        iso_color       : `list` of `float`
-            Color list
-    """
-    mag_2 = float(list_[iso_column[filter_2] - 1])
-    iso_mag_2.append(mag_2)
-    if iso_column_type[filter_1] == 'color':
-        color = float(list_[iso_column[filter_1] - 1])
-        iso_color.append(color)
-    elif iso_column_type[filter_1] == 'single':
-        mag_1 = float(list_[iso_column[filter_1] - 1])
-        iso_mag_1.append(mag_1)
-        iso_color.append(mag_1 - mag_2)
-
-    return iso_mag_2, iso_mag_1, iso_color
+class MaxRecursionError(Exception):
+    pass
 
 
-def mk_colormap(n_iso):
+def mk_colormap(n_color_steps):
     """
         Make a color map e.g. for isochrones
 
         Parameters
         ----------
-        n_iso    : `integer`
-            Number of isochrone files
+        n_color_steps    : `integer`
+            Number of things to color
     """
-    #   Prepare colors for the isochrones
-    #   Self defined colormap
+    #   Prepare colormap
     cm1 = mcol.LinearSegmentedColormap.from_list(
         "MyCmapName",
         ['orchid',
@@ -1500,7 +2518,7 @@ def mk_colormap(n_iso):
          'saddlebrown',
          ]
     )
-    cnorm = mcol.Normalize(vmin=0, vmax=n_iso)
+    cnorm = mcol.Normalize(vmin=0, vmax=n_color_steps)
     cpick = cm.ScalarMappable(norm=cnorm, cmap=cm1)
     cpick.set_array([])
 
@@ -1529,541 +2547,6 @@ def mk_color_cycler_error_bars():
     """
     colors = ['wheat', 'dodgerblue', 'violet', 'gold']
     return cycle(colors)
-
-
-def write_cmd(name_of_star_cluster, filename, filter_, color, file_type,
-              plot_type, output_dir='output'):
-    """
-        Write plot to disk
-
-        Parameters
-        ----------
-        name_of_star_cluster    : `string`
-            Name of cluster
-
-        filename                : `string`
-            Base name of the file to write
-
-        filter_                 : `string`
-            Filter
-
-        color                   : `string`
-            Color
-
-        file_type               : `string`
-            File type
-
-        plot_type                   : `string`
-            Plot type
-
-        output_dir              : `string`, optional
-            Output directory
-            Default is ``output``.
-    """
-    if name_of_star_cluster == "" or name_of_star_cluster == "?":
-        path = (f'{output_dir}/{filename}_{plot_type}_{filter_}_{color}'
-                f'.{file_type}')
-        terminal_output.print_to_terminal(
-            f"Save CMD plot ({file_type}): {path}",
-        )
-        plt.savefig(
-            path,
-            format=file_type,
-            bbox_inches="tight",
-        )
-    else:
-        name_of_star_cluster = name_of_star_cluster.replace(' ', '_')
-        path = (f'{output_dir}/{filename}_{name_of_star_cluster}_{plot_type}'
-                f'_{filter_}_{color}.{file_type}')
-        terminal_output.print_to_terminal(
-            f"Save CMD plot ({file_type}): {path}",
-        )
-        plt.savefig(
-            path,
-            format=file_type,
-            bbox_inches="tight",
-        )
-
-
-#   TODO: Make class for CMD plots and add associated functions
-def plot_apparent_cmd(magnitude_color, magnitude_filter_2,
-                      name_of_star_cluster, file_name, file_type, filter_2,
-                      filter_1, figure_size_x='', figure_size_y='',
-                      y_plot_range_max='', y_plot_range_min='',
-                      x_plot_range_max='', x_plot_range_min='',
-                      output_dir='output', magnitude_filter_2_err=None,
-                      color_err=None):
-    """
-        Plot calibrated cmd with apparent magnitudes
-
-        Parameters
-        ----------
-        magnitude_color             : `numpy.ndarray`
-            Color - 1D
-
-        magnitude_filter_2          : `numpy.ndarray`
-            Filter magnitude - 1D
-
-        name_of_star_cluster        : `string`
-            Name of cluster
-
-        file_name                   : `string`
-            Base name of the file to write
-
-        file_type                   : `string`
-            File type
-
-        filter_2                    : `string`
-            First filter
-
-        filter_1                    : `string`
-            Second filter
-
-        figure_size_x               : `float`
-            Figure size in cm (x direction)
-
-        figure_size_y               : `float`
-            Figure size in cm (y direction)
-
-        y_plot_range_max            : `float`
-            The maximum of the plot range in Y direction
-
-        y_plot_range_min            : `float`
-            The minimum of the plot range in Y direction
-
-        x_plot_range_max            : `float`
-            The maximum of the plot range in X direction
-
-        x_plot_range_min            : `float`
-            The minimum of the plot range in X direction
-
-        output_dir                  : `string`, optional
-            Output directory
-            Default is ``output``.
-
-        magnitude_filter_2_err      : `numpy.ndarray' or ``None``, optional
-            Error for ``magnitude_filter_2``
-            Default is ``None``.
-
-        color_err                   : `numpy.ndarray' or ``None``, optional
-            Error for ``mag_color``
-            Default is ``None``.
-
-    """
-    #   Check plot dimensions and set defaults
-    check_cmd_plot(
-        figure_size_x,
-        figure_size_y,
-        magnitude_filter_2,
-        magnitude_color,
-        y_plot_range_max,
-        y_plot_range_min,
-        x_plot_range_max,
-        x_plot_range_min,
-    )
-
-    #   Plot the stars
-    terminal_output.print_to_terminal("Add stars", indent=1)
-    plt.errorbar(
-        magnitude_color,
-        magnitude_filter_2,
-        xerr=magnitude_filter_2_err,
-        yerr=color_err,
-        marker='o',
-        ls='none',
-        elinewidth=0.5,
-        markersize=2,
-        capsize=2,
-        ecolor='#ccdbfd',
-        # ecolor='dodgerblue',
-        color='darkred',
-        alpha=0.3,
-    )
-
-    #   Set ticks and labels
-    color = f'{filter_1}-{filter_2}'
-    mk_ticks_labels(f'{filter_2}', f'{color}')
-
-    #   Write plot to disk
-    write_cmd(
-        name_of_star_cluster,
-        file_name,
-        filter_2,
-        color,
-        file_type,
-        'apparent',
-        output_dir=output_dir,
-    )
-    plt.close()
-
-
-def plot_absolute_cmd(magnitude_color, magnitude_filter_2,
-                      name_of_star_cluster, file_name, file_type, filter_2,
-                      filter_1, isochrones, isochrone_type,
-                      isochrone_column_type, isochrone_column,
-                      isochrone_log_age, isochrone_keyword, isochrone_legend,
-                      figure_size_x='', figure_size_y='', y_plot_range_max='',
-                      y_plot_range_min='', x_plot_range_max='',
-                      x_plot_range_min='', output_dir='output',
-                      magnitude_filter_2_err=None, color_err=None):
-    """
-        Plot calibrated CMD with
-            * magnitudes corrected for reddening and distance
-            * isochrones
-
-        Parameters
-        ----------
-        magnitude_color             : `numpy.ndarray`
-            Color - 1D
-
-        magnitude_filter_2          : `numpy.ndarray`
-            Filter magnitude - 1D
-
-        name_of_star_cluster        : `string`
-            Name of cluster
-
-        file_name                   : `string`
-            Base name of the file to write
-
-        file_type                   : `string`
-            File type
-
-        filter_2                    : `string`
-            First filter
-
-        filter_1                    : `string`
-            Second filter
-
-        isochrones                  : `string`
-            Path to the isochrone directory or the isochrone file
-
-        isochrone_type              : `string`
-            Type of 'isochrones'
-            Possibilities: 'directory' or 'file'
-
-        isochrone_column_type       : `dictionary`
-            Keys = filter : `string`
-            Values = type : `string`
-
-        isochrone_column            : `dictionary`
-            Keys = filter           : `string`
-            Values = column numbers : `integer`
-
-        isochrone_log_age           : `boolean`
-            Logarithmic age
-
-        isochrone_keyword           : `string`
-            Keyword to identify a new isochrone
-
-        isochrone_legend            : `boolean`
-            If True plot legend for isochrones.
-
-        figure_size_x               : `float`, optional
-            Figure size in cm (x direction)
-            Default is ````.
-
-        figure_size_y               : `float`, optional
-            Figure size in cm (y direction)
-            Default is ````.
-
-        y_plot_range_max            : `float`, optional
-            The maximum of the plot range in Y
-                                direction
-            Default is ````.
-
-        y_plot_range_min            : `float`, optional
-            The minimum of the plot range in Y
-                                direction
-            Default is ````.
-
-        x_plot_range_max            : `float`, optional
-            The maximum of the plot range in X
-                                direction
-            Default is ````.
-
-        x_plot_range_min            : `float`, optional
-            The minimum of the plot range in X direction
-
-        output_dir                  : `string`, optional
-            Output directory
-            Default is ``output``.
-
-        magnitude_filter_2_err      : `numpy.ndarray' or ``None``, optional
-            Error for ``magnitude_filter_2``
-            Default is ``None``.
-
-        color_err                   : `numpy.ndarray' or ``None``, optional
-            Error for ``mag_color``
-            Default is ``None``.
-    """
-    #   Check plot dimensions and set defaults
-    check_cmd_plot(
-        figure_size_x,
-        figure_size_y,
-        magnitude_filter_2,
-        magnitude_color,
-        y_plot_range_max,
-        y_plot_range_min,
-        x_plot_range_max,
-        x_plot_range_min,
-    )
-
-    #   Plot the stars
-    terminal_output.print_to_terminal("Add stars")
-    plt.errorbar(
-        magnitude_color,
-        magnitude_filter_2,
-        xerr=magnitude_filter_2_err,
-        yerr=color_err,
-        marker='o',
-        ls='none',
-        elinewidth=0.5,
-        markersize=2,
-        capsize=2,
-        ecolor='#ccdbfd',
-        # ecolor='dodgerblue',
-        color='darkred',
-        alpha=0.3,
-    )
-
-    ###
-    #   Plot isochrones
-    #
-
-    #   Check if isochrones are specified
-    if isochrones != '' and isochrones != '?':
-        #   OPTION I: Individual isochrone files in a specific directory
-        if isochrone_type == 'directory':
-            #   Resolve iso path
-            isochrones = Path(isochrones).expanduser()
-
-            #   Make list of isochrone files
-            file_list = os.listdir(isochrones)
-
-            #   Number of isochrones
-            n_isochrones = len(file_list)
-            terminal_output.print_to_terminal(
-                f"Plot {n_isochrones} isochrone(s)",
-                style_name='OKGREEN',
-            )
-
-            #   Make color map
-            color_pick = mk_colormap(n_isochrones)
-
-            #   Prepare cycler for the line styles
-            line_cycler = mk_line_cycler()
-
-            #   Cycle through iso files
-            for i in range(0, n_isochrones):
-                #   Load file
-                isochrone_data = open(isochrones / file_list[i])
-
-                #   Prepare variables for the isochrone data
-                isochrone_magnitude_2 = []
-                isochrone_magnitude_1 = []
-                isochrone_color = []
-                age_value = ''
-                age_unit = ''
-
-                #   Extract B and V values & make lists
-                #   Loop over all lines in the file
-                for line in isochrone_data:
-                    line_elements = line.split()
-
-                    #   Check that the entries are not HEADER keywords
-                    try:
-                        float(line_elements[0])
-                    except:
-                        #   Try to find and extract age information
-                        if 'Age' in line_elements or 'age' in line_elements:
-                            try:
-                                age_index = line_elements.index('age')
-                            except:
-                                age_index = line_elements.index('Age')
-
-                            for string in line_elements[age_index + 1:]:
-                                #   Find age unit
-                                if string.rfind("yr") != -1:
-                                    age_unit = string
-                                #   Find age value
-                                try:
-                                    if isinstance(age_value, str):
-                                        age_value = int(float(string))
-                                except:
-                                    pass
-                        continue
-
-                    #   Fill lists
-                    isochrone_magnitude_2, isochrone_magnitude_1, isochrone_color = fill_lists(
-                        line_elements,
-                        isochrone_column,
-                        isochrone_column_type,
-                        filter_2,
-                        filter_1,
-                        isochrone_magnitude_2,
-                        isochrone_magnitude_1,
-                        isochrone_color,
-                    )
-
-                #   Construct label
-                if not isinstance(age_value, str):
-                    label = str(age_value)
-                    if age_unit != '':
-                        label += f' {age_unit}'
-                else:
-                    label = os.path.splitext(file_list[i])[0]
-
-                #   Plot iso lines
-                plt.plot(
-                    isochrone_color,
-                    isochrone_magnitude_2,
-                    linestyle=next(line_cycler),
-                    color=color_pick.to_rgba(i),
-                    linewidth=1.2,
-                    label=label,
-                )
-
-                #   Close file with the iso data
-                isochrone_data.close()
-
-        #   OPTION II: Isochrone file containing many individual isochrones
-        if isochrone_type == 'file':
-            #   Resolve iso path
-            isochrones = Path(isochrones).expanduser()
-
-            #   Load file
-            isochrone_data = open(isochrones)
-
-            #   Overall lists for the isochrones
-            age_list = []
-            isochrone_magnitude_2_list = []
-            isochrone_magnitude_1_list = []
-            isochrone_color_list = []
-
-            #   Number of detected isochrones
-            n_isochrones = 0
-
-            #   Loop over all lines in the file
-            for line in isochrone_data:
-                line_elements = line.split()
-
-                #   Check for a key word to distinguish the isochrones
-                try:
-                    if line[0:len(isochrone_keyword)] == isochrone_keyword:
-                        #   Add data from the last isochrone to the overall lists
-                        #   for the isochrones.
-                        if n_isochrones:
-                            #   This part is only active after an isochrone has been detected.
-                            #   The variables are then assigned.
-                            age_list.append(age)
-                            isochrone_magnitude_2_list.append(isochrone_magnitude_2)
-                            isochrone_magnitude_1_list.append(isochrone_magnitude_1)
-                            isochrone_color_list.append(isochrone_color)
-
-                        #   Save age for the case where age is given as a
-                        #   keyword and not as a column
-                        if isochrone_column['AGE'] == 0:
-                            age = line.split('=')[1].split()[0]
-
-                        #   Prepare/reset lists for the single isochrones
-                        isochrone_magnitude_2 = []
-                        isochrone_magnitude_1 = []
-                        isochrone_color = []
-
-                        n_isochrones += 1
-                        continue
-                except RuntimeError:
-                    continue
-
-                #   Check that the entries are not HEADER keywords
-                try:
-                    float(line_elements[0])
-                except ValueError:
-                    continue
-
-                #   Fill lists
-                if isochrone_column['AGE'] != 0:
-                    age = float(line_elements[isochrone_column['AGE'] - 1])
-
-                isochrone_magnitude_2, isochrone_magnitude_1, isochrone_color = fill_lists(
-                    line_elements,
-                    isochrone_column,
-                    isochrone_column_type,
-                    filter_2,
-                    filter_1,
-                    isochrone_magnitude_2,
-                    isochrone_magnitude_1,
-                    isochrone_color,
-                )
-
-            #   Add last isochrone to overall lists
-            age_list.append(age)
-            isochrone_magnitude_2_list.append(isochrone_magnitude_2)
-            isochrone_magnitude_1_list.append(isochrone_magnitude_1)
-            isochrone_color_list.append(isochrone_color)
-
-            #   Close isochrone file
-            isochrone_data.close()
-
-            #   Number of isochrones
-            n_isochrones = len(isochrone_magnitude_2_list)
-            terminal_output.print_to_terminal(
-                f"Plot {n_isochrones} isochrone(s)",
-                style_name='OKGREEN',
-            )
-
-            #   Make color map
-            color_pick = mk_colormap(n_isochrones)
-
-            #   Prepare cycler for the line styles
-            line_cycler = mk_line_cycler()
-
-            #   Cycle through iso lines
-            for i in range(0, n_isochrones):
-                if isochrone_log_age:
-                    age_value = float(age_list[i])
-                    age_value = 10 ** age_value / 10 ** 9
-                    age_value = round(age_value, 2)
-                else:
-                    age_value = round(float(age_list[i]), 2)
-                age_string = f'{age_value} Gyr'
-
-                #   Plot iso lines
-                plt.plot(
-                    isochrone_color_list[i],
-                    isochrone_magnitude_2_list[i],
-                    linestyle=next(line_cycler),
-                    color=color_pick.to_rgba(i),
-                    linewidth=1.2,
-                    label=age_string,
-                )
-                isochrone_data.close()
-
-        #   Plot legend
-        if isochrone_legend:
-            plt.legend(
-                bbox_to_anchor=(0., 1.02, 1.0, 0.102),
-                loc=3,
-                ncol=4,
-                mode='expand',
-                borderaxespad=0.,
-            )
-
-    #   Set ticks and labels
-    color = f'{filter_1}-{filter_2}'
-    mk_ticks_labels(filter_2, color)
-
-    #   Write plot to disk
-    write_cmd(
-        name_of_star_cluster,
-        file_name,
-        filter_2,
-        color,
-        file_type,
-        'absolut',
-        output_dir=output_dir,
-    )
-    plt.close()
 
 
 def onpick3(event):
@@ -2565,7 +3048,7 @@ def extinction_curves(rv):
         fitzpatrick_extinction_curve(x),
         color='darkorange',
         linewidth=1,
-        label=r'Fitzpatrick: $R_\mathrm{V} = $'+f'{rv}',
+        label=r'Fitzpatrick: $R_\mathrm{V} = $' + f'{rv}',
     )
 
     #   Set x and y-axis label and legend
@@ -2676,3 +3159,99 @@ def filled_iso_contours(object_table, shape_image, filter_, output_dir='./',
     )
     plt.close()
     # plt.show()
+
+
+def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
+                        rts, output_dir, dataset_label, name_obj=None):
+    """
+    Plots histogram statistics on properties such as the zero point
+
+    Parameters
+    ----------
+    parameter_list_0    : `list` of `numpy.ndarray`
+        List of arrays with parameters to plot
+
+    parameter_list_1    : `list` of `numpy.ndarray`
+        Second list of arrays with parameters to plot such as sigma
+        clipped values of parameter_list_0
+
+    name_x              : `string`
+        Name of quantity 1
+
+    name_y              : `string`
+        Name of quantity 2
+
+    rts                 : `string`
+        Expression characterizing the plot
+
+    output_dir          : `string`
+        Output directory
+
+    dataset_label       : 'list` of 'string` or `None`, optional
+        Label for the datasets
+        Default is ``None``.
+
+    name_obj            : `string`, optional
+        Name of the object
+        Default is ``None``
+    """
+    #   Check output directories
+    checks.check_output_directories(
+        output_dir,
+        os.path.join(output_dir, 'calibration'),
+    )
+
+    #   Plot magnitudes
+    fig = plt.figure(figsize=(8, 8))
+
+    #   Set title
+    if name_obj is None:
+        sub_title = f'{name_x} histogram'
+    else:
+        sub_title = f'{name_x} histogram ({name_obj})'
+    fig.suptitle(
+        sub_title,
+        fontsize=17,
+    )
+
+    #   Make color map
+    color_pick = mk_colormap(len(parameter_list_0))
+
+    for i, parameter in enumerate(parameter_list_0):
+        plt.hist(
+            unumpy.nominal_values(parameter),
+            bins=40,
+            alpha=0.25,
+            color=color_pick.to_rgba(i),
+            label=f'{dataset_label[0][i]}',
+        )
+    for i, parameter in enumerate(parameter_list_1):
+        plt.hist(
+            unumpy.nominal_values(parameter),
+            bins=10,
+            alpha=0.5,
+            color=color_pick.to_rgba(i),
+            label=f'{dataset_label[1][i]}',
+        )
+        median_parameter = np.ma.median(parameter)
+        plt.axvline(
+            unumpy.nominal_values(median_parameter),
+            # color='g',
+            color=color_pick.to_rgba(i),
+        )
+
+    #   Add legend
+    if dataset_label is not None:
+        plt.legend()
+
+    #   Set x and y axis label
+    plt.ylabel(name_y)
+    plt.xlabel(name_x)
+
+    #   Save plot
+    plt.savefig(
+        f'{output_dir}/calibration/{rts}.pdf',
+        bbox_inches='tight',
+        format='pdf',
+    )
+    plt.close()

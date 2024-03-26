@@ -273,7 +273,7 @@ class ImageEnsemble:
 
         #   Fill image list
         terminal_output.print_to_terminal(
-            "Read images and calculate FOV, PIXEL scale, etc. ... ",
+            "Read images and calculate field of view, PIXEL scale, etc. ... ",
             indent=2,
         )
         #   TODO: Convert image_list to dictionary
@@ -321,16 +321,24 @@ class ImageEnsemble:
         def __init__(self, pd, filter_, obj_name, path, file_name, output_dir):
             #   Set image ID
             self.pd = pd
+
             #   Set filter
             self.filt = filter_
+
             #   Set object name
             self.objname = obj_name
+
             #   Set file name
             self.filename = file_name
+
             #   Set complete path
             self.path = Path(Path(path) / file_name)
+
             #   Set path to output directory
             self.outpath = Path(output_dir)
+
+            #   Set wcs default
+            self.wcs = None
 
         #   Read image
         def read_image(self):
@@ -2783,6 +2791,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
                 label_2='stars used to determine the ePSF',
                 rts=f'Initial object identification [Image: {image.pd}]',
                 name_obj=image.objname,
+                wcs=image.wcs,
                 terminal_logger=terminal_logger,
             )
 
@@ -3096,8 +3105,7 @@ def extract_flux(image_container, filter_list, object_name, image_paths,
                 indent=3,
             )
         except Exception as e:
-            #   Get the WCS from one of the other filters incase, if they
-            #   have one
+            #   Get the WCS from one of the other filters, if they have one
             for wcs_filter in filter_list:
                 wcs = getattr(
                     image_container.ensembles[wcs_filter],

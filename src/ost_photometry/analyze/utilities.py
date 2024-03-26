@@ -1179,6 +1179,7 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
         label=label,
         rts=rts_pre,
         name_obj=name,
+        wcs=image.wcs,
         terminal_logger=terminal_logger,
     )
 
@@ -1224,6 +1225,7 @@ def prepare_and_plot_starmap_from_image_container(img_container, filter_list):
                 'label': f'Stars identified in {filter_list[0]} and '
                          f'{filter_list[1]} filter',
                 'name_obj': image.objname,
+                'wcs': image.wcs,
             }
         )
         p.start()
@@ -1287,6 +1289,7 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
                 # 'label_2': 'Calibration stars',
                 'label_2': 'Variable object',
                 'name_obj': img_ensemble.objname,
+                'wcs': img_ensemble.wcs,
             }
         )
         p.start()
@@ -1619,6 +1622,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
                 'rts': rts,
                 'mode': 'mags',
                 'name_obj': image.objname,
+                'wcs': image.wcs,
             }
         )
         p.start()
@@ -1686,7 +1690,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             indent=indent * 2,
         )
         terminal_output.print_to_terminal(
-            f"500 apertures, 5 sigma, 2 iterations: {mag_limit} mag",
+                f"500 apertures, 5 sigma, 2 iterations: {mag_limit:6.2f} mag",
             indent=indent * 3,
         )
 
@@ -1814,7 +1818,8 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
         column_filters={'Gmag': '<' + str(g_mag_limit)},
     )
 
-    #   Get data from the corresponding catalog for the objects in the FOV
+    #   Get data from the corresponding catalog for the objects in
+    #   the field of view
     result = v.query_region(
         ensemble.coord,
         radius=ensemble.fov * u.arcmin,
@@ -2072,7 +2077,8 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         column_filters={'Gmag': '<' + str(g_mag_limit)},
     )
 
-    #   Get data from the corresponding catalog for the objects in the FOV
+    #   Get data from the corresponding catalog for the objects in
+    #   the field of view
     result = v.query_region(
         ensemble.coord,
         radius=ensemble.fov * u.arcmin,

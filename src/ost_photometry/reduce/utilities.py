@@ -170,8 +170,22 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
             f'\t=> Check paths to the images!{style.Bcolors.ENDC}'
         )
 
-    #   Get instruments (set() allows to return only unique values)
-    instruments = set(image_file_collection.summary['instrume'])
+    #   Get instruments
+    instrument_mask = image_file_collection.summary['instrume'].mask
+    files_without_instrument = np.array(
+        image_file_collection.files
+    )[instrument_mask]
+    for file_name in files_without_instrument:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without instrument information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    instruments = set(
+        image_file_collection.summary['instrume'][np.invert(instrument_mask)]
+    )
 
     if len(instruments) > 1:
         raise RuntimeError(
@@ -230,12 +244,29 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
             instrument = ''
 
     #   Get readout mode
-    readout_modes = set(image_file_collection.summary['readoutm'])
+    readout_mode_mask = image_file_collection.summary['readoutm'].mask
+    files_without_readout_mode = np.array(
+        image_file_collection.files
+    )[readout_mode_mask]
+    for file_name in files_without_readout_mode:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without readout mode information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    readout_modes = set(
+        image_file_collection.summary['readoutm'][np.invert(readout_mode_mask)]
+    )
+
     if not readout_modes:
         readout_mode = 'Extend Fullwell 2CMS'
     elif len(readout_modes) == 1:
         readout_mode = list(readout_modes)[0]
 
+        #   This is a dirty fix for the inadequacy of Maxim-DL to write
+        #   the correct readout mode in the Header.
         if readout_mode in ['Fast', 'Slow']:
             readout_mode = 'Extend Fullwell 2CMS'
     else:
@@ -245,7 +276,22 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         )
 
     #   Get gain setting
-    gain_settings = set(image_file_collection.summary['gain'])
+    gain_mask = image_file_collection.summary['gain'].mask
+    files_without_gain = np.array(
+        image_file_collection.files
+    )[gain_mask]
+    for file_name in files_without_gain:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without gain information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    gain_settings = set(
+        image_file_collection.summary['gain'][np.invert(gain_mask)]
+    )
+
     if len(gain_settings) > 1:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Multiple gain values detected.\n'
@@ -254,7 +300,22 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
     gain_setting = list(gain_settings)[0]
 
     #   Offset settings
-    offset_settings = set(image_file_collection.summary['offset'])
+    offset_mask = image_file_collection.summary['offset'].mask
+    files_without_offset = np.array(
+        image_file_collection.files
+    )[offset_mask]
+    for file_name in files_without_offset:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without offset information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    offset_settings = set(
+        image_file_collection.summary['offset'][np.invert(offset_mask)]
+    )
+
     if len(offset_settings) > 1:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Multiple offset values detected.\n'
@@ -262,7 +323,22 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         )
 
     #   Get the bit setting
-    pixel_bit_set = set(image_file_collection.summary['bitpix'])
+    pixel_bit_mask = image_file_collection.summary['bitpix'].mask
+    files_without_pixel_bit = np.array(
+        image_file_collection.files
+    )[pixel_bit_mask]
+    for file_name in files_without_pixel_bit:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without pixel bit information: \n "
+            f"{file_name} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+
+    pixel_bit_set = set(
+        image_file_collection.summary['bitpix'][np.invert(pixel_bit_mask)]
+    )
+
     if len(pixel_bit_set) > 1:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Multiple bit values detected.\n'
@@ -275,16 +351,23 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
     files_without_ccd_temperature = np.array(image_file_collection.files)[mask]
     for file_name in files_without_ccd_temperature:
         terminal_output.print_to_terminal(
-            f"WARNING: Found file without temperature information: \n "
-            f"{file_name} \n Skip file.",
+            f"WARNING: Found file without temperature information: "
+            f"{file_name} -> Skip file.",
             style_name='WARNING',
             indent=2,
         )
 
     files_with_ccd_temperature = np.array(image_file_collection.files)[np.invert(mask)]
     temperatures = image_file_collection.summary['ccd-temp'][np.invert(mask)]
-    clipped_temperatures_mask = sigma_clip(temperatures).mask
+    
+    #   Fix for weird crash due to dtype error in 'sigma_clip' 
+    if temperatures.fill_value == '?':
+        temperatures.fill_value = 999.
+    if temperatures.dtype == 'object':
+        temperatures = temperatures.astype(float)
+
     median_temperature = np.median(temperatures)
+    clipped_temperatures_mask = sigma_clip(temperatures).mask
 
     if np.any(clipped_temperatures_mask):
         clipped_temperatures = temperatures[clipped_temperatures_mask]
@@ -615,15 +698,17 @@ def check_exposure_times(image_file_collection, image_type, exposure_times,
         return False
 
 
-def check_filter_keywords(path, image_type):
+def check_filter_keywords(path, temp_dir, image_type):
     """
         Consistency check - Check if the image type of the images in 'path'
-        fit
-                            to one supplied with 'image_type'.
+                            fit to one supplied with 'image_type'.
         Parameters
         ----------
         path            : `string`
             File path to check
+
+        temp_dir        : `tempfile.TemporaryDirectory`
+            Temporary directory to store the symbolic links to the images
 
         image_type      : `string`
             Internal image type of the images in 'path' should have
@@ -671,21 +756,17 @@ def check_filter_keywords(path, image_type):
     #   -> Compare image file collection with 'image_with_correct_image_type'
     list_1 = list(image_file_collection.files)
     list_2 = image_with_correct_image_type
+    # TODO: Check if there is a bug here when image_with_correct_image_type is a list of lists
     result = [x for x in list_1 + list_2 if x not in list_1 or x not in list_2]
 
-    #   TODO: Replace '_str' methods
     if result:
-        return sanitize_image_types(file_path, image_type)._str
-        # raise RuntimeError(
-        # 'The following images do not have the correct '
-        # 'image type: \n {} \n Expected: {} \n Got: \n {} \n Path: {} '
-        # ''.format(result, image_type, image_file_collection.summary['file', 'imagetyp'], path)
-        # )
+        sanitize_image_types(file_path, temp_dir, image_type)
+        return None
 
-    return file_path._str
+    return str(file_path)
 
 
-def sanitize_image_types(file_path, image_type):
+def sanitize_image_types(file_path, temp_dir, image_type):
     """
         Sanitize image types according to prerequisites
 
@@ -693,14 +774,12 @@ def sanitize_image_types(file_path, image_type):
         ----------
         file_path           : `pathlib.Path`
 
+        temp_dir            : `tempfile.TemporaryDirectory`
+            Temporary directory to store the symbolic links to the images
+
         image_type          : `string` or `list`
             Expected image type
     """
-    #   Set path
-    path = Path('/tmp')
-    path = path / base_aux.random_string_generator(7)
-    checks.check_output_directories(path)
-
     #   Sanitize
     image_file_collection = ccdp.ImageFileCollection(file_path)
 
@@ -710,9 +789,7 @@ def sanitize_image_types(file_path, image_type):
         else:
             image_ccd.meta['imagetyp'] = image_type
 
-        image_ccd.write(path / file_name)
-
-    return path
+        image_ccd.write(temp_dir.name + '/' + file_name)
 
 
 def get_pixel_mask(out_path, shape):
@@ -1645,9 +1722,13 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
             bias_path_new = []
             for path in bias_path:
                 if image_type is not None:
-                    bias_path_new.append(
-                        check_filter_keywords(path, image_type['bias'])
+                    new_bias_path = check_filter_keywords(
+                        path,
+                        temp_dir,
+                        image_type['bias'],
                     )
+                    if isinstance(new_bias_path, str):
+                        bias_path_new.append(new_bias_path)
                 else:
                     bias_path_new.append(check_filter_keywords(path, 'bias'))
             bias_path = bias_path_new
@@ -1655,9 +1736,13 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
         darks_path_new = []
         for path in darks_path:
             if image_type is not None:
-                darks_path_new.append(
-                    check_filter_keywords(path, image_type['dark'])
+                new_darks_path = check_filter_keywords(
+                    path,
+                    temp_dir,
+                    image_type['dark'],
                 )
+                if isinstance(new_darks_path, str):
+                    darks_path_new.append(new_darks_path)
             else:
                 darks_path_new.append(check_filter_keywords(path, 'dark'))
         darks_path = darks_path_new
@@ -1665,9 +1750,13 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
         flats_path_new = []
         for path in flats_path:
             if image_type is not None:
-                flats_path_new.append(
-                    check_filter_keywords(path, image_type['flat'])
+                new_flats_path = check_filter_keywords(
+                    path,
+                    temp_dir,
+                    image_type['flat'],
                 )
+                if isinstance(new_flats_path, str):
+                    flats_path_new.append(new_flats_path)
             else:
                 flats_path_new.append(check_filter_keywords(path, 'flat'))
         flats_path = flats_path_new
@@ -1675,9 +1764,13 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
         images_path_new = []
         for path in images_path:
             if image_type is not None:
-                images_path_new.append(
-                    check_filter_keywords(path, image_type['light'])
+                new_images_path = check_filter_keywords(
+                    path,
+                    temp_dir,
+                    image_type['light'],
                 )
+                if isinstance(new_images_path, str):
+                    images_path_new.append(new_images_path)
             else:
                 images_path_new.append(check_filter_keywords(path, 'light'))
         images_path = images_path_new

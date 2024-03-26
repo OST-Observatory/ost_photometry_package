@@ -457,7 +457,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
     #   images
     #
     terminal_output.print_to_terminal(
-        "Trim images to the same FOV...",
+        "Trim images to the same field of view...",
         indent=1,
     )
     if shift_all:
@@ -570,7 +570,8 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
                 #   Calculate and apply image shifts between filters
                 #
                 terminal_output.print_to_terminal(
-                    "Trim stacked images of the filters to the same FOV...",
+                    "Trim stacked images of the filters to the same "
+                    "field of view...",
                     indent=1,
                 )
 
