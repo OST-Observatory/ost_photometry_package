@@ -703,7 +703,7 @@ def get_observed_magnitudes_of_calibration_stars(image, magnitude_array, img_con
     return magnitudes_calibration_observed
 
 
-def get_observed_magnitude_distribution_of_calibration_stars(
+def observed_magnitude_distribution_of_calibration_stars(
         image, magnitude_distribution, img_container):
     """
         Sort and rearrange the distribution of extracted magnitudes so that
