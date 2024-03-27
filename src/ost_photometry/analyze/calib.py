@@ -700,9 +700,55 @@ def get_observed_magnitudes_of_calibration_stars(image, magnitude_array, img_con
             magnitudes_calibration_observed['mag'] = magnitude_array['mag'][ind_list]
             magnitudes_calibration_observed['err'] = magnitude_array['err'][ind_list]
 
-    #   Add array with magnitudes to the image
     return magnitudes_calibration_observed
 
+
+def get_observed_magnitude_distribution_of_calibration_stars(
+        image, magnitude_distribution, img_container):
+    """
+        Sort and rearrange the distribution of extracted magnitudes so that
+        the returned distribution contains the extracted magnitudes of the
+        calibration stars.
+
+        Parameters
+        ----------
+        image                           : `image class`
+            Image class object
+
+        magnitude_distribution          : `astropy.uncertainty.normal`
+            Array with image magnitudes
+
+        img_container                   : `image.container`
+            Container object with image ensemble objects for each filter
+
+        Returns
+        -------
+        distribution_calibration_observed : `astropy.uncertainty.normal`
+            Rearrange distribution
+    """
+    #   Get calibration data
+    index_calibration_stars = img_container.CalibParameters.inds
+    col_names = img_container.CalibParameters.column_names
+
+    #   Convert index array of the calibration stars to a list
+    ind_list = list(index_calibration_stars)
+
+    #   Calculate number of calibration stars
+    count_cali = len(ind_list)
+
+    #   Sort magnitudes
+    #   Check if we have calibration data for the current filter/image
+    if f'mag{getattr(image, "filt", "?")}' in col_names:
+        #   Sort
+        distribution_calibration_observed = magnitude_distribution[ind_list]
+    else:
+        unc.normal(
+            np.zeros(count_cali) * u.mag,
+            std=np.zeros(count_cali) * u.mag,
+            n_samples=1000,
+        )
+
+    return distribution_calibration_observed
 
 def derive_calibration(img_container, filter_list, calibration_method='APASS',
                        max_pixel_between_objects=3., own_correlation_option=1,

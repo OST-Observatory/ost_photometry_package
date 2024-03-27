@@ -1469,23 +1469,34 @@ def apply_calib(img_container, filter_list,
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
             #   Get magnitude array for image 1
+            magnitudes_current_image = utilities.distribution_from_table(
+                current_image
+            )
+            print(magnitudes_current_image)
+            magnitudes_current_image_distribution = magnitudes_current_image
             magnitudes_current_image = utilities.magnitude_array_from_table(
                 img_container,
                 current_image,
             )
 
-            #   TODO: Remove later?
+            #   TODO: Remove later?!
             #   Add magnitudes to image
             current_image.mags = magnitudes_current_image
 
             #   Get extracted magnitudes of the calibration stars for the
             #   current image
+            magnitudes_calibration_stars_current_image = calib.get_observed_magnitude_distribution_of_calibration_stars(
+                current_image,
+                magnitudes_current_image_distribution,
+                img_container,
+            )
+            print(magnitudes_calibration_stars_current_image)
             magnitudes_calibration_stars_current_image = calib.get_observed_magnitudes_of_calibration_stars(
                 current_image,
                 magnitudes_current_image,
                 img_container,
             )
-            #   TODO: Remove later?
+            #   TODO: Remove later?!
             current_image.mags_fit = magnitudes_calibration_stars_current_image
 
             #   Prepare some variables and find corresponding image to

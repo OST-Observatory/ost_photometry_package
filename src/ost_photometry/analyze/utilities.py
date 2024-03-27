@@ -16,6 +16,7 @@ from astropy.io import fits
 from astropy.coordinates import SkyCoord, matching
 from astropy.timeseries import TimeSeries
 from astropy.modeling import models, fitting
+from astropy import uncertainty as unc
 import astropy.units as u
 from astropy import wcs
 
@@ -2619,6 +2620,30 @@ def magnitude_array_from_table(img_container, image):
         image_mags['err'] = image.photometry['mags_unc']
 
     return image_mags
+
+
+def distribution_from_table(image):
+    """
+    Arrange the literature values in a numpy array or uncertainty array.
+
+    Parameters
+    ----------
+    image           : `image`
+        Image object
+
+    Returns
+    -------
+    distribution    : `astropy.uncertainty.normal`
+        Normal distribution representing observed magnitudes
+    """
+    #   Build normal distribution
+    magnitude_distribution = unc.normal(
+        image.photometry['mags_fit'] * u.mag,
+        std=image.photometry['mags_unc'] * u.mag,
+        n_samples=1000,
+    )
+
+    return magnitude_distribution
 
 
 def convert_magnitudes_to_other_system(tbl: Table,
