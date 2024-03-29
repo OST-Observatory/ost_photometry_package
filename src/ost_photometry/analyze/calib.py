@@ -750,6 +750,7 @@ def observed_magnitude_distribution_of_calibration_stars(
 
     return distribution_calibration_observed
 
+
 def derive_calibration(img_container, filter_list, calibration_method='APASS',
                        max_pixel_between_objects=3., own_correlation_option=1,
                        vizier_dict=None, path_calibration_file=None,
@@ -1052,8 +1053,8 @@ def distribution_from_calibration_table(calibration_parameters, filter_list):
         ]
 
         literature_magnitudes_distribution = unc.normal(
-            calibration_magnitudes * u.mag,
-            std=calibration_magnitudes_err * u.mag,
+            calibration_magnitudes.value * u.mag,
+            std=calibration_magnitudes_err.value * u.mag,
             n_samples=1000,
         )
         distribution_list.append(

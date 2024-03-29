@@ -1292,8 +1292,8 @@ def prepare_zero_point(img_container, image, id_filter_1,
 
     #   Plot zero point statistics
     plot.histogram_statistic(
-        [image.ZP],
-        [image.ZP_clip],
+        [unumpy.nominal_values(image.ZP)],
+        [unumpy.nominal_values(image.ZP_clip)],
         f'Zero point ({image.filt})',
         '',
         f'histogram_zero_point_{image.filt}',
@@ -1405,18 +1405,20 @@ def prepare_zero_point_distribution(image, id_filter_1,
                        literature_magnitude_distribution_list[id_filter_1])
 
     #   Calculate mask according to sigma clipping
-    clip = sigma_clipping(delta_color, sigma=1.5)
+    clip = sigma_clipping(delta_color.pdf_median(), sigma=1.5)
     image.ZP_mask = np.invert(clip.recordmask)
 
     #   Calculate zero points and clip
     image.ZP = (literature_magnitude_distribution_list[id_filter_1] -
                 observed_magnitude_distribution_filter_1)
-    image.ZP_clip = image.ZP[image.ZP_mask]
+    image.ZP_clip = image.ZP[np.where(image.ZP_mask)]
 
+    #   TODO: Check if the following blocks can be improved, using
+    #         distribution properties
     #   Plot zero point statistics
     plot.histogram_statistic(
-        [image.ZP],
-        [image.ZP_clip],
+        [image.ZP.pdf_median()],
+        [image.ZP_clip.pdf_median()],
         f'Zero point ({image.filt})',
         '',
         f'histogram_zero_point_{image.filt}',
@@ -1444,7 +1446,7 @@ def prepare_zero_point_distribution(image, id_filter_1,
             size=(n_samples, n_objects_sample),
         )
 
-        samples = image.ZP_clip[random_index]
+        samples = image.ZP_clip.pdf_median()[random_index]
 
         #   Get statistic
         # mean_samples = np.mean(sample_values, axis=1)
@@ -1589,7 +1591,6 @@ def apply_calib(img_container, filter_list,
             magnitudes_current_image = utilities.distribution_from_table(
                 current_image
             )
-            print(magnitudes_current_image)
             magnitudes_current_image_distribution = magnitudes_current_image
             magnitudes_current_image = utilities.magnitude_array_from_table(
                 img_container,
@@ -1646,7 +1647,7 @@ def apply_calib(img_container, filter_list,
                     magnitudes_second_image_distribution,
                     img_container,
                 )
-                magnitudes_calibration_stars_second_imagedistribution = magnitudes_calibration_stars_second_image
+                magnitudes_calibration_stars_second_image_distribution = magnitudes_calibration_stars_second_image
                 magnitudes_calibration_stars_second_image = calib.get_observed_magnitudes_of_calibration_stars(
                     second_image,
                     magnitudes_second_image,
@@ -1678,19 +1679,19 @@ def apply_calib(img_container, filter_list,
             prepare_zero_point_distribution(
                 current_image,
                 current_filter,
-                literature_magnitudes,
-                magnitudes_calibration_stars_current_image,
+                literature_magnitudes_distribution,
+                magnitudes_calibration_stars_current_image_distribution,
                 id_filter_2=second_filter_id,
-                magnitudes_observed_filter_2=magnitudes_calibration_stars_second_image,
+                observed_magnitude_distribution_filter_2=magnitudes_calibration_stars_second_image_distribution,
             )
             prepare_zero_point(
                 img_container,
                 current_image,
                 current_filter,
-                literature_magnitudes_distribution,
-                magnitudes_calibration_stars_current_image_distribution,
+                literature_magnitudes,
+                magnitudes_calibration_stars_current_image,
                 id_filter_2=second_filter_id,
-                magnitudes_observed_filter_2=magnitudes_calibration_stars_second_imagedistribution,
+                magnitudes_observed_filter_2=magnitudes_calibration_stars_second_image,
             )
 
             ###

@@ -3219,7 +3219,7 @@ def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
 
     for i, parameter in enumerate(parameter_list_0):
         plt.hist(
-            unumpy.nominal_values(parameter),
+            parameter,
             bins=40,
             alpha=0.25,
             color=color_pick.to_rgba(i),
@@ -3227,15 +3227,17 @@ def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
         )
     for i, parameter in enumerate(parameter_list_1):
         plt.hist(
-            unumpy.nominal_values(parameter),
+            parameter,
             bins=10,
             alpha=0.5,
             color=color_pick.to_rgba(i),
             label=f'{dataset_label[1][i]}',
         )
         median_parameter = np.ma.median(parameter)
+        if isinstance(median_parameter, u.quantity.Quantity):
+            median_parameter = median_parameter.value
         plt.axvline(
-            unumpy.nominal_values(median_parameter),
+            median_parameter,
             # color='g',
             color=color_pick.to_rgba(i),
         )
