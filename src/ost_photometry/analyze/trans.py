@@ -678,13 +678,15 @@ def derive_transformation_onthefly_distribution(image, filter_list, id_current_f
     if np.isinf(z_2_err):
         z_2_err = None
 
+    #   TODO: Check that ravel and value is realy necessary
+    #         Check if color_literature_err_plot=0 can be improved
     #   Plots magnitude difference (literature vs. measured) vs. color
     plot.plot_transform(
         image.outpath.name,
         filter_list[id_filter_1],
         filter_list[id_filter_2],
-        color_literature_plot,
-        diff_mag_plot_1,
+        np.ravel(color_literature_plot.value),
+        np.ravel(diff_mag_plot_1.value),
         z_1,
         color_correction_filter_1,
         color_correction_filter_1_err,
@@ -694,7 +696,7 @@ def derive_transformation_onthefly_distribution(image, filter_list, id_current_f
         color_literature_err=color_literature_err_plot,
         fit_variable_err=z_1_err,
         name_obj=image.objname,
-    )
+        )
 
     if id_current_filter == id_filter_1:
         id_o = id_filter_2
@@ -704,8 +706,8 @@ def derive_transformation_onthefly_distribution(image, filter_list, id_current_f
         image.outpath.name,
         filter_list[id_filter_1],
         filter_list[id_filter_2],
-        color_literature_plot,
-        diff_mag_plot_2,
+        np.ravel(color_literature_plot.value),
+        np.ravel(diff_mag_plot_2.value),
         z_2,
         color_correction_filter_2,
         color_correction_filter_2_err,
@@ -767,7 +769,7 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
         calib_magnitudes_literature_filter_1 : `numpy.ndarray` or `unumpy.uarray`
             Magnitudes of calibration stars from the literature
             for filter 1.
-transformation_core_distribution
+
         calib_magnitudes_literature_filter_2 : `numpy.ndarray` or `unumpy.uarray`
             Magnitudes of calibration stars from the literature
             for filter 1.
@@ -986,7 +988,7 @@ def transformation_core_distribution(image, calib_magnitudes_literature_filter_1
 
         Returns
         -------
-                            : `numpy.ndarray` or `unumpy.uarray`
+                            : `astropy.uncertainty.normal`
             Calibrated magnitudes
     """
     #   Get clipped zero points
@@ -1049,7 +1051,7 @@ def transformation_core_distribution(image, calib_magnitudes_literature_filter_1
     if transformation_type in ['air_mass', 'derive']:
         #   Calculate C or more precise C'
 
-        denominator = 1. - c_1 + c_2
+        denominator = 1. * u.mag - c_1 + c_2
 
         if id_current_filter == id_filter_1:
             c = c_1 / denominator
@@ -1068,10 +1070,8 @@ def transformation_core_distribution(image, calib_magnitudes_literature_filter_1
             magnitudes + c * color
             + np.median((zp_clipped - c * color_observed_clipped)))
 
-    print(calibrated_magnitudes)
-
     #   Add calibrated photometry to table of Image object
-    image.photometry['mag_cali_trans_distribution'] = calibrated_magnitudes
+    image.photometry['mag_cali_distribution_trans'] = calibrated_magnitudes.pdf_median()
 
     return calibrated_magnitudes, color_observed, color_literature
 
@@ -1235,7 +1235,7 @@ def apply_transformation_distribution(img_container, image, calib_magnitudes_lit
         image                       : `image.class`
             Image class with all image specific properties
 
-        calib_magnitudes_literature : `numpy.ndarray`
+        calib_magnitudes_literature : `astropy.uncertainty.normal`
             Numpy structured array with literature magnitudes for the
             calibration stars
 
@@ -1313,34 +1313,28 @@ def apply_transformation_distribution(img_container, image, calib_magnitudes_lit
     )
 
     #   Quality control plots
-    # utilities.calibration_check_plots(
-    #     filter_list[id_current_filter],
-    #     image.outpath.name,
-    #     image.objname,
-    #     image.pd,
-    #     filter_list,
-    #     id_filter_1,
-    #     id_filter_2,
-    #     image.ZP_mask,
-    #     color_observed,
-    #     color_literature,
-    #     img_container.CalibParameters.inds,
-    #     calib_magnitudes_literature[id_filter_1],
-    #     magnitudes_calibrated,
-    #     magnitudes,
-    #     color_observed_err=utilities.err_prop(
-    #         image.mag_fit_1['err'],
-    #         image.mag_fit_2['err'],
-    #     ),
-    #     color_literature_err=utilities.err_prop(
-    #         calib_magnitudes_literature['err'][id_filter_1],
-    #         calib_magnitudes_literature['err'][id_filter_2],
-    #     ),
-    #     literature_magnitudes_err=calib_magnitudes_literature['err'][id_filter_1],
-    #     magnitudes_err=img_container.cali['err'][id_current_filter][id_current_image],
-    #     uncalibrated_magnitudes_err=image.mags['err'],
-    #     plot_sigma_switch=plot_sigma,
-    # )
+    utilities.calibration_check_plots(
+        filter_list[id_current_filter],
+        image.outpath.name,
+        image.objname,
+        image.pd,
+        filter_list,
+        id_filter_1,
+        id_filter_2,
+        image.ZP_mask_distribution,
+        color_observed.pdf_median(),
+        color_literature.pdf_median(),
+        img_container.CalibParameters.inds,
+        calib_magnitudes_literature[id_filter_1].pdf_median(),
+        magnitudes_calibrated.pdf_median(),
+        magnitudes.pdf_median(),
+        color_observed_err=color_observed.pdf_std(),
+        color_literature_err=color_literature.pdf_std(),
+        literature_magnitudes_err=calib_magnitudes_literature[id_filter_1].pdf_std(),
+        magnitudes_err=magnitudes_calibrated.pdf_std(),
+        uncalibrated_magnitudes_err=magnitudes.pdf_std(),
+        plot_sigma_switch=plot_sigma,
+    )
 
 
 def apply_transformation_unumpy(img_container, image, calib_magnitudes_literature,
@@ -2165,11 +2159,12 @@ def apply_calib(img_container, filter_list,
                 apply_transformation_distribution(
                     img_container,
                     current_image,
-                    literature_magnitudes,
+                    literature_magnitudes_distribution,
                     magnitudes_calibration_stars_image_1_distribution,
                     magnitudes_calibration_stars_image_2_distribution,
                     magnitudes_image_1,
                     magnitudes_image_2,
+                    magnitudes_current_image_distribution,
                     current_filter,
                     current_image_id,
                     id_color_filter_1,
@@ -2193,7 +2188,7 @@ def apply_calib(img_container, filter_list,
                     plot_sigma=plot_sigma,
                     transformation_type=transformation_type,
                 )
-
+            
             ###
             #   Calibration without transformation
             #

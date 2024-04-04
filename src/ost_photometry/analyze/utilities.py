@@ -559,7 +559,12 @@ def fit_curve(fit_func, x, y, x0, sigma):
 
     #   Fit curve
     if np.any(sigma == 0.):
-        para, coma = optimization.curve_fit(fit_func, x, y, x0)
+        para, coma = optimization.curve_fit(
+            fit_func, 
+            np.ravel(x), 
+            np.ravel(y), 
+            x0,
+        )
     else:
         para, coma = optimization.curve_fit(fit_func, x, y, x0, sigma)
     a = para[0]
@@ -1598,7 +1603,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             magnitude_type = 'mag_cali_trans'
             tbl_mag = photo.group_by(magnitude_type)
         except:
-            magnitude_type = 'mag_cali'
+            magnitude_type = 'mag_cali_no-trans'
             tbl_mag = photo.group_by(magnitude_type)
 
         #   Remove implausible dark results
@@ -2751,6 +2756,7 @@ def convert_magnitudes_to_other_system(tbl: Table,
                     data_dict[column_filter] = tbl[f'{column_filter} ({image_id})'].value
 
         if target_filter_system == 'AB':
+            #   TODO: Fix this
             print('Will be available soon...')
 
         elif target_filter_system == 'SDSS':
@@ -2786,6 +2792,7 @@ def convert_magnitudes_to_other_system(tbl: Table,
                 tbl = add_column_to_table(tbl, 'z', z, image_id)
 
         elif target_filter_system == 'BESSELL':
+            #   TODO: Fix this
             print('Will be available soon...')
 
         return tbl

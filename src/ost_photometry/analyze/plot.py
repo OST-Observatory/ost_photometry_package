@@ -3121,6 +3121,7 @@ def filled_iso_contours(object_table, shape_image, filter_, output_dir='./',
     if object_property in object_table.colnames:
         z = object_table[object_property].value[nearst_neighbour_indexes]
     else:
+        #   TODO: Replace with terminal output
         print(f'{object_property} is not available. Try roundness instead.')
         if 'roundness' in object_table.colnames:
             z = object_table['roundness'].value[nearst_neighbour_indexes]
