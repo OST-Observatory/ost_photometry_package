@@ -1076,6 +1076,7 @@ def transformation_core_distribution(image, calib_magnitudes_literature_filter_1
 
     #   Add calibrated photometry to table of Image object
     image.photometry['mag_cali_distribution_trans'] = calibrated_magnitudes.pdf_median()
+    image.photometry['mag_cali_distribution_trans_unc'] = calibrated_magnitudes.pdf_std()
 
     return calibrated_magnitudes, color_observed, color_literature
 
@@ -1321,7 +1322,7 @@ def apply_transformation_distribution(image_container, image,
     )
 
     #   Add calibrated magnitudes to image container
-    image_container.calibrated_transformed_magnitudes[filter_].append(
+    image_container.calibrated_transformed_magnitudes[filter_list[filter_]].append(
         magnitudes_calibrated
     )
 
@@ -1552,7 +1553,8 @@ def calibrate_simple_core_distribution(image, magnitudes):
         calibrated_magnitudes = reshaped_magnitudes - np.median(magnitudes)
 
     #   Add calibrated photometry to table of Image object
-    image.photometry['mag_cali_no-trans_distribution'] = calibrated_magnitudes
+    image.photometry['mag_cali_no-trans_distribution'] = calibrated_magnitudes.pdf_median()
+    image.photometry['mag_cali_no-trans_distribution_unc'] = calibrated_magnitudes.pdf_std()
 
     return calibrated_magnitudes
 
@@ -1672,8 +1674,8 @@ def calibrate_simple_distribution(image_container, image, not_calibrated_magnitu
         not_calibrated_magnitudes   : `astropy.uncertainty.core.QuantityDistribution`
             Distribution of uncalibrated magnitudes
 
-        filter_                     : `integer`
-            ID of the current filter
+        filter_                     : `string`
+            Current filter
     """
     #   Perform calibration
     calibrated_magnitudes = calibrate_simple_core_distribution(
@@ -2295,7 +2297,7 @@ def apply_calib(image_container, filter_list,
                 image_container,
                 current_image,
                 magnitudes_current_image_distribution,
-                current_filter,
+                filter_list[current_filter],
             )
             calibrate_simple(
                 image_container,
