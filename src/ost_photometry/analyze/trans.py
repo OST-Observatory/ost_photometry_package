@@ -1065,9 +1065,14 @@ def transformation_core_distribution(image, calib_magnitudes_literature_filter_1
             )
 
     #   Calculate calibrated magnitudes
-    calibrated_magnitudes = (
-            magnitudes + c * color
-            + np.median((zp_clipped - c * color_observed_clipped)))
+    phase_1_calibrated_magnitudes = magnitudes + c * color
+    phase_1_calibrated_magnitudes = phase_1_calibrated_magnitudes.reshape(
+        phase_1_calibrated_magnitudes.size, 
+        1,
+    )
+    calibrated_magnitudes_zero_point = zp_clipped - c * color_observed_clipped
+    calibrated_magnitudes = phase_1_calibrated_magnitudes + calibrated_magnitudes_zero_point
+    calibrated_magnitudes = np.median(calibrated_magnitudes, axis=1)
 
     #   Add calibrated photometry to table of Image object
     image.photometry['mag_cali_distribution_trans'] = calibrated_magnitudes.pdf_median()
