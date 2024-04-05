@@ -668,6 +668,8 @@ def prepare_arrays(img_container, n_filter, count_objects):
             ]
         )
 
+    #   TODO: Add temporary dict of lists for distributions
+
     img_container.cali = calibrated_magnitudes
     img_container.noT = np.copy(calibrated_magnitudes)
 
