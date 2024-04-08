@@ -148,8 +148,8 @@ def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
     for ids in filter_image_ids:
         tbl.add_columns(
             [
-                magnitudes[filter_list[ids[0]]][ids[1]].pdf_median,
-                magnitudes[filter_list[ids[0]]][ids[1]].pdf_std,
+                magnitudes[filter_list[ids[0]]][ids[1]].pdf_median(),
+                magnitudes[filter_list[ids[0]]][ids[1]].pdf_std(),
             ],
             names=[
                 f'{filter_list[ids[0]]} ({ids[1]})',
