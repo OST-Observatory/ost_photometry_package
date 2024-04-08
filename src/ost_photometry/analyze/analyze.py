@@ -801,7 +801,7 @@ def check_epsf_stars(image, size_epsf_region=25, minimum_n_stars=25,
 
     #   Useful information
     out_string = f"{n_stars} sources identified in the " \
-        f"{identification_string} band image"
+                 f"{identification_string} band image"
     if terminal_logger is not None:
         terminal_logger.add_to_cache(
             out_string,
@@ -1160,7 +1160,7 @@ def extraction_epsf(image, sigma_object_psf, sigma_background=5.,
     epsf = image.epsf
 
     output_str = f"Performing the actual PSF photometry (" \
-        f"{identification_str} image)"
+                 f"{identification_str} image)"
     if terminal_logger is not None:
         terminal_logger.add_to_cache(output_str, indent=indent)
     else:
@@ -1652,17 +1652,17 @@ def extraction_aperture(image, radius_aperture, inner_annulus_radius,
 
         #   Calculate aperture background and the corresponding error
         photometry_tbl['aper_bkg'] = (bkg_phot['aperture_sum']
-                                 * aperture.area / annulus_aperture.area)
+                                      * aperture.area / annulus_aperture.area)
 
         photometry_tbl['aper_bkg_err'] = (bkg_phot['aperture_sum_err']
-                                     * aperture.area / annulus_aperture.area)
+                                          * aperture.area / annulus_aperture.area)
 
         bkg_err = photometry_tbl['aper_bkg_err']
 
     #   Subtract background from aperture flux and add it to the
     #   output table
     photometry_tbl['aper_sum_bkgsub'] = (photometry_tbl['aperture_sum']
-                                    - photometry_tbl['aper_bkg'])
+                                         - photometry_tbl['aper_bkg'])
 
     #   Define flux column
     #   (necessary to have the same column names for aperture and PSF
@@ -1941,11 +1941,11 @@ def correlate_ensembles(img_container, filter_list,
     n_object_all_images_list = []
     x_pixel_positions_all_images = []
     y_pixel_positions_all_images = []
-    wcs_list_all_images  = []
+    wcs_list_all_images = []
 
     #   Number of objects in each table/image
     for ensemble in ensemble_dict.values():
-        wcs_list_all_images .append(ensemble.wcs)
+        wcs_list_all_images.append(ensemble.wcs)
 
         _x = ensemble.image_list[0].photometry['x_fit']
         x_pixel_positions_all_images.append(_x)
@@ -1965,7 +1965,7 @@ def correlate_ensembles(img_container, filter_list,
     correlation_index, _, rejected_images, _ = correlate.correlate_datasets(
         x_pixel_positions_all_images,
         y_pixel_positions_all_images,
-        wcs_list_all_images [reference_image_id],
+        wcs_list_all_images[reference_image_id],
         n_objects_max,
         n_ensembles,
         dataset_type='ensemble',

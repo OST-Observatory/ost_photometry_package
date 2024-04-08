@@ -90,6 +90,81 @@ def mk_magnitudes_table(*args, **kwargs):
         return mk_mags_table_from_structured_array(*args, **kwargs)
 
 
+def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
+                                     magnitudes, filter_list, filter_image_ids,
+                                     wcs):
+    """
+        Create and export astropy table with object positions and magnitudes
+        Input magnitude array is expected to be an unumpy uarray.
+
+        Parameters
+        ----------
+        index_objects    : `numpy.ndarray`
+            IDs of the stars
+
+        x_positions      : `numpy.ndarray`
+            Position of the stars on the image in pixel in X direction
+
+        y_positions      : `numpy.ndarray`
+            Position of the stars on the image in pixel in X direction
+
+        magnitudes       : `unumpy.ndarray`
+            Magnitudes of all stars
+
+        filter_list      : `list` of `string`
+            Filter
+
+        filter_image_ids : `list` of `tuple`
+            FORMAT = (Filter IDs, ID of the images to position 0, Filter IDs
+                      for the color calculation, ID of the images to
+                      position 2)
+
+        wcs              : `astropy.wcs`
+            WCS
+
+        Returns
+        -------
+        tbl             : `astropy.table.Table`
+            Table with CMD data
+    """
+    # Make CMD table
+    tbl = Table(
+        names=['i', 'x', 'y', ],
+        data=[
+            np.intc(index_objects),
+            x_positions,
+            y_positions,
+        ]
+    )
+
+    #   Convert Pixel to sky coordinates
+    sky = wcs.pixel_to_world(x_positions, y_positions)
+
+    #   Add sky coordinates to table
+    tbl['ra (deg)'] = sky.ra
+    tbl['dec (deg)'] = sky.dec
+
+    #   Add magnitude columns to table
+    for ids in filter_image_ids:
+        tbl.add_columns(
+            [
+                magnitudes[filter_list[ids[0]]][ids[1]].pdf_median,
+                magnitudes[filter_list[ids[0]]][ids[1]].pdf_std,
+            ],
+            names=[
+                f'{filter_list[ids[0]]} ({ids[1]})',
+                f'{filter_list[ids[0]]}_err ({ids[1]})',
+            ]
+        )
+
+    #   Sort table
+    tbl = tbl.group_by(
+        f'{filter_list[filter_image_ids[0][0]]} ({filter_image_ids[0][1]})'
+    )
+
+    return tbl
+
+
 def mk_mags_table_from_structured_array(index_objects, x_positions, y_positions,
                                         magnitudes, list_bands, id_tuples, wcs):
     """
@@ -160,6 +235,7 @@ def mk_mags_table_from_structured_array(index_objects, x_positions, y_positions,
                     f'{list_bands[ids[0]]}_err ({ids[1]})',
                 ]
             )
+            #   TODO: Check if this is a bug! Shouldn't that be ids instead of id_tuples?
             if len(id_tuples) == 4:
                 tbl.add_columns(
                     [
@@ -258,6 +334,7 @@ def mk_mags_table_unumpy_array(index_objects, x_positions, y_positions,
                 f'{list_bands[ids[0]]}_err ({ids[1]})',
             ]
         )
+        #   TODO: Check if this is a bug! Shouldn't that be ids instead of id_tuples?
         if len(id_tuples) == 4:
             color = magnitudes[ids[2]][ids[3]] - magnitudes[ids[0]][ids[1]]
             tbl.add_columns(
