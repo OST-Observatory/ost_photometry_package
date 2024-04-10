@@ -127,7 +127,8 @@ def get_instruments(image_file_collection):
     return instruments
 
 
-def get_instrument_info(image_file_collection, temperature_tolerance):
+def get_instrument_info(image_file_collection, temperature_tolerance,
+                        ignore_readout_mode_mismatch=False):
     """
         Extract information regarding the instruments and readout mode.
         Currently the instrument and readout mode need to be unique. An
@@ -137,30 +138,35 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
 
         Parameters
         ----------
-        image_file_collection      : `ccdproc.ImageFileCollection`
+        image_file_collection           : `ccdproc.ImageFileCollection`
             Image file collection with all images
 
-        temperature_tolerance      : `float`, optional
+        temperature_tolerance           : `float`
             The images are required to have the temperature. This value
             specifies the temperature difference that is acceptable.
 
+        ignore_readout_mode_mismatch    : `boolean`, optional
+            If set to `True` a mismatch of the detected readout modes will 
+            be ignored.
+            Default is ``False``.
+
         Returns
         -------
-        instrument                  : `string`
+        instrument                      : `string`
             List of instruments
 
-        readout_mode                : `string`
+        readout_mode                    : `string`
             Mode used to readout the data from the camera chip.
 
-        gain_setting                : `integer` or `None`
+        gain_setting                    : `integer` or `None`
             Gain used in the camera setting for cameras such as the QHYs.
             This is not the system gain, but it can be calculated from this
             value. See below.
 
-        pixel_bit_value             : `integer`
+        pixel_bit_value                 : `integer`
             Bit value of each pixel
 
-        temperature                 : `float`
+        temperature                     : `float`
             Temperature of the images
     """
     #   Except if no files are found
@@ -269,6 +275,14 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         #   the correct readout mode in the Header.
         if readout_mode in ['Fast', 'Slow']:
             readout_mode = 'Extend Fullwell 2CMS'
+    elif ignore_readout_mode_mismatch:
+        terminal_output.print_to_terminal(
+            "WARNING: Multiple readout modes detected. "
+            "Assume Extend Fullwell 2CMS",
+            style_name='WARNING',
+            indent=2,
+        )
+        readout_mode = 'Extend Fullwell 2CMS'
     else:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Multiple readout modes detected.\n'

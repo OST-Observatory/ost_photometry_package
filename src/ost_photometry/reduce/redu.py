@@ -48,7 +48,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
                 rm_outliers_image_shifts=True, filter_window_image_shifts=8,
                 threshold_image_shifts=10., temperature_tolerance=5,
                 plot_dark_statistic_plots=False, plot_flat_statistic_plots=False,
-                debug=False):
+                ignore_readout_mode_mismatch=False, debug=False):
     """
         Main reduction routine: Creates master images for bias, darks,
                                 flats, reduces the science images and trims
@@ -217,6 +217,11 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
             created.
             Default is ``False``
 
+        ignore_readout_mode_mismatch        : `boolean`, optional
+            If set to `True` a mismatch of the detected readout modes will
+            be ignored.
+            Default is ``False``.
+
         debug                               : `boolean`, optional
             If `True` the intermediate files of the data reduction will not
             be removed.
@@ -299,6 +304,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
     image_parameters = utilities.get_instrument_info(
         image_file_collection,
         temperature_tolerance,
+        ignore_readout_mode_mismatch=ignore_readout_mode_mismatch,
     )
     instrument = image_parameters[0]
     readout_mode = image_parameters[1]
