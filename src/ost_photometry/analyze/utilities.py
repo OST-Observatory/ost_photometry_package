@@ -607,11 +607,7 @@ def flux_to_magnitudes(flux, flux_error):
             errors
     """
     #   Setup distributions
-    flux_distribution = unc.normal(
-        flux * u.mag,
-        std=flux_error * u.mag,
-        n_samples=1000,
-    )
+    flux_distribution = unc.normal(flux, std=flux_error, n_samples=1000)
 
     #   Calculate magnitudes
     magnitudes = -2.5 * np.log10(flux_distribution)
@@ -1462,7 +1458,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             tbl_mag = photo.group_by(magnitude_type)
 
         #   Remove implausible dark results
-        mask = tbl_mag[magnitude_type] < 30
+        mask = tbl_mag[magnitude_type] < 30 * u.mag
         tbl_mag = tbl_mag[mask]
 
         #   Plot star map
