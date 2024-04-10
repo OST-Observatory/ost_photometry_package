@@ -325,7 +325,6 @@ def extract_wcs(wcs_path, image_wcs=None, rm_cosmics=False, filters=None):
     return w
 
 
-#   TODO: Convert to distributions
 def mk_time_series(observation_times, magnitudes, filter_, object_id):
     """
         Make a time series object
@@ -606,7 +605,7 @@ def flux_to_magnitudes(flux, flux_error):
             Numpy structured array containing magnitudes and corresponding
             errors
     """
-    #   Setup distributions
+    #   Setup distribution
     flux_distribution = unc.normal(flux, std=flux_error, n_samples=1000)
 
     #   Calculate magnitudes
@@ -1527,7 +1526,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             niters=2,
             overlap=False,
             # seed=123,
-            zeropoint=np.median(image.ZP_clip),
+            zeropoint=np.median(image.zp_clip),
             progress_bar=False,
         )
 
@@ -2371,7 +2370,6 @@ def post_process_results(img_container, filter_list, id_object=None,
                 tbl = tbl[img_id_pm][mask_pm]
 
         #   Convert magnitudes to a different filter system
-        #   TODO: Convert to distributions?
         if convert_magnitudes:
             tbl = convert_magnitudes_to_other_system(tbl, target_filter_system)
 

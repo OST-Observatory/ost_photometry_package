@@ -232,12 +232,12 @@ def prepare_transformation(img_container, trans_coefficients, filter_list,
             id_color_filter_2, trans_coefficients_selection, filter_image_ids)
 
 
-def derive_transformation_onthefly_distribution(image, filter_list, id_current_filter, id_filter_1,
-                                                id_filter_2, color_literature,
-                                                magnitudes_literature_filter_1,
-                                                magnitudes_literature_filter_2,
-                                                magnitudes_observed_filter_1,
-                                                magnitudes_observed_filter_2):
+def derive_transformation_onthefly(image, filter_list, id_current_filter,
+                                   id_filter_1, id_filter_2, color_literature,
+                                   magnitudes_literature_filter_1,
+                                   magnitudes_literature_filter_2,
+                                   magnitudes_observed_filter_1,
+                                   magnitudes_observed_filter_2):
     """
         Determine the parameters for the color term used in the magnitude
         calibration. This corresponds to a magnitude transformation without
@@ -387,18 +387,18 @@ def derive_transformation_onthefly_distribution(image, filter_list, id_current_f
         name_obj=image.objname,
     )
 
-    color_correction_filter_1_distribution = unc.normal(
+    color_correction_filter_1 = unc.normal(
         color_correction_filter_1 * u.mag,
         std=color_correction_filter_1_err * u.mag,
         n_samples=1000,
     )
-    color_correction_filter_2_distribution = unc.normal(
+    color_correction_filter_2 = unc.normal(
         color_correction_filter_2 * u.mag,
         std=color_correction_filter_2_err * u.mag,
         n_samples=1000,
     )
 
-    return color_correction_filter_1_distribution, color_correction_filter_2_distribution
+    return color_correction_filter_1, color_correction_filter_2
 
 
 def transformation_core(image, calib_magnitudes_literature_filter_1,
@@ -480,10 +480,10 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
             Calibrated magnitudes
     """
     #   Get clipped zero points
-    zp_clipped = image.ZP_clip_distribution
+    zp_clipped = image.zp_clip
 
     #   Get mask from sigma clipping that needs to be applied to the data
-    mask = np.where(image.ZP_mask_distribution)
+    mask = np.where(image.zp_mask)
 
     #   Instrument color of the calibration objects
     color_observed = (calib_magnitudes_observed_filter_1 -
@@ -502,7 +502,7 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
     #
     #   Color
     color = magnitudes_filter_1 - magnitudes_filter_2
-    image.color_mag_distribution = color
+    image.color_mag = color
 
     #   Distinguish between versions
     if transformation_type == 'simple':
@@ -515,7 +515,7 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
 
     elif transformation_type == 'derive':
         #   Calculate color correction coefficients
-        c_1, c_2 = derive_transformation_onthefly_distribution(
+        c_1, c_2 = derive_transformation_onthefly(
             image,
             filter_list,
             id_current_filter,
@@ -696,7 +696,7 @@ def apply_transformation(image_container, image, calib_magnitudes_literature,
         filter_list,
         id_filter_1,
         id_filter_2,
-        image.ZP_mask_distribution,
+        image.zp_mask,
         color_observed.pdf_median(),
         color_literature.pdf_median(),
         image_container.CalibParameters.inds,
@@ -712,8 +712,7 @@ def apply_transformation(image_container, image, calib_magnitudes_literature,
     )
 
 
-#   TODO: Rename
-def calibrate_simple_core_distribution(image, magnitudes):
+def calibrate_simple_core(image, magnitudes):
     """
         Perform minimal calibration
 
@@ -731,7 +730,7 @@ def calibrate_simple_core_distribution(image, magnitudes):
             Array with calibrated magnitudes
     """
     #   Get clipped zero points
-    zp = image.ZP_clip_distribution
+    zp = image.zp_clip
 
     #   Reshape the magnitudes to allow broadcasting
     reshaped_magnitudes = magnitudes.reshape(magnitudes.size, 1)
@@ -771,7 +770,7 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
             Current filter
     """
     #   Perform calibration
-    calibrated_magnitudes = calibrate_simple_core_distribution(
+    calibrated_magnitudes = calibrate_simple_core(
         image,
         not_calibrated_magnitudes,
     )
@@ -864,67 +863,65 @@ def flux_normalization_ensemble(image_ensemble):
     image_ensemble.quasi_calibrated_flux_normalized = normalized_flux
 
 
-def prepare_zero_point(image, id_filter_1,
-                       literature_magnitude_distribution_list,
-                       observed_magnitude_distribution_filter_1,
-                       id_filter_2=None,
-                       observed_magnitude_distribution_filter_2=None):
+def prepare_zero_point(image, id_filter_1, literature_magnitude_list,
+                       observed_magnitude_filter_1, id_filter_2=None,
+                       observed_magnitude_filter_2=None):
     """
         Prepare some values necessary for the magnitude calibration and add
         them to the image class
 
         Parameters
         ----------
-        image                                       : `image.class`
+        image                       : `image.class`
             Image class with all image specific properties
 
-        id_filter_1                                 : `integer`
+        id_filter_1                 : `integer`
             ID of the filter
 
-        literature_magnitude_distribution_list      : list of `astropy.uncertainty.core.QuantityDistribution`
+        literature_magnitude_list   : list of `astropy.uncertainty.core.QuantityDistribution`
             Literature magnitudes
 
-        observed_magnitude_distribution_filter_1    : `astropy.uncertainty.core.QuantityDistribution`
+        observed_magnitude_filter_1 : `astropy.uncertainty.core.QuantityDistribution`
             Observed magnitudes of the objects that were used for the
             calibration from the image of filter 1
 
-        id_filter_2                                 : `integer`, optional
+        id_filter_2                 : `integer`, optional
             ID of the `second` image/filter that is used for the magnitude
             transformation.
             Default is ``None``.
 
-        observed_magnitude_distribution_filter_2    : `astropy.uncertainty.core.QuantityDistribution`, optional
+        observed_magnitude_filter_2 : `astropy.uncertainty.core.QuantityDistribution`, optional
             Observed magnitudes of the objects that were used for the
             calibration from the image of filter 2
             Default is ``None``.
     """
     #   Calculated color. For two filter calculate delta color
     if id_filter_2 is not None:
-        delta_color = (observed_magnitude_distribution_filter_1 +
-                       observed_magnitude_distribution_filter_2 -
-                       literature_magnitude_distribution_list[id_filter_1] -
-                       literature_magnitude_distribution_list[id_filter_2]
+        delta_color = (observed_magnitude_filter_1 +
+                       observed_magnitude_filter_2 -
+                       literature_magnitude_list[id_filter_1] -
+                       literature_magnitude_list[id_filter_2]
                        )
 
     else:
-        delta_color = (observed_magnitude_distribution_filter_1 -
-                       literature_magnitude_distribution_list[id_filter_1])
+        delta_color = (observed_magnitude_filter_1 -
+                       literature_magnitude_list[id_filter_1])
 
     #   Calculate mask according to sigma clipping
     clip = sigma_clipping(delta_color.pdf_median(), sigma=1.5)
-    image.ZP_mask_distribution = np.invert(clip.recordmask)
+    image.zp_mask = np.invert(clip.recordmask)
 
     #   Calculate zero points and clip
-    image.ZP_distribution = (literature_magnitude_distribution_list[id_filter_1] -
-                             observed_magnitude_distribution_filter_1)
-    image.ZP_clip_distribution = image.ZP_distribution[np.where(image.ZP_mask_distribution)]
+    image.zp = (literature_magnitude_list[id_filter_1] -
+                observed_magnitude_filter_1)
+    image.zp_clip = image.zp[np.where(image.zp_mask)]
 
     #   TODO: Check if the following blocks can be improved, using
     #         distribution properties
     #   Plot zero point statistics
     plot.histogram_statistic(
-        [image.ZP_distribution.pdf_median()],
-        [image.ZP_clip_distribution.pdf_median()],
+        [image.zp.pdf_median()],
+        [image.zp_clip.pdf_median()],
         f'Zero point ({image.filt})',
         '',
         f'histogram_zero_point_{image.filt}',
@@ -937,7 +934,7 @@ def prepare_zero_point(image, id_filter_1,
     )
 
     #   TODO: Add random selection of calibration stars -> calculate variance
-    n_calibration_objects = image.ZP_clip_distribution.shape[0]
+    n_calibration_objects = image.zp_clip.shape[0]
     if n_calibration_objects > 20:
         #   Number of samples
         n_samples = 10000
@@ -952,7 +949,7 @@ def prepare_zero_point(image, id_filter_1,
             size=(n_samples, n_objects_sample),
         )
 
-        samples = image.ZP_clip_distribution.pdf_median()[random_index]
+        samples = image.zp_clip.pdf_median()[random_index]
 
         #   Get statistic
         # mean_samples = np.mean(sample_values, axis=1)
@@ -1132,7 +1129,7 @@ def apply_calibration(image_container, filter_list,
                 literature_magnitudes,
                 magnitudes_calibration_stars_current_image,
                 id_filter_2=second_filter_id,
-                observed_magnitude_distribution_filter_2=magnitudes_calibration_stars_second_image,
+                observed_magnitude_filter_2=magnitudes_calibration_stars_second_image,
             )
 
             #   Calculate transformation if possible

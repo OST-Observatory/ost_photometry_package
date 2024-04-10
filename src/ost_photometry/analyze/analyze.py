@@ -449,24 +449,6 @@ class ImageEnsemble:
 
         return x, y, np.max(n_max_list)
 
-    #   TODO: Remove
-    # def get_flux_uarray(self):
-    #     #   Get data
-    #     tbl_s = list(self.get_photometry().values())
-    #
-    #     #   Expects the number of objects in each table to be the same.
-    #     n_images = len(tbl_s)
-    #     n_objects = len(tbl_s[0])
-    #
-    #     flux = np.zeros((n_images, n_objects))
-    #     flux_unc = np.zeros((n_images, n_objects))
-    #
-    #     for i, tbl in enumerate(tbl_s):
-    #         flux[i] = tbl['flux_fit']
-    #         flux_unc[i] = tbl['flux_unc']
-    #
-    #     return unumpy.uarray(flux, flux_unc)
-
     def get_flux_distribution(self):
         #   Get data
         tbl_s = list(self.get_photometry().values())
@@ -4019,7 +4001,6 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                     # invert=True
                     # )
 
-                    #   TODO: Convert to distributions
                     #   Create a time series object
                     time_series = utilities.mk_time_series(
                         observation_times,
@@ -4107,7 +4088,6 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                     [filter_],
                     photometry_extraction_method=photometry_extraction_method,
                 )
-                #   TODO: Convert to distributions
                 plot_quantity = getattr(
                     image_container,
                     'calibrated_magnitudes',
@@ -4123,7 +4103,6 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                 format='jd',
             )
 
-            #   TODO: Convert to distributions
             #   Create a time series object
             time_series = utilities.mk_time_series(
                 observation_times,

@@ -374,7 +374,6 @@ def get_instrument_info(image_file_collection, temperature_tolerance,
     files_with_ccd_temperature = np.array(image_file_collection.files)[np.invert(mask)]
     temperatures = image_file_collection.summary['ccd-temp'][np.invert(mask)]
 
-    #   TODO: Add temperature_tolerance
     #   Fix for weird crash due to dtype error in 'sigma_clip' 
     if temperatures.fill_value == '?':
         temperatures.fill_value = 999.
@@ -382,9 +381,10 @@ def get_instrument_info(image_file_collection, temperature_tolerance,
         temperatures = temperatures.astype(float)
 
     median_temperature = np.median(temperatures)
-    clipped_temperatures_mask = sigma_clip(temperatures).mask
+    std_temperature = np.std(temperatures)
 
-    if np.any(clipped_temperatures_mask):
+    if std_temperature > temperature_tolerance:
+        clipped_temperatures_mask = sigma_clip(temperatures).mask
         clipped_temperatures = temperatures[clipped_temperatures_mask]
         clipped_images = files_with_ccd_temperature[clipped_temperatures_mask]
 

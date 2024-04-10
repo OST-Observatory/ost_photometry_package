@@ -46,7 +46,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
                 target_name=None, find_wcs=True, wcs_method='astrometry',
                 find_wcs_of_all_images=False, force_wcs_determination=False,
                 rm_outliers_image_shifts=True, filter_window_image_shifts=8,
-                threshold_image_shifts=10., temperature_tolerance=5,
+                threshold_image_shifts=10., temperature_tolerance=5.,
                 plot_dark_statistic_plots=False, plot_flat_statistic_plots=False,
                 ignore_readout_mode_mismatch=False, debug=False):
     """
@@ -206,6 +206,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
         temperature_tolerance               : `float`, optional
             The images are required to have the temperature. This value
             specifies the temperature difference that is acceptable.
+            Default is ``5.``.
 
         plot_dark_statistic_plots            : `boolean`, optional
             If True some plots showing some statistic on the dark frames are
