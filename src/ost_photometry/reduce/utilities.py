@@ -359,7 +359,8 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
 
     files_with_ccd_temperature = np.array(image_file_collection.files)[np.invert(mask)]
     temperatures = image_file_collection.summary['ccd-temp'][np.invert(mask)]
-    
+
+    #   TODO: Add temperature_tolerance
     #   Fix for weird crash due to dtype error in 'sigma_clip' 
     if temperatures.fill_value == '?':
         temperatures.fill_value = 999.
@@ -1774,6 +1775,9 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
             else:
                 images_path_new.append(check_filter_keywords(path, 'light'))
         images_path = images_path_new
+
+    #   TODO: Add a completeness check so that all science images have
+    #         the necessary flats.
 
     ###
     #   Prepare temporary directory, if individual

@@ -704,6 +704,7 @@ def apply_transformation(image_container, image, calib_magnitudes_literature,
     )
 
 
+#   TODO: Rename
 def calibrate_simple_core_distribution(image, magnitudes):
     """
         Perform minimal calibration

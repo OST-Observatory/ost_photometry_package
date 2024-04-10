@@ -2867,6 +2867,9 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
     color_cycler_symbols = mk_color_cycler_symbols()
     color_cycler_error_bars = mk_color_cycler_error_bars()
 
+    #   Prepare cycler for the line styles
+    line_cycler = mk_line_cycler()
+
     #   Plot data
     for i, x in enumerate(x_values):
         if dataset_label is None:
@@ -2896,6 +2899,7 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
                     x_sort,
                     fits[i](x_sort),
                     color='darkorange',
+                    linestyle=next(line_cycler),
                     linewidth=1,
                     label=f'Fit to dataset {dataset_label_i}',
                 )

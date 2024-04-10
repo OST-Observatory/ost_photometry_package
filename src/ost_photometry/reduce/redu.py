@@ -222,7 +222,6 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
             be removed.
             Default is ``False``.
     """
-
     ###
     #   Prepare reduction
     #
@@ -246,6 +245,9 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
 
     #   Get image types
     ifc_image_types = set(image_file_collection.summary['imagetyp'])
+
+    #   TODO: Add a completeness check so that all science images have
+    #         the necessary flats. Add here or in utilities.
 
     #   Check exposure times:   Successful if dark frames with ~ the same
     #                           exposure time are available all flat and
