@@ -6,7 +6,7 @@ import requests
 
 import numpy as np
 
-from uncertainties import unumpy
+# from uncertainties import unumpy
 
 from astroquery.vizier import Vizier
 from astroquery.simbad import Simbad
@@ -635,75 +635,7 @@ def load_calibration_data_table(image, filter_list, calibration_method='APASS',
     return calib_tbl, column_names, ra_unit
 
 
-def get_observed_magnitudes_of_calibration_stars(image, magnitude_array, img_container):
-    """
-        Sort and rearrange input numpy array with extracted magnitude
-        data, such that the returned numpy array contains the extracted
-        magnitudes of the calibration stars
-
-        Parameters
-        ----------
-        image                           : `image class`
-            Image class object
-
-        magnitude_array                 : `numpy.ndarray` or `unumpy.uarray`
-            Array with image magnitudes
-
-        img_container                   : `image.container`
-            Container object with image ensemble objects for each filter
-
-        Returns
-        -------
-        magnitudes_calibration_observed : `numpy.ndarray` or `unumpy.uarray`
-            Rearrange array with magnitudes
-    """
-    #   Get calibration data
-    index_calibration_stars = img_container.CalibParameters.inds
-    col_names = img_container.CalibParameters.column_names
-
-    #   Convert index array of the calibration stars to a list
-    ind_list = list(index_calibration_stars)
-
-    #   Calculate number of calibration stars
-    count_cali = len(ind_list)
-
-    #   Get required type for magnitude array. If ``True`` an unumpy array
-    #   will be used. Otherwise, a structured numpy array will be created.
-    unc = getattr(img_container, 'unc', True)
-
-    ###
-    #   Sort and add magnitudes
-    #
-    #   unumpy.uarray
-    if unc:
-        #   Check if we have calibration data for the current filter/image
-        if f'mag{getattr(image, "filt", "?")}' in col_names:
-            #   Sort
-            magnitudes_calibration_observed = magnitude_array[ind_list]
-        else:
-            magnitudes_calibration_observed = unumpy.uarray(
-                np.zeros(count_cali),
-                np.zeros(count_cali)
-            )
-
-    #   numpy structured array
-    else:
-        #   Define array for the magnitudes of the calibration stars
-        magnitudes_calibration_observed = np.zeros(
-            count_cali,
-            dtype=[('mag', 'f8'), ('err', 'f8')],
-        )
-
-        #   Check if we have calibration data for the current filter/image
-        if f'mag{getattr(image, "filt", "?")}' in col_names:
-            #   Sort
-            magnitudes_calibration_observed['mag'] = magnitude_array['mag'][ind_list]
-            magnitudes_calibration_observed['err'] = magnitude_array['err'][ind_list]
-
-    return magnitudes_calibration_observed
-
-
-def observed_magnitude_distribution_of_calibration_stars(
+def observed_magnitude_of_calibration_stars(
         image, magnitude_distribution, img_container):
     """
         Sort and rearrange the distribution of extracted magnitudes so that
@@ -1063,100 +995,100 @@ def distribution_from_calibration_table(calibration_parameters, filter_list):
 
     return distribution_list
 
-
-def magnitude_array_from_calibration_table(img_container, filter_list):
-    """
-        Arrange the literature values in a numpy array or uncertainty array.
-
-        Parameters
-        ----------
-        img_container           : `image.container`
-            Container object with image ensemble objects for each filter
-
-        filter_list             : `list` of `string`
-            Filter names
-
-        Returns
-        -------
-        literature_magnitudes   : `numpy.ndarray` or `uncertainties.unumpy.uarray`
-            Array with literature magnitudes
-    """
-    #   Number of filter
-    n_filter = len(filter_list)
-
-    #   Get calibration table
-    calib_tbl = img_container.CalibParameters.calib_tbl
-    calib_column_names = img_container.CalibParameters.column_names
-
-    n_calib_stars = len(calib_tbl)
-
-    #   unumpy.array or default numpy.ndarray
-    unc = getattr(img_container, 'unc', True)
-    if unc:
-        #   Create uncertainties array with the literature magnitudes
-        literature_magnitudes = unumpy.uarray(
-            np.zeros((n_filter, n_calib_stars)),
-            np.zeros((n_filter, n_calib_stars))
-        )
-
-        #
-        for z, filter_ in enumerate(filter_list):
-            if f'mag{filter_}' in calib_column_names:
-                #   Check if errors for the calibration magnitudes exist
-                if f'err{filter_}' in calib_column_names:
-                    err = np.array(
-                        calib_tbl[calib_column_names[f'err{filter_}']]
-                    )
-
-                    #   Check if errors are nice floats
-                    if err.dtype in (float, np.float32, np.float64):
-                        err_value = err
-                    else:
-                        err_value = 0.
-                else:
-                    err_value = 0.
-
-                #   Extract magnitudes
-                literature_magnitudes[z] = unumpy.uarray(
-                    calib_tbl[calib_column_names[f'mag{filter_}']],
-                    err_value
-                )
-
-    #   Default numpy.ndarray
-    else:
-        #   Define new arrays
-        literature_magnitudes = np.zeros(n_filter, dtype=[('mag', 'f8', n_calib_stars),
-                                                          ('err', 'f8', n_calib_stars),
-                                                          ('qua', 'U1', n_calib_stars),
-                                                          ]
-                                         )
-
-        #
-        for z, filter_ in enumerate(filter_list):
-            if f'mag{filter_}' in calib_column_names:
-                #   Extract magnitudes
-                col_mags = np.array(
-                    calib_tbl[calib_column_names[f'mag{filter_}']]
-                )
-                literature_magnitudes['mag'][z] = col_mags
-
-                #   Check if errors for the calibration magnitudes exist
-                if f'err{filter_}' in calib_column_names:
-                    err_value = np.array(
-                        calib_tbl[calib_column_names[f'err{filter_}']]
-                    )
-                else:
-                    err_value = np.zeros(n_calib_stars)
-
-                #   Check if errors are nice floats
-                if err_value.dtype in (np.float, np.float32, np.float64):
-                    literature_magnitudes['err'][z] = err_value
-
-                #   Add quality flag, if it exists
-                if f'qua{filter_}' in calib_column_names:
-                    quality_value = np.array(
-                        calib_tbl[calib_column_names[f'qua{filter_}']]
-                    )
-                    literature_magnitudes['qua'][z] = quality_value
-
-    return literature_magnitudes
+#   TODO: This seems to be no longer in use. Soon to be removed
+# def magnitude_array_from_calibration_table(img_container, filter_list):
+#     """
+#         Arrange the literature values in a numpy array or uncertainty array.
+#
+#         Parameters
+#         ----------
+#         img_container           : `image.container`
+#             Container object with image ensemble objects for each filter
+#
+#         filter_list             : `list` of `string`
+#             Filter names
+#
+#         Returns
+#         -------
+#         literature_magnitudes   : `numpy.ndarray` or `uncertainties.unumpy.uarray`
+#             Array with literature magnitudes
+#     """
+#     #   Number of filter
+#     n_filter = len(filter_list)
+#
+#     #   Get calibration table
+#     calib_tbl = img_container.CalibParameters.calib_tbl
+#     calib_column_names = img_container.CalibParameters.column_names
+#
+#     n_calib_stars = len(calib_tbl)
+#
+#     #   unumpy.array or default numpy.ndarray
+#     unc = getattr(img_container, 'unc', True)
+#     if unc:
+#         #   Create uncertainties array with the literature magnitudes
+#         literature_magnitudes = unumpy.uarray(
+#             np.zeros((n_filter, n_calib_stars)),
+#             np.zeros((n_filter, n_calib_stars))
+#         )
+#
+#         #
+#         for z, filter_ in enumerate(filter_list):
+#             if f'mag{filter_}' in calib_column_names:
+#                 #   Check if errors for the calibration magnitudes exist
+#                 if f'err{filter_}' in calib_column_names:
+#                     err = np.array(
+#                         calib_tbl[calib_column_names[f'err{filter_}']]
+#                     )
+#
+#                     #   Check if errors are nice floats
+#                     if err.dtype in (float, np.float32, np.float64):
+#                         err_value = err
+#                     else:
+#                         err_value = 0.
+#                 else:
+#                     err_value = 0.
+#
+#                 #   Extract magnitudes
+#                 literature_magnitudes[z] = unumpy.uarray(
+#                     calib_tbl[calib_column_names[f'mag{filter_}']],
+#                     err_value
+#                 )
+#
+#     #   Default numpy.ndarray
+#     else:
+#         #   Define new arrays
+#         literature_magnitudes = np.zeros(n_filter, dtype=[('mag', 'f8', n_calib_stars),
+#                                                           ('err', 'f8', n_calib_stars),
+#                                                           ('qua', 'U1', n_calib_stars),
+#                                                           ]
+#                                          )
+#
+#         #
+#         for z, filter_ in enumerate(filter_list):
+#             if f'mag{filter_}' in calib_column_names:
+#                 #   Extract magnitudes
+#                 col_mags = np.array(
+#                     calib_tbl[calib_column_names[f'mag{filter_}']]
+#                 )
+#                 literature_magnitudes['mag'][z] = col_mags
+#
+#                 #   Check if errors for the calibration magnitudes exist
+#                 if f'err{filter_}' in calib_column_names:
+#                     err_value = np.array(
+#                         calib_tbl[calib_column_names[f'err{filter_}']]
+#                     )
+#                 else:
+#                     err_value = np.zeros(n_calib_stars)
+#
+#                 #   Check if errors are nice floats
+#                 if err_value.dtype in (np.float, np.float32, np.float64):
+#                     literature_magnitudes['err'][z] = err_value
+#
+#                 #   Add quality flag, if it exists
+#                 if f'qua{filter_}' in calib_column_names:
+#                     quality_value = np.array(
+#                         calib_tbl[calib_column_names[f'qua{filter_}']]
+#                     )
+#                     literature_magnitudes['qua'][z] = quality_value
+#
+#     return literature_magnitudes

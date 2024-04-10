@@ -94,6 +94,7 @@ def check_dir(path_dict):
         )
 
 
+#   TODO: Remove
 def check_unumpy_array(arr):
     """
         Check if an array is an unumpy array. Since those arrays are also

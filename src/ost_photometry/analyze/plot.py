@@ -10,8 +10,6 @@ from pathlib import Path
 
 import itertools
 
-from uncertainties import unumpy
-
 from astropy.visualization import (
     ImageNormalize,
     ZScaleInterval,

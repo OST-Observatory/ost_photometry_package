@@ -8,7 +8,7 @@ import copy
 
 import numpy as np
 
-from uncertainties import unumpy
+from astropy import uncertainty as unc
 
 from collections import Counter
 
@@ -115,6 +115,7 @@ class ImageContainer:
         else:
             self.coord = None
 
+        #   TODO: Remove
         #   Check if uncertainty should be calculated by means of the
         #   "uncertainties" package. Default is ``True``.
         self.unc = kwargs.get('unc', True)
@@ -174,41 +175,43 @@ class ImageContainer:
 
         return ensembles
 
+
+    #   TODO: This seems to be no longer in use. Soon to be removed
     #   Get calibrated magnitudes as numpy.ndarray
-    def get_calibrated_magnitudes(self):
-        #   Get type of the magnitude arrays
-        #   Possibilities: unumpy.uarray & numpy structured ndarray
-        unc = getattr(self, 'unc', True)
-
-        #   Get calibrated magnitudes
-        cali_mags = getattr(self, 'cali', None)
-        if unc:
-            if (cali_mags is None or
-                    np.all(unumpy.nominal_values(cali_mags) == 0.)):
-                #   If array with magnitude transformation is not available
-                #   or if it is empty get the array without magnitude
-                #   transformation
-                cali_mags = getattr(self, 'noT', None)
-                if cali_mags is not None:
-                    #   Get only the magnitude values
-                    cali_mags = unumpy.nominal_values(cali_mags)
-            else:
-                #   Get only the magnitude values
-                cali_mags = unumpy.nominal_values(cali_mags)
-
-        #   numpy structured ndarray type:
-        else:
-            if cali_mags is None or np.all(cali_mags['mag'] == 0.):
-                #   If array with magnitude transformation is not available
-                #   or if it is empty get the array without magnitude
-                #   transformation
-                cali_mags = getattr(self, 'noT', None)
-                if cali_mags is not None:
-                    cali_mags = cali_mags['mag']
-            else:
-                cali_mags = cali_mags['mag']
-
-        return cali_mags
+    # def get_calibrated_magnitudes(self):
+    #     #   Get type of the magnitude arrays
+    #     #   Possibilities: unumpy.uarray & numpy structured ndarray
+    #     unc = getattr(self, 'unc', True)
+    #
+    #     #   Get calibrated magnitudes
+    #     cali_mags = getattr(self, 'cali', None)
+    #     if unc:
+    #         if (cali_mags is None or
+    #                 np.all(unumpy.nominal_values(cali_mags) == 0.)):
+    #             #   If array with magnitude transformation is not available
+    #             #   or if it is empty get the array without magnitude
+    #             #   transformation
+    #             cali_mags = getattr(self, 'noT', None)
+    #             if cali_mags is not None:
+    #                 #   Get only the magnitude values
+    #                 cali_mags = unumpy.nominal_values(cali_mags)
+    #         else:
+    #             #   Get only the magnitude values
+    #             cali_mags = unumpy.nominal_values(cali_mags)
+    #
+    #     #   numpy structured ndarray type:
+    #     else:
+    #         if cali_mags is None or np.all(cali_mags['mag'] == 0.):
+    #             #   If array with magnitude transformation is not available
+    #             #   or if it is empty get the array without magnitude
+    #             #   transformation
+    #             cali_mags = getattr(self, 'noT', None)
+    #             if cali_mags is not None:
+    #                 cali_mags = cali_mags['mag']
+    #         else:
+    #             cali_mags = cali_mags['mag']
+    #
+    #     return cali_mags
 
 
 class ImageEnsemble:
@@ -446,22 +449,40 @@ class ImageEnsemble:
 
         return x, y, np.max(n_max_list)
 
-    def get_flux_uarray(self):
+    #   TODO: Remove
+    # def get_flux_uarray(self):
+    #     #   Get data
+    #     tbl_s = list(self.get_photometry().values())
+    #
+    #     #   Expects the number of objects in each table to be the same.
+    #     n_images = len(tbl_s)
+    #     n_objects = len(tbl_s[0])
+    #
+    #     flux = np.zeros((n_images, n_objects))
+    #     flux_unc = np.zeros((n_images, n_objects))
+    #
+    #     for i, tbl in enumerate(tbl_s):
+    #         flux[i] = tbl['flux_fit']
+    #         flux_unc[i] = tbl['flux_unc']
+    #
+    #     return unumpy.uarray(flux, flux_unc)
+
+    def get_flux_distribution(self):
         #   Get data
         tbl_s = list(self.get_photometry().values())
 
-        #   Expects the number of objects in each table to be the same.
-        n_images = len(tbl_s)
-        n_objects = len(tbl_s[0])
+        #   Create list of distributions
+        flux_list = []
+        for tbl in tbl_s:
+            flux_list.append(
+                unc.normal(
+                    tbl['flux_fit'] * u.mag,
+                    std=tbl['flux_unc'] * u.mag,
+                    n_samples=1000,
+                )
+            )
 
-        flux = np.zeros((n_images, n_objects))
-        flux_unc = np.zeros((n_images, n_objects))
-
-        for i, tbl in enumerate(tbl_s):
-            flux[i] = tbl['flux_fit']
-            flux_unc[i] = tbl['flux_unc']
-
-        return unumpy.uarray(flux, flux_unc)
+        return flux_list
 
 
 def rm_cosmic_rays(image, limiting_contrast=5., read_noise=8.,
@@ -2876,15 +2897,14 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
         )
 
     #   Conversion of flux to magnitudes
-    #   TODO: Should we also offer a classical method to calculate the magnitude plus uncertainty?
-    flux_objects = unumpy.uarray(
+    #   TODO: Move this to the calibration stage, where it makes more sense
+    magnitudes = utilities.flux_to_magnitudes(
         image.photometry['flux_fit'],
-        image.photometry['flux_unc']
+        image.photometry['flux_unc'],
     )
-    magnitudes = utilities.mag_u_arr(flux_objects)
 
-    image.photometry['mags_fit'] = unumpy.nominal_values(magnitudes)
-    image.photometry['mags_unc'] = unumpy.std_devs(magnitudes)
+    image.photometry['mags_fit'] = magnitudes.pdf_median()
+    image.photometry['mags_unc'] = magnitudes.pdf_std()
 
     ###
     #   Plot images with extracted stars overlaid
@@ -3665,7 +3685,7 @@ def correlate_calibrate(image_container, filter_list,
     )
 
     #   Apply calibration and perform magnitude transformation
-    trans.apply_calib(
+    trans.apply_calibration(
         image_container,
         filter_list,
         transformation_coefficients_dict=transformation_coefficients_dict,
@@ -3813,7 +3833,7 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
         n_allowed_non_detections_object     : `integer`, optional
             Maximum number of times an object may not be detected in an image.
             When this limit is reached, the object will be removed.
-            Default is ``i`.
+            Default is ``1`.
 
         expected_bad_image_fraction         : `float`, optional
             Fraction of low quality images, i.e. those images for which a
@@ -3871,11 +3891,6 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
             if filter_ in valid_calibration_filters:
                 #   Check if filter combination is valid
                 if valid_calibration_filters[0] in filter_list and valid_calibration_filters[1] in filter_list:
-
-                    if filter_ == valid_calibration_filters[0]:
-                        i = 0
-                    else:
-                        i = 1
 
                     #   Get object ID
                     object_id = image_container.ensembles[filter_].variable_id
@@ -3970,7 +3985,7 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
 
                     #   Apply calibration and perform magnitude
                     #   transformation
-                    trans.apply_calib(
+                    trans.apply_calibration(
                         image_container,
                         valid_calibration_filters,
                         transformation_coefficients_dict=transformation_coefficients_dict,
@@ -3978,13 +3993,13 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                         photometry_extraction_method=photometry_extraction_method,
                         plot_sigma=plot_sigma,
                     )
-                    calibrated_magnitudes = getattr(image_container, 'cali', None)
-                    if not checks.check_unumpy_array(calibrated_magnitudes):
-                        cali = calibrated_magnitudes['mag']
-                    else:
-                        cali = calibrated_magnitudes
-                    if np.all(cali == 0):
-                        break
+                    calibrated_magnitudes = getattr(
+                        image_container,
+                        'calibrated_transformed_magnitudes',
+                        None,
+                    )
+                    # if np.all(cali == 0):
+                    #     break
 
                     ###
                     #   Plot light curve
@@ -4004,10 +4019,11 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                     # invert=True
                     # )
 
+                    #   TODO: Convert to distributions
                     #   Create a time series object
                     time_series = utilities.mk_time_series(
                         observation_times,
-                        calibrated_magnitudes[i],
+                        calibrated_magnitudes[filter_],
                         filter_,
                         object_id,
                     )
@@ -4082,15 +4098,21 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                 #   Normalize data if no calibration magnitudes are available
                 trans.flux_normalization_ensemble(ensemble)
 
-                plot_quantity = ensemble.uflux_norm
+                #   TODO: Is this necessary? Use return value?
+                plot_quantity = ensemble.quasi_calibrated_flux_normalized
             else:
                 #   Apply calibration
-                trans.apply_calib(
+                trans.apply_calibration(
                     image_container,
                     [filter_],
                     photometry_extraction_method=photometry_extraction_method,
                 )
-                plot_quantity = getattr(image_container, 'noT', None)[0]
+                #   TODO: Convert to distributions
+                plot_quantity = getattr(
+                    image_container,
+                    'calibrated_magnitudes',
+                    None,
+                )[filter_]
 
             ###
             #   Plot light curve
@@ -4101,6 +4123,7 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                 format='jd',
             )
 
+            #   TODO: Convert to distributions
             #   Create a time series object
             time_series = utilities.mk_time_series(
                 observation_times,

@@ -6,7 +6,7 @@ import sys
 
 import numpy as np
 
-from uncertainties import unumpy
+# from uncertainties import unumpy
 
 from pytimedinput import timedInput
 
@@ -74,28 +74,12 @@ def err_prop(*args):
     return sum_error
 
 
-def mk_magnitudes_table(*args, **kwargs):
-    """
-        Create and export astropy table with object positions and magnitudes
-
-        Distinguishes between different input magnitude array types.
-        Possibilities: unumpy.uarray & numpy structured ndarray
-    """
-    #   Get type of the magnitude arrays
-    unc = checks.check_unumpy_array(args[3])
-
-    if unc:
-        return mk_mags_table_unumpy_array(*args, **kwargs)
-    else:
-        return mk_mags_table_from_structured_array(*args, **kwargs)
-
-
 def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
                                      magnitudes, filter_list, filter_image_ids,
                                      wcs):
     """
         Create and export astropy table with object positions and magnitudes
-        Input magnitude array is expected to be an unumpy uarray.
+        Input magnitude array is expected to be astropy.uncertainty.core.QuantityDistribution
 
         Parameters
         ----------
@@ -108,7 +92,7 @@ def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
         y_positions      : `numpy.ndarray`
             Position of the stars on the image in pixel in X direction
 
-        magnitudes       : `unumpy.ndarray`
+        magnitudes       : `astropy.uncertainty.core.QuantityDistribution`
             Magnitudes of all stars
 
         filter_list      : `list` of `string`
@@ -160,197 +144,6 @@ def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
     #   Sort table
     tbl = tbl.group_by(
         f'{filter_list[filter_image_ids[0][0]]} ({filter_image_ids[0][1]})'
-    )
-
-    return tbl
-
-
-def mk_mags_table_from_structured_array(index_objects, x_positions, y_positions,
-                                        magnitudes, list_bands, id_tuples, wcs):
-    """
-        Create and export astropy table with object positions and magnitudes
-        Input magnitude array is expected to be a numpy structured array.
-
-        Parameters
-        ----------
-        index_objects   : `numpy.ndarray`
-            IDs of the stars
-
-        x_positions     : `numpy.ndarray`
-            Position of the stars on the image in pixel in X direction
-
-        y_positions     : `numpy.ndarray`
-            Position of the stars on the image in pixel in X direction
-
-        magnitudes      : `numpy.ndarray`
-            Magnitudes of all stars
-
-        list_bands      : `list` of `string`
-            Filter
-
-        id_tuples       : `list` of `tuple`
-            TODO: rewrite
-            FORMAT = (Filter IDs, ID of the images to position 0, Filter IDs
-                      for the color calculation, ID of the images to
-                      position 2)
-
-        wcs             : `astropy.wcs`
-            WCS
-
-        Returns
-        -------
-        tbl             : `astropy.table.Table`
-            Table with CMD data
-    """
-    # Make CMD table
-    tbl = Table(
-        names=['i', 'x', 'y', ],
-        data=[
-            np.intc(index_objects),
-            x_positions,
-            y_positions,
-        ]
-    )
-
-    #   Convert Pixel to sky coordinates
-    sky = wcs.pixel_to_world(x_positions, y_positions)
-
-    #   Add sky coordinates to table
-    tbl['ra (deg)'] = sky.ra
-    tbl['dec (deg)'] = sky.dec
-
-    #   Set name of the magnitude field
-    name_mag = 'mag'
-
-    #   Add magnitude columns to table
-    for ids in id_tuples:
-        if 'err' in magnitudes.dtype.names:
-            tbl.add_columns(
-                [
-                    magnitudes[name_mag][ids[0]][ids[1]] * u.mag,
-                    magnitudes['err'][ids[0]][ids[1]] * u.mag,
-                ],
-                names=[
-                    f'{list_bands[ids[0]]} ({ids[1]})',
-                    f'{list_bands[ids[0]]}_err ({ids[1]})',
-                ]
-            )
-            #   TODO: Check if this is a bug! Shouldn't that be ids instead of id_tuples?
-            if len(id_tuples) == 4:
-                tbl.add_columns(
-                    [
-                        (magnitudes[name_mag][ids[2]][ids[3]]
-                         - magnitudes[name_mag][ids[0]][ids[1]]) * u.mag,
-                        err_prop(
-                            magnitudes['err'][ids[2]][ids[3]],
-                            magnitudes['err'][ids[0]][ids[1]],
-                        ) * u.mag,
-                    ],
-                    names=[
-                        f'{list_bands[ids[2]]}-{list_bands[ids[0]]} ({ids[1]})',
-                        f'{list_bands[ids[2]]}-{list_bands[ids[0]]}_err ({ids[1]})',
-                    ]
-                )
-
-        else:
-            tbl.add_column(
-                magnitudes[name_mag][ids[0]][ids[1]] * u.mag,
-                name=f'{list_bands[ids[0]]} ({ids[1]})'
-            )
-            tbl.add_column(
-                (magnitudes[name_mag][ids[2]][ids[3]] -
-                 magnitudes[name_mag][ids[0]][ids[1]]) * u.mag,
-                name=f'{list_bands[ids[2]]}-{list_bands[ids[0]]} ({ids[1]})'
-            )
-
-    #   Sort table
-    tbl = tbl.group_by(f'{list_bands[0]} (0)')
-
-    return tbl
-
-
-def mk_mags_table_unumpy_array(index_objects, x_positions, y_positions,
-                               magnitudes, list_bands, id_tuples, wcs):
-    """
-        Create and export astropy table with object positions and magnitudes
-        Input magnitude array is expected to be an unumpy uarray.
-
-        Parameters
-        ----------
-        index_objects   : `numpy.ndarray`
-            IDs of the stars
-
-        x_positions     : `numpy.ndarray`
-            Position of the stars on the image in pixel in X direction
-
-        y_positions     : `numpy.ndarray`
-            Position of the stars on the image in pixel in X direction
-
-        magnitudes      : `unumpy.ndarray`
-            Magnitudes of all stars
-
-        list_bands      : `list` of `string`
-            Filter
-
-        id_tuples       : `list` of `tuple`
-            FORMAT = (Filter IDs, ID of the images to position 0, Filter IDs
-                      for the color calculation, ID of the images to
-                      position 2)
-
-        wcs             : `astropy.wcs`
-            WCS
-
-        Returns
-        -------
-        tbl             : `astropy.table.Table`
-            Table with CMD data
-    """
-    # Make CMD table
-    tbl = Table(
-        names=['i', 'x', 'y', ],
-        data=[
-            np.intc(index_objects),
-            x_positions,
-            y_positions,
-        ]
-    )
-
-    #   Convert Pixel to sky coordinates
-    sky = wcs.pixel_to_world(x_positions, y_positions)
-
-    #   Add sky coordinates to table
-    tbl['ra (deg)'] = sky.ra
-    tbl['dec (deg)'] = sky.dec
-
-    #   Add magnitude columns to table
-    for ids in id_tuples:
-        tbl.add_columns(
-            [
-                unumpy.nominal_values(magnitudes[ids[0]][ids[1]]) * u.mag,
-                unumpy.std_devs(magnitudes[ids[0]][ids[1]]) * u.mag,
-            ],
-            names=[
-                f'{list_bands[ids[0]]} ({ids[1]})',
-                f'{list_bands[ids[0]]}_err ({ids[1]})',
-            ]
-        )
-        #   TODO: Check if this is a bug! Shouldn't that be ids instead of id_tuples?
-        if len(id_tuples) == 4:
-            color = magnitudes[ids[2]][ids[3]] - magnitudes[ids[0]][ids[1]]
-            tbl.add_columns(
-                [
-                    unumpy.nominal_values(color) * u.mag,
-                    unumpy.std_devs(color) * u.mag,
-                ],
-                names=[
-                    f'{list_bands[ids[2]]}-{list_bands[ids[0]]} ({ids[1]})',
-                    f'{list_bands[ids[2]]}-{list_bands[ids[0]]}_err ({ids[1]})',
-                ]
-            )
-
-    #   Sort table
-    tbl = tbl.group_by(
-        f'{list_bands[id_tuples[0][0]]} ({id_tuples[0][1]})'
     )
 
     return tbl
@@ -532,43 +325,61 @@ def extract_wcs(wcs_path, image_wcs=None, rm_cosmics=False, filters=None):
     return w
 
 
-def mk_time_series(observation_times, magnitudes, filter_, obj_id):
+#   TODO: Convert to distributions
+def mk_time_series(observation_times, magnitudes, filter_, object_id):
     """
         Make a time series object
 
         Parameters
         ----------
-        observation_times        : `astropy.time.Time`
+        observation_times   : `astropy.time.Time`
             Observation times
 
-        magnitudes       : `numpy.ndarray`
+        magnitudes          : `astropy.uncertainty.core.QuantityDistribution`
             Magnitudes and uncertainties
 
-        filter_         : `string`
+        filter_             : `string`
             Filter
 
-        obj_id          : `integer`
+        object_id           : `integer`
             ID/Number of the object for with the time series should be
             created
 
         Returns
         -------
-        ts              : `astropy.timeseries.TimeSeries`
+        ts                  : `astropy.timeseries.TimeSeries`
     """
     #   Extract magnitudes of the object 'objID' depending on array dtype
-    if checks.check_unumpy_array(magnitudes):
-        u_mags = magnitudes[:, obj_id]
-        mags_obj = unumpy.nominal_values(u_mags)
-        errs_obj = unumpy.std_devs(u_mags)
+    # if checks.check_unumpy_array(magnitudes):
+    #     u_mags = magnitudes[:, obj_id]
+    #     mags_obj = unumpy.nominal_values(u_mags)
+    #     errs_obj = unumpy.std_devs(u_mags)
+    #
+    # else:
+    #     try:
+    #         mags_obj = magnitudes['mag'][:, obj_id]
+    #         errs_obj = magnitudes['err'][:, obj_id]
+    #     except KeyError:
+    #         mags_obj = magnitudes['flux'][:, obj_id]
+    #         errs_obj = magnitudes['err'][:, obj_id]
 
-    else:
-        try:
-            mags_obj = magnitudes['mag'][:, obj_id]
-            errs_obj = magnitudes['err'][:, obj_id]
-        except KeyError:
-            mags_obj = magnitudes['flux'][:, obj_id]
-            errs_obj = magnitudes['err'][:, obj_id]
+    #   Extract magnitudes of the object 'objID'
+    stacked_distribution = np.stack(magnitudes)
+    print('++++++++++++++++++++++++++++++++++++++++++++++++')
+    print(stacked_distribution)
+    print(stacked_distribution.shape)
+    print(type(stacked_distribution))
+    object_magnitudes = stacked_distribution[:, object_id]
+    print(object_magnitudes)
+    print(object_magnitudes.shape)
+    print(type(object_magnitudes))
+    mags_obj = object_magnitudes.pdf_median()
+    errs_obj = object_magnitudes.pdf_std()
+    print(mags_obj)
+    print(errs_obj)
+    print('++++++++++++++++++++++++++++++++++++++++++++++++')
 
+    #   TODO: Check if this is still necessary
     #   Create mask for time series to remove images without entries
     mask = np.isin(
         mags_obj,
@@ -658,18 +469,15 @@ def fit_data_one_d(x, y, order):
 
         Parameters
         ----------
-        x               : `numpy.ndarray` or `unumpy.uarray`
+        x               : `numpy.ndarray`
             X data values
 
-        y               : `numpy.ndarray` or `unumpy.uarray`
+        y               : `numpy.ndarray`
             Y data values
 
         order           : `integer`
             Order of the polynomial to be fitted to the data
     """
-    #   Check array type
-    unc = checks.check_unumpy_array(x)
-
     #   Set model
     model = models.Polynomial1D(degree=order)
 
@@ -677,170 +485,138 @@ def fit_data_one_d(x, y, order):
     fitter_poly = fitting.LevMarLSQFitter()
 
     #   Fit data
-    if unc:
-        if np.all(unumpy.nominal_values(x) == 0.):
-            fit_poly = None
-        else:
-            fit_poly = fitter_poly(
-                model,
-                unumpy.nominal_values(x),
-                unumpy.nominal_values(y),
-            )
+    if np.all(x == 0.):
+        fit_poly = None
     else:
-        if np.all(x == 0.):
-            fit_poly = None
-        else:
-            fit_poly = fitter_poly(
-                model,
-                x,
-                y,
-            )
+        fit_poly = fitter_poly(
+            model,
+            x,
+            y,
+        )
 
     return fit_poly
 
-
-def prepare_arrays(img_container, n_filter, count_objects):
-    """
-        Prepare arrays for magnitude calibration
-
-        Parameters
-        ----------
-        img_container   : `image.container`
-            Container object with image ensemble objects for each filter
-
-        n_filter        : `integer`
-            Number of filter
-
-        count_objects   : `integer`
-            Number of stars
-    """
-    #   Get image ensembles
-    img_ensembles = img_container.ensembles
-
-    #   Get maximum number of images
-    n_images = []
-    for ensemble in img_ensembles.values():
-        n_images.append(len(ensemble.image_list))
-
-    #   Maximum number of images
-    n_img_max = np.max(n_images)
-
-    #   Get required array type
-    unc = getattr(img_container, 'unc', True)
-
-    #   Define magnitude arrays
-    if unc:
-        calibrated_magnitudes = unumpy.uarray(
-            np.zeros((n_filter, n_img_max, count_objects)),
-            np.zeros((n_filter, n_img_max, count_objects))
-        )
-    else:
-        #   Define arrays
-        calibrated_magnitudes = np.zeros(
-            n_filter,
-            dtype=[
-                ('mag', 'f8', (n_img_max, count_objects)),
-                ('std', 'f8', (n_img_max, count_objects)),
-                ('err', 'f8', (n_img_max, count_objects)),
-            ]
-        )
-
-    #   TODO: Add temporary dict of lists for distributions
-
-    img_container.cali = calibrated_magnitudes
-    img_container.noT = np.copy(calibrated_magnitudes)
-
-
 # @execution_time
-def mag_arr(flux_arr):
+# def mag_arr(flux_arr):
+#     """
+#         Calculate magnitudes from flux
+#
+#         This function is not currently used, but will remain here for future
+#         use.
+#
+#         Parameters
+#         ----------
+#         flux_arr        : `numpy.ndarray`
+#             Numpy structured array containing flux values and corresponding
+#             uncertainties
+#
+#         Returns
+#         -------
+#         mags            : `numpy.ndarray`
+#             Numpy structured array containing magnitudes and corresponding
+#             errors
+#     """
+#     #   Get dimensions
+#     shape = flux_arr['flux_fit'].shape
+#     if len(shape) == 1:
+#         n_obj = shape[0]
+#
+#         #   Prepare array for the magnitudes and uncertainty
+#         mags = np.zeros(n_obj, dtype=[('mag', 'f8'), ('err', 'f8')])
+#
+#     elif len(shape) == 2:
+#         n_img = shape[0]
+#         n_obj = shape[1]
+#
+#         #   Prepare array for the magnitudes and uncertainty
+#         mags = np.zeros(
+#             n_img,
+#             dtype=[('mag', 'f8', n_obj), ('err', 'f8', n_obj)],
+#         )
+#
+#     else:
+#         raise RuntimeError(
+#             f"{style.Bcolors.FAIL} \nDimension of the flux array > 2. This "
+#             f"is not supported. -> Exit {style.Bcolors.ENDC}"
+#         )
+#
+#     ###
+#     #   Calculate magnitudes
+#     #
+#     #   Extract flux
+#     flux = flux_arr['flux_fit']
+#     #   Calculate magnitudes
+#     mags['mag'] = -2.5 * np.log10(flux)
+#
+#     ###
+#     #   Calculate magnitudes and uncertainty
+#     #
+#     #   Error propagation also used by DAOPHOT -> see 'compute_phot_error'
+#     mags['err'] = 1.0857 * flux_arr['flux_unc'] / flux_arr['flux_fit']
+#
+#     return mags
+
+
+# def mag_u_arr(flux):
+#     """
+#         Calculate magnitudes from flux
+#
+#         Parameters
+#         ----------
+#         flux            : `unumpy.ndarray`
+#             Numpy structured array containing flux values and corresponding
+#             uncertainties
+#
+#         Returns
+#         -------
+#         mags            : `unumpy.ndarray`
+#             Numpy structured array containing magnitudes and corresponding
+#             errors
+#     """
+#     #   Get dimensions
+#     shape = flux.shape
+#     dim = len(shape)
+#     if 0 == dim or dim > 2:
+#         raise ValueError(
+#             f"{style.Bcolors.FAIL} \nDimension of the flux array > 2. This "
+#             f"is not supported. -> Exit {style.Bcolors.ENDC}"
+#         )
+#
+#     #   Calculate magnitudes
+#     mags = -2.5 * unumpy.log10(flux)
+#
+#     return mags
+
+
+def flux_to_magnitudes(flux, flux_error):
     """
         Calculate magnitudes from flux
 
-        This function is not currently used, but will remain here for future
-        use.
-
         Parameters
         ----------
-        flux_arr        : `numpy.ndarray`
-            Numpy structured array containing flux values and corresponding
-            uncertainties
+        flux            : `numpy.ndarray` or `astropy.table.Column`
+            Flux values
+
+        flux_error      : `numpy.ndarray` or `astropy.table.Column`
+            Flux uncertainties
 
         Returns
         -------
-        mags            : `numpy.ndarray`
+        mags            : `astropy.uncertainty.core.QuantityDistribution`
             Numpy structured array containing magnitudes and corresponding
             errors
     """
-    #   Get dimensions
-    shape = flux_arr['flux_fit'].shape
-    if len(shape) == 1:
-        n_obj = shape[0]
-
-        #   Prepare array for the magnitudes and uncertainty
-        mags = np.zeros(n_obj, dtype=[('mag', 'f8'), ('err', 'f8')])
-
-    elif len(shape) == 2:
-        n_img = shape[0]
-        n_obj = shape[1]
-
-        #   Prepare array for the magnitudes and uncertainty
-        mags = np.zeros(
-            n_img,
-            dtype=[('mag', 'f8', n_obj), ('err', 'f8', n_obj)],
-        )
-
-    else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nDimension of the flux array > 2. This "
-            f"is not supported. -> Exit {style.Bcolors.ENDC}"
-        )
-
-    ###
-    #   Calculate magnitudes
-    #
-    #   Extract flux
-    flux = flux_arr['flux_fit']
-    #   Calculate magnitudes
-    mags['mag'] = -2.5 * np.log10(flux)
-
-    ###
-    #   Calculate magnitudes and uncertainty
-    #
-    #   Error propagation also used by DAOPHOT -> see 'compute_phot_error'
-    mags['err'] = 1.0857 * flux_arr['flux_unc'] / flux_arr['flux_fit']
-
-    return mags
-
-
-def mag_u_arr(flux):
-    """
-        Calculate magnitudes from flux
-
-        Parameters
-        ----------
-        flux            : `unumpy.ndarray`
-            Numpy structured array containing flux values and corresponding
-            uncertainties
-
-        Returns
-        -------
-        mags            : `unumpy.ndarray`
-            Numpy structured array containing magnitudes and corresponding
-            errors
-    """
-    #   Get dimensions
-    shape = flux.shape
-    dim = len(shape)
-    if 0 == dim or dim > 2:
-        raise ValueError(
-            f"{style.Bcolors.FAIL} \nDimension of the flux array > 2. This "
-            f"is not supported. -> Exit {style.Bcolors.ENDC}"
-        )
+    #   Setup distributions
+    flux_distribution = unc.normal(
+        flux * u.mag,
+        std=flux_error * u.mag,
+        n_samples=1000,
+    )
 
     #   Calculate magnitudes
-    mags = -2.5 * unumpy.log10(flux)
+    magnitudes = -2.5 * np.log10(flux_distribution)
 
-    return mags
+    return magnitudes
 
 
 def find_filter(filter_list, tsc_parameter_dict, filter_, camera,
@@ -1420,10 +1196,10 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         mask:                       : `numpy.ndarray`
             Mask of stars that should be excluded
 
-        color_observed                   : `numpy.ndarray` - `numpy.float64`
+        color_observed              : `numpy.ndarray` - `numpy.float64`
             Instrument color of the calibration stars
 
-        color_literature                   : `numpy.ndarray` - `numpy.float64`
+        color_literature            : `numpy.ndarray` - `numpy.float64`
             Literature color of the calibration stars
 
         ids_calibration_stars       : `numpy.ndarray`
@@ -1439,10 +1215,10 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         uncalibrated_magnitudes     : `numpy.ndarray`
             Magnitudes of all observed objects but not calibrated yet
 
-        color_observed_err               : `numpy.ndarray' or ``None``, optional
+        color_observed_err          : `numpy.ndarray' or ``None``, optional
             Uncertainty in the instrument color of the calibration stars
 
-        color_literature_err               : `numpy.ndarray' or ``None``, optional
+        color_literature_err        : `numpy.ndarray' or ``None``, optional
             Uncertainty in the literature color of the calibration stars
 
         literature_magnitudes_err   : `numpy.ndarray`
@@ -2599,6 +2375,7 @@ def post_process_results(img_container, filter_list, id_object=None,
                 tbl = tbl[img_id_pm][mask_pm]
 
         #   Convert magnitudes to a different filter system
+        #   TODO: Convert to distributions?
         if convert_magnitudes:
             tbl = convert_magnitudes_to_other_system(tbl, target_filter_system)
 
@@ -2618,7 +2395,7 @@ def post_process_results(img_container, filter_list, id_object=None,
 
 def add_column_to_table(tbl, column_name, data, column_id):
     """
-        Adds data from an unumpy array to an astropy Table
+        Adds data from a distribution to an astropy Table
 
         Parameters
         ----------
@@ -2628,7 +2405,7 @@ def add_column_to_table(tbl, column_name, data, column_id):
         column_name         : `string`
             Name of the column to add
 
-        data                : `uncertainties.unumpy.ndarray`
+        data                : `astropy.uncertainty.core.QuantityDistribution`
             Data to add
 
         column_id           : `integer`
@@ -2642,19 +2419,12 @@ def add_column_to_table(tbl, column_name, data, column_id):
     """
     if column_id == -1:
         tbl.add_columns(
-            [
-                unumpy.nominal_values(data) * u.mag,
-                unumpy.std_devs(data) * u.mag,
-            ],
-            names=[column_name, f'{column_name}_err',
-                   ]
+            [data.pdf_median(), data.pdf_std()],
+            names=[column_name, f'{column_name}_err']
         )
     else:
         tbl.add_columns(
-            [
-                unumpy.nominal_values(data) * u.mag,
-                unumpy.std_devs(data) * u.mag,
-            ],
+            [data.pdf_median(), data.pdf_std()],
             names=[
                 f'{column_name} ({column_id})',
                 f'{column_name}_err ({column_id})',
@@ -2662,48 +2432,6 @@ def add_column_to_table(tbl, column_name, data, column_id):
         )
 
     return tbl
-
-
-def magnitude_array_from_table(img_container, image):
-    """
-        From an astropy table, create a numpy or uncertainty array for
-        magnitudes.
-
-        Parameters
-        ----------
-        img_container   : `image.container`
-            Container object with image ensemble objects for each filter
-
-        image           : `image`
-            Image object
-
-        Returns
-        -------
-        image_mags      : `numpy.ndarray` or `uncertainties.unumpy.uarray`
-            Magnitude array
-    """
-    #   Number of objects
-    n_objects = len(image.photometry)
-
-    #   Check which array type is required
-    unc = getattr(img_container, 'unc', True)
-    if unc:
-        #   Create uncertainties array with the literature magnitudes
-        image_mags = unumpy.uarray(
-            image.photometry['mags_fit'].value,
-            image.photometry['mags_unc'].value
-        )
-    else:
-        #   Overall array for the flux and uncertainty
-        image_mags = np.zeros(
-            1,
-            # Code requirements require current naming
-            dtype=[('mag', 'f8', n_objects), ('err', 'f8', n_objects)]
-        )
-        image_mags['mag'] = image.photometry['mags_fit']
-        image_mags['err'] = image.photometry['mags_unc']
-
-    return image_mags
 
 
 def distribution_from_table(image):
@@ -2737,7 +2465,7 @@ def convert_magnitudes_to_other_system(tbl: Table,
 
         Parameters
         ----------
-        tbl                 : `astropy.table.Table`
+        tbl                     : `astropy.table.Table`
             Table with magnitudes
 
         target_filter_system    : `string`
@@ -2819,20 +2547,38 @@ def convert_magnitudes_to_other_system(tbl: Table,
             #   ID availability
             if image_id == -1:
                 if error:
-                    data_dict[column_filter] = unumpy.uarray(
-                        tbl[f'{column_filter}'].value,
-                        tbl[f'{column_filter}_err'].value
+                    data_dict[column_filter] = unc.normal(
+                        tbl[f'{column_filter}'].value * u.mag,
+                        std=tbl[f'{column_filter}_err'].value * u.mag,
+                        n_samples=1000,
                     )
+                    # unumpy.uarray(
+                    #     tbl[f'{column_filter}'].value,
+                    #     tbl[f'{column_filter}_err'].value
+                    # )
                 else:
-                    data_dict[column_filter] = tbl[f'{column_filter}'].value
+                    # data_dict[column_filter] = tbl[f'{column_filter}'].value
+                    data_dict[column_filter] = unc.normal(
+                        tbl[f'{column_filter}'].value * u.mag,
+                        n_samples=1000,
+                    )
             else:
                 if error:
-                    data_dict[column_filter] = unumpy.uarray(
-                        tbl[f'{column_filter} ({image_id})'].value,
-                        tbl[f'{column_filter}_err ({image_id})'].value
+                    # data_dict[column_filter] = unumpy.uarray(
+                    #     tbl[f'{column_filter} ({image_id})'].value,
+                    #     tbl[f'{column_filter}_err ({image_id})'].value
+                    # )
+                    data_dict[column_filter] = unc.normal(
+                        tbl[f'{column_filter} ({image_id})'].value * u.mag,
+                        std=tbl[f'{column_filter}_err ({image_id})'].value * u.mag,
+                        n_samples=1000,
                     )
                 else:
-                    data_dict[column_filter] = tbl[f'{column_filter} ({image_id})'].value
+                    # data_dict[column_filter] = tbl[f'{column_filter} ({image_id})'].value
+                    data_dict[column_filter] = unc.normal(
+                        tbl[f'{column_filter} ({image_id})'].value * u.mag,
+                        n_samples=1000,
+                    )
 
         if target_filter_system == 'AB':
             #   TODO: Fix this
