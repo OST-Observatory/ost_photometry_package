@@ -299,10 +299,14 @@ def derive_transformation_onthefly_distribution(image, filter_list, id_current_f
     diff_mag_2 = magnitudes_literature_filter_2 - magnitudes_observed_filter_2
 
     #   TODO: Test median with std (should be worse!?)
-    color_literature_plot = color_literature.distribution
-    color_literature_err_plot = 0.
-    diff_mag_plot_1 = diff_mag_1.distribution
-    diff_mag_plot_2 = diff_mag_2.distribution
+    # color_literature_plot = color_literature.distribution
+    # color_literature_err_plot = 0.
+    # diff_mag_plot_1 = diff_mag_1.distribution
+    # diff_mag_plot_2 = diff_mag_2.distribution
+    color_literature_plot = color_literature.pdf_median()
+    color_literature_err_plot = color_literature.pdf_std()
+    diff_mag_plot_1 = diff_mag_1.pdf_median()
+    diff_mag_plot_2 = diff_mag_2.pdf_median()
 
     #   Set
     sigma = np.array(color_literature_err_plot)
@@ -315,17 +319,19 @@ def derive_transformation_onthefly_distribution(image, filter_list, id_current_f
         x0,
         sigma,
     )
-    z_1_ii, z_1_err_ii, color_correction_filter_1, color_correction_filter_1_err = utilities.fit_curve(
-        fit_func,
-        color_literature.pdf_median(),
-        diff_mag_plot_1,
-        x0,
-        color_literature.pdf_std(),
-    )
-    print('Fit comparison: --------------------------')
-    print(z_1, z_1_err)
-    print(z_1_ii, z_1_err_ii)
-    print('------------------------------------------')
+    # z_1_ii, z_1_err_ii, color_correction_filter_1, color_correction_filter_1_err = utilities.fit_curve(
+    #     fit_func,
+    #     color_literature.pdf_median(),
+    #     diff_mag_1.pdf_median(),
+    #     x0,
+    #     color_literature.pdf_std(),
+    # )
+    # print('Fit comparison: --------------------------')
+    # print(z_1, z_1_err)
+    # print(z_1_ii, z_1_err_ii)
+    # print('------------------------------------------')
+    # print(z_1)
+    # print(color_correction_filter_1)
     z_2, z_2_err, color_correction_filter_2, color_correction_filter_2_err = utilities.fit_curve(
         fit_func,
         color_literature_plot,
@@ -345,15 +351,17 @@ def derive_transformation_onthefly_distribution(image, filter_list, id_current_f
         image.outpath.name,
         filter_list[id_filter_1],
         filter_list[id_filter_2],
-        np.ravel(color_literature_plot.value),
-        np.ravel(diff_mag_plot_1.value),
+        # np.ravel(color_literature_plot.value),
+        color_literature_plot.value,
+        # np.ravel(diff_mag_plot_1.value),
+        diff_mag_plot_1.value,
         z_1,
         color_correction_filter_1,
         color_correction_filter_1_err,
         fit_func,
         image.air_mass,
         filter_=filter_list[id_current_filter],
-        color_literature_err=color_literature_err_plot,
+        color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_1_err,
         name_obj=image.objname,
     )
@@ -366,15 +374,15 @@ def derive_transformation_onthefly_distribution(image, filter_list, id_current_f
         image.outpath.name,
         filter_list[id_filter_1],
         filter_list[id_filter_2],
-        np.ravel(color_literature_plot.value),
-        np.ravel(diff_mag_plot_2.value),
+        color_literature_plot.value,
+        diff_mag_plot_2.value,
         z_2,
         color_correction_filter_2,
         color_correction_filter_2_err,
         fit_func,
         image.air_mass,
         filter_=filter_list[id_o],
-        color_literature_err=color_literature_err_plot,
+        color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_2_err,
         name_obj=image.objname,
     )
@@ -555,8 +563,8 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
     calibrated_magnitudes = np.median(calibrated_magnitudes, axis=1)
 
     #   Add calibrated photometry to table of Image object
-    image.photometry['mag_cali_distribution_trans'] = calibrated_magnitudes.pdf_median()
-    image.photometry['mag_cali_distribution_trans_unc'] = calibrated_magnitudes.pdf_std()
+    image.photometry['mag_cali_trans'] = calibrated_magnitudes.pdf_median()
+    image.photometry['mag_cali_trans_unc'] = calibrated_magnitudes.pdf_std()
 
     return calibrated_magnitudes, color_observed, color_literature
 
@@ -737,8 +745,8 @@ def calibrate_simple_core_distribution(image, magnitudes):
         calibrated_magnitudes = reshaped_magnitudes - np.median(magnitudes)
 
     #   Add calibrated photometry to table of Image object
-    image.photometry['mag_cali_no-trans_distribution'] = calibrated_magnitudes.pdf_median()
-    image.photometry['mag_cali_no-trans_distribution_unc'] = calibrated_magnitudes.pdf_std()
+    image.photometry['mag_cali_no-trans'] = calibrated_magnitudes.pdf_median()
+    image.photometry['mag_cali_no-trans_unc'] = calibrated_magnitudes.pdf_std()
 
     return calibrated_magnitudes
 
