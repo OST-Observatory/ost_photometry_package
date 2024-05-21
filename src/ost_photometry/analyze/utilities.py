@@ -334,7 +334,7 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
         observation_times   : `astropy.time.Time`
             Observation times
 
-        magnitudes          : `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes          : `list` of `astropy.uncertainty.core.QuantityDistribution`
             Magnitudes and uncertainties
 
         filter_             : `string`
@@ -1390,6 +1390,7 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
         p.start()
 
     #   Difference between literature values and calibration results
+    #   TODO: Add image ID to plot file name
     p = mp.Process(
         target=plot.scatter,
         args=(

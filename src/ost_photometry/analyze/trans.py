@@ -204,6 +204,7 @@ def check_requirements_transformation(img_container, trans_coefficients, filter_
 
             second_filter_id = id_color_filter_2
 
+    message_type = 'BOLD'
     if type_transformation == 'simple':
         string = "Apply simple magnitude transformation"
     elif type_transformation == 'air_mass':
@@ -214,6 +215,7 @@ def check_requirements_transformation(img_container, trans_coefficients, filter_
     else:
         string = f"Magnitude transformation is not possible because some " \
                  f"prerequisites, such as a second filter, are not met."
+        message_type = 'WARNING'
         # raise RuntimeError(
         #     f"{style.Bcolors.FAIL} \nNo valid transformation type. Got "
         #     f"{type_transformation}, but allowed are only: simple, "
@@ -221,7 +223,7 @@ def check_requirements_transformation(img_container, trans_coefficients, filter_
         # )
 
     # if type_transformation is not None:
-    terminal_output.print_to_terminal(string, indent=3)
+    terminal_output.print_to_terminal(string, indent=3, style_name= message_type)
 
     return (type_transformation, second_filter_id, id_color_filter_1,
             id_color_filter_2, trans_coefficients_selection)
