@@ -734,7 +734,7 @@ def calibrate_simple_core(image, magnitudes):
 
     #   Reshape the magnitudes to allow broadcasting
     reshaped_magnitudes = magnitudes.reshape(magnitudes.size, 1)
-
+    
     #   Calculate calibrated magnitudes
     calibrated_magnitudes = reshaped_magnitudes + zp
 
@@ -1110,7 +1110,7 @@ def apply_calibration(image_container, filter_list,
                 #   for the image in the second filter
                 #   -> required for magnitude transformation
                 magnitudes_calibration_stars_second_image = calib.observed_magnitude_of_calibration_stars(
-                    current_image,
+                    second_image,
                     magnitudes_second_image,
                     image_container,
                 )

@@ -674,7 +674,8 @@ def observed_magnitude_of_calibration_stars(
         #   Sort
         distribution_calibration_observed = magnitude_distribution[ind_list]
     else:
-        unc.normal(
+        #   TODO: Check: If None should be returned instead!
+        distribution_calibration_observed = unc.normal(
             np.zeros(count_cali) * u.mag,
             std=np.zeros(count_cali) * u.mag,
             n_samples=1000,
