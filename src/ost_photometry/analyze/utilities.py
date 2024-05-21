@@ -140,8 +140,8 @@ def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
         )
 
     #   Sort table
-    print(type(filter_image_ids))
-    print(filter_image_ids)
+    # print(type(filter_image_ids))
+    # print(filter_image_ids)
     tbl = tbl.group_by(
         f'{filter_list[filter_image_ids[0][0]]} ({filter_image_ids[0][1]})'
     )
@@ -367,7 +367,11 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
     # print(magnitudes.shape)
     # print(magnitudes)
     # print(type(magnitudes))
-    # print(type(magnitudes))
+    # for dist in magnitudes:
+    #     print(dist.shape)
+    # print(object_id)
+    # object_id += 1
+
     if isinstance(magnitudes, list):
         stacked_distribution = np.stack(magnitudes)
     else:
@@ -388,15 +392,15 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
 
     #   TODO: Check if this is still necessary
     #   Create mask for time series to remove images without entries
-    mask = np.isin(
-        mags_obj,
-        [0.],
-        invert=True
-    )
+    # mask = np.isin(
+    #     mags_obj,
+    #     [0.],
+    #     invert=True
+    # )
 
     #   Remove images without entries
-    mags_obj = mags_obj[mask]
-    errs_obj = errs_obj[mask]
+    # mags_obj = mags_obj[mask]
+    # errs_obj = errs_obj[mask]
 
     # Make time series and use reshape to get a justified array
     ts = TimeSeries(
