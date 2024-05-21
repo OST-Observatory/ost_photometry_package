@@ -465,6 +465,23 @@ class ImageEnsemble:
             )
 
         return flux_list
+    
+    def get_flux_array(self):
+        #   Get data
+        tbl_s = list(self.get_photometry().values())
+
+        #   Expects the number of objects in each table to be the same.
+        n_images = len(tbl_s)
+        n_objects = len(tbl_s[0])
+
+        flux = np.zeros((n_images, n_objects))
+        flux_unc = np.zeros((n_images, n_objects))
+
+        for i, tbl in enumerate(tbl_s):
+            flux[i] = tbl['flux_fit']
+            flux_unc[i] = tbl['flux_unc']
+
+        return flux, flux_unc
 
 
 def rm_cosmic_rays(image, limiting_contrast=5., read_noise=8.,
@@ -2880,13 +2897,13 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
 
     #   Conversion of flux to magnitudes
     #   TODO: Move this to the calibration stage, where it makes more sense
-    magnitudes = utilities.flux_to_magnitudes(
+    magnitudes, magnitudes_error = utilities.flux_to_magnitudes(
         image.photometry['flux_fit'],
         image.photometry['flux_unc'],
     )
-
-    image.photometry['mags_fit'] = magnitudes.pdf_median()
-    image.photometry['mags_unc'] = magnitudes.pdf_std()
+    
+    image.photometry['mags_fit'] = magnitudes
+    image.photometry['mags_unc'] = magnitudes_error
 
     ###
     #   Plot images with extracted stars overlaid
@@ -3492,7 +3509,8 @@ def correlate_calibrate(image_container, filter_list,
                         separation_limit=2. * u.arcsec, aperture_radius=4.,
                         radii_unit='arcsec', convert_magnitudes=False,
                         target_filter_system='SDSS',
-                        region_to_select_calibration_stars=None):
+                        region_to_select_calibration_stars=None,
+                        calculate_zero_point_statistic=True):
     """
         Correlate photometric extraction results from 2 images and calibrate
         the magnitudes.
@@ -3626,6 +3644,10 @@ def correlate_calibrate(image_container, filter_list,
             feature in instances where not the entire field of view can be
             utilized for calibration purposes.
             Default is ``None``.
+
+        calculate_zero_point_statistic      : `boolean`, optional
+            If `True` a statistic on the zero points will be calculated.
+            Default is ``True``.
     """
     ###
     #   Correlate the stellar positions from the different filter
@@ -3674,6 +3696,7 @@ def correlate_calibrate(image_container, filter_list,
         derive_transformation_coefficients=derive_transformation_coefficients,
         plot_sigma=plot_sigma,
         photometry_extraction_method=photometry_extraction_method,
+        calculate_zero_point_statistic=calculate_zero_point_statistic,
     )
 
     ###
@@ -3728,7 +3751,8 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                                   correlation_method='astropy',
                                   separation_limit=2. * u.arcsec,
                                   verbose=False, plot_sigma=False,
-                                  region_to_select_calibration_stars=None):
+                                  region_to_select_calibration_stars=None,
+                                  calculate_zero_point_statistic=True):
     """
         Calculate magnitudes, calibrate, and plot light curves
 
@@ -3854,6 +3878,11 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
             feature in instances where not the entire field of view can be
             utilized for calibration purposes.
             Default is ``None``.
+
+        calculate_zero_point_statistic      : `boolean`, optional
+            If `True` a statistic on the zero points will be calculated.
+            Default is ``True``.
+
     """
     if valid_filter_combinations is None:
         valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
@@ -3974,10 +4003,12 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                         derive_transformation_coefficients=derive_transformation_coefficients,
                         photometry_extraction_method=photometry_extraction_method,
                         plot_sigma=plot_sigma,
+                        calculate_zero_point_statistic=calculate_zero_point_statistic,
                     )
                     calibrated_magnitudes = getattr(
                         image_container,
-                        'calibrated_transformed_magnitudes',
+                        # 'calibrated_transformed_magnitudes',
+                        'calibrated_magnitudes',
                         None,
                     )
                     # if np.all(cali == 0):
@@ -4081,12 +4112,14 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
 
                 #   TODO: Is this necessary? Use return value?
                 plot_quantity = ensemble.quasi_calibrated_flux_normalized
+                # plot_quantity = ensemble.quasi_calibrated_flux
             else:
                 #   Apply calibration
                 trans.apply_calibration(
                     image_container,
                     [filter_],
                     photometry_extraction_method=photometry_extraction_method,
+                    calculate_zero_point_statistic=calculate_zero_point_statistic,
                 )
                 plot_quantity = getattr(
                     image_container,

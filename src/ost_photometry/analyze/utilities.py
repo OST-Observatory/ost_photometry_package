@@ -140,6 +140,8 @@ def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
         )
 
     #   Sort table
+    print(type(filter_image_ids))
+    print(filter_image_ids)
     tbl = tbl.group_by(
         f'{filter_list[filter_image_ids[0][0]]} ({filter_image_ids[0][1]})'
     )
@@ -361,20 +363,28 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
     #         errs_obj = magnitudes['err'][:, obj_id]
 
     #   Extract magnitudes of the object 'objID'
-    stacked_distribution = np.stack(magnitudes)
-    print('++++++++++++++++++++++++++++++++++++++++++++++++')
-    print(stacked_distribution)
-    print(stacked_distribution.shape)
-    print(type(stacked_distribution))
+    # print(magnitudes)
+    # print(magnitudes.shape)
+    # print(magnitudes)
+    # print(type(magnitudes))
+    # print(type(magnitudes))
+    if isinstance(magnitudes, list):
+        stacked_distribution = np.stack(magnitudes)
+    else:
+        stacked_distribution = magnitudes
+    # print('++++++++++++++++++++++++++++++++++++++++++++++++')
+    # print(stacked_distribution)
+    # print(stacked_distribution.shape)
+    # print(type(stacked_distribution))
     object_magnitudes = stacked_distribution[:, object_id]
-    print(object_magnitudes)
-    print(object_magnitudes.shape)
-    print(type(object_magnitudes))
+    #`print(object_magnitudes)
+    #`print(object_magnitudes.shape)
+    #`print(type(object_magnitudes))
     mags_obj = object_magnitudes.pdf_median()
     errs_obj = object_magnitudes.pdf_std()
-    print(mags_obj)
-    print(errs_obj)
-    print('++++++++++++++++++++++++++++++++++++++++++++++++')
+    # print(mags_obj)
+    # print(errs_obj)
+    # print('++++++++++++++++++++++++++++++++++++++++++++++++')
 
     #   TODO: Check if this is still necessary
     #   Create mask for time series to remove images without entries
@@ -603,13 +613,18 @@ def flux_to_magnitudes(flux, flux_error):
             Numpy structured array containing magnitudes and corresponding
             errors
     """
-    #   Setup distribution
-    flux_distribution = unc.normal(flux, std=flux_error, n_samples=1000)
+    #   Sanitize input parameters
+    #   TODO: Check if the following is necessary
+    # if np.ma.isMaskedArray(flux):
+    #     flux = flux.filled()
+    # if np.ma.isMaskedArray(flux_error):
+    #     flux_error = flux_error.filled()
 
     #   Calculate magnitudes
-    magnitudes = -2.5 * np.log10(flux_distribution)
+    magnitudes = -2.5 * np.log10(flux)
+    magnitudes_error = -2.5 * flux_error / flux
 
-    return magnitudes
+    return magnitudes, magnitudes_error
 
 
 def find_filter(filter_list, tsc_parameter_dict, filter_, camera,
@@ -1524,7 +1539,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             niters=2,
             overlap=False,
             # seed=123,
-            zeropoint=np.median(image.zp_clip),
+            zeropoint=np.median(image.zp_clip).value,
             progress_bar=False,
         )
 
@@ -1543,8 +1558,11 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             "Based on the ImageDepth (photutils) routine:",
             indent=indent * 2,
         )
+        #   Remark: the error is only based on the zero point error
         terminal_output.print_to_terminal(
-                f"500 apertures, 5 sigma, 2 iterations: {mag_limit:6.2f} mag",
+                f"500 apertures, 5 sigma, 2 iterations: "
+                f"{mag_limit.pdf_median():6.2f} +/- "
+                f"{mag_limit.pdf_std():6.2f} mag",
             indent=indent * 3,
         )
 
