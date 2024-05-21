@@ -42,7 +42,7 @@ def prepare_transformation_variables(image_container, current_image_id, id_secon
 
         Returns
         -------
-        best_img_second_filter          : `image.class`
+        best_image_second_filter        : `image.class`
             Image class with all image specific properties
 
         filter_image_ids_transformation : `list` of `tupel`
@@ -215,14 +215,16 @@ def prepare_transformation(img_container, trans_coefficients, filter_list,
         string = f"Derive and apply magnitude transformation based on " \
                  f"{filter_} image"
     else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNo valid transformation type. Got "
-            f"{type_transformation}, but allowed are only: simple, "
-            f"air_mass, and derive  {style.Bcolors.ENDC}"
-        )
+        string = f"Magnitude transformation is not possible because some " \
+                 f"prerequisites, such as a second filter, are not met."
+        # raise RuntimeError(
+        #     f"{style.Bcolors.FAIL} \nNo valid transformation type. Got "
+        #     f"{type_transformation}, but allowed are only: simple, "
+        #     f"air_mass, and derive  {style.Bcolors.ENDC}"
+        # )
 
-    if type_transformation is not None:
-        terminal_output.print_to_terminal(string, indent=3)
+    # if type_transformation is not None:
+    terminal_output.print_to_terminal(string, indent=3)
 
     #   Save filter and image ID configuration to allow
     #   for calculation later on
@@ -507,11 +509,11 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
     #   Distinguish between versions
     if transformation_type == 'simple':
         #   Calculate calibration factor
-        c = tc_c * tc_color
+        c = tc_c * tc_color * u.mag
     elif transformation_type == 'air_mass':
         #   Calculate calibration factor
-        c_1 = tc_t1 - tc_k1 * image.air_mass
-        c_2 = tc_t2 - tc_k2 * image.air_mass
+        c_1 = tc_t1 * u.mag - tc_k1 * image.air_mass * u.mag
+        c_2 = tc_t2 * u.mag - tc_k2 * image.air_mass * u.mag
 
     elif transformation_type == 'derive':
         #   Calculate color correction coefficients
@@ -538,6 +540,9 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
     if transformation_type in ['air_mass', 'derive']:
         #   Calculate C or more precise C'
 
+        # print(c_1)
+        # print(c_2)
+        # print(transformation_type)
         denominator = 1. * u.mag - c_1 + c_2
 
         if id_current_filter == id_filter_1:
@@ -552,20 +557,43 @@ def transformation_core(image, calib_magnitudes_literature_filter_1,
                 f"are {id_filter_1} and {id_filter_2} {style.Bcolors.ENDC}"
             )
 
+    # print(c)
     #   Calculate calibrated magnitudes
     phase_1_calibrated_magnitudes = magnitudes + c * color
+    # print(magnitudes)
+    # print(c)
+    # print(color)
     phase_1_calibrated_magnitudes = phase_1_calibrated_magnitudes.reshape(
         phase_1_calibrated_magnitudes.size,
         1,
     )
     calibrated_magnitudes_zero_point = zp_clipped - c * color_observed_clipped
+    # print(zp_clipped)
+    # print(c)
+    # print(color_observed_clipped)
+    # print(c * color_observed_clipped)
+    # print(zp_clipped - c * color_observed_clipped)
+    # print('-------------------')
+    # print(phase_1_calibrated_magnitudes)
+    # print(np.any(np.isnan(phase_1_calibrated_magnitudes)))
+    # print(calibrated_magnitudes_zero_point)
+    # print(np.any(np.isnan(calibrated_magnitudes_zero_point)))
+    # print()
     calibrated_magnitudes = phase_1_calibrated_magnitudes + calibrated_magnitudes_zero_point
+    # print(calibrated_magnitudes)
+    # print(calibrated_magnitudes.dtype)
+    # print(calibrated_magnitudes.shape)
+
+    # calibrated_magnitudes = magnitudes.reshape(magnitudes.size, 1) + zp_clipped
     calibrated_magnitudes = np.median(calibrated_magnitudes, axis=1)
 
     #   Add calibrated photometry to table of Image object
     image.photometry['mag_cali_trans'] = calibrated_magnitudes.pdf_median()
     image.photometry['mag_cali_trans_unc'] = calibrated_magnitudes.pdf_std()
 
+    # print(calibrated_magnitudes.shape)
+    # print(color_observed.shape)
+    # print(color_literature.shape)
     return calibrated_magnitudes, color_observed, color_literature
 
 
@@ -792,6 +820,7 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
     image_container.calibrated_magnitudes[filter_].append(median)
 
 
+#   TODO: combine the next two functions
 def flux_calibration_ensemble(image_ensemble):
     """
         Simple calibration for flux values. Assuming the median over all
@@ -804,15 +833,42 @@ def flux_calibration_ensemble(image_ensemble):
             all images within the ensemble
     """
     #   Get list with flux distributions for the individual images
-    flux_list = image_ensemble.get_flux_distribution()
+    # flux_list = image_ensemble.get_flux_distribution()
+    flux, flux_error = image_ensemble.get_flux_array()
 
-    flux_calibrated = []
-    for flux in flux_list:
-        #   Calculate median flux in each image
-        median_flux = np.median(flux, axis=1)
+    # flux_calibrated = []
+    # for flux in flux_list:
+    #     #   Calculate median flux in each image
+    #     median_flux = np.median(flux)
 
-        #   Calibrate
-        flux_calibrated.append(flux / median_flux[:, np.newaxis])
+    #     #   Calibrate
+    #     flux_calibrated.append(flux / median_flux)
+    # median_flux = np.median(flux, axis=1)
+    _, median, stddev = sigma_clipped_stats(
+        flux,
+        axis=1,
+        sigma=1.5,
+        mask_value=0.0,
+    )
+    # print(median)
+    # print(stddev)
+    # print(median.shape)
+    # print(flux.shape)
+    flux_distribution = unc.normal(
+        flux,
+        std=flux_error,
+        n_samples=1000,
+    )
+    # normalization_factor = unc.normal(
+    #     median,
+    #     std=stddev,
+    #     n_samples=1000,
+    # )[:, np.newaxis]
+    normalization_factor = median[:, np.newaxis]
+    flux_calibrated = flux_distribution / normalization_factor
+    # print(flux_calibrated)
+    # print(flux_calibrated.shape)
+    # print('----------------------')
 
     #   Add to ensemble
     image_ensemble.quasi_calibrated_flux = flux_calibrated
@@ -821,7 +877,7 @@ def flux_calibration_ensemble(image_ensemble):
 #   TODO: Check if this can be improved based on distributions
 def flux_normalization_ensemble(image_ensemble):
     """
-        Normalize flux
+        Normalize flux of each object
 
         Parameters
         ----------
@@ -830,42 +886,83 @@ def flux_normalization_ensemble(image_ensemble):
             all images within the ensemble
     """
     #   Get list with flux distributions for the individual images
+    # try:
+    #     flux_list = image_ensemble.quasi_calibrated_flux
+    # except AttributeError:
+    #     flux_list = image_ensemble.get_flux_distribution()
     try:
-        flux_list = image_ensemble.quasi_calibrated_flux
+        flux_distribution = image_ensemble.quasi_calibrated_flux
+        flux = flux_distribution.pdf_median()
+        flux_error = flux_distribution.pdf_std()
     except AttributeError:
-        flux_list = image_ensemble.get_flux_distribution()
-
-    normalized_flux = []
-    for flux in flux_list:
-        flux_values = flux.pdf_median()
-
-        #   Calculated sigma clipped magnitudes
-        _, median, stddev = sigma_clipped_stats(
-            flux_values,
-            axis=0,
-            sigma=1.5,
-            mask_value=0.0,
-        )
-
-        #   Add axis so that broadcasting to original array is possible
-        median_reshape = median[np.newaxis, :]
-        std_dev_reshape = stddev[np.newaxis, :]
-
-        #   Normalized magnitudes
-        normalization_factor = unc.normal(
-            median_reshape * u.mag,
-            std=std_dev_reshape * u.mag,
+        flux, flux_error = image_ensemble.get_flux_array()
+        flux_distribution = unc.normal(
+            flux,
+            std=flux_error,
             n_samples=1000,
         )
 
-        normalized_flux = flux / normalization_factor
+    # normalized_flux = []
+    # for flux in flux_list:
+    #     flux_values = flux.pdf_median()
+    #     if isinstance(flux_values, u.quantity.Quantity):
+    #         flux_values = flux_values.value
+
+    #     #   Calculated sigma clipped magnitudes
+    #     _, median, std = sigma_clipped_stats(
+    #         flux_values,
+    #         axis=0,
+    #         sigma=1.5,
+    #         mask_value=0.0,
+    #     )
+
+    #     #   Add axis so that broadcasting to original array is possible
+    #     # median_reshape = median[np.newaxis, :]
+    #     # std_dev_reshape = stddev[np.newaxis, :]
+
+    #     #   Normalized magnitudes
+    #     normalization_factor = unc.normal(
+    #         # median_reshape * u.mag,
+    #         # std=std_dev_reshape * u.mag,
+    #         # median * u.mag,
+    #         # std=std * u.mag,
+    #         median,
+    #         std=std,
+    #         n_samples=1000,
+    #     )
+
+    #     normalized_flux.append(flux / normalization_factor)
+    
+    #   Calculated sigma clipped magnitudes
+    _, median, stddev = sigma_clipped_stats(
+        flux,
+        axis=0,
+        sigma=1.5,
+        mask_value=0.0,
+    )
+    # print(median)
+    # print(stddev)
+    # print(median.shape)
+    # print(flux_distribution)
+    # print(flux_distribution.shape)
+    
+    #   Prepare distributions 
+    normalization_factor = unc.normal(
+        median,
+        std=stddev,
+        n_samples=1000,
+    )
+    normalized_flux = flux_distribution / normalization_factor
+    # print('+++++++++++++++++++++')
+    # print(normalized_flux)
 
     image_ensemble.quasi_calibrated_flux_normalized = normalized_flux
 
 
 def prepare_zero_point(image, id_filter_1, literature_magnitude_list,
                        observed_magnitude_filter_1, id_filter_2=None,
-                       observed_magnitude_filter_2=None):
+                       observed_magnitude_filter_2=None,
+                       calculate_zero_point_statistic=True):
     """
         Prepare some values necessary for the magnitude calibration and add
         them to the image class
@@ -894,6 +991,10 @@ def prepare_zero_point(image, id_filter_1, literature_magnitude_list,
             Observed magnitudes of the objects that were used for the
             calibration from the image of filter 2
             Default is ``None``.
+
+        calculate_zero_point_statistic  : `boolean`, optional
+            If `True` a statistic on the zero points will be calculated.
+            Default is ``True``.
     """
     #   Calculated color. For two filter calculate delta color
     if id_filter_2 is not None:
@@ -935,7 +1036,7 @@ def prepare_zero_point(image, id_filter_1, literature_magnitude_list,
 
     #   TODO: Add random selection of calibration stars -> calculate variance
     n_calibration_objects = image.zp_clip.shape[0]
-    if n_calibration_objects > 20:
+    if n_calibration_objects > 20 and calculate_zero_point_statistic:
         #   Number of samples
         n_samples = 10000
 
@@ -984,7 +1085,8 @@ def apply_calibration(image_container, filter_list,
                       transformation_coefficients_dict=None,
                       derive_transformation_coefficients=False,
                       plot_sigma=False, id_object=None,
-                      photometry_extraction_method='', indent=1):
+                      photometry_extraction_method='', 
+                      calculate_zero_point_statistic=True, indent=1):
     """
         Apply the calibration to the magnitudes and perform a magnitude
         transformation if possible
@@ -1025,6 +1127,10 @@ def apply_calibration(image_container, filter_list,
         photometry_extraction_method        : `string`, optional
             Applied extraction method. Possibilities: ePSF or APER`
             Default is ``''``.
+
+        calculate_zero_point_statistic      : `boolean`, optional
+            If `True` a statistic on the zero points will be calculated.
+            Default is ``True``.
 
         indent                              : `integer`, optional
             Indentation for the console output lines
@@ -1110,7 +1216,7 @@ def apply_calibration(image_container, filter_list,
                 #   for the image in the second filter
                 #   -> required for magnitude transformation
                 magnitudes_calibration_stars_second_image = calib.observed_magnitude_of_calibration_stars(
-                    current_image,
+                    second_image,
                     magnitudes_second_image,
                     image_container,
                 )
@@ -1130,6 +1236,7 @@ def apply_calibration(image_container, filter_list,
                 magnitudes_calibration_stars_current_image,
                 id_filter_2=second_filter_id,
                 observed_magnitude_filter_2=magnitudes_calibration_stars_second_image,
+                calculate_zero_point_statistic=calculate_zero_point_statistic,
             )
 
             #   Calculate transformation if possible

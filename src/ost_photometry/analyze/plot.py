@@ -853,6 +853,8 @@ def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
     else:
         fig.suptitle(f'Light curve - {name_obj}', fontsize=30)
 
+    # print(ts[err_column])
+    # print(ts[data_column])
     #   Plot data with or without error bars
     if not error_bars:
         plt.plot(ts.time.jd, ts[data_column], 'k.', markersize=3)
@@ -873,6 +875,7 @@ def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
     median_data = np.median(ts[data_column].value)
     min_data = np.min(ts[data_column].value)
     max_data = np.max(ts[data_column].value)
+    # print(median_data)
 
     #   Invert y-axis
     if median_data > 1.5 or median_data < 0.5:
@@ -893,7 +896,9 @@ def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
         y_lim = max_err * 1.2
         # plt.y_lim([median_data+y_lim,median_data-y_lim])
         plt.ylim([min_data - y_lim, max_data + y_lim])
+        # plt.ylim([0, 2])
         y_label_text = ' [flux] (normalized)'
+    # plt.ylim(11.7, 11.4)
 
     #   Set x and y axis label
     plt.xlabel('Julian Date', fontsize=15)

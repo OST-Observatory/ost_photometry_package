@@ -1604,6 +1604,7 @@ def trim_image(image, image_id, n_files, image_shift,
     """
     if verbose:
         #   Write status to console
+        #   TODO: Move to terminal output
         print(f"\r\tApply shift to image {image_id + 1}/{n_files}\n")
 
     if correlation_method in ['own', 'skimage']:
@@ -1745,7 +1746,10 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
                     if isinstance(new_bias_path, str):
                         bias_path_new.append(new_bias_path)
                 else:
-                    bias_path_new.append(check_filter_keywords(path, 'bias'))
+                    new_bias_path = check_filter_keywords(path, temp_dir, 'bias')
+                    if new_bias_path is not None:
+                        bias_path_new.append(new_bias_path)
+
             bias_path = bias_path_new
 
         darks_path_new = []
@@ -1759,7 +1763,10 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
                 if isinstance(new_darks_path, str):
                     darks_path_new.append(new_darks_path)
             else:
-                darks_path_new.append(check_filter_keywords(path, 'dark'))
+                new_darks_path = check_filter_keywords(path, temp_dir, 'dark')
+                if new_darks_path is not None:
+                    darks_path_new.append(new_darks_path)
+
         darks_path = darks_path_new
 
         flats_path_new = []
@@ -1773,7 +1780,9 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
                 if isinstance(new_flats_path, str):
                     flats_path_new.append(new_flats_path)
             else:
-                flats_path_new.append(check_filter_keywords(path, 'flat'))
+                new_flats_path = check_filter_keywords(path, temp_dir, 'flat')
+                if new_flats_path is not None:
+                    flats_path_new.append(new_flats_path)
         flats_path = flats_path_new
 
         images_path_new = []
@@ -1787,7 +1796,10 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
                 if isinstance(new_images_path, str):
                     images_path_new.append(new_images_path)
             else:
-                images_path_new.append(check_filter_keywords(path, 'light'))
+                new_images_path = check_filter_keywords(path, temp_dir, 'light')
+                if new_images_path is not None:
+                    images_path_new.append(new_images_path)
+
         images_path = images_path_new
 
     #   TODO: Add a completeness check so that all science images have
