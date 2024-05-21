@@ -99,9 +99,7 @@ def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
             Filter
 
         filter_image_ids : `list` of `tuple`
-            FORMAT = (Filter IDs, ID of the images to position 0, Filter IDs
-                      for the color calculation, ID of the images to
-                      position 2)
+            FORMAT = (Filter IDs, ID of the images to position 0)
 
         wcs              : `astropy.wcs`
             WCS
