@@ -76,7 +76,7 @@ def prepare_transformation_variables(image_container, current_image_id, id_secon
 
 
 def prepare_transformation(img_container, trans_coefficients, filter_list,
-                           current_filter, current_image_id, filter_image_ids,
+                           current_filter_id, current_image_id,
                            derive_trans_coefficients=False):
     """
         Prepare magnitude transformation: find filter combination,
@@ -93,14 +93,11 @@ def prepare_transformation(img_container, trans_coefficients, filter_list,
         filter_list                     : `list` of `string`
             List of filter names
 
-        current_filter                  : `integer`
+        current_filter_id               : `integer`
             ID of the current filter
 
         current_image_id                : `integer`
             ID of the image
-
-        filter_image_ids                : `list` of `tuple` of `integer`
-            Image and filter IDs
 
         derive_trans_coefficients       : `boolean`, optional
             If True the magnitude transformation coefficients will be
@@ -130,7 +127,7 @@ def prepare_transformation(img_container, trans_coefficients, filter_list,
             Image and filter IDs
     """
     #   Get filter name
-    filter_ = filter_list[current_filter]
+    filter_ = filter_list[current_filter_id]
 
     #   Get image
     current_img = img_container.ensembles[filter_].image_list[current_image_id]
@@ -160,7 +157,7 @@ def prepare_transformation(img_container, trans_coefficients, filter_list,
             type_transformation = trans_coefficients_selection['type']
 
             #   Get correct filter order
-            if id_color_filter_1 == current_filter:
+            if id_color_filter_1 == current_filter_id:
                 second_filter_id = id_color_filter_2
             else:
                 second_filter_id = id_color_filter_1
@@ -172,7 +169,7 @@ def prepare_transformation(img_container, trans_coefficients, filter_list,
             #   current filter, while the second filter is either
             #   the second in 'filter_list' or the one in 'filter_list'
             #    with the ID one below the first filter ID.
-            id_color_filter_1 = current_filter
+            id_color_filter_1 = current_filter_id
 
             if id_color_filter_1 == 0:
                 id_color_filter_2 = 1
@@ -198,7 +195,7 @@ def prepare_transformation(img_container, trans_coefficients, filter_list,
             #   current filter, while the second filter is either
             #   the second in 'filter_list' or the one in 'filter_list'
             #    with the ID one below the first filter ID.
-            id_color_filter_1 = current_filter
+            id_color_filter_1 = current_filter_id
 
             if id_color_filter_1 == 0:
                 id_color_filter_2 = 1
@@ -215,23 +212,19 @@ def prepare_transformation(img_container, trans_coefficients, filter_list,
         string = f"Derive and apply magnitude transformation based on " \
                  f"{filter_} image"
     else:
-        string = f"Magnitude transformation is not possible because some " \
-                 f"prerequisites, such as a second filter, are not met."
-        # raise RuntimeError(
-        #     f"{style.Bcolors.FAIL} \nNo valid transformation type. Got "
-        #     f"{type_transformation}, but allowed are only: simple, "
-        #     f"air_mass, and derive  {style.Bcolors.ENDC}"
-        # )
+        # string = f"Magnitude transformation is not possible because some " \
+        #          f"prerequisites, such as a second filter, are not met."
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \nNo valid transformation type. Got "
+            f"{type_transformation}, but allowed are only: simple, "
+            f"air_mass, and derive  {style.Bcolors.ENDC}"
+        )
 
     # if type_transformation is not None:
     terminal_output.print_to_terminal(string, indent=3)
 
-    #   Save filter and image ID configuration to allow
-    #   for calculation later on
-    filter_image_ids.append((current_filter, current_image_id))
-
     return (type_transformation, second_filter_id, id_color_filter_1,
-            id_color_filter_2, trans_coefficients_selection, filter_image_ids)
+            id_color_filter_2, trans_coefficients_selection)
 
 
 def derive_transformation_onthefly(image, filter_list, id_current_filter,
@@ -740,44 +733,6 @@ def apply_transformation(image_container, image, calib_magnitudes_literature,
     )
 
 
-def calibrate_simple_core(image, magnitudes):
-    """
-        Perform minimal calibration
-
-        Parameters
-        ----------
-        image                   : `image.class`
-            Image class with all image specific properties
-
-        magnitudes              : `astropy.uncertainty.core.QuantityDistribution`
-            Array with object magnitudes
-
-        Returns
-        -------
-        calibrated_magnitudes   : `numpy.ndarray`
-            Array with calibrated magnitudes
-    """
-    #   Get clipped zero points
-    zp = image.zp_clip
-
-    #   Reshape the magnitudes to allow broadcasting
-    reshaped_magnitudes = magnitudes.reshape(magnitudes.size, 1)
-    
-    #   Calculate calibrated magnitudes
-    calibrated_magnitudes = reshaped_magnitudes + zp
-
-    #   If ZP is 0, calibrate with the median of all magnitudes
-    #   TODO: Test this
-    if np.all(zp == 0.):
-        calibrated_magnitudes = reshaped_magnitudes - np.median(magnitudes)
-
-    #   Add calibrated photometry to table of Image object
-    image.photometry['mag_cali_no-trans'] = calibrated_magnitudes.pdf_median()
-    image.photometry['mag_cali_no-trans_unc'] = calibrated_magnitudes.pdf_std()
-
-    return calibrated_magnitudes
-
-
 def calibrate_simple(image_container, image, not_calibrated_magnitudes,
                      filter_):
     """
@@ -797,11 +752,17 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
         filter_                     : `string`
             Current filter
     """
-    #   Perform calibration
-    calibrated_magnitudes = calibrate_simple_core(
-        image,
-        not_calibrated_magnitudes,
+    #   Get clipped zero points
+    zp = image.zp_clip
+
+    #   Reshape the magnitudes to allow broadcasting
+    reshaped_magnitudes = not_calibrated_magnitudes.reshape(
+        not_calibrated_magnitudes.size,
+        1,
     )
+
+    #   Calculate calibrated magnitudes
+    calibrated_magnitudes_array = reshaped_magnitudes + zp
 
     # #   Sigma clipping to rm outliers
     # mag_cali_sigma = sigma_clipping(
@@ -812,15 +773,24 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
     # mask = np.invert(mag_cali_sigma.mask)
     # mask = np.where(np.any(mask, axis=0))
 
-    #   Calculate median
+    #   Calculate median since zp was an array of values
     # median = np.median(calibrated_magnitudes[:, mask], axis=1)
-    median = np.median(calibrated_magnitudes, axis=1)
+    calibrated_magnitudes = np.median(calibrated_magnitudes_array, axis=1)
+
+    #   If ZP is 0, calibrate with the median of all magnitudes
+    #   TODO: Test this
+    if np.all(zp == 0.):
+        calibrated_magnitudes = reshaped_magnitudes - np.median(not_calibrated_magnitudes)
+
+    #   Add calibrated photometry to table of Image object
+    image.photometry['mag_cali_no-trans'] = calibrated_magnitudes.pdf_median()
+    image.photometry['mag_cali_no-trans_unc'] = calibrated_magnitudes.pdf_std()
 
     #   Write data back to the image container
-    image_container.calibrated_magnitudes[filter_].append(median)
+    image_container.calibrated_magnitudes[filter_].append(calibrated_magnitudes)
 
 
-#   TODO: combine the next two functions
+#   TODO: combine the next two functions?
 def flux_calibration_ensemble(image_ensemble):
     """
         Simple calibration for flux values. Assuming the median over all
@@ -932,7 +902,7 @@ def flux_normalization_ensemble(image_ensemble):
     #     )
 
     #     normalized_flux.append(flux / normalization_factor)
-    
+
     #   Calculated sigma clipped magnitudes
     _, median, stddev = sigma_clipped_stats(
         flux,
@@ -945,7 +915,7 @@ def flux_normalization_ensemble(image_ensemble):
     # print(median.shape)
     # print(flux_distribution)
     # print(flux_distribution.shape)
-    
+
     #   Prepare distributions 
     normalization_factor = unc.normal(
         median,
@@ -1085,7 +1055,7 @@ def apply_calibration(image_container, filter_list,
                       transformation_coefficients_dict=None,
                       derive_transformation_coefficients=False,
                       plot_sigma=False, id_object=None,
-                      photometry_extraction_method='', 
+                      photometry_extraction_method='',
                       calculate_zero_point_statistic=True, indent=1):
     """
         Apply the calibration to the magnitudes and perform a magnitude
@@ -1169,20 +1139,26 @@ def apply_calibration(image_container, filter_list,
         image_list = img_ensemble.image_list
 
         #   Prepare transformation
-        (transformation_type, second_filter_id, id_color_filter_1,
-         id_color_filter_2, trans_coefficients, filter_image_ids) = prepare_transformation(
-            image_container,
-            transformation_coefficients_dict,
-            filter_list,
-            current_filter_id,
-            0,
-            filter_image_ids,
-            derive_trans_coefficients=derive_transformation_coefficients,
-        )
-        transformation_type_list.append(transformation_type)
-
+        if transformation_coefficients_dict is None:
+            (transformation_type, second_filter_id, id_color_filter_1,
+             id_color_filter_2, trans_coefficients) = prepare_transformation(
+                image_container,
+                transformation_coefficients_dict,
+                filter_list,
+                current_filter_id,
+                0,
+                derive_trans_coefficients=derive_transformation_coefficients,
+            )
+            transformation_type_list.append(transformation_type)
+        else:
+            transformation_type = None
+            
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
+
+            #   Save filter and image IDs
+            filter_image_ids.append((current_filter_id, current_image_id))
+
             #   Get magnitude array for first image
             magnitudes_current_image = utilities.distribution_from_table(
                 current_image
