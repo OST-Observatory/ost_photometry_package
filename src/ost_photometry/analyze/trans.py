@@ -75,9 +75,9 @@ def prepare_transformation_variables(image_container, current_image_id, id_secon
     return best_img_second_filter
 
 
-def prepare_transformation(img_container, trans_coefficients, filter_list,
-                           current_filter_id, current_image_id,
-                           derive_trans_coefficients=False):
+def check_requirements_transformation(img_container, trans_coefficients, filter_list,
+                                      current_filter_id, current_image_id,
+                                      derive_trans_coefficients=False):
     """
         Prepare magnitude transformation: find filter combination,
         get calibration parameters, prepare variables, ...
@@ -212,13 +212,13 @@ def prepare_transformation(img_container, trans_coefficients, filter_list,
         string = f"Derive and apply magnitude transformation based on " \
                  f"{filter_} image"
     else:
-        # string = f"Magnitude transformation is not possible because some " \
-        #          f"prerequisites, such as a second filter, are not met."
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNo valid transformation type. Got "
-            f"{type_transformation}, but allowed are only: simple, "
-            f"air_mass, and derive  {style.Bcolors.ENDC}"
-        )
+        string = f"Magnitude transformation is not possible because some " \
+                 f"prerequisites, such as a second filter, are not met."
+        # raise RuntimeError(
+        #     f"{style.Bcolors.FAIL} \nNo valid transformation type. Got "
+        #     f"{type_transformation}, but allowed are only: simple, "
+        #     f"air_mass, and derive  {style.Bcolors.ENDC}"
+        # )
 
     # if type_transformation is not None:
     terminal_output.print_to_terminal(string, indent=3)
@@ -1139,19 +1139,16 @@ def apply_calibration(image_container, filter_list,
         image_list = img_ensemble.image_list
 
         #   Prepare transformation
-        if transformation_coefficients_dict is None:
-            (transformation_type, second_filter_id, id_color_filter_1,
-             id_color_filter_2, trans_coefficients) = prepare_transformation(
-                image_container,
-                transformation_coefficients_dict,
-                filter_list,
-                current_filter_id,
-                0,
-                derive_trans_coefficients=derive_transformation_coefficients,
-            )
-            transformation_type_list.append(transformation_type)
-        else:
-            transformation_type = None
+        (transformation_type, second_filter_id, id_color_filter_1,
+         id_color_filter_2, trans_coefficients) = check_requirements_transformation(
+            image_container,
+            transformation_coefficients_dict,
+            filter_list,
+            current_filter_id,
+            0,
+            derive_trans_coefficients=derive_transformation_coefficients,
+        )
+        transformation_type_list.append(transformation_type)
             
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):

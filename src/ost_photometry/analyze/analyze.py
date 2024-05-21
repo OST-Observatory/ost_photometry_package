@@ -4007,8 +4007,8 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                     )
                     calibrated_magnitudes = getattr(
                         image_container,
-                        # 'calibrated_transformed_magnitudes',
-                        'calibrated_magnitudes',
+                        'calibrated_transformed_magnitudes',
+                        # 'calibrated_magnitudes',
                         None,
                     )
                     # if np.all(cali == 0):
