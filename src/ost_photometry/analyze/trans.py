@@ -758,13 +758,14 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
     zp = image.zp_clip
 
     #   Reshape the magnitudes to allow broadcasting
-    reshaped_magnitudes = not_calibrated_magnitudes.reshape(
-        not_calibrated_magnitudes.size,
-        1,
-    )
+    # reshaped_magnitudes = not_calibrated_magnitudes.reshape(
+    #     not_calibrated_magnitudes.size,
+    #     1,
+    # )
 
     #   Calculate calibrated magnitudes
-    calibrated_magnitudes_array = reshaped_magnitudes + zp
+    # calibrated_magnitudes_array = reshaped_magnitudes + zp
+    calibrated_magnitudes = not_calibrated_magnitudes + image.zp_clip_median
 
     # #   Sigma clipping to rm outliers
     # mag_cali_sigma = sigma_clipping(
@@ -777,12 +778,12 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
 
     #   Calculate median since zp was an array of values
     # median = np.median(calibrated_magnitudes[:, mask], axis=1)
-    calibrated_magnitudes = np.median(calibrated_magnitudes_array, axis=1)
+    # calibrated_magnitudes = np.median(calibrated_magnitudes_array, axis=1)
 
     #   If ZP is 0, calibrate with the median of all magnitudes
     #   TODO: Test this
     if np.all(zp == 0.):
-        calibrated_magnitudes = reshaped_magnitudes - np.median(not_calibrated_magnitudes)
+        calibrated_magnitudes = not_calibrated_magnitudes - np.median(not_calibrated_magnitudes)
 
     #   Add calibrated photometry to table of Image object
     image.photometry['mag_cali_no-trans'] = calibrated_magnitudes.pdf_median()
@@ -988,6 +989,7 @@ def prepare_zero_point(image, id_filter_1, literature_magnitude_list,
     image.zp = (literature_magnitude_list[id_filter_1] -
                 observed_magnitude_filter_1)
     image.zp_clip = image.zp[np.where(image.zp_mask)]
+    image.zp_clip_median = np.median(image.zp_clip)
 
     #   TODO: Check if the following blocks can be improved, using
     #         distribution properties
@@ -1154,7 +1156,7 @@ def apply_calibration(image_container, filter_list,
             
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
-
+            #   TODO: Remove since not really needed
             #   Save filter and image IDs
             filter_image_ids.append((current_filter_id, current_image_id))
 
