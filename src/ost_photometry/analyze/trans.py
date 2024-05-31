@@ -75,9 +75,10 @@ def prepare_transformation_variables(image_container, current_image_id, id_secon
     return best_img_second_filter
 
 
-def check_requirements_transformation(img_container, trans_coefficients, filter_list,
-                                      current_filter_id, current_image_id,
-                                      derive_trans_coefficients=False):
+def check_requirements_transformation(
+        img_container, trans_coefficients, filter_list, current_filter_id,
+        current_image_id, derive_transformation_coefficients=False
+):
     """
         Prepare magnitude transformation: find filter combination,
         get calibration parameters, prepare variables, ...
@@ -99,7 +100,7 @@ def check_requirements_transformation(img_container, trans_coefficients, filter_
         current_image_id                : `integer`
             ID of the image
 
-        derive_trans_coefficients       : `boolean`, optional
+        derive_transformation_coefficients       : `boolean`, optional
             If True the magnitude transformation coefficients will be
             calculated from the current data even if calibration coefficients
             are available in the database.
@@ -145,7 +146,7 @@ def check_requirements_transformation(img_container, trans_coefficients, filter_
     id_color_filter_1 = None
     id_color_filter_2 = None
     trans_coefficients_selection = None
-    if trans_coefficients is not None and not derive_trans_coefficients:
+    if trans_coefficients is not None and not derive_transformation_coefficients:
         trans_coefficients_selection, id_color_filter_1, id_color_filter_2 = utilities.find_filter(
             filter_list,
             trans_coefficients,
@@ -223,7 +224,7 @@ def check_requirements_transformation(img_container, trans_coefficients, filter_
         # )
 
     # if type_transformation is not None:
-    terminal_output.print_to_terminal(string, indent=3, style_name= message_type)
+    terminal_output.print_to_terminal(string, indent=3, style_name=message_type)
 
     return (type_transformation, second_filter_id, id_color_filter_1,
             id_color_filter_2, trans_coefficients_selection)
@@ -755,7 +756,8 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
             Current filter
     """
     #   Get clipped zero points
-    zp = image.zp_clip
+    # zp = image.zp_clip
+    zp = image.zp_clip_median
 
     #   Reshape the magnitudes to allow broadcasting
     # reshaped_magnitudes = not_calibrated_magnitudes.reshape(
@@ -765,7 +767,7 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
 
     #   Calculate calibrated magnitudes
     # calibrated_magnitudes_array = reshaped_magnitudes + zp
-    calibrated_magnitudes = not_calibrated_magnitudes + image.zp_clip_median
+    calibrated_magnitudes = not_calibrated_magnitudes + zp
 
     # #   Sigma clipping to rm outliers
     # mag_cali_sigma = sigma_clipping(
@@ -782,7 +784,8 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
 
     #   If ZP is 0, calibrate with the median of all magnitudes
     #   TODO: Test this
-    if np.all(zp == 0.):
+    # if np.all(zp == 0.):
+    if zp == 0.:
         calibrated_magnitudes = not_calibrated_magnitudes - np.median(not_calibrated_magnitudes)
 
     #   Add calibrated photometry to table of Image object
@@ -932,10 +935,10 @@ def flux_normalization_ensemble(image_ensemble):
     image_ensemble.quasi_calibrated_flux_normalized = normalized_flux
 
 
-def prepare_zero_point(image, id_filter_1, literature_magnitude_list,
-                       observed_magnitude_filter_1, id_filter_2=None,
-                       observed_magnitude_filter_2=None,
-                       calculate_zero_point_statistic=True):
+def prepare_zero_point(
+        image, id_filter_1, literature_magnitude_list,
+        observed_magnitude_filter_1, id_filter_2=None,
+        observed_magnitude_filter_2=None, calculate_zero_point_statistic=True):
     """
         Prepare some values necessary for the magnitude calibration and add
         them to the image class
@@ -956,7 +959,7 @@ def prepare_zero_point(image, id_filter_1, literature_magnitude_list,
             calibration from the image of filter 1
 
         id_filter_2                 : `integer`, optional
-            ID of the `second` image/filter that is used for the magnitude
+            ID of the comparison image/filter that is used for the magnitude
             transformation.
             Default is ``None``.
 
@@ -971,6 +974,7 @@ def prepare_zero_point(image, id_filter_1, literature_magnitude_list,
     """
     #   Calculated color. For two filter calculate delta color
     if id_filter_2 is not None:
+        #   TODO: Check if this can be improved
         delta_color = (observed_magnitude_filter_1 +
                        observed_magnitude_filter_2 -
                        literature_magnitude_list[id_filter_1] -
@@ -990,6 +994,8 @@ def prepare_zero_point(image, id_filter_1, literature_magnitude_list,
                 observed_magnitude_filter_1)
     image.zp_clip = image.zp[np.where(image.zp_mask)]
     image.zp_clip_median = np.median(image.zp_clip)
+    print('type(image.zp_clip_median):', type(image.zp_clip_median))
+    print('image.zp_clip_median: ', image.zp_clip_median)
 
     #   TODO: Check if the following blocks can be improved, using
     #         distribution properties
@@ -1008,6 +1014,7 @@ def prepare_zero_point(image, id_filter_1, literature_magnitude_list,
         name_obj=image.objname,
     )
 
+    #   TODO: Replace with distribution properties?
     #   TODO: Add random selection of calibration stars -> calculate variance
     n_calibration_objects = image.zp_clip.shape[0]
     if n_calibration_objects > 20 and calculate_zero_point_statistic:
@@ -1143,21 +1150,21 @@ def apply_calibration(image_container, filter_list,
         image_list = img_ensemble.image_list
 
         #   Prepare transformation
-        (transformation_type, second_filter_id, id_color_filter_1,
+        (transformation_type, comparison_filter_id, id_color_filter_1,
          id_color_filter_2, trans_coefficients) = check_requirements_transformation(
             image_container,
             transformation_coefficients_dict,
             filter_list,
             current_filter_id,
             0,
-            derive_trans_coefficients=derive_transformation_coefficients,
+            derive_transformation_coefficients=derive_transformation_coefficients,
         )
         transformation_type_list.append(transformation_type)
-            
+        print('image list: ', image_list)
+
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
-            #   TODO: Remove since not really needed
-            #   Save filter and image IDs
+            #   Store filter and image IDs for easier table creation later
             filter_image_ids.append((current_filter_id, current_image_id))
 
             #   Get magnitude array for first image
@@ -1176,32 +1183,32 @@ def apply_calibration(image_container, filter_list,
             #   Prepare some variables and find corresponding image to
             #   current_image
             if transformation_type is not None:
-                second_image = prepare_transformation_variables(
+                comparison_image = prepare_transformation_variables(
                     image_container,
                     current_image_id,
-                    second_filter_id,
+                    comparison_filter_id,
                     current_filter_id,
                     filter_list,
                 )
 
-                #   Get magnitude array for second image
-                magnitudes_second_image = utilities.distribution_from_table(
-                    second_image
+                #   Get magnitude array for comparison image
+                magnitudes_comparison_image = utilities.distribution_from_table(
+                    comparison_image
                 )
 
                 #   Get extracted magnitudes of the calibration stars
-                #   for the image in the second filter
+                #   for the image in the comparison filter
                 #   -> required for magnitude transformation
-                magnitudes_calibration_stars_second_image = calib.observed_magnitude_of_calibration_stars(
-                    second_image,
-                    magnitudes_second_image,
+                magnitudes_calibration_stars_comparison_image = calib.observed_magnitude_of_calibration_stars(
+                    comparison_image,
+                    magnitudes_comparison_image,
                     image_container,
                 )
 
             else:
-                magnitudes_calibration_stars_second_image = None
-                second_filter_id = None
-                magnitudes_second_image = None
+                magnitudes_calibration_stars_comparison_image = None
+                comparison_filter_id = None
+                magnitudes_comparison_image = None
 
             #   Prepare ZP for the magnitude calibration and perform
             #   sigma clipping on the delta color or color, depending on
@@ -1211,8 +1218,8 @@ def apply_calibration(image_container, filter_list,
                 current_filter_id,
                 literature_magnitudes,
                 magnitudes_calibration_stars_current_image,
-                id_filter_2=second_filter_id,
-                observed_magnitude_filter_2=magnitudes_calibration_stars_second_image,
+                id_filter_2=comparison_filter_id,
+                observed_magnitude_filter_2=magnitudes_calibration_stars_comparison_image,
                 calculate_zero_point_statistic=calculate_zero_point_statistic,
             )
 
@@ -1223,9 +1230,9 @@ def apply_calibration(image_container, filter_list,
                     current_image,
                     literature_magnitudes,
                     magnitudes_calibration_stars_current_image,
-                    magnitudes_calibration_stars_second_image,
+                    magnitudes_calibration_stars_comparison_image,
                     magnitudes_current_image,
-                    magnitudes_second_image,
+                    magnitudes_comparison_image,
                     magnitudes_current_image,
                     current_filter_id,
                     id_color_filter_1,

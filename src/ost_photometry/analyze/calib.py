@@ -635,6 +635,7 @@ def load_calibration_data_table(image, filter_list, calibration_method='APASS',
     return calib_tbl, column_names, ra_unit
 
 
+#   TODO: Convert all function definitions to this style
 def observed_magnitude_of_calibration_stars(
         image, magnitude_distribution, img_container):
     """
@@ -648,7 +649,7 @@ def observed_magnitude_of_calibration_stars(
             Image class object
 
         magnitude_distribution          : `astropy.uncertainty.normal`
-            Array with image magnitudes
+            Distribution with image magnitudes
 
         img_container                   : `image.container`
             Container object with image ensemble objects for each filter
@@ -662,17 +663,20 @@ def observed_magnitude_of_calibration_stars(
     index_calibration_stars = img_container.CalibParameters.inds
     col_names = img_container.CalibParameters.column_names
 
+    #   TODO: Check this!
     #   Convert index array of the calibration stars to a list
-    ind_list = list(index_calibration_stars)
+    print('index_calibration_stars: ', index_calibration_stars)
+    index_list = list(index_calibration_stars)
+    print('index_list: ', index_list)
 
     #   Calculate number of calibration stars
-    count_cali = len(ind_list)
+    count_cali = len(index_list)
 
     #   Sort magnitudes
     #   Check if we have calibration data for the current filter/image
     if f'mag{getattr(image, "filt", "?")}' in col_names:
         #   Sort
-        distribution_calibration_observed = magnitude_distribution[ind_list]
+        distribution_calibration_observed = magnitude_distribution[index_list]
     else:
         #   TODO: Check: If None should be returned instead!
         distribution_calibration_observed = unc.normal(
@@ -977,7 +981,7 @@ def distribution_from_calibration_table(calibration_parameters, filter_list):
     calibration_data_table = calibration_parameters.calib_tbl
 
     distribution_list = []
-    for z, filter_ in enumerate(filter_list):
+    for filter_ in filter_list:
         calibration_magnitudes = calibration_data_table[
             calib_column_names[f'mag{filter_}']
         ]

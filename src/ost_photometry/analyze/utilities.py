@@ -92,7 +92,7 @@ def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
         y_positions      : `numpy.ndarray`
             Position of the stars on the image in pixel in X direction
 
-        magnitudes       : `list` of `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes       : `dict` of `list` of `astropy.uncertainty.core.QuantityDistribution`
             Magnitudes of all stars
 
         filter_list      : `list` of `string`

@@ -2002,10 +2002,14 @@ def correlate_ensembles(img_container, filter_list,
         correlation_method=correlation_method,
     )
 
+    #   TODO: Check this! Remove ensembles based on bad images???????
     #   Remove "bad"/rejected ensembles
     for ject in rejected_images:
         ensemble_dict.pop(ensemble_keys[ject])
 
+    #   TODO: Check this! If the ensemble is used multiple times, such as
+    #    multiple filter combinations, this might less common objects, since
+    #    some were removed in a previous iteration step
     #   Limit the photometry tables to common objects.
     for j, ensemble in enumerate(ensemble_dict.values()):
         for image in ensemble.image_list:
@@ -2310,7 +2314,7 @@ def correlate_preserve_variable(image_ensemble, ra_obj, dec_obj,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         cross_identification_limit=cross_identification_limit,
-        reference_obj_ids=variable_id,
+        reference_obj_ids=[variable_id],
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         expected_bad_image_fraction=expected_bad_image_fraction,
         protect_reference_obj=protect_reference_obj,
@@ -3987,7 +3991,6 @@ def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
                             indent=2,
                             style_name='WARNING',
                         )
-                        #   2023.08.04: Changed from 'break' to 'continue'
                         continue
 
                     ###
