@@ -705,7 +705,7 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
         img_container                       : `image.container`
             Container object with image ensemble objects for each filter
 
-        filter_list                         : `list` of `string`
+        filter_list                         : `list` or set` of `string`
             Filter list
 
         calibration_method                  : `string`, optional

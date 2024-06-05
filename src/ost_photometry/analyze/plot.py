@@ -802,32 +802,37 @@ def plot_residual(name, image_orig, residual_image, output_dir,
     plt.close()
 
 
-def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
-                   name_obj=None):
+def light_curve_jd(
+        ts, data_column, err_column, output_dir, error_bars=True,
+        name_obj=None, file_name_suffix=''):
     """
         Plot the light curve over Julian Date
 
         Parameters
         ----------
-        ts          : `astropy.timeseries.TimeSeries`
+        ts                  : `astropy.timeseries.TimeSeries`
             Time series
 
-        data_column : `string`
+        data_column         : `string`
             Filter
 
-        err_column  : `string`
+        err_column          : `string`
             Name of the error column
 
-        output_dir  : `string`
+        output_dir          : `string`
             Output directory
 
-        error_bars  : `boolean`, optional
+        error_bars          : `boolean`, optional
             If True error bars will be plotted.
             Default is ``False``.
 
-        name_obj    : `string`, optional
+        name_obj            : `string`, optional
             Name of the object
             Default is ``None``.
+
+        file_name_suffix    : `string`, optional
+            Suffix to add to the file name
+            Default is ``''``
     """
     #   Check output directories
     checks.check_output_directories(
@@ -906,50 +911,55 @@ def light_curve_jd(ts, data_column, err_column, output_dir, error_bars=True,
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/lightcurve/lightcurve_jd_{data_column}.pdf',
+        f'{output_dir}/lightcurve/lightcurve_jd_{data_column}{file_name_suffix}.pdf',
         bbox_inches='tight',
         format='pdf',
     )
     plt.close()
 
 
-def light_curve_fold(time_series, data_column, err_column, output_dir,
-                     transit_time, period, binning_factor=None,
-                     error_bars=True, name_obj=None):
+def light_curve_fold(
+        time_series, data_column, err_column, output_dir, transit_time, period,
+        binning_factor=None, error_bars=True, name_obj=None,
+        file_name_suffix=''):
     """
         Plot a folded light curve
 
         Parameters
         ----------
-        time_series     : `astropy.timeseries.TimeSeries`
+        time_series         : `astropy.timeseries.TimeSeries`
             Time series
 
-        data_column     : `string`
+        data_column         : `string`
             Filter
 
-        err_column      : `string`
+        err_column          : `string`
             Name of the error column
 
-        output_dir      : `string`
+        output_dir          : `string`
             Output directory
 
-        transit_time    : `string`
+        transit_time        : `string`
             Time of the transit - Format example: "2020-09-18T01:00:00"
 
-        period          : `float`
+        period              : `float`
             Period in days
 
-        binning_factor  : `float`, optional
+        binning_factor      : `float`, optional
             Light-curve binning-factor in days
             Default is ``None``.
 
-        error_bars      : `boolean`, optional
+        error_bars          : `boolean`, optional
             If True error bars will be plotted.
             Default is ``False``.
 
-        name_obj        : `string`, optional
+        name_obj            : `string`, optional
             Name of the object
             Default is ``None``.
+
+        file_name_suffix    : `string`, optional
+            Suffix to add to the file name
+            Default is ``''``
     """
     #   Check output directories
     checks.check_output_directories(
@@ -1072,7 +1082,7 @@ def light_curve_fold(time_series, data_column, err_column, output_dir,
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/lightcurve/lightcurve_folded_{data_column}.pdf',
+        f'{output_dir}/lightcurve/lightcurve_folded_{data_column}{file_name_suffix}.pdf',
         bbox_inches='tight',
         format='pdf',
     )
