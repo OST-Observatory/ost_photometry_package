@@ -994,8 +994,8 @@ def prepare_zero_point(
                 observed_magnitude_filter_1)
     image.zp_clip = image.zp[np.where(image.zp_mask)]
     image.zp_clip_median = np.median(image.zp_clip)
-    print('type(image.zp_clip_median):', type(image.zp_clip_median))
-    print('image.zp_clip_median: ', image.zp_clip_median)
+    # print('type(image.zp_clip_median):', type(image.zp_clip_median))
+    # print('image.zp_clip_median: ', image.zp_clip_median)
 
     #   TODO: Check if the following blocks can be improved, using
     #         distribution properties
@@ -1160,7 +1160,7 @@ def apply_calibration(image_container, filter_list,
             derive_transformation_coefficients=derive_transformation_coefficients,
         )
         transformation_type_list.append(transformation_type)
-        print('image list: ', image_list)
+        print('len(image list): ', len(image_list))
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
