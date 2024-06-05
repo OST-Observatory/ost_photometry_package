@@ -665,18 +665,19 @@ def observed_magnitude_of_calibration_stars(
 
     #   TODO: Check this!
     #   Convert index array of the calibration stars to a list
-    print('index_calibration_stars: ', index_calibration_stars)
-    index_list = list(index_calibration_stars)
-    print('index_list: ', index_list)
+    # print('index_calibration_stars: ', index_calibration_stars)
+    # index_list = list(index_calibration_stars)
+    # print('index_list: ', index_list)
 
     #   Calculate number of calibration stars
-    count_cali = len(index_list)
+    # count_cali = len(index_list)
 
     #   Sort magnitudes
     #   Check if we have calibration data for the current filter/image
     if f'mag{getattr(image, "filt", "?")}' in col_names:
         #   Sort
-        distribution_calibration_observed = magnitude_distribution[index_list]
+        # distribution_calibration_observed = magnitude_distribution[index_list]
+        distribution_calibration_observed = magnitude_distribution[index_calibration_stars]
     else:
         #   TODO: Check: If None should be returned instead!
         distribution_calibration_observed = unc.normal(
