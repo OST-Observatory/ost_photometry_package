@@ -289,6 +289,9 @@ class ImageEnsemble:
             #   them to the image class instance
             base_utilities.calculate_field_of_view(self.image_list[image_id], verbose=False)
 
+        #   Set start time for image series
+        self.start_jd = self.image_list[0].jd
+
         #   Set reference image
         self.ref_img = self.image_list[reference_image_id]
 
@@ -3735,6 +3738,8 @@ def correlate_calibrate(image_container, filter_list,
         region_to_select_calibration_stars=region_to_select_calibration_stars,
     )
 
+    #   TODO: Add here checks on which filter combinations are possible!!!!!
+
     #   Apply calibration and perform magnitude transformation
     trans.apply_calibration(
         image_container,
@@ -4370,43 +4375,9 @@ def calibrate_data_mk_light_curve(
             Default is ``True``.
 
     """
-    #   Get valid filter combinations
-    if valid_filter_combinations is None:
-        valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
-
-    #   Setup list for valid filter etc.
-    valid_filter = []
-    usable_filter_combinations = []
-
-    #   Determine usable filter combinations
-    for filter_combination in valid_filter_combinations:
-        if filter_combination[0] in filter_list and filter_combination[1] in filter_list:
-            valid_filter.append(filter_combination[0])
-            valid_filter.append(filter_combination[1])
-            usable_filter_combinations.append(filter_combination)
-    valid_filter = set(valid_filter)
-
-    #   Correlate star positions from the different filter
-    correlate_ensembles(
-        image_container,
-        valid_filter,
-        max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
-        cross_identification_limit=cross_identification_limit,
-        n_allowed_non_detections_object=n_allowed_non_detections_object,
-        expected_bad_image_fraction=expected_bad_image_fraction,
-        protect_reference_obj=protect_reference_obj,
-        correlation_method=correlation_method,
-        separation_limit=separation_limit,
-        ra_object=ra_object,
-        dec_object=dec_object,
-        verbose=verbose,
-    )
-
     #   Load calibration information
     calib.derive_calibration(
         image_container,
-        # valid_filter,
         filter_list,
         calibration_method=calibration_method,
         max_pixel_between_objects=max_pixel_between_objects,
@@ -4421,6 +4392,58 @@ def calibrate_data_mk_light_curve(
     calibration_filters = image_container.CalibParameters.column_names
     terminal_output.print_to_terminal('')
 
+    #   TODO: Put the following checks in a function
+    #   Get valid filter combinations
+    if valid_filter_combinations is None:
+        valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
+
+    #   Setup list for valid filter etc.
+    valid_filter = []
+    usable_filter_combinations = []
+
+    #   Determine usable filter combinations -> Filters must be in a valid
+    #   filter combination for the magnitude transformation and calibration
+    #   data must be available for the filter.
+    for filter_combination in valid_filter_combinations:
+        if filter_combination[0] in filter_list and filter_combination[1] in filter_list:
+            err_filter = None
+            if f'mag{filter_combination[0]}' not in calibration_filters:
+                err_filter = filter_combination[0]
+            if f'mag{filter_combination[1]}' not in calibration_filters:
+                err_filter = filter_combination[1]
+            if err_filter is not None:
+                terminal_output.print_to_terminal(
+                    "Magnitude transformation not possible because "
+                    "no calibration data available for filter "
+                    f"{err_filter}",
+                    indent=2,
+                    style_name='WARNING',
+                )
+                continue
+
+            valid_filter.append(filter_combination[0])
+            valid_filter.append(filter_combination[1])
+            usable_filter_combinations.append(filter_combination)
+    valid_filter = set(valid_filter)
+
+    #   Correlate star positions from the different filter
+    if valid_filter:
+        correlate_ensembles(
+            image_container,
+            valid_filter,
+            max_pixel_between_objects=max_pixel_between_objects,
+            own_correlation_option=own_correlation_option,
+            cross_identification_limit=cross_identification_limit,
+            n_allowed_non_detections_object=n_allowed_non_detections_object,
+            expected_bad_image_fraction=expected_bad_image_fraction,
+            protect_reference_obj=protect_reference_obj,
+            correlation_method=correlation_method,
+            separation_limit=separation_limit,
+            ra_object=ra_object,
+            dec_object=dec_object,
+            verbose=verbose,
+        )
+
     ###
     #   Calibrate magnitudes
     #
@@ -4428,23 +4451,6 @@ def calibrate_data_mk_light_curve(
     #   TODO: Convert this to matrix calculation over all filter simultaneously
     processed_filter = []
     for filter_set in usable_filter_combinations:
-        #   Stop here if calibration data is not available
-        if (f'mag{filter_set[0]}' not in calibration_filters or
-                f'mag{filter_set[1]}' not in calibration_filters):
-            err_filter = None
-            if f'mag{filter_set[0]}' not in calibration_filters:
-                err_filter = filter_set[0]
-            if f'mag{filter_set[1]}' not in calibration_filters:
-                err_filter = filter_set[1]
-            terminal_output.print_to_terminal(
-                "Magnitude transformation not possible because "
-                "no calibration data available for filter "
-                f"{err_filter}",
-                indent=2,
-                style_name='WARNING',
-            )
-            continue
-
         #   Apply calibration and perform magnitude transformation
         trans.apply_calibration(
             image_container,

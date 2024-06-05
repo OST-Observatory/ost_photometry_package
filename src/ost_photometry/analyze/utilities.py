@@ -631,8 +631,8 @@ def flux_to_magnitudes(flux, flux_error):
     return magnitudes, magnitudes_error
 
 
-def find_filter(filter_list, tsc_parameter_dict, filter_, camera,
-                verbose=False, indent=2):
+def find_transformation_coefficients(filter_list, tsc_parameter_dict, filter_,
+                                     camera, verbose=False, indent=2):
     """
         Find the position of the filter from the 'tsc_parameter_dict'
         dictionary with reference to 'filter_list'
@@ -664,12 +664,6 @@ def find_filter(filter_list, tsc_parameter_dict, filter_, camera,
         -------
         variable_1          : `dictionary`
             Entry from dictionary 'in_dict' corresponding to filter 'filter_'
-
-        variable_2          : `integer`
-            ID of filter 1
-
-        variable_3          : `integer`
-            ID of filter 2
     """
     #   Initialize list of bools
     cam_bools = []
@@ -688,11 +682,8 @@ def find_filter(filter_list, tsc_parameter_dict, filter_, camera,
                     #   Check if the filter used to calculate the
                     #   calibration data is also available in the filter
                     #   list 'filter_list'
-                    if f1 in filter_list and f2 in filter_list:
-                        #   Determine indexes of the filter
-                        id_1 = filter_list.index(f1)
-                        id_2 = filter_list.index(f2)
-                        return value_inner, id_1, id_2
+                    if f1 == filter_list[0] and f2 == filter_list[1]:
+                        return value_inner
                     else:
                         if verbose:
                             terminal_output.print_to_terminal(
@@ -716,7 +707,7 @@ def find_filter(filter_list, tsc_parameter_dict, filter_, camera,
             style_name='WARNING',
         )
 
-    return None, None, None
+    return None
 
 
 def check_variable(filename, filetype, filter_1, filter_2, iso_column_type,

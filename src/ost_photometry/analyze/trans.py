@@ -18,8 +18,8 @@ from .. import checks, style, calibration_data, terminal_output
 #                           Routines & definitions                         #
 ############################################################################
 
-def prepare_transformation_variables(image_container, current_image_id, id_second_filter,
-                                     id_current_filter, filter_list):
+def find_best_comarison_image_second_filter(image_container, current_image_id, id_second_filter,
+                                            id_current_filter, filter_list):
     """
         Prepare variables for magnitude transformation
 
@@ -44,9 +44,6 @@ def prepare_transformation_variables(image_container, current_image_id, id_secon
         -------
         best_image_second_filter        : `image.class`
             Image class with all image specific properties
-
-        filter_image_ids_transformation : `list` of `tupel`
-            See above
     """
     #   Get image ensemble
     image_ensembles = image_container.ensembles
@@ -75,10 +72,9 @@ def prepare_transformation_variables(image_container, current_image_id, id_secon
     return best_img_second_filter
 
 
-def check_requirements_transformation(
+def check_transformation_requirements(
         img_container, trans_coefficients, filter_list, current_filter_id,
-        current_image_id, derive_transformation_coefficients=False
-):
+        derive_transformation_coefficients):
     """
         Prepare magnitude transformation: find filter combination,
         get calibration parameters, prepare variables, ...
@@ -97,15 +93,10 @@ def check_requirements_transformation(
         current_filter_id               : `integer`
             ID of the current filter
 
-        current_image_id                : `integer`
-            ID of the image
-
-        derive_transformation_coefficients       : `boolean`, optional
+        derive_transformation_coefficients       : `boolean`
             If True the magnitude transformation coefficients will be
             calculated from the current data even if calibration coefficients
             are available in the database.
-            Default is ``False``
-
 
         Returns
         -------
@@ -114,12 +105,6 @@ def check_requirements_transformation(
 
         second_filter_id                : `integer`
             ID of the second filter
-
-        id_color_filter_1               : `integer`
-            ID of the color filter 1. In B-V that would be B.
-
-        id_color_filter_2               : `integer`
-            ID of the color filter 2. In B-V that would be V.
 
         trans_coefficients_selection    : `dictionary`
             Dictionary with validated calibration parameters from Tcs.
@@ -130,80 +115,55 @@ def check_requirements_transformation(
     #   Get filter name
     filter_ = filter_list[current_filter_id]
 
-    #   Get image
-    current_img = img_container.ensembles[filter_].image_list[current_image_id]
-
-    #   Load calibration coefficients
-    if trans_coefficients is None:
-        trans_coefficients = calibration_data.get_transformation_calibration_values(
-            current_img.jd
-        )
-
-    #   Check if transformation is possible with the calibration
-    #   coefficients.
-    type_transformation = None
-    second_filter_id = None
-    id_color_filter_1 = None
-    id_color_filter_2 = None
-    trans_coefficients_selection = None
-    if trans_coefficients is not None and not derive_transformation_coefficients:
-        trans_coefficients_selection, id_color_filter_1, id_color_filter_2 = utilities.find_filter(
-            filter_list,
-            trans_coefficients,
-            filter_,
-            current_img.instrument,
-        )
-
-        if trans_coefficients_selection is not None and 'type' in trans_coefficients_selection.keys():
-            type_transformation = trans_coefficients_selection['type']
-
-            #   Get correct filter order
-            if id_color_filter_1 == current_filter_id:
-                second_filter_id = id_color_filter_2
-            else:
-                second_filter_id = id_color_filter_1
-
-        elif len(filter_list) >= 2:
-            type_transformation = 'derive'
-
-            #   Get correct filter ids: The first filter is the
-            #   current filter, while the second filter is either
-            #   the second in 'filter_list' or the one in 'filter_list'
-            #    with the ID one below the first filter ID.
-            id_color_filter_1 = current_filter_id
-
-            if id_color_filter_1 == 0:
-                id_color_filter_2 = 1
-            else:
-                id_color_filter_2 = id_color_filter_1 - 1
-
-            second_filter_id = id_color_filter_2
+    #   Get second filter id -> assumes that filter list contains
+    #   only two filter
+    #   TODO: Generalize for more filter -> matrix calculations
+    if len(filter_list) == 1:
+        return None, None, None
+    elif len(filter_list) == 2:
+        if current_filter_id == 0:
+            second_filter_id = 1
         else:
-            type_transformation = None
+            second_filter_id = 0
+    else:
+        #   This should currently not happen
+        terminal_output.print_to_terminal(
+            f"Magnitude transformation currently only possible with two filter "
+            f"but {len(filter_list)} filter given in filter_list",
+            style_name='ERROR',
+        )
+        raise RuntimeError
 
-    elif len(filter_list) >= 2:
+    if derive_transformation_coefficients:
         type_transformation = 'derive'
-
-        #   Check if calibration data is available for the
-        #   filter in``filter_list`
-        filter_calib = img_container.CalibParameters.column_names
-        for second_filter_ in filter_list:
-            if 'mag' + second_filter_ not in filter_calib:
-                type_transformation = None
-
-        if type_transformation is not None:
-            #   Get correct filter ids: The first filter is the
-            #   current filter, while the second filter is either
-            #   the second in 'filter_list' or the one in 'filter_list'
-            #    with the ID one below the first filter ID.
-            id_color_filter_1 = current_filter_id
-
-            if id_color_filter_1 == 0:
-                id_color_filter_2 = 1
+        trans_coefficients_selection = None
+    else:
+        #   Load coefficients coefficients
+        if trans_coefficients is None:
+            trans_coefficients = calibration_data.get_transformation_calibration_values(
+                img_container.ensembles[filter_].start_jd
+            )
+            trans_coefficients_selection = utilities.find_transformation_coefficients(
+                filter_list,
+                trans_coefficients,
+                filter_,
+                img_container.ensembles[filter_].instrument,
+            )
+            #   If no valid transformation coefficients can be loaded switch to
+            #   automatic determination of these coefficients
+            if trans_coefficients_selection is None:
+                type_transformation = 'derive'
+                terminal_output.print_to_terminal(
+                    'Transformation coefficients cannot be loaded, switching'
+                    ' to automatic determination of these coefficients.',
+                    indent=3,
+                    style_name='WARNING',
+                )
             else:
-                id_color_filter_2 = id_color_filter_1 - 1
-
-            second_filter_id = id_color_filter_2
+                type_transformation = trans_coefficients_selection['type']
+        else:
+            trans_coefficients_selection = trans_coefficients
+            type_transformation = trans_coefficients_selection['type']
 
     message_type = 'BOLD'
     if type_transformation == 'simple':
@@ -223,11 +183,9 @@ def check_requirements_transformation(
         #     f"air_mass, and derive  {style.Bcolors.ENDC}"
         # )
 
-    # if type_transformation is not None:
     terminal_output.print_to_terminal(string, indent=3, style_name=message_type)
 
-    return (type_transformation, second_filter_id, id_color_filter_1,
-            id_color_filter_2, trans_coefficients_selection)
+    return type_transformation, second_filter_id, trans_coefficients_selection
 
 
 def derive_transformation_onthefly(image, filter_list, id_current_filter,
@@ -1062,14 +1020,13 @@ def prepare_zero_point(
         )
 
 
-def apply_calibration(image_container, filter_list,
-                      transformation_coefficients_dict=None,
-                      derive_transformation_coefficients=False,
-                      plot_sigma=False, id_object=None,
-                      photometry_extraction_method='',
-                      calculate_zero_point_statistic=True, indent=1):
+def apply_calibration(
+        image_container, filter_list, transformation_coefficients_dict=None,
+        derive_transformation_coefficients=False, plot_sigma=False,
+        id_object=None, photometry_extraction_method='',
+        calculate_zero_point_statistic=True, indent=1):
     """
-        Apply the calibration to the magnitudes and perform a magnitude
+        Apply the zero points to the magnitudes and perform a magnitude
         transformation if possible
 
         # Using:
@@ -1150,17 +1107,17 @@ def apply_calibration(image_container, filter_list,
         image_list = img_ensemble.image_list
 
         #   Prepare transformation
-        (transformation_type, comparison_filter_id, id_color_filter_1,
-         id_color_filter_2, trans_coefficients) = check_requirements_transformation(
+        transformation_type, comparison_filter_id, trans_coefficients = check_transformation_requirements(
             image_container,
             transformation_coefficients_dict,
             filter_list,
             current_filter_id,
-            0,
-            derive_transformation_coefficients=derive_transformation_coefficients,
+            derive_transformation_coefficients,
         )
+        print('transformation_type: ', transformation_type)
+        print('comparison_filter_id: ', comparison_filter_id)
+        print('trans_coefficients: ', trans_coefficients)
         transformation_type_list.append(transformation_type)
-        print('len(image list): ', len(image_list))
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
@@ -1183,7 +1140,7 @@ def apply_calibration(image_container, filter_list,
             #   Prepare some variables and find corresponding image to
             #   current_image
             if transformation_type is not None:
-                comparison_image = prepare_transformation_variables(
+                comparison_image = find_best_comarison_image_second_filter(
                     image_container,
                     current_image_id,
                     comparison_filter_id,
@@ -1235,8 +1192,10 @@ def apply_calibration(image_container, filter_list,
                     magnitudes_comparison_image,
                     magnitudes_current_image,
                     current_filter_id,
-                    id_color_filter_1,
-                    id_color_filter_2,
+                    0,
+                    1,
+                    # id_color_filter_1,
+                    # id_color_filter_2,
                     filter_list,
                     trans_coefficients,
                     plot_sigma=plot_sigma,
