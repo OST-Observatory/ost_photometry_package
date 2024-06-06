@@ -4375,23 +4375,6 @@ def calibrate_data_mk_light_curve(
             Default is ``True``.
 
     """
-    #   Load calibration information
-    calib.derive_calibration(
-        image_container,
-        filter_list,
-        calibration_method=calibration_method,
-        max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
-        vizier_dict=vizier_dict,
-        path_calibration_file=path_calibration_file,
-        magnitude_range=magnitude_range,
-        correlation_method=correlation_method,
-        separation_limit=separation_limit,
-        region_to_select_calibration_stars=region_to_select_calibration_stars,
-    )
-    calibration_filters = image_container.CalibParameters.column_names
-    terminal_output.print_to_terminal('')
-
     #   TODO: Put the following checks in a function
     #   Get valid filter combinations
     if valid_filter_combinations is None:
@@ -4443,6 +4426,23 @@ def calibrate_data_mk_light_curve(
             dec_object=dec_object,
             verbose=verbose,
         )
+
+    #   Load calibration information
+    calib.derive_calibration(
+        image_container,
+        filter_list,
+        calibration_method=calibration_method,
+        max_pixel_between_objects=max_pixel_between_objects,
+        own_correlation_option=own_correlation_option,
+        vizier_dict=vizier_dict,
+        path_calibration_file=path_calibration_file,
+        magnitude_range=magnitude_range,
+        correlation_method=correlation_method,
+        separation_limit=separation_limit,
+        region_to_select_calibration_stars=region_to_select_calibration_stars,
+    )
+    calibration_filters = image_container.CalibParameters.column_names
+    terminal_output.print_to_terminal('')
 
     ###
     #   Calibrate magnitudes

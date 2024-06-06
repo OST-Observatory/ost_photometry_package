@@ -108,9 +108,6 @@ def check_transformation_requirements(
 
         trans_coefficients_selection    : `dictionary`
             Dictionary with validated calibration parameters from Tcs.
-
-        filter_image_ids                : `list` of `tuple` of `integer`
-            Image and filter IDs
     """
     #   Get filter name
     filter_ = filter_list[current_filter_id]
@@ -670,6 +667,7 @@ def apply_transformation(image_container, image, calib_magnitudes_literature,
     )
 
     #   Quality control plots
+    #   TODO: Rename to transformation_check_plots?
     utilities.calibration_check_plots(
         filter_list[filter_id],
         image.outpath.name,
@@ -1120,6 +1118,7 @@ def apply_calibration(
         transformation_type_list.append(transformation_type)
 
         #   Loop over images
+        print('len(image_list): ', len(image_list))
         for current_image_id, current_image in enumerate(image_list):
             #   Store filter and image IDs for easier table creation later
             filter_image_ids.append((current_filter_id, current_image_id))
@@ -1132,7 +1131,6 @@ def apply_calibration(
             #   Get extracted magnitudes of the calibration stars for the
             #   current image
             magnitudes_calibration_stars_current_image = calib.observed_magnitude_of_calibration_stars(
-                current_image,
                 magnitudes_current_image,
                 image_container,
             )
@@ -1157,7 +1155,6 @@ def apply_calibration(
                 #   for the image in the comparison filter
                 #   -> required for magnitude transformation
                 magnitudes_calibration_stars_comparison_image = calib.observed_magnitude_of_calibration_stars(
-                    comparison_image,
                     magnitudes_comparison_image,
                     image_container,
                 )

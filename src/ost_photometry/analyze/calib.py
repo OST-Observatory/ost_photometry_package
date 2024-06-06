@@ -637,7 +637,7 @@ def load_calibration_data_table(image, filter_list, calibration_method='APASS',
 
 #   TODO: Convert all function definitions to this style
 def observed_magnitude_of_calibration_stars(
-        image, magnitude_distribution, img_container):
+        magnitude_distribution, img_container):
     """
         Sort and rearrange the distribution of extracted magnitudes so that
         the returned distribution contains the extracted magnitudes of the
@@ -645,9 +645,6 @@ def observed_magnitude_of_calibration_stars(
 
         Parameters
         ----------
-        image                           : `image class`
-            Image class object
-
         magnitude_distribution          : `astropy.uncertainty.normal`
             Distribution with image magnitudes
 
@@ -820,6 +817,7 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
     calib_tbl = calib_tbl[~np.isnan(pixel_position_cali_y)]
 
     #   X & Y pixel positions
+    #   TODO: Replace with reference image
     pixel_position_obj_x = img_ensemble.image_list[0].photometry['x_fit']
     pixel_position_obj_y = img_ensemble.image_list[0].photometry['y_fit']
 
