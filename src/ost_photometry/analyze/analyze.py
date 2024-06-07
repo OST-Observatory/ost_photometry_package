@@ -1987,6 +1987,7 @@ def correlate_ensembles(
     wcs_list_ensemble = []
 
     #   Number of objects in each table/image
+    reference_obj_id = []
     for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
         wcs_list_ensemble.append(ensemble.wcs)
 
@@ -2038,6 +2039,8 @@ def correlate_ensembles(
         "Identify the variable star",
     )
 
+    #   TODO: Convert ra_object and dec_object to lists -> allow multiple objects
+    object_ids = []
     for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
         if id_ensemble == reference_ensemble_id:
             object_id, count, _, _ = correlate.identify_star_in_dataset(
@@ -2051,6 +2054,7 @@ def correlate_ensembles(
                 own_correlation_option=own_correlation_option,
                 verbose=verbose,
             )
+            object_ids.append(object_id)
 
             #   Check if variable star was detected
             if count == 0:
@@ -2062,7 +2066,7 @@ def correlate_ensembles(
 
     #   Set new object ID
     for ensemble in ensemble_dict.values():
-        ensemble.variable_id = object_id
+        ensemble.variable_id = object_ids
 
     #   TODO: Check this! If the ensemble is used multiple times, such as
     #    multiple filter combinations, this might less common objects, since
@@ -2075,7 +2079,6 @@ def correlate_ensembles(
 
     #   Check if correlation with calibration data is necessary
     if image_container.inds is None or force_correlation_calibration_objects:
-        print('IN calibration correlation')
         calibration_tbl = image_container.calib_tbl
         column_names = image_container.column_names
 
@@ -2098,7 +2101,7 @@ def correlate_ensembles(
             separation_limit=separation_limit,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
-            id_object=ensemble_dict.values()[reference_ensemble_id].variable_id,
+            # id_object=ensemble_dict.values()[reference_ensemble_id].variable_id,
         )
 
         image_container.calib_tbl = calibration_tbl
