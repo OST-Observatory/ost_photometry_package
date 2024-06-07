@@ -657,8 +657,12 @@ def observed_magnitude_of_calibration_stars(
             Rearrange distribution
     """
     #   Get calibration data
+    #   TODO: Convert to getattr()
     index_calibration_stars = img_container.CalibParameters.inds
 
+    print('index_calibration_stars: ', index_calibration_stars)
+    print('index_calibration_stars.shape: ', index_calibration_stars.shape)
+    print('magnitude_distribution.shape: ', magnitude_distribution.shape)
     #   Sort magnitudes
     distribution_calibration_observed = magnitude_distribution[index_calibration_stars]
 
@@ -675,8 +679,7 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
                        region_to_select_calibration_stars=None,
                        correlate_with_observed_objects=True, indent=1):
     """
-        Determine calibration information, find suitable calibration stars
-        and determine calibration factors
+        Find suitable calibration stars
 
         Parameters
         ----------
@@ -808,10 +811,14 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
         calibration_tbl = calibration_tbl[mask]
 
     #   Remove a specific star from the loaded calibration stars
+    #   TODO: Rewrite such that multiple objects can be removed
     if coordinates_obj_to_rm is not None:
+        print('Reference object removed from calibration list.')
+        print('len(calibration_object_coordinates) [before]: ', len(calibration_object_coordinates))
         mask = calibration_object_coordinates.separation(coordinates_obj_to_rm) < 1 * u.arcsec
         mask = np.invert(mask)
         calibration_object_coordinates = calibration_object_coordinates[mask]
+        print('len(calibration_object_coordinates) [after]: ', len(calibration_object_coordinates))
 
     #   Calculate object positions in pixel coordinates
     pixel_position_cali_x, pixel_position_cali_y = calibration_object_coordinates.to_pixel(wcs)
@@ -820,6 +827,8 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
     pixel_position_cali_x = pixel_position_cali_x[~np.isnan(pixel_position_cali_x)]
     pixel_position_cali_y = pixel_position_cali_y[~np.isnan(pixel_position_cali_y)]
     calibration_tbl = calibration_tbl[~np.isnan(pixel_position_cali_y)]
+
+    #   TODO: Adds output line with number of remaining calibration stars
 
     if correlate_with_observed_objects:
         calibration_tbl, index_obj_instrument = correlate_with_calibration_objects(
@@ -1015,6 +1024,8 @@ def correlate_with_calibration_objects(
                 }
             )
             p.start()
+
+    #   TODO: Adds output line with number of remaining calibration stars
 
     return calibration_tbl_sort, index_obj_instrument
 

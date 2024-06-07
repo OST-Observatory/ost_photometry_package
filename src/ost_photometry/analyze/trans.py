@@ -1112,9 +1112,6 @@ def apply_calibration(
             current_filter_id,
             derive_transformation_coefficients,
         )
-        print('transformation_type: ', transformation_type)
-        print('comparison_filter_id: ', comparison_filter_id)
-        print('trans_coefficients: ', trans_coefficients)
         transformation_type_list.append(transformation_type)
 
         #   Loop over images

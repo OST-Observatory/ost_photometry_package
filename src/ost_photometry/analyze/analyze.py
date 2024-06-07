@@ -2094,6 +2094,8 @@ def correlate_ensembles(
         )
 
         #   Correlate with calibration stars
+        #   -> assumes that calibration stars are already cleared of any reference objects
+        #      or variable stars
         calibration_tbl, index_obj_instrument = calib.correlate_with_calibration_objects(
             list(ensemble_dict.values())[reference_ensemble_id],
             calibration_object_coordinates,
