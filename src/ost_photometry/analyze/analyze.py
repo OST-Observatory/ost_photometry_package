@@ -2078,9 +2078,12 @@ def correlate_ensembles(
             image.photometry = image.photometry[correlation_index[j, :]]
 
     #   Check if correlation with calibration data is necessary
-    if image_container.inds is None or force_correlation_calibration_objects:
-        calibration_tbl = image_container.calib_tbl
-        column_names = image_container.column_names
+    calibration_parameters = getattr(image_container, 'CalibParameters', None)
+
+    if calibration_parameters is not None and (calibration_parameters.inds is None
+                                               or force_correlation_calibration_objects):
+        calibration_tbl = calibration_parameters.calib_tbl
+        column_names = calibration_parameters.column_names
 
         #   Convert coordinates of the calibration stars to SkyCoord object
         calibration_object_coordinates = SkyCoord(
@@ -2092,7 +2095,7 @@ def correlate_ensembles(
 
         #   Correlate with calibration stars
         calibration_tbl, index_obj_instrument = calib.correlate_with_calibration_objects(
-            ensemble_dict.values()[reference_ensemble_id],
+            list(ensemble_dict.values())[reference_ensemble_id],
             calibration_object_coordinates,
             calibration_tbl,
             filter_list,
@@ -2101,11 +2104,11 @@ def correlate_ensembles(
             separation_limit=separation_limit,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
-            # id_object=ensemble_dict.values()[reference_ensemble_id].variable_id,
+            # id_object=list(ensemble_dict.values())[reference_ensemble_id].variable_id,
         )
 
-        image_container.calib_tbl = calibration_tbl
-        image_container.inds = index_obj_instrument
+        calibration_parameters.calib_tbl = calibration_tbl
+        calibration_parameters.inds = index_obj_instrument
 
 
 #   TODO: Check were this is used and if it is still functional, rename
