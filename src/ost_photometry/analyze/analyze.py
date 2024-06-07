@@ -1889,71 +1889,85 @@ def correlate_ensembles(
         reference_ensemble_id=0, n_allowed_non_detections_object=1,
         expected_bad_image_fraction=1.0, protect_reference_obj=True,
         correlation_method='astropy', separation_limit=2. * u.arcsec,
-        ra_object=None, dec_object=None, verbose=False):
+        ra_object=None, dec_object=None, ra_unit=u.deg, dec_unit=u.deg,
+        force_correlation_calibration_objects=False, verbose=False):
     """
         Correlate star lists from the stacked images of all filters to find
         those stars that are visible on all images -> write calibrated CMD
 
         Parameters
         ----------
-        image_container                 : `image.container`
+        image_container                         : `image.container`
             Container object with image ensemble objects for each filter
 
-        filter_list                     : `list` or `set` of `string`
+        filter_list                             : `list` or `set` of `string`
             List with filter identifiers.
 
-        max_pixel_between_objects       : `float`, optional
+        max_pixel_between_objects               : `float`, optional
             Maximal distance between two objects in Pixel
             Default is ``3``.
 
-        own_correlation_option          : `integer`, optional
+        own_correlation_option                  : `integer`, optional
             Option for the srcor correlation function
             Default is ``1``.
 
-        cross_identification_limit      : `integer`, optional
+        cross_identification_limit              : `integer`, optional
             Cross-identification limit between multiple objects in the current
             image and one object in the reference image. The current image is
             rejected when this limit is reached.
             Default is ``1``.
 
-        reference_ensemble_id           : `integer`, optional
+        reference_ensemble_id                   : `integer`, optional
             ID of the reference image
             Default is ``0``.
 
-        n_allowed_non_detections_object : `integer`, optional
+        n_allowed_non_detections_object         : `integer`, optional
             Maximum number of times an object may not be detected in an image.
             When this limit is reached, the object will be removed.
             Default is ``i`.
 
-        expected_bad_image_fraction     : `float`, optional
+        expected_bad_image_fraction             : `float`, optional
             Fraction of low quality images, i.e. those images for which a
             reduced number of objects with valid source positions are expected.
             Default is ``1.0``.
 
-        protect_reference_obj           : `boolean`, optional
+        protect_reference_obj                   : `boolean`, optional
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
 
-        correlation_method              : `string`, optional
+        correlation_method                      : `string`, optional
             Correlation method to be used to find the common objects on
             the images.
             Possibilities: ``astropy``, ``own``
             Default is ``astropy``.
 
-        separation_limit                : `astropy.units`, optional
+        separation_limit                        : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
 
-        ra_object                       : `float`, optional
+        ra_object                               : `float`, optional
             Right ascension of the object
             Default is ``None``
 
-        dec_object                      : `float`, optional
+        dec_object                              : `float`, optional
             Declination of the object
             Default is ``None``
 
-        verbose                             : `boolean`, optional
+        ra_unit                                 : `astropy.unit`, optional
+            Right ascension unit
+            Default is ``u.deg``.
+
+        dec_unit                                : `astropy.unit`, optional
+            Declination unit
+            Default is ``u.deg``.
+
+        force_correlation_calibration_objects   : `boolean`, optional
+            If ``True`` the correlation between the already correlated
+            ensembles and the calibration data will be enforced.
+            Default is ``False``
+
+        verbose                                 : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
     """
@@ -2058,6 +2072,37 @@ def correlate_ensembles(
     for j, ensemble in enumerate(ensemble_dict.values()):
         for image in ensemble.image_list:
             image.photometry = image.photometry[correlation_index[j, :]]
+
+    #   Check if correlation with calibration data is necessary
+    if image_container.inds is None or force_correlation_calibration_objects:
+        print('IN calibration correlation')
+        calibration_tbl = image_container.calib_tbl
+        column_names = image_container.column_names
+
+        #   Convert coordinates of the calibration stars to SkyCoord object
+        calibration_object_coordinates = SkyCoord(
+            calibration_tbl[column_names['ra']].data,
+            calibration_tbl[column_names['dec']].data,
+            unit=(ra_unit, dec_unit),
+            frame="icrs"
+        )
+
+        #   Correlate with calibration stars
+        calibration_tbl, index_obj_instrument = calib.correlate_with_calibration_objects(
+            ensemble_dict.values()[reference_ensemble_id],
+            calibration_object_coordinates,
+            calibration_tbl,
+            filter_list,
+            column_names,
+            correlation_method=correlation_method,
+            separation_limit=separation_limit,
+            max_pixel_between_objects=max_pixel_between_objects,
+            own_correlation_option=own_correlation_option,
+            id_object=ensemble_dict.values()[reference_ensemble_id].variable_id,
+        )
+
+        image_container.calib_tbl = calibration_tbl
+        image_container.inds = index_obj_instrument
 
 
 #   TODO: Check were this is used and if it is still functional, rename
@@ -4375,6 +4420,24 @@ def calibrate_data_mk_light_curve(
             Default is ``True``.
 
     """
+    #   Load calibration information
+    calib.derive_calibration(
+        image_container,
+        filter_list,
+        calibration_method=calibration_method,
+        max_pixel_between_objects=max_pixel_between_objects,
+        own_correlation_option=own_correlation_option,
+        vizier_dict=vizier_dict,
+        path_calibration_file=path_calibration_file,
+        magnitude_range=magnitude_range,
+        correlation_method=correlation_method,
+        separation_limit=separation_limit,
+        region_to_select_calibration_stars=region_to_select_calibration_stars,
+        correlate_with_observed_objects=False,
+    )
+    calibration_filters = image_container.CalibParameters.column_names
+    terminal_output.print_to_terminal('')
+
     #   TODO: Put the following checks in a function
     #   Get valid filter combinations
     if valid_filter_combinations is None:
@@ -4426,23 +4489,6 @@ def calibrate_data_mk_light_curve(
             dec_object=dec_object,
             verbose=verbose,
         )
-
-    #   Load calibration information
-    calib.derive_calibration(
-        image_container,
-        filter_list,
-        calibration_method=calibration_method,
-        max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
-        vizier_dict=vizier_dict,
-        path_calibration_file=path_calibration_file,
-        magnitude_range=magnitude_range,
-        correlation_method=correlation_method,
-        separation_limit=separation_limit,
-        region_to_select_calibration_stars=region_to_select_calibration_stars,
-    )
-    calibration_filters = image_container.CalibParameters.column_names
-    terminal_output.print_to_terminal('')
 
     ###
     #   Calibrate magnitudes

@@ -672,7 +672,8 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
                        magnitude_range=(0., 18.5), coordinates_obj_to_rm=None,
                        correlation_method='astropy',
                        separation_limit=2. * u.arcsec, reference_filter=None,
-                       region_to_select_calibration_stars=None, indent=1):
+                       region_to_select_calibration_stars=None,
+                       correlate_with_observed_objects=True, indent=1):
     """
         Determine calibration information, find suitable calibration stars
         and determine calibration factors
@@ -747,6 +748,10 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
             utilized for calibration purposes.
             Default is ``None``.
 
+        correlate_with_observed_objects     : `boolean`, optional
+            If ``True`` the downloaded calibration objects will be correlated
+            with the observed objects to get a valid set of calibration objects
+
         indent                              : `integer`, optional
             Indentation for the console output lines
             Default is ``1``.
@@ -759,15 +764,15 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
     #   Get one of image ensembles to extract wcs, positions, ect.
     if reference_filter is None:
         reference_filter = filter_list[0]
-    img_ensemble = img_container.ensembles[reference_filter]
+    image_ensemble = img_container.ensembles[reference_filter]
 
     #   Get wcs
-    wcs = img_ensemble.wcs
+    wcs = image_ensemble.wcs
 
     #   Load calibration data
     #   TODO: Check this routine - It gets and returns ra_unit
-    calib_tbl, column_names, ra_unit = load_calibration_data_table(
-        img_ensemble,
+    calibration_tbl, column_names, ra_unit = load_calibration_data_table(
+        image_ensemble,
         filter_list,
         calibration_method=calibration_method,
         magnitude_range=magnitude_range,
@@ -778,61 +783,145 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
     )
 
     #   Convert coordinates of the calibration stars to SkyCoord object
-    calib_coordinates = SkyCoord(
-        calib_tbl[column_names['ra']].data,
-        calib_tbl[column_names['dec']].data,
+    calibration_object_coordinates = SkyCoord(
+        calibration_tbl[column_names['ra']].data,
+        calibration_tbl[column_names['dec']].data,
         unit=(ra_unit, dec_unit),
         frame="icrs"
     )
 
     #   Get PixelRegion of the field of view and convert it SkyRegion
-    region_pix = img_ensemble.region_pix
+    region_pix = image_ensemble.region_pix
     region_sky = region_pix.to_sky(wcs)
 
     #   Remove calibration stars that are not within the field of view
-    mask = region_sky.contains(calib_coordinates, wcs)
-    calib_coordinates = calib_coordinates[mask]
-    calib_tbl = calib_tbl[mask]
+    mask = region_sky.contains(calibration_object_coordinates, wcs)
+    calibration_object_coordinates = calibration_object_coordinates[mask]
+    calibration_tbl = calibration_tbl[mask]
 
     #   Remove calibration stars that are not within the selection region
     if region_to_select_calibration_stars:
         if hasattr(region_to_select_calibration_stars, 'to_sky'):
             region_to_select_calibration_stars = region_to_select_calibration_stars.to_sky(wcs)
-        mask = region_to_select_calibration_stars.contains(calib_coordinates, wcs)
-        calib_coordinates = calib_coordinates[mask]
-        calib_tbl = calib_tbl[mask]
+        mask = region_to_select_calibration_stars.contains(calibration_object_coordinates, wcs)
+        calibration_object_coordinates = calibration_object_coordinates[mask]
+        calibration_tbl = calibration_tbl[mask]
 
     #   Remove a specific star from the loaded calibration stars
     if coordinates_obj_to_rm is not None:
-        mask = calib_coordinates.separation(coordinates_obj_to_rm) < 1 * u.arcsec
+        mask = calibration_object_coordinates.separation(coordinates_obj_to_rm) < 1 * u.arcsec
         mask = np.invert(mask)
-        calib_coordinates = calib_coordinates[mask]
+        calibration_object_coordinates = calibration_object_coordinates[mask]
 
     #   Calculate object positions in pixel coordinates
-    pixel_position_cali_x, pixel_position_cali_y = calib_coordinates.to_pixel(wcs)
+    pixel_position_cali_x, pixel_position_cali_y = calibration_object_coordinates.to_pixel(wcs)
 
     #   Remove nans that are caused by missing ra/dec entries
     pixel_position_cali_x = pixel_position_cali_x[~np.isnan(pixel_position_cali_x)]
     pixel_position_cali_y = pixel_position_cali_y[~np.isnan(pixel_position_cali_y)]
-    calib_tbl = calib_tbl[~np.isnan(pixel_position_cali_y)]
+    calibration_tbl = calibration_tbl[~np.isnan(pixel_position_cali_y)]
 
-    #   X & Y pixel positions
+    if correlate_with_observed_objects:
+        calibration_tbl, index_obj_instrument = correlate_with_calibration_objects(
+            image_ensemble,
+            calibration_object_coordinates,
+            calibration_tbl,
+            filter_list,
+            column_names,
+            correlation_method=correlation_method,
+            separation_limit=separation_limit,
+            max_pixel_between_objects=max_pixel_between_objects,
+            own_correlation_option=own_correlation_option,
+            id_object=id_object,
+        )
+    else:
+        index_obj_instrument = None
+
+    #   Add calibration data to image container
+    img_container.CalibParameters = CalibParameters(
+        index_obj_instrument,
+        column_names,
+        calibration_tbl,
+    )
+
+
+#   TODO: Move to correlate
+def correlate_with_calibration_objects(
+        image_ensemble, calibration_object_coordinates, calibration_tbl,
+        filter_list, column_names, correlation_method='astropy',
+        separation_limit=2. * u.arcsec, max_pixel_between_objects=3.,
+        own_correlation_option=1, id_object=None):
+    """
+    Correlate observed objects with calibration stars
+
+    Parameters
+    ----------
+    image_ensemble                      : `image.ensemble`
+        Class with all images of a specific image series
+
+    calibration_object_coordinates      : `astropy.coordinates.SkyCoord`
+        Coordinates of the calibration objects
+
+    calibration_tbl                     : `astropy.table.Table`
+        Table with calibration data
+
+    filter_list                         : `list` or set` of `string`
+        Filter list
+
+    column_names                        : `dictionary`
+        Actual names of the columns in calibration_tbl versus
+        the internal default names
+
+    correlation_method                  : `string`, optional
+        Correlation method to be used to find the common objects on
+        the images.
+        Possibilities: ``astropy``, ``own``
+        Default is ``astropy``.
+
+    separation_limit                    : `astropy.units`, optional
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
+
+    max_pixel_between_objects           : `float`, optional
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
+
+    own_correlation_option              : `integer`, optional
+        Option for the srcor correlation function
+        Default is ``1``.
+
+    id_object                           : `integer`, optional
+        ID of the object
+        Default is ``None``.
+
+    Returns
+    -------
+    calibration_tbl_sort                : `astropy.table.Table`
+        Sorted table with calibration data
+
+    index_obj_instrument                : `numpy.ndarray`
+        Index of the observed stars that correspond to the calibration stars
+    """
+    #   Pixel positions of the observed object
     #   TODO: Replace with reference image
-    pixel_position_obj_x = img_ensemble.image_list[0].photometry['x_fit']
-    pixel_position_obj_y = img_ensemble.image_list[0].photometry['y_fit']
+    pixel_position_obj_x = image_ensemble.image_list[0].photometry['x_fit']
+    pixel_position_obj_y = image_ensemble.image_list[0].photometry['y_fit']
+
+    #   Pixel positions of calibration object
+    pixel_position_cali_x, pixel_position_cali_y = calibration_object_coordinates.to_pixel(image_ensemble.wcs)
 
     if correlation_method == 'astropy':
         #   Create coordinates object
         object_coordinates = SkyCoord.from_pixel(
             pixel_position_obj_x,
             pixel_position_obj_y,
-            wcs,
+            image_ensemble.wcs,
         )
 
         #   Find matches between the datasets
         index_obj_instrument, index_obj_literature, _, _ = matching.search_around_sky(
             object_coordinates,
-            calib_coordinates,
+            calibration_object_coordinates,
             separation_limit,
         )
 
@@ -879,7 +968,7 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
         )
 
     #   Limit calibration table to common objects
-    calib_tbl_sort = calib_tbl[index_obj_literature]
+    calibration_tbl_sort = calibration_tbl[index_obj_literature]
 
     ###
     #   Plots
@@ -890,12 +979,12 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
     index_common_new = np.arange(n_identified_literature_objs)
 
     #   Add pixel positions and object ids to the calibration table
-    calib_tbl_sort.add_columns(
+    calibration_tbl_sort.add_columns(
         [np.intc(index_common_new), pixel_position_common_objs_x, pixel_position_common_objs_y],
         names=['id', 'xcentroid', 'ycentroid']
     )
 
-    calib_tbl.add_columns(
+    calibration_tbl.add_columns(
         [np.arange(0, len(pixel_position_cali_y)), pixel_position_cali_x, pixel_position_cali_y],
         names=['id', 'xcentroid', 'ycentroid']
     )
@@ -910,29 +999,24 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
             p = mp.Process(
                 target=plot.starmap,
                 args=(
-                    img_ensemble.outpath.name,
+                    image_ensemble.outpath.name,
                     #   Replace with reference image in the future
-                    img_ensemble.image_list[0].get_data(),
+                    image_ensemble.image_list[0].get_data(),
                     filter_,
-                    calib_tbl,
+                    calibration_tbl,
                 ),
                 kwargs={
-                    'tbl_2': calib_tbl_sort,
+                    'tbl_2': calibration_tbl_sort,
                     'label': 'downloaded calibration stars',
                     'label_2': 'matched calibration stars',
                     'rts': rts,
-                    'name_obj': img_ensemble.objname,
-                    'wcs': img_ensemble.wcs,
+                    'name_obj': image_ensemble.objname,
+                    'wcs': image_ensemble.wcs,
                 }
             )
             p.start()
 
-    #   Add calibration data to image container
-    img_container.CalibParameters = CalibParameters(
-        index_obj_instrument,
-        column_names,
-        calib_tbl_sort,
-    )
+    return calibration_tbl_sort, index_obj_instrument
 
 
 def distribution_from_calibration_table(calibration_parameters, filter_list):
