@@ -18,8 +18,9 @@ from .. import checks, style, calibration_data, terminal_output
 #                           Routines & definitions                         #
 ############################################################################
 
-def find_best_comarison_image_second_filter(image_container, current_image_id, id_second_filter,
-                                            id_current_filter, filter_list):
+def find_best_comparison_image_second_filter(
+        image_container, current_image_id, id_second_filter, id_current_filter,
+        filter_list):
     """
         Prepare variables for magnitude transformation
 
@@ -343,12 +344,12 @@ def derive_transformation_onthefly(image, filter_list, id_current_filter,
     color_correction_filter_1 = unc.normal(
         color_correction_filter_1 * u.mag,
         std=color_correction_filter_1_err * u.mag,
-        n_samples=1000,
+        n_samples=10000,
     )
     color_correction_filter_2 = unc.normal(
         color_correction_filter_2 * u.mag,
         std=color_correction_filter_2_err * u.mag,
-        n_samples=1000,
+        n_samples=10000,
     )
 
     return color_correction_filter_1, color_correction_filter_2
@@ -789,12 +790,12 @@ def flux_calibration_ensemble(image_ensemble):
     flux_distribution = unc.normal(
         flux,
         std=flux_error,
-        n_samples=1000,
+        n_samples=10000,
     )
     # normalization_factor = unc.normal(
     #     median,
     #     std=stddev,
-    #     n_samples=1000,
+    #     n_samples=10000,
     # )[:, np.newaxis]
     normalization_factor = median[:, np.newaxis]
     flux_calibrated = flux_distribution / normalization_factor
@@ -831,7 +832,7 @@ def flux_normalization_ensemble(image_ensemble):
         flux_distribution = unc.normal(
             flux,
             std=flux_error,
-            n_samples=1000,
+            n_samples=10000,
         )
 
     # normalized_flux = []
@@ -860,7 +861,7 @@ def flux_normalization_ensemble(image_ensemble):
     #         # std=std * u.mag,
     #         median,
     #         std=std,
-    #         n_samples=1000,
+    #         n_samples=10000,
     #     )
 
     #     normalized_flux.append(flux / normalization_factor)
@@ -882,7 +883,7 @@ def flux_normalization_ensemble(image_ensemble):
     normalization_factor = unc.normal(
         median,
         std=stddev,
-        n_samples=1000,
+        n_samples=10000,
     )
     normalized_flux = flux_distribution / normalization_factor
     # print('+++++++++++++++++++++')
@@ -1135,8 +1136,9 @@ def apply_calibration(
 
             #   Prepare some variables and find corresponding image to
             #   current_image
+            #   TODO: Replace current_image_id with current_image
             if transformation_type is not None:
-                comparison_image = find_best_comarison_image_second_filter(
+                comparison_image = find_best_comparison_image_second_filter(
                     image_container,
                     current_image_id,
                     comparison_filter_id,

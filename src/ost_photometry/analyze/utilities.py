@@ -2458,7 +2458,7 @@ def distribution_from_table(image):
     magnitude_distribution = unc.normal(
         image.photometry['mags_fit'] * u.mag,
         std=image.photometry['mags_unc'] * u.mag,
-        n_samples=1000,
+        n_samples=10000,
     )
 
     return magnitude_distribution
@@ -2556,7 +2556,7 @@ def convert_magnitudes_to_other_system(tbl: Table,
                     data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter}'].value * u.mag,
                         std=tbl[f'{column_filter}_err'].value * u.mag,
-                        n_samples=1000,
+                        n_samples=10000,
                     )
                     # unumpy.uarray(
                     #     tbl[f'{column_filter}'].value,
@@ -2566,7 +2566,7 @@ def convert_magnitudes_to_other_system(tbl: Table,
                     # data_dict[column_filter] = tbl[f'{column_filter}'].value
                     data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter}'].value * u.mag,
-                        n_samples=1000,
+                        n_samples=10000,
                     )
             else:
                 if error:
@@ -2577,13 +2577,13 @@ def convert_magnitudes_to_other_system(tbl: Table,
                     data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter} ({image_id})'].value * u.mag,
                         std=tbl[f'{column_filter}_err ({image_id})'].value * u.mag,
-                        n_samples=1000,
+                        n_samples=10000,
                     )
                 else:
                     # data_dict[column_filter] = tbl[f'{column_filter} ({image_id})'].value
                     data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter} ({image_id})'].value * u.mag,
-                        n_samples=1000,
+                        n_samples=10000,
                     )
 
         if target_filter_system == 'AB':

@@ -1062,7 +1062,7 @@ def distribution_from_calibration_table(calibration_parameters, filter_list):
         literature_magnitudes_distribution = unc.normal(
             calibration_magnitudes.value * u.mag,
             std=calibration_magnitudes_err.value * u.mag,
-            n_samples=1000,
+            n_samples=10000,
         )
         distribution_list.append(
             literature_magnitudes_distribution

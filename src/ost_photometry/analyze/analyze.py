@@ -462,7 +462,7 @@ class ImageEnsemble:
                 unc.normal(
                     tbl['flux_fit'] * u.mag,
                     std=tbl['flux_unc'] * u.mag,
-                    n_samples=1000,
+                    n_samples=10000,
                 )
             )
 
