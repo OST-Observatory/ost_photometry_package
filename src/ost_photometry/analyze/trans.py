@@ -1112,6 +1112,7 @@ def apply_calibration(
             current_filter_id,
             derive_transformation_coefficients,
         )
+        print('transformation_type: ', transformation_type)
         transformation_type_list.append(transformation_type)
 
         #   Loop over images
@@ -1217,6 +1218,7 @@ def apply_calibration(
     wcs = img_ensembles[filter_list[0]].wcs
 
     #   If transformation is available
+    print('transformation_type_list: ', transformation_type_list)
     if not np.any(np.array(transformation_type_list) == None):
         #   Make astropy table
         table_transformed_magnitudes = utilities.mk_magnitudes_table_distribution(

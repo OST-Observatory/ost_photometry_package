@@ -2109,8 +2109,8 @@ def correlate_ensembles(
             # id_object=list(ensemble_dict.values())[reference_ensemble_id].variable_id,
         )
 
-        calibration_parameters.calib_tbl = calibration_tbl
-        calibration_parameters.inds = index_obj_instrument
+        image_container.CalibParameters.calib_tbl = calibration_tbl
+        image_container.CalibParameters.inds = index_obj_instrument
 
 
 #   TODO: Check were this is used and if it is still functional, rename
@@ -4428,6 +4428,10 @@ def calibrate_data_mk_light_curve(
             Default is ``True``.
 
     """
+    if len(filter_list) == 1:
+        correlate_with_observed_objects = True
+    else:
+        correlate_with_observed_objects = False
     #   Load calibration information
     calib.derive_calibration(
         image_container,
@@ -4441,7 +4445,7 @@ def calibrate_data_mk_light_curve(
         correlation_method=correlation_method,
         separation_limit=separation_limit,
         region_to_select_calibration_stars=region_to_select_calibration_stars,
-        correlate_with_observed_objects=False,
+        correlate_with_observed_objects=correlate_with_observed_objects,
     )
     calibration_filters = image_container.CalibParameters.column_names
     terminal_output.print_to_terminal('')

@@ -660,9 +660,6 @@ def observed_magnitude_of_calibration_stars(
     #   TODO: Convert to getattr()
     index_calibration_stars = img_container.CalibParameters.inds
 
-    print('index_calibration_stars: ', index_calibration_stars)
-    print('index_calibration_stars.shape: ', index_calibration_stars.shape)
-    print('magnitude_distribution.shape: ', magnitude_distribution.shape)
     #   Sort magnitudes
     distribution_calibration_observed = magnitude_distribution[index_calibration_stars]
 
