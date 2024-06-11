@@ -819,13 +819,14 @@ def derive_calibration(
         mask = calibration_object_coordinates.separation(coordinates_obj_to_rm) < 1 * u.arcsec
         mask = np.invert(mask)
         calibration_object_coordinates = calibration_object_coordinates[mask]
+        calibration_tbl = calibration_tbl[mask]
         print('len(calibration_object_coordinates) [after]: ', len(calibration_object_coordinates))
 
     #   Calculate object positions in pixel coordinates
     pixel_position_cali_x, pixel_position_cali_y = calibration_object_coordinates.to_pixel(wcs)
 
     #   Remove nans that are caused by missing ra/dec entries
-    pixel_position_cali_x = pixel_position_cali_x[~np.isnan(pixel_position_cali_x)]
+    # pixel_position_cali_x = pixel_position_cali_x[~np.isnan(pixel_position_cali_x)]
     pixel_position_cali_y = pixel_position_cali_y[~np.isnan(pixel_position_cali_y)]
     calibration_tbl = calibration_tbl[~np.isnan(pixel_position_cali_y)]
 

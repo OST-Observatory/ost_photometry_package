@@ -2058,6 +2058,8 @@ def correlate_ensembles(
                 max_pixel_between_objects=max_pixel_between_objects,
                 own_correlation_option=own_correlation_option,
                 verbose=verbose,
+                ra_unit=ra_unit,
+                dec_unit=dec_unit,
             )
             object_ids.append(object_id)
 
@@ -2303,17 +2305,14 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
 
 #   TODO: Move to correlation
 #   TODO: Generalize for multiple variable objects
-def correlate_preserve_variable(image_ensemble, ra_obj, dec_obj,
-                                max_pixel_between_objects=3.,
-                                own_correlation_option=1,
-                                cross_identification_limit=1,
-                                reference_image_id=0,
-                                n_allowed_non_detections_object=1,
-                                expected_bad_image_fraction=1.0,
-                                protect_reference_obj=True,
-                                correlation_method='astropy',
-                                separation_limit=2. * u.arcsec, verbose=False,
-                                plot_reference_only=True):
+def correlate_preserve_variable(
+        image_ensemble, ra_obj, dec_obj, ra_unit=u.hourangle, dec_unit=u.deg,
+        max_pixel_between_objects=3., own_correlation_option=1,
+        cross_identification_limit=1, reference_image_id=0,
+        n_allowed_non_detections_object=1, expected_bad_image_fraction=1.0,
+        protect_reference_obj=True, correlation_method='astropy',
+        separation_limit=2. * u.arcsec, verbose=False,
+        plot_reference_only=True):
     """
         Correlate results from all images, while preserving the variable
         star
@@ -2329,6 +2328,14 @@ def correlate_preserve_variable(image_ensemble, ra_obj, dec_obj,
 
         dec_obj                         : `float`
             Declination of the object
+
+        ra_unit                         : `astropy.units`, optional
+            Right ascension unit
+            Default is ``u.hourangle``.
+
+        dec_unit                        : `astropy.units`, optional
+            Declination unit
+            Default is ``u.deg``.
 
         max_pixel_between_objects       : `float`, optional
             Maximal distance between two objects in Pixel
@@ -2400,6 +2407,8 @@ def correlate_preserve_variable(image_ensemble, ra_obj, dec_obj,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         verbose=verbose,
+        ra_unit=ra_unit,
+        dec_unit=dec_unit,
     )
 
     ###
@@ -2445,6 +2454,8 @@ def correlate_preserve_variable(image_ensemble, ra_obj, dec_obj,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         verbose=verbose,
+        ra_unit=ra_unit,
+        dec_unit=dec_unit,
     )
 
     ###
@@ -3314,30 +3325,25 @@ def extract_flux(image_container, filter_list, object_name, image_paths,
         p.start()
 
 
-def extract_flux_multi(image_container, filter_list, object_name, image_paths,
-                       output_dir, sigma_object_psf, ra_obj, dec_obj,
-                       n_cores_multiprocessing=6, wcs_method='astrometry',
-                       force_wcs_determ=False,
-                       sigma_value_background_clipping=5.,
-                       multiplier_background_rms=5., size_epsf_region=25,
-                       fraction_epsf_stars=0.2, oversampling_factor_epsf=2,
-                       max_n_iterations_epsf=7, object_finder_method='IRAF',
-                       multiplier_background_rms_epsf=5.0,
-                       multiplier_dao_grouper_epsf=2.0,
-                       strict_cleaning_epsf_results=True,
-                       minimum_n_eps_stars=25, strict_epsf_checks=True,
-                       photometry_extraction_method='PSF', radius_aperture=5.,
-                       inner_annulus_radius=7., outer_annulus_radius=10.,
-                       radii_unit='arcsec', max_pixel_between_objects=3.,
-                       own_correlation_option=1, cross_identification_limit=1,
-                       reference_image_id=0, n_allowed_non_detections_object=1,
-                       expected_bad_image_fraction=1.0,
-                       protect_reference_obj=True,
-                       correlation_method='astropy',
-                       separation_limit=2. * u.arcsec, verbose=False,
-                       identify_objects_on_image=True,
-                       plots_for_all_images=False,
-                       plot_for_reference_image_only=True):
+def extract_flux_multi(
+        image_container, filter_list, object_name, image_paths, output_dir,
+        sigma_object_psf, ra_obj, dec_obj, ra_unit=u.hourangle, dec_unit=u.deg,
+        n_cores_multiprocessing=6, wcs_method='astrometry',
+        force_wcs_determ=False, sigma_value_background_clipping=5.,
+        multiplier_background_rms=5., size_epsf_region=25,
+        fraction_epsf_stars=0.2, oversampling_factor_epsf=2,
+        max_n_iterations_epsf=7, object_finder_method='IRAF',
+        multiplier_background_rms_epsf=5.0, multiplier_dao_grouper_epsf=2.0,
+        strict_cleaning_epsf_results=True, minimum_n_eps_stars=25,
+        strict_epsf_checks=True, photometry_extraction_method='PSF',
+        radius_aperture=5., inner_annulus_radius=7., outer_annulus_radius=10.,
+        radii_unit='arcsec', max_pixel_between_objects=3.,
+        own_correlation_option=1, cross_identification_limit=1,
+        reference_image_id=0, n_allowed_non_detections_object=1,
+        expected_bad_image_fraction=1.0, protect_reference_obj=True,
+        correlation_method='astropy', separation_limit=2. * u.arcsec,
+        verbose=False, identify_objects_on_image=True,
+        plots_for_all_images=False, plot_for_reference_image_only=True):
     """
         Extract flux from multiple images per filter and add results to
         the image container
@@ -3367,6 +3373,14 @@ def extract_flux_multi(image_container, filter_list, object_name, image_paths,
 
         dec_obj                         : `float`
             Declination of the object
+
+        ra_unit                         : `astropy.units`, optional
+            Right ascension unit
+            Default is ``u.hourangle``.
+
+        dec_unit                        : `astropy.units`, optional
+            Declination unit
+            Default is ``u.deg``.
 
         n_cores_multiprocessing         : `integer`, optional
             Number of cores to use for multicore processing
@@ -3588,6 +3602,8 @@ def extract_flux_multi(image_container, filter_list, object_name, image_paths,
             image_container.ensembles[filter_],
             ra_obj,
             dec_obj,
+            ra_unit=ra_unit,
+            dec_unit=dec_unit,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             cross_identification_limit=cross_identification_limit,
@@ -4531,6 +4547,8 @@ def calibrate_data_mk_light_curve(
             dec_object=dec_object,
             verbose=verbose,
             reference_image_id=reference_image_id,
+            ra_unit=ra_unit,
+            dec_unit=dec_unit,
         )
 
     ###
