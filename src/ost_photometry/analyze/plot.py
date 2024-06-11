@@ -3205,7 +3205,7 @@ def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
     output_dir          : `string`
         Output directory
 
-    dataset_label       : 'list` of 'string` or `None`, optional
+    dataset_label       : `list` of `list` of `string` or `None`, optional
         Label for the datasets
         Default is ``None``.
 

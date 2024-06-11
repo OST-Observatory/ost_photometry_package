@@ -666,95 +666,99 @@ def observed_magnitude_of_calibration_stars(
     return distribution_calibration_observed
 
 
-def derive_calibration(img_container, filter_list, calibration_method='APASS',
-                       max_pixel_between_objects=3., own_correlation_option=1,
-                       vizier_dict=None, path_calibration_file=None,
-                       id_object=None, ra_unit=u.deg, dec_unit=u.deg,
-                       magnitude_range=(0., 18.5), coordinates_obj_to_rm=None,
-                       correlation_method='astropy',
-                       separation_limit=2. * u.arcsec, reference_filter=None,
-                       region_to_select_calibration_stars=None,
-                       correlate_with_observed_objects=True, indent=1):
+def derive_calibration(
+        img_container, filter_list, calibration_method='APASS',
+        max_pixel_between_objects=3., own_correlation_option=1,
+        vizier_dict=None, path_calibration_file=None, id_object=None,
+        ra_unit=u.deg, dec_unit=u.deg, magnitude_range=(0., 18.5),
+        coordinates_obj_to_rm=None, correlation_method='astropy',
+        separation_limit=2. * u.arcsec, reference_filter=None,
+        region_to_select_calibration_stars=None,
+        correlate_with_observed_objects=True, reference_image_id=0, indent=1):
     """
-        Find suitable calibration stars
+    Find suitable calibration stars
 
-        Parameters
-        ----------
-        img_container                       : `image.container`
-            Container object with image ensemble objects for each filter
+    Parameters
+    ----------
+    img_container                       : `image.container`
+        Container object with image ensemble objects for each filter
 
-        filter_list                         : `list` or set` of `string`
-            Filter list
+    filter_list                         : `list` or set` of `string`
+        Filter list
 
-        calibration_method                  : `string`, optional
-            Calibration method
-            Default is ``APASS``.
+    calibration_method                  : `string`, optional
+        Calibration method
+        Default is ``APASS``.
 
-        max_pixel_between_objects           : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
+    max_pixel_between_objects           : `float`, optional
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
 
-        own_correlation_option              : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
+    own_correlation_option              : `integer`, optional
+        Option for the srcor correlation function
+        Default is ``1``.
 
-        vizier_dict                         : `dictionary` or `None`, optional
-            Dictionary with identifiers of the Vizier catalogs with valid
-            calibration data
-            Default is ``None``.
+    vizier_dict                         : `dictionary` or `None`, optional
+        Dictionary with identifiers of the Vizier catalogs with valid
+        calibration data
+        Default is ``None``.
 
-        path_calibration_file               : `string`, optional
-            Path to the calibration file
-            Default is ``None``.
+    path_calibration_file               : `string`, optional
+        Path to the calibration file
+        Default is ``None``.
 
-        id_object                           : `integer`, optional
-            ID of the object
-            Default is ``None``.
+    id_object                           : `integer`, optional
+        ID of the object
+        Default is ``None``.
 
-        ra_unit                             : `astropy.unit`, optional
-            Right ascension unit
-            Default is ``u.deg``.
+    ra_unit                             : `astropy.unit`, optional
+        Right ascension unit
+        Default is ``u.deg``.
 
-        dec_unit                            : `astropy.unit`, optional
-            Declination unit
-            Default is ``u.deg``.
+    dec_unit                            : `astropy.unit`, optional
+        Declination unit
+        Default is ``u.deg``.
 
-        magnitude_range                     : `tuple` or `float`, optional
-            Magnitude range
-            Default is ``(0.,18.5)``.
+    magnitude_range                     : `tuple` or `float`, optional
+        Magnitude range
+        Default is ``(0.,18.5)``.
 
-        coordinates_obj_to_rm               : `astropy.coordinates.SkyCoord`, optional
-            Coordinates of an object that should not be used for calibrating
-            the data.
-            Default is ``None``.
+    coordinates_obj_to_rm               : `astropy.coordinates.SkyCoord`, optional
+        Coordinates of an object that should not be used for calibrating
+        the data.
+        Default is ``None``.
 
-        correlation_method                  : `string`, optional
-            Correlation method to be used to find the common objects on
-            the images.
-            Possibilities: ``astropy``, ``own``
-            Default is ``astropy``.
+    correlation_method                  : `string`, optional
+        Correlation method to be used to find the common objects on
+        the images.
+        Possibilities: ``astropy``, ``own``
+        Default is ``astropy``.
 
-        separation_limit                    : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
+    separation_limit                    : `astropy.units`, optional
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
 
-        reference_filter                    : `string` or `None`, optional
-            Name of the reference filter
-            Default is ``None`.
+    reference_filter                    : `string` or `None`, optional
+        Name of the reference filter
+        Default is ``None`.
 
-        region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
-            Region in which to select calibration stars. This is a useful
-            feature in instances where not the entire field of view can be
-            utilized for calibration purposes.
-            Default is ``None``.
+    region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
+        Region in which to select calibration stars. This is a useful
+        feature in instances where not the entire field of view can be
+        utilized for calibration purposes.
+        Default is ``None``.
 
-        correlate_with_observed_objects     : `boolean`, optional
-            If ``True`` the downloaded calibration objects will be correlated
-            with the observed objects to get a valid set of calibration objects
+    correlate_with_observed_objects     : `boolean`, optional
+        If ``True`` the downloaded calibration objects will be correlated
+        with the observed objects to get a valid set of calibration objects
 
-        indent                              : `integer`, optional
-            Indentation for the console output lines
-            Default is ``1``.
+    reference_image_id                  : `integer`, optional
+        ID of the reference image
+        Default is ``0``.
+
+    indent                              : `integer`, optional
+        Indentation for the console output lines
+        Default is ``1``.
     """
     terminal_output.print_to_terminal(
         f"Get calibration star magnitudes (filter: {tuple(filter_list)})",
@@ -839,6 +843,7 @@ def derive_calibration(img_container, filter_list, calibration_method='APASS',
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             id_object=id_object,
+            reference_image_id=reference_image_id,
         )
     else:
         index_obj_instrument = None
@@ -856,7 +861,7 @@ def correlate_with_calibration_objects(
         image_ensemble, calibration_object_coordinates, calibration_tbl,
         filter_list, column_names, correlation_method='astropy',
         separation_limit=2. * u.arcsec, max_pixel_between_objects=3.,
-        own_correlation_option=1, id_object=None):
+        own_correlation_option=1, id_object=None, reference_image_id=0):
     """
     Correlate observed objects with calibration stars
 
@@ -900,6 +905,10 @@ def correlate_with_calibration_objects(
         ID of the object
         Default is ``None``.
 
+    reference_image_id                  : `integer`, optional
+        ID of the reference image
+        Default is ``0``.
+
     Returns
     -------
     calibration_tbl_sort                : `astropy.table.Table`
@@ -909,9 +918,8 @@ def correlate_with_calibration_objects(
         Index of the observed stars that correspond to the calibration stars
     """
     #   Pixel positions of the observed object
-    #   TODO: Replace with reference image
-    pixel_position_obj_x = image_ensemble.image_list[0].photometry['x_fit']
-    pixel_position_obj_y = image_ensemble.image_list[0].photometry['y_fit']
+    pixel_position_obj_x = image_ensemble.image_list[reference_image_id].photometry['x_fit']
+    pixel_position_obj_y = image_ensemble.image_list[reference_image_id].photometry['y_fit']
 
     #   Pixel positions of calibration object
     pixel_position_cali_x, pixel_position_cali_y = calibration_object_coordinates.to_pixel(image_ensemble.wcs)

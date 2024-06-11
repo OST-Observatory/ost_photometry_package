@@ -1890,7 +1890,8 @@ def correlate_ensembles(
         expected_bad_image_fraction=1.0, protect_reference_obj=True,
         correlation_method='astropy', separation_limit=2. * u.arcsec,
         ra_object=None, dec_object=None, ra_unit=u.deg, dec_unit=u.deg,
-        force_correlation_calibration_objects=False, verbose=False):
+        force_correlation_calibration_objects=False, reference_image_id=0,
+        verbose=False):
     """
         Correlate star lists from the stacked images of all filters to find
         those stars that are visible on all images -> write calibrated CMD
@@ -1967,6 +1968,10 @@ def correlate_ensembles(
             ensembles and the calibration data will be enforced.
             Default is ``False``
 
+        reference_image_id                      : `integer`, optional
+            ID of the reference image
+            Default is ``0``.
+
         verbose                                 : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
@@ -1991,10 +1996,10 @@ def correlate_ensembles(
     for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
         wcs_list_ensemble.append(ensemble.wcs)
 
-        _x = ensemble.image_list[0].photometry['x_fit']
+        _x = ensemble.image_list[reference_image_id].photometry['x_fit']
         x_pixel_positions_all_images.append(_x)
         y_pixel_positions_all_images.append(
-            ensemble.image_list[0].photometry['y_fit']
+            ensemble.image_list[reference_image_id].photometry['y_fit']
         )
         n_object_all_images_list.append(len(_x))
 
@@ -2044,8 +2049,8 @@ def correlate_ensembles(
     for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
         if id_ensemble == reference_ensemble_id:
             object_id, count, _, _ = correlate.identify_star_in_dataset(
-                ensemble.image_list[0].photometry['x_fit'],
-                ensemble.image_list[0].photometry['y_fit'],
+                ensemble.image_list[reference_image_id].photometry['x_fit'],
+                ensemble.image_list[reference_image_id].photometry['y_fit'],
                 ra_object,
                 dec_object,
                 ensemble.wcs,
@@ -2106,6 +2111,7 @@ def correlate_ensembles(
             separation_limit=separation_limit,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
+            reference_image_id=reference_image_id,
             # id_object=list(ensemble_dict.values())[reference_ensemble_id].variable_id,
         )
 
@@ -4284,9 +4290,10 @@ def correlate_calibrate(image_container, filter_list,
 
 
 def calibrate_data_mk_light_curve(
-        image_container, filter_list, ra_object, dec_object, name_object, output_dir,
-        transit_time, period, valid_filter_combinations=None,
-        binning_factor=None, transformation_coefficients_dict=None,
+        image_container, filter_list, ra_object, dec_object, name_object,
+        output_dir, transit_time, period, ra_unit=u.hourangle, dec_unit=u.deg,
+        valid_filter_combinations=None, binning_factor=None,
+        transformation_coefficients_dict=None,
         derive_transformation_coefficients=False, reference_image_id=0,
         calibration_method='APASS', vizier_dict=None,
         path_calibration_file=None, magnitude_range=(0., 18.5),
@@ -4298,140 +4305,161 @@ def calibrate_data_mk_light_curve(
         region_to_select_calibration_stars=None,
         calculate_zero_point_statistic=True):
     """
-        Calculate magnitudes, calibrate, and plot light curves
+    Calculate magnitudes, calibrate, and plot light curves
 
-        Parameters
-        ----------
-        image_container                     : `image.container`
-            Container object with image ensemble objects for each filter
+    Parameters
+    ----------
+    image_container                     : `image.container`
+        Container object with image ensemble objects for each filter
 
-        filter_list                         : `list` of `strings`
-            List with filter names
+    filter_list                         : `list` of `strings`
+        List with filter names
 
-        ra_object                           : `float`
-            Right ascension of the object
+    ra_object                           : `float`
+        Right ascension of the object
 
-        dec_object                          : `float`
-            Declination of the object
+    dec_object                          : `float`
+        Declination of the object
 
-        name_object                         : `string`
-            Name of the object
+    name_object                         : `string`
+        Name of the object
 
-        output_dir                          : `string`
-            Path, where the output should be stored.
+    output_dir                          : `string`
+        Path, where the output should be stored.
 
-        transit_time                        : `string`
-            Date and time of the transit.
-            Format: "yyyy:mm:ddThh:mm:ss" e.g., "2020-09-18T01:00:00"
+    transit_time                        : `string`
+        Date and time of the transit.
+        Format: "yyyy:mm:ddThh:mm:ss" e.g., "2020-09-18T01:00:00"
 
-        period                              : `float`
-            Period in [d]
+    period                              : `float`
+        Period in [d]
 
-        valid_filter_combinations           : `list` of 'list` of `string` or None, optional
-            Valid filter combinations to calculate magnitude transformation
-            Default is ``None``.
+    ra_unit                             : `astropy.unit`, optional
+        Right ascension unit
+        Default is ``u.deg``.
 
-        binning_factor                      : `float`, optional
-            Binning factor for the light curve.
-            Default is ``None```.
+    dec_unit                            : `astropy.unit`, optional
+        Declination unit
+        Default is ``u.deg``.
 
-        transformation_coefficients_dict    : `dictionary`, optional
-            Calibration coefficients for the magnitude transformation
-            Default is ``None``.
+    valid_filter_combinations           : `list` of 'list` of `string` or None, optional
+        Valid filter combinations to calculate magnitude transformation
+        Default is ``None``.
 
-        derive_transformation_coefficients  : `boolean`, optional
-            If True the magnitude transformation coefficients will be
-            calculated from the current data even if calibration coefficients
-            are available in the database.
-            Default is ``False``
+    binning_factor                      : `float`, optional
+        Binning factor for the light curve.
+        Default is ``None```.
 
-        reference_image_id                  : `integer`, optional
-            ID of the reference image
-            Default is ``0``.
+    transformation_coefficients_dict    : `dictionary`, optional
+        Calibration coefficients for the magnitude transformation
+        Default is ``None``.
 
-        calibration_method                  : `string`, optional
-            Calibration method
-            Default is ``APASS``.
+    derive_transformation_coefficients  : `boolean`, optional
+        If True the magnitude transformation coefficients will be
+        calculated from the current data even if calibration coefficients
+        are available in the database.
+        Default is ``False``
 
-        vizier_dict                         : `dictionary` or `None`, optional
-            Dictionary with identifiers of the Vizier catalogs with valid
-            calibration data
-            Default is ``None``.
+    reference_image_id                  : `integer`, optional
+        ID of the reference image
+        Default is ``0``.
 
-        path_calibration_file               : `string`, optional
-            Path to the calibration file
-            Default is ``None``.
+    calibration_method                  : `string`, optional
+        Calibration method
+        Default is ``APASS``.
 
-        magnitude_range                     : `tuple` or `float`, optional
-            Magnitude range
-            Default is ``(0.,18.5)``.
+    vizier_dict                         : `dictionary` or `None`, optional
+        Dictionary with identifiers of the Vizier catalogs with valid
+        calibration data
+        Default is ``None``.
 
-        max_pixel_between_objects           : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
+    path_calibration_file               : `string`, optional
+        Path to the calibration file
+        Default is ``None``.
 
-        own_correlation_option              : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
+    magnitude_range                     : `tuple` or `float`, optional
+        Magnitude range
+        Default is ``(0.,18.5)``.
 
-        cross_identification_limit          : `integer`, optional
-            Cross-identification limit between multiple objects in the current
-            image and one object in the reference image. The current image is
-            rejected when this limit is reached.
-            Default is ``1``.
+    max_pixel_between_objects           : `float`, optional
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
 
-        n_allowed_non_detections_object     : `integer`, optional
-            Maximum number of times an object may not be detected in an image.
-            When this limit is reached, the object will be removed.
-            Default is ``1`.
+    own_correlation_option              : `integer`, optional
+        Option for the srcor correlation function
+        Default is ``1``.
 
-        expected_bad_image_fraction         : `float`, optional
-            Fraction of low quality images, i.e. those images for which a
-            reduced number of objects with valid source positions are expected.
-            Default is ``1.0``.
+    cross_identification_limit          : `integer`, optional
+        Cross-identification limit between multiple objects in the current
+        image and one object in the reference image. The current image is
+        rejected when this limit is reached.
+        Default is ``1``.
 
-        protect_reference_obj               : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
+    n_allowed_non_detections_object     : `integer`, optional
+        Maximum number of times an object may not be detected in an image.
+        When this limit is reached, the object will be removed.
+        Default is ``1`.
 
-        photometry_extraction_method        : `string`, optional
-            Applied extraction method. Possibilities: ePSF or APER`
-            Default is ``''``.
+    expected_bad_image_fraction         : `float`, optional
+        Fraction of low quality images, i.e. those images for which a
+        reduced number of objects with valid source positions are expected.
+        Default is ``1.0``.
 
-        correlation_method                  : `string`, optional
-            Correlation method to be used to find the common objects on
-            the images.
-            Possibilities: ``astropy``, ``own``
-            Default is ``astropy``.
+    protect_reference_obj               : `boolean`, optional
+        If ``False`` also reference objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``True``.
 
-        separation_limit                    : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
+    photometry_extraction_method        : `string`, optional
+        Applied extraction method. Possibilities: ePSF or APER`
+        Default is ``''``.
 
-        verbose                             : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
+    correlation_method                  : `string`, optional
+        Correlation method to be used to find the common objects on
+        the images.
+        Possibilities: ``astropy``, ``own``
+        Default is ``astropy``.
 
-        plot_sigma                          : `boolean', optional
-            If True sigma clipped magnitudes will be plotted.
-            Default is ``False``.
+    separation_limit                    : `astropy.units`, optional
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
 
-        region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
-            Region in which to select calibration stars. This is a useful
-            feature in instances where not the entire field of view can be
-            utilized for calibration purposes.
-            Default is ``None``.
+    verbose                             : `boolean`, optional
+        If True additional output will be printed to the command line.
+        Default is ``False``.
 
-        calculate_zero_point_statistic      : `boolean`, optional
-            If `True` a statistic on the zero points will be calculated.
-            Default is ``True``.
+    plot_sigma                          : `boolean', optional
+        If True sigma clipped magnitudes will be plotted.
+        Default is ``False``.
+
+    region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
+        Region in which to select calibration stars. This is a useful
+        feature in instances where not the entire field of view can be
+        utilized for calibration purposes.
+        Default is ``None``.
+
+    calculate_zero_point_statistic      : `boolean`, optional
+        If `True` a statistic on the zero points will be calculated.
+        Default is ``True``.
 
     """
+    #   Check if correlation with observed objects can be applied directly
+    #   after loading the calibration data. If only one filter and thus one
+    #   image series is available, correlation will be applied immediately.
     if len(filter_list) == 1:
         correlate_with_observed_objects = True
     else:
         correlate_with_observed_objects = False
+
+    #   TODO: Use ra_unit and dec_unit consistently
+    #   Make coordinates object for variable star
+    coordinates_variable_objects = SkyCoord(
+        ra_object,
+        dec_object,
+        unit=(ra_unit, dec_unit),
+        frame="icrs",
+    )
+
     #   Load calibration information
     calib.derive_calibration(
         image_container,
@@ -4446,6 +4474,8 @@ def calibrate_data_mk_light_curve(
         separation_limit=separation_limit,
         region_to_select_calibration_stars=region_to_select_calibration_stars,
         correlate_with_observed_objects=correlate_with_observed_objects,
+        reference_image_id=reference_image_id,
+        coordinates_obj_to_rm=coordinates_variable_objects,
     )
     calibration_filters = image_container.CalibParameters.column_names
     terminal_output.print_to_terminal('')
@@ -4500,6 +4530,7 @@ def calibrate_data_mk_light_curve(
             ra_object=ra_object,
             dec_object=dec_object,
             verbose=verbose,
+            reference_image_id=reference_image_id,
         )
 
     ###

@@ -1160,16 +1160,13 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
         terminal_output.print_to_terminal('')
 
 
-def calibration_check_plots(filter_, out_dir, name_object, image_id,
-                            filter_list, id_filter_1, id_filter_2, mask,
-                            color_observed, color_literature,
-                            ids_calibration_stars, literature_magnitudes,
-                            magnitudes, uncalibrated_magnitudes,
-                            color_observed_err=None, color_literature_err=None,
-                            literature_magnitudes_err=None,
-                            magnitudes_err=None,
-                            uncalibrated_magnitudes_err=None,
-                            plot_sigma_switch=False):
+def calibration_check_plots(
+        filter_, out_dir, name_object, image_id, filter_list, mask,
+        color_observed, color_literature, ids_calibration_stars,
+        literature_magnitudes, magnitudes, uncalibrated_magnitudes,
+        color_observed_err=None, color_literature_err=None,
+        literature_magnitudes_err=None, magnitudes_err=None,
+        uncalibrated_magnitudes_err=None, plot_sigma_switch=False):
     """
         Useful plots to check the quality of the calibration process.
 
@@ -1189,12 +1186,6 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
 
         filter_list                 : `list` - `string`
             Filter list
-
-        id_filter_1                 : `integer`
-            ID of filter 1
-
-        id_filter_2                 : `integer`
-            ID of filter 2
 
         mask:                       : `numpy.ndarray`
             Mask of stars that should be excluded
@@ -1308,9 +1299,9 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
             target=plot.scatter,
             args=(
                 [color_literature, color_literature[mask]],
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
+                f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
                 [color_observed, color_observed[mask]],
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
+                f'{filter_list[0]}-{filter_list[1]}_measured [mag]',
                 f'color_sigma_{filter_}_img_{image_id}',
                 out_dir,
             ),
@@ -1357,15 +1348,15 @@ def calibration_check_plots(filter_, out_dir, name_object, image_id,
             target=plot.scatter,
             args=(
                 [color_literature, color_literature[mask]],
-                f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
+                f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
                 [
                     2 * literature_magnitudes - color_literature -
                     2 * magnitudes[ids_calibration_stars] + color_observed,
                     2 * literature_magnitudes[mask] - color_literature[mask] -
                     2 * magnitudes[ids_calibration_stars][mask] + color_observed[mask]
                 ],
-                f'{filter_list[id_filter_1]} + {filter_list[id_filter_2]}_measured [mag]'
-                f' - {filter_list[id_filter_1]} - {filter_list[id_filter_2]}_literature',
+                f'{filter_list[0]} + {filter_list[1]}_measured [mag]'
+                f' - {filter_list[0]} - {filter_list[1]}_literature',
                 f'delta_magnitudes_sigma_{filter_}_img_{image_id}',
                 out_dir,
             ),
@@ -2456,8 +2447,8 @@ def distribution_from_table(image):
     """
     #   Build normal distribution
     magnitude_distribution = unc.normal(
-        image.photometry['mags_fit'] * u.mag,
-        std=image.photometry['mags_unc'] * u.mag,
+        image.photometry['mags_fit'].value * u.mag,
+        std=image.photometry['mags_unc'].value * u.mag,
         n_samples=10000,
     )
 
