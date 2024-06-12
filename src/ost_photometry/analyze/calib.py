@@ -29,11 +29,25 @@ from . import correlate, plot
 
 
 class CalibParameters:
-    def __init__(self, index, column_names, calib_tbl):
+    def __init__(self, index, column_names, calib_tbl, **kwargs):
         self.inds = index
         self.column_names = column_names
         self.calib_tbl = calib_tbl
 
+        #   Add additional keywords
+        self.__dict__.update(kwargs)
+
+        #   Check for right ascension and declination
+        ra_unit = kwargs.get('ra_unit', None)
+        dec_unit = kwargs.get('dec_unit', None)
+        if ra_unit is not None:
+            self.ra_unit = ra_unit
+        else:
+            self.ra_unit = u.deg
+        if dec_unit is not None:
+            self.dec = dec_unit
+        else:
+            self.dec = u.deg
 
 def get_comp_stars_aavso(coordinates_sky, filters=None, field_of_view=18.5,
                          magnitude_range=(0., 18.5), indent=2):
@@ -356,7 +370,6 @@ def get_vizier_catalog(filter_list, coordinates_image_center, field_of_view,
 
     result = table_list[0]
 
-    #   TODO: Remove comment lines when changes have proven successful.
     #   Rename columns to default names
     if 'column_rename' in catalog_properties_dict:
         for element in catalog_properties_dict['column_rename']:
@@ -496,10 +509,10 @@ def read_votable_simbad(path_calibration_file, filter_list, magnitude_range=(0.,
     return calib_tbl, column_dict
 
 
-def load_calibration_data_table(image, filter_list, calibration_method='APASS',
-                                magnitude_range=(0., 18.5), vizier_dict=None,
-                                path_calibration_file=None, ra_unit=u.deg,
-                                indent=1):
+def load_calibration_data_table(
+        image, filter_list, calibration_method='APASS',
+        magnitude_range=(0., 18.5), vizier_dict=None,
+        path_calibration_file=None, indent=1):
     """
         Load calibration information
 
@@ -526,10 +539,6 @@ def load_calibration_data_table(image, filter_list, calibration_method='APASS',
         path_calibration_file   : `string`, optional
             Path to the calibration file
             Default is ``None``.
-
-        ra_unit                 : `astropy.unit`, optional
-            Right ascension unit
-            Default is ``u.deg``.
 
         indent          : `integer`, optional
             Indentation for the console output lines
@@ -670,10 +679,9 @@ def derive_calibration(
         img_container, filter_list, calibration_method='APASS',
         max_pixel_between_objects=3., own_correlation_option=1,
         vizier_dict=None, path_calibration_file=None, id_object=None,
-        ra_unit=u.deg, dec_unit=u.deg, magnitude_range=(0., 18.5),
-        coordinates_obj_to_rm=None, correlation_method='astropy',
-        separation_limit=2. * u.arcsec, reference_filter=None,
-        region_to_select_calibration_stars=None,
+        magnitude_range=(0., 18.5), coordinates_obj_to_rm=None,
+        correlation_method='astropy', separation_limit=2. * u.arcsec,
+        reference_filter=None, region_to_select_calibration_stars=None,
         correlate_with_observed_objects=True, reference_image_id=0, indent=1):
     """
     Find suitable calibration stars
@@ -710,14 +718,6 @@ def derive_calibration(
     id_object                           : `integer`, optional
         ID of the object
         Default is ``None``.
-
-    ra_unit                             : `astropy.unit`, optional
-        Right ascension unit
-        Default is ``u.deg``.
-
-    dec_unit                            : `astropy.unit`, optional
-        Declination unit
-        Default is ``u.deg``.
 
     magnitude_range                     : `tuple` or `float`, optional
         Magnitude range
@@ -775,7 +775,7 @@ def derive_calibration(
 
     #   Load calibration data
     #   TODO: Check this routine - It gets and returns ra_unit
-    calibration_tbl, column_names, ra_unit = load_calibration_data_table(
+    calibration_tbl, column_names, ra_unit_calibration = load_calibration_data_table(
         image_ensemble,
         filter_list,
         calibration_method=calibration_method,
@@ -783,14 +783,13 @@ def derive_calibration(
         vizier_dict=vizier_dict,
         path_calibration_file=path_calibration_file,
         indent=indent,
-        ra_unit=ra_unit,
     )
 
     #   Convert coordinates of the calibration stars to SkyCoord object
     calibration_object_coordinates = SkyCoord(
         calibration_tbl[column_names['ra']].data,
         calibration_tbl[column_names['dec']].data,
-        unit=(ra_unit, dec_unit),
+        unit=(ra_unit_calibration, u.deg),
         frame="icrs"
     )
 
@@ -830,7 +829,13 @@ def derive_calibration(
     pixel_position_cali_y = pixel_position_cali_y[~np.isnan(pixel_position_cali_y)]
     calibration_tbl = calibration_tbl[~np.isnan(pixel_position_cali_y)]
 
-    #   TODO: Adds output line with number of remaining calibration stars
+    #   TODO: Add a filter for known variable objects and non stellar objects
+
+    terminal_output.print_to_terminal(
+        f"{len(calibration_tbl)} calibration stars remain after the cleanup.",
+        indent=indent + 2,
+        style_name='OKBLUE',
+    )
 
     if correlate_with_observed_objects:
         calibration_tbl, index_obj_instrument = correlate_with_calibration_objects(
@@ -845,6 +850,7 @@ def derive_calibration(
             own_correlation_option=own_correlation_option,
             id_object=id_object,
             reference_image_id=reference_image_id,
+            indent=indent,
         )
     else:
         index_obj_instrument = None
@@ -854,6 +860,7 @@ def derive_calibration(
         index_obj_instrument,
         column_names,
         calibration_tbl,
+        ra_unit=ra_unit_calibration,
     )
 
 
@@ -862,7 +869,8 @@ def correlate_with_calibration_objects(
         image_ensemble, calibration_object_coordinates, calibration_tbl,
         filter_list, column_names, correlation_method='astropy',
         separation_limit=2. * u.arcsec, max_pixel_between_objects=3.,
-        own_correlation_option=1, id_object=None, reference_image_id=0):
+        own_correlation_option=1, id_object=None, reference_image_id=0,
+        indent=1):
     """
     Correlate observed objects with calibration stars
 
@@ -909,6 +917,10 @@ def correlate_with_calibration_objects(
     reference_image_id                  : `integer`, optional
         ID of the reference image
         Default is ``0``.
+
+    indent                              : `integer`, optional
+        Indentation for the console output lines
+        Default is ``1``.
 
     Returns
     -------
@@ -1031,7 +1043,12 @@ def correlate_with_calibration_objects(
             )
             p.start()
 
-    #   TODO: Adds output line with number of remaining calibration stars
+    terminal_output.print_to_terminal(
+        f"{len(calibration_tbl_sort)} calibration stars have been matched to"
+        f" observed stars",
+        indent=indent + 2,
+        style_name='OKBLUE',
+    )
 
     return calibration_tbl_sort, index_obj_instrument
 

@@ -1891,90 +1891,94 @@ def correlate_ensembles(
         correlation_method='astropy', separation_limit=2. * u.arcsec,
         ra_object=None, dec_object=None, ra_unit=u.deg, dec_unit=u.deg,
         force_correlation_calibration_objects=False, reference_image_id=0,
-        verbose=False):
+        verbose=False, indent=1):
     """
-        Correlate star lists from the stacked images of all filters to find
-        those stars that are visible on all images -> write calibrated CMD
+    Correlate star lists from the stacked images of all filters to find
+    those stars that are visible on all images -> write calibrated CMD
 
-        Parameters
-        ----------
-        image_container                         : `image.container`
-            Container object with image ensemble objects for each filter
+    Parameters
+    ----------
+    image_container                         : `image.container`
+        Container object with image ensemble objects for each filter
 
-        filter_list                             : `list` or `set` of `string`
-            List with filter identifiers.
+    filter_list                             : `list` or `set` of `string`
+        List with filter identifiers.
 
-        max_pixel_between_objects               : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
+    max_pixel_between_objects               : `float`, optional
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
 
-        own_correlation_option                  : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
+    own_correlation_option                  : `integer`, optional
+        Option for the srcor correlation function
+        Default is ``1``.
 
-        cross_identification_limit              : `integer`, optional
-            Cross-identification limit between multiple objects in the current
-            image and one object in the reference image. The current image is
-            rejected when this limit is reached.
-            Default is ``1``.
+    cross_identification_limit              : `integer`, optional
+        Cross-identification limit between multiple objects in the current
+        image and one object in the reference image. The current image is
+        rejected when this limit is reached.
+        Default is ``1``.
 
-        reference_ensemble_id                   : `integer`, optional
-            ID of the reference image
-            Default is ``0``.
+    reference_ensemble_id                   : `integer`, optional
+        ID of the reference image
+        Default is ``0``.
 
-        n_allowed_non_detections_object         : `integer`, optional
-            Maximum number of times an object may not be detected in an image.
-            When this limit is reached, the object will be removed.
-            Default is ``i`.
+    n_allowed_non_detections_object         : `integer`, optional
+        Maximum number of times an object may not be detected in an image.
+        When this limit is reached, the object will be removed.
+        Default is ``i`.
 
-        expected_bad_image_fraction             : `float`, optional
-            Fraction of low quality images, i.e. those images for which a
-            reduced number of objects with valid source positions are expected.
-            Default is ``1.0``.
+    expected_bad_image_fraction             : `float`, optional
+        Fraction of low quality images, i.e. those images for which a
+        reduced number of objects with valid source positions are expected.
+        Default is ``1.0``.
 
-        protect_reference_obj                   : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
+    protect_reference_obj                   : `boolean`, optional
+        If ``False`` also reference objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``True``.
 
-        correlation_method                      : `string`, optional
-            Correlation method to be used to find the common objects on
-            the images.
-            Possibilities: ``astropy``, ``own``
-            Default is ``astropy``.
+    correlation_method                      : `string`, optional
+        Correlation method to be used to find the common objects on
+        the images.
+        Possibilities: ``astropy``, ``own``
+        Default is ``astropy``.
 
-        separation_limit                        : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
+    separation_limit                        : `astropy.units`, optional
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
 
-        ra_object                               : `float`, optional
-            Right ascension of the object
-            Default is ``None``
+    ra_object                               : `float`, optional
+        Right ascension of the object
+        Default is ``None``
 
-        dec_object                              : `float`, optional
-            Declination of the object
-            Default is ``None``
+    dec_object                              : `float`, optional
+        Declination of the object
+        Default is ``None``
 
-        ra_unit                                 : `astropy.unit`, optional
-            Right ascension unit
-            Default is ``u.deg``.
+    ra_unit                                 : `astropy.unit`, optional
+        Right ascension unit
+        Default is ``u.deg``.
 
-        dec_unit                                : `astropy.unit`, optional
-            Declination unit
-            Default is ``u.deg``.
+    dec_unit                                : `astropy.unit`, optional
+        Declination unit
+        Default is ``u.deg``.
 
-        force_correlation_calibration_objects   : `boolean`, optional
-            If ``True`` the correlation between the already correlated
-            ensembles and the calibration data will be enforced.
-            Default is ``False``
+    force_correlation_calibration_objects   : `boolean`, optional
+        If ``True`` the correlation between the already correlated
+        ensembles and the calibration data will be enforced.
+        Default is ``False``
 
-        reference_image_id                      : `integer`, optional
-            ID of the reference image
-            Default is ``0``.
+    reference_image_id                      : `integer`, optional
+        ID of the reference image
+        Default is ``0``.
 
-        verbose                                 : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
+    verbose                                 : `boolean`, optional
+        If True additional output will be printed to the command line.
+        Default is ``False``.
+
+    indent                              : `integer`, optional
+        Indentation for the console output lines
+        Default is ``1``.
     """
     terminal_output.print_to_terminal(
         "Correlate image ensembles",
@@ -2091,12 +2095,14 @@ def correlate_ensembles(
                                                or force_correlation_calibration_objects):
         calibration_tbl = calibration_parameters.calib_tbl
         column_names = calibration_parameters.column_names
+        ra_unit_calibration = calibration_parameters.ra_unit
+        dec_unit_calibration = calibration_parameters.dec_unit
 
         #   Convert coordinates of the calibration stars to SkyCoord object
         calibration_object_coordinates = SkyCoord(
             calibration_tbl[column_names['ra']].data,
             calibration_tbl[column_names['dec']].data,
-            unit=(ra_unit, dec_unit),
+            unit=(ra_unit_calibration, dec_unit_calibration),
             frame="icrs"
         )
 
@@ -2115,6 +2121,7 @@ def correlate_ensembles(
             own_correlation_option=own_correlation_option,
             reference_image_id=reference_image_id,
             # id_object=list(ensemble_dict.values())[reference_ensemble_id].variable_id,
+            indent=indent,
         )
 
         image_container.CalibParameters.calib_tbl = calibration_tbl
@@ -2612,18 +2619,20 @@ def extract_multiprocessing(image_ensemble, n_cores_multiprocessing,
     ###
     #   Find the stars (via DAO or IRAF StarFinder)
     #
-    if not identify_objects_on_image:
-        determine_background(
-            image_ensemble.ref_img,
-            sigma_background=sigma_value_background_clipping,
-        )
-
-        find_stars(
-            image_ensemble.ref_img,
-            sigma_object_psf[filter_],
-            multiplier_background_rms=multiplier_background_rms,
-            method=object_finder_method,
-        )
+    #   Commented out as it seems unnecessary...
+    #
+    # if not identify_objects_on_image:
+    #     determine_background(
+    #         image_ensemble.ref_img,
+    #         sigma_background=sigma_value_background_clipping,
+    #     )
+    #
+    #     find_stars(
+    #         image_ensemble.ref_img,
+    #         sigma_object_psf[filter_],
+    #         multiplier_background_rms=multiplier_background_rms,
+    #         method=object_finder_method,
+    #     )
 
     ###
     #   Main loop: Extract stars and info from all images, using
@@ -3808,8 +3817,6 @@ def correlate_calibrate(image_container, filter_list,
         vizier_dict=vizier_dict,
         path_calibration_file=path_calibration_file,
         magnitude_range=magnitude_range,
-        ra_unit=ra_unit,
-        dec_unit=dec_unit,
         region_to_select_calibration_stars=region_to_select_calibration_stars,
     )
 
@@ -4467,7 +4474,6 @@ def calibrate_data_mk_light_curve(
     else:
         correlate_with_observed_objects = False
 
-    #   TODO: Use ra_unit and dec_unit consistently
     #   Make coordinates object for variable star
     coordinates_variable_objects = SkyCoord(
         ra_object,
