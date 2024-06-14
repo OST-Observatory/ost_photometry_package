@@ -3179,8 +3179,9 @@ def filled_iso_contours(object_table, shape_image, filter_, output_dir='./',
     # plt.show()
 
 
-def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
-                        rts, output_dir, dataset_label, name_obj=None):
+def histogram_statistic(
+        parameter_list_0, name_x, name_y, rts, output_dir, dataset_label,
+        name_obj=None, parameter_list_1=None):
     """
     Plots histogram statistics on properties such as the zero point
 
@@ -3188,10 +3189,6 @@ def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
     ----------
     parameter_list_0    : `list` of `numpy.ndarray`
         List of arrays with parameters to plot
-
-    parameter_list_1    : `list` of `numpy.ndarray`
-        Second list of arrays with parameters to plot such as sigma
-        clipped values of parameter_list_0
 
     name_x              : `string`
         Name of quantity 1
@@ -3211,6 +3208,11 @@ def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
 
     name_obj            : `string`, optional
         Name of the object
+        Default is ``None``
+
+    parameter_list_1    : `list` of `numpy.ndarray`, optional
+        Second list of arrays with parameters to plot such as sigma
+        clipped values of parameter_list_0
         Default is ``None``
     """
     #   Check output directories
@@ -3243,14 +3245,6 @@ def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
             color=color_pick.to_rgba(i),
             label=f'{dataset_label[0][i]}',
         )
-    for i, parameter in enumerate(parameter_list_1):
-        plt.hist(
-            parameter,
-            bins=10,
-            alpha=0.5,
-            color=color_pick.to_rgba(i),
-            label=f'{dataset_label[1][i]}',
-        )
         median_parameter = np.ma.median(parameter)
         if isinstance(median_parameter, u.quantity.Quantity):
             median_parameter = median_parameter.value
@@ -3259,6 +3253,25 @@ def histogram_statistic(parameter_list_0, parameter_list_1, name_x, name_y,
             # color='g',
             color=color_pick.to_rgba(i),
         )
+
+    if parameter_list_1 is not None:
+        for i, parameter in enumerate(parameter_list_1):
+            plt.hist(
+                parameter,
+                bins=10,
+                alpha=0.5,
+                color=color_pick.to_rgba(i),
+                label=f'{dataset_label[1][i]}',
+            )
+
+            median_parameter = np.ma.median(parameter)
+            if isinstance(median_parameter, u.quantity.Quantity):
+                median_parameter = median_parameter.value
+            plt.axvline(
+                median_parameter,
+                # color='g',
+                color=color_pick.to_rgba(i),
+            )
 
     #   Add legend
     if dataset_label is not None:

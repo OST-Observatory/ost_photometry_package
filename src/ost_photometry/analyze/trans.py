@@ -849,9 +849,8 @@ def flux_normalization_ensemble(image_ensemble):
 
 
 def prepare_zero_point(
-        image, filter_list, id_filter, literature_magnitude_list,
-        magnitudes_calibration_stars, magnitude_calibration_stars_second_filter=None,
-        calculate_zero_point_statistic=True):
+        image, id_filter, literature_magnitude_list,
+        magnitudes_calibration_stars, calculate_zero_point_statistic=True):
     """
         Calculate zero point values based on calibration stars and
         sigma clip these values before calculating median
@@ -860,9 +859,6 @@ def prepare_zero_point(
         ----------
         image                               : `image.class`
             Image class with all image specific properties
-
-        filter_list                         : `list` of `string`
-            Filter names
 
         id_filter                   : `integer`
             ID of the current filter
@@ -874,83 +870,35 @@ def prepare_zero_point(
             Observed magnitudes of the objects that were used for the
             calibration from the image of filter 1
 
-        magnitude_calibration_stars_second_filter         : `astropy.uncertainty.core.QuantityDistribution`, optional
-            Observed magnitudes of the objects that were used for the
-            calibration from the image of filter 2
-            Default is ``None``.
-
         calculate_zero_point_statistic      : `boolean`, optional
             If `True` a statistic on the zero points will be calculated.
             Default is ``True``.
     """
     #   Calculate zero point
     zp = literature_magnitude_list[id_filter] - magnitudes_calibration_stars
-
-    #   Prepare sigma clipping of zero point. Use zero if one filter is
-    #   specified. Use difference between observed and literature color if
-    #   two filters are given.
-    if len(filter_list) == 1:
-        clipping_value = zp
-    elif len(filter_list) == 2 and magnitude_calibration_stars_second_filter is not None:
-        #   TODO: Check if this can be improved
-        if id_filter == 0:
-            id_other_filter = 1
-        else:
-            id_other_filter = 0
-        color_literature = literature_magnitude_list[id_filter] - literature_magnitude_list[id_other_filter]
-        color_observed = magnitudes_calibration_stars - magnitude_calibration_stars_second_filter
-        #   TODO: Check if this can be improved. The - was a + in the past
-        clipping_value = color_literature - color_observed
-    else:
-        #   This should currently not happen
-        terminal_output.print_to_terminal(
-            f"It is not possible to calculate the zero point.",
-            style_name='ERROR',
-        )
-        if len(filter_list) > 2:
-            terminal_output.print_to_terminal(
-                f"Number of supplied filters too large. "
-                f"Supplied filters: {filter_list}",
-                style_name='ERROR',
-            )
-        if magnitude_calibration_stars_second_filter is None:
-            terminal_output.print_to_terminal(
-                f"No magnitudes for second filter supplied.",
-                style_name='ERROR',
-            )
-        raise RuntimeError
-
-    #   Calculate mask according to sigma clipping
-    clip = sigma_clipping(clipping_value.pdf_median(), sigma=1.5)
+    # terminal_output.print_to_terminal(
+    #     f"It is not possible to calculate the zero point.",
+    #     style_name='ERROR',
+    # )
 
     image.zp = zp
-    image.zp_mask = np.invert(clip.recordmask)
-    image.zp_clip = zp[np.where(image.zp_mask)]
-    image.zp_clip_median = np.median(image.zp_clip)
-    # print('type(image.zp_clip_median):', type(image.zp_clip_median))
-    # print('image.zp_clip_median: ', image.zp_clip_median)
-    #   TODO: Add a plot that illustrates the sigma clipping of the zero point
 
-    #   TODO: Check if the following blocks can be improved, using
-    #         distribution properties
     #   Plot zero point statistics
     plot.histogram_statistic(
         [image.zp.pdf_median()],
-        [image.zp_clip.pdf_median()],
         f'Zero point ({image.filt})',
         '',
         f'histogram_zero_point_{image.filt}',
         image.outpath,
         dataset_label=[
             ['All calibration objects'],
-            ['Sigma clipped calibration objects'],
         ],
         name_obj=image.objname,
     )
 
     #   TODO: Replace with distribution properties?
     #   TODO: Add random selection of calibration stars -> calculate variance
-    n_calibration_objects = image.zp_clip.shape[0]
+    n_calibration_objects = image.zp.shape[0]
     if n_calibration_objects > 20 and calculate_zero_point_statistic:
         #   Number of samples
         n_samples = 10000
@@ -965,7 +913,7 @@ def prepare_zero_point(
             size=(n_samples, n_objects_sample),
         )
 
-        samples = image.zp_clip.pdf_median()[random_index]
+        samples = image.zp.pdf_median()[random_index]
 
         #   Get statistic
         # mean_samples = np.mean(sample_values, axis=1)
@@ -1065,8 +1013,7 @@ def apply_calibration(
         image_container.calibrated_transformed_magnitudes[filter_] = []
         image_container.calibrated_magnitudes[filter_] = []
 
-    #   Initialize list for tuple of filter and image ID for table construction
-    filter_image_ids = []
+    #   Initialize list for
     transformation_type_list = []
 
     #   Get calibration magnitudes
@@ -1094,11 +1041,7 @@ def apply_calibration(
         transformation_type_list.append(transformation_type)
 
         #   Loop over images
-        print('len(image_list): ', len(image_list))
         for current_image_id, current_image in enumerate(image_list):
-            #   Store filter and image IDs for easier table creation later
-            filter_image_ids.append((current_filter_id, current_image_id))
-
             #   Get magnitude array for first image
             magnitudes_current_image = utilities.distribution_from_table(
                 current_image
@@ -1109,6 +1052,23 @@ def apply_calibration(
             magnitudes_calibration_stars_current_image = calib.observed_magnitude_of_calibration_stars(
                 magnitudes_current_image,
                 image_container,
+            )
+
+            #   Prepare ZP for the magnitude calibration
+            prepare_zero_point(
+                current_image,
+                current_filter_id,
+                literature_magnitudes,
+                magnitudes_calibration_stars_current_image,
+                calculate_zero_point_statistic=calculate_zero_point_statistic,
+            )
+
+            #   Calibration without transformation
+            calibrate_simple(
+                image_container,
+                current_image,
+                magnitudes_current_image,
+                filter_,
             )
 
             #   Prepare some variables and find corresponding image to
@@ -1136,25 +1096,7 @@ def apply_calibration(
                     image_container,
                 )
 
-            else:
-                magnitudes_calibration_stars_comparison_image = None
-                magnitudes_comparison_image = None
-
-            #   Prepare ZP for the magnitude calibration and perform
-            #   sigma clipping on the delta color or color, depending on
-            #   whether magnitude transformation is possible or not.
-            prepare_zero_point(
-                current_image,
-                filter_list,
-                current_filter_id,
-                literature_magnitudes,
-                magnitudes_calibration_stars_current_image,
-                magnitude_calibration_stars_second_filter=magnitudes_calibration_stars_comparison_image,
-                calculate_zero_point_statistic=calculate_zero_point_statistic,
-            )
-
-            #   Calculate transformation if possible
-            if transformation_type is not None:
+                #   Calculate transformation
                 apply_transformation(
                     image_container,
                     current_image,
@@ -1171,38 +1113,19 @@ def apply_calibration(
                     transformation_type=transformation_type,
                 )
 
-            #   Calibration without transformation
-            calibrate_simple(
-                image_container,
-                current_image,
-                magnitudes_current_image,
-                filter_list[current_filter_id],
-            )
-
-        image_container.Tc_type = None
+        #   TODO: Check for what the following is necessary
+        # image_container.Tc_type = None
 
     ###
     #   Save results as ASCII files
     #
-    #   Get object indices, X & Y pixel positions and wcs
-    #   Assumes that the image ensembles are already correlated
-    object_index = image_ensembles[filter_list[0]].image_list[0].photometry['id']
-    pixel_position_x = image_ensembles[filter_list[0]].image_list[0].photometry['x_fit']
-    pixel_position_y = image_ensembles[filter_list[0]].image_list[0].photometry['y_fit']
-    wcs = image_ensembles[filter_list[0]].wcs
-
-    #   If transformation is available
+    #   With transformation
     print('transformation_type_list: ', transformation_type_list)
     if not np.any(np.array(transformation_type_list) == None):
         #   Make astropy table
-        table_transformed_magnitudes = utilities.mk_magnitudes_table_distribution(
-            object_index,
-            pixel_position_x,
-            pixel_position_y,
-            image_container.calibrated_transformed_magnitudes,
+        table_transformed_magnitudes = utilities.mk_magnitudes_table(
+            image_container,
             filter_list,
-            filter_image_ids,
-            wcs,
         )
 
         #   Add table to container
@@ -1226,14 +1149,9 @@ def apply_calibration(
     #   Without transformation
 
     #   Make astropy table
-    table_mags_not_transformed = utilities.mk_magnitudes_table_distribution(
-        object_index,
-        pixel_position_x,
-        pixel_position_y,
-        image_container.calibrated_magnitudes,
+    table_mags_not_transformed = utilities.mk_magnitudes_table(
+        image_container,
         filter_list,
-        filter_image_ids,
-        wcs,
     )
 
     #   Add table to container

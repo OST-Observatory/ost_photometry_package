@@ -74,41 +74,31 @@ def err_prop(*args):
     return sum_error
 
 
-def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
-                                     magnitudes, filter_list, filter_image_ids,
-                                     wcs):
+def mk_magnitudes_table(image_container, filter_list):
     """
         Create and export astropy table with object positions and magnitudes
         Input magnitude array is expected to be astropy.uncertainty.core.QuantityDistribution
 
         Parameters
         ----------
-        index_objects    : `numpy.ndarray`
-            IDs of the stars
-
-        x_positions      : `numpy.ndarray`
-            Position of the stars on the image in pixel in X direction
-
-        y_positions      : `numpy.ndarray`
-            Position of the stars on the image in pixel in X direction
-
-        magnitudes       : `dict` of `list` of `astropy.uncertainty.core.QuantityDistribution`
-            Magnitudes of all stars
+        image_container  : `image.container`
+            Container object with image ensemble objects for each filter
 
         filter_list      : `list` of `string`
             Filter
-
-        filter_image_ids : `list` of `tuple`
-            FORMAT = (Filter IDs, ID of the images to position 0)
-
-        wcs              : `astropy.wcs`
-            WCS
 
         Returns
         -------
         tbl             : `astropy.table.Table`
             Table with CMD data
     """
+    #   Get object indices, X & Y pixel positions and wcs
+    #   Assumes that the image ensembles are already correlated
+    wcs = image_container.ensembles[filter_list[0]].wcs
+    index_objects = image_container.ensembles[filter_list[0]].image_list[0].photometry['id']
+    x_positions = image_container.ensembles[filter_list[0]].image_list[0].photometry['x_fit']
+    y_positions = image_container.ensembles[filter_list[0]].image_list[0].photometry['y_fit']
+
     # Make CMD table
     tbl = Table(
         names=['i', 'x', 'y', ],
@@ -129,23 +119,38 @@ def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
     #   TODO: rewrite this with photometry table from image objects
     #   TODO: Add array creation
     #   Add magnitude columns to table
-    for ids in filter_image_ids:
-        tbl.add_columns(
-            [
-                magnitudes[filter_list[ids[0]]][ids[1]].pdf_median(),
-                magnitudes[filter_list[ids[0]]][ids[1]].pdf_std(),
-            ],
-            names=[
-                f'{filter_list[ids[0]]} ({ids[1]})',
-                f'{filter_list[ids[0]]}_err ({ids[1]})',
-            ]
-        )
+    for filter_ in filter_list:
+        ensemble = image_container.ensembles[filter_]
+        image_list = ensemble.image_list
+        for image_id, image in enumerate(image_list):
+            photometry_table = image.photometry
+
+            tbl.add_columns(
+                [
+                    photometry_table['mag_cali_trans'],
+                    photometry_table['mag_cali_trans_unc'],
+                ],
+                names=[
+                    f'{filter_} ({image_id})',
+                    f'{filter_}_err ({image_id})',
+                ]
+            )
+
+    # for ids in filter_image_ids:
+    #     tbl.add_columns(
+    #         [
+    #             magnitudes[filter_list[ids[0]]][ids[1]].pdf_median(),
+    #             magnitudes[filter_list[ids[0]]][ids[1]].pdf_std(),
+    #         ],
+    #         names=[
+    #             f'{filter_list[ids[0]]} ({ids[1]})',
+    #             f'{filter_list[ids[0]]}_err ({ids[1]})',
+    #         ]
+    #     )
 
     #   Sort table
-    # print(type(filter_image_ids))
-    # print(filter_image_ids)
     tbl = tbl.group_by(
-        f'{filter_list[filter_image_ids[0][0]]} ({filter_image_ids[0][1]})'
+        f'{filter_list[0]} (0)'
     )
 
     return tbl
