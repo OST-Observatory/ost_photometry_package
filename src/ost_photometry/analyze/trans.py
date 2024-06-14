@@ -1126,6 +1126,7 @@ def apply_calibration(
         table_transformed_magnitudes = utilities.mk_magnitudes_table(
             image_container,
             filter_list,
+            'mag_cali_trans',
         )
 
         #   Add table to container
@@ -1152,6 +1153,7 @@ def apply_calibration(
     table_mags_not_transformed = utilities.mk_magnitudes_table(
         image_container,
         filter_list,
+        'mag_cali',
     )
 
     #   Add table to container

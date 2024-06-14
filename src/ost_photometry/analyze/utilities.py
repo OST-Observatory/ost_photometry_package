@@ -74,22 +74,26 @@ def err_prop(*args):
     return sum_error
 
 
-def mk_magnitudes_table(image_container, filter_list):
+def mk_magnitudes_table(
+        image_container, filter_list, photometry_column_keyword):
     """
         Create and export astropy table with object positions and magnitudes
-        Input magnitude array is expected to be astropy.uncertainty.core.QuantityDistribution
 
         Parameters
         ----------
-        image_container  : `image.container`
+        image_container             : `image.container`
             Container object with image ensemble objects for each filter
 
-        filter_list      : `list` of `string`
+        filter_list                 : `list` of `string`
             Filter
+
+        photometry_column_keyword   : `string`
+            String used to identify the magnitude column in the
+            photometry tables
 
         Returns
         -------
-        tbl             : `astropy.table.Table`
+        tbl                         : `astropy.table.Table`
             Table with CMD data
     """
     #   Get object indices, X & Y pixel positions and wcs
@@ -127,8 +131,8 @@ def mk_magnitudes_table(image_container, filter_list):
 
             tbl.add_columns(
                 [
-                    photometry_table['mag_cali_trans'],
-                    photometry_table['mag_cali_trans_unc'],
+                    photometry_table[photometry_column_keyword],
+                    photometry_table[f'{photometry_column_keyword}_unc'],
                 ],
                 names=[
                     f'{filter_} ({image_id})',
@@ -152,6 +156,12 @@ def mk_magnitudes_table(image_container, filter_list):
     tbl = tbl.group_by(
         f'{filter_list[0]} (0)'
     )
+
+    #   Make numpy array with magnitudes from all images in an imaging series
+    # if isinstance(magnitudes, list):
+    #     stacked_distribution = np.stack(magnitudes)
+    # else:
+    #     stacked_distribution = magnitudes
 
     return tbl
 
