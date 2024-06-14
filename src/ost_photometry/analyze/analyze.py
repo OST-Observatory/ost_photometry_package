@@ -1856,7 +1856,7 @@ def correlate_ensemble_images(img_ensemble, max_pixel_between_objects=3.,
         wcs,
         n_objects,
         n_images,
-        reference_image_id=img_ensemble.reference_image_id,
+        reference_dataset_id=img_ensemble.reference_image_id,
         reference_obj_ids=reference_obj_ids,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         protect_reference_obj=protect_reference_obj,
@@ -2026,7 +2026,7 @@ def correlate_ensembles(
         n_objects_max,
         n_ensembles,
         dataset_type='ensemble',
-        reference_image_id=reference_ensemble_id,
+        reference_dataset_id=reference_ensemble_id,
         reference_obj_ids=reference_obj_id,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         protect_reference_obj=protect_reference_obj,
@@ -4503,7 +4503,7 @@ def calibrate_data_mk_light_curve(
     terminal_output.print_to_terminal('')
 
     #   TODO: Put the following checks in a function
-    #   Get valid filter combinations
+    #   Load valid filter combinations, if none are supplied
     if valid_filter_combinations is None:
         valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
 
@@ -4516,16 +4516,16 @@ def calibrate_data_mk_light_curve(
     #   data must be available for the filter.
     for filter_combination in valid_filter_combinations:
         if filter_combination[0] in filter_list and filter_combination[1] in filter_list:
-            err_filter = None
+            faulty_filter = None
             if f'mag{filter_combination[0]}' not in calibration_filters:
-                err_filter = filter_combination[0]
+                faulty_filter = filter_combination[0]
             if f'mag{filter_combination[1]}' not in calibration_filters:
-                err_filter = filter_combination[1]
-            if err_filter is not None:
+                faulty_filter = filter_combination[1]
+            if faulty_filter is not None:
                 terminal_output.print_to_terminal(
                     "Magnitude transformation not possible because "
                     "no calibration data available for filter "
-                    f"{err_filter}",
+                    f"{faulty_filter}",
                     indent=2,
                     style_name='WARNING',
                 )
@@ -4574,6 +4574,7 @@ def calibrate_data_mk_light_curve(
             plot_sigma=plot_sigma,
             calculate_zero_point_statistic=calculate_zero_point_statistic,
         )
+        #   TODO: Replace with table_mags_transformed
         calibrated_magnitudes = getattr(
             image_container,
             'calibrated_transformed_magnitudes',
@@ -4689,6 +4690,7 @@ def calibrate_data_mk_light_curve(
                     photometry_extraction_method=photometry_extraction_method,
                     calculate_zero_point_statistic=calculate_zero_point_statistic,
                 )
+                #   TODO: Replace with table_mags_not_transformed and table_mags_transformed
                 plot_quantity = getattr(
                     image_container,
                     'calibrated_magnitudes',

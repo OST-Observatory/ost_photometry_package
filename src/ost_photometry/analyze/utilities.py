@@ -126,6 +126,8 @@ def mk_magnitudes_table_distribution(index_objects, x_positions, y_positions,
     tbl['ra (deg)'] = sky.ra
     tbl['dec (deg)'] = sky.dec
 
+    #   TODO: rewrite this with photometry table from image objects
+    #   TODO: Add array creation
     #   Add magnitude columns to table
     for ids in filter_image_ids:
         tbl.add_columns(
@@ -340,7 +342,7 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
         filter_             : `string`
             Filter
 
-        object_id           : `integer`
+        object_id           : `list` of `integer` or `numpy.ndarray`
             ID/Number of the object for with the time series should be
             created
 
@@ -380,6 +382,8 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
     # print(stacked_distribution)
     # print(stacked_distribution.shape)
     # print(type(stacked_distribution))
+    #   TODO: Replace this with a proper handling of multiple objects
+    object_id = object_id[0]
     object_magnitudes = stacked_distribution[:, object_id]
     #`print(object_magnitudes)
     #`print(object_magnitudes.shape)

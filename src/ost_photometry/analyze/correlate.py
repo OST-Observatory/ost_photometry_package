@@ -316,7 +316,7 @@ def identify_star_in_dataset(x_pixel_positions, y_pixel_positions, ra_obj,
 
 
 def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
-                       n_images, dataset_type='image', reference_image_id=0,
+                       n_images, dataset_type='image', reference_dataset_id=0,
                        reference_obj_ids=None, protect_reference_obj=True,
                        n_allowed_non_detections_object=1,
                        separation_limit=2. * u.arcsec, advanced_cleanup=True,
@@ -349,8 +349,8 @@ def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
             Characterizes the dataset.
             Default is ``image``.
 
-        reference_image_id              : `integer`, optional
-            ID of the reference image
+        reference_dataset_id            : `integer`, optional
+            ID of the reference dataset
             Default is ``0``.
 
         reference_obj_ids               : `list` of `integer` or `None`, optional
@@ -425,7 +425,7 @@ def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
             x_pixel_positions,
             y_pixel_positions,
             wcs,
-            reference_image_id=reference_image_id,
+            reference_dataset_id=reference_dataset_id,
             reference_obj_ids=reference_obj_ids,
             expected_bad_image_fraction=n_allowed_non_detections_object,
             protect_reference_obj=protect_reference_obj,
@@ -451,7 +451,7 @@ def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
             expected_bad_image_fraction=expected_bad_image_fraction,
             option=own_correlation_option,
             cross_identification_limit=cross_identification_limit,
-            reference_image_id=reference_image_id,
+            reference_dataset_id=reference_dataset_id,
             reference_obj_id=reference_obj_ids,
             n_allowed_non_detections_object=n_allowed_non_detections_object,
             protect_reference_obj=protect_reference_obj,
@@ -509,14 +509,14 @@ def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
         correlation_index = np.delete(correlation_index, rejected_images, 0)
 
     #   Calculate new index of the reference image
-    shift_id = np.argwhere(rejected_images < reference_image_id)
-    new_reference_image_id = reference_image_id - len(shift_id)
+    shift_id = np.argwhere(rejected_images < reference_dataset_id)
+    new_reference_image_id = reference_dataset_id - len(shift_id)
 
     return correlation_index, new_reference_image_id, rejected_images, n_common_objects
 
 
 def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
-                        reference_image_id=0, reference_obj_ids=None,
+                        reference_dataset_id=0, reference_obj_ids=None,
                         expected_bad_image_fraction=1,
                         protect_reference_obj=True,
                         separation_limit=2. * u.arcsec, advanced_cleanup=True):
@@ -534,8 +534,8 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
         wcs                         : `astropy.wcs ` object
             WCS information
 
-        reference_image_id          : `integer`, optional
-            ID of the reference image
+        reference_dataset_id        : `integer`, optional
+            ID of the reference dataset
             Default is ``0``.
 
         reference_obj_ids           : `list` of `integer` or None, optional
@@ -576,37 +576,37 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
         reference_obj_ids = []
 
     #   Number of datasets/images
-    n_images = len(x_pixel_positions)
+    n_datasets = len(x_pixel_positions)
 
     #   Create reference SkyCoord object
     reference_coordinates = SkyCoord.from_pixel(
-        x_pixel_positions[reference_image_id],
-        y_pixel_positions[reference_image_id],
+        x_pixel_positions[reference_dataset_id],
+        y_pixel_positions[reference_dataset_id],
         wcs,
     )
 
     #   Prepare index array and fill in values for the reference dataset
     index_array = np.ones(
-        (n_images, len(x_pixel_positions[reference_image_id])),
+        (n_datasets, len(x_pixel_positions[reference_dataset_id])),
         dtype=int
     )
     index_array *= -1
-    index_array[reference_image_id, :] = np.arange(
-        len(x_pixel_positions[reference_image_id])
+    index_array[reference_dataset_id, :] = np.arange(
+        len(x_pixel_positions[reference_dataset_id])
     )
 
     #   Loop over datasets
-    for i in range(0, n_images):
+    for i in range(0, n_datasets):
         #   Do nothing for the reference object
-        if i != reference_image_id:
+        if i != reference_dataset_id:
             #   Dirty fix: In case of identical positions between the
             #              reference and the current data set,
             #              matching.search_around_sky will fail.
             #              => set reference indexes
-            if ((len(x_pixel_positions[i]) == len(x_pixel_positions[reference_image_id])) and
-                    (np.all(x_pixel_positions[i] == x_pixel_positions[reference_image_id]) and
-                     np.all(y_pixel_positions[i] == y_pixel_positions[reference_image_id]))):
-                index_array[i, :] = index_array[reference_image_id, :]
+            if ((len(x_pixel_positions[i]) == len(x_pixel_positions[reference_dataset_id])) and
+                    (np.all(x_pixel_positions[i] == x_pixel_positions[reference_dataset_id]) and
+                     np.all(y_pixel_positions[i] == y_pixel_positions[reference_dataset_id]))):
+                index_array[i, :] = index_array[reference_dataset_id, :]
             else:
                 #   Create coordinates object
                 current_coordinates = SkyCoord.from_pixel(
@@ -666,7 +666,7 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
         index_array = np.delete(index_array, rejected_object_ids, 1)
 
         #   Calculate new reference object position
-        #   TODO: Check if this needs to adjusted to account for multiple reference objects
+        #   TODO: Check if this needs to be adjusted to account for multiple reference objects
         shift_obj = np.argwhere(rejected_object_ids < reference_obj_ids)
         n_shift = len(shift_obj)
         reference_obj_ids = np.array(reference_obj_ids) - n_shift
@@ -684,7 +684,7 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
 
         #   Create mask -> Identify all datasets as bad that contain less
         #                  than 90% of all objects from the reference image.
-        mask = n_times_to_rm > 0.02 * len(x_pixel_positions[reference_image_id])
+        mask = n_times_to_rm > 0.02 * len(x_pixel_positions[reference_dataset_id])
         rejected_images = images_to_rm[mask]
 
         #   Remove those datasets
@@ -706,7 +706,7 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
         #   If YES remove reference objects from "bad" objects and remove
         #   the datasets on which they were not detected instead.
         if np.any(ref_is_in):
-            if n_images <= 2:
+            if n_datasets <= 2:
                 raise RuntimeError(
                     f"{style.Bcolors.FAIL} \nReference object only found on "
                     "one or on none image at all. This is not sufficient. "
@@ -752,7 +752,7 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
 def correlation_own(x_pixel_positions, y_pixel_positions,
                     max_pixel_between_objects=3.,
                     expected_bad_image_fraction=1.0,
-                    cross_identification_limit=1, reference_image_id=0,
+                    cross_identification_limit=1, reference_dataset_id=0,
                     reference_obj_id=None,
                     n_allowed_non_detections_object=1, indent=1, option=None,
                     magnitudes=None, silent=False,
@@ -795,8 +795,8 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
             rejected when this limit is reached.
             Default is ``1``.
 
-        reference_image_id              : `integer`, optional
-            ID of the reference image (e.g., an image).
+        reference_dataset_id            : `integer`, optional
+            ID of the reference dataset (e.g., an image).
             Default is ``0``.
 
         reference_obj_id                : `integer`, optional
@@ -934,10 +934,10 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
         #   Loop over the number of objects
         for i in range(0, n_objects):
             #   Check that objects exists in the reference image
-            if x_pixel_positions[i, reference_image_id] != 0.:
+            if x_pixel_positions[i, reference_dataset_id] != 0.:
                 #   Prepare dummy arrays and counter for bad images
                 _correlation_index = np.zeros(n_images, dtype=int) - 1
-                _correlation_index[reference_image_id] = i
+                _correlation_index[reference_dataset_id] = i
                 _img_rejected = np.zeros(n_images, dtype=int)
                 _obj_rejected = np.zeros(n_objects, dtype=int)
                 _n_bad_images = 0
@@ -945,7 +945,7 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
                 #   Loop over all images
                 for j in range(0, n_images):
                     #   Exclude reference image
-                    if j != reference_image_id:
+                    if j != reference_dataset_id:
                         comparison_x_pixel_positions = np.copy(
                             x_pixel_positions[:, j]
                         )
@@ -956,8 +956,8 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
                         comparison_y_pixel_positions[comparison_y_pixel_positions == 0] = 9E13
 
                         #   Calculate radii
-                        d2 = (x_pixel_positions[i, reference_image_id] - comparison_x_pixel_positions) ** 2 \
-                            + (y_pixel_positions[i, reference_image_id] - comparison_y_pixel_positions) ** 2
+                        d2 = (x_pixel_positions[i, reference_dataset_id] - comparison_x_pixel_positions) ** 2 \
+                             + (y_pixel_positions[i, reference_dataset_id] - comparison_y_pixel_positions) ** 2
 
                         if option == 3:
                             #   Find objects with distances that are smaller
@@ -969,8 +969,8 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
                             n_possible_matches = len(possible_matches)
                             if n_possible_matches:
                                 index_array[j, count:count + n_possible_matches] = possible_matches
-                                index_array[reference_image_id, count:count + n_possible_matches] = \
-                                    _correlation_index[reference_image_id]
+                                index_array[reference_dataset_id, count:count + n_possible_matches] = \
+                                    _correlation_index[reference_dataset_id]
                                 count += n_possible_matches
                         else:
                             #   Find the object with the smallest distance
@@ -1029,8 +1029,8 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
             )
 
         #   Discard objects that are on not enough images
-        x_pixel_positions[rej_obj_tup, reference_image_id] = 0.
-        y_pixel_positions[rej_obj_tup, reference_image_id] = 0.
+        x_pixel_positions[rej_obj_tup, reference_dataset_id] = 0.
+        y_pixel_positions[rej_obj_tup, reference_dataset_id] = 0.
 
     if not silent:
         terminal_output.print_to_terminal(
@@ -1074,7 +1074,7 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
 
     #   Loop over the images
     for j in range(0, len(index_array[:, 0])):
-        if j == reference_image_id:
+        if j == reference_dataset_id:
             continue
         #   Loop over the indexes of the objects
         for i in range(0, np.max(index_array[j, :])):
@@ -1092,7 +1092,7 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
                 if option == 4 and n_images == 2:
                     possible_matches = np.argmin(
                         magnitudes[
-                            index_array[reference_image_id, many_to_one_ids]
+                            index_array[reference_dataset_id, many_to_one_ids]
                         ]
                     )
                 else:
@@ -1101,12 +1101,12 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
                     x_current = x_pixel_positions[i, j]
                     y_current = y_pixel_positions[i, j]
                     x_many = x_pixel_positions[
-                        index_array[reference_image_id, many_to_one_ids],
-                        reference_image_id
+                        index_array[reference_dataset_id, many_to_one_ids],
+                        reference_dataset_id
                     ]
                     y_many = y_pixel_positions[
-                        index_array[reference_image_id, many_to_one_ids],
-                        reference_image_id
+                        index_array[reference_dataset_id, many_to_one_ids],
+                        reference_dataset_id
                     ]
                     d2 = (x_current - x_many) ** 2 + (y_current - y_many) ** 2
 
@@ -1150,7 +1150,7 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
                             f"{style.Bcolors.FAIL}\nLogic error 2"
                             f"{style.Bcolors.ENDC}"
                         )
-                    if len(index_array[reference_image_id, :]) != (c_save - n_multi):
+                    if len(index_array[reference_dataset_id, :]) != (c_save - n_multi):
                         raise Exception(
                             f"{style.Bcolors.FAIL}\nLogic error 3"
                             f"{style.Bcolors.ENDC}"
@@ -1161,12 +1161,12 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
                             f"{style.Bcolors.FAIL}\nLogic error 2"
                             f"{style.Bcolors.ENDC}"
                         )
-                    if len(index_array[reference_image_id, :]) != (c_save - n_multi + 1):
+                    if len(index_array[reference_dataset_id, :]) != (c_save - n_multi + 1):
                         raise Exception(
                             f"{style.Bcolors.FAIL}\nLogic error 3"
                             f"{style.Bcolors.ENDC}"
                         )
-                if len(index_array[j, :]) != len(index_array[reference_image_id, :]):
+                if len(index_array[j, :]) != len(index_array[reference_dataset_id, :]):
                     raise Exception(
                         f"{style.Bcolors.FAIL}\nLogic error 4"
                         f"{style.Bcolors.ENDC}"
@@ -1176,11 +1176,11 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
     rejected_images = np.argwhere(rejected_img >= 1).ravel()
 
     #   Set count variable once more
-    count = len(index_array[reference_image_id, :])
+    count = len(index_array[reference_dataset_id, :])
 
     if not silent:
         terminal_output.print_to_terminal(
-            f"       {len(index_array[reference_image_id, :])} unique "
+            f"       {len(index_array[reference_dataset_id, :])} unique "
             f"matches found.",
             indent=indent,
             style_name='OKGREEN',

@@ -667,43 +667,44 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
         filter_                     : `string`
             Current filter
     """
-    #   Get clipped zero points
-    # zp = image.zp_clip
-    zp = image.zp_clip_median
+    #   Get zero points
+    zp = image.zp
 
-    #   Reshape the magnitudes to allow broadcasting
-    # reshaped_magnitudes = not_calibrated_magnitudes.reshape(
-    #     not_calibrated_magnitudes.size,
-    #     1,
-    # )
+    #   Reshape the magnitudes to allow broadcasting because zp is an array
+    reshaped_magnitudes = not_calibrated_magnitudes.reshape(
+        not_calibrated_magnitudes.size,
+        1,
+    )
 
     #   Calculate calibrated magnitudes
-    # calibrated_magnitudes_array = reshaped_magnitudes + zp
-    calibrated_magnitudes = not_calibrated_magnitudes + zp
+    calibrated_magnitudes_array = reshaped_magnitudes + zp
 
-    # #   Sigma clipping to rm outliers
-    # mag_cali_sigma = sigma_clipping(
-    #     calibrated_magnitudes.pdf_median(),
-    #     sigma=1.5,
-    #     axis=1,
-    # )
-    # mask = np.invert(mag_cali_sigma.mask)
-    # mask = np.where(np.any(mask, axis=0))
+    #   Sigma clipping to rm outliers
+    _, median, stddev = sigma_clipped_stats(
+        calibrated_magnitudes_array.distribution,
+        sigma=1.5,
+        axis=(1,2),
+    )
 
-    #   Calculate median since zp was an array of values
-    # median = np.median(calibrated_magnitudes[:, mask], axis=1)
-    # calibrated_magnitudes = np.median(calibrated_magnitudes_array, axis=1)
-
+    #   TODO: Rewrite & test this
     #   If ZP is 0, calibrate with the median of all magnitudes
-    #   TODO: Test this
     # if np.all(zp == 0.):
-    if zp == 0.:
-        calibrated_magnitudes = not_calibrated_magnitudes - np.median(not_calibrated_magnitudes)
+    # if zp == 0.:
+    #     calibrated_magnitudes = not_calibrated_magnitudes - np.median(not_calibrated_magnitudes)
 
     #   Add calibrated photometry to table of Image object
-    image.photometry['mag_cali_no-trans'] = calibrated_magnitudes.pdf_median()
-    image.photometry['mag_cali_no-trans_unc'] = calibrated_magnitudes.pdf_std()
+    image.photometry['mag_cali_no-trans'] = median
+    image.photometry['mag_cali_no-trans_unc'] = stddev
+    if image.pd == 0:
+        print(image.filename)
+        print(image.photometry['mag_cali_no-trans'])
 
+    #   TODO: Remove this later on
+    calibrated_magnitudes = unc.normal(
+        median,
+        std=stddev,
+        n_samples=10000,
+    )
     #   Write data back to the image container
     image_container.calibrated_magnitudes[filter_].append(calibrated_magnitudes)
 
@@ -1055,7 +1056,7 @@ def apply_calibration(
     )
 
     #   Get image ensembles
-    img_ensembles = image_container.ensembles
+    image_ensembles = image_container.ensembles
 
     #   Prepare dictionary for calibrated magnitudes
     image_container.calibrated_transformed_magnitudes = {}
@@ -1076,7 +1077,7 @@ def apply_calibration(
 
     for current_filter_id, filter_ in enumerate(filter_list):
         #   Get image ensemble
-        img_ensemble = img_ensembles[filter_]
+        img_ensemble = image_ensembles[filter_]
 
         #   Get image list
         image_list = img_ensemble.image_list
@@ -1185,10 +1186,10 @@ def apply_calibration(
     #
     #   Get object indices, X & Y pixel positions and wcs
     #   Assumes that the image ensembles are already correlated
-    object_index = img_ensembles[filter_list[0]].image_list[0].photometry['id']
-    pixel_position_x = img_ensembles[filter_list[0]].image_list[0].photometry['x_fit']
-    pixel_position_y = img_ensembles[filter_list[0]].image_list[0].photometry['y_fit']
-    wcs = img_ensembles[filter_list[0]].wcs
+    object_index = image_ensembles[filter_list[0]].image_list[0].photometry['id']
+    pixel_position_x = image_ensembles[filter_list[0]].image_list[0].photometry['x_fit']
+    pixel_position_y = image_ensembles[filter_list[0]].image_list[0].photometry['y_fit']
+    wcs = image_ensembles[filter_list[0]].wcs
 
     #   If transformation is available
     print('transformation_type_list: ', transformation_type_list)

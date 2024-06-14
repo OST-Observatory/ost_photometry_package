@@ -45,9 +45,10 @@ class CalibParameters:
         else:
             self.ra_unit = u.deg
         if dec_unit is not None:
-            self.dec = dec_unit
+            self.dec_unit = dec_unit
         else:
-            self.dec = u.deg
+            self.dec_unit = u.deg
+
 
 def get_comp_stars_aavso(coordinates_sky, filters=None, field_of_view=18.5,
                          magnitude_range=(0., 18.5), indent=2):
