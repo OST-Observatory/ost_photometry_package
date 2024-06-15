@@ -74,7 +74,7 @@ def err_prop(*args):
     return sum_error
 
 
-def mk_magnitudes_table(
+def mk_magnitudes_table_and_array(
         image_container, filter_list, photometry_column_keyword):
     """
         Create and export astropy table with object positions and magnitudes
@@ -95,7 +95,16 @@ def mk_magnitudes_table(
         -------
         tbl                         : `astropy.table.Table`
             Table with CMD data
+
+        stacked_magnitudes          : `dict` of `dict` of `numpy.ndarray`
+            Array with magnitudes and magnitude errors of all images in an
+            image series
     """
+    #   Setup magnitude list
+    magnitude_list = []
+    magnitude_error_list = []
+    stacked_magnitudes = {}
+
     #   Get object indices, X & Y pixel positions and wcs
     #   Assumes that the image ensembles are already correlated
     wcs = image_container.ensembles[filter_list[0]].wcs
@@ -124,21 +133,37 @@ def mk_magnitudes_table(
     #   TODO: Add array creation
     #   Add magnitude columns to table
     for filter_ in filter_list:
+        #   Get image list
         ensemble = image_container.ensembles[filter_]
         image_list = ensemble.image_list
+
         for image_id, image in enumerate(image_list):
             photometry_table = image.photometry
+            magnitudes = photometry_table[photometry_column_keyword]
+            magnitude_errors = photometry_table[f'{photometry_column_keyword}_unc']
 
+            #   Add to table
             tbl.add_columns(
                 [
-                    photometry_table[photometry_column_keyword],
-                    photometry_table[f'{photometry_column_keyword}_unc'],
+                    magnitudes,
+                    magnitude_errors,
                 ],
                 names=[
                     f'{filter_} ({image_id})',
                     f'{filter_}_err ({image_id})',
                 ]
             )
+
+            #   Add magnitudes and error to corresponding lists
+            magnitude_list.append(magnitudes)
+            magnitude_error_list.append(magnitude_errors)
+
+        #   Make numpy array with magnitudes from all images in an imaging
+        #   series and add this to the magnitude dictionary
+        stacked_magnitudes[filter_] = {
+            'values':np.stack(magnitude_list),
+            'errors':np.stack(magnitude_error_list)
+        }
 
     # for ids in filter_image_ids:
     #     tbl.add_columns(
@@ -157,13 +182,7 @@ def mk_magnitudes_table(
         f'{filter_list[0]} (0)'
     )
 
-    #   Make numpy array with magnitudes from all images in an imaging series
-    # if isinstance(magnitudes, list):
-    #     stacked_distribution = np.stack(magnitudes)
-    # else:
-    #     stacked_distribution = magnitudes
-
-    return tbl
+    return tbl, stacked_magnitudes
 
 
 #   TODO: Check where this function is used and whether it is safe to rename the parameters.
@@ -389,25 +408,25 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
     # print(object_id)
     # object_id += 1
 
-    if isinstance(magnitudes, list):
-        stacked_distribution = np.stack(magnitudes)
-    else:
-        stacked_distribution = magnitudes
-    # print('++++++++++++++++++++++++++++++++++++++++++++++++')
-    # print(stacked_distribution)
-    # print(stacked_distribution.shape)
-    # print(type(stacked_distribution))
-    #   TODO: Replace this with a proper handling of multiple objects
-    object_id = object_id[0]
-    object_magnitudes = stacked_distribution[:, object_id]
-    #`print(object_magnitudes)
-    #`print(object_magnitudes.shape)
-    #`print(type(object_magnitudes))
-    mags_obj = object_magnitudes.pdf_median()
-    errs_obj = object_magnitudes.pdf_std()
-    # print(mags_obj)
-    # print(errs_obj)
-    # print('++++++++++++++++++++++++++++++++++++++++++++++++')
+    # if isinstance(magnitudes, list):
+    #     stacked_distribution = np.stack(magnitudes)
+    # else:
+    #     stacked_distribution = magnitudes
+    # # print('++++++++++++++++++++++++++++++++++++++++++++++++')
+    # # print(stacked_distribution)
+    # # print(stacked_distribution.shape)
+    # # print(type(stacked_distribution))
+    # #   TODO: Replace this with a proper handling of multiple objects
+    # object_id = object_id[0]
+    # object_magnitudes = stacked_distribution[:, object_id]
+    # #`print(object_magnitudes)
+    # #`print(object_magnitudes.shape)
+    # #`print(type(object_magnitudes))
+    # mags_obj = object_magnitudes.pdf_median()
+    # errs_obj = object_magnitudes.pdf_std()
+    # # print(mags_obj)
+    # # print(errs_obj)
+    # # print('++++++++++++++++++++++++++++++++++++++++++++++++')
 
     #   TODO: Check if this is still necessary
     #   Create mask for time series to remove images without entries
@@ -420,6 +439,9 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
     #   Remove images without entries
     # mags_obj = mags_obj[mask]
     # errs_obj = errs_obj[mask]
+
+    mags_obj = magnitudes[filter_]['value'][:, object_id]
+    errs_obj = magnitudes[filter_]['error'][:, object_id]
 
     # Make time series and use reshape to get a justified array
     ts = TimeSeries(

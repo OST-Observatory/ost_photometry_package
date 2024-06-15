@@ -1123,7 +1123,7 @@ def apply_calibration(
     print('transformation_type_list: ', transformation_type_list)
     if not np.any(np.array(transformation_type_list) == None):
         #   Make astropy table
-        table_transformed_magnitudes = utilities.mk_magnitudes_table(
+        table_transformed_magnitudes, array_transformed_magnitudes = utilities.mk_magnitudes_table_and_array(
             image_container,
             filter_list,
             'mag_cali_trans',
@@ -1131,6 +1131,7 @@ def apply_calibration(
 
         #   Add table to container
         image_container.table_mags_transformed = table_transformed_magnitudes
+        image_container.array_mags_transformed = array_transformed_magnitudes
 
         #   Save to file
         utilities.save_magnitudes_ascii(
@@ -1150,19 +1151,20 @@ def apply_calibration(
     #   Without transformation
 
     #   Make astropy table
-    table_mags_not_transformed = utilities.mk_magnitudes_table(
+    table_not_transformed_magnitudes, array_not_transformed_magnitudes = utilities.mk_magnitudes_table_and_array(
         image_container,
         filter_list,
-        'mag_cali',
+        'mag_cali_no-trans',
     )
 
-    #   Add table to container
-    image_container.table_mags_not_transformed = table_mags_not_transformed
+    #   Add table and array to container
+    image_container.table_mags_not_transformed = table_not_transformed_magnitudes
+    image_container.array_mags_not_transformed = array_not_transformed_magnitudes
 
     #   Save to file
     utilities.save_magnitudes_ascii(
         image_container,
-        table_mags_not_transformed,
+        table_not_transformed_magnitudes,
         trans=False,
         id_object=id_object,
         photometry_extraction_method=photometry_extraction_method,

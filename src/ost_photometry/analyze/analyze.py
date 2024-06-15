@@ -4577,8 +4577,9 @@ def calibrate_data_mk_light_curve(
         #   TODO: Replace with table_mags_transformed
         calibrated_magnitudes = getattr(
             image_container,
-            'calibrated_transformed_magnitudes',
+            # 'calibrated_transformed_magnitudes',
             # 'calibrated_magnitudes',
+            'array_mags_transformed',
             None,
         )
 
@@ -4609,7 +4610,7 @@ def calibrate_data_mk_light_curve(
             #   Create a time series object
             time_series = utilities.mk_time_series(
                 observation_times,
-                calibrated_magnitudes[filter_],
+                calibrated_magnitudes,
                 filter_,
                 image_container.ensembles[filter_].variable_id,
             )
@@ -4693,9 +4694,10 @@ def calibrate_data_mk_light_curve(
                 #   TODO: Replace with table_mags_not_transformed and table_mags_transformed
                 plot_quantity = getattr(
                     image_container,
-                    'calibrated_magnitudes',
+                    # 'calibrated_magnitudes',
+                    'array_mags_not_transformed',
                     None,
-                )[filter_]
+                )
 
             #   TODO: Make lightcurve plots for all object + highlight calibration stars
             ###
