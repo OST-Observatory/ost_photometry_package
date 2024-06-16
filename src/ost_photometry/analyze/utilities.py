@@ -440,8 +440,8 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
     # mags_obj = mags_obj[mask]
     # errs_obj = errs_obj[mask]
 
-    mags_obj = magnitudes[filter_]['value'][:, object_id]
-    errs_obj = magnitudes[filter_]['error'][:, object_id]
+    mags_obj = magnitudes[filter_]['values'][:, object_id]
+    errs_obj = magnitudes[filter_]['errors'][:, object_id]
 
     # Make time series and use reshape to get a justified array
     ts = TimeSeries(
@@ -1202,7 +1202,7 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
 
 
 def calibration_check_plots(
-        filter_, out_dir, name_object, image_id, filter_list, mask,
+        filter_, out_dir, name_object, image_id, filter_list,
         color_observed, color_literature, ids_calibration_stars,
         literature_magnitudes, magnitudes, uncalibrated_magnitudes,
         color_observed_err=None, color_literature_err=None,
@@ -1290,74 +1290,74 @@ def calibration_check_plots(
     p.start()
 
     #   Illustration of sigma clipping on calibration magnitudes
-    if plot_sigma_switch:
+    # if plot_sigma_switch:
         #   Make fit
-        fit = fit_data_one_d(
-            uncalibrated_magnitudes[ids_calibration_stars][mask],
-            literature_magnitudes[mask],
-            1,
-        )
+        # fit = fit_data_one_d(
+        #     uncalibrated_magnitudes[ids_calibration_stars][mask],
+        #     literature_magnitudes[mask],
+        #     1,
+        # )
+        #
+        # p = mp.Process(
+        #     target=plot.scatter,
+        #     args=(
+        #         [
+        #             uncalibrated_magnitudes[ids_calibration_stars],
+        #             uncalibrated_magnitudes[ids_calibration_stars][mask]
+        #         ],
+        #         f'{filter_}_measured [mag]',
+        #         [literature_magnitudes, literature_magnitudes[mask]],
+        #         f'{filter_}_literature [mag]',
+        #         f'mags_sigma_{filter_}_img_{image_id}',
+        #         out_dir,
+        #     ),
+        #     kwargs={
+        #         'name_obj': name_object,
+        #         'fits': [None, fit],
+        #         'x_errors': [
+        #             uncalibrated_magnitudes_err[ids_calibration_stars],
+        #             uncalibrated_magnitudes_err[ids_calibration_stars][mask]
+        #         ],
+        #         'y_errors': [
+        #             literature_magnitudes_err,
+        #             literature_magnitudes_err[mask]
+        #         ],
+        #         'dataset_label': [
+        #             'without sigma clipping',
+        #             'with sigma clipping',
+        #         ],
+        #     }
+        # )
+        # p.start()
 
-        p = mp.Process(
-            target=plot.scatter,
-            args=(
-                [
-                    uncalibrated_magnitudes[ids_calibration_stars],
-                    uncalibrated_magnitudes[ids_calibration_stars][mask]
-                ],
-                f'{filter_}_measured [mag]',
-                [literature_magnitudes, literature_magnitudes[mask]],
-                f'{filter_}_literature [mag]',
-                f'mags_sigma_{filter_}_img_{image_id}',
-                out_dir,
-            ),
-            kwargs={
-                'name_obj': name_object,
-                'fits': [None, fit],
-                'x_errors': [
-                    uncalibrated_magnitudes_err[ids_calibration_stars],
-                    uncalibrated_magnitudes_err[ids_calibration_stars][mask]
-                ],
-                'y_errors': [
-                    literature_magnitudes_err,
-                    literature_magnitudes_err[mask]
-                ],
-                'dataset_label': [
-                    'without sigma clipping',
-                    'with sigma clipping',
-                ],
-            }
-        )
-        p.start()
-
-        #   Make fit for test purposes TODO: Check that the settings are correct.
-        fit = fit_data_one_d(
-            color_literature[mask],
-            color_observed[mask],
-            1,
-        )
-        p = mp.Process(
-            target=plot.scatter,
-            args=(
-                [color_literature, color_literature[mask]],
-                f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
-                [color_observed, color_observed[mask]],
-                f'{filter_list[0]}-{filter_list[1]}_measured [mag]',
-                f'color_sigma_{filter_}_img_{image_id}',
-                out_dir,
-            ),
-            kwargs={
-                'name_obj': name_object,
-                'x_errors': [color_literature_err, color_literature_err[mask]],
-                'y_errors': [color_observed_err, color_observed_err[mask]],
-                'dataset_label': [
-                    'without sigma clipping',
-                    'with sigma clipping',
-                ],
-                'fits': [fit, fit],
-            }
-        )
-        p.start()
+        # #   Make fit for test purposes TODO: Check that the settings are correct.
+        # fit = fit_data_one_d(
+        #     color_literature[mask],
+        #     color_observed[mask],
+        #     1,
+        # )
+        # p = mp.Process(
+        #     target=plot.scatter,
+        #     args=(
+        #         [color_literature, color_literature[mask]],
+        #         f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
+        #         [color_observed, color_observed[mask]],
+        #         f'{filter_list[0]}-{filter_list[1]}_measured [mag]',
+        #         f'color_sigma_{filter_}_img_{image_id}',
+        #         out_dir,
+        #     ),
+        #     kwargs={
+        #         'name_obj': name_object,
+        #         'x_errors': [color_literature_err, color_literature_err[mask]],
+        #         'y_errors': [color_observed_err, color_observed_err[mask]],
+        #         'dataset_label': [
+        #             'without sigma clipping',
+        #             'with sigma clipping',
+        #         ],
+        #         'fits': [fit, fit],
+        #     }
+        # )
+        # p.start()
 
         # p = mp.Process(
         #     target=plot.scatter,
@@ -1385,65 +1385,65 @@ def calibration_check_plots(
         # )
         # p.start()
 
-        p = mp.Process(
-            target=plot.scatter,
-            args=(
-                [color_literature, color_literature[mask]],
-                f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
-                [
-                    2 * literature_magnitudes - color_literature -
-                    2 * magnitudes[ids_calibration_stars] + color_observed,
-                    2 * literature_magnitudes[mask] - color_literature[mask] -
-                    2 * magnitudes[ids_calibration_stars][mask] + color_observed[mask]
-                ],
-                f'{filter_list[0]} + {filter_list[1]}_measured [mag]'
-                f' - {filter_list[0]} - {filter_list[1]}_literature',
-                f'delta_magnitudes_sigma_{filter_}_img_{image_id}',
-                out_dir,
-            ),
-            kwargs={
-                'name_obj': name_object,
-                'x_errors': [color_literature_err, color_literature_err[mask]],
-                'y_errors': [
-                    err_prop(color_observed_err, color_literature_err),
-                    err_prop(color_observed_err[mask], color_literature_err[mask])
-                ],
-                'dataset_label': [
-                    'without sigma clipping',
-                    'with sigma clipping',
-                ],
-            }
-        )
-        p.start()
+        # p = mp.Process(
+        #     target=plot.scatter,
+        #     args=(
+        #         [color_literature, color_literature[mask]],
+        #         f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
+        #         [
+        #             2 * literature_magnitudes - color_literature -
+        #             2 * magnitudes[ids_calibration_stars] + color_observed,
+        #             2 * literature_magnitudes[mask] - color_literature[mask] -
+        #             2 * magnitudes[ids_calibration_stars][mask] + color_observed[mask]
+        #         ],
+        #         f'{filter_list[0]} + {filter_list[1]}_measured [mag]'
+        #         f' - {filter_list[0]} - {filter_list[1]}_literature',
+        #         f'delta_magnitudes_sigma_{filter_}_img_{image_id}',
+        #         out_dir,
+        #     ),
+        #     kwargs={
+        #         'name_obj': name_object,
+        #         'x_errors': [color_literature_err, color_literature_err[mask]],
+        #         'y_errors': [
+        #             err_prop(color_observed_err, color_literature_err),
+        #             err_prop(color_observed_err[mask], color_literature_err[mask])
+        #         ],
+        #         'dataset_label': [
+        #             'without sigma clipping',
+        #             'with sigma clipping',
+        #         ],
+        #     }
+        # )
+        # p.start()
 
-    #   Difference between literature values and calibration results
-    #   TODO: Add image ID to plot file name
-    p = mp.Process(
-        target=plot.scatter,
-        args=(
-            [literature_magnitudes, literature_magnitudes[mask]],
-            f'{filter_}_literature [mag]',
-            [
-                magnitudes[ids_calibration_stars] - literature_magnitudes,
-                magnitudes[ids_calibration_stars][mask] - literature_magnitudes[mask]
-            ],
-            f'{filter_}_observed - {filter_}_literature [mag]',
-            'magnitudes_literature-vs-observed',
-            out_dir,
-        ),
-        kwargs={
-            'x_errors': [literature_magnitudes_err, literature_magnitudes_err[mask]],
-            'y_errors': [
-                err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
-                err_prop(magnitudes_err[ids_calibration_stars][mask], literature_magnitudes_err[mask]),
-            ],
-            'dataset_label': [
-                'without sigma clipping',
-                'with sigma clipping',
-            ],
-        },
-    )
-    p.start()
+    # #   Difference between literature values and calibration results
+    # #   TODO: Add image ID to plot file name
+    # p = mp.Process(
+    #     target=plot.scatter,
+    #     args=(
+    #         [literature_magnitudes, literature_magnitudes[mask]],
+    #         f'{filter_}_literature [mag]',
+    #         [
+    #             magnitudes[ids_calibration_stars] - literature_magnitudes,
+    #             magnitudes[ids_calibration_stars][mask] - literature_magnitudes[mask]
+    #         ],
+    #         f'{filter_}_observed - {filter_}_literature [mag]',
+    #         'magnitudes_literature-vs-observed',
+    #         out_dir,
+    #     ),
+    #     kwargs={
+    #         'x_errors': [literature_magnitudes_err, literature_magnitudes_err[mask]],
+    #         'y_errors': [
+    #             err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
+    #             err_prop(magnitudes_err[ids_calibration_stars][mask], literature_magnitudes_err[mask]),
+    #         ],
+    #         'dataset_label': [
+    #             'without sigma clipping',
+    #             'with sigma clipping',
+    #         ],
+    #     },
+    # )
+    # p.start()
 
 
 def derive_limiting_magnitude(image_container, filter_list, reference_img,
