@@ -1041,6 +1041,7 @@ def apply_calibration(
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
+            #   TODO: Add progress bar
             #   Get magnitude array for first image
             magnitudes_current_image = utilities.distribution_from_table(
                 current_image

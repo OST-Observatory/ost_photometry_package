@@ -1996,7 +1996,7 @@ def correlate_ensembles(
     wcs_list_ensemble = []
 
     #   Number of objects in each table/image
-    reference_obj_id = []
+    reference_obj_ids = []
     for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
         wcs_list_ensemble.append(ensemble.wcs)
 
@@ -2009,7 +2009,7 @@ def correlate_ensembles(
 
         #   Check if reference object is set
         if id_ensemble == reference_ensemble_id:
-            reference_obj_id = getattr(ensemble, 'variable_id', [])
+            reference_obj_ids = getattr(ensemble, 'variable_id', [])
 
     #   Max. number of objects
     n_objects_max = np.max(n_object_all_images_list)
@@ -2027,7 +2027,7 @@ def correlate_ensembles(
         n_ensembles,
         dataset_type='ensemble',
         reference_dataset_id=reference_ensemble_id,
-        reference_obj_ids=reference_obj_id,
+        reference_obj_ids=reference_obj_ids,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         protect_reference_obj=protect_reference_obj,
         separation_limit=separation_limit,
@@ -2043,12 +2043,18 @@ def correlate_ensembles(
     for ensemble_rejected in rejected_ensembles:
         ensemble_dict.pop(ensemble_keys[ensemble_rejected])
 
-    #   Re-identify position of the variable star
+    #   Limit the photometry tables object_ids to common objects.
+    for j, ensemble in enumerate(ensemble_dict.values()):
+        for image in ensemble.image_list:
+            image.photometry = image.photometry[correlation_index[j, :]]
+
+    #   Re-identify position of the variable stars
     terminal_output.print_to_terminal(
         "Identify the variable star",
     )
-
     #   TODO: Convert ra_object and dec_object to lists -> allow multiple objects
+    #   TODO: Check if this is necessary
+    #   TODO: Put this in a function
     object_ids = []
     for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
         if id_ensemble == reference_ensemble_id:
@@ -2078,15 +2084,6 @@ def correlate_ensembles(
     #   Set new object ID
     for ensemble in ensemble_dict.values():
         ensemble.variable_id = object_ids
-
-    #   TODO: Check this! If the ensemble is used multiple times, such as
-    #    multiple filter combinations, this might less common objects, since
-    #    some were removed in a previous iteration step
-    #    =>  Should be save now
-    #   Limit the photometry tables to common objects.
-    for j, ensemble in enumerate(ensemble_dict.values()):
-        for image in ensemble.image_list:
-            image.photometry = image.photometry[correlation_index[j, :]]
 
     #   Check if correlation with calibration data is necessary
     calibration_parameters = getattr(image_container, 'CalibParameters', None)

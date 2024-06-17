@@ -100,9 +100,7 @@ def mk_magnitudes_table_and_array(
             Array with magnitudes and magnitude errors of all images in an
             image series
     """
-    #   Setup magnitude list
-    magnitude_list = []
-    magnitude_error_list = []
+    #   Dictionary for stacked magnitudes
     stacked_magnitudes = {}
 
     #   Get object indices, X & Y pixel positions and wcs
@@ -136,6 +134,10 @@ def mk_magnitudes_table_and_array(
         #   Get image list
         ensemble = image_container.ensembles[filter_]
         image_list = ensemble.image_list
+
+        #   Lists for magnitudes and errors
+        magnitude_list = []
+        magnitude_error_list = []
 
         for image_id, image in enumerate(image_list):
             photometry_table = image.photometry
@@ -416,8 +418,6 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
     # # print(stacked_distribution)
     # # print(stacked_distribution.shape)
     # # print(type(stacked_distribution))
-    # #   TODO: Replace this with a proper handling of multiple objects
-    # object_id = object_id[0]
     # object_magnitudes = stacked_distribution[:, object_id]
     # #`print(object_magnitudes)
     # #`print(object_magnitudes.shape)
@@ -439,6 +439,9 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
     #   Remove images without entries
     # mags_obj = mags_obj[mask]
     # errs_obj = errs_obj[mask]
+
+    #   TODO: Replace this with a proper handling of multiple objects
+    object_id = object_id[0]
 
     mags_obj = magnitudes[filter_]['values'][:, object_id]
     errs_obj = magnitudes[filter_]['errors'][:, object_id]
