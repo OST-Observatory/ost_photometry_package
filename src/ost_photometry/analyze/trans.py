@@ -749,12 +749,12 @@ def flux_calibration_ensemble(image_ensemble):
     # print(stddev)
     # print(median.shape)
     # print(flux.shape)
-    flux_distribution = unc.normal(
+    flux_distribution = unc.poisson(
         flux,
         std=flux_error,
         n_samples=10000,
     )
-    # normalization_factor = unc.normal(
+    # normalization_factor = unc.poisson(
     #     median,
     #     std=stddev,
     #     n_samples=10000,
@@ -791,7 +791,7 @@ def flux_normalization_ensemble(image_ensemble):
         flux_error = flux_distribution.pdf_std()
     except AttributeError:
         flux, flux_error = image_ensemble.get_flux_array()
-        flux_distribution = unc.normal(
+        flux_distribution = unc.poisson(
             flux,
             std=flux_error,
             n_samples=10000,
@@ -816,7 +816,7 @@ def flux_normalization_ensemble(image_ensemble):
     #     # std_dev_reshape = stddev[np.newaxis, :]
 
     #     #   Normalized magnitudes
-    #     normalization_factor = unc.normal(
+    #     normalization_factor = unc.poisson(
     #         # median_reshape * u.mag,
     #         # std=std_dev_reshape * u.mag,
     #         # median * u.mag,
@@ -842,7 +842,7 @@ def flux_normalization_ensemble(image_ensemble):
     # print(flux_distribution.shape)
 
     #   Prepare distributions 
-    normalization_factor = unc.normal(
+    normalization_factor = unc.poisson(
         median,
         std=stddev,
         n_samples=10000,

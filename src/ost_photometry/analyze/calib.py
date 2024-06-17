@@ -1086,7 +1086,7 @@ def distribution_from_calibration_table(calibration_parameters, filter_list):
             calib_column_names[f'err{filter_}']
         ]
 
-        literature_magnitudes_distribution = unc.normal(
+        literature_magnitudes_distribution = unc.poisson(
             calibration_magnitudes.value * u.mag,
             std=calibration_magnitudes_err.value * u.mag,
             n_samples=10000,
