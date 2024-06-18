@@ -459,7 +459,7 @@ class ImageEnsemble:
         flux_list = []
         for tbl in tbl_s:
             flux_list.append(
-                unc.poisson(
+                unc.normal(
                     tbl['flux_fit'] * u.mag,
                     std=tbl['flux_unc'] * u.mag,
                     n_samples=10000,

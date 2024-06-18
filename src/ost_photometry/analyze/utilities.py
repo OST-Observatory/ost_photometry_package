@@ -2490,7 +2490,7 @@ def distribution_from_table(image):
         Normal distribution representing observed magnitudes
     """
     #   Build normal distribution
-    magnitude_distribution = unc.poisson(
+    magnitude_distribution = unc.normal(
         image.photometry['mags_fit'].value * u.mag,
         std=image.photometry['mags_unc'].value * u.mag,
         n_samples=10000,
@@ -2588,7 +2588,7 @@ def convert_magnitudes_to_other_system(tbl: Table,
             #   ID availability
             if image_id == -1:
                 if error:
-                    data_dict[column_filter] = unc.poisson(
+                    data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter}'].value * u.mag,
                         std=tbl[f'{column_filter}_err'].value * u.mag,
                         n_samples=10000,
@@ -2599,7 +2599,7 @@ def convert_magnitudes_to_other_system(tbl: Table,
                     # )
                 else:
                     # data_dict[column_filter] = tbl[f'{column_filter}'].value
-                    data_dict[column_filter] = unc.poisson(
+                    data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter}'].value * u.mag,
                         n_samples=10000,
                     )
@@ -2609,14 +2609,14 @@ def convert_magnitudes_to_other_system(tbl: Table,
                     #     tbl[f'{column_filter} ({image_id})'].value,
                     #     tbl[f'{column_filter}_err ({image_id})'].value
                     # )
-                    data_dict[column_filter] = unc.poisson(
+                    data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter} ({image_id})'].value * u.mag,
                         std=tbl[f'{column_filter}_err ({image_id})'].value * u.mag,
                         n_samples=10000,
                     )
                 else:
                     # data_dict[column_filter] = tbl[f'{column_filter} ({image_id})'].value
-                    data_dict[column_filter] = unc.poisson(
+                    data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter} ({image_id})'].value * u.mag,
                         n_samples=10000,
                     )
