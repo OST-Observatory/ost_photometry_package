@@ -1,6 +1,8 @@
 ############################################################################
 #                               Libraries                                  #
 ############################################################################
+import sys
+import time
 
 import numpy as np
 
@@ -17,6 +19,25 @@ from .. import checks, style, calibration_data, terminal_output
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
+
+
+def progress_bar(count_value, total, suffix=''):
+    """
+    A progress bar. The code is from: https://www.geeksforgeeks.org/progress-bars-in-python/
+
+    Parameters
+    ----------
+    count_value
+    total
+    suffix
+    """
+    bar_length = 100
+    filled_up_length = int(round(bar_length* count_value / float(total)))
+    percentage = round(100.0 * count_value/float(total),1)
+    bar = '=' * filled_up_length + '-' * (bar_length - filled_up_length)
+    sys.stdout.write('[%s] %s%s ...%s\r' %(bar, percentage, '%', suffix))
+    sys.stdout.flush()
+
 
 def find_best_comparison_image_second_filter(
         image_container, current_image_id, id_second_filter, id_current_filter,
@@ -1007,6 +1028,7 @@ def apply_calibration(
 
         #   Get image list
         image_list = img_ensemble.image_list
+        n_images = len(image_list)
 
         #   Prepare transformation
         transformation_type, comparison_filter_id, trans_coefficients = check_transformation_requirements(
@@ -1021,7 +1043,6 @@ def apply_calibration(
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
-            #   TODO: Add progress bar
             #   Get magnitude array for first image
             magnitudes_current_image = utilities.distribution_from_table(
                 current_image
@@ -1104,6 +1125,9 @@ def apply_calibration(
                     plot_sigma=plot_sigma,
                     transformation_type=transformation_type,
                 )
+
+            #   TODO: Add progress bar
+            progress_bar(current_image_id, n_images)
 
     ###
     #   Save results as ASCII files
