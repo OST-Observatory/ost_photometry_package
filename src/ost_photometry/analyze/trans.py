@@ -231,7 +231,6 @@ def derive_transformation_onthefly(
         color_correction_filter_2       : `ufloat` or `float`
             Color correction term for filter 2.
     """
-    #   TODO: Add sigma clipping
     #   Initial guess for the parameters
     # x0    = np.array([0.0, 0.0])
     x0 = np.array([1.0, 1.0])
@@ -243,19 +242,11 @@ def derive_transformation_onthefly(
     diff_mag_1 = magnitudes_literature_filter_1 - magnitudes_observed_filter_1
     diff_mag_2 = magnitudes_literature_filter_2 - magnitudes_observed_filter_2
 
-    #   Sigma clipping of zero point to find outliers
-    clip = sigma_clipping(image.zp.pdf_median(), sigma=1.5)
-    mask = np.invert(clip.recordmask)
-
-    #   TODO: Test median with std (should be worse!?)
-    # color_literature_plot = color_literature.distribution
-    # color_literature_err_plot = 0.
-    # diff_mag_plot_1 = diff_mag_1.distribution
-    # diff_mag_plot_2 = diff_mag_2.distribution
-    color_literature_plot = color_literature.pdf_median()[mask]
-    color_literature_err_plot = color_literature.pdf_std()[mask]
-    diff_mag_plot_1 = diff_mag_1.pdf_median()[mask]
-    diff_mag_plot_2 = diff_mag_2.pdf_median()[mask]
+    #   TODO: Test with distributions
+    color_literature_plot = color_literature.pdf_median()
+    color_literature_err_plot = color_literature.pdf_std()
+    diff_mag_plot_1 = diff_mag_1.pdf_median()
+    diff_mag_plot_2 = diff_mag_2.pdf_median()
 
     #   Set
     sigma = np.array(color_literature_err_plot)
@@ -268,19 +259,6 @@ def derive_transformation_onthefly(
         x0,
         sigma,
     )
-    # z_1_ii, z_1_err_ii, color_correction_filter_1, color_correction_filter_1_err = utilities.fit_curve(
-    #     fit_func,
-    #     color_literature.pdf_median(),
-    #     diff_mag_1.pdf_median(),
-    #     x0,
-    #     color_literature.pdf_std(),
-    # )
-    # print('Fit comparison: --------------------------')
-    # print(z_1, z_1_err)
-    # print(z_1_ii, z_1_err_ii)
-    # print('------------------------------------------')
-    # print(z_1)
-    # print(color_correction_filter_1)
     z_2, z_2_err, color_correction_filter_2, color_correction_filter_2_err = utilities.fit_curve(
         fit_func,
         color_literature_plot,
@@ -293,16 +271,12 @@ def derive_transformation_onthefly(
     if np.isinf(z_2_err):
         z_2_err = None
 
-    #   TODO: Check that ravel and value is really necessary
-    #         Check if color_literature_err_plot=0 can be improved!!!
     #   Plots magnitude difference (literature vs. measured) vs. color
     plot.plot_transform(
         image.outpath.name,
         filter_list[0],
         filter_list[1],
-        # np.ravel(color_literature_plot.value),
         color_literature_plot.value,
-        # np.ravel(diff_mag_plot_1.value),
         diff_mag_plot_1.value,
         z_1,
         color_correction_filter_1,
@@ -312,7 +286,8 @@ def derive_transformation_onthefly(
         filter_=filter_list[id_current_filter],
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_1_err,
-        name_obj=image.objname,
+        name_object=image.objname,
+        image_id=image.pd,
     )
 
     if id_current_filter == 0:
@@ -333,7 +308,8 @@ def derive_transformation_onthefly(
         filter_=other_filter,
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_2_err,
-        name_obj=image.objname,
+        name_object=image.objname,
+        image_id=image.pd,
     )
 
     color_correction_filter_1 = unc.normal(
@@ -1348,7 +1324,7 @@ def determine_transformation(img_container, current_filter, filter_list,
             ensemble_dict[filter_list[0]].get_air_mass()[0],
             color_literature_err=color_literature_err_plot,
             fit_variable_err=color_observed_err_plot,
-            name_obj=ensemble_dict[filter_list[0]].objname,
+            name_object=ensemble_dict[filter_list[0]].objname,
         )
 
         #  Mag transform - Fit the data with fit_func
@@ -1387,7 +1363,7 @@ def determine_transformation(img_container, current_filter, filter_list,
             filter_=current_filter,
             color_literature_err=color_literature_err_plot,
             fit_variable_err=zero_point_err_plot,
-            name_obj=ensemble_dict[filter_list[0]].objname,
+            name_object=ensemble_dict[filter_list[0]].objname,
         )
 
         #   Redefine variables -> shorter variables

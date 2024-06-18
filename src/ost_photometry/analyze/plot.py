@@ -1092,7 +1092,7 @@ def light_curve_fold(
 def plot_transform(output_dir, filter_1, filter_2, color_literature, fit_variable,
                    a_fit, b_fit, b_err_fit, fit_function, air_mass,
                    filter_=None, color_literature_err=None, fit_variable_err=None,
-                   name_obj=None):
+                   name_object=None, image_id=None):
     """
         Plots illustrating magnitude transformation results
 
@@ -1142,9 +1142,12 @@ def plot_transform(output_dir, filter_1, filter_2, color_literature, fit_variabl
             Fit variable errors
             Default is ``None``.
 
-        name_obj            : `string`
+        name_object            : `string` or `list` of `string`
             Name of the object
             Default is ``None``.
+
+        image_id            : `integer` or `None`, optional
+            ID of the image
     """
     #   Check output directories
     checks.check_output_directories(
@@ -1152,39 +1155,51 @@ def plot_transform(output_dir, filter_1, filter_2, color_literature, fit_variabl
         os.path.join(output_dir, 'trans_plots'),
     )
 
+    #   Add image ID to file name, if available
+    if image_id is not None:
+        id_image_str = f'_{image_id}'
+    else:
+        id_image_str = ''
+
     #   Fit data
     x_lin = np.sort(color_literature)
     y_lin = fit_function(x_lin, a_fit, b_fit)
+
+    #   Limit the space for the object names in case several are given
+    if isinstance(name_object, list):
+        name_object = ', '.join(name_object)
+        if len(name_object) > 20:
+            name_object = name_object[0:16] + ' ...'
 
     #   Set labels etc.
     air_mass = round(air_mass, 2)
     if filter_ is None:
         #   coeff  = 1./b
-        if name_obj is None:
+        if name_object is None:
             title = f'Color transform ({filter_1.lower()}-{filter_2.lower()}' \
                     f' vs. {filter_1}-{filter_2}) (X = {air_mass})'
         else:
             title = f'Color transform ({filter_1.lower()}-{filter_2.lower()}' \
-                    f' vs. {filter_1}-{filter_2}) - {name_obj} (X = {air_mass})'
+                    f' vs. {filter_1}-{filter_2}) - {name_object} (X = {air_mass})'
         y_label = f'{filter_1.lower()}-{filter_2.lower()} [mag]'
         path = f'{output_dir}/trans_plots/{filter_1.lower()}{filter_2.lower()}' \
-               f'_{filter_1}{filter_2}.pdf'
+               f'_{filter_1}{filter_2}{id_image_str}.pdf'
         p_label = (f'slope = {b_fit:.5f}, T{filter_1.lower()}'
                    f'{filter_2.lower()} = {1. / b_fit:.5f} +/- {b_err_fit:.5f}')
     else:
         #   coeff  = b
-        if name_obj is None:
+        if name_object is None:
             title = f'{filter_}{filter_1.lower()}{filter_2.lower()}' \
                     f'-mag transform ({filter_}-{filter_.lower()}' \
                     f' vs. {filter_1}-{filter_2}) (X = {air_mass})'
         else:
             title = f'{filter_}{filter_1.lower()}{filter_2.lower()}' \
                     f'-mag transform ({filter_}-{filter_.lower()}' \
-                    f' vs. {filter_1}-{filter_2}) - {name_obj}' \
+                    f' vs. {filter_1}-{filter_2}) - {name_object}' \
                     f' (X = {air_mass})'
         y_label = f'{filter_}-{filter_.lower()} [mag]'
         path = f'{output_dir}/trans_plots/{filter_}{filter_.lower()}' \
-               f'_{filter_1}{filter_2}.pdf'
+               f'_{filter_1}{filter_2}{id_image_str}.pdf'
         p_label = (f'slope = {b_fit:.5f}, C{filter_.lower()}_{filter_1.lower()}'
                    f'{filter_2.lower()} = {b_fit:.5f} +/- {b_err_fit:.5f}')
     x_label = f'{filter_1}-{filter_2} [mag]'
