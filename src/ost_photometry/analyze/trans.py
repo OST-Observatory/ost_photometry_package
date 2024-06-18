@@ -243,15 +243,19 @@ def derive_transformation_onthefly(
     diff_mag_1 = magnitudes_literature_filter_1 - magnitudes_observed_filter_1
     diff_mag_2 = magnitudes_literature_filter_2 - magnitudes_observed_filter_2
 
+    #   Sigma clipping of zero point to find outliers
+    clip = sigma_clipping(image.zp.pdf_median(), sigma=1.5)
+    mask = np.invert(clip.recordmask)
+
     #   TODO: Test median with std (should be worse!?)
     # color_literature_plot = color_literature.distribution
     # color_literature_err_plot = 0.
     # diff_mag_plot_1 = diff_mag_1.distribution
     # diff_mag_plot_2 = diff_mag_2.distribution
-    color_literature_plot = color_literature.pdf_median()
-    color_literature_err_plot = color_literature.pdf_std()
-    diff_mag_plot_1 = diff_mag_1.pdf_median()
-    diff_mag_plot_2 = diff_mag_2.pdf_median()
+    color_literature_plot = color_literature.pdf_median()[mask]
+    color_literature_err_plot = color_literature.pdf_std()[mask]
+    diff_mag_plot_1 = diff_mag_1.pdf_median()[mask]
+    diff_mag_plot_2 = diff_mag_2.pdf_median()[mask]
 
     #   Set
     sigma = np.array(color_literature_err_plot)
