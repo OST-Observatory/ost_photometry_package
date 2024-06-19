@@ -509,6 +509,8 @@ def transformation_core(
     )
 
     #   Add calibrated photometry to table of Image object
+    #   TODO: Add the photometry with filter_list information such that it is
+    #         clear how the magnitudes are derived
     image.photometry['mag_cali_trans'] = median
     image.photometry['mag_cali_trans_unc'] = stddev
 
@@ -635,24 +637,17 @@ def apply_transformation(
     )
 
 
-def calibrate_simple(image_container, image, not_calibrated_magnitudes,
-                     filter_):
+def calibrate_simple(image, not_calibrated_magnitudes):
     """
         Calibrate magnitudes without magnitude transformation
 
         Parameters
         ----------
-        image_container             : `image.container`
-            Container object with image ensemble objects for each filter
-
         image                       : `image.class`
             Image class with all image specific properties
 
         not_calibrated_magnitudes   : `astropy.uncertainty.core.QuantityDistribution`
             Distribution of uncalibrated magnitudes
-
-        filter_                     : `string`
-            Current filter
     """
     #   Get zero points
     zp = image.zp
@@ -928,7 +923,6 @@ def apply_calibration(
         # Vobj = Δv + Tv_bv * Δ(B-V) + Vcomp or Vobj
                = v + Tv_bv*Δ(B-V) - v_cali
 
-
         Parameters
         ----------
         image_container                     : `image.container`
@@ -971,6 +965,7 @@ def apply_calibration(
             Indentation for the console output lines
             Default is ``1``.
     """
+    #   TODO: Separate simple calibration and magnitude transformation
     terminal_output.print_to_terminal(
         "Apply calibration and perform magnitude transformation",
         indent=indent,
@@ -989,6 +984,7 @@ def apply_calibration(
         distribution_samples=distribution_samples,
     )
 
+    #   TODO: Prepare this for multithreading
     for current_filter_id, filter_ in enumerate(filter_list):
         #   Get image ensemble
         img_ensemble = image_ensembles[filter_]
@@ -1005,7 +1001,6 @@ def apply_calibration(
             current_filter_id,
             derive_transformation_coefficients,
         )
-        print('transformation_type: ', transformation_type)
         transformation_type_list.append(transformation_type)
 
         #   Loop over images
@@ -1034,12 +1029,7 @@ def apply_calibration(
             )
 
             #   Calibration without transformation
-            calibrate_simple(
-                image_container,
-                current_image,
-                magnitudes_current_image,
-                filter_,
-            )
+            calibrate_simple(current_image, magnitudes_current_image)
 
             #   Prepare some variables and find corresponding image to
             #   current_image
@@ -1097,14 +1087,15 @@ def apply_calibration(
                     distribution_samples=distribution_samples,
                 )
 
-            #   TODO: Add progress bar
+            #   Progress bar
             progress_bar(current_image_id, n_images)
 
     ###
     #   Save results as ASCII files
     #
+    #   TODO: Remove this from apply calibration and move it to a function called save_calibration
+    #         -> put it one level up
     #   With transformation
-    print('transformation_type_list: ', transformation_type_list)
     if not np.any(np.array(transformation_type_list) == None):
         #   Make astropy table
         table_transformed_magnitudes, array_transformed_magnitudes = utilities.mk_magnitudes_table_and_array(
@@ -1124,6 +1115,7 @@ def apply_calibration(
             trans=True,
             id_object=id_object,
             photometry_extraction_method=photometry_extraction_method,
+            rts=f'_{filter_list[0]}-{filter_list[1]}'
         )
     else:
         terminal_output.print_to_terminal(

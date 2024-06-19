@@ -2430,12 +2430,18 @@ def post_process_results(
         ###
         #   Save results as ASCII files
         #
+        #   TODO: Fix this dirty hack to fix the file names, if magnitude
+        #         transformation is applied
+        if trans:
+            rts = f'{filter_list[0]}-{filter_list[1]}_post_processed'
+        else:
+            rts = '_post_processed'
         save_magnitudes_ascii(
             img_container,
             tbl,
             trans=trans,
             id_object=id_object,
-            rts='_post_processed',
+            rts=rts,
             photometry_extraction_method=extraction_method,
             add_file_path_to_container=False,
         )
@@ -2678,3 +2684,65 @@ def convert_magnitudes_to_other_system(
             print('Will be available soon...')
 
         return tbl
+
+
+def find_filter_for_magnitude_transformation(
+        filter_list, calibration_filters, valid_filter_combinations=None):
+    """
+    Identifies filter that can be used for magnitude transformation
+
+    Parameters
+    ----------
+    filter_list                 : `list` of `strings`
+        List with observed filter names
+
+    calibration_filters         : `list` of `strings`
+        Names of the available filter with calibration data
+
+    valid_filter_combinations   : `list` of 'list` of `string` or None, optional
+        Valid filter combinations to calculate magnitude transformation
+        Default is ``None``.
+
+    Returns
+    -------
+    valid_filter                : `list` of `string`
+        Filter for which magnitude transformation is possible
+
+    usable_filter_combinations  : `list` of `list` od `string`
+        Filter combinations for which magnitude transformation
+        can be applied
+    """
+#   Load valid filter combinations, if none are supplied
+    if valid_filter_combinations is None:
+        valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
+
+    #   Setup list for valid filter etc.
+    valid_filter = []
+    usable_filter_combinations = []
+
+    #   Determine usable filter combinations -> Filters must be in a valid
+    #   filter combination for the magnitude transformation and calibration
+    #   data must be available for the filter.
+    for filter_combination in valid_filter_combinations:
+        if filter_combination[0] in filter_list and filter_combination[1] in filter_list:
+            faulty_filter = None
+            if f'mag{filter_combination[0]}' not in calibration_filters:
+                faulty_filter = filter_combination[0]
+            if f'mag{filter_combination[1]}' not in calibration_filters:
+                faulty_filter = filter_combination[1]
+            if faulty_filter is not None:
+                terminal_output.print_to_terminal(
+                    "Magnitude transformation not possible because "
+                    "no calibration data available for filter "
+                    f"{faulty_filter}",
+                    indent=2,
+                    style_name='WARNING',
+                )
+                continue
+
+            valid_filter.append(filter_combination[0])
+            valid_filter.append(filter_combination[1])
+            usable_filter_combinations.append(filter_combination)
+    valid_filter = set(valid_filter)
+
+    return valid_filter, usable_filter_combinations

@@ -3819,499 +3819,57 @@ def correlate_calibrate(
         magnitude_range=magnitude_range,
         region_to_select_calibration_stars=region_to_select_calibration_stars,
     )
+    calibration_filters = image_container.CalibParameters.column_names
 
-    #   TODO: Add here checks on which filter combinations are possible!!!!!
-
-    #   Apply calibration and perform magnitude transformation
-    trans.apply_calibration(
-        image_container,
+    #   Find filter combinations for which magnitude transformation is possible
+    _, usable_filter_combinations = utilities.find_filter_for_magnitude_transformation(
         filter_list,
-        transformation_coefficients_dict=transformation_coefficients_dict,
-        derive_transformation_coefficients=derive_transformation_coefficients,
-        plot_sigma=plot_sigma,
-        photometry_extraction_method=photometry_extraction_method,
-        calculate_zero_point_statistic=calculate_zero_point_statistic,
-        distribution_samples=distribution_samples,
+        calibration_filters,
     )
 
-    ###
-    #   Restrict results to specific areas of the image and filter by means
-    #   of proper motion and distance using Gaia
-    #
-    utilities.post_process_results(
-        image_container,
-        filter_list,
-        id_object=object_id,
-        extraction_method=photometry_extraction_method,
-        extract_only_circular_region=extract_only_circular_region,
-        region_radius=region_radius,
-        data_cluster=identify_data_cluster,
-        clean_objects_using_proper_motion=clean_objs_using_pm,
-        max_distance_cluster=max_distance_cluster,
-        find_cluster_para_set=find_cluster_para_set,
-        convert_magnitudes=convert_magnitudes,
-        target_filter_system=target_filter_system,
-        distribution_samples=distribution_samples,
-    )
+    for filter_combination in usable_filter_combinations:
+        #   Apply calibration and perform magnitude transformation
+        trans.apply_calibration(
+            image_container,
+            filter_combination,
+            transformation_coefficients_dict=transformation_coefficients_dict,
+            derive_transformation_coefficients=derive_transformation_coefficients,
+            plot_sigma=plot_sigma,
+            photometry_extraction_method=photometry_extraction_method,
+            calculate_zero_point_statistic=calculate_zero_point_statistic,
+            distribution_samples=distribution_samples,
+        )
 
-    ###
-    #   Determine limiting magnitudes
-    #
-    utilities.derive_limiting_magnitude(
-        image_container,
-        filter_list,
-        reference_image_id,
-        aperture_radius=aperture_radius,
-        radii_unit=radii_unit,
-    )
+        ###
+        #   Restrict results to specific areas of the image and filter by means
+        #   of proper motion and distance using Gaia
+        #
+        utilities.post_process_results(
+            image_container,
+            filter_combination,
+            id_object=object_id,
+            extraction_method=photometry_extraction_method,
+            extract_only_circular_region=extract_only_circular_region,
+            region_radius=region_radius,
+            data_cluster=identify_data_cluster,
+            clean_objects_using_proper_motion=clean_objs_using_pm,
+            max_distance_cluster=max_distance_cluster,
+            find_cluster_para_set=find_cluster_para_set,
+            convert_magnitudes=convert_magnitudes,
+            target_filter_system=target_filter_system,
+            distribution_samples=distribution_samples,
+        )
 
-#
-# def calibrate_data_mk_light_curve(image_container, filter_list, ra_obj,
-#                                   dec_obj, name_object, output_dir,
-#                                   transit_time, period,
-#                                   valid_filter_combinations=None,
-#                                   binning_factor=None,
-#                                   transformation_coefficients_dict=None,
-#                                   derive_transformation_coefficients=False,
-#                                   reference_image_id=0,
-#                                   calibration_method='APASS', vizier_dict=None,
-#                                   path_calibration_file=None,
-#                                   magnitude_range=(0., 18.5),
-#                                   max_pixel_between_objects=3.,
-#                                   own_correlation_option=1,
-#                                   cross_identification_limit=1,
-#                                   n_allowed_non_detections_object=1,
-#                                   expected_bad_image_fraction=1.0,
-#                                   protect_reference_obj=True,
-#                                   photometry_extraction_method='',
-#                                   correlation_method='astropy',
-#                                   separation_limit=2. * u.arcsec,
-#                                   verbose=False, plot_sigma=False,
-#                                   region_to_select_calibration_stars=None,
-#                                   calculate_zero_point_statistic=True):
-#     """
-#         Calculate magnitudes, calibrate, and plot light curves
-#
-#         Parameters
-#         ----------
-#         image_container                     : `image.container`
-#             Container object with image ensemble objects for each filter
-#
-#         filter_list                         : `list` of `strings`
-#             List with filter names
-#
-#         ra_obj                              : `float`
-#             Right ascension of the object
-#
-#         dec_obj                             : `float`
-#             Declination of the object
-#
-#         name_object                         : `string`
-#             Name of the object
-#
-#         output_dir                          : `string`
-#             Path, where the output should be stored.
-#
-#         transit_time                        : `string`
-#             Date and time of the transit.
-#             Format: "yyyy:mm:ddThh:mm:ss" e.g., "2020-09-18T01:00:00"
-#
-#         period                              : `float`
-#             Period in [d]
-#
-#         valid_filter_combinations           : `list` of 'list` of `string` or None, optional
-#             Valid filter combinations to calculate magnitude transformation
-#             Default is ``None``.
-#
-#         binning_factor                      : `float`, optional
-#             Binning factor for the light curve.
-#             Default is ``None```.
-#
-#         transformation_coefficients_dict    : `dictionary`, optional
-#             Calibration coefficients for the magnitude transformation
-#             Default is ``None``.
-#
-#         derive_transformation_coefficients  : `boolean`, optional
-#             If True the magnitude transformation coefficients will be
-#             calculated from the current data even if calibration coefficients
-#             are available in the database.
-#             Default is ``False``
-#
-#         reference_image_id                  : `integer`, optional
-#             ID of the reference image
-#             Default is ``0``.
-#
-#         calibration_method                  : `string`, optional
-#             Calibration method
-#             Default is ``APASS``.
-#
-#         vizier_dict                         : `dictionary` or `None`, optional
-#             Dictionary with identifiers of the Vizier catalogs with valid
-#             calibration data
-#             Default is ``None``.
-#
-#         path_calibration_file               : `string`, optional
-#             Path to the calibration file
-#             Default is ``None``.
-#
-#         magnitude_range                     : `tuple` or `float`, optional
-#             Magnitude range
-#             Default is ``(0.,18.5)``.
-#
-#         max_pixel_between_objects           : `float`, optional
-#             Maximal distance between two objects in Pixel
-#             Default is ``3``.
-#
-#         own_correlation_option              : `integer`, optional
-#             Option for the srcor correlation function
-#             Default is ``1``.
-#
-#         cross_identification_limit          : `integer`, optional
-#             Cross-identification limit between multiple objects in the current
-#             image and one object in the reference image. The current image is
-#             rejected when this limit is reached.
-#             Default is ``1``.
-#
-#         n_allowed_non_detections_object     : `integer`, optional
-#             Maximum number of times an object may not be detected in an image.
-#             When this limit is reached, the object will be removed.
-#             Default is ``1`.
-#
-#         expected_bad_image_fraction         : `float`, optional
-#             Fraction of low quality images, i.e. those images for which a
-#             reduced number of objects with valid source positions are expected.
-#             Default is ``1.0``.
-#
-#         protect_reference_obj               : `boolean`, optional
-#             If ``False`` also reference objects will be rejected, if they do
-#             not fulfill all criteria.
-#             Default is ``True``.
-#
-#         photometry_extraction_method        : `string`, optional
-#             Applied extraction method. Possibilities: ePSF or APER`
-#             Default is ``''``.
-#
-#         correlation_method                  : `string`, optional
-#             Correlation method to be used to find the common objects on
-#             the images.
-#             Possibilities: ``astropy``, ``own``
-#             Default is ``astropy``.
-#
-#         separation_limit                    : `astropy.units`, optional
-#             Allowed separation between objects.
-#             Default is ``2.*u.arcsec``.
-#
-#         verbose                             : `boolean`, optional
-#             If True additional output will be printed to the command line.
-#             Default is ``False``.
-#
-#         plot_sigma                          : `boolean', optional
-#             If True sigma clipped magnitudes will be plotted.
-#             Default is ``False``.
-#
-#         region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
-#             Region in which to select calibration stars. This is a useful
-#             feature in instances where not the entire field of view can be
-#             utilized for calibration purposes.
-#             Default is ``None``.
-#
-#         calculate_zero_point_statistic      : `boolean`, optional
-#             If `True` a statistic on the zero points will be calculated.
-#             Default is ``True``.
-#
-#     """
-#     if valid_filter_combinations is None:
-#         valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
-#
-#     for filter_ in filter_list:
-#         terminal_output.print_to_terminal(
-#             f"Working on filter: {filter_}",
-#             style_name='OKBLUE',
-#         )
-#
-#         ###
-#         #   Try magnitude transformation
-#         #
-#         success = False
-#         #   Loop over valid filter combination for the transformation
-#         for valid_calibration_filters in valid_filter_combinations:
-#             if filter_ in valid_calibration_filters:
-#                 #   Check if filter combination is valid
-#                 if valid_calibration_filters[0] in filter_list and valid_calibration_filters[1] in filter_list:
-#
-#                     #   Get object ID
-#                     object_id = image_container.ensembles[filter_].variable_id
-#
-#                     #   TODO: Move reference object determination to correlate_ensembles()
-#                     ###
-#                     #   Correlate star positions from the different filter
-#                     #
-#                     correlate_ensembles(
-#                         image_container,
-#                         valid_calibration_filters,
-#                         max_pixel_between_objects=max_pixel_between_objects,
-#                         own_correlation_option=own_correlation_option,
-#                         cross_identification_limit=cross_identification_limit,
-#                         reference_obj_id=[object_id],
-#                         n_allowed_non_detections_object=n_allowed_non_detections_object,
-#                         expected_bad_image_fraction=expected_bad_image_fraction,
-#                         protect_reference_obj=protect_reference_obj,
-#                         correlation_method=correlation_method,
-#                         separation_limit=separation_limit,
-#                     )
-#
-#                     ###
-#                     #   Re-identify position of the variable star
-#                     #
-#                     terminal_output.print_to_terminal(
-#                         "Identify the variable star",
-#                     )
-#
-#                     object_id, count, _, _ = correlate.identify_star_in_dataset(
-#                         image_container.ensembles[filter_].image_list[reference_image_id].photometry['x_fit'],
-#                         image_container.ensembles[filter_].image_list[reference_image_id].photometry['y_fit'],
-#                         ra_obj,
-#                         dec_obj,
-#                         image_container.ensembles[filter_].wcs,
-#                         separation_limit=separation_limit,
-#                         max_pixel_between_objects=max_pixel_between_objects,
-#                         own_correlation_option=own_correlation_option,
-#                         verbose=verbose,
-#                     )
-#
-#                     #   Set new object ID
-#                     image_container.ensembles[filter_].variable_id = object_id
-#
-#                     #   Check if variable star was detected
-#                     if count == 0:
-#                         raise RuntimeError(
-#                             f"{style.Bcolors.FAIL} \tERROR: The variable "
-#                             "star was not detected in the reference image.\n"
-#                             f"\t-> EXIT {style.Bcolors.ENDC}"
-#                         )
-#
-#                     ###
-#                     #   Load calibration information
-#                     #
-#                     calib.derive_calibration(
-#                         image_container,
-#                         valid_calibration_filters,
-#                         calibration_method=calibration_method,
-#                         max_pixel_between_objects=max_pixel_between_objects,
-#                         own_correlation_option=own_correlation_option,
-#                         vizier_dict=vizier_dict,
-#                         path_calibration_file=path_calibration_file,
-#                         magnitude_range=magnitude_range,
-#                         correlation_method=correlation_method,
-#                         separation_limit=separation_limit,
-#                         region_to_select_calibration_stars=region_to_select_calibration_stars,
-#                     )
-#                     terminal_output.print_to_terminal('')
-#
-#                     #   Stop here if calibration data is not available
-#                     calibration_filters = image_container.CalibParameters.column_names
-#                     if (f'mag{valid_calibration_filters[0]}' not in calibration_filters or
-#                             f'mag{valid_calibration_filters[1]}' not in calibration_filters):
-#                         err_filter = None
-#                         if f'mag{valid_calibration_filters[0]}' not in calibration_filters:
-#                             err_filter = valid_calibration_filters[0]
-#                         if f'mag{valid_calibration_filters[1]}' not in calibration_filters:
-#                             err_filter = valid_calibration_filters[1]
-#                         terminal_output.print_to_terminal(
-#                             "Magnitude transformation not possible because "
-#                             "no calibration data available for filter "
-#                             f"{err_filter}",
-#                             indent=2,
-#                             style_name='WARNING',
-#                         )
-#                         continue
-#
-#                     ###
-#                     #   Calibrate magnitudes
-#                     #
-#
-#                     #   Apply calibration and perform magnitude
-#                     #   transformation
-#                     trans.apply_calibration(
-#                         image_container,
-#                         valid_calibration_filters,
-#                         transformation_coefficients_dict=transformation_coefficients_dict,
-#                         derive_transformation_coefficients=derive_transformation_coefficients,
-#                         photometry_extraction_method=photometry_extraction_method,
-#                         plot_sigma=plot_sigma,
-#                         calculate_zero_point_statistic=calculate_zero_point_statistic,
-#                     )
-#                     calibrated_magnitudes = getattr(
-#                         image_container,
-#                         'calibrated_transformed_magnitudes',
-#                         # 'calibrated_magnitudes',
-#                         None,
-#                     )
-#                     # if np.all(cali == 0):
-#                     #     break
-#
-#                     ###
-#                     #   Plot light curve
-#                     #
-#                     #   Create a Time object for the observation times
-#                     observation_times = Time(
-#                         image_container.ensembles[filter_].get_obs_time(),
-#                         format='jd',
-#                     )
-#
-#                     #   Create mask for time series to remove images
-#                     #   without entries
-#                     # mask_ts = np.isin(
-#                     # #cali_mags['med'][i][:,objID],
-#                     # cali_mags[i][:,objID],
-#                     # [0.],
-#                     # invert=True
-#                     # )
-#
-#                     #   Create a time series object
-#                     time_series = utilities.mk_time_series(
-#                         observation_times,
-#                         calibrated_magnitudes[filter_],
-#                         filter_,
-#                         object_id,
-#                     )
-#
-#                     #   Write time series
-#                     time_series.write(
-#                         f'{output_dir}/tables/light_curve_{filter_}.dat',
-#                         format='ascii',
-#                         overwrite=True,
-#                     )
-#                     time_series.write(
-#                         f'{output_dir}/tables/light_curve_{filter_}.csv',
-#                         format='ascii.csv',
-#                         overwrite=True,
-#                     )
-#
-#                     #   Plot light curve over JD
-#                     plot.light_curve_jd(
-#                         time_series,
-#                         filter_,
-#                         f'{filter_}_err',
-#                         output_dir,
-#                         name_obj=name_object
-#                     )
-#
-#                     #   Plot the light curve folded on the period
-#                     plot.light_curve_fold(
-#                         time_series,
-#                         filter_,
-#                         f'{filter_}_err',
-#                         output_dir,
-#                         transit_time,
-#                         period,
-#                         binning_factor=binning_factor,
-#                         name_obj=name_object,
-#                     )
-#
-#                     success = True
-#                     break
-#
-#         if not success:
-#             #   Load calibration information
-#             calib.derive_calibration(
-#                 image_container,
-#                 [filter_],
-#                 calibration_method=calibration_method,
-#                 max_pixel_between_objects=max_pixel_between_objects,
-#                 own_correlation_option=own_correlation_option,
-#                 vizier_dict=vizier_dict,
-#                 path_calibration_file=path_calibration_file,
-#                 magnitude_range=magnitude_range,
-#                 region_to_select_calibration_stars=region_to_select_calibration_stars,
-#             )
-#
-#             #   Check if calibration data is available
-#             calibration_filters = image_container.CalibParameters.column_names
-#             if f'mag{filter_}' not in calibration_filters:
-#                 terminal_output.print_to_terminal(
-#                     "Magnitude calibration not possible because no "
-#                     f"calibration data is available for filter {filter_}. "
-#                     "Use normalized flux for light curve.",
-#                     indent=2,
-#                     style_name='WARNING',
-#                 )
-#
-#                 #   Get ensemble
-#                 ensemble = image_container.ensembles[filter_]
-#
-#                 #   Quasi calibration of the flux data
-#                 trans.flux_calibration_ensemble(ensemble)
-#
-#                 #   Normalize data if no calibration magnitudes are available
-#                 trans.flux_normalization_ensemble(ensemble)
-#
-#                 #   TODO: Is this necessary? Use return value?
-#                 plot_quantity = ensemble.quasi_calibrated_flux_normalized
-#                 # plot_quantity = ensemble.quasi_calibrated_flux
-#             else:
-#                 #   Apply calibration
-#                 trans.apply_calibration(
-#                     image_container,
-#                     [filter_],
-#                     photometry_extraction_method=photometry_extraction_method,
-#                     calculate_zero_point_statistic=calculate_zero_point_statistic,
-#                 )
-#                 plot_quantity = getattr(
-#                     image_container,
-#                     'calibrated_magnitudes',
-#                     None,
-#                 )[filter_]
-#
-#             #   TODO: Make lightcurve plots for all object + highlight calibration stars
-#             ###
-#             #   Plot light curve
-#             #
-#             #   Create a Time object for the observation times
-#             observation_times = Time(
-#                 image_container.ensembles[filter_].get_obs_time(),
-#                 format='jd',
-#             )
-#
-#             #   Create a time series object
-#             time_series = utilities.mk_time_series(
-#                 observation_times,
-#                 plot_quantity,
-#                 filter_,
-#                 image_container.ensembles[filter_].variable_id,
-#             )
-#
-#             #   Write time series
-#             time_series.write(
-#                 f'{output_dir}/tables/light_curve_{filter_}.dat',
-#                 format='ascii',
-#                 overwrite=True,
-#             )
-#             time_series.write(
-#                 f'{output_dir}/tables/light_curve_{filter_}.csv',
-#                 format='ascii.csv',
-#                 overwrite=True,
-#             )
-#
-#             #   Plot light curve over JD
-#             plot.light_curve_jd(
-#                 time_series,
-#                 filter_,
-#                 f'{filter_}_err',
-#                 output_dir,
-#                 name_obj=name_object)
-#
-#             #   Plot the light curve folded on the period
-#             plot.light_curve_fold(
-#                 time_series,
-#                 filter_,
-#                 f'{filter_}_err',
-#                 output_dir,
-#                 transit_time,
-#                 period,
-#                 binning_factor=binning_factor,
-#                 name_obj=name_object,
-#             )
+        ###
+        #   Determine limiting magnitudes
+        #
+        utilities.derive_limiting_magnitude(
+            image_container,
+            filter_combination,
+            reference_image_id,
+            aperture_radius=aperture_radius,
+            radii_unit=radii_unit,
+        )
 
 
 def calibrate_data_mk_light_curve(
@@ -4508,38 +4066,43 @@ def calibrate_data_mk_light_curve(
     terminal_output.print_to_terminal('')
 
     #   TODO: Put the following checks in a function
-    #   Load valid filter combinations, if none are supplied
-    if valid_filter_combinations is None:
-        valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
-
-    #   Setup list for valid filter etc.
-    valid_filter = []
-    usable_filter_combinations = []
-
-    #   Determine usable filter combinations -> Filters must be in a valid
-    #   filter combination for the magnitude transformation and calibration
-    #   data must be available for the filter.
-    for filter_combination in valid_filter_combinations:
-        if filter_combination[0] in filter_list and filter_combination[1] in filter_list:
-            faulty_filter = None
-            if f'mag{filter_combination[0]}' not in calibration_filters:
-                faulty_filter = filter_combination[0]
-            if f'mag{filter_combination[1]}' not in calibration_filters:
-                faulty_filter = filter_combination[1]
-            if faulty_filter is not None:
-                terminal_output.print_to_terminal(
-                    "Magnitude transformation not possible because "
-                    "no calibration data available for filter "
-                    f"{faulty_filter}",
-                    indent=2,
-                    style_name='WARNING',
-                )
-                continue
-
-            valid_filter.append(filter_combination[0])
-            valid_filter.append(filter_combination[1])
-            usable_filter_combinations.append(filter_combination)
-    valid_filter = set(valid_filter)
+    valid_filter, usable_filter_combinations = utilities.find_filter_for_magnitude_transformation(
+        filter_list,
+        calibration_filters,
+        valid_filter_combinations=valid_filter_combinations,
+    )
+    # #   Load valid filter combinations, if none are supplied
+    # if valid_filter_combinations is None:
+    #     valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
+    #
+    # #   Setup list for valid filter etc.
+    # valid_filter = []
+    # usable_filter_combinations = []
+    #
+    # #   Determine usable filter combinations -> Filters must be in a valid
+    # #   filter combination for the magnitude transformation and calibration
+    # #   data must be available for the filter.
+    # for filter_combination in valid_filter_combinations:
+    #     if filter_combination[0] in filter_list and filter_combination[1] in filter_list:
+    #         faulty_filter = None
+    #         if f'mag{filter_combination[0]}' not in calibration_filters:
+    #             faulty_filter = filter_combination[0]
+    #         if f'mag{filter_combination[1]}' not in calibration_filters:
+    #             faulty_filter = filter_combination[1]
+    #         if faulty_filter is not None:
+    #             terminal_output.print_to_terminal(
+    #                 "Magnitude transformation not possible because "
+    #                 "no calibration data available for filter "
+    #                 f"{faulty_filter}",
+    #                 indent=2,
+    #                 style_name='WARNING',
+    #             )
+    #             continue
+    #
+    #         valid_filter.append(filter_combination[0])
+    #         valid_filter.append(filter_combination[1])
+    #         usable_filter_combinations.append(filter_combination)
+    # valid_filter = set(valid_filter)
 
     #   Correlate star positions from the different filter
     if valid_filter:
