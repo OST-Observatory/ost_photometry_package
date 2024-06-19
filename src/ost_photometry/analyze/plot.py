@@ -85,7 +85,7 @@ def compare_images(output_dir, original_image, comparison_image):
 
 def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             label='Identified stars', label_2='Identified stars (set 2)',
-            rts=None, mode=None, name_obj=None, wcs=None, terminal_logger=None,
+            rts=None, mode=None, name_object=None, wcs=None, terminal_logger=None,
             indent=2):
     """
         Plot star maps  -> overlays of the determined star positions on FITS
@@ -125,7 +125,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
             String used to switch between different plot modes
             Default is ``None``
 
-        name_obj        : `string` or None, optional
+        name_object     : `list` of `string` or `string` or None, optional
             Name of the object
             Default is ``None``
 
@@ -206,17 +206,23 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     else:
         ax = fig.add_subplot()
 
+    #   Limit the space for the object names in case several are given
+    if isinstance(name_object, list):
+        name_object = ', '.join(name_object)
+        if len(name_object) > 20:
+            name_object = name_object[0:16] + ' ...'
+
     #   Set title of the complete plot
-    if rts is None and name_obj is None:
+    if rts is None and name_object is None:
         sub_title = f'Star map ({filter_} filter)'
     elif rts is None:
         # sub_title = f'Star map ({filter_} filter) - {name_obj}'
-        sub_title = f'{name_obj} - {filter_} filter'
-    elif name_obj is None:
+        sub_title = f'{name_object} - {filter_} filter'
+    elif name_object is None:
         sub_title = f'{filter_} filter, {rts}'
         # sub_title = f'Star map ({filter_} filter, {rts})'
     else:
-        sub_title = f'{name_obj} - {filter_} filter, {rts}'
+        sub_title = f'{name_object} - {filter_} filter, {rts}'
         # sub_title = f'Star map ({filter_} filter, {rts}) - {name_obj}'
 
     fig.suptitle(sub_title, fontsize=17)
@@ -470,7 +476,7 @@ def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
             Maximum number of cutouts to plot
             Default is ``25``.
 
-        name_object     : `string`, optional
+        name_object     : `list` of `string` or `string`, optional
             Name of the object
             Default is ``None``.
 
@@ -512,6 +518,12 @@ def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
     plt.subplots_adjust(left=None, bottom=None, right=None, top=None,
                         wspace=None, hspace=0.25)
 
+    #   Limit the space for the object names in case several are given
+    if isinstance(name_object, list):
+        name_object = ', '.join(name_object)
+        if len(name_object) > 20:
+            name_object = name_object[0:16] + ' ...'
+
     #   Set title of the complete plot
     if name_object is None:
         sub_title = f'Cutouts of the {n_cutouts} faintest stars ({identifier})'
@@ -540,7 +552,8 @@ def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
     plt.close()
 
 
-def plot_epsf(output_dir, epsf, name_obj=None, terminal_logger=None, indent=1):
+def plot_epsf(
+        output_dir, epsf, name_object=None, terminal_logger=None, indent=1):
     """
         Plot the ePSF image of all filters
 
@@ -552,7 +565,7 @@ def plot_epsf(output_dir, epsf, name_obj=None, terminal_logger=None, indent=1):
         epsf            : `epsf.object` ???
             ePSF object, usually constructed by epsf_builder
 
-        name_obj         : `string`, optional
+        name_object     : `list` of string` or `string`, optional
             Name of the object
             Default is ``None``.
 
@@ -588,11 +601,17 @@ def plot_epsf(output_dir, epsf, name_obj=None, terminal_logger=None, indent=1):
     else:
         fig = plt.figure(figsize=(20, 15))
 
+    #   Limit the space for the object names in case several are given
+    if isinstance(name_object, list):
+        name_object = ', '.join(name_object)
+        if len(name_object) > 20:
+            name_object = name_object[0:16] + ' ...'
+
     #   Set title of the complete plot
-    if name_obj is None:
+    if name_object is None:
         fig.suptitle('ePSF', fontsize=17)
     else:
-        fig.suptitle(f'ePSF ({name_obj})', fontsize=17)
+        fig.suptitle(f'ePSF ({name_object})', fontsize=17)
 
     #   Plot individual subplots
     for i, (filter_, eps) in enumerate(epsf.items()):
@@ -658,7 +677,7 @@ def plot_residual(name, image_orig, residual_image, output_dir,
         output_dir          : `string`
             Output directory
 
-        name_object         : `string`, optional
+        name_object         : `list` of `string` or `string`, optional
             Name of the object
             Default is ``None``.
 
@@ -708,6 +727,12 @@ def plot_residual(name, image_orig, residual_image, output_dir,
         wspace=None,
         hspace=0.25,
     )
+
+    #   Limit the space for the object names in case several are given
+    if isinstance(name_object, list):
+        name_object = ', '.join(name_object)
+        if len(name_object) > 20:
+            name_object = name_object[0:16] + ' ...'
 
     #   Set title of the complete plot
     if name_object is None:
@@ -804,7 +829,7 @@ def plot_residual(name, image_orig, residual_image, output_dir,
 
 def light_curve_jd(
         ts, data_column, err_column, output_dir, error_bars=True,
-        name_obj=None, file_name_suffix=''):
+        name_object=None, file_name_suffix=''):
     """
         Plot the light curve over Julian Date
 
@@ -826,7 +851,7 @@ def light_curve_jd(
             If True error bars will be plotted.
             Default is ``False``.
 
-        name_obj            : `string`, optional
+        name_object         : `list` of `string` or `string`, optional
             Name of the object
             Default is ``None``.
 
@@ -852,11 +877,17 @@ def light_curve_jd(
     plt.tick_params(axis='x', labelsize=15)
     plt.tick_params(axis='y', labelsize=15)
 
+    #   Limit the space for the object names in case several are given
+    if isinstance(name_object, list):
+        name_object = ', '.join(name_object)
+        if len(name_object) > 20:
+            name_object = name_object[0:16] + ' ...'
+
     #   Set title
-    if name_obj is None:
+    if name_object is None:
         fig.suptitle(f'Light curve', fontsize=30)
     else:
-        fig.suptitle(f'Light curve - {name_obj}', fontsize=30)
+        fig.suptitle(f'Light curve - {name_object}', fontsize=30)
 
     # print(ts[err_column])
     # print(ts[data_column])
@@ -920,7 +951,7 @@ def light_curve_jd(
 
 def light_curve_fold(
         time_series, data_column, err_column, output_dir, transit_time, period,
-        binning_factor=None, error_bars=True, name_obj=None,
+        binning_factor=None, error_bars=True, name_object=None,
         file_name_suffix=''):
     """
         Plot a folded light curve
@@ -953,7 +984,7 @@ def light_curve_fold(
             If True error bars will be plotted.
             Default is ``False``.
 
-        name_obj            : `string`, optional
+        name_object         : `list` of `string` or `string`, optional
             Name of the object
             Default is ``None``.
 
@@ -988,11 +1019,17 @@ def light_curve_fold(
     plt.tick_params(axis='x', labelsize=15)
     plt.tick_params(axis='y', labelsize=15)
 
+    #   Limit the space for the object names in case several are given
+    if isinstance(name_object, list):
+        name_object = ', '.join(name_object)
+        if len(name_object) > 20:
+            name_object = name_object[0:16] + ' ...'
+
     #   Set title
-    if name_obj is None:
+    if name_object is None:
         fig.suptitle('Folded light curve', fontsize=30)
     else:
-        fig.suptitle(f'Folded light curve - {name_obj}', fontsize=30)
+        fig.suptitle(f'Folded light curve - {name_object}', fontsize=30)
 
     #   Calculate binned lightcurve => plot
     if binning_factor is not None:
@@ -1098,55 +1135,55 @@ def plot_transform(output_dir, filter_1, filter_2, color_literature, fit_variabl
 
         Parameters
         ----------
-        output_dir          : `string`
+        output_dir              : `string`
             Output directory
 
-        filter_1            : `string`
+        filter_1                : `string`
             Filter 1
 
-        filter_2            : `string`
+        filter_2                : `string`
             Filter 2
 
-        color_literature           : `numpy.ndarray`
+        color_literature        : `numpy.ndarray`
             Colors of the calibration stars
 
-        fit_variable        : `numpy.ndarray`
+        fit_variable            : `numpy.ndarray`
             Fit variable
 
-        a_fit               : `float`
+        a_fit                   : `float`
             First parameter of the fit
 
-        b_fit               : `float`
+        b_fit                   : `float`
             Second parameter of the fit
             Currently only two fit parameters are supported
             TODO: -> Needs to generalized
 
-        b_err_fit           : `float`
+        b_err_fit               : `float`
             Error of `b`
 
-        fit_function        : `fit.function`
+        fit_function            : `fit.function`
             Fit function, used for determining the fit
 
-        air_mass            : `float`
+        air_mass                : `float`
             Air mass
 
-        filter_             : `string`, optional
+        filter_                 : `string`, optional
             Filter, used to distinguish between the different plot options
             Default is ``None``
 
-        color_literature_err       : `numpy.ndarray`, optional
+        color_literature_err    : `numpy.ndarray`, optional
             Color errors of the calibration stars
             Default is ``None``.
 
-        fit_variable_err         : `numpy.ndarray`, optional
+        fit_variable_err        : `numpy.ndarray`, optional
             Fit variable errors
             Default is ``None``.
 
-        name_object            : `string` or `list` of `string`
+        name_object             : `string` or `list` of `string`
             Name of the object
             Default is ``None``.
 
-        image_id            : `integer` or `None`, optional
+        image_id                : `integer` or `None`, optional
             ID of the image
     """
     #   Check output directories

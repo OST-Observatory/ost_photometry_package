@@ -1086,7 +1086,7 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
         tbl_xy,
         label=label,
         rts=rts_pre,
-        name_obj=name,
+        name_object=name,
         wcs=image.wcs,
         terminal_logger=terminal_logger,
     )

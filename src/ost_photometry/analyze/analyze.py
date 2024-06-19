@@ -2049,41 +2049,42 @@ def correlate_ensembles(
             image.photometry = image.photometry[correlation_index[j, :]]
 
     #   Re-identify position of the variable stars
-    terminal_output.print_to_terminal(
-        "Identify the variable star",
-    )
-    #   TODO: Convert ra_object and dec_object to lists -> allow multiple objects
-    #   TODO: Check if this is necessary
-    #   TODO: Put this in a function
-    object_ids = []
-    for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
-        if id_ensemble == reference_ensemble_id:
-            object_id, count, _, _ = correlate.identify_star_in_dataset(
-                ensemble.image_list[reference_image_id].photometry['x_fit'],
-                ensemble.image_list[reference_image_id].photometry['y_fit'],
-                ra_object,
-                dec_object,
-                ensemble.wcs,
-                separation_limit=separation_limit,
-                max_pixel_between_objects=max_pixel_between_objects,
-                own_correlation_option=own_correlation_option,
-                verbose=verbose,
-                ra_unit=ra_unit,
-                dec_unit=dec_unit,
-            )
-            object_ids.append(object_id)
-
-            #   Check if variable star was detected
-            if count == 0:
-                raise RuntimeError(
-                    f"{style.Bcolors.FAIL} \tERROR: The variable "
-                    "star was not detected in the reference image.\n"
-                    f"\t-> EXIT {style.Bcolors.ENDC}"
+    if ra_object is not None and dec_object is not None:
+        terminal_output.print_to_terminal(
+            "Identify the variable star",
+        )
+        #   TODO: Convert ra_object and dec_object to lists -> allow multiple objects
+        #   TODO: Check if this is necessary
+        #   TODO: Put this in a function
+        object_ids = []
+        for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
+            if id_ensemble == reference_ensemble_id:
+                object_id, count, _, _ = correlate.identify_star_in_dataset(
+                    ensemble.image_list[reference_image_id].photometry['x_fit'],
+                    ensemble.image_list[reference_image_id].photometry['y_fit'],
+                    ra_object,
+                    dec_object,
+                    ensemble.wcs,
+                    separation_limit=separation_limit,
+                    max_pixel_between_objects=max_pixel_between_objects,
+                    own_correlation_option=own_correlation_option,
+                    verbose=verbose,
+                    ra_unit=ra_unit,
+                    dec_unit=dec_unit,
                 )
+                object_ids.append(object_id)
 
-    #   Set new object ID
-    for ensemble in ensemble_dict.values():
-        ensemble.variable_id = object_ids
+                #   Check if variable star was detected
+                if count == 0:
+                    raise RuntimeError(
+                        f"{style.Bcolors.FAIL} \tERROR: The variable "
+                        "star was not detected in the reference image.\n"
+                        f"\t-> EXIT {style.Bcolors.ENDC}"
+                    )
+
+        #   Set new object ID
+        for ensemble in ensemble_dict.values():
+            ensemble.variable_id = object_ids
 
     #   Check if correlation with calibration data is necessary
     calibration_parameters = getattr(image_container, 'CalibParameters', None)
@@ -2936,7 +2937,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
                 label='identified stars',
                 label_2='stars used to determine the ePSF',
                 rts=f'Initial object identification [Image: {image.pd}]',
-                name_obj=image.objname,
+                name_object=image.objname,
                 wcs=image.wcs,
                 terminal_logger=terminal_logger,
             )
@@ -2961,7 +2962,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
             image.outpath.name,
             {f'img-{image.pd}-{image.filt}': image.epsf},
             terminal_logger=terminal_logger,
-            name_obj=image.objname,
+            name_object=image.objname,
             indent=2,
         )
 
@@ -4202,7 +4203,7 @@ def calibrate_data_mk_light_curve(
                 filter_,
                 f'{filter_}_err',
                 output_dir,
-                name_obj=name_object,
+                name_object=name_object,
                 file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
             )
 
@@ -4215,7 +4216,7 @@ def calibrate_data_mk_light_curve(
                 transit_time,
                 period,
                 binning_factor=binning_factor,
-                name_obj=name_object,
+                name_object=name_object,
                 file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
             )
 
@@ -4311,7 +4312,7 @@ def calibrate_data_mk_light_curve(
                 filter_,
                 f'{filter_}_err',
                 output_dir,
-                name_obj=name_object)
+                name_object=name_object)
 
             #   Plot the light curve folded on the period
             plot.light_curve_fold(
@@ -4322,7 +4323,7 @@ def calibrate_data_mk_light_curve(
                 transit_time,
                 period,
                 binning_factor=binning_factor,
-                name_obj=name_object,
+                name_object=name_object,
             )
 
 
