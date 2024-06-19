@@ -210,7 +210,8 @@ def check_transformation_requirements(
 def derive_transformation_onthefly(
         image, filter_list, id_current_filter, color_literature,
         magnitudes_literature_filter_1, magnitudes_literature_filter_2,
-        magnitudes_observed_filter_1, magnitudes_observed_filter_2):
+        magnitudes_observed_filter_1, magnitudes_observed_filter_2,
+        distribution_samples=1000):
     """
         Determine the parameters for the color term used in the magnitude
         calibration. This corresponds to a magnitude transformation without
@@ -243,6 +244,10 @@ def derive_transformation_onthefly(
 
         magnitudes_observed_filter_2    : `astropy.uncertainty.core.QuantityDistribution`
             Extracted magnitudes of the calibration stars from filter 2
+
+        distribution_samples            : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`
 
         Returns
         -------
@@ -336,12 +341,12 @@ def derive_transformation_onthefly(
     color_correction_filter_1 = unc.normal(
         color_correction_filter_1 * u.mag,
         std=color_correction_filter_1_err * u.mag,
-        n_samples=10000,
+        n_samples=distribution_samples,
     )
     color_correction_filter_2 = unc.normal(
         color_correction_filter_2 * u.mag,
         std=color_correction_filter_2_err * u.mag,
-        n_samples=10000,
+        n_samples=distribution_samples,
     )
 
     return color_correction_filter_1, color_correction_filter_2
@@ -352,7 +357,7 @@ def transformation_core(
         calib_magnitudes_observed_filter_1, calib_magnitudes_observed_filter_2,
         magnitudes_filter_1, magnitudes_filter_2, magnitudes, tc_c, tc_color,
         tc_t1, tc_k1, tc_t2, tc_k2, id_current_filter, filter_list,
-        transformation_type='derive'):
+        transformation_type='derive', distribution_samples=1000):
     """
         Routine that performs the actual magnitude transformation.
 
@@ -413,6 +418,10 @@ def transformation_core(
             Possibilities: simple, air_mass, or derive
             Default is ``derive``.
 
+        distribution_samples                : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`
+
         Returns
         -------
         color_observed                      : `astropy.uncertainty.core.QuantityDistribution`
@@ -422,30 +431,21 @@ def transformation_core(
             Literature color of the calibration stars
     """
     #   Get clipped zero points
-    # zp_clipped = image.zp_clip
     zp = image.zp
-
-    #   Get mask from sigma clipping that needs to be applied to the data
-    # mask = np.where(image.zp_mask)
 
     #   Instrument color of the calibration objects
     color_observed = (calib_magnitudes_observed_filter_1 -
                       calib_magnitudes_observed_filter_2)
-    #   Mask data according to sigma clipping
-    # color_observed_clipped = color_observed[mask]
 
     #   Literature color of the calibration objects
     color_literature = (magnitudes_literature_filter_1 -
                         magnitudes_literature_filter_2)
-    #   Mask data according to sigma clipping
-    # color_literature_clipped = color_literature[mask]
 
     ###
     #   Apply magnitude transformation and calibration
     #
     #   Color
     color = magnitudes_filter_1 - magnitudes_filter_2
-    # image.color_mag = color
 
     #   Distinguish between versions
     if transformation_type == 'simple':
@@ -462,16 +462,12 @@ def transformation_core(
             image,
             filter_list,
             id_current_filter,
-            # color_literature_clipped,
-            # magnitudes_literature_filter_1[mask],
-            # magnitudes_literature_filter_2[mask],
-            # calib_magnitudes_observed_filter_1[mask],
-            # calib_magnitudes_observed_filter_2[mask],
             color_literature,
             magnitudes_literature_filter_1,
             magnitudes_literature_filter_2,
             calib_magnitudes_observed_filter_1,
             calib_magnitudes_observed_filter_2,
+            distribution_samples=distribution_samples,
         )
 
     else:
@@ -483,10 +479,6 @@ def transformation_core(
 
     if transformation_type in ['air_mass', 'derive']:
         #   Calculate C or more precise C'
-
-        # print(c_1)
-        # print(c_2)
-        # print(transformation_type)
         denominator = 1. * u.mag - c_1 + c_2
 
         if id_current_filter == 0:
@@ -500,36 +492,15 @@ def transformation_core(
                 f"current filter ID is {id_current_filter}{style.Bcolors.ENDC}"
             )
 
-    # print(c)
     #   Calculate calibrated magnitudes
     phase_1_calibrated_magnitudes = magnitudes + c * color
-    # print(magnitudes)
-    # print(c)
-    # print(color)
     phase_1_calibrated_magnitudes = phase_1_calibrated_magnitudes.reshape(
         phase_1_calibrated_magnitudes.size,
         1,
     )
-    # calibrated_magnitudes_zero_point = zp_clipped - c * color_observed_clipped
     calibrated_magnitudes_zero_point = zp - c * color_observed
-    # print(zp_clipped)
-    # print(c)
-    # print(color_observed_clipped)
-    # print(c * color_observed_clipped)
-    # print(zp_clipped - c * color_observed_clipped)
-    # print('-------------------')
-    # print(phase_1_calibrated_magnitudes)
-    # print(np.any(np.isnan(phase_1_calibrated_magnitudes)))
-    # print(calibrated_magnitudes_zero_point)
-    # print(np.any(np.isnan(calibrated_magnitudes_zero_point)))
-    # print()
     calibrated_magnitudes = phase_1_calibrated_magnitudes + calibrated_magnitudes_zero_point
-    # print(calibrated_magnitudes)
-    # print(calibrated_magnitudes.dtype)
-    # print(calibrated_magnitudes.shape)
 
-    # calibrated_magnitudes = magnitudes.reshape(magnitudes.size, 1) + zp_clipped
-    # calibrated_magnitudes = np.median(calibrated_magnitudes, axis=1)
     #   Sigma clipping to rm outliers
     _, median, stddev = sigma_clipped_stats(
         calibrated_magnitudes.distribution,
@@ -538,17 +509,9 @@ def transformation_core(
     )
 
     #   Add calibrated photometry to table of Image object
-    # image.photometry['mag_cali_trans'] = calibrated_magnitudes.pdf_median()
-    # image.photometry['mag_cali_trans_unc'] = calibrated_magnitudes.pdf_std()
     image.photometry['mag_cali_trans'] = median
     image.photometry['mag_cali_trans_unc'] = stddev
-    if image.pd == 0:
-        print(image.filename)
-        print(image.photometry['mag_cali_trans'])
 
-    # print(calibrated_magnitudes.shape)
-    # print(color_observed.shape)
-    # print(color_literature.shape)
     return color_observed, color_literature
 
 
@@ -558,7 +521,7 @@ def apply_transformation(
         calib_magnitudes_observed_second_filter, magnitudes_first_filter,
         magnitudes_second_filter, magnitudes, filter_id, filter_list,
         transformation_coefficients, plot_sigma=False,
-        transformation_type='derive'):
+        transformation_type='derive', distribution_samples=1000):
     """
         Apply transformation
 
@@ -605,6 +568,10 @@ def apply_transformation(
             Type of magnitude transformation.
             Possibilities: simple, air_mass, or derive
             Default is ``derive``.
+
+        distribution_samples            : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`
     """
     #   Prepare calibration parameters
     tc_t1 = None
@@ -640,6 +607,7 @@ def apply_transformation(
         filter_id,
         filter_list,
         transformation_type=transformation_type,
+        distribution_samples=distribution_samples,
     )
 
     #   Quality control plots
@@ -717,7 +685,7 @@ def calibrate_simple(image_container, image, not_calibrated_magnitudes,
 
 
 #   TODO: combine the next two functions?
-def flux_calibration_ensemble(image_ensemble):
+def flux_calibration_ensemble(image_ensemble, distribution_samples=1000):
     """
         Simple calibration for flux values. Assuming the median over all
         objects in an image as a quasi ZP.
@@ -727,51 +695,39 @@ def flux_calibration_ensemble(image_ensemble):
         image_ensemble        : `image.ensemble`
             Image ensemble object with flux and magnitudes of all objects in
             all images within the ensemble
+
+        distribution_samples  : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`.
     """
-    #   Get list with flux distributions for the individual images
-    # flux_list = image_ensemble.get_flux_distribution()
+    #   Get flux as numpy array
     flux, flux_error = image_ensemble.get_flux_array()
 
-    # flux_calibrated = []
-    # for flux in flux_list:
-    #     #   Calculate median flux in each image
-    #     median_flux = np.median(flux)
-
-    #     #   Calibrate
-    #     flux_calibrated.append(flux / median_flux)
-    # median_flux = np.median(flux, axis=1)
-    _, median, stddev = sigma_clipped_stats(
+    #   Derive median of flux in individual images
+    _, median, _ = sigma_clipped_stats(
         flux,
         axis=1,
         sigma=1.5,
         mask_value=0.0,
     )
-    # print(median)
-    # print(stddev)
-    # print(median.shape)
-    # print(flux.shape)
+
+    #   Normalize the flux of all objects with the median flux in the
+    #   corresponding images
     flux_distribution = unc.normal(
         flux,
         std=flux_error,
-        n_samples=10000,
+        n_samples=distribution_samples,
     )
-    # normalization_factor = unc.normal(
-    #     median,
-    #     std=stddev,
-    #     n_samples=10000,
-    # )[:, np.newaxis]
+    #   TODO: Check if a distribution would make sense here
     normalization_factor = median[:, np.newaxis]
     flux_calibrated = flux_distribution / normalization_factor
-    # print(flux_calibrated)
-    # print(flux_calibrated.shape)
-    # print('----------------------')
 
     #   Add to ensemble
     image_ensemble.quasi_calibrated_flux = flux_calibrated
 
 
 #   TODO: Check if this can be improved based on distributions
-def flux_normalization_ensemble(image_ensemble):
+def flux_normalization_ensemble(image_ensemble, distribution_samples=1000):
     """
         Normalize flux of each object
 
@@ -780,6 +736,10 @@ def flux_normalization_ensemble(image_ensemble):
         image_ensemble        : `image.ensemble`
             Image ensemble object with flux and magnitudes of all objects in
             all images within the ensemble
+
+        distribution_samples  : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`.
     """
     #   Get list with flux distributions for the individual images
     # try:
@@ -795,7 +755,7 @@ def flux_normalization_ensemble(image_ensemble):
         flux_distribution = unc.normal(
             flux,
             std=flux_error,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
 
     # normalized_flux = []
@@ -824,7 +784,7 @@ def flux_normalization_ensemble(image_ensemble):
     #         # std=std * u.mag,
     #         median,
     #         std=std,
-    #         n_samples=10000,
+    #         n_samples=distribution_samples,
     #     )
 
     #     normalized_flux.append(flux / normalization_factor)
@@ -846,7 +806,7 @@ def flux_normalization_ensemble(image_ensemble):
     normalization_factor = unc.normal(
         median,
         std=stddev,
-        n_samples=10000,
+        n_samples=distribution_samples,
     )
     normalized_flux = flux_distribution / normalization_factor
     # print('+++++++++++++++++++++')
@@ -857,7 +817,8 @@ def flux_normalization_ensemble(image_ensemble):
 
 def prepare_zero_point(
         image, id_filter, literature_magnitude_list,
-        magnitudes_calibration_stars, calculate_zero_point_statistic=True):
+        magnitudes_calibration_stars, calculate_zero_point_statistic=True,
+        distribution_samples=1000):
     """
         Calculate zero point values based on calibration stars and
         sigma clip these values before calculating median
@@ -880,6 +841,10 @@ def prepare_zero_point(
         calculate_zero_point_statistic      : `boolean`, optional
             If `True` a statistic on the zero points will be calculated.
             Default is ``True``.
+
+        distribution_samples  : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`.
     """
     #   Calculate zero point
     zp = literature_magnitude_list[id_filter] - magnitudes_calibration_stars
@@ -887,7 +852,6 @@ def prepare_zero_point(
     #     f"It is not possible to calculate the zero point.",
     #     style_name='ERROR',
     # )
-
     image.zp = zp
 
     #   Plot zero point statistics
@@ -907,9 +871,6 @@ def prepare_zero_point(
     #   TODO: Add random selection of calibration stars -> calculate variance
     n_calibration_objects = image.zp.shape[0]
     if n_calibration_objects > 20 and calculate_zero_point_statistic:
-        #   Number of samples
-        n_samples = 10000
-
         #   Create samples using numpy's random number generator to generate
         #   an index array
         n_objects_sample = int(n_calibration_objects * 0.6)
@@ -917,7 +878,7 @@ def prepare_zero_point(
         random_index = rng.integers(
             0,
             high=n_calibration_objects,
-            size=(n_samples, n_objects_sample),
+            size=(distribution_samples, n_objects_sample),
         )
 
         samples = image.zp.pdf_median()[random_index]
@@ -929,12 +890,12 @@ def prepare_zero_point(
         standard_deviation_over_samples = np.std(median_samples)
 
         terminal_output.print_to_terminal(
-            f"Based on {n_samples} randomly selected sub-samples, the ",
+            f"Based on {distribution_samples} randomly selected sub-samples, ",
             indent=3,
             style_name='UNDERLINE'
         )
         terminal_output.print_to_terminal(
-            f"following statistic is obtained for the zero points:",
+            f"the following statistic is obtained for the zero points:",
             indent=3,
             style_name='UNDERLINE'
         )
@@ -955,7 +916,8 @@ def apply_calibration(
         image_container, filter_list, transformation_coefficients_dict=None,
         derive_transformation_coefficients=False, plot_sigma=False,
         id_object=None, photometry_extraction_method='',
-        calculate_zero_point_statistic=True, indent=1):
+        calculate_zero_point_statistic=True, distribution_samples=1000,
+        indent=1):
     """
         Apply the zero points to the magnitudes and perform a magnitude
         transformation if possible
@@ -1001,6 +963,10 @@ def apply_calibration(
             If `True` a statistic on the zero points will be calculated.
             Default is ``True``.
 
+        distribution_samples                : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`
+
         indent                              : `integer`, optional
             Indentation for the console output lines
             Default is ``1``.
@@ -1020,6 +986,7 @@ def apply_calibration(
     literature_magnitudes = calib.distribution_from_calibration_table(
         image_container.CalibParameters,
         filter_list,
+        distribution_samples=distribution_samples,
     )
 
     for current_filter_id, filter_ in enumerate(filter_list):
@@ -1045,7 +1012,8 @@ def apply_calibration(
         for current_image_id, current_image in enumerate(image_list):
             #   Get magnitude array for first image
             magnitudes_current_image = utilities.distribution_from_table(
-                current_image
+                current_image,
+                distribution_samples=distribution_samples,
             )
 
             #   Get extracted magnitudes of the calibration stars for the
@@ -1062,6 +1030,7 @@ def apply_calibration(
                 literature_magnitudes,
                 magnitudes_calibration_current_image,
                 calculate_zero_point_statistic=calculate_zero_point_statistic,
+                distribution_samples=distribution_samples,
             )
 
             #   Calibration without transformation
@@ -1086,7 +1055,8 @@ def apply_calibration(
 
                 #   Get magnitude array for comparison image
                 magnitudes_comparison_image = utilities.distribution_from_table(
-                    comparison_image
+                    comparison_image,
+                    distribution_samples=distribution_samples,
                 )
 
                 #   Get extracted magnitudes of the calibration stars
@@ -1124,6 +1094,7 @@ def apply_calibration(
                     trans_coefficients,
                     plot_sigma=plot_sigma,
                     transformation_type=transformation_type,
+                    distribution_samples=distribution_samples,
                 )
 
             #   TODO: Add progress bar

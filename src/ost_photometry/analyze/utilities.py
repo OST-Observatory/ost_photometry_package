@@ -1273,6 +1273,7 @@ def calibration_check_plots(
             If True sigma clipped magnitudes will be plotted.
             Default is ``False``.
     """
+    #   TODO: Cleanup & add new plots
     #   Comparison observed vs. literature magnitudes
     p = mp.Process(
         target=plot.scatter,
@@ -2277,14 +2278,13 @@ def save_magnitudes_ascii(container, tbl, trans=False, id_object=None, rts='',
     )
 
 
-def post_process_results(img_container, filter_list, id_object=None,
-                         extraction_method='',
-                         extract_only_circular_region=False, region_radius=600,
-                         data_cluster=False,
-                         clean_objects_using_proper_motion=False,
-                         max_distance_cluster=6., find_cluster_para_set=1,
-                         convert_magnitudes=False, target_filter_system='SDSS',
-                         tbl_list=None):
+def post_process_results(
+        img_container, filter_list, id_object=None, extraction_method='',
+        extract_only_circular_region=False, region_radius=600,
+        data_cluster=False, clean_objects_using_proper_motion=False,
+        max_distance_cluster=6., find_cluster_para_set=1,
+        convert_magnitudes=False, target_filter_system='SDSS', tbl_list=None,
+        distribution_samples=1000):
     """
         Restrict results to specific areas of the image and filter by means
         of proper motion and distance using Gaia
@@ -2349,6 +2349,9 @@ def post_process_results(img_container, filter_list, id_object=None,
             the tables will be read from the image container.
             Default is ``None``.
 
+        distribution_samples  : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`.
     """
     #   Do nothing if no post process method were defined
     if (not extract_only_circular_region and not clean_objects_using_proper_motion
@@ -2418,7 +2421,11 @@ def post_process_results(img_container, filter_list, id_object=None,
 
         #   Convert magnitudes to a different filter system
         if convert_magnitudes:
-            tbl = convert_magnitudes_to_other_system(tbl, target_filter_system)
+            tbl = convert_magnitudes_to_other_system(
+                tbl,
+                target_filter_system,
+                distribution_samples=distribution_samples,
+            )
 
         ###
         #   Save results as ASCII files
@@ -2475,14 +2482,18 @@ def add_column_to_table(tbl, column_name, data, column_id):
     return tbl
 
 
-def distribution_from_table(image):
+def distribution_from_table(image, distribution_samples=1000):
     """
     Arrange the literature values in a numpy array or uncertainty array.
 
     Parameters
     ----------
-    image           : `image`
+    image                   : `image`
         Image object
+
+    distribution_samples    : `integer`, optional
+        Number of samples used for distributions
+        Default is `1000`
 
     Returns
     -------
@@ -2493,14 +2504,15 @@ def distribution_from_table(image):
     magnitude_distribution = unc.normal(
         image.photometry['mags_fit'].value * u.mag,
         std=image.photometry['mags_unc'].value * u.mag,
-        n_samples=10000,
+        n_samples=distribution_samples,
     )
 
     return magnitude_distribution
 
 
-def convert_magnitudes_to_other_system(tbl: Table,
-                                       target_filter_system: str) -> Table:
+def convert_magnitudes_to_other_system(
+        tbl: Table, target_filter_system: str, distribution_samples=1000
+        ) -> Table:
     """
         Convert magnitudes from one magnitude system to another
 
@@ -2511,6 +2523,10 @@ def convert_magnitudes_to_other_system(tbl: Table,
 
         target_filter_system    : `string`
             Photometric system the magnitudes should be converted to
+
+        distribution_samples    : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`.
     """
     #   Get column names
     column_names = tbl.colnames
@@ -2591,7 +2607,7 @@ def convert_magnitudes_to_other_system(tbl: Table,
                     data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter}'].value * u.mag,
                         std=tbl[f'{column_filter}_err'].value * u.mag,
-                        n_samples=10000,
+                        n_samples=distribution_samples,
                     )
                     # unumpy.uarray(
                     #     tbl[f'{column_filter}'].value,
@@ -2601,7 +2617,7 @@ def convert_magnitudes_to_other_system(tbl: Table,
                     # data_dict[column_filter] = tbl[f'{column_filter}'].value
                     data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter}'].value * u.mag,
-                        n_samples=10000,
+                        n_samples=distribution_samples,
                     )
             else:
                 if error:
@@ -2612,13 +2628,13 @@ def convert_magnitudes_to_other_system(tbl: Table,
                     data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter} ({image_id})'].value * u.mag,
                         std=tbl[f'{column_filter}_err ({image_id})'].value * u.mag,
-                        n_samples=10000,
+                        n_samples=distribution_samples,
                     )
                 else:
                     # data_dict[column_filter] = tbl[f'{column_filter} ({image_id})'].value
                     data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter} ({image_id})'].value * u.mag,
-                        n_samples=10000,
+                        n_samples=distribution_samples,
                     )
 
         if target_filter_system == 'AB':

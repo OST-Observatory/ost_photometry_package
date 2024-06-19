@@ -834,17 +834,17 @@ def jordi_u(**kwargs):
         conversation_constant_1 = unc.normal(
             0.750 * u.mag,
             std=0.050 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
             0.770 * u.mag,
             std=0.070 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_3 = unc.normal(
             0.720 * u.mag,
             std=0.040 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         return conversation_constant_1 * (U - B) + conversation_constant_2 * (B - V) \
             + conversation_constant_3 + g
@@ -885,12 +885,12 @@ def jordi_g(**kwargs):
         conversation_constant_1 = unc.normal(
             0.630 * u.mag,
             std=0.002 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
             0.124 * u.mag,
             std=0.002 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         return conversation_constant_1 * (B - V) - conversation_constant_2 + V
 
@@ -902,12 +902,12 @@ def jordi_g(**kwargs):
         conversation_constant_1 = unc.normal(
             1.646 * u.mag,
             std=0.008 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
             0.139 * u.mag,
             std=0.004 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         return conversation_constant_1 * (V - R) - conversation_constant_2 + r
 
@@ -919,22 +919,22 @@ def jordi_g(**kwargs):
         conversation_constant_1_a = unc.normal(
             1.481 * u.mag,
             std=0.004 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2_a = unc.normal(
             0.536 * u.mag,
             std=0.004 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_1_b = unc.normal(
             0.83 * u.mag,
             std=0.01 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2_b = unc.normal(
             0.6 * u.mag,
             std=0.03 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         if V - I <= 1.8:
             return conversation_constant_1_a * (V - I) - conversation_constant_2_a + i
@@ -986,22 +986,22 @@ def jordi_r(**kwargs):
         conversation_constant_1_a = unc.normal(
             0.267 * u.mag,
             std=0.005 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2_a = unc.normal(
             0.088 * u.mag,
             std=0.003 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_1_b = unc.normal(
             0.77 * u.mag,
             std=0.04 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2_b = unc.normal(
             0.37 * u.mag,
             std=0.04 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         if V - R <= 0.93:
             return conversation_constant_1_a * (V - R) + conversation_constant_2_a + R
@@ -1016,12 +1016,12 @@ def jordi_r(**kwargs):
         conversation_constant_1 = unc.normal(
             1.646 * u.mag,
             std=0.008 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
             0.139 * u.mag,
             std=0.004 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         return g - conversation_constant_1 * (V - R) + conversation_constant_2
 
@@ -1033,12 +1033,12 @@ def jordi_r(**kwargs):
         conversation_constant_1 = unc.normal(
             1.007 * u.mag,
             std=0.005 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
             0.236 * u.mag,
             std=0.003 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         return conversation_constant_1 * (R - I) - conversation_constant_2 + i
 
@@ -1050,12 +1050,12 @@ def jordi_r(**kwargs):
         conversation_constant_1 = unc.normal(
             1.584 * u.mag,
             std=0.008 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
             0.386 * u.mag,
             std=0.005 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         return conversation_constant_1 * (R - I) - conversation_constant_2 + z
 
@@ -1097,12 +1097,12 @@ def jordi_i(**kwargs):
         conversation_constant_1 = unc.normal(
             0.247 * u.mag,
             std=0.003 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
             0.329 * u.mag,
             std=0.002 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         return conversation_constant_1 * (R - I) + conversation_constant_2 + I
 
@@ -1114,22 +1114,22 @@ def jordi_i(**kwargs):
         conversation_constant_1_a = unc.normal(
             1.481 * u.mag,
             std=0.004 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2_a = unc.normal(
             0.536 * u.mag,
             std=0.004 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_1_b = unc.normal(
             0.83 * u.mag,
             std=0.01 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2_b = unc.normal(
             0.60 * u.mag,
             std=0.03 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         if V - I <= 1.8:
             return g - conversation_constant_1_a * (V - I) + conversation_constant_2_a
@@ -1144,12 +1144,12 @@ def jordi_i(**kwargs):
         conversation_constant_1 = unc.normal(
             1.007 * u.mag,
             std=0.005 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
             0.236 * u.mag,
             std=0.003 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         return r - conversation_constant_1 * (R - I) + conversation_constant_2
 
@@ -1176,12 +1176,12 @@ def jordi_z(**kwargs):
         conversation_constant_1 = unc.normal(
             1.584 * u.mag,
             std=0.008 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
             0.386 * u.mag,
             std=0.005 * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         return r - conversation_constant_1 * (R - I) + conversation_constant_2
 

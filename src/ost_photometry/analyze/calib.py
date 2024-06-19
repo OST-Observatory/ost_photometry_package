@@ -1054,7 +1054,8 @@ def correlate_with_calibration_objects(
     return calibration_tbl_sort, index_obj_instrument
 
 
-def distribution_from_calibration_table(calibration_parameters, filter_list):
+def distribution_from_calibration_table(
+        calibration_parameters, filter_list, distribution_samples=1000):
     """
         Arrange the literature values in a numpy array or uncertainty array.
 
@@ -1065,6 +1066,10 @@ def distribution_from_calibration_table(calibration_parameters, filter_list):
 
         filter_list             : `list` of `string`
             Filter names
+
+        distribution_samples    : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`.
 
         Returns
         -------
@@ -1089,7 +1094,7 @@ def distribution_from_calibration_table(calibration_parameters, filter_list):
         literature_magnitudes_distribution = unc.normal(
             calibration_magnitudes.value * u.mag,
             std=calibration_magnitudes_err.value * u.mag,
-            n_samples=10000,
+            n_samples=distribution_samples,
         )
         distribution_list.append(
             literature_magnitudes_distribution

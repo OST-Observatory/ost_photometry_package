@@ -451,7 +451,7 @@ class ImageEnsemble:
 
         return x, y, np.max(n_max_list)
 
-    def get_flux_distribution(self):
+    def get_flux_distribution(self, distribution_samples=1000):
         #   Get data
         tbl_s = list(self.get_photometry().values())
 
@@ -462,7 +462,7 @@ class ImageEnsemble:
                 unc.normal(
                     tbl['flux_fit'] * u.mag,
                     std=tbl['flux_unc'] * u.mag,
-                    n_samples=10000,
+                    n_samples=distribution_samples,
                 )
             )
 
@@ -3624,24 +3624,23 @@ def extract_flux_multi(
         )
 
 
-def correlate_calibrate(image_container, filter_list,
-                        max_pixel_between_objects=3, own_correlation_option=1,
-                        reference_image_id=0, calibration_method='APASS',
-                        vizier_dict=None, path_calibration_file=None,
-                        object_id=None, ra_unit=u.deg, dec_unit=u.deg,
-                        magnitude_range=(0., 18.5),
-                        transformation_coefficients_dict=None,
-                        derive_transformation_coefficients=False,
-                        plot_sigma=False, photometry_extraction_method='',
-                        extract_only_circular_region=False, region_radius=600,
-                        identify_data_cluster=False, clean_objs_using_pm=False,
-                        max_distance_cluster=6., find_cluster_para_set=1,
-                        correlation_method='astropy',
-                        separation_limit=2. * u.arcsec, aperture_radius=4.,
-                        radii_unit='arcsec', convert_magnitudes=False,
-                        target_filter_system='SDSS',
-                        region_to_select_calibration_stars=None,
-                        calculate_zero_point_statistic=True):
+#   TODO: Check ra and dec unit
+def correlate_calibrate(
+        image_container, filter_list, max_pixel_between_objects=3,
+        own_correlation_option=1, reference_image_id=0,
+        calibration_method='APASS', vizier_dict=None,
+        path_calibration_file=None, object_id=None, ra_unit=u.deg,
+        dec_unit=u.deg, magnitude_range=(0., 18.5),
+        transformation_coefficients_dict=None,
+        derive_transformation_coefficients=False, plot_sigma=False,
+        photometry_extraction_method='', extract_only_circular_region=False,
+        region_radius=600, identify_data_cluster=False,
+        clean_objs_using_pm=False, max_distance_cluster=6.,
+        find_cluster_para_set=1, correlation_method='astropy',
+        separation_limit=2. * u.arcsec, aperture_radius=4.,
+        radii_unit='arcsec', convert_magnitudes=False,
+        target_filter_system='SDSS', region_to_select_calibration_stars=None,
+        calculate_zero_point_statistic=True, distribution_samples=1000):
     """
         Correlate photometric extraction results from 2 images and calibrate
         the magnitudes.
@@ -3779,6 +3778,10 @@ def correlate_calibrate(image_container, filter_list,
         calculate_zero_point_statistic      : `boolean`, optional
             If `True` a statistic on the zero points will be calculated.
             Default is ``True``.
+
+        distribution_samples                : `integer`, optional
+            Number of samples used for distributions
+            Default is `1000`.
     """
     ###
     #   Correlate the stellar positions from the different filter
@@ -3828,6 +3831,7 @@ def correlate_calibrate(image_container, filter_list,
         plot_sigma=plot_sigma,
         photometry_extraction_method=photometry_extraction_method,
         calculate_zero_point_statistic=calculate_zero_point_statistic,
+        distribution_samples=distribution_samples,
     )
 
     ###
@@ -3847,6 +3851,7 @@ def correlate_calibrate(image_container, filter_list,
         find_cluster_para_set=find_cluster_para_set,
         convert_magnitudes=convert_magnitudes,
         target_filter_system=target_filter_system,
+        distribution_samples=distribution_samples,
     )
 
     ###
@@ -4323,7 +4328,7 @@ def calibrate_data_mk_light_curve(
         photometry_extraction_method='', correlation_method='astropy',
         separation_limit=2. * u.arcsec, verbose=False, plot_sigma=False,
         region_to_select_calibration_stars=None,
-        calculate_zero_point_statistic=True):
+        calculate_zero_point_statistic=True, distribution_samples=1000):
     """
     Calculate magnitudes, calibrate, and plot light curves
 
@@ -4462,6 +4467,9 @@ def calibrate_data_mk_light_curve(
         If `True` a statistic on the zero points will be calculated.
         Default is ``True``.
 
+    distribution_samples                : `integer`, optional
+        Number of samples used for distributions
+        Default is `1000`.
     """
     #   Check if correlation with observed objects can be applied directly
     #   after loading the calibration data. If only one filter and thus one
@@ -4570,6 +4578,7 @@ def calibrate_data_mk_light_curve(
             photometry_extraction_method=photometry_extraction_method,
             plot_sigma=plot_sigma,
             calculate_zero_point_statistic=calculate_zero_point_statistic,
+            distribution_samples=distribution_samples,
         )
         #   TODO: Replace with table_mags_transformed
         calibrated_magnitudes = getattr(
@@ -4672,10 +4681,16 @@ def calibrate_data_mk_light_curve(
                 ensemble = image_container.ensembles[filter_]
 
                 #   Quasi calibration of the flux data
-                trans.flux_calibration_ensemble(ensemble)
+                trans.flux_calibration_ensemble(
+                    ensemble,
+                    distribution_samples=distribution_samples,
+                )
 
                 #   Normalize data if no calibration magnitudes are available
-                trans.flux_normalization_ensemble(ensemble)
+                trans.flux_normalization_ensemble(
+                    ensemble,
+                    distribution_samples=distribution_samples
+                )
 
                 #   TODO: Is this necessary? Use return value?
                 plot_quantity = ensemble.quasi_calibrated_flux_normalized
@@ -4687,6 +4702,7 @@ def calibrate_data_mk_light_curve(
                     [filter_],
                     photometry_extraction_method=photometry_extraction_method,
                     calculate_zero_point_statistic=calculate_zero_point_statistic,
+                    distribution_samples=distribution_samples,
                 )
                 #   TODO: Replace with table_mags_not_transformed and table_mags_transformed
                 plot_quantity = getattr(
