@@ -181,8 +181,8 @@ class ImageContainer:
     #   Get image ensembles for a specific set of filter
     def get_ensembles(self, filter_list):
         ensembles = {}
-        for filt in filter_list:
-            ensembles[filt] = self.ensembles[filt]
+        for filter_ in filter_list:
+            ensembles[filter_] = self.ensembles[filter_]
 
         return ensembles
 
@@ -4041,44 +4041,14 @@ def calibrate_data_mk_light_curve(
     calibration_filters = image_container.CalibParameters.column_names
     terminal_output.print_to_terminal('')
 
-    #   TODO: Put the following checks in a function
+    #   Determine usable filter combinations -> Filters must be in a valid
+    #   filter combination for the magnitude transformation and calibration
+    #   data must be available for the filter.
     valid_filter, usable_filter_combinations = utilities.find_filter_for_magnitude_transformation(
         filter_list,
         calibration_filters,
         valid_filter_combinations=valid_filter_combinations,
     )
-    # #   Load valid filter combinations, if none are supplied
-    # if valid_filter_combinations is None:
-    #     valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
-    #
-    # #   Setup list for valid filter etc.
-    # valid_filter = []
-    # usable_filter_combinations = []
-    #
-    # #   Determine usable filter combinations -> Filters must be in a valid
-    # #   filter combination for the magnitude transformation and calibration
-    # #   data must be available for the filter.
-    # for filter_combination in valid_filter_combinations:
-    #     if filter_combination[0] in filter_list and filter_combination[1] in filter_list:
-    #         faulty_filter = None
-    #         if f'mag{filter_combination[0]}' not in calibration_filters:
-    #             faulty_filter = filter_combination[0]
-    #         if f'mag{filter_combination[1]}' not in calibration_filters:
-    #             faulty_filter = filter_combination[1]
-    #         if faulty_filter is not None:
-    #             terminal_output.print_to_terminal(
-    #                 "Magnitude transformation not possible because "
-    #                 "no calibration data available for filter "
-    #                 f"{faulty_filter}",
-    #                 indent=2,
-    #                 style_name='WARNING',
-    #             )
-    #             continue
-    #
-    #         valid_filter.append(filter_combination[0])
-    #         valid_filter.append(filter_combination[1])
-    #         usable_filter_combinations.append(filter_combination)
-    # valid_filter = set(valid_filter)
 
     #   Correlate star positions from the different filter
     if valid_filter:

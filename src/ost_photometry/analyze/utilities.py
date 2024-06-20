@@ -1836,7 +1836,7 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
             Ensemble class object with all image data taken in a specific
             filter
 
-        coordinates_target  : `list` of `astropy.coordinates.SkyCoord` object
+        coordinates_target  : `astropy.coordinates.SkyCoord` object or `list` of `astropy.coordinates.SkyCoord` object
             Coordinates of the observed object such as a star cluster
 
         tbl                 : `astropy.table.Table`
@@ -1870,12 +1870,18 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
 
     #   Calculate separation between the coordinates defined in ``coord``
     #   the objects in ``tbl``
-    #   TODO: Check if this is save if coordinates_target is a list
-    #         or if a loop is needed
-    sep = obj_coordinates.separation(coordinates_target)
+    if isinstance(coordinates_target, list):
+        mask = np.zeros(len(obj_coordinates), dtype=bool)
+        for target_coordinates in coordinates_target:
+            sep = obj_coordinates.separation(target_coordinates)
 
-    #   Calculate mask of all object closer than ``radius``
-    mask = sep.arcsec <= radius
+            #   Calculate mask of all object closer than ``radius``
+            mask = mask | sep.arcsec <= radius
+    else:
+        sep = obj_coordinates.separation(coordinates_target)
+
+        #   Calculate mask of all object closer than ``radius``
+        mask = sep.arcsec <= radius
 
     #   Limit objects to those within radius
     tbl = tbl[mask]

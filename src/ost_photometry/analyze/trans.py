@@ -1089,7 +1089,7 @@ def apply_calibration(
 
             #   Progress bar
             progress_bar(current_image_id, n_images)
-    terminal_output.print_to_terminal('')
+        terminal_output.print_to_terminal('')
 
     ###
     #   Save results as ASCII files
