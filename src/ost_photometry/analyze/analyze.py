@@ -111,8 +111,11 @@ class ImageContainer:
         self.object_names = kwargs.get('object_names', None)
 
         #   Create SkyCoord object
+        #   TODO: Fix that coordinates_objects is once a list and once a SkyCoord object
         if self.object_names is not None and self.ra_objects is None and self.dec_objects is None:
-            self.coordinates_objects = SkyCoord.from_name(self.object_names)
+            self.coordinates_objects = []
+            for object_name in self.object_names:
+                self.coordinates_objects.append(SkyCoord.from_name(object_name))
         elif self.ra_objects is not None and self.dec_objects is not None:
             self.coordinates_objects = SkyCoord(
                 ra=self.ra_objects,
