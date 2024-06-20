@@ -1065,7 +1065,7 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
         tbl = image.photometry
     data = image.get_data()
     filter_ = image.filt
-    name = image.objname
+    name = image.object_name
 
     #   Prepare table
     n_stars = len(tbl)
@@ -1132,7 +1132,7 @@ def prepare_and_plot_starmap_from_image_container(img_container, filter_list):
                 'rts': rts,
                 'label': f'Stars identified in {filter_list[0]} and '
                          f'{filter_list[1]} filter',
-                'name_obj': image.objname,
+                'name_object': image.object_name,
                 'wcs': image.wcs,
             }
         )
@@ -1196,7 +1196,7 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
                 'label': 'Stars identified in all images',
                 # 'label_2': 'Calibration stars',
                 'label_2': 'Variable object',
-                'name_obj': img_ensemble.objname,
+                'name_object': img_ensemble.object_name,
                 'wcs': img_ensemble.wcs,
             }
         )
@@ -1286,7 +1286,7 @@ def calibration_check_plots(
             out_dir,
         ),
         kwargs={
-            'name_obj': name_object,
+            'name_object': name_object,
             'x_errors': [magnitudes_err],
             'y_errors': [uncalibrated_magnitudes_err],
         }
@@ -1316,7 +1316,7 @@ def calibration_check_plots(
         #         out_dir,
         #     ),
         #     kwargs={
-        #         'name_obj': name_object,
+        #         'name_object': name_object,
         #         'fits': [None, fit],
         #         'x_errors': [
         #             uncalibrated_magnitudes_err[ids_calibration_stars],
@@ -1351,7 +1351,7 @@ def calibration_check_plots(
         #         out_dir,
         #     ),
         #     kwargs={
-        #         'name_obj': name_object,
+        #         'name_object': name_object,
         #         'x_errors': [color_literature_err, color_literature_err[mask]],
         #         'y_errors': [color_observed_err, color_observed_err[mask]],
         #         'dataset_label': [
@@ -1375,7 +1375,7 @@ def calibration_check_plots(
         #         out_dir,
         #     ),
         #     kwargs={
-        #         'name_obj': name_object,
+        #         'name_object': name_object,
         #         'x_errors': [color_lit_err, color_lit_err[mask]],
         #         'y_errors': [
         #             err_prop(color_fit_err, color_lit_err),
@@ -1406,7 +1406,7 @@ def calibration_check_plots(
         #         out_dir,
         #     ),
         #     kwargs={
-        #         'name_obj': name_object,
+        #         'name_object': name_object,
         #         'x_errors': [color_literature_err, color_literature_err[mask]],
         #         'y_errors': [
         #             err_prop(color_observed_err, color_literature_err),
@@ -1522,7 +1522,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
                 'label': '10 faintest objects',
                 'rts': rts,
                 'mode': 'mags',
-                'name_obj': image.objname,
+                'name_object': image.object_name,
                 'wcs': image.wcs,
             }
         )
@@ -1836,7 +1836,7 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
             Ensemble class object with all image data taken in a specific
             filter
 
-        coordinates_target  : `astropy.coordinates.SkyCoord` object
+        coordinates_target  : `list` of `astropy.coordinates.SkyCoord` object
             Coordinates of the observed object such as a star cluster
 
         tbl                 : `astropy.table.Table`
@@ -1870,6 +1870,8 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
 
     #   Calculate separation between the coordinates defined in ``coord``
     #   the objects in ``tbl``
+    #   TODO: Check if this is save if coordinates_target is a list
+    #         or if a loop is needed
     sep = obj_coordinates.separation(coordinates_target)
 
     #   Calculate mask of all object closer than ``radius``
@@ -1988,11 +1990,15 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
         radius=ensemble.fov * u.arcmin,
     )[0]
 
+    #   Multiple objects can be specified. The first object is assumed to
+    #   be the cluster of interest.
+    object_name = ensemble.object_name[0]
+
     #   Restrict proper motion to Simbad value plus some margin
     custom_simbad = Simbad()
     custom_simbad.add_votable_fields('pm')
 
-    result_simbad = custom_simbad.query_object(ensemble.objname)
+    result_simbad = custom_simbad.query_object(object_name)
     pm_ra_object = result_simbad['PMRA'].value[0]
     pm_de_object = result_simbad['PMDEC'].value[0]
     if pm_ra_object != '--' and pm_de_object != '--':
@@ -2389,7 +2395,7 @@ def post_process_results(
             if mask_region is None:
                 tbl, mask_region = region_selection(
                     img_ensembles[filter_list[0]],
-                    img_container.coord,
+                    img_container.coordinates_objects,
                     tbl,
                     radius=region_radius
                 )

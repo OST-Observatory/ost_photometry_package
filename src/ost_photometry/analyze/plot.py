@@ -877,11 +877,10 @@ def light_curve_jd(
     plt.tick_params(axis='x', labelsize=15)
     plt.tick_params(axis='y', labelsize=15)
 
-    #   Limit the space for the object names in case several are given
+    #   Take the first object at the moment
+    #   TODO: Make this applicable to multiple objects
     if isinstance(name_object, list):
-        name_object = ', '.join(name_object)
-        if len(name_object) > 20:
-            name_object = name_object[0:16] + ' ...'
+        name_object = name_object[0]
 
     #   Set title
     if name_object is None:
@@ -1019,11 +1018,10 @@ def light_curve_fold(
     plt.tick_params(axis='x', labelsize=15)
     plt.tick_params(axis='y', labelsize=15)
 
-    #   Limit the space for the object names in case several are given
+    #   Take the first object at the moment
+    #   TODO: Make this applicable to multiple objects
     if isinstance(name_object, list):
-        name_object = ', '.join(name_object)
-        if len(name_object) > 20:
-            name_object = name_object[0:16] + ' ...'
+        name_object = name_object[0]
 
     #   Set title
     if name_object is None:
@@ -2862,7 +2860,7 @@ def d3_scatter(xs, ys, zs, output_dir, color=None, name_x='', name_y='',
 
 
 def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
-            y_errors=None, dataset_label=None, name_obj=None, fits=None,
+            y_errors=None, dataset_label=None, name_object=None, fits=None,
             one_to_one=False):
     """
         Plot magnitudes
@@ -2899,7 +2897,7 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
             Label for the datasets
             Default is ``None``.
 
-        name_obj        : `string`, optional
+        name_object     : `string`, optional
             Name of the object
             Default is ``None``
 
@@ -2920,11 +2918,17 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
     #   Plot magnitudes
     fig = plt.figure(figsize=(8, 8))
 
+    #   Limit the space for the object names in case several are given
+    if isinstance(name_object, list):
+        name_object = ', '.join(name_object)
+        if len(name_object) > 20:
+            name_object = name_object[0:16] + ' ...'
+
     #   Set title
-    if name_obj is None:
+    if name_object is None:
         sub_title = f'{name_x} vs. {name_y}'
     else:
-        sub_title = f'{name_x} vs. {name_y} ({name_obj})'
+        sub_title = f'{name_x} vs. {name_y} ({name_object})'
     fig.suptitle(
         sub_title,
         fontsize=17,
@@ -3233,7 +3237,7 @@ def filled_iso_contours(object_table, shape_image, filter_, output_dir='./',
 
 def histogram_statistic(
         parameter_list_0, name_x, name_y, rts, output_dir, dataset_label,
-        name_obj=None, parameter_list_1=None):
+        name_object=None, parameter_list_1=None):
     """
     Plots histogram statistics on properties such as the zero point
 
@@ -3258,7 +3262,7 @@ def histogram_statistic(
         Label for the datasets
         Default is ``None``.
 
-    name_obj            : `string`, optional
+    name_object         : `string`, optional
         Name of the object
         Default is ``None``
 
@@ -3276,11 +3280,17 @@ def histogram_statistic(
     #   Plot magnitudes
     fig = plt.figure(figsize=(8, 8))
 
+    #   Limit the space for the object names in case several are given
+    if isinstance(name_object, list):
+        name_object = ', '.join(name_object)
+        if len(name_object) > 20:
+            name_object = name_object[0:16] + ' ...'
+
     #   Set title
-    if name_obj is None:
+    if name_object is None:
         sub_title = f'{name_x} histogram'
     else:
-        sub_title = f'{name_x} histogram ({name_obj})'
+        sub_title = f'{name_x} histogram ({name_object})'
     fig.suptitle(
         sub_title,
         fontsize=17,

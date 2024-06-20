@@ -312,7 +312,7 @@ def derive_transformation_onthefly(
         filter_=filter_list[id_current_filter],
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_1_err,
-        name_object=image.objname,
+        name_object=image.object_name,
         image_id=image.pd,
     )
 
@@ -334,7 +334,7 @@ def derive_transformation_onthefly(
         filter_=other_filter,
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_2_err,
-        name_object=image.objname,
+        name_object=image.object_name,
         image_id=image.pd,
     )
 
@@ -618,7 +618,7 @@ def apply_transformation(
     utilities.calibration_check_plots(
         filter_list[filter_id],
         image.outpath.name,
-        image.objname,
+        image.object_name,
         image.pd,
         filter_list,
         # image.zp_mask,
@@ -859,7 +859,7 @@ def prepare_zero_point(
         dataset_label=[
             ['All calibration objects'],
         ],
-        name_obj=image.objname,
+        name_object=image.object_name,
     )
 
     #   TODO: Replace with distribution properties?
@@ -1312,7 +1312,7 @@ def determine_transformation(img_container, current_filter, filter_list,
             ensemble_dict[filter_list[0]].get_air_mass()[0],
             color_literature_err=color_literature_err_plot,
             fit_variable_err=color_observed_err_plot,
-            name_object=ensemble_dict[filter_list[0]].objname,
+            name_object=ensemble_dict[filter_list[0]].object_name,
         )
 
         #  Mag transform - Fit the data with fit_func
@@ -1351,7 +1351,7 @@ def determine_transformation(img_container, current_filter, filter_list,
             filter_=current_filter,
             color_literature_err=color_literature_err_plot,
             fit_variable_err=zero_point_err_plot,
-            name_object=ensemble_dict[filter_list[0]].objname,
+            name_object=ensemble_dict[filter_list[0]].object_name,
         )
 
         #   Redefine variables -> shorter variables

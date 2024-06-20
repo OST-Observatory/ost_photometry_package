@@ -45,7 +45,7 @@ class Image:
     def __init__(self, pd, filter_, object_name, file_path, output_dir):
         self.pd = pd
         self.filt = filter_
-        self.objname = object_name
+        self.object_name = object_name
         if isinstance(file_path, Path):
             self.filename = file_path.name
             self.path = file_path

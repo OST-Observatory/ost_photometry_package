@@ -88,32 +88,40 @@ class ImageContainer:
         self.__dict__.update(kwargs)
 
         #   Check for right ascension and declination
-        ra = kwargs.get('ra', None)
-        dec = kwargs.get('dec', None)
-        if ra is not None:
-            self.ra = Angle(ra, unit='hour').degree
+        ra_objects = kwargs.get('ra_objects', None)
+        ra_unit = kwargs.get('ra_unit', None)
+        dec_objects = kwargs.get('dec_objects', None)
+        dec_unit = kwargs.get('dec_unit', None)
+        if ra_objects is not None:
+            if ra_unit is not None:
+                self.ra_objects = Angle(ra_objects, unit=ra_unit).degree
+            else:
+                self.ra_objects = Angle(ra_objects, unit='hour').degree
         else:
-            self.ra = None
-        if dec is not None:
-            self.dec = Angle(dec, unit='degree').degree
+            self.ra_objects = None
+        if dec_objects is not None:
+            if dec_unit is not None:
+                self.dec_objects = Angle(dec_objects, unit=dec_unit).degree
+            else:
+                self.dec_objects = Angle(dec_objects, unit='degree').degree
         else:
-            self.dec = None
+            self.dec_objects = None
 
-        #   Check for an object name
-        self.name = kwargs.get('name', None)
+        #   Check for object names
+        self.object_names = kwargs.get('object_names', None)
 
         #   Create SkyCoord object
-        if self.name is not None and self.ra is None and self.dec is None:
-            self.coord = SkyCoord.from_name(self.name)
-        elif self.ra is not None and self.dec is not None:
-            self.coord = SkyCoord(
-                ra=self.ra,
-                dec=self.dec,
+        if self.object_names is not None and self.ra_objects is None and self.dec_objects is None:
+            self.coordinates_objects = SkyCoord.from_name(self.object_names)
+        elif self.ra_objects is not None and self.dec_objects is not None:
+            self.coordinates_objects = SkyCoord(
+                ra=self.ra_objects,
+                dec=self.dec_objects,
                 unit=(u.degree, u.degree),
                 frame="icrs"
             )
         else:
-            self.coord = None
+            self.coordinates_objects = None
 
         #   TODO: Remove
         #   Check if uncertainty should be calculated by means of the
@@ -175,43 +183,6 @@ class ImageContainer:
 
         return ensembles
 
-    #   TODO: This seems to be no longer in use. Soon to be removed
-    #   Get calibrated magnitudes as numpy.ndarray
-    # def get_calibrated_magnitudes(self):
-    #     #   Get type of the magnitude arrays
-    #     #   Possibilities: unumpy.uarray & numpy structured ndarray
-    #     unc = getattr(self, 'unc', True)
-    #
-    #     #   Get calibrated magnitudes
-    #     cali_mags = getattr(self, 'cali', None)
-    #     if unc:
-    #         if (cali_mags is None or
-    #                 np.all(unumpy.nominal_values(cali_mags) == 0.)):
-    #             #   If array with magnitude transformation is not available
-    #             #   or if it is empty get the array without magnitude
-    #             #   transformation
-    #             cali_mags = getattr(self, 'noT', None)
-    #             if cali_mags is not None:
-    #                 #   Get only the magnitude values
-    #                 cali_mags = unumpy.nominal_values(cali_mags)
-    #         else:
-    #             #   Get only the magnitude values
-    #             cali_mags = unumpy.nominal_values(cali_mags)
-    #
-    #     #   numpy structured ndarray type:
-    #     else:
-    #         if cali_mags is None or np.all(cali_mags['mag'] == 0.):
-    #             #   If array with magnitude transformation is not available
-    #             #   or if it is empty get the array without magnitude
-    #             #   transformation
-    #             cali_mags = getattr(self, 'noT', None)
-    #             if cali_mags is not None:
-    #                 cali_mags = cali_mags['mag']
-    #         else:
-    #             cali_mags = cali_mags['mag']
-    #
-    #     return cali_mags
-
 
 class ImageEnsemble:
     """
@@ -219,7 +190,8 @@ class ImageEnsemble:
         an image series taken in a specific filter
     """
 
-    def __init__(self, filter_, obj_name, path, output_dir, reference_image_id=0):
+    def __init__(self, filter_, object_names, path, output_dir,
+                 reference_image_id=0):
         ###
         #   Get file list, if path is a directory, if path is a file put
         #   base name of this file in a list
@@ -271,7 +243,7 @@ class ImageEnsemble:
         self.outpath = Path(output_dir)
 
         #   Set object name
-        self.objname = obj_name
+        self.object_name = object_names
 
         #   Fill image list
         terminal_output.print_to_terminal(
@@ -282,7 +254,7 @@ class ImageEnsemble:
         for image_id, file_name in enumerate(file_list):
             self.image_list.append(
                 #   Prepare image class instance
-                self.Image(image_id, filter_, obj_name, path, file_name, output_dir)
+                self.Image(image_id, filter_, object_names, path, file_name, output_dir)
             )
 
             #   Calculate field of view and additional quantities and add
@@ -323,7 +295,7 @@ class ImageEnsemble:
 
     #   Image class
     class Image:
-        def __init__(self, pd, filter_, obj_name, path, file_name, output_dir):
+        def __init__(self, pd, filter_, object_names, path, file_name, output_dir):
             #   Set image ID
             self.pd = pd
 
@@ -331,7 +303,7 @@ class ImageEnsemble:
             self.filt = filter_
 
             #   Set object name
-            self.objname = obj_name
+            self.object_name = object_names
 
             #   Set file name
             self.filename = file_name
@@ -1006,7 +978,7 @@ def determine_epsf(image, size_epsf_region=25, oversampling_factor=2,
         )
 
     #   Get object name
-    name_object = image.objname
+    name_object = image.object_name
 
     if terminal_logger is not None:
         terminal_logger.add_to_cache(
@@ -2937,7 +2909,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
                 label='identified stars',
                 label_2='stars used to determine the ePSF',
                 rts=f'Initial object identification [Image: {image.pd}]',
-                name_object=image.objname,
+                name_object=image.object_name,
                 wcs=image.wcs,
                 terminal_logger=terminal_logger,
             )
@@ -2962,7 +2934,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
             image.outpath.name,
             {f'img-{image.pd}-{image.filt}': image.epsf},
             terminal_logger=terminal_logger,
-            name_object=image.objname,
+            name_object=image.object_name,
             indent=2,
         )
 
@@ -2986,12 +2958,12 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
         #   Plot original and residual image
         #
         plot.plot_residual(
-            image.objname,
+            image.object_name,
             {f'{image.filt}, Image ID: {image.pd}': image.get_data()},
             {f'{image.filt}, Image ID: {image.pd}': image.residual_image},
             image.outpath.name,
             terminal_logger=terminal_logger,
-            name_object=image.objname,
+            name_object=image.object_name,
             indent=2,
         )
 
@@ -3051,7 +3023,7 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
         return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
 
 
-def extract_flux(image_container, filter_list, object_name, image_paths,
+def extract_flux(image_container, filter_list, name_objects, image_paths,
                  output_dir, sigma_object_psf, wcs_method='astrometry',
                  force_wcs_determ=False, sigma_value_background_clipping=5.,
                  multiplier_background_rms=5., size_epsf_region=25,
@@ -3080,7 +3052,7 @@ def extract_flux(image_container, filter_list, object_name, image_paths,
         filter_list                     : `list` of `string`
             Filter list
 
-        object_name                     : `string`
+        name_objects                    : `list` of `string`
             Name of the object
 
         image_paths                     : `dictionary`
@@ -3234,7 +3206,7 @@ def extract_flux(image_container, filter_list, object_name, image_paths,
         #   Initialize image ensemble object
         image_container.ensembles[filter_] = current_ensemble = ImageEnsemble(
             filter_,
-            object_name,
+            name_objects,
             image_paths[filter_],
             output_dir,
         )
@@ -3320,7 +3292,7 @@ def extract_flux(image_container, filter_list, object_name, image_paths,
         p = mp.Process(
             target=plot.plot_residual,
             args=(
-                object_name,
+                name_objects,
                 image_container.get_ref_img(),
                 image_container.get_ref_residual_img(),
                 output_dir,
@@ -3333,7 +3305,7 @@ def extract_flux(image_container, filter_list, object_name, image_paths,
 
 
 def extract_flux_multi(
-        image_container, filter_list, object_name, image_paths, output_dir,
+        image_container, filter_list, name_objects, image_paths, output_dir,
         sigma_object_psf, ra_obj, dec_obj, ra_unit=u.hourangle, dec_unit=u.deg,
         n_cores_multiprocessing=6, wcs_method='astrometry',
         force_wcs_determ=False, sigma_value_background_clipping=5.,
@@ -3363,7 +3335,7 @@ def extract_flux_multi(
         filter_list                     : `list` of `string`
             Filter list
 
-        object_name                     : `string`
+        name_objects                    : `list` of `string`
             Name of the object
 
         image_paths                     : `dictionary`
@@ -3554,7 +3526,7 @@ def extract_flux_multi(
         #   Initialize image ensemble object
         image_container.ensembles[filter_] = ImageEnsemble(
             filter_,
-            object_name,
+            name_objects,
             image_paths[filter_],
             output_dir,
             reference_image_id=reference_image_id,
@@ -4327,7 +4299,7 @@ def calibrate_data_mk_light_curve(
             )
 
 
-def subtract_archive_img_from_img(filter_, name_object, image_paths,
+def subtract_archive_img_from_img(filter_, name_objects, image_paths,
                                   output_dir, wcs_method='astrometry',
                                   plot_comp=True,
                                   hips_source='CDS/P/DSS2/blue'):
@@ -4340,7 +4312,7 @@ def subtract_archive_img_from_img(filter_, name_object, image_paths,
         filter_                 : `string`
             Filter identifier
 
-        name_object             : `string`
+        name_objects            : `list` of `string`
             Name of the object
 
         image_paths             : `dictionary`
@@ -4403,7 +4375,7 @@ def subtract_archive_img_from_img(filter_, name_object, image_paths,
     #
     image_ensemble = ImageEnsemble(
         filter_,
-        name_object,
+        name_objects,
         image_paths,
         output_dir,
     )

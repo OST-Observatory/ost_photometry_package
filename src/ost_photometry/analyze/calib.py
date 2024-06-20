@@ -1035,7 +1035,7 @@ def correlate_with_calibration_objects(
                     'label': 'downloaded calibration stars',
                     'label_2': 'matched calibration stars',
                     'rts': rts,
-                    'name_obj': image_ensemble.objname,
+                    'name_object': image_ensemble.object_name,
                     'wcs': image_ensemble.wcs,
                 }
             )
