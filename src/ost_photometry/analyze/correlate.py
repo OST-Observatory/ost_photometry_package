@@ -96,7 +96,7 @@ def determine_pixel_coordinates_obj_astropy(
     #   TODO: Check - This seems to fail if more than
     #    one object is within the separation limit.
     if isinstance(ra_objects, list):
-        mask = np.zeros(len(obj_pixel_position_x), dtype=bool)
+        mask = np.zeros(len(coordinates_dataset), dtype=bool)
         for coordinate_object in coordinates_objects:
             separation = coordinates_dataset.separation(coordinate_object)
 
@@ -105,10 +105,10 @@ def determine_pixel_coordinates_obj_astropy(
     #   TODO: Check if this else is necessary
     else:
         mask = coordinates_dataset.separation(coordinates_objects) < separation_limit
-        index_obj = np.argwhere(mask).ravel()
-    print(index_obj)
 
-    return index_obj, len(index_obj), obj_pixel_position_x, obj_pixel_position_y
+    index_object = np.argwhere(mask).ravel()
+
+    return index_object, len(index_object), obj_pixel_position_x, obj_pixel_position_y
 
 
 def determine_pixel_coordinates_obj_srcor(x_pixel_position_dataset,
@@ -325,15 +325,14 @@ def identify_star_in_dataset(x_pixel_positions, y_pixel_positions, ra_obj,
     return index_obj, count, obj_pixel_position_x, obj_pixel_position_y
 
 
-def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
-                       n_images, dataset_type='image', reference_dataset_id=0,
-                       reference_obj_ids=None, protect_reference_obj=True,
-                       n_allowed_non_detections_object=1,
-                       separation_limit=2. * u.arcsec, advanced_cleanup=True,
-                       max_pixel_between_objects=3.,
-                       expected_bad_image_fraction=1.0,
-                       own_correlation_option=1, cross_identification_limit=1,
-                       correlation_method='astropy'):
+def correlate_datasets(
+        x_pixel_positions, y_pixel_positions, wcs, n_objects, n_images,
+        dataset_type='image', reference_dataset_id=0, reference_obj_ids=None,
+        protect_reference_obj=True, n_allowed_non_detections_object=1,
+        separation_limit=2. * u.arcsec, advanced_cleanup=True,
+        max_pixel_between_objects=3., expected_bad_image_fraction=1.0,
+        own_correlation_option=1, cross_identification_limit=1,
+        correlation_method='astropy'):
     """
         Correlate the pixel positions from different dataset such as
         images or image ensembles.
@@ -363,7 +362,7 @@ def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
             ID of the reference dataset
             Default is ``0``.
 
-        reference_obj_ids               : `list` of `integer` or `None`, optional
+        reference_obj_ids               : `list` of `integer` or `numpy.ndarray` or `None`, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``None``.
@@ -525,11 +524,11 @@ def correlate_datasets(x_pixel_positions, y_pixel_positions, wcs, n_objects,
     return correlation_index, new_reference_image_id, rejected_images, n_common_objects
 
 
-def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
-                        reference_dataset_id=0, reference_obj_ids=None,
-                        expected_bad_image_fraction=1,
-                        protect_reference_obj=True,
-                        separation_limit=2. * u.arcsec, advanced_cleanup=True):
+def correlation_astropy(
+        x_pixel_positions, y_pixel_positions, wcs, reference_dataset_id=0,
+        reference_obj_ids=None, expected_bad_image_fraction=1,
+        protect_reference_obj=True, separation_limit=2. * u.arcsec,
+        advanced_cleanup=True):
     """
         Correlation based on astropy matching algorithm
 
@@ -548,7 +547,7 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
             ID of the reference dataset
             Default is ``0``.
 
-        reference_obj_ids           : `list` of `integer` or None, optional
+        reference_obj_ids           : `list` of `integer` or `numpy.ndarray` or None, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``None``.
@@ -677,9 +676,13 @@ def correlation_astropy(x_pixel_positions, y_pixel_positions, wcs,
 
         #   Calculate new reference object position
         #   TODO: Check if this needs to be adjusted to account for multiple reference objects
-        shift_obj = np.argwhere(rejected_object_ids < reference_obj_ids)
-        n_shift = len(shift_obj)
-        reference_obj_ids = np.array(reference_obj_ids) - n_shift
+        print('reference_obj_ids: ', reference_obj_ids)
+        if not isinstance(reference_obj_ids, np.ndarray):
+            reference_obj_ids = np.array(reference_obj_ids)
+        for index, reference_obj_id in np.ndenumerate(reference_obj_ids):
+            object_shift = np.argwhere(rejected_object_ids < reference_obj_id)
+            n_shift = len(object_shift)
+            reference_obj_ids[index] = reference_obj_id - n_shift
 
         #   2. Remove bad images
 

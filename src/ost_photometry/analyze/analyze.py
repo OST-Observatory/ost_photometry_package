@@ -1744,15 +1744,12 @@ def extraction_aperture(image, radius_aperture, inner_annulus_radius,
 
 
 #   TODO: Move to correlation
-def correlate_ensemble_images(img_ensemble, max_pixel_between_objects=3.,
-                              own_correlation_option=1,
-                              cross_identification_limit=1,
-                              reference_obj_ids=None,
-                              n_allowed_non_detections_object=1,
-                              expected_bad_image_fraction=1.0,
-                              protect_reference_obj=True,
-                              correlation_method='astropy',
-                              separation_limit=2. * u.arcsec):
+def correlate_ensemble_images(
+        img_ensemble, max_pixel_between_objects=3., own_correlation_option=1,
+        cross_identification_limit=1, reference_obj_ids=None,
+        n_allowed_non_detections_object=1, expected_bad_image_fraction=1.0,
+        protect_reference_obj=True, correlation_method='astropy',
+        separation_limit=2. * u.arcsec):
     """
         Correlate object positions from all stars in the image ensemble to
         identify those objects that are visible on all images
@@ -1776,7 +1773,7 @@ def correlate_ensemble_images(img_ensemble, max_pixel_between_objects=3.,
             rejected when this limit is reached.
             Default is ``1``.
 
-        reference_obj_ids               : `list` of `integer` or None, optional
+        reference_obj_ids               : `list` of `integer` or `numpy.ndarray` or None, optional
             IDs of the reference objects. The reference objects will not be
             removed from the list of objects.
             Default is ``None``.
@@ -2408,7 +2405,7 @@ def correlate_preserve_variable(
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         cross_identification_limit=cross_identification_limit,
-        reference_obj_ids=[variable_id],
+        reference_obj_ids=variable_id,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         expected_bad_image_fraction=expected_bad_image_fraction,
         protect_reference_obj=protect_reference_obj,
