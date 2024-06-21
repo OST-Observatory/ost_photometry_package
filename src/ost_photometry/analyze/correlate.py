@@ -15,12 +15,10 @@ import astropy.units as u
 ############################################################################
 
 
-def determine_pixel_coordinates_obj_astropy(x_pixel_position_dataset,
-                                            y_pixel_position_dataset,
-                                            ra_obj, dec_obj, wcs,
-                                            ra_unit=u.hourangle,
-                                            dec_unit=u.deg,
-                                            separation_limit=2. * u.arcsec):
+def determine_pixel_coordinates_obj_astropy(
+        x_pixel_position_dataset, y_pixel_position_dataset, ra_objects,
+        dec_objects, wcs, ra_unit=u.hourangle, dec_unit=u.deg,
+        separation_limit=2. * u.arcsec):
     """
         Find the image coordinates of a star based on the stellar
         coordinates and the WCS of the image, using astropy matching
@@ -34,10 +32,10 @@ def determine_pixel_coordinates_obj_astropy(x_pixel_position_dataset,
         y_pixel_position_dataset    : `numpy.ndarray`
             Positions of the objects in Pixel in Y direction
 
-        ra_obj                      : `float`
+        ra_objects                  : `string` or `list` of `string`
             Right ascension of the object
 
-        dec_obj                     : `float`
+        dec_objects                 : `string` or `list` of `string`
             Declination of the object
 
         wcs                         : `astropy.wcs.WCS`
@@ -70,18 +68,20 @@ def determine_pixel_coordinates_obj_astropy(x_pixel_position_dataset,
         obj_pixel_position_y        : `float`
             Y coordinates of the objects in pixel
     """
+    ra_objects = ['07:27:39.95', '07:27:50.8']
+    dec_objects = ['+24:20:11.52', '+24:19:4.9']
     #   Make coordinates object
-    coordinates_obj = SkyCoord(
-        ra_obj,
-        dec_obj,
+    coordinates_objects = SkyCoord(
+        ra_objects,
+        dec_objects,
         unit=(ra_unit, dec_unit),
         frame="icrs",
     )
 
     #   Convert ra & dec to pixel coordinates
     obj_pixel_position_x, obj_pixel_position_y = wcs.all_world2pix(
-        coordinates_obj.ra,
-        coordinates_obj.dec,
+        coordinates_objects.ra,
+        coordinates_objects.dec,
         0,
     )
 
@@ -95,8 +95,18 @@ def determine_pixel_coordinates_obj_astropy(x_pixel_position_dataset,
     #   Find matches in the dataset
     #   TODO: Check - This seems to fail if more than
     #    one object is within the separation limit.
-    mask = coordinates_dataset.separation(coordinates_obj) < separation_limit
-    index_obj = np.argwhere(mask).ravel()
+    if isinstance(ra_objects, list):
+        mask = np.zeros(len(obj_pixel_position_x), dtype=bool)
+        for coordinate_object in coordinates_objects:
+            separation = coordinates_dataset.separation(coordinate_object)
+
+            #   Calculate mask of all object closer than ``radius``
+            mask = mask | (separation < separation_limit)
+    #   TODO: Check if this else is necessary
+    else:
+        mask = coordinates_dataset.separation(coordinates_objects) < separation_limit
+        index_obj = np.argwhere(mask).ravel()
+    print(index_obj)
 
     return index_obj, len(index_obj), obj_pixel_position_x, obj_pixel_position_y
 

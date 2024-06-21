@@ -2418,7 +2418,7 @@ class MakeCMDs:
                     mode='expand',
                     borderaxespad=0.,
                 )
-                for element in legend_.legendHandles:
+                for element in legend_.legend_handles:
                     element.set_alpha(0.6)
 
         if fit_isochrone:

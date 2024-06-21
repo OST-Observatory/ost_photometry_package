@@ -1571,7 +1571,7 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             niters=2,
             overlap=False,
             # seed=123,
-            zeropoint=np.median(image.zp_clip).value,
+            zeropoint=np.median(image.zp).value,
             progress_bar=False,
         )
 
@@ -1876,7 +1876,7 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
             sep = obj_coordinates.separation(target_coordinates)
 
             #   Calculate mask of all object closer than ``radius``
-            mask = mask | sep.arcsec <= radius
+            mask = mask | (sep.arcsec <= radius)
     else:
         sep = obj_coordinates.separation(coordinates_target)
 
@@ -2445,7 +2445,7 @@ def post_process_results(
         #   TODO: Fix this dirty hack to fix the file names, if magnitude
         #         transformation is applied
         if trans:
-            rts = f'{filter_list[0]}-{filter_list[1]}_post_processed'
+            rts = f'_{filter_list[0]}-{filter_list[1]}_post_processed'
         else:
             rts = '_post_processed'
         save_magnitudes_ascii(
