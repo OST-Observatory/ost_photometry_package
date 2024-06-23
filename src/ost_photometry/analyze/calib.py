@@ -814,8 +814,18 @@ def derive_calibration(
     #   Remove a specific star from the loaded calibration stars
     #   TODO: Rewrite such that multiple objects can be removed
     if coordinates_obj_to_rm is not None:
-        mask = calibration_object_coordinates.separation(coordinates_obj_to_rm) < 1 * u.arcsec
-        mask = np.invert(mask)
+        # mask = calibration_object_coordinates.separation(coordinates_obj_to_rm) < 1 * u.arcsec
+        # mask = np.invert(mask)
+        # calibration_object_coordinates = calibration_object_coordinates[mask]
+        # calibration_tbl = calibration_tbl[mask]
+
+        mask = np.ones(len(coordinates_obj_to_rm), dtype=bool)
+        for coordinate_object in coordinates_obj_to_rm:
+            separation = calibration_object_coordinates.separation(coordinate_object)
+
+            #   Calculate mask of all object closer than ``radius``
+            mask = mask & np.invert(separation < 1 * u.arcsec)
+
         calibration_object_coordinates = calibration_object_coordinates[mask]
         calibration_tbl = calibration_tbl[mask]
 

@@ -55,7 +55,7 @@ def determine_pixel_coordinates_obj_astropy(
 
         Returns
         -------
-        index_obj                   : `numpy.ndarray`
+        index_object                : `numpy.ndarray`
             Index positions of matched objects in the images. Is -1 is no
             objects were found.
 
@@ -111,13 +111,11 @@ def determine_pixel_coordinates_obj_astropy(
     return index_object, len(index_object), obj_pixel_position_x, obj_pixel_position_y
 
 
-def determine_pixel_coordinates_obj_srcor(x_pixel_position_dataset,
-                                          y_pixel_position_dataset,
-                                          ra_obj, dec_obj, wcs,
-                                          max_pixel_between_objects=3,
-                                          own_correlation_option=1,
-                                          ra_unit=u.hourangle,
-                                          dec_unit=u.deg, verbose=False):
+def determine_pixel_coordinates_obj_srcor(
+        x_pixel_position_dataset, y_pixel_position_dataset, ra_object,
+        dec_object, wcs, max_pixel_between_objects=3,
+        own_correlation_option=1, ra_unit=u.hourangle, dec_unit=u.deg,
+        verbose=False):
     """
         Find the image coordinates of a star based on the stellar
         coordinates and the WCS of the image
@@ -130,10 +128,10 @@ def determine_pixel_coordinates_obj_srcor(x_pixel_position_dataset,
         y_pixel_position_dataset    : `numpy.ndarray`
             Positions of the objects in Pixel in Y direction
 
-        ra_obj                      : `float`
+        ra_object                      : `string` or `list` of `string`
             Right ascension of the object
 
-        dec_obj                     : `float`
+        dec_object                     : `string`or `list` of `string`
             Declination of the object
 
         wcs                         : `astropy.wcs.WCS`
@@ -176,8 +174,8 @@ def determine_pixel_coordinates_obj_srcor(x_pixel_position_dataset,
     """
     #   Make coordinates object
     coordinates_obj = SkyCoord(
-        ra_obj,
-        dec_obj,
+        ra_object,
+        dec_object,
         unit=(ra_unit, dec_unit),
         frame="icrs",
     )
@@ -212,15 +210,14 @@ def determine_pixel_coordinates_obj_srcor(x_pixel_position_dataset,
     return index_obj, count, obj_pixel_position_x, obj_pixel_position_x
 
 
-def identify_star_in_dataset(x_pixel_positions, y_pixel_positions, ra_obj,
-                             dec_obj, wcs, ra_unit=u.hourangle,
-                             dec_unit=u.deg, separation_limit=2. * u.arcsec,
-                             max_pixel_between_objects=3,
-                             own_correlation_option=1, verbose=False,
-                             correlation_method='astropy'):
+def identify_star_in_dataset(
+        x_pixel_positions, y_pixel_positions, ra_object, dec_object, wcs,
+        ra_unit=u.hourangle, dec_unit=u.deg, separation_limit=2. * u.arcsec,
+        max_pixel_between_objects=3, own_correlation_option=1, verbose=False,
+        correlation_method='astropy'):
     """
         Identify a specific star based on its right ascension and declination
-         in a dataset of pixel coordinates. Requires a valid WCS.
+        in a dataset of pixel coordinates. Requires a valid WCS.
 
         Parameters
         ----------
@@ -230,10 +227,10 @@ def identify_star_in_dataset(x_pixel_positions, y_pixel_positions, ra_obj,
         y_pixel_positions           : `numpy.ndarray`
             Object positions in pixel coordinates. Y direction.
 
-        ra_obj                      : `float`
+        ra_object                   : `string` or `list` of `string`
             Right ascension of the object
 
-        dec_obj                     : `float`
+        dec_object                  : `string` or `list` of `string`
             Declination of the object
 
         wcs                         : `astropy.wcs` object
@@ -272,7 +269,7 @@ def identify_star_in_dataset(x_pixel_positions, y_pixel_positions, ra_obj,
 
         Returns
         -------
-        index_obj                   : `integer`
+        index_obj                   : `numpy.ndarray`
             Index positions of the object.
 
         count                       : `integer`
@@ -288,8 +285,8 @@ def identify_star_in_dataset(x_pixel_positions, y_pixel_positions, ra_obj,
         index_obj, count, obj_pixel_position_x, obj_pixel_position_y = determine_pixel_coordinates_obj_astropy(
             x_pixel_positions,
             y_pixel_positions,
-            ra_obj,
-            dec_obj,
+            ra_object,
+            dec_object,
             wcs,
             ra_unit=ra_unit,
             dec_unit=dec_unit,
@@ -300,8 +297,8 @@ def identify_star_in_dataset(x_pixel_positions, y_pixel_positions, ra_obj,
         index_obj, count, obj_pixel_position_x, obj_pixel_position_y = determine_pixel_coordinates_obj_srcor(
             x_pixel_positions,
             y_pixel_positions,
-            ra_obj,
-            dec_obj,
+            ra_object,
+            dec_object,
             wcs,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,

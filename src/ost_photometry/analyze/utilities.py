@@ -378,7 +378,7 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
         filter_             : `string`
             Filter
 
-        object_id           : `list` of `integer` or `numpy.ndarray`
+        object_id           : `integer`
             ID/Number of the object for with the time series should be
             created
 
@@ -386,67 +386,11 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
         -------
         ts                  : `astropy.timeseries.TimeSeries`
     """
-    #   Extract magnitudes of the object 'objID' depending on array dtype
-    # if checks.check_unumpy_array(magnitudes):
-    #     u_mags = magnitudes[:, obj_id]
-    #     mags_obj = unumpy.nominal_values(u_mags)
-    #     errs_obj = unumpy.std_devs(u_mags)
-    #
-    # else:
-    #     try:
-    #         mags_obj = magnitudes['mag'][:, obj_id]
-    #         errs_obj = magnitudes['err'][:, obj_id]
-    #     except KeyError:
-    #         mags_obj = magnitudes['flux'][:, obj_id]
-    #         errs_obj = magnitudes['err'][:, obj_id]
-
-    #   Extract magnitudes of the object 'objID'
-    # print(magnitudes)
-    # print(magnitudes.shape)
-    # print(magnitudes)
-    # print(type(magnitudes))
-    # for dist in magnitudes:
-    #     print(dist.shape)
-    # print(object_id)
-    # object_id += 1
-
-    # if isinstance(magnitudes, list):
-    #     stacked_distribution = np.stack(magnitudes)
-    # else:
-    #     stacked_distribution = magnitudes
-    # # print('++++++++++++++++++++++++++++++++++++++++++++++++')
-    # # print(stacked_distribution)
-    # # print(stacked_distribution.shape)
-    # # print(type(stacked_distribution))
-    # object_magnitudes = stacked_distribution[:, object_id]
-    # #`print(object_magnitudes)
-    # #`print(object_magnitudes.shape)
-    # #`print(type(object_magnitudes))
-    # mags_obj = object_magnitudes.pdf_median()
-    # errs_obj = object_magnitudes.pdf_std()
-    # # print(mags_obj)
-    # # print(errs_obj)
-    # # print('++++++++++++++++++++++++++++++++++++++++++++++++')
-
-    #   TODO: Check if this is still necessary
-    #   Create mask for time series to remove images without entries
-    # mask = np.isin(
-    #     mags_obj,
-    #     [0.],
-    #     invert=True
-    # )
-
-    #   Remove images without entries
-    # mags_obj = mags_obj[mask]
-    # errs_obj = errs_obj[mask]
-
-    #   TODO: Replace this with a proper handling of multiple objects
-    object_id = object_id[0]
-
+    #   Get magnitude and error
     mags_obj = magnitudes[filter_]['values'][:, object_id]
     errs_obj = magnitudes[filter_]['errors'][:, object_id]
 
-    # Make time series and use reshape to get a justified array
+    #   Make time series and use reshape to get a justified array
     ts = TimeSeries(
         time=observation_times,
         data={
@@ -550,97 +494,6 @@ def fit_data_one_d(x, y, order):
         )
 
     return fit_poly
-
-# @execution_time
-# def mag_arr(flux_arr):
-#     """
-#         Calculate magnitudes from flux
-#
-#         This function is not currently used, but will remain here for future
-#         use.
-#
-#         Parameters
-#         ----------
-#         flux_arr        : `numpy.ndarray`
-#             Numpy structured array containing flux values and corresponding
-#             uncertainties
-#
-#         Returns
-#         -------
-#         mags            : `numpy.ndarray`
-#             Numpy structured array containing magnitudes and corresponding
-#             errors
-#     """
-#     #   Get dimensions
-#     shape = flux_arr['flux_fit'].shape
-#     if len(shape) == 1:
-#         n_obj = shape[0]
-#
-#         #   Prepare array for the magnitudes and uncertainty
-#         mags = np.zeros(n_obj, dtype=[('mag', 'f8'), ('err', 'f8')])
-#
-#     elif len(shape) == 2:
-#         n_img = shape[0]
-#         n_obj = shape[1]
-#
-#         #   Prepare array for the magnitudes and uncertainty
-#         mags = np.zeros(
-#             n_img,
-#             dtype=[('mag', 'f8', n_obj), ('err', 'f8', n_obj)],
-#         )
-#
-#     else:
-#         raise RuntimeError(
-#             f"{style.Bcolors.FAIL} \nDimension of the flux array > 2. This "
-#             f"is not supported. -> Exit {style.Bcolors.ENDC}"
-#         )
-#
-#     ###
-#     #   Calculate magnitudes
-#     #
-#     #   Extract flux
-#     flux = flux_arr['flux_fit']
-#     #   Calculate magnitudes
-#     mags['mag'] = -2.5 * np.log10(flux)
-#
-#     ###
-#     #   Calculate magnitudes and uncertainty
-#     #
-#     #   Error propagation also used by DAOPHOT -> see 'compute_phot_error'
-#     mags['err'] = 1.0857 * flux_arr['flux_unc'] / flux_arr['flux_fit']
-#
-#     return mags
-
-
-# def mag_u_arr(flux):
-#     """
-#         Calculate magnitudes from flux
-#
-#         Parameters
-#         ----------
-#         flux            : `unumpy.ndarray`
-#             Numpy structured array containing flux values and corresponding
-#             uncertainties
-#
-#         Returns
-#         -------
-#         mags            : `unumpy.ndarray`
-#             Numpy structured array containing magnitudes and corresponding
-#             errors
-#     """
-#     #   Get dimensions
-#     shape = flux.shape
-#     dim = len(shape)
-#     if 0 == dim or dim > 2:
-#         raise ValueError(
-#             f"{style.Bcolors.FAIL} \nDimension of the flux array > 2. This "
-#             f"is not supported. -> Exit {style.Bcolors.ENDC}"
-#         )
-#
-#     #   Calculate magnitudes
-#     mags = -2.5 * unumpy.log10(flux)
-#
-#     return mags
 
 
 def flux_to_magnitudes(flux, flux_error):

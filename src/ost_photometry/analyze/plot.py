@@ -888,8 +888,6 @@ def light_curve_jd(
     else:
         fig.suptitle(f'Light curve - {name_object}', fontsize=30)
 
-    # print(ts[err_column])
-    # print(ts[data_column])
     #   Plot data with or without error bars
     if not error_bars:
         plt.plot(ts.time.jd, ts[data_column], 'k.', markersize=3)

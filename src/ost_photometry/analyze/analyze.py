@@ -1919,11 +1919,11 @@ def correlate_ensembles(
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
 
-    ra_object                               : `float`, optional
+    ra_object                               : `string` or `list` of `string`, optional
         Right ascension of the object
         Default is ``None``
 
-    dec_object                              : `float`, optional
+    dec_object                              : `string` or `list` of `string`, optional
         Declination of the object
         Default is ``None``
 
@@ -2028,10 +2028,10 @@ def correlate_ensembles(
         #   TODO: Convert ra_object and dec_object to lists -> allow multiple objects
         #   TODO: Check if this is necessary
         #   TODO: Put this in a function
-        object_ids = []
+        object_ids = None
         for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
             if id_ensemble == reference_ensemble_id:
-                object_id, count, _, _ = correlate.identify_star_in_dataset(
+                object_ids, count, _, _ = correlate.identify_star_in_dataset(
                     ensemble.image_list[reference_image_id].photometry['x_fit'],
                     ensemble.image_list[reference_image_id].photometry['y_fit'],
                     ra_object,
@@ -2044,7 +2044,6 @@ def correlate_ensembles(
                     ra_unit=ra_unit,
                     dec_unit=dec_unit,
                 )
-                object_ids.append(object_id)
 
                 #   Check if variable star was detected
                 if count == 0:
@@ -2283,7 +2282,7 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
 #   TODO: Move to correlation
 #   TODO: Generalize for multiple variable objects
 def correlate_preserve_variable(
-        image_ensemble, ra_obj, dec_obj, ra_unit=u.hourangle, dec_unit=u.deg,
+        image_ensemble, ra_object, dec_object, ra_unit=u.hourangle, dec_unit=u.deg,
         max_pixel_between_objects=3., own_correlation_option=1,
         cross_identification_limit=1, reference_image_id=0,
         n_allowed_non_detections_object=1, expected_bad_image_fraction=1.0,
@@ -2300,10 +2299,10 @@ def correlate_preserve_variable(
             Ensemble class object with all image data taken in a specific
             filter
 
-        ra_obj                          : `float`
+        ra_object                       : `string` or `list` of `string`
             Right ascension of the object
 
-        dec_obj                         : `float`
+        dec_object                      : `string` or `list` of `string`
             Declination of the object
 
         ra_unit                         : `astropy.units`, optional
@@ -2377,8 +2376,8 @@ def correlate_preserve_variable(
     variable_id, n_detections, _, _ = correlate.identify_star_in_dataset(
         image_ensemble.image_list[reference_image_id].photometry['x_fit'],
         image_ensemble.image_list[reference_image_id].photometry['y_fit'],
-        ra_obj,
-        dec_obj,
+        ra_object,
+        dec_object,
         image_ensemble.wcs,
         separation_limit=separation_limit,
         max_pixel_between_objects=max_pixel_between_objects,
@@ -2424,8 +2423,8 @@ def correlate_preserve_variable(
     variable_id, n_detections, x_position_obj, y_position_obj = correlate.identify_star_in_dataset(
         image_ensemble.image_list[reference_image_id].photometry['x_fit'],
         image_ensemble.image_list[reference_image_id].photometry['y_fit'],
-        ra_obj,
-        dec_obj,
+        ra_object,
+        dec_object,
         image_ensemble.wcs,
         separation_limit=separation_limit,
         max_pixel_between_objects=max_pixel_between_objects,
@@ -2455,7 +2454,7 @@ def correlate_preserve_variable(
     )
 
     #   Add ID of the variable star to the image ensemble
-    image_ensemble.variable_id = [variable_id]
+    image_ensemble.variable_id = variable_id
 
 
 def extract_multiprocessing(image_ensemble, n_cores_multiprocessing,
@@ -3306,8 +3305,8 @@ def extract_flux(image_container, filter_list, name_objects, image_paths,
 
 def extract_flux_multi(
         image_container, filter_list, name_objects, image_paths, output_dir,
-        sigma_object_psf, ra_obj, dec_obj, ra_unit=u.hourangle, dec_unit=u.deg,
-        n_cores_multiprocessing=6, wcs_method='astrometry',
+        sigma_object_psf, ra_object, dec_object, ra_unit=u.hourangle,
+        dec_unit=u.deg, n_cores_multiprocessing=6, wcs_method='astrometry',
         force_wcs_determ=False, sigma_value_background_clipping=5.,
         multiplier_background_rms=5., size_epsf_region=25,
         fraction_epsf_stars=0.2, oversampling_factor_epsf=2,
@@ -3347,10 +3346,10 @@ def extract_flux_multi(
         sigma_object_psf                : `dictionary`
             Sigma of the objects PSF, assuming it is a Gaussian
 
-        ra_obj                          : `float`
+        ra_object                          : `string` or `list` of `string`
             Right ascension of the object
 
-        dec_obj                         : `float`
+        dec_object                         : `string` or `list` of `string`
             Declination of the object
 
         ra_unit                         : `astropy.units`, optional
@@ -3579,8 +3578,8 @@ def extract_flux_multi(
         #
         correlate_preserve_variable(
             image_container.ensembles[filter_],
-            ra_obj,
-            dec_obj,
+            ra_object,
+            dec_object,
             ra_unit=ra_unit,
             dec_unit=dec_unit,
             max_pixel_between_objects=max_pixel_between_objects,
@@ -3846,9 +3845,9 @@ def correlate_calibrate(
 
 
 def calibrate_data_mk_light_curve(
-        image_container, filter_list, ra_object, dec_object, name_object,
-        output_dir, transit_time, period, ra_unit=u.hourangle, dec_unit=u.deg,
-        valid_filter_combinations=None, binning_factor=None,
+        image_container, filter_list, ra_object, dec_object, object_names,
+        output_dir, transit_times, periods, ra_unit=u.hourangle,
+        dec_unit=u.deg, valid_filter_combinations=None, binning_factor=None,
         transformation_coefficients_dict=None,
         derive_transformation_coefficients=False, reference_image_id=0,
         calibration_method='APASS', vizier_dict=None,
@@ -3871,23 +3870,23 @@ def calibrate_data_mk_light_curve(
     filter_list                         : `list` of `strings`
         List with filter names
 
-    ra_object                           : `float`
+    ra_object                           : `string` or `list` of `string`
         Right ascension of the object
 
-    dec_object                          : `float`
+    dec_object                          : `string` or `list` of `string`
         Declination of the object
 
-    name_object                         : `string`
+    object_names                        : `list` of `string`
         Name of the object
 
     output_dir                          : `string`
         Path, where the output should be stored.
 
-    transit_time                        : `string`
+    transit_times                       : `list` of `string`
         Date and time of the transit.
         Format: "yyyy:mm:ddThh:mm:ss" e.g., "2020-09-18T01:00:00"
 
-    period                              : `float`
+    periods                             : `list` of `float`
         Period in [d]
 
     ra_unit                             : `astropy.unit`, optional
@@ -4068,6 +4067,10 @@ def calibrate_data_mk_light_curve(
             dec_unit=dec_unit,
         )
 
+    #   Names of variable objects
+    #   TODO: Activate this, when object names are move to the image container
+    # object_names = image_container.object_name
+
     ###
     #   Calibrate magnitudes
     #
@@ -4110,59 +4113,58 @@ def calibrate_data_mk_light_curve(
                 format='jd',
             )
 
-            #   Create mask for time series to remove images
-            #   without entries
-            # mask_ts = np.isin(
-            # #cali_mags['med'][i][:,objID],
-            # cali_mags[i][:,objID],
-            # [0.],
-            # invert=True
-            # )
+            #   IDs of variable objects
+            variable_object_ids = image_container.ensembles[filter_].variable_id
 
-            #   Create a time series object
-            time_series = utilities.mk_time_series(
-                observation_times,
-                calibrated_magnitudes,
-                filter_,
-                image_container.ensembles[filter_].variable_id,
-            )
+            for variable_id, object_name, transit_time, period in \
+                    zip(variable_object_ids, object_names, transit_times, periods):
+                #   Create a time series object
+                time_series = utilities.mk_time_series(
+                    observation_times,
+                    calibrated_magnitudes,
+                    filter_,
+                    variable_id,
+                )
 
-            #   Write time series
-            time_series.write(
-                f'{output_dir}/tables/light_curve_{filter_}_{filter_set[0]}-{filter_set[1]}.dat',
-                format='ascii',
-                overwrite=True,
-            )
-            time_series.write(
-                f'{output_dir}/tables/light_curve_{filter_}_{filter_set[0]}-{filter_set[1]}.csv',
-                format='ascii.csv',
-                overwrite=True,
-            )
+                #   Write time series
+                time_series.write(
+                    f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
+                    f'_{filter_set[0]}-{filter_set[1]}.dat',
+                    format='ascii',
+                    overwrite=True,
+                )
+                time_series.write(
+                    f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
+                    f'_{filter_set[0]}-{filter_set[1]}.csv',
+                    format='ascii.csv',
+                    overwrite=True,
+                )
 
-            #   Plot light curve over JD
-            plot.light_curve_jd(
-                time_series,
-                filter_,
-                f'{filter_}_err',
-                output_dir,
-                name_object=name_object,
-                file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
-            )
+                #   Plot light curve over JD
+                plot.light_curve_jd(
+                    time_series,
+                    filter_,
+                    f'{filter_}_err',
+                    output_dir,
+                    name_object=object_name,
+                    file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
+                )
 
-            #   Plot the light curve folded on the period
-            plot.light_curve_fold(
-                time_series,
-                filter_,
-                f'{filter_}_err',
-                output_dir,
-                transit_time,
-                period,
-                binning_factor=binning_factor,
-                name_object=name_object,
-                file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
-            )
+                #   Plot the light curve folded on the period
+                if transit_time != '?' and period > 0.:
+                    plot.light_curve_fold(
+                        time_series,
+                        filter_,
+                        f'{filter_}_err',
+                        output_dir,
+                        transit_time,
+                        period,
+                        binning_factor=binning_factor,
+                        name_object=object_name,
+                        file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
+                    )
 
-            processed_filter.append(filter_)
+                processed_filter.append(filter_)
 
     #   Process those filters for which magnitude transformation is not possible
     for filter_ in filter_list:
@@ -4228,45 +4230,52 @@ def calibrate_data_mk_light_curve(
                 format='jd',
             )
 
-            #   Create a time series object
-            time_series = utilities.mk_time_series(
-                observation_times,
-                plot_quantity,
-                filter_,
-                image_container.ensembles[filter_].variable_id,
-            )
+            #   IDs of variable objects
+            variable_object_ids = image_container.ensembles[filter_].variable_id
 
-            #   Write time series
-            time_series.write(
-                f'{output_dir}/tables/light_curve_{filter_}.dat',
-                format='ascii',
-                overwrite=True,
-            )
-            time_series.write(
-                f'{output_dir}/tables/light_curve_{filter_}.csv',
-                format='ascii.csv',
-                overwrite=True,
-            )
+            for variable_id, object_name, transit_time, period in \
+                    zip(variable_object_ids, object_names, transit_times, periods):
+                #   Create a time series object
+                time_series = utilities.mk_time_series(
+                    observation_times,
+                    plot_quantity,
+                    filter_,
+                    variable_id,
+                )
 
-            #   Plot light curve over JD
-            plot.light_curve_jd(
-                time_series,
-                filter_,
-                f'{filter_}_err',
-                output_dir,
-                name_object=name_object)
+                #   Write time series
+                time_series.write(
+                    f'{output_dir}/tables/light_curve_{object_name}_{filter_}.dat',
+                    format='ascii',
+                    overwrite=True,
+                )
+                time_series.write(
+                    f'{output_dir}/tables/light_curve_{object_name}_{filter_}.csv',
+                    format='ascii.csv',
+                    overwrite=True,
+                )
 
-            #   Plot the light curve folded on the period
-            plot.light_curve_fold(
-                time_series,
-                filter_,
-                f'{filter_}_err',
-                output_dir,
-                transit_time,
-                period,
-                binning_factor=binning_factor,
-                name_object=name_object,
-            )
+                #   Plot light curve over JD
+                plot.light_curve_jd(
+                    time_series,
+                    filter_,
+                    f'{filter_}_err',
+                    output_dir,
+                    name_object=object_name,
+                )
+
+                #   Plot the light curve folded on the period
+                if transit_time != '?' and period > 0.:
+                    plot.light_curve_fold(
+                        time_series,
+                        filter_,
+                        f'{filter_}_err',
+                        output_dir,
+                        transit_time,
+                        period,
+                        binning_factor=binning_factor,
+                        name_object=object_name,
+                    )
 
 
 def subtract_archive_img_from_img(filter_, name_objects, image_paths,
