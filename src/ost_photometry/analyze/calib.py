@@ -819,7 +819,7 @@ def derive_calibration(
         # calibration_object_coordinates = calibration_object_coordinates[mask]
         # calibration_tbl = calibration_tbl[mask]
 
-        mask = np.ones(len(coordinates_obj_to_rm), dtype=bool)
+        mask = np.ones(len(calibration_object_coordinates), dtype=bool)
         for coordinate_object in coordinates_obj_to_rm:
             separation = calibration_object_coordinates.separation(coordinate_object)
 

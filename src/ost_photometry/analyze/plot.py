@@ -851,7 +851,7 @@ def light_curve_jd(
             If True error bars will be plotted.
             Default is ``False``.
 
-        name_object         : `list` of `string` or `string`, optional
+        name_object         : `string`, optional
             Name of the object
             Default is ``None``.
 
@@ -876,11 +876,6 @@ def light_curve_jd(
     #   Set tick size
     plt.tick_params(axis='x', labelsize=15)
     plt.tick_params(axis='y', labelsize=15)
-
-    #   Take the first object at the moment
-    #   TODO: Make this applicable to multiple objects
-    if isinstance(name_object, list):
-        name_object = name_object[0]
 
     #   Set title
     if name_object is None:
@@ -939,7 +934,8 @@ def light_curve_jd(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/lightcurve/lightcurve_jd_{data_column}{file_name_suffix}.pdf',
+        f'{output_dir}/lightcurve/lightcurve_jd_{name_object}'
+        f'_{data_column}{file_name_suffix}.pdf',
         bbox_inches='tight',
         format='pdf',
     )
@@ -981,7 +977,7 @@ def light_curve_fold(
             If True error bars will be plotted.
             Default is ``False``.
 
-        name_object         : `list` of `string` or `string`, optional
+        name_object         : `string`, optional
             Name of the object
             Default is ``None``.
 
@@ -1015,11 +1011,6 @@ def light_curve_fold(
     #   Set tick size
     plt.tick_params(axis='x', labelsize=15)
     plt.tick_params(axis='y', labelsize=15)
-
-    #   Take the first object at the moment
-    #   TODO: Make this applicable to multiple objects
-    if isinstance(name_object, list):
-        name_object = name_object[0]
 
     #   Set title
     if name_object is None:
@@ -1115,7 +1106,8 @@ def light_curve_fold(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/lightcurve/lightcurve_folded_{data_column}{file_name_suffix}.pdf',
+        f'{output_dir}/lightcurve/lightcurve_folded_{name_object}'
+        f'_{data_column}{file_name_suffix}.pdf',
         bbox_inches='tight',
         format='pdf',
     )
