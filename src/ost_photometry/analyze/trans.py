@@ -517,7 +517,7 @@ def transformation_core(
     return color_observed, color_literature
 
 
-def apply_transformation(
+def apply_magnitude_transformation(
         image_container, image, calib_magnitudes_literature,
         calib_magnitudes_observed_first_filter,
         calib_magnitudes_observed_second_filter, magnitudes_first_filter,
@@ -965,7 +965,7 @@ def apply_calibration(
             Indentation for the console output lines
             Default is ``1``.
     """
-    #   TODO: Separate simple calibration and magnitude transformation
+    #   TODO: Separate simple calibration and magnitude transformation -> transform_magnitudes - simple_calibration
     terminal_output.print_to_terminal(
         "Apply calibration and perform magnitude transformation",
         indent=indent,
@@ -1070,7 +1070,7 @@ def apply_calibration(
                     magnitudes_second_filter = magnitudes_current_image
 
                 #   Calculate transformation
-                apply_transformation(
+                apply_magnitude_transformation(
                     image_container,
                     current_image,
                     literature_magnitudes,

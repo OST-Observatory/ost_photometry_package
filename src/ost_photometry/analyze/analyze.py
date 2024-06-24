@@ -79,6 +79,8 @@ class ImageContainer:
     """
         Container class for image class objects
     """
+    #   TODO: Make this the default class that needs to be instated every time and that gives birth to the
+    #         tine series/ensembles and all the rest - add all the analysis functions to this class
 
     def __init__(self, **kwargs):
         #   Prepare dictionary
@@ -87,6 +89,7 @@ class ImageContainer:
         #   Add additional keywords
         self.__dict__.update(kwargs)
 
+        #   TODO: Add a target object that has all the target properties and that keeps them together
         #   Check for right ascension and declination
         ra_objects = kwargs.get('ra_objects', None)
         ra_unit = kwargs.get('ra_unit', None)
@@ -4115,6 +4118,8 @@ def calibrate_data_mk_light_curve(
 
             #   IDs of variable objects
             variable_object_ids = image_container.ensembles[filter_].variable_id
+
+            #   TODO: Add fix for the case that not all variable stars where detected
 
             for variable_id, object_name, transit_time, period in \
                     zip(variable_object_ids, object_names, transit_times, periods):

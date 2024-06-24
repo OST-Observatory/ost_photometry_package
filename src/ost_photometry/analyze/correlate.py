@@ -68,8 +68,6 @@ def determine_pixel_coordinates_obj_astropy(
         obj_pixel_position_y        : `float`
             Y coordinates of the objects in pixel
     """
-    ra_objects = ['07:27:39.95', '07:27:50.8']
-    dec_objects = ['+24:20:11.52', '+24:19:4.9']
     #   Make coordinates object
     coordinates_objects = SkyCoord(
         ra_objects,
@@ -660,9 +658,10 @@ def correlation_astropy(
 
         #   If YES remove reference objects from the "bad" objects
         if protect_reference_obj and np.any(ref_is_in):
+            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - reference_obj_ids
             id_reference_obj_in_rejected_objects = np.argwhere(
-                rejected_object_ids == reference_obj_ids
-            )
+                id_difference == 0.
+            )[:,0]
             rejected_object_ids = np.delete(
                 rejected_object_ids,
                 id_reference_obj_in_rejected_objects
@@ -673,7 +672,6 @@ def correlation_astropy(
 
         #   Calculate new reference object position
         #   TODO: Check if this needs to be adjusted to account for multiple reference objects
-        print('reference_obj_ids: ', reference_obj_ids)
         if not isinstance(reference_obj_ids, np.ndarray):
             reference_obj_ids = np.array(reference_obj_ids)
         for index, reference_obj_id in np.ndenumerate(reference_obj_ids):
@@ -724,9 +722,13 @@ def correlation_astropy(
                 )
             rejected_object_ids = rows_to_rm[1]
             rejected_object_ids = np.unique(rejected_object_ids)
+            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - reference_obj_ids
             id_reference_obj_in_rejected_objects = np.argwhere(
-                rejected_object_ids == reference_obj_ids
-            )
+                id_difference == 0.
+            )[:,0]
+            # id_reference_obj_in_rejected_objects = np.argwhere(
+            #     rejected_object_ids == reference_obj_ids
+            # )
             rejected_object_ids = np.delete(
                 rejected_object_ids,
                 id_reference_obj_in_rejected_objects
