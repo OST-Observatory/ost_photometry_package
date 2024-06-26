@@ -83,18 +83,51 @@ class ImageContainer:
     #         tine series/ensembles and all the rest - add all the analysis functions to this class
 
     def __init__(self, **kwargs):
-        #   Prepare dictionary
+        #   Prepare dictionary for image series
         self.ensembles = {}
 
         #   Add additional keywords
         self.__dict__.update(kwargs)
 
-        #   TODO: Add a target object that has all the target properties and that keeps them together
-        #   Check for right ascension and declination
-        ra_objects = kwargs.get('ra_objects', None)
-        ra_unit = kwargs.get('ra_unit', None)
-        dec_objects = kwargs.get('dec_objects', None)
-        dec_unit = kwargs.get('dec_unit', None)
+        #   Check for right ascension, declination, units, and object names
+        ra_objects: (None | list[str]) = kwargs.get('ra_objects', None)
+        ra_unit: (None | str) = kwargs.get('ra_unit', None)
+        dec_objects: (None | list[str]) = kwargs.get('dec_objects', None)
+        dec_unit: (None | str) = kwargs.get('dec_unit', None)
+        object_names: (None | list[str]) = kwargs.get('object_names', None)
+
+        #   Object of interests
+        self.objects_of_interest = []
+
+        if all([ra_objects, dec_objects, ra_unit, dec_unit, object_names]):
+            len_names = len(object_names)
+            if len_names == len(ra_objects) and len_names == len(ra_objects):
+                for name, ra, dec in zip(object_names, ra_objects, ra_objects):
+                    self.objects_of_interest.append(
+                        self.ObjectOfInterest(
+                            ra,
+                            dec,
+                            ra_unit,
+                            dec_unit,
+                            name,
+                        )
+                    )
+        elif object_names is not None:
+            for name in object_names:
+                sky_coordinates = SkyCoord.from_name(name)
+                self.objects_of_interest.append(
+                    self.ObjectOfInterest(
+                        sky_coordinates.ra.degree,
+                        sky_coordinates.dec.degree,
+                        u.degree,
+                        u.degree,
+                        name,
+                    )
+                )
+
+        #   TODO: If the object objects are implemented, the following code
+        #         will be removed
+        #######################################################################
         if ra_objects is not None:
             if ra_unit is not None:
                 self.ra_objects = Angle(ra_objects, unit=ra_unit).degree
@@ -110,11 +143,9 @@ class ImageContainer:
         else:
             self.dec_objects = None
 
-        #   Check for object names
-        self.object_names = kwargs.get('object_names', None)
-
         #   Create SkyCoord object
         #   TODO: Fix that coordinates_objects is once a list and once a SkyCoord object
+        self.object_names = object_names
         if self.object_names is not None and self.ra_objects is None and self.dec_objects is None:
             self.coordinates_objects = []
             for object_name in self.object_names:
@@ -128,11 +159,7 @@ class ImageContainer:
             )
         else:
             self.coordinates_objects = None
-
-        #   TODO: Remove
-        #   Check if uncertainty should be calculated by means of the
-        #   "uncertainties" package. Default is ``True``.
-        self.unc = kwargs.get('unc', True)
+        #######################################################################
 
     #   Get ePSF objects of all images
     def get_epsf(self):
@@ -189,7 +216,116 @@ class ImageContainer:
 
         return ensembles
 
+    class ObjectOfInterest:
+        def __init__(self, ra, dec, ra_unit, dec_unit, name):
+            #   Set right ascension
+            self.ra = ra
 
+            #   Set declination
+            self.dec = dec
+
+            #   Set right ascension unit
+            self.ra_unit = ra_unit
+
+            #   Set declination unit
+            self.dec_unit = dec_unit
+
+            #   Set object_name
+            self.name = name
+
+            #   Set sky coordinates object
+            self.coordinates_objects = SkyCoord(
+                ra=ra,
+                dec=dec,
+                unit=(ra_unit, dec_unit),
+                frame="icrs"
+            )
+
+            #   ID of object in the image series
+            #   Syntax: {'filter': 'id'}
+            self.id_in_image_series = {}
+
+    #   Get the IDs of the objects of interest within the detected objects on
+    #   the images
+    def get_ids_object_of_interest(
+            self, filter_=None, reference_ensemble_id=None):
+        if filter_ is None and reference_ensemble_id is None:
+            terminal_output.print_to_terminal(
+                "Neither a filter nor an image series ID was provided to "
+                "compile the IDs for the objects of interest.The image series ID "
+                "is assumed to be 0.",
+                style_name='WARNING',
+            )
+            reference_ensemble_id = 0
+
+        object_of_interest_ids = []
+        for object_ in self.objects_of_interest:
+            ids_object_of_interest = object_.id_in_image_series
+            if ids_object_of_interest:
+                if filter_ is not None:
+                    object_of_interest_ids.append(
+                        ids_object_of_interest[filter_]
+                    )
+                else:
+                    #   TODO: This is dirty... :( Can you fix it?
+                    object_of_interest_ids.append(
+                        ids_object_of_interest[
+                            list(
+                                ids_object_of_interest.keys()
+                            )[reference_ensemble_id]
+                        ]
+                    )
+
+        return object_of_interest_ids
+
+    #   Get the names of the objects of interest.
+    def get_object_of_interest_names(self):
+        name_list = []
+
+        for object_ in self.objects_of_interest:
+            name_list.append(object_.name)
+
+        return name_list
+
+    #   Get object right ascensions
+    def get_object_ras(self):
+        ra_list = []
+
+        for object_ in self.objects_of_interest:
+            ra_list.append(object_.ra)
+
+        return ra_list
+
+    #   Get object declinations
+    def get_object_decs(self):
+        dec_list = []
+
+        for object_ in self.objects_of_interest:
+            dec_list.append(object_.dec)
+
+        return dec_list
+
+    #   Get ra unit
+    def get_ra_unit(self):
+        #   TODO: Check if None or u.degree is better
+        ra_unit = None
+
+        if self.objects_of_interest:
+            ra_unit = self.objects_of_interest[0].ra_unit
+
+        return ra_unit
+
+    #   Get dec unit
+    def get_dec_unit(self):
+        dec_unit = None
+
+        if self.objects_of_interest:
+            dec_unit = self.objects_of_interest[0].ra_unit
+
+        return dec_unit
+
+
+#   TODO: Rename to image series!!!!!!!!!
 class ImageEnsemble:
     """
         Image ensemble class: Used to handle multiple images, e.g.,
@@ -248,6 +384,7 @@ class ImageEnsemble:
         #   Set path to output directory
         self.outpath = Path(output_dir)
 
+        #   TODO: rm parameter?
         #   Set object name
         self.object_name = object_names
 
@@ -308,6 +445,7 @@ class ImageEnsemble:
             #   Set filter
             self.filt = filter_
 
+            #   TODO: rm parameter?
             #   Set object name
             self.object_name = object_names
 
@@ -2283,7 +2421,6 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
 
 
 #   TODO: Move to correlation
-#   TODO: Generalize for multiple variable objects
 def correlate_preserve_variable(
         image_ensemble, ra_object, dec_object, ra_unit=u.hourangle, dec_unit=u.deg,
         max_pixel_between_objects=3., own_correlation_option=1,

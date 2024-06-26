@@ -391,6 +391,7 @@ def mk_time_series(observation_times, magnitudes, filter_, object_id):
     errs_obj = magnitudes[filter_]['errors'][:, object_id]
 
     #   Make time series and use reshape to get a justified array
+    #   TODO: Check if the reshape below is necessary
     ts = TimeSeries(
         time=observation_times,
         data={

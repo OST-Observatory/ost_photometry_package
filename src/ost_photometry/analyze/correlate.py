@@ -671,7 +671,7 @@ def correlation_astropy(
         index_array = np.delete(index_array, rejected_object_ids, 1)
 
         #   Calculate new reference object position
-        #   TODO: Check if this needs to be adjusted to account for multiple reference objects
+        #   TODO: Check if this needs to be adjusted to account for multiple reference objects -> Done?
         if not isinstance(reference_obj_ids, np.ndarray):
             reference_obj_ids = np.array(reference_obj_ids)
         for index, reference_obj_id in np.ndenumerate(reference_obj_ids):
@@ -726,9 +726,6 @@ def correlation_astropy(
             id_reference_obj_in_rejected_objects = np.argwhere(
                 id_difference == 0.
             )[:,0]
-            # id_reference_obj_in_rejected_objects = np.argwhere(
-            #     rejected_object_ids == reference_obj_ids
-            # )
             rejected_object_ids = np.delete(
                 rejected_object_ids,
                 id_reference_obj_in_rejected_objects
