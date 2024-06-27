@@ -40,7 +40,7 @@ from astropy.time import Time
 from astropy.nddata import NDData
 from astropy.stats import (gaussian_sigma_to_fwhm, sigma_clipped_stats)
 from astropy.modeling.fitting import LevMarLSQFitter
-from astropy.coordinates import SkyCoord, Angle
+from astropy.coordinates import SkyCoord, Angle, name_resolve
 import astropy.units as u
 
 #   hips2fits module is not in the Ubuntu 22.04 package version
@@ -75,6 +75,7 @@ warnings.filterwarnings('ignore', category=UserWarning, append=True)
 ############################################################################
 
 
+#   TODO: Rename to observation?!
 class ImageContainer:
     """
         Container class for image class objects
@@ -89,20 +90,28 @@ class ImageContainer:
         #   Add additional keywords
         self.__dict__.update(kwargs)
 
-        #   Check for right ascension, declination, units, and object names
-        ra_objects: (None | list[str]) = kwargs.get('ra_objects', None)
-        ra_unit: (None | str) = kwargs.get('ra_unit', None)
-        dec_objects: (None | list[str]) = kwargs.get('dec_objects', None)
-        dec_unit: (None | str) = kwargs.get('dec_unit', None)
-        object_names: (None | list[str]) = kwargs.get('object_names', None)
+        #   Check for right ascension, declination, units, object names,
+        #   periods, and transit times
+        ra_objects: (list[str] | None) = kwargs.get('ra_objects', None)
+        ra_unit: (str | None) = kwargs.get('ra_unit', None)
+        dec_objects: (list[str] | None)  = kwargs.get('dec_objects', None)
+        dec_unit: (str | None) = kwargs.get('dec_unit', None)
+        object_names: (list[str] | None)  = kwargs.get('object_names', None)
+        periods: (list[str] | None) = kwargs.get('periods', None)
+        transit_times: (list[str] | None) = kwargs.get('transit_times', None)
 
-        #   Object of interests
+        add_periods = False
+        if all([periods, transit_times]):
+            add_periods = True
+
+        #   Setup object of interests
         self.objects_of_interest = []
 
+        #   Case 1: All base parameters are provided
         if all([ra_objects, dec_objects, ra_unit, dec_unit, object_names]):
             len_names = len(object_names)
             if len_names == len(ra_objects) and len_names == len(ra_objects):
-                for name, ra, dec in zip(object_names, ra_objects, ra_objects):
+                for i, (name, ra, dec) in enumerate(zip(object_names, ra_objects, ra_objects)):
                     self.objects_of_interest.append(
                         self.ObjectOfInterest(
                             ra,
@@ -112,18 +121,52 @@ class ImageContainer:
                             name,
                         )
                     )
+                    if add_periods:
+                        self.objects_of_interest[i].period = periods[i]
+                        self.objects_of_interest[i].transit_time = transit_times[i]
+        #   Case 2: Only the object name is provided
         elif object_names is not None:
-            for name in object_names:
-                sky_coordinates = SkyCoord.from_name(name)
-                self.objects_of_interest.append(
-                    self.ObjectOfInterest(
-                        sky_coordinates.ra.degree,
-                        sky_coordinates.dec.degree,
-                        u.degree,
-                        u.degree,
-                        name,
+            for i, name in enumerate(object_names):
+                #   Case 2a: Object can be resolved
+                try:
+                    sky_coordinates = SkyCoord.from_name(name)
+                    self.objects_of_interest.append(
+                        self.ObjectOfInterest(
+                            sky_coordinates.ra.degree,
+                            sky_coordinates.dec.degree,
+                            u.degree,
+                            u.degree,
+                            name,
+                        )
                     )
-                )
+                #   Case 2b: Object cannot be resolved
+                except name_resolve.NameResolveError:
+                    self.objects_of_interest.append(
+                        self.ObjectOfInterest(
+                            None,
+                            None,
+                            None,
+                            None,
+                            name,
+                        )
+                    )
+
+                if add_periods:
+                    self.objects_of_interest[i].period = periods[i]
+                    self.objects_of_interest[i].transit_time = transit_times[i]
+
+        #   Sky coordinates for all objects of interest
+        n_objects = len(object_names)
+        coordinates_properties = [ra_objects, dec_objects, ra_unit, dec_unit]
+        if all(len(x) == n_objects for x in coordinates_properties) and all(coordinates_properties):
+            self.objects_of_interest_coordinates = SkyCoord(
+                ra_objects,
+                dec_objects,
+                unit=(ra_unit, dec_unit),
+                frame="icrs",
+            )
+        else:
+            self.objects_of_interest_coordinates = None
 
         #   TODO: If the object objects are implemented, the following code
         #         will be removed
@@ -244,6 +287,10 @@ class ImageContainer:
             #   ID of object in the image series
             #   Syntax: {'filter': 'id'}
             self.id_in_image_series = {}
+
+            #   Set defaults for period and transit time
+            self.transit_time = None
+            self.period = None
 
     #   Get the IDs of the objects of interest within the detected objects on
     #   the images
@@ -2002,7 +2049,6 @@ def correlate_ensembles(
         reference_ensemble_id=0, n_allowed_non_detections_object=1,
         expected_bad_image_fraction=1.0, protect_reference_obj=True,
         correlation_method='astropy', separation_limit=2. * u.arcsec,
-        ra_object=None, dec_object=None, ra_unit=u.deg, dec_unit=u.deg,
         force_correlation_calibration_objects=False, reference_image_id=0,
         verbose=False, indent=1):
     """
@@ -2059,22 +2105,6 @@ def correlate_ensembles(
     separation_limit                        : `astropy.units`, optional
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
-
-    ra_object                               : `string` or `list` of `string`, optional
-        Right ascension of the object
-        Default is ``None``
-
-    dec_object                              : `string` or `list` of `string`, optional
-        Declination of the object
-        Default is ``None``
-
-    ra_unit                                 : `astropy.unit`, optional
-        Right ascension unit
-        Default is ``u.deg``.
-
-    dec_unit                                : `astropy.unit`, optional
-        Declination unit
-        Default is ``u.deg``.
 
     force_correlation_calibration_objects   : `boolean`, optional
         If ``True`` the correlation between the already correlated
@@ -2161,42 +2191,29 @@ def correlate_ensembles(
         for image in ensemble.image_list:
             image.photometry = image.photometry[correlation_index[j, :]]
 
-    #   Re-identify position of the variable stars
-    if ra_object is not None and dec_object is not None:
+    #   Re-identify position of objects of interest
+    objects_of_interest = image_container.objects_of_interest
+    if objects_of_interest:
         terminal_output.print_to_terminal(
-            "Identify the variable star",
+            "Identify objects of interest",
         )
-        #   TODO: Convert ra_object and dec_object to lists -> allow multiple objects
+
         #   TODO: Check if this is necessary
-        #   TODO: Put this in a function
-        object_ids = None
-        for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
-            if id_ensemble == reference_ensemble_id:
-                object_ids, count, _, _ = correlate.identify_star_in_dataset(
-                    ensemble.image_list[reference_image_id].photometry['x_fit'],
-                    ensemble.image_list[reference_image_id].photometry['y_fit'],
-                    ra_object,
-                    dec_object,
-                    ensemble.wcs,
-                    separation_limit=separation_limit,
-                    max_pixel_between_objects=max_pixel_between_objects,
-                    own_correlation_option=own_correlation_option,
-                    verbose=verbose,
-                    ra_unit=ra_unit,
-                    dec_unit=dec_unit,
-                )
-
-                #   Check if variable star was detected
-                if count == 0:
-                    raise RuntimeError(
-                        f"{style.Bcolors.FAIL} \tERROR: The variable "
-                        "star was not detected in the reference image.\n"
-                        f"\t-> EXIT {style.Bcolors.ENDC}"
-                    )
-
-        #   Set new object ID
-        for ensemble in ensemble_dict.values():
-            ensemble.variable_id = object_ids
+        #   TODO: Remove loop -> replace with ensemble_dict[filter_list[reference_ensemble_id]]
+        # for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
+        #     if id_ensemble == reference_ensemble_id:
+        ensemble = ensemble_dict[filter_list[reference_ensemble_id]]
+        correlate.identify_star_in_dataset(
+            ensemble.image_list[reference_image_id].photometry['x_fit'],
+            ensemble.image_list[reference_image_id].photometry['y_fit'],
+            objects_of_interest,
+            filter_list[reference_ensemble_id],
+            ensemble.wcs,
+            separation_limit=separation_limit,
+            max_pixel_between_objects=max_pixel_between_objects,
+            own_correlation_option=own_correlation_option,
+            verbose=verbose,
+        )
 
     #   Check if correlation with calibration data is necessary
     calibration_parameters = getattr(image_container, 'CalibParameters', None)
@@ -2230,7 +2247,6 @@ def correlate_ensembles(
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             reference_image_id=reference_image_id,
-            # id_object=list(ensemble_dict.values())[reference_ensemble_id].variable_id,
             indent=indent,
         )
 
@@ -2422,36 +2438,23 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
 
 #   TODO: Move to correlation
 def correlate_preserve_variable(
-        image_ensemble, ra_object, dec_object, ra_unit=u.hourangle, dec_unit=u.deg,
-        max_pixel_between_objects=3., own_correlation_option=1,
-        cross_identification_limit=1, reference_image_id=0,
-        n_allowed_non_detections_object=1, expected_bad_image_fraction=1.0,
-        protect_reference_obj=True, correlation_method='astropy',
-        separation_limit=2. * u.arcsec, verbose=False,
-        plot_reference_only=True):
+        image_container, filter_, max_pixel_between_objects=3.,
+        own_correlation_option=1, cross_identification_limit=1,
+        reference_image_id=0, n_allowed_non_detections_object=1,
+        expected_bad_image_fraction=1.0, protect_reference_obj=True,
+        correlation_method='astropy', separation_limit=2. * u.arcsec,
+        verbose=False, plot_reference_only=True):
     """
         Correlate results from all images, while preserving the variable
         star
 
         Parameters
         ----------
-        image_ensemble                  : `image.ensemble` object
-            Ensemble class object with all image data taken in a specific
-            filter
+        image_container                 : `image.container` object
+            Container object with image series and object of interest properties
 
-        ra_object                       : `string` or `list` of `string`
-            Right ascension of the object
-
-        dec_object                      : `string` or `list` of `string`
-            Declination of the object
-
-        ra_unit                         : `astropy.units`, optional
-            Right ascension unit
-            Default is ``u.hourangle``.
-
-        dec_unit                        : `astropy.units`, optional
-            Declination unit
-            Default is ``u.deg``.
+        filter_                         : `string`
+            Filter
 
         max_pixel_between_objects       : `float`, optional
             Maximal distance between two objects in Pixel
@@ -2505,46 +2508,50 @@ def correlate_preserve_variable(
             be created.
             Default is ``True``.
     """
-    ###
+    #   Get image series
+    image_series = image_container.ensembles[filter_]
+
+    #   Get object of interests
+    objects_of_interest = image_container.objects_of_interest
+
     #   Find position of the variable star I
-    #
     terminal_output.print_to_terminal(
         "Identify the variable star",
         indent=1,
     )
 
-    variable_id, n_detections, _, _ = correlate.identify_star_in_dataset(
-        image_ensemble.image_list[reference_image_id].photometry['x_fit'],
-        image_ensemble.image_list[reference_image_id].photometry['y_fit'],
-        ra_object,
-        dec_object,
-        image_ensemble.wcs,
+    # object_of_interest_ids, n_detections, _, _ =
+    correlate.identify_star_in_dataset(
+        image_series.image_list[reference_image_id].photometry['x_fit'],
+        image_series.image_list[reference_image_id].photometry['y_fit'],
+        objects_of_interest,
+        filter_,
+        image_series.wcs,
         separation_limit=separation_limit,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         verbose=verbose,
-        ra_unit=ra_unit,
-        dec_unit=dec_unit,
     )
 
     ###
     #   Check if variable star was detected I
     #
-    if n_detections == 0:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \tERROR: The variable object was not "
-            f"detected in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
-        )
+    # if n_detections == 0:
+    #     raise RuntimeError(
+    #         f"{style.Bcolors.FAIL} \tERROR: The variable object was not "
+    #         f"detected in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
+    #     )
 
-    ###
+    #   Get object of interests ID list
+    object_of_interest_ids = image_container.get_ids_object_of_interest(filter_=filter_)
+
     #   Correlate the stellar positions from the different filter
-    #
     correlate_ensemble_images(
-        image_ensemble,
+        image_series,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         cross_identification_limit=cross_identification_limit,
-        reference_obj_ids=variable_id,
+        reference_obj_ids=object_of_interest_ids,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         expected_bad_image_fraction=expected_bad_image_fraction,
         protect_reference_obj=protect_reference_obj,
@@ -2552,49 +2559,51 @@ def correlate_preserve_variable(
         separation_limit=separation_limit,
     )
 
-    ###
     #   Find position of the variable star II
-    #
     terminal_output.print_to_terminal(
         "Re-identify the variable star",
         indent=1,
     )
 
-    variable_id, n_detections, x_position_obj, y_position_obj = correlate.identify_star_in_dataset(
-        image_ensemble.image_list[reference_image_id].photometry['x_fit'],
-        image_ensemble.image_list[reference_image_id].photometry['y_fit'],
-        ra_object,
-        dec_object,
-        image_ensemble.wcs,
+    # object_of_interest_ids, n_detections =
+    correlate.identify_star_in_dataset(
+        image_series.image_list[reference_image_id].photometry['x_fit'],
+        image_series.image_list[reference_image_id].photometry['y_fit'],
+        objects_of_interest,
+        filter_,
+        image_series.wcs,
         separation_limit=separation_limit,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         verbose=verbose,
-        ra_unit=ra_unit,
-        dec_unit=dec_unit,
     )
 
-    ###
-    #   Check if variable star was detected II
-    #
-    if n_detections == 0:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \tERROR: The variable was not detected "
-            f"in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
-        )
+    #   Convert ra & dec to pixel coordinates
+    coordinates_objects_of_interest = image_container.objects_of_interest_coordinates
+    x_position_object, y_position_object = image_series.wcs.all_world2pix(
+        coordinates_objects_of_interest.ra,
+        coordinates_objects_of_interest.dec,
+        0,
+    )
+
+    # ###
+    # #   Check if variable star was detected II
+    # #
+    # if n_detections == 0:
+    #     raise RuntimeError(
+    #         f"{style.Bcolors.FAIL} \tERROR: The variable was not detected "
+    #         f"in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
+    #     )
 
     ###
     #   Plot image with the final positions overlaid (final version)
     #
     utilities.prepare_and_plot_starmap_from_image_ensemble(
-        image_ensemble,
-        [x_position_obj],
-        [y_position_obj],
+        image_series,
+        [x_position_object],
+        [y_position_object],
         plot_reference_only=plot_reference_only,
     )
-
-    #   Add ID of the variable star to the image ensemble
-    image_ensemble.variable_id = variable_id
 
 
 def extract_multiprocessing(image_ensemble, n_cores_multiprocessing,
@@ -3444,9 +3453,8 @@ def extract_flux(image_container, filter_list, name_objects, image_paths,
 
 
 def extract_flux_multi(
-        image_container, filter_list, name_objects, image_paths, output_dir,
-        sigma_object_psf, ra_object, dec_object, ra_unit=u.hourangle,
-        dec_unit=u.deg, n_cores_multiprocessing=6, wcs_method='astrometry',
+        image_container, filter_list, image_paths, output_dir,
+        sigma_object_psf, n_cores_multiprocessing=6, wcs_method='astrometry',
         force_wcs_determ=False, sigma_value_background_clipping=5.,
         multiplier_background_rms=5., size_epsf_region=25,
         fraction_epsf_stars=0.2, oversampling_factor_epsf=2,
@@ -3474,9 +3482,6 @@ def extract_flux_multi(
         filter_list                     : `list` of `string`
             Filter list
 
-        name_objects                    : `list` of `string`
-            Name of the object
-
         image_paths                     : `dictionary`
             Paths to images: key - filter name; value - path
 
@@ -3485,20 +3490,6 @@ def extract_flux_multi(
 
         sigma_object_psf                : `dictionary`
             Sigma of the objects PSF, assuming it is a Gaussian
-
-        ra_object                          : `string` or `list` of `string`
-            Right ascension of the object
-
-        dec_object                         : `string` or `list` of `string`
-            Declination of the object
-
-        ra_unit                         : `astropy.units`, optional
-            Right ascension unit
-            Default is ``u.hourangle``.
-
-        dec_unit                        : `astropy.units`, optional
-            Declination unit
-            Default is ``u.deg``.
 
         n_cores_multiprocessing         : `integer`, optional
             Number of cores to use for multicore processing
@@ -3665,7 +3656,7 @@ def extract_flux_multi(
         #   Initialize image ensemble object
         image_container.ensembles[filter_] = ImageEnsemble(
             filter_,
-            name_objects,
+            image_container.get_object_of_interest_names(),
             image_paths[filter_],
             output_dir,
             reference_image_id=reference_image_id,
@@ -3717,11 +3708,8 @@ def extract_flux_multi(
         #   the variable star
         #
         correlate_preserve_variable(
-            image_container.ensembles[filter_],
-            ra_object,
-            dec_object,
-            ra_unit=ra_unit,
-            dec_unit=dec_unit,
+            image_container,
+            filter_,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             cross_identification_limit=cross_identification_limit,
@@ -3985,9 +3973,8 @@ def correlate_calibrate(
 
 
 def calibrate_data_mk_light_curve(
-        image_container, filter_list, ra_object, dec_object, object_names,
-        output_dir, transit_times, periods, ra_unit=u.hourangle,
-        dec_unit=u.deg, valid_filter_combinations=None, binning_factor=None,
+        image_container, filter_list,
+        output_dir, valid_filter_combinations=None, binning_factor=None,
         transformation_coefficients_dict=None,
         derive_transformation_coefficients=False, reference_image_id=0,
         calibration_method='APASS', vizier_dict=None,
@@ -4150,12 +4137,17 @@ def calibrate_data_mk_light_curve(
         correlate_with_observed_objects = False
 
     #   Make coordinates object for variable star
-    coordinates_variable_objects = SkyCoord(
-        ra_object,
-        dec_object,
-        unit=(ra_unit, dec_unit),
-        frame="icrs",
-    )
+    coordinates_objects_of_interest = image_container.objects_of_interest_coordinates
+    if coordinates_objects_of_interest is None:
+        raise RuntimeError(
+            f"SkyCoord object for objects of interest does not exit."
+        )
+    # coordinates_objects_of_interest = SkyCoord(
+    #     ra_object,
+    #     dec_object,
+    #     unit=(ra_unit, dec_unit),
+    #     frame="icrs",
+    # )
 
     #   Load calibration information
     calib.derive_calibration(
@@ -4172,7 +4164,7 @@ def calibrate_data_mk_light_curve(
         region_to_select_calibration_stars=region_to_select_calibration_stars,
         correlate_with_observed_objects=correlate_with_observed_objects,
         reference_image_id=reference_image_id,
-        coordinates_obj_to_rm=coordinates_variable_objects,
+        coordinates_obj_to_rm=coordinates_objects_of_interest,
     )
     calibration_filters = image_container.CalibParameters.column_names
     terminal_output.print_to_terminal('')
@@ -4199,12 +4191,8 @@ def calibrate_data_mk_light_curve(
             protect_reference_obj=protect_reference_obj,
             correlation_method=correlation_method,
             separation_limit=separation_limit,
-            ra_object=ra_object,
-            dec_object=dec_object,
             verbose=verbose,
             reference_image_id=reference_image_id,
-            ra_unit=ra_unit,
-            dec_unit=dec_unit,
         )
 
     #   Names of variable objects
@@ -4253,19 +4241,18 @@ def calibrate_data_mk_light_curve(
                 format='jd',
             )
 
-            #   IDs of variable objects
-            variable_object_ids = image_container.ensembles[filter_].variable_id
+            for object_ in image_container.objects_of_interest:
+                object_name = object_.name
+                id_object = object_.id_in_image_series
+                transit_time = object_.transit_time
+                period = object_.period
 
-            #   TODO: Add fix for the case that not all variable stars where detected
-
-            for variable_id, object_name, transit_time, period in \
-                    zip(variable_object_ids, object_names, transit_times, periods):
                 #   Create a time series object
                 time_series = utilities.mk_time_series(
                     observation_times,
                     calibrated_magnitudes,
                     filter_,
-                    variable_id,
+                    id_object,
                 )
 
                 #   Write time series
@@ -4372,17 +4359,18 @@ def calibrate_data_mk_light_curve(
                 format='jd',
             )
 
-            #   IDs of variable objects
-            variable_object_ids = image_container.ensembles[filter_].variable_id
+            for object_ in image_container.objects_of_interest:
+                object_name = object_.name
+                id_object = object_.id_in_image_series
+                transit_time = object_.transit_time
+                period = object_.period
 
-            for variable_id, object_name, transit_time, period in \
-                    zip(variable_object_ids, object_names, transit_times, periods):
                 #   Create a time series object
                 time_series = utilities.mk_time_series(
                     observation_times,
                     plot_quantity,
                     filter_,
-                    variable_id,
+                    id_object,
                 )
 
                 #   Write time series

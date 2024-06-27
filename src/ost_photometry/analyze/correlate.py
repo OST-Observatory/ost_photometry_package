@@ -15,10 +15,132 @@ import astropy.units as u
 ############################################################################
 
 
+# def determine_pixel_coordinates_obj_astropy(
+#         x_pixel_position_dataset, y_pixel_position_dataset, ra_objects,
+#         dec_objects, wcs, ra_unit=u.hourangle, dec_unit=u.deg,
+#         separation_limit=2. * u.arcsec):
+#     """
+#         Find the image coordinates of a star based on the stellar
+#         coordinates and the WCS of the image, using astropy matching
+#         algorithms.
+#
+#         Parameters
+#         ----------
+#         x_pixel_position_dataset    : `numpy.ndarray`
+#             Positions of the objects in Pixel in X direction
+#
+#         y_pixel_position_dataset    : `numpy.ndarray`
+#             Positions of the objects in Pixel in Y direction
+#
+#         ra_objects                  : `string` or `list` of `string`
+#             Right ascension of the object
+#
+#         dec_objects                 : `string` or `list` of `string`
+#             Declination of the object
+#
+#         wcs                         : `astropy.wcs.WCS`
+#             WCS info
+#
+#         ra_unit                     : `astropy.units`, optional
+#             Right ascension unit
+#             Default is ``u.hourangle``.
+#
+#         dec_unit                    : `astropy.units`, optional
+#             Declination unit
+#             Default is ``u.deg``.
+#
+#         separation_limit            : `astropy.units`, optional
+#             Allowed separation between objects.
+#             Default is ``2.*u.arcsec``.
+#
+#         Returns
+#         -------
+#         index_object                : `numpy.ndarray`
+#             Index positions of matched objects in the images. Is -1 is no
+#             objects were found.
+#
+#         count                       : `integer`
+#             Number of times the object has been identified on the image
+#
+#         obj_pixel_position_x        : `float`
+#             X coordinates of the objects in pixel
+#
+#         obj_pixel_position_y        : `float`
+#             Y coordinates of the objects in pixel
+#     """
+#     #   Make coordinates object
+#     #   TODO: Check - Replace with SkyCoord from ImageContainer object?
+#     coordinates_objects = SkyCoord(
+#         ra_objects,
+#         dec_objects,
+#         unit=(ra_unit, dec_unit),
+#         frame="icrs",
+#     )
+#
+#     #   Convert ra & dec to pixel coordinates
+#     obj_pixel_position_x, obj_pixel_position_y = wcs.all_world2pix(
+#         coordinates_objects.ra,
+#         coordinates_objects.dec,
+#         0,
+#     )
+#
+#     #   Create SkyCoord object for dataset
+#     coordinates_dataset = SkyCoord.from_pixel(
+#         x_pixel_position_dataset,
+#         y_pixel_position_dataset,
+#         wcs,
+#     )
+#
+#     #   Find matches in the dataset
+#     index_object_list = []
+#     for coordinate_object in coordinates_objects:
+#         separation = coordinates_dataset.separation(coordinate_object)
+#         mask = separation < separation_limit
+#         object_id = np.argwhere(mask).ravel()
+#
+#         if len(object_id) > 1:
+#             #   Note: with an 'object of interest' object a better error
+#             #   message would be feasible
+#             terminal_output.print_to_terminal(
+#                 f"More than one object detected within the separation limit to "
+#                 f"the object of interest at the following coordinates "
+#                 f"{coordinate_object.ra} {coordinate_object.dec}. Use the "
+#                 f"object that is the closest.",
+#                 style_name='WARNING',
+#             )
+#             object_id = np.argmin(separation)
+#         if not object_id:
+#             terminal_output.print_to_terminal(
+#                 f"No object detected within the separation limit to "
+#                 f"the object of interest at the following coordinates "
+#                 f"{coordinate_object.ra} {coordinate_object.dec}. Set object "
+#                 f"ID to None",
+#                 style_name='WARNING',
+#             )
+#             object_id = None
+#
+#         index_object_list.append(object_id)
+#
+#     #   TODO: This does not work as intended
+#     # if isinstance(ra_objects, list):
+#     #     mask = np.zeros(len(coordinates_dataset), dtype=bool)
+#     #     for coordinate_object in coordinates_objects:
+#     #         separation = coordinates_dataset.separation(coordinate_object)
+#     #
+#     #         #   Calculate mask of all object closer than ``radius``
+#     #         mask = mask | (separation < separation_limit)
+#     # #   TODO: Check if this else is necessary
+#     # else:
+#     #     mask = coordinates_dataset.separation(coordinates_objects) < separation_limit
+#     #
+#     # index_object = np.argwhere(mask).ravel()
+#
+#     return index_object_list, len(index_object_list), obj_pixel_position_x, obj_pixel_position_y
+
+
 def determine_pixel_coordinates_obj_astropy(
-        x_pixel_position_dataset, y_pixel_position_dataset, ra_objects,
-        dec_objects, wcs, ra_unit=u.hourangle, dec_unit=u.deg,
-        separation_limit=2. * u.arcsec):
+        x_pixel_position_dataset, y_pixel_position_dataset,
+        objects_of_interest, filter_, wcs, separation_limit=2. * u.arcsec):
     """
         Find the image coordinates of a star based on the stellar
         coordinates and the WCS of the image, using astropy matching
@@ -32,57 +154,20 @@ def determine_pixel_coordinates_obj_astropy(
         y_pixel_position_dataset    : `numpy.ndarray`
             Positions of the objects in Pixel in Y direction
 
-        ra_objects                  : `string` or `list` of `string`
-            Right ascension of the object
+        objects_of_interest         : `image_container.objects_of_interest`
+            Object with 'object of interest' properties
 
-        dec_objects                 : `string` or `list` of `string`
-            Declination of the object
+        filter_                     : `string`
+            Filter identifier
 
         wcs                         : `astropy.wcs.WCS`
             WCS info
 
-        ra_unit                     : `astropy.units`, optional
-            Right ascension unit
-            Default is ``u.hourangle``.
-
-        dec_unit                    : `astropy.units`, optional
-            Declination unit
-            Default is ``u.deg``.
 
         separation_limit            : `astropy.units`, optional
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
-
-        Returns
-        -------
-        index_object                : `numpy.ndarray`
-            Index positions of matched objects in the images. Is -1 is no
-            objects were found.
-
-        count                       : `integer`
-            Number of times the object has been identified on the image
-
-        obj_pixel_position_x        : `float`
-            X coordinates of the objects in pixel
-
-        obj_pixel_position_y        : `float`
-            Y coordinates of the objects in pixel
     """
-    #   Make coordinates object
-    coordinates_objects = SkyCoord(
-        ra_objects,
-        dec_objects,
-        unit=(ra_unit, dec_unit),
-        frame="icrs",
-    )
-
-    #   Convert ra & dec to pixel coordinates
-    obj_pixel_position_x, obj_pixel_position_y = wcs.all_world2pix(
-        coordinates_objects.ra,
-        coordinates_objects.dec,
-        0,
-    )
-
     #   Create SkyCoord object for dataset
     coordinates_dataset = SkyCoord.from_pixel(
         x_pixel_position_dataset,
@@ -90,30 +175,39 @@ def determine_pixel_coordinates_obj_astropy(
         wcs,
     )
 
-    #   Find matches in the dataset
-    #   TODO: Check - This seems to fail if more than
-    #    one object is within the separation limit.
-    if isinstance(ra_objects, list):
-        mask = np.zeros(len(coordinates_dataset), dtype=bool)
-        for coordinate_object in coordinates_objects:
-            separation = coordinates_dataset.separation(coordinate_object)
+    for object_ in objects_of_interest:
+        coordinates_object = object_.coordinates_objects
 
-            #   Calculate mask of all object closer than ``radius``
-            mask = mask | (separation < separation_limit)
-    #   TODO: Check if this else is necessary
-    else:
-        mask = coordinates_dataset.separation(coordinates_objects) < separation_limit
+        #   Find matches in the dataset
+        separation = coordinates_dataset.separation(coordinates_object)
+        mask = separation < separation_limit
+        object_id = np.argwhere(mask).ravel()
 
-    index_object = np.argwhere(mask).ravel()
+        if len(object_id) > 1:
+            #   message would be feasible
+            terminal_output.print_to_terminal(
+                f"More than one object detected within the separation limit to "
+                f"{object_.name}. Use the object that is the closest.",
+                style_name='WARNING',
+            )
+            object_id = np.argmin(separation)
 
-    return index_object, len(index_object), obj_pixel_position_x, obj_pixel_position_y
+        if not object_id:
+            terminal_output.print_to_terminal(
+                f"No object detected within the separation limit to "
+                f"{object_.name}. Set object ID to None",
+                style_name='WARNING',
+            )
+            object_id = None
+
+        #   Add ID to object of interest
+        object_.id_in_image_series[filter_] = object_id
 
 
 def determine_pixel_coordinates_obj_srcor(
-        x_pixel_position_dataset, y_pixel_position_dataset, ra_object,
-        dec_object, wcs, max_pixel_between_objects=3,
-        own_correlation_option=1, ra_unit=u.hourangle, dec_unit=u.deg,
-        verbose=False):
+        x_pixel_position_dataset, y_pixel_position_dataset,
+        objects_of_interest, filter_, wcs, max_pixel_between_objects=3,
+        own_correlation_option=1, verbose=False):
     """
         Find the image coordinates of a star based on the stellar
         coordinates and the WCS of the image
@@ -126,11 +220,11 @@ def determine_pixel_coordinates_obj_srcor(
         y_pixel_position_dataset    : `numpy.ndarray`
             Positions of the objects in Pixel in Y direction
 
-        ra_object                      : `string` or `list` of `string`
-            Right ascension of the object
+        objects_of_interest         : `image_container.objects_of_interest`
+            Object with 'object of interest' properties
 
-        dec_object                     : `string`or `list` of `string`
-            Declination of the object
+        filter_                     : `string`
+            Filter identifier
 
         wcs                         : `astropy.wcs.WCS`
             WCS info
@@ -143,76 +237,71 @@ def determine_pixel_coordinates_obj_srcor(
             Option for the srcor correlation function
             Default is ``1``.
 
-        ra_unit                     : `astropy.units`, optional
-            Right ascension unit
-            Default is ``u.hourangle``.
-
-        dec_unit                    : `astropy.units`, optional
-            Declination unit
-            Default is ``u.deg``.
-
         verbose                     : `boolean`, optional
             If True additional output will be printed to the command line.
             Default is ``False``.
-
-        Returns
-        -------
-        index_obj            : `numpy.ndarray`
-            Index positions of matched objects in the images. Is -1 is no
-            objects were found.
-
-        count           : `integer`
-            Number of times the object has been identified on the image
-
-        obj_pixel_position_x           : `float`
-            X coordinates of the objects in pixel
-
-        obj_pixel_position_x
-            Y coordinates of the objects in pixel
     """
-    #   Make coordinates object
-    coordinates_obj = SkyCoord(
-        ra_object,
-        dec_object,
-        unit=(ra_unit, dec_unit),
-        frame="icrs",
-    )
-
-    #   Convert ra & dec to pixel coordinates
-    obj_pixel_position_x, obj_pixel_position_x = wcs.all_world2pix(
-        coordinates_obj.ra,
-        coordinates_obj.dec,
-        0,
-    )
-
     #   Number of objects
     n_obj_dataset = len(x_pixel_position_dataset)
 
     #   Define and fill new arrays to allow correlation
     pixel_position_all_x = np.zeros((n_obj_dataset, 2))
     pixel_position_all_y = np.zeros((n_obj_dataset, 2))
-    pixel_position_all_x[0, 0] = obj_pixel_position_x
     pixel_position_all_x[0:n_obj_dataset, 1] = x_pixel_position_dataset
-    pixel_position_all_y[0, 0] = obj_pixel_position_x
     pixel_position_all_y[0:n_obj_dataset, 1] = y_pixel_position_dataset
 
-    #   Correlate calibration stars with stars on the image
-    index_obj, reject, count, reject_obj = correlation_own(
-        pixel_position_all_x,
-        pixel_position_all_y,
-        max_pixel_between_objects=max_pixel_between_objects,
-        option=own_correlation_option,
-        silent=not verbose,
-    )
+    #   Loop over all objects of interest
+    for object_ in objects_of_interest:
+        coordinates_object = object_.coordinates_objects
 
-    return index_obj, count, obj_pixel_position_x, obj_pixel_position_x
+        #   Convert ra & dec to pixel coordinates
+        obj_pixel_position_x, obj_pixel_position_y = wcs.all_world2pix(
+            coordinates_object.ra,
+            coordinates_object.dec,
+            0,
+        )
+
+        #   Add pixel position of object of interest to pixel position array
+        pixel_position_all_x[0, 0] = obj_pixel_position_x
+        pixel_position_all_y[0, 0] = obj_pixel_position_y
+
+        #   Correlate calibration stars with stars on the image
+        index_obj, reject, count, reject_obj = correlation_own(
+            pixel_position_all_x,
+            pixel_position_all_y,
+            max_pixel_between_objects=max_pixel_between_objects,
+            option=own_correlation_option,
+            silent=not verbose,
+        )
+
+        #   Current object ID
+        object_id = index_obj[1]
+
+        if len(object_id) > 1:
+            #   message would be feasible
+            terminal_output.print_to_terminal(
+                f"More than one object detected within the separation limit to "
+                f"{object_.name}. Take the first one in the list.",
+                style_name='WARNING',
+            )
+            object_id = object_id[0]
+
+        if not object_id:
+            terminal_output.print_to_terminal(
+                f"No object detected within the separation limit to "
+                f"{object_.name}. Set object ID to None",
+                style_name='WARNING',
+            )
+            object_id = None
+
+        #   Add ID to object of interest
+        object_.id_in_image_series[filter_] = object_id
 
 
 def identify_star_in_dataset(
-        x_pixel_positions, y_pixel_positions, ra_object, dec_object, wcs,
-        ra_unit=u.hourangle, dec_unit=u.deg, separation_limit=2. * u.arcsec,
-        max_pixel_between_objects=3, own_correlation_option=1, verbose=False,
-        correlation_method='astropy'):
+        x_pixel_positions, y_pixel_positions, objects_of_interest, filter_,
+        wcs, separation_limit=2. * u.arcsec, max_pixel_between_objects=3,
+        own_correlation_option=1, verbose=False, correlation_method='astropy'):
     """
         Identify a specific star based on its right ascension and declination
         in a dataset of pixel coordinates. Requires a valid WCS.
@@ -225,22 +314,14 @@ def identify_star_in_dataset(
         y_pixel_positions           : `numpy.ndarray`
             Object positions in pixel coordinates. Y direction.
 
-        ra_object                   : `string` or `list` of `string`
-            Right ascension of the object
+        objects_of_interest         : `image_container.objects_of_interest`
+            Object with 'object of interest' properties
 
-        dec_object                  : `string` or `list` of `string`
-            Declination of the object
+        filter_                     : `string`
+            Filter identifier
 
         wcs                         : `astropy.wcs` object
             WCS information
-
-        ra_unit                     : `astropy.units`, optional
-            Right ascension unit
-            Default is ``u.hourangle``.
-
-        dec_unit                    : `astropy.units`, optional
-            Declination unit
-            Default is ``u.deg``.
 
         separation_limit            : `astropy.units`, optional
             Allowed separation between objects.
@@ -280,44 +361,32 @@ def identify_star_in_dataset(
             Y coordinates of the objects in pixel
     """
     if correlation_method == 'astropy':
-        index_obj, count, obj_pixel_position_x, obj_pixel_position_y = determine_pixel_coordinates_obj_astropy(
+        determine_pixel_coordinates_obj_astropy(
             x_pixel_positions,
             y_pixel_positions,
-            ra_object,
-            dec_object,
+            objects_of_interest,
+            filter_,
             wcs,
-            ra_unit=ra_unit,
-            dec_unit=dec_unit,
             separation_limit=separation_limit,
         )
 
     elif correlation_method == 'own':
-        index_obj, count, obj_pixel_position_x, obj_pixel_position_y = determine_pixel_coordinates_obj_srcor(
+        determine_pixel_coordinates_obj_srcor(
             x_pixel_positions,
             y_pixel_positions,
-            ra_object,
-            dec_object,
+            objects_of_interest,
+            filter_,
             wcs,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             verbose=verbose,
-            ra_unit=ra_unit,
-            dec_unit=dec_unit,
         )
-
-        # if verbose:
-        #     terminal_output.print_terminal()
-
-        #   Current object ID
-        index_obj = index_obj[1]
 
     else:
         raise ValueError(
             f'The correlation method needs to either "astropy" or "own".'
             f'Got {correlation_method} instead.'
         )
-
-    return index_obj, count, obj_pixel_position_x, obj_pixel_position_y
 
 
 def correlate_datasets(
