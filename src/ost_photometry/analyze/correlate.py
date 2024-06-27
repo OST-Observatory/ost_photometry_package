@@ -176,7 +176,7 @@ def determine_pixel_coordinates_obj_astropy(
     )
 
     for object_ in objects_of_interest:
-        coordinates_object = object_.coordinates_objects
+        coordinates_object = object_.coordinates_object
 
         #   Find matches in the dataset
         separation = coordinates_dataset.separation(coordinates_object)
@@ -201,7 +201,7 @@ def determine_pixel_coordinates_obj_astropy(
             object_id = None
 
         #   Add ID to object of interest
-        object_.id_in_image_series[filter_] = object_id
+        object_.id_in_image_series[filter_] = object_id[0]
 
 
 def determine_pixel_coordinates_obj_srcor(
@@ -252,7 +252,7 @@ def determine_pixel_coordinates_obj_srcor(
 
     #   Loop over all objects of interest
     for object_ in objects_of_interest:
-        coordinates_object = object_.coordinates_objects
+        coordinates_object = object_.coordinates_object
 
         #   Convert ra & dec to pixel coordinates
         obj_pixel_position_x, obj_pixel_position_y = wcs.all_world2pix(
@@ -295,7 +295,7 @@ def determine_pixel_coordinates_obj_srcor(
             object_id = None
 
         #   Add ID to object of interest
-        object_.id_in_image_series[filter_] = object_id
+        object_.id_in_image_series[filter_] = object_id[0]
 
 
 def identify_star_in_dataset(

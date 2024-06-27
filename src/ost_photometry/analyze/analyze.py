@@ -97,7 +97,7 @@ class ImageContainer:
         dec_objects: (list[str] | None)  = kwargs.get('dec_objects', None)
         dec_unit: (str | None) = kwargs.get('dec_unit', None)
         object_names: (list[str] | None)  = kwargs.get('object_names', None)
-        periods: (list[str] | None) = kwargs.get('periods', None)
+        periods: (list[float] | None) = kwargs.get('periods', None)
         transit_times: (list[str] | None) = kwargs.get('transit_times', None)
 
         add_periods = False
@@ -111,7 +111,7 @@ class ImageContainer:
         if all([ra_objects, dec_objects, ra_unit, dec_unit, object_names]):
             len_names = len(object_names)
             if len_names == len(ra_objects) and len_names == len(ra_objects):
-                for i, (name, ra, dec) in enumerate(zip(object_names, ra_objects, ra_objects)):
+                for i, (name, ra, dec) in enumerate(zip(object_names, ra_objects, dec_objects)):
                     self.objects_of_interest.append(
                         self.ObjectOfInterest(
                             ra,
@@ -156,17 +156,18 @@ class ImageContainer:
                     self.objects_of_interest[i].transit_time = transit_times[i]
 
         #   Sky coordinates for all objects of interest
-        n_objects = len(object_names)
-        coordinates_properties = [ra_objects, dec_objects, ra_unit, dec_unit]
-        if all(len(x) == n_objects for x in coordinates_properties) and all(coordinates_properties):
-            self.objects_of_interest_coordinates = SkyCoord(
-                ra_objects,
-                dec_objects,
-                unit=(ra_unit, dec_unit),
-                frame="icrs",
-            )
-        else:
-            self.objects_of_interest_coordinates = None
+        if object_names:
+            n_objects = len(object_names)
+            coordinates_properties = [ra_objects, dec_objects]
+            if all(len(x) == n_objects for x in coordinates_properties) and all(coordinates_properties):
+                self.objects_of_interest_coordinates = SkyCoord(
+                    ra_objects,
+                    dec_objects,
+                    unit=(ra_unit, dec_unit),
+                    frame="icrs",
+                )
+            else:
+                self.objects_of_interest_coordinates = None
 
         #   TODO: If the object objects are implemented, the following code
         #         will be removed
@@ -277,7 +278,7 @@ class ImageContainer:
             self.name = name
 
             #   Set sky coordinates object
-            self.coordinates_objects = SkyCoord(
+            self.coordinates_object = SkyCoord(
                 ra=ra,
                 dec=dec,
                 unit=(ra_unit, dec_unit),
@@ -2132,6 +2133,10 @@ def correlate_ensembles(
     ensemble_dict = image_container.get_ensembles(filter_list)
     ensemble_keys = list(ensemble_dict.keys())
 
+    #   Get Reference filter
+    #   TODO: Check: Is there a better solution?
+    reference_filter = list(filter_list)[reference_ensemble_id]
+
     #   Define variables
     n_object_all_images_list = []
     x_pixel_positions_all_images = []
@@ -2202,18 +2207,28 @@ def correlate_ensembles(
         #   TODO: Remove loop -> replace with ensemble_dict[filter_list[reference_ensemble_id]]
         # for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
         #     if id_ensemble == reference_ensemble_id:
-        ensemble = ensemble_dict[filter_list[reference_ensemble_id]]
+        ensemble = ensemble_dict[reference_filter]
         correlate.identify_star_in_dataset(
             ensemble.image_list[reference_image_id].photometry['x_fit'],
             ensemble.image_list[reference_image_id].photometry['y_fit'],
             objects_of_interest,
-            filter_list[reference_ensemble_id],
+            reference_filter,
             ensemble.wcs,
             separation_limit=separation_limit,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             verbose=verbose,
         )
+
+        #   Replicate IDs for the objects of interest
+        #   -> This is required, since the identification above is only for the
+        #      reference filter / image series
+        #   TODO: Check if there is a better solution
+        for object_ in objects_of_interest:
+            id_object = object_.id_in_image_series[reference_filter]
+            for filter_ in filter_list:
+                if filter_ != list(filter_list)[reference_ensemble_id]:
+                    object_.id_in_image_series[filter_] = id_object
 
     #   Check if correlation with calibration data is necessary
     calibration_parameters = getattr(image_container, 'CalibParameters', None)
@@ -4243,7 +4258,7 @@ def calibrate_data_mk_light_curve(
 
             for object_ in image_container.objects_of_interest:
                 object_name = object_.name
-                id_object = object_.id_in_image_series
+                id_object = object_.id_in_image_series[filter_]
                 transit_time = object_.transit_time
                 period = object_.period
 
@@ -4361,7 +4376,7 @@ def calibrate_data_mk_light_curve(
 
             for object_ in image_container.objects_of_interest:
                 object_name = object_.name
-                id_object = object_.id_in_image_series
+                id_object = object_.id_in_image_series[filter_]
                 transit_time = object_.transit_time
                 period = object_.period
 
