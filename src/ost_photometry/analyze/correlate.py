@@ -192,7 +192,7 @@ def determine_pixel_coordinates_obj_astropy(
             )
             object_id = np.argmin(separation)
 
-        if not object_id:
+        elif not object_id:
             terminal_output.print_to_terminal(
                 f"No object detected within the separation limit to "
                 f"{object_.name}. Set object ID to None",
@@ -200,8 +200,11 @@ def determine_pixel_coordinates_obj_astropy(
             )
             object_id = None
 
+        else:
+            object_id = object_id[0]
+
         #   Add ID to object of interest
-        object_.id_in_image_series[filter_] = object_id[0]
+        object_.id_in_image_series[filter_] = object_id
 
 
 def determine_pixel_coordinates_obj_srcor(
@@ -286,7 +289,7 @@ def determine_pixel_coordinates_obj_srcor(
             )
             object_id = object_id[0]
 
-        if not object_id:
+        elif not object_id:
             terminal_output.print_to_terminal(
                 f"No object detected within the separation limit to "
                 f"{object_.name}. Set object ID to None",
@@ -294,8 +297,11 @@ def determine_pixel_coordinates_obj_srcor(
             )
             object_id = None
 
+        else:
+            object_id = object_id[0]
+
         #   Add ID to object of interest
-        object_.id_in_image_series[filter_] = object_id[0]
+            object_.id_in_image_series[filter_] = object_id
 
 
 def identify_star_in_dataset(

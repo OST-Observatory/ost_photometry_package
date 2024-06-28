@@ -4012,32 +4012,8 @@ def calibrate_data_mk_light_curve(
     filter_list                         : `list` of `strings`
         List with filter names
 
-    ra_object                           : `string` or `list` of `string`
-        Right ascension of the object
-
-    dec_object                          : `string` or `list` of `string`
-        Declination of the object
-
-    object_names                        : `list` of `string`
-        Name of the object
-
     output_dir                          : `string`
         Path, where the output should be stored.
-
-    transit_times                       : `list` of `string`
-        Date and time of the transit.
-        Format: "yyyy:mm:ddThh:mm:ss" e.g., "2020-09-18T01:00:00"
-
-    periods                             : `list` of `float`
-        Period in [d]
-
-    ra_unit                             : `astropy.unit`, optional
-        Right ascension unit
-        Default is ``u.deg``.
-
-    dec_unit                            : `astropy.unit`, optional
-        Declination unit
-        Default is ``u.deg``.
 
     valid_filter_combinations           : `list` of 'list` of `string` or None, optional
         Valid filter combinations to calculate magnitude transformation
@@ -4209,10 +4185,6 @@ def calibrate_data_mk_light_curve(
             verbose=verbose,
             reference_image_id=reference_image_id,
         )
-
-    #   Names of variable objects
-    #   TODO: Activate this, when object names are move to the image container
-    # object_names = image_container.object_name
 
     ###
     #   Calibrate magnitudes

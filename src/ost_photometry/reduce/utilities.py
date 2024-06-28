@@ -273,7 +273,7 @@ def get_instrument_info(image_file_collection, temperature_tolerance,
 
         #   This is a dirty fix for the inadequacy of Maxim-DL to write
         #   the correct readout mode in the Header.
-        if readout_mode in ['Fast', 'Slow']:
+        if readout_mode in ['Fast', 'Slow', 'Normal']:
             readout_mode = 'Extend Fullwell 2CMS'
     elif ignore_readout_mode_mismatch:
         terminal_output.print_to_terminal(
@@ -1213,6 +1213,7 @@ def calculate_image_shifts_core(image_ccd_object, reference_ccd_object,
             reference_mask=reference_mask,
             moving_mask=current_mask,
         )
+        image_shift = image_shift[0]
     elif correlation_method == 'own':
         image_shift = cross_correlate_images(
             reference_data,
@@ -1242,7 +1243,7 @@ def calculate_image_shifts_core(image_ccd_object, reference_ccd_object,
             transformation_coefficiants, (_, _) = aa.find_transform(
                 current_ccd,
                 reference_ccd_object,
-                detection_sigma=3.0,
+                detection_sigma=3,
             )
 
             image_shift = (
