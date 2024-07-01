@@ -4,14 +4,21 @@
 import sys
 import time
 
+import copy
+
 import numpy as np
 
 import astropy.units as u
 from astropy import uncertainty as unc
 from astropy.stats import sigma_clipped_stats
+from astropy.table import Table
 from astropy.stats import sigma_clip as sigma_clipping
 
 from . import calib, analyze, utilities, plot
+
+import typing
+if typing.TYPE_CHECKING:
+    from . import analyze
 
 from .. import checks, style, calibration_data, terminal_output
 
@@ -797,7 +804,9 @@ def apply_magnitude_transformation(
     )
 
 
-def calibrate_simple(image, not_calibrated_magnitudes):
+def calibrate_simple(
+        image: 'analyze.ImageEnsemble.Image' , not_calibrated_magnitudes: unc,
+        multiprocessing: bool = False) -> tuple[Table, unc] | None:
     """
         Calibrate magnitudes without magnitude transformation
 
@@ -808,9 +817,13 @@ def calibrate_simple(image, not_calibrated_magnitudes):
 
         not_calibrated_magnitudes   : `astropy.uncertainty.core.QuantityDistribution`
             Distribution of uncalibrated magnitudes
+
+        multiprocessing
+            Switch to distinguish between single and multicore processing
+            Default is ``False``.
     """
     #   Get zero points
-    zp = image.zp
+    zp: unc = image.zp
 
     #   Reshape the magnitudes to allow broadcasting because zp is an array
     reshaped_magnitudes = not_calibrated_magnitudes.reshape(
@@ -841,6 +854,8 @@ def calibrate_simple(image, not_calibrated_magnitudes):
     #   Add calibrated magnitudes distribution to image for magnitude transformation
     image.magnitudes_with_zp = calibrated_magnitudes
 
+    if multiprocessing:
+        return image.photometry, calibrated_magnitudes
 
 #   TODO: combine the next two functions?
 def flux_calibration_ensemble(image_ensemble, distribution_samples=1000):
@@ -974,35 +989,41 @@ def flux_normalization_ensemble(image_ensemble, distribution_samples=1000):
 
 
 def prepare_zero_point(
-        image, id_filter, literature_magnitude_list,
-        magnitudes_calibration_stars, calculate_zero_point_statistic=True,
-        distribution_samples=1000):
+        image: 'analyze.ImageEnsemble.Image', id_filter: int,
+        literature_magnitude_list: list[unc], magnitudes_calibration_stars: unc,
+        calculate_zero_point_statistic: bool = True,
+        distribution_samples: int = 1000, multiprocessing: bool = True,
+        ) -> unc | None:
     """
         Calculate zero point values based on calibration stars and
         sigma clip these values before calculating median
 
         Parameters
         ----------
-        image                               : `image.class`
-            Image class with all image specific properties
+        image
+            Class with all image specific properties
 
-        id_filter                   : `integer`
+        id_filter
             ID of the current filter
 
-        literature_magnitude_list           : list of `astropy.uncertainty.core.QuantityDistribution`
+        literature_magnitude_list
             Literature magnitudes
 
-        magnitudes_calibration_stars   : `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes_calibration_stars
             Observed magnitudes of the objects that were used for the
             calibration from the image of filter 1
 
-        calculate_zero_point_statistic      : `boolean`, optional
+        calculate_zero_point_statistic
             If `True` a statistic on the zero points will be calculated.
             Default is ``True``.
 
-        distribution_samples  : `integer`, optional
+        distribution_samples
             Number of samples used for distributions
             Default is `1000`.
+
+        multiprocessing
+            Switch to distinguish between single and multicore processing
+            Default is ``False``.
     """
     #   Calculate zero point
     zp = literature_magnitude_list[id_filter] - magnitudes_calibration_stars
@@ -1024,6 +1045,11 @@ def prepare_zero_point(
         ],
         name_object=image.object_name,
     )
+
+    #   If this is running with multicore processing, return here and void
+    #   the zero point statistic calculation below.
+    if multiprocessing:
+        return zp
 
     #   TODO: Replace with distribution properties?
     #   TODO: Add random selection of calibration stars -> calculate variance
@@ -1070,10 +1096,87 @@ def prepare_zero_point(
         )
 
 
-def calibrate_magnitudes_zero_point_only(
-        image_container: analyze.ImageContainer, filter_list: (list[str] | set[str]),
+def calibrate_magnitudes_zero_point_core(
+        current_image: 'analyze.ImageEnsemble.Image',
+        image_container: 'analyze.ImageContainer', current_filter_id: int,
+        literature_magnitudes: list[unc],
+        calculate_zero_point_statistic: bool = True,
+        distribution_samples: int = 1000, multiprocessing: bool = False
+        ) -> tuple[unc, Table, unc]:
+    """
+    Core module for zero point calibration that allows also for multicore
+    processing
+
+    Parameters
+    ----------
+        current_image
+            Image object of the image that is processed, containing the
+            specific image properties
+
+        image_container
+            Container object with image ensemble objects for each filter
+
+        current_filter_id
+            ID of the current filter
+
+        literature_magnitudes
+            Literature magnitudes of the calibration stars
+
+        calculate_zero_point_statistic
+            If `True` a statistic on the zero points will be calculated.
+            Default is ``True``.
+
+        distribution_samples
+            Number of samples used for distributions
+            Default is `1000`.
+
+        multiprocessing
+            Switch to distinguish between single and multicore processing
+            Default is ``False``.
+    
+    Returns
+    -------
+
+    """
+    #   Get magnitude array for first image
+    magnitudes_current_image = utilities.distribution_from_table(
+        current_image,
+        distribution_samples=distribution_samples,
+    )
+
+    #   Get extracted magnitudes of the calibration stars for the
+    #   current image
+    magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
+        magnitudes_current_image,
+        image_container,
+    )
+
+    #   Prepare ZP for the magnitude calibration
+    zp = prepare_zero_point(
+        current_image,
+        current_filter_id,
+        literature_magnitudes,
+        magnitudes_calibration_current_image,
+        calculate_zero_point_statistic=calculate_zero_point_statistic,
+        distribution_samples=distribution_samples,
+        multiprocessing=multiprocessing,
+    )
+
+    #   Calibration without transformation
+    photometry_tbl, magnitudes_with_zp = calibrate_simple(
+        current_image,
+        magnitudes_current_image,
+        multiprocessing=multiprocessing,
+    )
+
+    if multiprocessing:
+        return copy.deepcopy(zp), copy.deepcopy(photometry_tbl), copy.deepcopy(magnitudes_with_zp)
+
+
+def calibrate_magnitudes_zero_point(
+        image_container: 'analyze.ImageContainer', filter_list: (list[str] | set[str]),
         distribution_samples: int = 1000, calculate_zero_point_statistic: bool = True,
-        id_object: (int | None) =  None, photometry_extraction_method: str = '',
+        id_object: (int | None) = None, photometry_extraction_method: str = '',
         indent: int = 1) -> None:
     """
         Apply the zero points to the magnitudes
@@ -1088,7 +1191,7 @@ def calibrate_magnitudes_zero_point_only(
 
         distribution_samples
             Number of samples used for distributions
-            Default is `1000`
+            Default is `1000`.
 
         calculate_zero_point_statistic
             If `True` a statistic on the zero points will be calculated.
@@ -1131,31 +1234,40 @@ def calibrate_magnitudes_zero_point_only(
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
-            #   Get magnitude array for first image
-            magnitudes_current_image = utilities.distribution_from_table(
-                current_image,
-                distribution_samples=distribution_samples,
-            )
-
-            #   Get extracted magnitudes of the calibration stars for the
-            #   current image
-            magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
-                magnitudes_current_image,
-                image_container,
-            )
-
-            #   Prepare ZP for the magnitude calibration
-            prepare_zero_point(
-                current_image,
-                current_filter_id,
-                literature_magnitudes,
-                magnitudes_calibration_current_image,
+            calibrate_magnitudes_zero_point_core(
+                current_image=current_image,
+                image_container=image_container,
+                current_filter_id=current_filter_id,
+                literature_magnitudes=literature_magnitudes,
                 calculate_zero_point_statistic=calculate_zero_point_statistic,
                 distribution_samples=distribution_samples,
+                multiprocessing=False,
             )
-
-            #   Calibration without transformation
-            calibrate_simple(current_image, magnitudes_current_image)
+            # #   Get magnitude array for first image
+            # magnitudes_current_image = utilities.distribution_from_table(
+            #     current_image,
+            #     distribution_samples=distribution_samples,
+            # )
+            #
+            # #   Get extracted magnitudes of the calibration stars for the
+            # #   current image
+            # magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
+            #     magnitudes_current_image,
+            #     image_container,
+            # )
+            #
+            # #   Prepare ZP for the magnitude calibration
+            # prepare_zero_point(
+            #     current_image,
+            #     current_filter_id,
+            #     literature_magnitudes,
+            #     magnitudes_calibration_current_image,
+            #     calculate_zero_point_statistic=calculate_zero_point_statistic,
+            #     distribution_samples=distribution_samples,
+            # )
+            #
+            # #   Calibration without transformation
+            # calibrate_simple(current_image, magnitudes_current_image)
 
     #   Save results as ASCII files
     #   Make astropy table
@@ -1181,7 +1293,7 @@ def calibrate_magnitudes_zero_point_only(
 
 
 def calibrate_magnitudes_transformation(
-        image_container: analyze.ImageContainer, filter_list: (list[str] | set[str]),
+        image_container: 'analyze.ImageContainer', filter_list: (list[str] | set[str]),
         transformation_coefficients_dict: dict[str, (float | str)] = None,
         derive_transformation_coefficients: bool = False, plot_sigma: bool = False,
         distribution_samples: int = 1000, calculate_zero_point_statistic: bool = True,
@@ -1395,7 +1507,7 @@ def calibrate_magnitudes_transformation(
 
 
 def apply_calibration(
-        image_container: analyze.ImageContainer, filter_list: (list[str] | set[str]),
+        image_container: 'analyze.ImageContainer', filter_list: (list[str] | set[str]),
         transformation_coefficients_dict: dict[str, (float | str)] = None,
         derive_transformation_coefficients: bool = False, plot_sigma: bool = False,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
@@ -1448,7 +1560,7 @@ def apply_calibration(
             Default is ``1``.
     """
     #   Apply zero point calibration
-    calibrate_magnitudes_zero_point_only(
+    calibrate_magnitudes_zero_point(
         image_container=image_container,
         filter_list=filter_list,
         distribution_samples=distribution_samples,
@@ -2034,6 +2146,7 @@ def calculate_trans(img_container, key_filter, filter_list,
     ###
     #   Correlate the results from the different filter
     #
+    #   TODO: Avoid circular imports
     analyze.correlate_ensembles(
         img_container,
         filter_list,
