@@ -806,7 +806,7 @@ def apply_magnitude_transformation(
 
 def calibrate_simple(
         image: 'analyze.ImageEnsemble.Image' , not_calibrated_magnitudes: unc,
-        multiprocessing: bool = False) -> tuple[Table, unc] | None:
+        ) -> None:
     """
         Calibrate magnitudes without magnitude transformation
 
@@ -817,13 +817,9 @@ def calibrate_simple(
 
         not_calibrated_magnitudes   : `astropy.uncertainty.core.QuantityDistribution`
             Distribution of uncalibrated magnitudes
-
-        multiprocessing
-            Switch to distinguish between single and multicore processing
-            Default is ``False``.
     """
     #   Get zero points
-    zp: unc = image.zp
+    zp = image.zp
 
     #   Reshape the magnitudes to allow broadcasting because zp is an array
     reshaped_magnitudes = not_calibrated_magnitudes.reshape(
@@ -854,8 +850,6 @@ def calibrate_simple(
     #   Add calibrated magnitudes distribution to image for magnitude transformation
     image.magnitudes_with_zp = calibrated_magnitudes
 
-    if multiprocessing:
-        return image.photometry, calibrated_magnitudes
 
 #   TODO: combine the next two functions?
 def flux_calibration_ensemble(image_ensemble, distribution_samples=1000):
@@ -992,8 +986,7 @@ def prepare_zero_point(
         image: 'analyze.ImageEnsemble.Image', id_filter: int,
         literature_magnitude_list: list[unc], magnitudes_calibration_stars: unc,
         calculate_zero_point_statistic: bool = True,
-        distribution_samples: int = 1000, multiprocessing: bool = True,
-        ) -> unc | None:
+        distribution_samples: int = 1000) -> None:
     """
         Calculate zero point values based on calibration stars and
         sigma clip these values before calculating median
@@ -1021,9 +1014,6 @@ def prepare_zero_point(
             Number of samples used for distributions
             Default is `1000`.
 
-        multiprocessing
-            Switch to distinguish between single and multicore processing
-            Default is ``False``.
     """
     #   Calculate zero point
     zp = literature_magnitude_list[id_filter] - magnitudes_calibration_stars
@@ -1045,11 +1035,6 @@ def prepare_zero_point(
         ],
         name_object=image.object_name,
     )
-
-    #   If this is running with multicore processing, return here and void
-    #   the zero point statistic calculation below.
-    if multiprocessing:
-        return zp
 
     #   TODO: Replace with distribution properties?
     #   TODO: Add random selection of calibration stars -> calculate variance
@@ -1102,7 +1087,7 @@ def calibrate_magnitudes_zero_point_core(
         literature_magnitudes: list[unc],
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000, multiprocessing: bool = False
-        ) -> tuple[unc, Table, unc]:
+        ) -> tuple[int, unc, Table, unc]:
     """
     Core module for zero point calibration that allows also for multicore
     processing
@@ -1152,25 +1137,28 @@ def calibrate_magnitudes_zero_point_core(
     )
 
     #   Prepare ZP for the magnitude calibration
-    zp = prepare_zero_point(
+    prepare_zero_point(
         current_image,
         current_filter_id,
         literature_magnitudes,
         magnitudes_calibration_current_image,
         calculate_zero_point_statistic=calculate_zero_point_statistic,
         distribution_samples=distribution_samples,
-        multiprocessing=multiprocessing,
     )
 
     #   Calibration without transformation
-    photometry_tbl, magnitudes_with_zp = calibrate_simple(
+    calibrate_simple(
         current_image,
         magnitudes_current_image,
-        multiprocessing=multiprocessing,
     )
 
     if multiprocessing:
-        return copy.deepcopy(zp), copy.deepcopy(photometry_tbl), copy.deepcopy(magnitudes_with_zp)
+        pd = copy.deepcopy(current_image.pd)
+        zp = copy.deepcopy(current_image.zp)
+        tbl = copy.deepcopy(current_image.photometry)
+        magnitudes = copy.deepcopy(current_image.magnitudes_with_zp)
+
+        return pd, zp, tbl, magnitudes
 
 
 def calibrate_magnitudes_zero_point(
@@ -1227,22 +1215,42 @@ def calibrate_magnitudes_zero_point(
     #   TODO: Prepare this for multithreading
     for current_filter_id, filter_ in enumerate(filter_list):
         #   Get image ensemble
-        img_ensemble = image_ensembles[filter_]
+        image_ensemble = image_ensembles[filter_]
 
         #   Get image list
-        image_list = img_ensemble.image_list
+        image_list = image_ensemble.image_list
+
+        #   Initialize multiprocessing object
+        n_cores_multiprocessing = 12
+        executor = utilities.Executor(n_cores_multiprocessing)
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
-            calibrate_magnitudes_zero_point_core(
-                current_image=current_image,
-                image_container=image_container,
-                current_filter_id=current_filter_id,
-                literature_magnitudes=literature_magnitudes,
-                calculate_zero_point_statistic=calculate_zero_point_statistic,
-                distribution_samples=distribution_samples,
-                multiprocessing=False,
+            executor.schedule(
+                calibrate_magnitudes_zero_point_core,
+                args=(
+                    current_image,
+                    image_container,
+                    current_filter_id,
+                    literature_magnitudes,
+                ),
+                kwargs={
+                    'calculate_zero_point_statistic': calculate_zero_point_statistic,
+                    'distribution_samples': distribution_samples,
+                    'multiprocessing': False,
+                }
             )
+
+            # calibrate_magnitudes_zero_point_core(
+            #     current_image,
+            #     image_container,
+            #     current_filter_id,
+            #     literature_magnitudes,
+            #     calculate_zero_point_statistic=calculate_zero_point_statistic,
+            #     distribution_samples=distribution_samples,
+            #     multiprocessing=False,
+            # )
+
             # #   Get magnitude array for first image
             # magnitudes_current_image = utilities.distribution_from_table(
             #     current_image,
@@ -1268,6 +1276,33 @@ def calibrate_magnitudes_zero_point(
             #
             # #   Calibration without transformation
             # calibrate_simple(current_image, magnitudes_current_image)
+
+        #   Exit multiprocessing, if exceptions will occur
+        if executor.err is not None:
+            raise RuntimeError(
+                f'\n{style.Bcolors.FAIL}Zero point calibration using '
+                f' multiprocessing failed for {filter_} :({style.Bcolors.ENDC}'
+            )
+
+        #   Close multiprocessing pool and wait until it finishes
+        executor.wait()
+
+        #   Extract results
+        res = executor.res
+
+        #   Sort multiprocessing results
+        tmp_list = []
+        for image_ in image_ensemble.image_list:
+
+            for pd, zp, tbl, magnitudes in res:
+                if pd == image_.pd:
+                    image_.photometry = tbl
+                    image_.zp = zp
+                    image_.magnitudes_with_zp = magnitudes
+                    tmp_list.append(image_)
+
+        # TODO: Check if this is necessary
+        image_ensemble.image_list = tmp_list
 
     #   Save results as ASCII files
     #   Make astropy table

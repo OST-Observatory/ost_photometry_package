@@ -31,7 +31,7 @@ def get_image_types():
     default_img_type = {
         'bias': ['Bias Frame', 'Bias', 'BIAS'],
         'dark': ['Dark Frame', 'Dark', 'DARK'],
-        'flat': ['Flat Field', 'Flat', 'FLAT'],
+        'flat': ['Flat Field', 'Flat', 'FLAT', 'Flat Frame'],
         'light': ['Light Frame', 'Light', 'LIGHT'],
     }
 

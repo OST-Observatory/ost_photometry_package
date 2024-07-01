@@ -249,8 +249,22 @@ def get_instrument_info(image_file_collection, temperature_tolerance,
         else:
             instrument = ''
 
-    #   Get readout mode
-    readout_mode_mask = image_file_collection.summary['readoutm'].mask
+    #   Set default readout mode
+    readout_mode = 'default'
+
+    #   Determine readout mode keyword
+    if 'readoutm' in image_file_collection.summary:
+        readout_mode_keyword = 'readoutm'
+    elif 'readmode' in image_file_collection.summary:
+        readout_mode_keyword = 'readmode'
+    else:
+        raise KeyError(
+            f"{style.Bcolors.FAIL} \nReadout mode keyword for FITS Header could not"
+            f" be determined -> ABORT {style.Bcolors.ENDC}"
+        )
+
+    #   Readout mode: Restricting files to once with a set read mode
+    readout_mode_mask = image_file_collection.summary[readout_mode_keyword].mask
     files_without_readout_mode = np.array(
         image_file_collection.files
     )[readout_mode_mask]
@@ -262,32 +276,49 @@ def get_instrument_info(image_file_collection, temperature_tolerance,
             indent=2,
         )
 
+    #   Determine readout modes in the data
     readout_modes = set(
-        image_file_collection.summary['readoutm'][np.invert(readout_mode_mask)]
+        image_file_collection.summary[readout_mode_keyword][np.invert(readout_mode_mask)]
     )
 
-    if not readout_modes:
-        readout_mode = 'Extend Fullwell 2CMS'
-    elif len(readout_modes) == 1:
-        readout_mode = list(readout_modes)[0]
+    if len(readout_modes) > 1:
+        if ignore_readout_mode_mismatch:
+            readout_mode = readout_modes[0]
+            terminal_output.print_to_terminal(
+                f"Multiple readout modes detected. Use first one "
+                f"detected: {readout_mode}",
+                style_name='WARNING',
+            )
+        else:
+            raise RuntimeError(
+                f'{style.Bcolors.FAIL}Multiple readout modes detected.\n'
+                f'This is currently not supported -> EXIT \n{style.Bcolors.ENDC}'
+            )
 
-        #   This is a dirty fix for the inadequacy of Maxim-DL to write
-        #   the correct readout mode in the Header.
-        if readout_mode in ['Fast', 'Slow', 'Normal']:
+    #   Readout mode: Fix for QHY models:
+    if instrument in ['QHY600M', 'QHY268M']:
+        if not readout_modes:
             readout_mode = 'Extend Fullwell 2CMS'
-    elif ignore_readout_mode_mismatch:
-        terminal_output.print_to_terminal(
-            "WARNING: Multiple readout modes detected. "
-            "Assume Extend Fullwell 2CMS",
-            style_name='WARNING',
-            indent=2,
-        )
-        readout_mode = 'Extend Fullwell 2CMS'
-    else:
-        raise RuntimeError(
-            f'{style.Bcolors.FAIL}Multiple readout modes detected.\n'
-            f'This is currently not supported -> EXIT \n{style.Bcolors.ENDC}'
-        )
+        elif len(readout_modes) == 1:
+            readout_mode = list(readout_modes)[0]
+
+            #   This is a dirty fix for the inadequacy of Maxim-DL to write
+            #   the correct readout mode in the Header.
+            if readout_mode in ['Fast', 'Slow', 'Normal']:
+                readout_mode = 'Extend Fullwell 2CMS'
+
+            #   Kstars treats the readout mode by numbers. Assuming 0 is 'Extend Fullwell 2CMS' which is probably worng.
+            #   TODO: Check this!
+            if readout_mode == 0.:
+                readout_mode = 'Extend Fullwell 2CMS'
+        elif ignore_readout_mode_mismatch:
+            terminal_output.print_to_terminal(
+                "WARNING: Multiple readout modes detected. "
+                "Assume Extend Fullwell 2CMS",
+                style_name='WARNING',
+                indent=2,
+            )
+            readout_mode = 'Extend Fullwell 2CMS'
 
     #   Get gain setting
     gain_mask = image_file_collection.summary['gain'].mask
