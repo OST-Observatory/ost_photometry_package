@@ -878,6 +878,8 @@ def jordi_u(**kwargs):
 #     return None
 
 def jordi_g(**kwargs):
+    distribution_samples = kwargs.get("distribution_samples")
+
     if all(filter_ in kwargs for filter_ in ['B', 'V']):
         B = kwargs.get("B")
         V = kwargs.get("V")
@@ -979,6 +981,8 @@ def jordi_g(**kwargs):
 
 
 def jordi_r(**kwargs):
+    distribution_samples = kwargs.get("distribution_samples")
+
     if all(filter_ in kwargs for filter_ in ['V', 'R']):
         V = kwargs.get("V")
         R = kwargs.get("R")
@@ -1090,6 +1094,8 @@ def jordi_r(**kwargs):
 
 
 def jordi_i(**kwargs):
+    distribution_samples = kwargs.get("distribution_samples")
+
     if all(filter_ in kwargs for filter_ in ['R', 'I']):
         R = kwargs.get("R")
         I = kwargs.get("I")
@@ -1168,6 +1174,8 @@ def jordi_i(**kwargs):
 
 
 def jordi_z(**kwargs):
+    distribution_samples = kwargs.get("distribution_samples")
+
     if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
         I = kwargs.get("I")
         R = kwargs.get("R")

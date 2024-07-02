@@ -806,20 +806,24 @@ def apply_magnitude_transformation(
 
 def calibrate_simple(
         image: 'analyze.ImageEnsemble.Image' , not_calibrated_magnitudes: unc,
-        ) -> None:
+        zp: unc,
+        ) -> tuple[Table, unc]:
     """
         Calibrate magnitudes without magnitude transformation
 
         Parameters
         ----------
-        image                       : `image.class`
-            Image class with all image specific properties
+        image
+            Object with all image specific properties
 
-        not_calibrated_magnitudes   : `astropy.uncertainty.core.QuantityDistribution`
+        not_calibrated_magnitudes
             Distribution of uncalibrated magnitudes
+
+        zp
+            Zero pint of the photometric calibration
     """
-    #   Get zero points
-    zp = image.zp
+    #   Get photometry table
+    photometry_table = image.photometry
 
     #   Reshape the magnitudes to allow broadcasting because zp is an array
     reshaped_magnitudes = not_calibrated_magnitudes.reshape(
@@ -844,11 +848,10 @@ def calibrate_simple(
     #     calibrated_magnitudes = not_calibrated_magnitudes - np.median(not_calibrated_magnitudes)
 
     #   Add calibrated photometry to table of Image object
-    image.photometry['mag_cali_no-trans'] = median
-    image.photometry['mag_cali_no-trans_unc'] = stddev
+    photometry_table['mag_cali_no-trans'] = median
+    photometry_table['mag_cali_no-trans_unc'] = stddev
 
-    #   Add calibrated magnitudes distribution to image for magnitude transformation
-    image.magnitudes_with_zp = calibrated_magnitudes
+    return photometry_table, calibrated_magnitudes
 
 
 #   TODO: combine the next two functions?
@@ -986,7 +989,7 @@ def prepare_zero_point(
         image: 'analyze.ImageEnsemble.Image', id_filter: int,
         literature_magnitude_list: list[unc], magnitudes_calibration_stars: unc,
         calculate_zero_point_statistic: bool = True,
-        distribution_samples: int = 1000) -> None:
+        distribution_samples: int = 1000) -> unc:
     """
         Calculate zero point values based on calibration stars and
         sigma clip these values before calculating median
@@ -1021,11 +1024,11 @@ def prepare_zero_point(
     #     f"It is not possible to calculate the zero point.",
     #     style_name='ERROR',
     # )
-    image.zp = zp
+    # image.zp = zp
 
     #   Plot zero point statistics
     plot.histogram_statistic(
-        [image.zp.pdf_median()],
+        [zp.pdf_median()],
         f'Zero point ({image.filt})',
         '',
         f'histogram_zero_point_{image.filt}',
@@ -1038,7 +1041,7 @@ def prepare_zero_point(
 
     #   TODO: Replace with distribution properties?
     #   TODO: Add random selection of calibration stars -> calculate variance
-    n_calibration_objects = image.zp.shape[0]
+    n_calibration_objects = zp.shape[0]
     if n_calibration_objects > 20 and calculate_zero_point_statistic:
         #   Create samples using numpy's random number generator to generate
         #   an index array
@@ -1050,7 +1053,7 @@ def prepare_zero_point(
             size=(distribution_samples, n_objects_sample),
         )
 
-        samples = image.zp.pdf_median()[random_index]
+        samples = zp.pdf_median()[random_index]
 
         #   Get statistic
         # mean_samples = np.mean(sample_values, axis=1)
@@ -1080,14 +1083,16 @@ def prepare_zero_point(
             style_name='UNDERLINE'
         )
 
+    return zp
+
 
 def calibrate_magnitudes_zero_point_core(
         current_image: 'analyze.ImageEnsemble.Image',
         image_container: 'analyze.ImageContainer', current_filter_id: int,
-        literature_magnitudes: list[unc],
+        literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000, multiprocessing: bool = False
-        ) -> tuple[int, unc, Table, unc]:
+        ) -> tuple[int, u.quantity.Quantity, Table, u.quantity.Quantity]:
     """
     Core module for zero point calibration that allows also for multicore
     processing
@@ -1123,6 +1128,15 @@ def calibrate_magnitudes_zero_point_core(
     -------
 
     """
+    #   Restore the literature magnitudes as distributions
+    #   -> This is necessary since astropy QuantityDistribution cannot be
+    #      prickled/serialized
+    #   TODO: Check if this workaround is still necessary
+    tmp_list = []
+    for magnitudes in literature_magnitudes:
+        tmp_list.append(unc.Distribution(magnitudes))
+    literature_magnitudes = tmp_list
+
     #   Get magnitude array for first image
     magnitudes_current_image = utilities.distribution_from_table(
         current_image,
@@ -1137,7 +1151,7 @@ def calibrate_magnitudes_zero_point_core(
     )
 
     #   Prepare ZP for the magnitude calibration
-    prepare_zero_point(
+    zp = prepare_zero_point(
         current_image,
         current_filter_id,
         literature_magnitudes,
@@ -1147,16 +1161,17 @@ def calibrate_magnitudes_zero_point_core(
     )
 
     #   Calibration without transformation
-    calibrate_simple(
+    photometry_table, calibrated_magnitudes = calibrate_simple(
         current_image,
         magnitudes_current_image,
+        zp,
     )
 
     if multiprocessing:
         pd = copy.deepcopy(current_image.pd)
-        zp = copy.deepcopy(current_image.zp)
-        tbl = copy.deepcopy(current_image.photometry)
-        magnitudes = copy.deepcopy(current_image.magnitudes_with_zp)
+        zp = copy.deepcopy(zp.distribution)
+        tbl = copy.deepcopy(photometry_table)
+        magnitudes = copy.deepcopy(calibrated_magnitudes.distribution)
 
         return pd, zp, tbl, magnitudes
 
@@ -1212,6 +1227,15 @@ def calibrate_magnitudes_zero_point(
         distribution_samples=distribution_samples,
     )
 
+    #   Sanitize literature magnitudes for multicore processing
+    #   -> This is necessary since astropy QuantityDistribution cannot be
+    #      prickled/serialized
+    #   TODO: Check if this workaround is still necessary
+    tmp_list = []
+    for magnitudes in literature_magnitudes:
+        tmp_list.append(magnitudes.distribution)
+    literature_magnitudes = tmp_list
+
     #   TODO: Prepare this for multithreading
     for current_filter_id, filter_ in enumerate(filter_list):
         #   Get image ensemble
@@ -1237,7 +1261,7 @@ def calibrate_magnitudes_zero_point(
                 kwargs={
                     'calculate_zero_point_statistic': calculate_zero_point_statistic,
                     'distribution_samples': distribution_samples,
-                    'multiprocessing': False,
+                    'multiprocessing': True,
                 }
             )
 
@@ -1297,8 +1321,8 @@ def calibrate_magnitudes_zero_point(
             for pd, zp, tbl, magnitudes in res:
                 if pd == image_.pd:
                     image_.photometry = tbl
-                    image_.zp = zp
-                    image_.magnitudes_with_zp = magnitudes
+                    image_.zp = unc.Distribution(zp)
+                    image_.magnitudes_with_zp = unc.Distribution(magnitudes)
                     tmp_list.append(image_)
 
         # TODO: Check if this is necessary

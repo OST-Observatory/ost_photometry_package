@@ -800,7 +800,7 @@ class Executor:
             style_name='ERROR',
         )
         terminal_output.print_to_terminal(
-            f'The exception is {e}',
+            f'The exception is: {e}',
             style_name='ERROR',
         )
         #   Terminate pool
@@ -2520,27 +2520,42 @@ def convert_magnitudes_to_other_system(
                 .filter_system_conversions['SDSS']['Jordi_et_al_2005']
 
             #   Convert magnitudes and add those to data dictionary and the Table
-            g = calib_functions['g'](**data_dict)
+            g = calib_functions['g'](
+                **data_dict,
+                distribution_samples=distribution_samples,
+            )
             if g is not None:
                 data_dict['g'] = g
                 tbl = add_column_to_table(tbl, 'g', g, image_id)
 
-            u_mag = calib_functions['u'](**data_dict)
+            u_mag = calib_functions['u'](
+                **data_dict,
+                distribution_samples=distribution_samples,
+            )
             if u_mag is not None:
                 data_dict['u'] = u_mag
                 tbl = add_column_to_table(tbl, 'u', u_mag, image_id)
 
-            r = calib_functions['r'](**data_dict)
+            r = calib_functions['r'](
+                **data_dict,
+                distribution_samples=distribution_samples,
+            )
             if r is not None:
                 data_dict['r'] = r
                 tbl = add_column_to_table(tbl, 'r', r, image_id)
 
-            i = calib_functions['i'](**data_dict)
+            i = calib_functions['i'](
+                **data_dict,
+                distribution_samples=distribution_samples,
+            )
             if i is not None:
                 data_dict['i'] = i
                 tbl = add_column_to_table(tbl, 'i', i, image_id)
 
-            z = calib_functions['z'](**data_dict)
+            z = calib_functions['z'](
+                **data_dict,
+                distribution_samples=distribution_samples,
+            )
             if z is not None:
                 data_dict['z'] = z
                 tbl = add_column_to_table(tbl, 'z', z, image_id)

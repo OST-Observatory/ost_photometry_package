@@ -253,9 +253,9 @@ def get_instrument_info(image_file_collection, temperature_tolerance,
     readout_mode = 'default'
 
     #   Determine readout mode keyword
-    if 'readoutm' in image_file_collection.summary:
+    if 'readoutm' in image_file_collection.summary.colnames:
         readout_mode_keyword = 'readoutm'
-    elif 'readmode' in image_file_collection.summary:
+    elif 'readmode' in image_file_collection.summary.colnames:
         readout_mode_keyword = 'readmode'
     else:
         raise KeyError(
