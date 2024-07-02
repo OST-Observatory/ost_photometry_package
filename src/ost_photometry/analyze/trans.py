@@ -47,44 +47,42 @@ def progress_bar(count_value, total, suffix=''):
 
 
 def find_best_comparison_image_second_filter(
-        image_container, current_image_id, id_second_filter, id_current_filter,
-        filter_list):
+        image_series: 'analyze.ImageEnsemble', current_image: 'analyze.ImageEnsemble.Image',
+        id_second_filter: int, id_current_filter: int, filter_list: list[str]
+        ) -> 'analyze.ImageEnsemble.Image':
     """
         Prepare variables for magnitude transformation
 
         Parameters
         ----------
-        image_container                 : `image.container`
-            Container object with image ensemble objects for each filter
+        image_series
+            Object that encompasses all image objects for a filter and relevant
+            information
 
-        current_image_id                : `integer`
-            ID of the image
+        current_image
+            Object with all image specific properties
 
-        id_second_filter                : `integer`
+        id_second_filter
             ID of the second filter
 
-        id_current_filter               : `integer`
+        id_current_filter
             ID of the current filter
 
-        filter_list                     : `list` of `string`
+        filter_list
             List of filter names
 
         Returns
         -------
-        best_image_second_filter        : `image.class`
+        best_image_second_filter
             Image class with all image specific properties
     """
-    #   Get image ensemble
-    image_ensembles = image_container.ensembles
-    ensemble = image_ensembles[filter_list[id_current_filter]]
-
-    #   Get image
-    current_image = ensemble.image_list[current_image_id]
+    #   Get image series
+    current_image_series = image_series[filter_list[id_current_filter]]
 
     #   Get observation time of current image and all images of the
     #   second filter
     obs_time_current_image = current_image.jd
-    obs_times_images_second_filter = image_ensembles[
+    obs_times_images_second_filter = image_series[
         filter_list[id_second_filter]
     ].get_obs_time()
 
@@ -94,7 +92,7 @@ def find_best_comparison_image_second_filter(
     )
 
     #   Get image corresponding to this exposure time
-    best_img_second_filter = image_ensembles[
+    best_img_second_filter = image_series[
         filter_list[id_second_filter]
     ].image_list[id_best_image_second_filter]
 
@@ -215,10 +213,12 @@ def check_transformation_requirements(
 
 
 def derive_transformation_onthefly(
-        image, filter_list, id_current_filter, color_literature,
-        magnitudes_literature_filter_1, magnitudes_literature_filter_2,
-        magnitudes_observed_filter_1, magnitudes_observed_filter_2,
-        distribution_samples=1000):
+        image: 'analyze.ImageEnsemble.Image', filter_list: list[str],
+        id_current_filter: int, color_literature: unc,
+        magnitudes_literature_filter_1: unc,
+        magnitudes_literature_filter_2: unc,
+        magnitudes_observed_filter_1: unc, magnitudes_observed_filter_2: unc,
+        distribution_samples: int = 1000) -> tuple[unc, unc]:
     """
         Determine the parameters for the color term used in the magnitude
         calibration. This corresponds to a magnitude transformation without
@@ -226,47 +226,47 @@ def derive_transformation_onthefly(
 
         Parameters
         ----------
-        image                           : `image.class`
-            Image class with all image specific properties
+        image
+            Object with all image specific properties
 
-        filter_list                     : `list` - `string`
+        filter_list
             List of filter
 
-        id_current_filter               : `integer`
+        id_current_filter
             ID of the current filter
 
-        color_literature                : `astropy.uncertainty.core.QuantityDistribution`
+        color_literature
             Literature color of the calibration stars
 
-        magnitudes_literature_filter_1  : `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes_literature_filter_1
             Magnitudes of calibration stars from the literature
             for filter 1.
 
-        magnitudes_literature_filter_2  : `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes_literature_filter_2
             Magnitudes of calibration stars from the literature
             for filter 1.
 
-        magnitudes_observed_filter_1    : `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes_observed_filter_1
             Extracted magnitudes of the calibration stars from filter 1
 
-        magnitudes_observed_filter_2    : `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes_observed_filter_2
             Extracted magnitudes of the calibration stars from filter 2
 
-        distribution_samples            : `integer`, optional
+        distribution_samples
             Number of samples used for distributions
             Default is `1000`
 
         Returns
         -------
-        color_correction_filter_1       : `ufloat` or `float`
+        color_correction_filter_1
             Color correction term for filter 1.
 
-        color_correction_filter_2       : `ufloat` or `float`
+        color_correction_filter_2
             Color correction term for filter 2.
     """
     #   Initial guess for the parameters
     # x0    = np.array([0.0, 0.0])
-    x0 = np.array([1.0, 1.0])
+    x0: np.ndarray = np.array([1.0, 1.0])
 
     #   Fit function
     fit_func = utilities.lin_func
@@ -282,7 +282,7 @@ def derive_transformation_onthefly(
     diff_mag_plot_2 = diff_mag_2.pdf_median()
 
     #   Set
-    sigma = np.array(color_literature_err_plot)
+    sigma: np.ndarray = np.array(color_literature_err_plot)
 
     #   Fit
     z_1, z_1_err, color_correction_filter_1, color_correction_filter_1_err = utilities.fit_curve(
@@ -530,78 +530,83 @@ def derive_transformation_onthefly(
 
 
 def transformation_core(
-        image, magnitudes_literature_filter_1, magnitudes_literature_filter_2,
-        calib_magnitudes_observed_filter_1, calib_magnitudes_observed_filter_2,
-        magnitudes_filter_1, magnitudes_filter_2, tc_c, tc_color,
-        tc_t1, tc_k1, tc_t2, tc_k2, id_current_filter, filter_list,
-        transformation_type='derive', distribution_samples=1000):
+        image: 'analyze.ImageEnsemble.Image',
+        magnitudes_literature_filter_1: unc,
+        magnitudes_literature_filter_2: unc,
+        calib_magnitudes_observed_filter_1: unc,
+        calib_magnitudes_observed_filter_2: unc,
+        magnitudes_filter_1: unc, magnitudes_filter_2: unc, tc_c: float,
+        tc_color: float, tc_t1: float, tc_k1: float, tc_t2: float,
+        tc_k2: float, id_current_filter: int, filter_list: list[str],
+        transformation_type: str = 'derive',
+        distribution_samples: int = 1000) -> tuple[unc, unc]:
     """
         Routine that performs the actual magnitude transformation.
 
         Parameters
         ----------
-        image                                : `image.class`
-            Image class with all image specific properties
+        image
+            Object with all image specific properties
 
-        magnitudes_literature_filter_1      : `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes_literature_filter_1
             Magnitudes of calibration stars from the literature
             for filter 1.
 
-        magnitudes_literature_filter_2      : `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes_literature_filter_2
             Magnitudes of calibration stars from the literature
             for filter 1.
 
-        calib_magnitudes_observed_filter_1   : `astropy.uncertainty.core.QuantityDistribution`
+        calib_magnitudes_observed_filter_1
             Extracted magnitudes of the calibration stars from filter 1
 
-        calib_magnitudes_observed_filter_2   : `astropy.uncertainty.core.QuantityDistribution`
+        calib_magnitudes_observed_filter_2
             Extracted magnitudes of the calibration stars from filter 2
 
-        magnitudes_filter_1                  : `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes_filter_1
             Extracted magnitudes of objects from filter 1
 
-        magnitudes_filter_2                  : `astropy.uncertainty.core.QuantityDistribution`
+        magnitudes_filter_2
             Extracted magnitudes of objects from filter 2
 
-        tc_c                                 : `float` or `ufloat`
+        tc_c
             Calibration parameter for the magnitude transformation
 
-        tc_color                             : `float` or `ufloat`
+        tc_color
             Calibration parameter for the magnitude transformation
 
-        tc_t1                                : `float` or `ufloat`
+        tc_t1
             Calibration parameter for the magnitude transformation
 
-        tc_k1                                : `float` or `ufloat`
+        tc_k1
             Calibration parameter for the magnitude transformation
 
-        tc_t2                                : `float` or `ufloat`
+        tc_t2
             Calibration parameter for the magnitude transformation
 
-        tc_k2                                : `float` or `ufloat`
+        tc_k2
             Calibration parameter for the magnitude transformation
 
-        id_current_filter                    : `integer`
+        id_current_filter
             ID of the current filter
 
-        filter_list                          : `list` - `string`
+        filter_list
             List of filter
 
-        transformation_type                  : `string`, optional
+        transformation_type
             Type of magnitude transformation.
             Possibilities: simple, air_mass, or derive
             Default is ``derive``.
 
-        distribution_samples                : `integer`, optional
+        distribution_samples
             Number of samples used for distributions
             Default is `1000`
 
         Returns
         -------
-        color_observed                      : `astropy.uncertainty.core.QuantityDistribution`
+        color_observed
             Observed color of the calibration stars
 
-        color_literature                    : `astropy.uncertainty.core.QuantityDistribution`
+        color_literature
             Literature color of the calibration stars
     """
     #   Instrument color of the calibration objects
@@ -622,33 +627,32 @@ def transformation_core(
     if transformation_type == 'simple':
         #   Calculate calibration factor
         c = tc_c * tc_color * u.mag
-    elif transformation_type == 'air_mass':
-        #   Calculate calibration factor
-        c_1 = tc_t1 * u.mag - tc_k1 * image.air_mass * u.mag
-        c_2 = tc_t2 * u.mag - tc_k2 * image.air_mass * u.mag
 
-    elif transformation_type == 'derive':
-        #   Calculate color correction coefficients
-        c_1, c_2 = derive_transformation_onthefly(
-            image,
-            filter_list,
-            id_current_filter,
-            color_literature,
-            magnitudes_literature_filter_1,
-            magnitudes_literature_filter_2,
-            calib_magnitudes_observed_filter_1,
-            calib_magnitudes_observed_filter_2,
-            distribution_samples=distribution_samples,
-        )
+    elif transformation_type in ['air_mass', 'derive']:
+        if transformation_type == 'air_mass':
+            #   Calculate calibration factor
+            c_1 = tc_t1 * u.mag - tc_k1 * image.air_mass * u.mag
+            c_2 = tc_t2 * u.mag - tc_k2 * image.air_mass * u.mag
 
-    else:
-        raise Exception(
-            f"{style.Bcolors.FAIL}\nType of magnitude transformation not known"
-            "\n\t-> Check calibration coefficients \n\t-> Exit"
-            f"{style.Bcolors.ENDC}"
-        )
+        elif transformation_type == 'derive':
+            #   Calculate color correction coefficients
+            c_1, c_2 = derive_transformation_onthefly(
+                image,
+                filter_list,
+                id_current_filter,
+                color_literature,
+                magnitudes_literature_filter_1,
+                magnitudes_literature_filter_2,
+                calib_magnitudes_observed_filter_1,
+                calib_magnitudes_observed_filter_2,
+                distribution_samples=distribution_samples,
+            )
+        else:
+            raise Exception(
+                f"{style.Bcolors.FAIL} \nThis should never happen. Error "
+                f"in transformation calculation. {style.Bcolors.ENDC}"
+            )
 
-    if transformation_type in ['air_mass', 'derive']:
         #   Calculate C or more precise C'
         denominator = 1. * u.mag - c_1 + c_2
 
@@ -662,12 +666,18 @@ def transformation_core(
                 "combination not valid \n\t-> This should never happen. The "
                 f"current filter ID is {id_current_filter}{style.Bcolors.ENDC}"
             )
+    else:
+        raise Exception(
+            f"{style.Bcolors.FAIL}\nType of magnitude transformation not known"
+            "\n\t-> Check calibration coefficients \n\t-> Exit"
+            f"{style.Bcolors.ENDC}"
+        )
 
     #   Calculate calibrated magnitudes
     color_term_all = c * color
     color_term_all = color_term_all.reshape(color_term_all.size, 1)
     color_term_calibration = c * color_observed
-    calibrated_magnitudes = image.magnitudes_with_zp + color_term_all - color_term_calibration
+    calibrated_magnitudes = unc.Distribution(image.magnitudes_with_zp) + color_term_all - color_term_calibration
 
     #   Sigma clipping to rm outliers
     _, median, stddev = sigma_clipped_stats(
@@ -686,70 +696,84 @@ def transformation_core(
 
 
 def apply_magnitude_transformation(
-        image_container, image, calib_magnitudes_literature,
-        calib_magnitudes_observed_first_filter,
-        calib_magnitudes_observed_second_filter, magnitudes_first_filter,
-        magnitudes_second_filter, magnitudes, filter_id, filter_list,
-        transformation_coefficients, plot_sigma=False,
-        transformation_type='derive', distribution_samples=1000):
+        calibration_stars_ids: np.ndarray, image: 'analyze.ImageEnsemble.Image',
+        calib_magnitudes_literature: list[unc],
+        magnitudes_calibration_current_image: unc,
+        magnitudes_calibration_comparison_image: unc,
+        magnitudes_current_image: unc, magnitudes_comparison_image: unc,
+        filter_id: int, filter_list: list[str],
+        transformation_coefficients: dict[str, (float | str)],
+        plot_sigma: bool = False, transformation_type: str = 'derive',
+        distribution_samples: int = 1000) -> None:
     """
         Apply transformation
 
         Parameters
         ----------
-        image_container                         : `image.container`
-            Container object with image ensemble objects for each filter
+        calibration_stars_ids
+            IDs of the stars for which calibration data is available
 
-        image                                   : `image.class`
-            Image class with all image specific properties
+        image
+            Object with all image specific properties
 
-        calib_magnitudes_literature             : `list` of `astropy.uncertainty.core.QuantityDistribution`
+        calib_magnitudes_literature
             Literature magnitudes for the calibration stars
 
-        calib_magnitudes_observed_first_filter  : `astropy.uncertainty.core.QuantityDistribution`
-            Observed magnitudes of the calibration stars in the first filter
+        magnitudes_calibration_current_image
+            Observed magnitudes of the calibration stars in the current filter
 
-        calib_magnitudes_observed_second_filter : `astropy.uncertainty.core.QuantityDistribution`
-            Observed magnitudes of the calibration stars in second filter
+        magnitudes_calibration_comparison_image
+            Observed magnitudes of the calibration stars in comparison filter
 
-        magnitudes_first_filter                 : `astropy.uncertainty.core.QuantityDistribution`
-            Observed magnitudes in the first filter
+        magnitudes_current_image
+            Observed magnitudes in the current filter
 
-        magnitudes_second_filter                : `astropy.uncertainty.core.QuantityDistribution`
-            Observed magnitudes in the second filter
+        magnitudes_comparison_image
+            Observed magnitudes in the comparison filter
 
-        magnitudes                              : `astropy.uncertainty.core.QuantityDistribution`
-            Observed magnitudes for the current filter
-
-        filter_id                               : `integer`
+        filter_id
             ID of the current filter
 
-        filter_list                             : `list` - `string`
+        filter_list
             List of filter
 
-        transformation_coefficients             : `dictionary`
+        transformation_coefficients
             Calibration coefficients for magnitude transformation
 
-        plot_sigma                              : `boolean`, optional
+        plot_sigma
             If True sigma clipped magnitudes will be plotted.
             Default is ``False``.
 
-        transformation_type                     : `string`, optional
+        transformation_type
             Type of magnitude transformation.
             Possibilities: simple, air_mass, or derive
             Default is ``derive``.
 
-        distribution_samples            : `integer`, optional
+        distribution_samples
             Number of samples used for distributions
             Default is `1000`
     """
+    #   Sort magnitudes for color computations. The current and comparison
+    #   magnitudes can be different, but for color, a specific combination such
+    #   as B-V is required.
+    if filter_id == 0:
+        magnitudes_calibration_first_filter = magnitudes_calibration_current_image
+        magnitudes_calibration_second_filter = magnitudes_calibration_comparison_image
+        magnitudes_first_filter = magnitudes_current_image
+        magnitudes_second_filter = magnitudes_comparison_image
+    else:
+        magnitudes_calibration_first_filter = magnitudes_calibration_comparison_image
+        magnitudes_calibration_second_filter = magnitudes_calibration_current_image
+        magnitudes_first_filter = magnitudes_comparison_image
+        magnitudes_second_filter = magnitudes_current_image
+
     #   Prepare calibration parameters
-    tc_t1 = None
-    tc_k1 = None
-    tc_t2 = None
-    tc_k2 = None
-    tc_c = None
-    tc_color = None
+    tc_t1: float | None = None
+    tc_k1: float | None = None
+    tc_t2: float | None = None
+    tc_k2: float | None = None
+    tc_c: float | None = None
+    tc_color: float | None = None
     if transformation_type == 'simple':
         tc_c = transformation_coefficients['C']
         tc_color = transformation_coefficients['color']
@@ -763,8 +787,8 @@ def apply_magnitude_transformation(
         image,
         calib_magnitudes_literature[0],
         calib_magnitudes_literature[1],
-        calib_magnitudes_observed_first_filter,
-        calib_magnitudes_observed_second_filter,
+        magnitudes_calibration_first_filter,
+        magnitudes_calibration_second_filter,
         magnitudes_first_filter,
         magnitudes_second_filter,
         tc_c,
@@ -791,15 +815,15 @@ def apply_magnitude_transformation(
         # image.zp_mask,
         color_observed.pdf_median(),
         color_literature.pdf_median(),
-        image_container.CalibParameters.inds,
+        calibration_stars_ids,
         calib_magnitudes_literature[filter_id].pdf_median(),
         image.photometry['mag_cali_trans'],
-        magnitudes.pdf_median(),
+        magnitudes_current_image.pdf_median(),
         color_observed_err=color_observed.pdf_std(),
         color_literature_err=color_literature.pdf_std(  ),
         literature_magnitudes_err=calib_magnitudes_literature[filter_id].pdf_std(),
         magnitudes_err=image.photometry['mag_cali_trans_unc'],
-        uncalibrated_magnitudes_err=magnitudes.pdf_std(),
+        uncalibrated_magnitudes_err=magnitudes_current_image.pdf_std(),
         plot_sigma_switch=plot_sigma,
     )
 
@@ -1088,7 +1112,7 @@ def prepare_zero_point(
 
 def calibrate_magnitudes_zero_point_core(
         current_image: 'analyze.ImageEnsemble.Image',
-        index_calibration_stars: list[int], current_filter_id: int,
+        index_calibration_stars: np.ndarray, current_filter_id: int,
         literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000, multiprocessing: bool = False
@@ -1099,34 +1123,44 @@ def calibrate_magnitudes_zero_point_core(
 
     Parameters
     ----------
-        current_image
-            Image object of the image that is processed, containing the
-            specific image properties
+    current_image
+        Image object of the image that is processed, containing the
+        specific image properties
 
-        index_calibration_stars
-            IDs of the stars for which calibration data is available
+    index_calibration_stars
+        IDs of the stars for which calibration data is available
 
-        current_filter_id
-            ID of the current filter
+    current_filter_id
+        ID of the current filter
 
-        literature_magnitudes
-            Literature magnitudes of the calibration stars
+    literature_magnitudes
+        Literature magnitudes of the calibration stars
 
-        calculate_zero_point_statistic
-            If `True` a statistic on the zero points will be calculated.
-            Default is ``True``.
+    calculate_zero_point_statistic
+        If `True` a statistic on the zero points will be calculated.
+        Default is ``True``.
 
-        distribution_samples
-            Number of samples used for distributions
-            Default is `1000`.
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`.
 
-        multiprocessing
-            Switch to distinguish between single and multicore processing
-            Default is ``False``.
-    
+    multiprocessing
+        Switch to distinguish between single and multicore processing
+        Default is ``False``.
+
     Returns
     -------
+    pd
+        ID of the image
 
+    zp
+        Zero point for the image
+
+    tbl
+        Table with the photometric data
+
+    magnitudes
+        Array with calibrated magnitudes
     """
     #   Restore the literature magnitudes as distributions
     #   -> This is necessary since astropy QuantityDistribution cannot be
@@ -1182,35 +1216,35 @@ def calibrate_magnitudes_zero_point(
         id_object: (int | None) = None, photometry_extraction_method: str = '',
         indent: int = 1) -> None:
     """
-        Apply the zero points to the magnitudes
+    Apply the zero points to the magnitudes
 
-        Parameters
-        ----------
-        image_container
-            Container object with image ensemble objects for each filter
+    Parameters
+    ----------
+    image_container
+        Container object with image ensemble objects for each filter
 
-        filter_list
-            Filter names
+    filter_list
+        Filter names
 
-        distribution_samples
-            Number of samples used for distributions
-            Default is `1000`.
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`.
 
-        calculate_zero_point_statistic
-            If `True` a statistic on the zero points will be calculated.
-            Default is ``True``.
+    calculate_zero_point_statistic
+        If `True` a statistic on the zero points will be calculated.
+        Default is ``True``.
 
-        id_object
-            ID of the object
-            Default is ``None``.
+    id_object
+        ID of the object
+        Default is ``None``.
 
-        photometry_extraction_method
-            Applied extraction method. Possibilities: ePSF or APER`
-            Default is ``''``.
+    photometry_extraction_method
+        Applied extraction method. Possibilities: ePSF or APER`
+        Default is ``''``.
 
-        indent
-            Indentation for the console output lines
-            Default is ``1``.
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
     """
     terminal_output.print_to_terminal(
         "Apply zero point to magnitudes",
@@ -1272,42 +1306,6 @@ def calibrate_magnitudes_zero_point(
                 }
             )
 
-            # calibrate_magnitudes_zero_point_core(
-            #     current_image,
-            #     image_container,
-            #     current_filter_id,
-            #     literature_magnitudes,
-            #     calculate_zero_point_statistic=calculate_zero_point_statistic,
-            #     distribution_samples=distribution_samples,
-            #     multiprocessing=False,
-            # )
-
-            # #   Get magnitude array for first image
-            # magnitudes_current_image = utilities.distribution_from_table(
-            #     current_image,
-            #     distribution_samples=distribution_samples,
-            # )
-            #
-            # #   Get extracted magnitudes of the calibration stars for the
-            # #   current image
-            # magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
-            #     magnitudes_current_image,
-            #     image_container,
-            # )
-            #
-            # #   Prepare ZP for the magnitude calibration
-            # prepare_zero_point(
-            #     current_image,
-            #     current_filter_id,
-            #     literature_magnitudes,
-            #     magnitudes_calibration_current_image,
-            #     calculate_zero_point_statistic=calculate_zero_point_statistic,
-            #     distribution_samples=distribution_samples,
-            # )
-            #
-            # #   Calibration without transformation
-            # calibrate_simple(current_image, magnitudes_current_image)
-
         #   Exit multiprocessing, if exceptions will occur
         if executor.err is not None:
             raise RuntimeError(
@@ -1329,7 +1327,7 @@ def calibrate_magnitudes_zero_point(
                 if pd == image_.pd:
                     image_.photometry = tbl
                     image_.zp = unc.Distribution(zp)
-                    image_.magnitudes_with_zp = unc.Distribution(magnitudes)
+                    image_.magnitudes_with_zp = magnitudes
                     tmp_list.append(image_)
 
         # TODO: Check if this is necessary
@@ -1358,63 +1356,187 @@ def calibrate_magnitudes_zero_point(
     )
 
 
+def prepare_and_perform_magnitude_calibration(
+        image_series: 'analyze.ImageEnsemble',
+        current_image: 'analyze.ImageEnsemble.Image',
+        index_calibration_stars: np.ndarray, filter_list: list[str],
+        current_filter_id: int, comparison_filter_id: int,
+        literature_magnitudes: list[unc],
+        transformation_coefficients: dict[str, (float | str)],
+        distribution_samples: int = 1000, plot_sigma: bool = False,
+        transformation_type: str = 'derive', multiprocessing: bool = False
+    ) -> Table | None:
+    """
+    This routine prepares and initializes the magnitude transformation
+
+    Parameters
+    ----------
+    image_series
+        Object that encompasses all image objects for a filter and relevant
+        information
+
+    current_image
+        Image object of the image that is processed, containing the
+        specific image properties
+
+    index_calibration_stars
+        IDs of the stars for which calibration data is available
+
+    filter_list
+        List of filter names
+
+    current_filter_id
+        ID of the current filter
+
+    comparison_filter_id
+        ID of the comparison filter
+
+    literature_magnitudes
+        Literature magnitudes of the calibration stars
+
+    transformation_coefficients
+        Calibration coefficients for magnitude transformation
+
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`.
+
+    plot_sigma
+        If True sigma clipped magnitudes will be plotted.
+        Default is ``False``.
+
+    transformation_type
+        Type of magnitude transformation.
+        Possibilities: simple, air_mass, or derive
+        Default is ``derive``.
+
+    multiprocessing
+        Switch to distinguish between single and multicore processing
+        Default is ``False``.
+
+    Returns
+    -------
+    pd
+        ID of the image
+
+    tbl
+        Table with the photometric data
+    """
+    #   Get magnitude array for first image
+    magnitudes_current_image = utilities.distribution_from_table(
+        current_image,
+        distribution_samples=distribution_samples,
+    )
+
+    #   Get extracted magnitudes of the calibration stars for the
+    #   current image
+    magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
+        magnitudes_current_image,
+        index_calibration_stars,
+    )
+
+    #   Prepare some variables and find corresponding image to
+    #   current_image
+    comparison_image = find_best_comparison_image_second_filter(
+        image_series,
+        current_image,
+        comparison_filter_id,
+        current_filter_id,
+        filter_list,
+    )
+
+    #   Get magnitude array for comparison image
+    magnitudes_comparison_image = utilities.distribution_from_table(
+        comparison_image,
+        distribution_samples=distribution_samples,
+    )
+
+    #   Get extracted magnitudes of the calibration stars
+    #   for the image in the comparison filter
+    #   -> required for magnitude transformation
+    magnitudes_calibration_comparison_image = calib.observed_magnitude_of_calibration_stars(
+        magnitudes_comparison_image,
+        index_calibration_stars,
+    )
+
+    #   Calculate transformation
+    apply_magnitude_transformation(
+        index_calibration_stars,
+        current_image,
+        literature_magnitudes,
+        magnitudes_calibration_current_image,
+        magnitudes_calibration_comparison_image,
+        magnitudes_comparison_image,
+        magnitudes_current_image,
+        current_filter_id,
+        filter_list,
+        transformation_coefficients,
+        plot_sigma=plot_sigma,
+        transformation_type=transformation_type,
+        distribution_samples=distribution_samples,
+    )
+
+    if multiprocessing:
+        return copy.deepcopy(current_image.photometry)
+
+
 def calibrate_magnitudes_transformation(
         image_container: 'analyze.ImageContainer', filter_list: (list[str] | set[str]),
-        transformation_coefficients_dict: dict[str, (float | str)] = None,
+        transformation_coefficients: dict[str, (float | str)] = None,
         derive_transformation_coefficients: bool = False, plot_sigma: bool = False,
         distribution_samples: int = 1000, calculate_zero_point_statistic: bool = True,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
         indent: int = 1) -> None:
     """
-        Apply magnitude transformation
+    Apply magnitude transformation
 
-        # Using:
-        # Δ(b-v) = (b-v)obj - (b-v)cali
-        # Δ(B-V) = Tbv * Δ(b-v)
-        # Vobj = Δv + Tv_bv * Δ(B-V) + Vcomp or Vobj
-               = v + Tv_bv*Δ(B-V) - v_cali
+    # Using:
+    # Δ(b-v) = (b-v)obj - (b-v)cali
+    # Δ(B-V) = Tbv * Δ(b-v)
+    # Vobj = Δv + Tv_bv * Δ(B-V) + Vcomp or Vobj
+           = v + Tv_bv*Δ(B-V) - v_cali
 
-        Parameters
-        ----------
-        image_container
-            Container object with image ensemble objects for each filter
+    Parameters
+    ----------
+    image_container
+        Container object with image ensemble objects for each filter
 
-        filter_list
-            Filter names
+    filter_list
+        Filter names
 
-        transformation_coefficients_dict
-            Calibration coefficients for the magnitude transformation
-            Default is ``None``.
+    transformation_coefficients
+        Calibration coefficients for the magnitude transformation
+        Default is ``None``.
 
-        derive_transformation_coefficients
-            If True the magnitude transformation coefficients will be
-            calculated from the current data even if calibration coefficients
-            are available in the database.
-            Default is ``False``
+    derive_transformation_coefficients
+        If True the magnitude transformation coefficients will be
+        calculated from the current data even if calibration coefficients
+        are available in the database.
+        Default is ``False``
 
-        plot_sigma
-            If True sigma clipped magnitudes will be plotted.
-            Default is ``False``.
+    plot_sigma
+        If True sigma clipped magnitudes will be plotted.
+        Default is ``False``.
 
-        id_object
-            ID of the object
-            Default is ``None``.
+    id_object
+        ID of the object
+        Default is ``None``.
 
-        photometry_extraction_method
-            Applied extraction method. Possibilities: ePSF or APER`
-            Default is ``''``.
+    photometry_extraction_method
+        Applied extraction method. Possibilities: ePSF or APER`
+        Default is ``''``.
 
-        calculate_zero_point_statistic
-            If `True` a statistic on the zero points will be calculated.
-            Default is ``True``.
+    calculate_zero_point_statistic
+        If `True` a statistic on the zero points will be calculated.
+        Default is ``True``.
 
-        distribution_samples
-            Number of samples used for distributions
-            Default is `1000`
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`
 
-        indent
-            Indentation for the console output lines
-            Default is ``1``.
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
     """
     terminal_output.print_to_terminal(
         "Apply magnitude transformation",
@@ -1434,18 +1556,26 @@ def calibrate_magnitudes_transformation(
         distribution_samples=distribution_samples,
     )
 
+    #   Get IDs calibration data
+    #   TODO: Check if these IDs apply to all filter/image series
+    index_calibration_stars = getattr(
+        image_container.CalibParameters,
+        'inds',
+        None,
+    )
+
     for current_filter_id, filter_ in enumerate(filter_list):
         #   Get image ensemble
-        img_ensemble = image_ensembles[filter_]
+        image_series = image_ensembles[filter_]
 
         #   Get image list
-        image_list = img_ensemble.image_list
+        image_list = image_series.image_list
         n_images = len(image_list)
 
         #   Prepare transformation
         transformation_type, comparison_filter_id, trans_coefficients = check_transformation_requirements(
             image_container,
-            transformation_coefficients_dict,
+            transformation_coefficients,
             filter_list,
             current_filter_id,
             derive_transformation_coefficients,
@@ -1453,102 +1583,60 @@ def calibrate_magnitudes_transformation(
         transformation_type_list.append(transformation_type)
 
         if transformation_type is not None:
-            #   TODO: Prepare this for multithreading
+
+            #   Initialize multiprocessing object
+            n_cores_multiprocessing = 12
+            executor = utilities.Executor(n_cores_multiprocessing)
+
             for current_image_id, current_image in enumerate(image_list):
-                #   Get magnitude array for first image
-                magnitudes_current_image = utilities.distribution_from_table(
-                    current_image,
-                    distribution_samples=distribution_samples,
-                )
-
-                #   Get IDs calibration data
-                index_calibration_stars = getattr(
-                    image_container.CalibParameters,
-                    'inds',
-                    None,
-                )
-
-                #   Get extracted magnitudes of the calibration stars for the
-                #   current image
-                magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
-                    magnitudes_current_image,
-                    index_calibration_stars,
-                )
-
-                #   Prepare ZP for the magnitude calibration
-                # prepare_zero_point(
-                #     current_image,
-                #     current_filter_id,
-                #     literature_magnitudes,
-                #     magnitudes_calibration_current_image,
-                #     calculate_zero_point_statistic=calculate_zero_point_statistic,
-                #     distribution_samples=distribution_samples,
-                # )
-
-                #   Prepare some variables and find corresponding image to
-                #   current_image
-                #   TODO: Replace current_image_id with current_image
-                comparison_image = find_best_comparison_image_second_filter(
-                    image_container,
-                    current_image_id,
-                    comparison_filter_id,
-                    current_filter_id,
-                    filter_list,
-                )
-
-                #   Get magnitude array for comparison image
-                magnitudes_comparison_image = utilities.distribution_from_table(
-                    comparison_image,
-                    distribution_samples=distribution_samples,
-                )
-
-                #   Get IDs calibration data
-                index_calibration_stars = getattr(
-                    image_container.CalibParameters,
-                    'inds',
-                    None,
-                )
-
-                #   Get extracted magnitudes of the calibration stars
-                #   for the image in the comparison filter
-                #   -> required for magnitude transformation
-                magnitudes_calibration_comparison_image = calib.observed_magnitude_of_calibration_stars(
-                    magnitudes_comparison_image,
-                    index_calibration_stars,
-                )
-
-                #   TODO: Move this to apply_transform
-                if current_filter_id == 0:
-                    magnitudes_calibration_first_filter = magnitudes_calibration_current_image
-                    magnitudes_calibration_second_filter = magnitudes_calibration_comparison_image
-                    magnitudes_first_filter = magnitudes_current_image
-                    magnitudes_second_filter = magnitudes_comparison_image
-                else:
-                    magnitudes_calibration_first_filter = magnitudes_calibration_comparison_image
-                    magnitudes_calibration_second_filter = magnitudes_calibration_current_image
-                    magnitudes_first_filter = magnitudes_comparison_image
-                    magnitudes_second_filter = magnitudes_current_image
-
-                #   Calculate transformation
-                apply_magnitude_transformation(
-                    image_container,
-                    current_image,
-                    literature_magnitudes,
-                    magnitudes_calibration_first_filter,
-                    magnitudes_calibration_second_filter,
-                    magnitudes_first_filter,
-                    magnitudes_second_filter,
-                    magnitudes_current_image,
-                    current_filter_id,
-                    filter_list,
-                    trans_coefficients,
-                    plot_sigma=plot_sigma,
-                    transformation_type=transformation_type,
-                    distribution_samples=distribution_samples,
+                executor.schedule(
+                    prepare_and_perform_magnitude_calibration,
+                    args=(
+                        image_series,
+                        current_image,
+                        index_calibration_stars,
+                        filter_list,
+                        current_filter_id,
+                        comparison_filter_id,
+                        literature_magnitudes,
+                        transformation_coefficients,
+                    ),
+                    kwargs={
+                        'distribution_samples': distribution_samples,
+                        'plot_sigma': plot_sigma,
+                        'transformation_type': transformation_type,
+                        'multiprocessing': True,
+                    }
                 )
 
                 #   Progress bar
                 progress_bar(current_image_id, n_images)
+
+            #   Exit multiprocessing, if exceptions will occur
+            if executor.err is not None:
+                raise RuntimeError(
+                    f'\n{style.Bcolors.FAIL}Zero point calibration using '
+                    f' multiprocessing failed for {filter_} :({style.Bcolors.ENDC}'
+                )
+
+            #   Close multiprocessing pool and wait until it finishes
+            executor.wait()
+
+            #   Extract results
+            res = executor.res
+
+            #   Sort multiprocessing results
+            tmp_list = []
+            for image_ in image_series.image_list:
+
+                for pd, tbl in res:
+                    if pd == image_.pd:
+                        image_.photometry = tbl
+                        tmp_list.append(image_)
+
+            # TODO: Check if this is necessary
+            image_series.image_list = tmp_list
+
             terminal_output.print_to_terminal('')
 
     ###
@@ -1654,7 +1742,7 @@ def apply_calibration(
     calibrate_magnitudes_transformation(
         image_container=image_container,
         filter_list=filter_list,
-        transformation_coefficients_dict=transformation_coefficients_dict,
+        transformation_coefficients=transformation_coefficients_dict,
         derive_transformation_coefficients=derive_transformation_coefficients,
         distribution_samples=distribution_samples,
         calculate_zero_point_statistic=calculate_zero_point_statistic,

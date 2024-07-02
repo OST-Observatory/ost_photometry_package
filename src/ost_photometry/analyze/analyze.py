@@ -295,6 +295,7 @@ class ImageContainer:
 
     #   Get the IDs of the objects of interest within the detected objects on
     #   the images
+    #   TODO: Move this out of this class
     def get_ids_object_of_interest(
             self, filter_=None, reference_ensemble_id=None):
         if filter_ is None and reference_ensemble_id is None:

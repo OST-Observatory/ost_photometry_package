@@ -105,7 +105,7 @@ def mk_magnitudes_table_and_array(
 
     #   Get object indices, X & Y pixel positions and wcs
     #   Assumes that the image ensembles are already correlated
-    wcs = image_container.ensembles[filter_list[0]].wcs
+    image_wcs = image_container.ensembles[filter_list[0]].wcs
     index_objects = image_container.ensembles[filter_list[0]].image_list[0].photometry['id']
     x_positions = image_container.ensembles[filter_list[0]].image_list[0].photometry['x_fit']
     y_positions = image_container.ensembles[filter_list[0]].image_list[0].photometry['y_fit']
@@ -121,14 +121,12 @@ def mk_magnitudes_table_and_array(
     )
 
     #   Convert Pixel to sky coordinates
-    sky = wcs.pixel_to_world(x_positions, y_positions)
+    sky = image_wcs.pixel_to_world(x_positions, y_positions)
 
     #   Add sky coordinates to table
     tbl['ra (deg)'] = sky.ra
     tbl['dec (deg)'] = sky.dec
 
-    #   TODO: rewrite this with photometry table from image objects
-    #   TODO: Add array creation
     #   Add magnitude columns to table
     for filter_ in filter_list:
         #   Get image list
@@ -2354,22 +2352,24 @@ def add_column_to_table(tbl, column_name, data, column_id):
     return tbl
 
 
-def distribution_from_table(image, distribution_samples=1000):
+def distribution_from_table(
+        image: 'analyze.ImageEnsemble.Image',
+        distribution_samples: int = 1000) -> unc:
     """
     Arrange the literature values in a numpy array or uncertainty array.
 
     Parameters
     ----------
-    image                   : `image`
-        Image object
+    image
+        Object with image data
 
-    distribution_samples    : `integer`, optional
+    distribution_samples
         Number of samples used for distributions
         Default is `1000`
 
     Returns
     -------
-    distribution    : `astropy.uncertainty.normal`
+    distribution
         Normal distribution representing observed magnitudes
     """
     #   Build normal distribution
