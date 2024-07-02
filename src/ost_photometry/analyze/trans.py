@@ -1143,11 +1143,14 @@ def calibrate_magnitudes_zero_point_core(
         distribution_samples=distribution_samples,
     )
 
+    #   Get IDs calibration data
+    index_calibration_stars = getattr(image_container.CalibParameters, 'inds', None)
+
     #   Get extracted magnitudes of the calibration stars for the
     #   current image
     magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
         magnitudes_current_image,
-        image_container,
+        index_calibration_stars,
     )
 
     #   Prepare ZP for the magnitude calibration
@@ -1454,11 +1457,18 @@ def calibrate_magnitudes_transformation(
                     distribution_samples=distribution_samples,
                 )
 
+                #   Get IDs calibration data
+                index_calibration_stars = getattr(
+                    image_container.CalibParameters,
+                    'inds',
+                    None,
+                )
+
                 #   Get extracted magnitudes of the calibration stars for the
                 #   current image
                 magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
                     magnitudes_current_image,
-                    image_container,
+                    index_calibration_stars,
                 )
 
                 #   Prepare ZP for the magnitude calibration
@@ -1488,12 +1498,19 @@ def calibrate_magnitudes_transformation(
                     distribution_samples=distribution_samples,
                 )
 
+                #   Get IDs calibration data
+                index_calibration_stars = getattr(
+                    image_container.CalibParameters,
+                    'inds',
+                    None,
+                )
+
                 #   Get extracted magnitudes of the calibration stars
                 #   for the image in the comparison filter
                 #   -> required for magnitude transformation
                 magnitudes_calibration_comparison_image = calib.observed_magnitude_of_calibration_stars(
                     magnitudes_comparison_image,
-                    image_container,
+                    index_calibration_stars,
                 )
 
                 #   TODO: Move this to apply_transform

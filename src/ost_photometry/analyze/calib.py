@@ -645,9 +645,8 @@ def load_calibration_data_table(
     return calib_tbl, column_names, ra_unit
 
 
-#   TODO: Convert all function definitions to this style
 def observed_magnitude_of_calibration_stars(
-        magnitude_distribution, img_container):
+        magnitude_distribution: unc, calibration_stars_ids: list(int)) -> unc:
     """
         Sort and rearrange the distribution of extracted magnitudes so that
         the returned distribution contains the extracted magnitudes of the
@@ -655,23 +654,21 @@ def observed_magnitude_of_calibration_stars(
 
         Parameters
         ----------
-        magnitude_distribution          : `astropy.uncertainty.normal`
+        magnitude_distribution
             Distribution with image magnitudes
 
-        img_container                   : `image.container`
-            Container object with image ensemble objects for each filter
+        calibration_stars_ids
+            IDs of the stars for which calibration data is available
 
         Returns
         -------
-        distribution_calibration_observed : `astropy.uncertainty.normal`
+        distribution_calibration_observed
             Rearrange distribution
     """
-    #   Get calibration data
-    #   TODO: Convert to getattr()
-    index_calibration_stars = img_container.CalibParameters.inds
-
     #   Sort magnitudes
-    distribution_calibration_observed = magnitude_distribution[index_calibration_stars]
+    distribution_calibration_observed = magnitude_distribution[
+        calibration_stars_ids
+    ]
 
     return distribution_calibration_observed
 
