@@ -1088,7 +1088,7 @@ def prepare_zero_point(
 
 def calibrate_magnitudes_zero_point_core(
         current_image: 'analyze.ImageEnsemble.Image',
-        image_container: 'analyze.ImageContainer', current_filter_id: int,
+        index_calibration_stars: list[int], current_filter_id: int,
         literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000, multiprocessing: bool = False
@@ -1103,8 +1103,8 @@ def calibrate_magnitudes_zero_point_core(
             Image object of the image that is processed, containing the
             specific image properties
 
-        image_container
-            Container object with image ensemble objects for each filter
+        index_calibration_stars
+            IDs of the stars for which calibration data is available
 
         current_filter_id
             ID of the current filter
@@ -1142,9 +1142,6 @@ def calibrate_magnitudes_zero_point_core(
         current_image,
         distribution_samples=distribution_samples,
     )
-
-    #   Get IDs calibration data
-    index_calibration_stars = getattr(image_container.CalibParameters, 'inds', None)
 
     #   Get extracted magnitudes of the calibration stars for the
     #   current image
@@ -1251,13 +1248,20 @@ def calibrate_magnitudes_zero_point(
         n_cores_multiprocessing = 12
         executor = utilities.Executor(n_cores_multiprocessing)
 
+        #   Get IDs calibration data
+        index_calibration_stars = getattr(
+            image_container.CalibParameters,
+            'inds',
+            None,
+        )
+
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
             executor.schedule(
                 calibrate_magnitudes_zero_point_core,
                 args=(
                     current_image,
-                    image_container,
+                    index_calibration_stars,
                     current_filter_id,
                     literature_magnitudes,
                 ),

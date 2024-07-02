@@ -646,7 +646,7 @@ def load_calibration_data_table(
 
 
 def observed_magnitude_of_calibration_stars(
-        magnitude_distribution: unc, calibration_stars_ids: list(int)) -> unc:
+        magnitude_distribution: unc, calibration_stars_ids: list[int]) -> unc:
     """
         Sort and rearrange the distribution of extracted magnitudes so that
         the returned distribution contains the extracted magnitudes of the
