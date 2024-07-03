@@ -1294,7 +1294,7 @@ def calculate_image_shifts_core(image_ccd_object, reference_ccd_object,
                 transformation_coefficiants.translation[1],
                 transformation_coefficiants.translation[0]
             )
-        except:
+        except IndexError:
             image_shift = (0., 0.)
             terminal_output.print_to_terminal(
                 f"WARNING: Offset determination for image {image_id}"

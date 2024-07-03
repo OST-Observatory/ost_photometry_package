@@ -692,11 +692,12 @@ def transformation_core(
 
 def apply_magnitude_transformation(
         calibration_stars_ids: np.ndarray, image: 'analyze.ImageEnsemble.Image',
-        calib_magnitudes_literature: list[unc],
-        magnitudes_calibration_current_image: unc,
-        magnitudes_calibration_comparison_image: unc,
-        magnitudes_current_image: unc, magnitudes_comparison_image: unc,
-        filter_id: int, filter_list: list[str],
+        calib_magnitudes_literature: list[u.quantity.Quantity],
+        magnitudes_calibration_current_image: u.quantity.Quantity,
+        magnitudes_calibration_comparison_image: u.quantity.Quantity,
+        magnitudes_current_image: u.quantity.Quantity,
+        magnitudes_comparison_image: u.quantity.Quantity, filter_id: int,
+        filter_list: list[str],
         transformation_coefficients: dict[str, (float | str)],
         plot_sigma: bool = False, transformation_type: str = 'derive',
         distribution_samples: int = 1000, multiprocessing: bool = False
@@ -754,6 +755,20 @@ def apply_magnitude_transformation(
         Default is ``False``.
 
     """
+    #   Restore magnitudes as distributions
+    #   -> This is necessary since astropy QuantityDistribution cannot be
+    #      prickled/serialized
+    #   TODO: Check if this workaround is still necessary
+    tmp_list = []
+    for magnitudes in calib_magnitudes_literature:
+        tmp_list.append(unc.Distribution(magnitudes))
+    calib_magnitudes_literature = tmp_list
+
+    magnitudes_calibration_current_image = unc.Distribution(magnitudes_calibration_current_image)
+    magnitudes_calibration_comparison_image = unc.Distribution(magnitudes_calibration_comparison_image)
+    magnitudes_current_image = unc.Distribution(magnitudes_current_image)
+    magnitudes_comparison_image = unc.Distribution(magnitudes_comparison_image)
+
     #   Sort magnitudes for color computations. The current and comparison
     #   magnitudes can be different, but for color, a specific combination such
     #   as B-V is required.
@@ -1464,6 +1479,12 @@ def calibrate_magnitudes_transformation(
                     distribution_samples=distribution_samples,
                 )
 
+                #   The '.distribution' below is currently necessary for the multicore
+                #   processing below, because astropy QuantityDistribution cannot be
+                #   prickled/serialized
+                #   TODO: Check if this workaround is still necessary
+                magnitudes_current_image = magnitudes_current_image.distribution
+
                 #   Get extracted magnitudes of the calibration stars for the
                 #   current image
                 magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
@@ -1485,6 +1506,12 @@ def calibrate_magnitudes_transformation(
                     comparison_image,
                     distribution_samples=distribution_samples,
                 )
+
+                #   The '.distribution' below is currently necessary for the multicore
+                #   processing below, because astropy QuantityDistribution cannot be
+                #   prickled/serialized
+                #   TODO: Check if this workaround is still necessary
+                magnitudes_comparison_image = magnitudes_comparison_image.distribution
 
                 #   Get extracted magnitudes of the calibration stars
                 #   for the image in the comparison filter
