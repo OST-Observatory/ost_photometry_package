@@ -209,11 +209,13 @@ def check_transformation_requirements(
 
 def derive_transformation_onthefly(
         image: 'analyze.ImageEnsemble.Image', filter_list: list[str],
-        id_current_filter: int, color_literature: unc,
-        magnitudes_literature_filter_1: unc,
-        magnitudes_literature_filter_2: unc,
-        magnitudes_observed_filter_1: unc, magnitudes_observed_filter_2: unc,
-        distribution_samples: int = 1000) -> tuple[unc, unc]:
+        id_current_filter: int, color_literature: unc.core.NdarrayDistribution,
+        magnitudes_literature_filter_1: unc.core.NdarrayDistribution,
+        magnitudes_literature_filter_2: unc.core.NdarrayDistribution,
+        magnitudes_observed_filter_1: unc.core.NdarrayDistribution,
+        magnitudes_observed_filter_2: unc.core.NdarrayDistribution,
+        distribution_samples: int = 1000
+    ) -> tuple[unc.core.NdarrayDistribution, unc.core.NdarrayDistribution]:
     """
         Determine the parameters for the color term used in the magnitude
         calibration. This corresponds to a magnitude transformation without
@@ -526,15 +528,17 @@ def derive_transformation_onthefly(
 
 def transformation_core(
         image: 'analyze.ImageEnsemble.Image',
-        magnitudes_literature_filter_1: unc,
-        magnitudes_literature_filter_2: unc,
-        calib_magnitudes_observed_filter_1: unc,
-        calib_magnitudes_observed_filter_2: unc,
-        magnitudes_filter_1: unc, magnitudes_filter_2: unc, tc_c: float,
+        magnitudes_literature_filter_1: unc.core.NdarrayDistribution,
+        magnitudes_literature_filter_2: unc.core.NdarrayDistribution,
+        calib_magnitudes_observed_filter_1: unc.core.NdarrayDistribution,
+        calib_magnitudes_observed_filter_2: unc.core.NdarrayDistribution,
+        magnitudes_filter_1: unc.core.NdarrayDistribution,
+        magnitudes_filter_2: unc.core.NdarrayDistribution, tc_c: float,
         tc_color: float, tc_t1: float, tc_k1: float, tc_t2: float,
         tc_k2: float, id_current_filter: int, filter_list: list[str],
         transformation_type: str = 'derive',
-        distribution_samples: int = 1000) -> tuple[unc, unc]:
+        distribution_samples: int = 1000
+    ) -> tuple[unc.core.NdarrayDistribution, unc.core.NdarrayDistribution]:
     """
         Routine that performs the actual magnitude transformation.
 
@@ -841,6 +845,7 @@ def apply_magnitude_transformation(
         magnitudes_err=image.photometry['mag_cali_trans_unc'],
         uncalibrated_magnitudes_err=magnitudes_current_image.pdf_std(),
         plot_sigma_switch=plot_sigma,
+        multiprocessing=not multiprocessing,
     )
 
     if multiprocessing:
@@ -848,9 +853,10 @@ def apply_magnitude_transformation(
 
 
 def calibrate_simple(
-        image: 'analyze.ImageEnsemble.Image' , not_calibrated_magnitudes: unc,
-        zp: unc,
-        ) -> tuple[Table, unc]:
+        image: 'analyze.ImageEnsemble.Image',
+        not_calibrated_magnitudes: unc.core.NdarrayDistribution,
+        zp: unc.core.NdarrayDistribution,
+        ) -> tuple[Table, unc.core.NdarrayDistribution]:
     """
         Calibrate magnitudes without magnitude transformation
 
@@ -1030,9 +1036,10 @@ def flux_normalization_ensemble(image_ensemble, distribution_samples=1000):
 
 def prepare_zero_point(
         image: 'analyze.ImageEnsemble.Image', id_filter: int,
-        literature_magnitude_list: list[unc], magnitudes_calibration_stars: unc,
+        literature_magnitude_list: list[unc.core.NdarrayDistribution],
+        magnitudes_calibration_stars: unc.core.NdarrayDistribution,
         calculate_zero_point_statistic: bool = True,
-        distribution_samples: int = 1000) -> unc:
+        distribution_samples: int = 1000) -> unc.core.NdarrayDistribution:
     """
         Calculate zero point values based on calibration stars and
         sigma clip these values before calculating median

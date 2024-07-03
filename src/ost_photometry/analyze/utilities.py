@@ -1062,7 +1062,8 @@ def calibration_check_plots(
         literature_magnitudes, magnitudes, uncalibrated_magnitudes,
         color_observed_err=None, color_literature_err=None,
         literature_magnitudes_err=None, magnitudes_err=None,
-        uncalibrated_magnitudes_err=None, plot_sigma_switch=False):
+        uncalibrated_magnitudes_err=None, plot_sigma_switch=False,
+        multiprocessing: bool = True):
     """
         Useful plots to check the quality of the calibration process.
 
@@ -1124,26 +1125,42 @@ def calibration_check_plots(
         plot_sigma_switch           : `boolean`, optional
             If True sigma clipped magnitudes will be plotted.
             Default is ``False``.
+
+        multiprocessing
+            If ``True'', multicore processing is allowed, otherwise not.
     """
     #   TODO: Cleanup & add new plots
     #   Comparison observed vs. literature magnitudes
-    p = mp.Process(
-        target=plot.scatter,
-        args=(
+    if multiprocessing:
+        p = mp.Process(
+            target=plot.scatter,
+            args=(
+                [magnitudes],
+                f'{filter_}_calibration [mag]',
+                [uncalibrated_magnitudes],
+                f'{filter_}_no-calibration [mag]',
+                f'mag-cali_mags_{filter_}_img_{image_id}',
+                out_dir,
+            ),
+            kwargs={
+                'name_object': name_object,
+                'x_errors': [magnitudes_err],
+                'y_errors': [uncalibrated_magnitudes_err],
+            }
+        )
+        p.start()
+    else:
+        plot.scatter(
             [magnitudes],
             f'{filter_}_calibration [mag]',
             [uncalibrated_magnitudes],
             f'{filter_}_no-calibration [mag]',
             f'mag-cali_mags_{filter_}_img_{image_id}',
             out_dir,
-        ),
-        kwargs={
-            'name_object': name_object,
-            'x_errors': [magnitudes_err],
-            'y_errors': [uncalibrated_magnitudes_err],
-        }
-    )
-    p.start()
+            name_object=name_object,
+            x_errors=[magnitudes_err],
+            y_errors=[uncalibrated_magnitudes_err],
+        )
 
     #   Illustration of sigma clipping on calibration magnitudes
     # if plot_sigma_switch:
