@@ -1261,15 +1261,6 @@ def calibrate_magnitudes_zero_point(
         distribution_samples=distribution_samples,
     )
 
-    #   Sanitize literature magnitudes for multicore processing
-    #   -> This is necessary since astropy QuantityDistribution cannot be
-    #      prickled/serialized
-    #   TODO: Check if this workaround is still necessary
-    tmp_list = []
-    for magnitudes in literature_magnitudes:
-        tmp_list.append(magnitudes.distribution)
-    literature_magnitudes = tmp_list
-
     #   TODO: Prepare this for multithreading
     for current_filter_id, filter_ in enumerate(filter_list):
         #   Get image ensemble
@@ -1422,6 +1413,15 @@ def prepare_and_perform_magnitude_calibration(
     tbl
         Table with the photometric data
     """
+    #   Restore the literature magnitudes as distributions
+    #   -> This is necessary since astropy QuantityDistribution cannot be
+    #      prickled/serialized
+    #   TODO: Check if this workaround is still necessary
+    tmp_list = []
+    for magnitudes in literature_magnitudes:
+        tmp_list.append(unc.Distribution(magnitudes))
+    literature_magnitudes = tmp_list
+
     #   Get magnitude array for first image
     magnitudes_current_image = utilities.distribution_from_table(
         current_image,

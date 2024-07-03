@@ -1100,8 +1100,11 @@ def distribution_from_calibration_table(
             std=calibration_magnitudes_err.value * u.mag,
             n_samples=distribution_samples,
         )
+        #   The '.distribution' below is currently necessary, because astropy
+        #   QuantityDistribution cannot be prickled/serialized
+        #   TODO: Check if this workaround is still necessary
         distribution_list.append(
-            literature_magnitudes_distribution
+            literature_magnitudes_distribution.distribution
         )
 
     return distribution_list
