@@ -1059,25 +1059,26 @@ def correlate_with_calibration_objects(
 
 
 def distribution_from_calibration_table(
-        calibration_parameters, filter_list, distribution_samples=1000):
+        calibration_parameters: CalibParameters, filter_list: list[str],
+        distribution_samples: int = 1000) -> list[u.quantity.Quantity]:
     """
         Arrange the literature values in a numpy array or uncertainty array.
 
         Parameters
         ----------
-        calibration_parameters  : `CalibParameters` instance
+        calibration_parameters
             Class instance with calibration data
 
-        filter_list             : `list` of `string`
+        filter_list
             Filter names
 
-        distribution_samples    : `integer`, optional
+        distribution_samples
             Number of samples used for distributions
             Default is `1000`.
 
         Returns
         -------
-        distribution_list       : `list` of `astropy.uncertainty.normal`
+        distribution_list
             Normal distribution representing literature magnitudes
     """
     #   Get column names
@@ -1086,7 +1087,7 @@ def distribution_from_calibration_table(
     #   Get calibration table
     calibration_data_table = calibration_parameters.calib_tbl
 
-    distribution_list = []
+    distribution_list: list[u.quantity.Quantity] = []
     for filter_ in filter_list:
         calibration_magnitudes = calibration_data_table[
             calib_column_names[f'mag{filter_}']

@@ -1262,11 +1262,24 @@ def calculate_image_shifts_core(image_ccd_object, reference_ccd_object,
             '|': 'not applicable',
         }
         if endian_map[image_ccd_object.data.dtype.byteorder] != sys.byteorder:
-            image_ccd_object.data = image_ccd_object.data.byteswap().newbyteorder()
-            reference_ccd_object.data = reference_ccd_object.data.byteswap().newbyteorder()
-            u_img = image_ccd_object.uncertainty.array.byteswap().newbyteorder()
+            image_ccd_object.data = image_ccd_object.data.byteswap()
+            image_ccd_object.data = image_ccd_object.data.view(
+                image_ccd_object.data.dtype.newbyteorder()
+            )
+
+            reference_ccd_object.data = reference_ccd_object.data.byteswap()
+            reference_ccd_object.data = reference_ccd_object.data.view(
+                reference_ccd_object.data.dtype.newbyteorder()
+            )
+
+            u_img = image_ccd_object.uncertainty.array.byteswap()
+            u_img = u_img.view(u_img.dtype.newbyteorder())
+
             image_ccd_object.uncertainty = StdDevUncertainty(u_img)
-            u_re = reference_ccd_object.uncertainty.array.byteswap().newbyteorder()
+
+            u_re = reference_ccd_object.uncertainty.array.byteswap()
+            u_re = u_re.view(u_re.dtype.newbyteorder())
+
             reference_ccd_object.uncertainty = StdDevUncertainty(u_re)
 
         #   Determine transformation between the images

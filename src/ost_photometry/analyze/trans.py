@@ -47,8 +47,8 @@ def progress_bar(count_value, total, suffix=''):
 
 
 def find_best_comparison_image_second_filter(
-        image_series: 'analyze.ImageEnsemble', current_image: 'analyze.ImageEnsemble.Image',
-        id_second_filter: int, id_current_filter: int, filter_list: list[str]
+        image_series: dict[str:'analyze.ImageEnsemble'], current_image: 'analyze.ImageEnsemble.Image',
+        id_second_filter: int, filter_list: list[str]
         ) -> 'analyze.ImageEnsemble.Image':
     """
         Prepare variables for magnitude transformation
@@ -65,8 +65,6 @@ def find_best_comparison_image_second_filter(
         id_second_filter
             ID of the second filter
 
-        id_current_filter
-            ID of the current filter
 
         filter_list
             List of filter names
@@ -76,9 +74,6 @@ def find_best_comparison_image_second_filter(
         best_image_second_filter
             Image class with all image specific properties
     """
-    #   Get image series
-    current_image_series = image_series[filter_list[id_current_filter]]
-
     #   Get observation time of current image and all images of the
     #   second filter
     obs_time_current_image = current_image.jd
@@ -704,54 +699,60 @@ def apply_magnitude_transformation(
         filter_id: int, filter_list: list[str],
         transformation_coefficients: dict[str, (float | str)],
         plot_sigma: bool = False, transformation_type: str = 'derive',
-        distribution_samples: int = 1000) -> None:
+        distribution_samples: int = 1000, multiprocessing: bool = False
+    ) -> tuple[int, Table] | None:
     """
-        Apply transformation
+    Apply transformation
 
-        Parameters
-        ----------
-        calibration_stars_ids
-            IDs of the stars for which calibration data is available
+    Parameters
+    ----------
+    calibration_stars_ids
+        IDs of the stars for which calibration data is available
 
-        image
-            Object with all image specific properties
+    image
+        Object with all image specific properties
 
-        calib_magnitudes_literature
-            Literature magnitudes for the calibration stars
+    calib_magnitudes_literature
+        Literature magnitudes for the calibration stars
 
-        magnitudes_calibration_current_image
-            Observed magnitudes of the calibration stars in the current filter
+    magnitudes_calibration_current_image
+        Observed magnitudes of the calibration stars in the current filter
 
-        magnitudes_calibration_comparison_image
-            Observed magnitudes of the calibration stars in comparison filter
+    magnitudes_calibration_comparison_image
+        Observed magnitudes of the calibration stars in comparison filter
 
-        magnitudes_current_image
-            Observed magnitudes in the current filter
+    magnitudes_current_image
+        Observed magnitudes in the current filter
 
-        magnitudes_comparison_image
-            Observed magnitudes in the comparison filter
+    magnitudes_comparison_image
+        Observed magnitudes in the comparison filter
 
-        filter_id
-            ID of the current filter
+    filter_id
+        ID of the current filter
 
-        filter_list
-            List of filter
+    filter_list
+        List of filter
 
-        transformation_coefficients
-            Calibration coefficients for magnitude transformation
+    transformation_coefficients
+        Calibration coefficients for magnitude transformation
 
-        plot_sigma
-            If True sigma clipped magnitudes will be plotted.
-            Default is ``False``.
+    plot_sigma
+        If True sigma clipped magnitudes will be plotted.
+        Default is ``False``.
 
-        transformation_type
-            Type of magnitude transformation.
-            Possibilities: simple, air_mass, or derive
-            Default is ``derive``.
+    transformation_type
+        Type of magnitude transformation.
+        Possibilities: simple, air_mass, or derive
+        Default is ``derive``.
 
-        distribution_samples
-            Number of samples used for distributions
-            Default is `1000`
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`.
+
+    multiprocessing
+        Switch to distinguish between single and multicore processing
+        Default is ``False``.
+
     """
     #   Sort magnitudes for color computations. The current and comparison
     #   magnitudes can be different, but for color, a specific combination such
@@ -826,6 +827,9 @@ def apply_magnitude_transformation(
         uncalibrated_magnitudes_err=magnitudes_current_image.pdf_std(),
         plot_sigma_switch=plot_sigma,
     )
+
+    if multiprocessing:
+        return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
 
 
 def calibrate_simple(
@@ -1116,7 +1120,7 @@ def calibrate_magnitudes_zero_point_core(
         literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000, multiprocessing: bool = False
-        ) -> tuple[int, u.quantity.Quantity, Table, u.quantity.Quantity]:
+        ) -> tuple[int, Table, u.quantity.Quantity]:
     """
     Core module for zero point calibration that allows also for multicore
     processing
@@ -1203,11 +1207,10 @@ def calibrate_magnitudes_zero_point_core(
 
     if multiprocessing:
         pd = copy.deepcopy(current_image.pd)
-        zp = copy.deepcopy(zp.distribution)
         tbl = copy.deepcopy(photometry_table)
         magnitudes = copy.deepcopy(calibrated_magnitudes.distribution)
 
-        return pd, zp, tbl, magnitudes
+        return pd, tbl, magnitudes
 
 
 def calibrate_magnitudes_zero_point(
@@ -1314,10 +1317,9 @@ def calibrate_magnitudes_zero_point(
         tmp_list = []
         for image_ in image_ensemble.image_list:
 
-            for pd, zp, tbl, magnitudes in res:
+            for pd, tbl, magnitudes in res:
                 if pd == image_.pd:
                     image_.photometry = tbl
-                    image_.zp = unc.Distribution(zp)
                     image_.magnitudes_with_zp = magnitudes
                     tmp_list.append(image_)
 
@@ -1345,139 +1347,6 @@ def calibrate_magnitudes_zero_point(
         id_object=id_object,
         photometry_extraction_method=photometry_extraction_method,
     )
-
-
-def prepare_and_perform_magnitude_calibration(
-        image_series: 'analyze.ImageEnsemble',
-        current_image: 'analyze.ImageEnsemble.Image',
-        index_calibration_stars: np.ndarray, filter_list: list[str],
-        current_filter_id: int, comparison_filter_id: int,
-        literature_magnitudes: list[unc],
-        transformation_coefficients: dict[str, (float | str)],
-        distribution_samples: int = 1000, plot_sigma: bool = False,
-        transformation_type: str = 'derive', multiprocessing: bool = False
-    ) -> Table | None:
-    """
-    This routine prepares and initializes the magnitude transformation
-
-    Parameters
-    ----------
-    image_series
-        Object that encompasses all image objects for a filter and relevant
-        information
-
-    current_image
-        Image object of the image that is processed, containing the
-        specific image properties
-
-    index_calibration_stars
-        IDs of the stars for which calibration data is available
-
-    filter_list
-        List of filter names
-
-    current_filter_id
-        ID of the current filter
-
-    comparison_filter_id
-        ID of the comparison filter
-
-    literature_magnitudes
-        Literature magnitudes of the calibration stars
-
-    transformation_coefficients
-        Calibration coefficients for magnitude transformation
-
-    distribution_samples
-        Number of samples used for distributions
-        Default is `1000`.
-
-    plot_sigma
-        If True sigma clipped magnitudes will be plotted.
-        Default is ``False``.
-
-    transformation_type
-        Type of magnitude transformation.
-        Possibilities: simple, air_mass, or derive
-        Default is ``derive``.
-
-    multiprocessing
-        Switch to distinguish between single and multicore processing
-        Default is ``False``.
-
-    Returns
-    -------
-    pd
-        ID of the image
-
-    tbl
-        Table with the photometric data
-    """
-    #   Restore the literature magnitudes as distributions
-    #   -> This is necessary since astropy QuantityDistribution cannot be
-    #      prickled/serialized
-    #   TODO: Check if this workaround is still necessary
-    tmp_list = []
-    for magnitudes in literature_magnitudes:
-        tmp_list.append(unc.Distribution(magnitudes))
-    literature_magnitudes = tmp_list
-
-    #   Get magnitude array for first image
-    magnitudes_current_image = utilities.distribution_from_table(
-        current_image,
-        distribution_samples=distribution_samples,
-    )
-
-    #   Get extracted magnitudes of the calibration stars for the
-    #   current image
-    magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
-        magnitudes_current_image,
-        index_calibration_stars,
-    )
-
-    #   Prepare some variables and find corresponding image to
-    #   current_image
-    comparison_image = find_best_comparison_image_second_filter(
-        image_series,
-        current_image,
-        comparison_filter_id,
-        current_filter_id,
-        filter_list,
-    )
-
-    #   Get magnitude array for comparison image
-    magnitudes_comparison_image = utilities.distribution_from_table(
-        comparison_image,
-        distribution_samples=distribution_samples,
-    )
-
-    #   Get extracted magnitudes of the calibration stars
-    #   for the image in the comparison filter
-    #   -> required for magnitude transformation
-    magnitudes_calibration_comparison_image = calib.observed_magnitude_of_calibration_stars(
-        magnitudes_comparison_image,
-        index_calibration_stars,
-    )
-
-    #   Calculate transformation
-    apply_magnitude_transformation(
-        index_calibration_stars,
-        current_image,
-        literature_magnitudes,
-        magnitudes_calibration_current_image,
-        magnitudes_calibration_comparison_image,
-        magnitudes_comparison_image,
-        magnitudes_current_image,
-        current_filter_id,
-        filter_list,
-        transformation_coefficients,
-        plot_sigma=plot_sigma,
-        transformation_type=transformation_type,
-        distribution_samples=distribution_samples,
-    )
-
-    if multiprocessing:
-        return copy.deepcopy(current_image.photometry)
 
 
 def calibrate_magnitudes_transformation(
@@ -1544,7 +1413,7 @@ def calibrate_magnitudes_transformation(
     )
 
     #   Get image ensembles
-    image_ensembles = image_container.ensembles
+    image_series_dict = image_container.ensembles
 
     #   Initialize list for
     transformation_type_list = []
@@ -1566,10 +1435,10 @@ def calibrate_magnitudes_transformation(
 
     for current_filter_id, filter_ in enumerate(filter_list):
         #   Get image ensemble
-        image_series = image_ensembles[filter_]
+        current_image_series = image_series_dict[filter_]
 
         #   Get image list
-        image_list = image_series.image_list
+        image_list = current_image_series.image_list
         n_images = len(image_list)
 
         #   Prepare transformation
@@ -1589,22 +1458,60 @@ def calibrate_magnitudes_transformation(
             executor = utilities.Executor(n_cores_multiprocessing)
 
             for current_image_id, current_image in enumerate(image_list):
+                #   Get magnitude array for first image
+                magnitudes_current_image = utilities.distribution_from_table(
+                    current_image,
+                    distribution_samples=distribution_samples,
+                )
+
+                #   Get extracted magnitudes of the calibration stars for the
+                #   current image
+                magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
+                    magnitudes_current_image,
+                    index_calibration_stars,
+                )
+
+                #   Prepare some variables and find corresponding image to
+                #   current_image
+                comparison_image = find_best_comparison_image_second_filter(
+                    image_series_dict,
+                    current_image,
+                    comparison_filter_id,
+                    filter_list,
+                )
+
+                #   Get magnitude array for comparison image
+                magnitudes_comparison_image = utilities.distribution_from_table(
+                    comparison_image,
+                    distribution_samples=distribution_samples,
+                )
+
+                #   Get extracted magnitudes of the calibration stars
+                #   for the image in the comparison filter
+                #   -> required for magnitude transformation
+                magnitudes_calibration_comparison_image = calib.observed_magnitude_of_calibration_stars(
+                    magnitudes_comparison_image,
+                    index_calibration_stars,
+                )
+
                 executor.schedule(
-                    prepare_and_perform_magnitude_calibration,
+                    apply_magnitude_transformation,
                     args=(
-                        image_series,
-                        current_image,
                         index_calibration_stars,
-                        filter_list,
-                        current_filter_id,
-                        comparison_filter_id,
+                        current_image,
                         literature_magnitudes,
+                        magnitudes_calibration_current_image,
+                        magnitudes_calibration_comparison_image,
+                        magnitudes_comparison_image,
+                        magnitudes_current_image,
+                        current_filter_id,
+                        filter_list,
                         transformation_coefficients,
                     ),
                     kwargs={
-                        'distribution_samples': distribution_samples,
                         'plot_sigma': plot_sigma,
                         'transformation_type': transformation_type,
+                        'distribution_samples': distribution_samples,
                         'multiprocessing': True,
                     }
                 )
@@ -1627,7 +1534,7 @@ def calibrate_magnitudes_transformation(
 
             #   Sort multiprocessing results
             tmp_list = []
-            for image_ in image_series.image_list:
+            for image_ in current_image_series.image_list:
 
                 for pd, tbl in res:
                     if pd == image_.pd:
@@ -1635,7 +1542,7 @@ def calibrate_magnitudes_transformation(
                         tmp_list.append(image_)
 
             # TODO: Check if this is necessary
-            image_series.image_list = tmp_list
+            current_image_series.image_list = tmp_list
 
             terminal_output.print_to_terminal('')
 
