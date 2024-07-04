@@ -1450,7 +1450,7 @@ def reduce_light(image_path, output_dir, image_type, rm_cosmic_rays=True,
         if gain is None:
             try:
                 gain = light.header['EGAIN']
-            except:
+            except KeyError:
                 gain = 1.
                 terminal_output.print_to_terminal(
                     "WARNING: Gain could not de derived from the "

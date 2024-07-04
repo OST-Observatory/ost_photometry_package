@@ -63,7 +63,7 @@ import multiprocessing as mp
 from . import utilities, calib, trans, plot, correlate
 # from . import subtraction
 
-from .. import style, checks, terminal_output, calibration_data
+from .. import style, checks, terminal_output
 
 from .. import utilities as base_utilities
 
@@ -1076,6 +1076,7 @@ def check_epsf_stars(image, size_epsf_region=25, minimum_n_stars=25,
     y_all[0:len(y1), 0] = y1
     y_all[0:len(y2), 1] = y2
 
+    #   TODO: Check if a bug hides here
     id_percentile_99 = correlate.correlation_own(
         x_all,
         y_all,
@@ -1933,343 +1934,6 @@ def extraction_aperture(image, radius_aperture, inner_annulus_radius,
         )
 
 
-#   TODO: Move to correlation
-def correlate_ensemble_images(
-        img_ensemble, max_pixel_between_objects=3., own_correlation_option=1,
-        cross_identification_limit=1, reference_obj_ids=None,
-        n_allowed_non_detections_object=1, expected_bad_image_fraction=1.0,
-        protect_reference_obj=True, correlation_method='astropy',
-        separation_limit=2. * u.arcsec):
-    """
-        Correlate object positions from all stars in the image ensemble to
-        identify those objects that are visible on all images
-
-        Parameters
-        ----------
-        img_ensemble                    : `image ensemble`
-            Ensemble of images, e.g., taken in one filter
-
-        max_pixel_between_objects       : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
-
-        own_correlation_option          : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
-
-        cross_identification_limit      : `integer`, optional
-            Cross-identification limit between multiple objects in the current
-            image and one object in the reference image. The current image is
-            rejected when this limit is reached.
-            Default is ``1``.
-
-        reference_obj_ids               : `list` of `integer` or `numpy.ndarray` or None, optional
-            IDs of the reference objects. The reference objects will not be
-            removed from the list of objects.
-            Default is ``None``.
-
-        n_allowed_non_detections_object : `integer`, optional
-            Maximum number of times an object may not be detected in an image.
-            When this limit is reached, the object will be removed.
-            Default is ``i`.
-
-        expected_bad_image_fraction     : `float`, optional
-            Fraction of low quality images, i.e. those images for which a
-            reduced number of objects with valid source positions are expected.
-            Default is ``1.0``.
-
-        protect_reference_obj           : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
-
-        correlation_method              : `string`, optional
-            Correlation method to be used to find the common objects on
-            the images.
-            Possibilities: ``astropy``, ``own``
-            Default is ``astropy``.
-
-        separation_limit                : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
-    """
-    #   Number of images
-    n_images = len(img_ensemble.image_list)
-
-    #   Set proxy image position IDs
-    image_ids_arr = np.arange(n_images)
-
-    terminal_output.print_to_terminal(
-        f"Correlate results from the images ({image_ids_arr})",
-        indent=1,
-    )
-
-    #   Get WCS
-    wcs = img_ensemble.wcs
-
-    #   Extract pixel positions of the objects
-    x, y, n_objects = img_ensemble.get_object_positions_pixel()
-
-    # #   Correlate the object positions from the images
-    # #   -> find common objects
-    correlation_index, new_reference_image_id, rejected_images, _ = correlate.correlate_datasets(
-        x,
-        y,
-        wcs,
-        n_objects,
-        n_images,
-        reference_dataset_id=img_ensemble.reference_image_id,
-        reference_obj_ids=reference_obj_ids,
-        n_allowed_non_detections_object=n_allowed_non_detections_object,
-        protect_reference_obj=protect_reference_obj,
-        separation_limit=separation_limit,
-        max_pixel_between_objects=max_pixel_between_objects,
-        expected_bad_image_fraction=expected_bad_image_fraction,
-        own_correlation_option=own_correlation_option,
-        cross_identification_limit=cross_identification_limit,
-        correlation_method=correlation_method,
-    )
-
-    #   Remove "bad" images from image IDs
-    image_ids_arr = np.delete(image_ids_arr, rejected_images, 0)
-
-    #   Remove images that are rejected (bad images) during the correlation process.
-    img_ensemble.image_list = [img_ensemble.image_list[i] for i in image_ids_arr]
-    # img_ensemble.image_list = np.delete(img_list, reject)
-    img_ensemble.nfiles = len(image_ids_arr)
-    img_ensemble.reference_image_id = new_reference_image_id
-
-    #   Limit the photometry tables to common objects.
-    for j, image in enumerate(img_ensemble.image_list):
-        image.photometry = image.photometry[correlation_index[j, :]]
-
-
-#   TODO: Move to correlation
-def correlate_ensembles(
-        image_container, filter_list, max_pixel_between_objects=3.,
-        own_correlation_option=1, cross_identification_limit=1,
-        reference_ensemble_id=0, n_allowed_non_detections_object=1,
-        expected_bad_image_fraction=1.0, protect_reference_obj=True,
-        correlation_method='astropy', separation_limit=2. * u.arcsec,
-        force_correlation_calibration_objects=False, reference_image_id=0,
-        verbose=False, indent=1):
-    """
-    Correlate star lists from the stacked images of all filters to find
-    those stars that are visible on all images -> write calibrated CMD
-
-    Parameters
-    ----------
-    image_container                         : `image.container`
-        Container object with image ensemble objects for each filter
-
-    filter_list                             : `list` or `set` of `string`
-        List with filter identifiers.
-
-    max_pixel_between_objects               : `float`, optional
-        Maximal distance between two objects in Pixel
-        Default is ``3``.
-
-    own_correlation_option                  : `integer`, optional
-        Option for the srcor correlation function
-        Default is ``1``.
-
-    cross_identification_limit              : `integer`, optional
-        Cross-identification limit between multiple objects in the current
-        image and one object in the reference image. The current image is
-        rejected when this limit is reached.
-        Default is ``1``.
-
-    reference_ensemble_id                   : `integer`, optional
-        ID of the reference image
-        Default is ``0``.
-
-    n_allowed_non_detections_object         : `integer`, optional
-        Maximum number of times an object may not be detected in an image.
-        When this limit is reached, the object will be removed.
-        Default is ``i`.
-
-    expected_bad_image_fraction             : `float`, optional
-        Fraction of low quality images, i.e. those images for which a
-        reduced number of objects with valid source positions are expected.
-        Default is ``1.0``.
-
-    protect_reference_obj                   : `boolean`, optional
-        If ``False`` also reference objects will be rejected, if they do
-        not fulfill all criteria.
-        Default is ``True``.
-
-    correlation_method                      : `string`, optional
-        Correlation method to be used to find the common objects on
-        the images.
-        Possibilities: ``astropy``, ``own``
-        Default is ``astropy``.
-
-    separation_limit                        : `astropy.units`, optional
-        Allowed separation between objects.
-        Default is ``2.*u.arcsec``.
-
-    force_correlation_calibration_objects   : `boolean`, optional
-        If ``True`` the correlation between the already correlated
-        ensembles and the calibration data will be enforced.
-        Default is ``False``
-
-    reference_image_id                      : `integer`, optional
-        ID of the reference image
-        Default is ``0``.
-
-    verbose                                 : `boolean`, optional
-        If True additional output will be printed to the command line.
-        Default is ``False``.
-
-    indent                              : `integer`, optional
-        Indentation for the console output lines
-        Default is ``1``.
-    """
-    terminal_output.print_to_terminal(
-        "Correlate image ensembles",
-        indent=1,
-    )
-
-    #   Get image ensembles
-    ensemble_dict = image_container.get_ensembles(filter_list)
-    ensemble_keys = list(ensemble_dict.keys())
-
-    #   Get Reference filter
-    #   TODO: Check: Is there a better solution?
-    reference_filter = list(filter_list)[reference_ensemble_id]
-
-    #   Define variables
-    n_object_all_images_list = []
-    x_pixel_positions_all_images = []
-    y_pixel_positions_all_images = []
-    wcs_list_ensemble = []
-
-    #   Number of objects in each table/image
-    reference_obj_ids = []
-    for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
-        wcs_list_ensemble.append(ensemble.wcs)
-
-        _x = ensemble.image_list[reference_image_id].photometry['x_fit']
-        x_pixel_positions_all_images.append(_x)
-        y_pixel_positions_all_images.append(
-            ensemble.image_list[reference_image_id].photometry['y_fit']
-        )
-        n_object_all_images_list.append(len(_x))
-
-        #   Check if reference object is set
-        if id_ensemble == reference_ensemble_id:
-            reference_obj_ids = getattr(ensemble, 'variable_id', [])
-
-    #   Max. number of objects
-    n_objects_max = np.max(n_object_all_images_list)
-
-    #   Number of image ensembles
-    n_ensembles = len(x_pixel_positions_all_images)
-
-    #   Correlate the object positions from the images
-    #   -> find common objects
-    correlation_index, _, rejected_ensembles, _ = correlate.correlate_datasets(
-        x_pixel_positions_all_images,
-        y_pixel_positions_all_images,
-        wcs_list_ensemble[reference_ensemble_id],
-        n_objects_max,
-        n_ensembles,
-        dataset_type='ensemble',
-        reference_dataset_id=reference_ensemble_id,
-        reference_obj_ids=reference_obj_ids,
-        n_allowed_non_detections_object=n_allowed_non_detections_object,
-        protect_reference_obj=protect_reference_obj,
-        separation_limit=separation_limit,
-        advanced_cleanup=False,
-        max_pixel_between_objects=max_pixel_between_objects,
-        expected_bad_image_fraction=expected_bad_image_fraction,
-        own_correlation_option=own_correlation_option,
-        cross_identification_limit=cross_identification_limit,
-        correlation_method=correlation_method,
-    )
-
-    #   Remove "bad"/rejected ensembles
-    for ensemble_rejected in rejected_ensembles:
-        ensemble_dict.pop(ensemble_keys[ensemble_rejected])
-
-    #   Limit the photometry tables object_ids to common objects.
-    for j, ensemble in enumerate(ensemble_dict.values()):
-        for image in ensemble.image_list:
-            image.photometry = image.photometry[correlation_index[j, :]]
-
-    #   Re-identify position of objects of interest
-    objects_of_interest = image_container.objects_of_interest
-    if objects_of_interest:
-        terminal_output.print_to_terminal(
-            "Identify objects of interest",
-        )
-
-        #   TODO: Check if this is necessary
-        #   TODO: Remove loop -> replace with ensemble_dict[filter_list[reference_ensemble_id]]
-        # for id_ensemble, ensemble in enumerate(ensemble_dict.values()):
-        #     if id_ensemble == reference_ensemble_id:
-        ensemble = ensemble_dict[reference_filter]
-        correlate.identify_star_in_dataset(
-            ensemble.image_list[reference_image_id].photometry['x_fit'],
-            ensemble.image_list[reference_image_id].photometry['y_fit'],
-            objects_of_interest,
-            reference_filter,
-            ensemble.wcs,
-            separation_limit=separation_limit,
-            max_pixel_between_objects=max_pixel_between_objects,
-            own_correlation_option=own_correlation_option,
-            verbose=verbose,
-        )
-
-        #   Replicate IDs for the objects of interest
-        #   -> This is required, since the identification above is only for the
-        #      reference filter / image series
-        #   TODO: Check if there is a better solution
-        for object_ in objects_of_interest:
-            id_object = object_.id_in_image_series[reference_filter]
-            for filter_ in filter_list:
-                if filter_ != list(filter_list)[reference_ensemble_id]:
-                    object_.id_in_image_series[filter_] = id_object
-
-    #   Check if correlation with calibration data is necessary
-    calibration_parameters = getattr(image_container, 'CalibParameters', None)
-
-    if calibration_parameters is not None and (calibration_parameters.inds is None
-                                               or force_correlation_calibration_objects):
-        calibration_tbl = calibration_parameters.calib_tbl
-        column_names = calibration_parameters.column_names
-        ra_unit_calibration = calibration_parameters.ra_unit
-        dec_unit_calibration = calibration_parameters.dec_unit
-
-        #   Convert coordinates of the calibration stars to SkyCoord object
-        calibration_object_coordinates = SkyCoord(
-            calibration_tbl[column_names['ra']].data,
-            calibration_tbl[column_names['dec']].data,
-            unit=(ra_unit_calibration, dec_unit_calibration),
-            frame="icrs"
-        )
-
-        #   Correlate with calibration stars
-        #   -> assumes that calibration stars are already cleared of any reference objects
-        #      or variable stars
-        calibration_tbl, index_obj_instrument = calib.correlate_with_calibration_objects(
-            list(ensemble_dict.values())[reference_ensemble_id],
-            calibration_object_coordinates,
-            calibration_tbl,
-            filter_list,
-            column_names,
-            correlation_method=correlation_method,
-            separation_limit=separation_limit,
-            max_pixel_between_objects=max_pixel_between_objects,
-            own_correlation_option=own_correlation_option,
-            reference_image_id=reference_image_id,
-            indent=indent,
-        )
-
-        image_container.CalibParameters.calib_tbl = calibration_tbl
-        image_container.CalibParameters.inds = index_obj_instrument
-
-
 #   TODO: Check were this is used and if it is still functional, rename
 def correlate_preserve_calibration_objects(image_ensemble, filter_list,
                                            calib_method='APASS',
@@ -2428,7 +2092,7 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
     ###
     #   Correlate the results from all images
     #
-    correlate_ensemble_images(
+    correlate.correlate_ensemble_images(
         image_ensemble,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
@@ -2562,7 +2226,7 @@ def correlate_preserve_variable(
     object_of_interest_ids = image_container.get_ids_object_of_interest(filter_=filter_)
 
     #   Correlate the stellar positions from the different filter
-    correlate_ensemble_images(
+    correlate.correlate_ensemble_images(
         image_series,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
@@ -3745,9 +3409,8 @@ def correlate_calibrate(
         image_container, filter_list, max_pixel_between_objects=3,
         own_correlation_option=1, reference_image_id=0,
         calibration_method='APASS', vizier_dict=None,
-        path_calibration_file=None, object_id=None, ra_unit=u.deg,
-        dec_unit=u.deg, magnitude_range=(0., 18.5),
-        transformation_coefficients_dict=None,
+        path_calibration_file=None, object_id=None,
+        magnitude_range=(0., 18.5), transformation_coefficients_dict=None,
         derive_transformation_coefficients=False, plot_sigma=False,
         photometry_extraction_method='', extract_only_circular_region=False,
         region_radius=600, identify_data_cluster=False,
@@ -3797,14 +3460,6 @@ def correlate_calibrate(
         object_id                           : `integer` or `None`, optional
             ID of the object
             Default is ``None``.
-
-        ra_unit                             : `astropy.unit`, optional
-            Right ascension unit
-            Default is ``u.deg``.
-
-        dec_unit                            : `astropy.unit`, optional
-            Declination unit
-            Default is ``u.deg``.
 
         magnitude_range                     : `tuple` or `float`, optional
             Magnitude range
@@ -3902,7 +3557,7 @@ def correlate_calibrate(
     ###
     #   Correlate the stellar positions from the different filter
     #
-    correlate_ensembles(
+    correlate.correlate_ensembles(
         image_container,
         filter_list,
         max_pixel_between_objects=max_pixel_between_objects,
@@ -4172,7 +3827,7 @@ def calibrate_data_mk_light_curve(
 
     #   Correlate star positions from the different filter
     if valid_filter:
-        correlate_ensembles(
+        correlate.correlate_ensembles(
             image_container,
             valid_filter,
             max_pixel_between_objects=max_pixel_between_objects,
@@ -4208,8 +3863,7 @@ def calibrate_data_mk_light_curve(
         #   TODO: Replace with table_mags_transformed
         calibrated_magnitudes = getattr(
             image_container,
-            # 'calibrated_transformed_magnitudes',
-            # 'calibrated_magnitudes',
+            # 'array_mags_not_transformed',
             'array_mags_transformed',
             None,
         )
@@ -4332,7 +3986,6 @@ def calibrate_data_mk_light_curve(
                 #   TODO: Replace with table_mags_not_transformed and table_mags_transformed
                 plot_quantity = getattr(
                     image_container,
-                    # 'calibrated_magnitudes',
                     'array_mags_not_transformed',
                     None,
                 )
