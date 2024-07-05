@@ -45,6 +45,10 @@ from .. import checks, style, terminal_output, calibration_data
 
 from . import plot
 
+import typing
+if typing.TYPE_CHECKING:
+    from . import analyze
+
 
 ############################################################################
 #                           Routines & definitions                         #
@@ -75,14 +79,14 @@ def err_prop(*args):
 
 
 def mk_magnitudes_table_and_array(
-        image_container, filter_list, photometry_column_keyword):
+        observation: 'analyze.Observation', filter_list, photometry_column_keyword):
     """
         Create and export astropy table with object positions and magnitudes
 
         Parameters
         ----------
-        image_container             : `image.container`
-            Container object with image ensemble objects for each filter
+        observation
+            Container object with image series objects for each filter
 
         filter_list                 : `list` of `string`
             Filter
@@ -104,11 +108,11 @@ def mk_magnitudes_table_and_array(
     stacked_magnitudes = {}
 
     #   Get object indices, X & Y pixel positions and wcs
-    #   Assumes that the image ensembles are already correlated
-    image_wcs = image_container.ensembles[filter_list[0]].wcs
-    index_objects = image_container.ensembles[filter_list[0]].image_list[0].photometry['id']
-    x_positions = image_container.ensembles[filter_list[0]].image_list[0].photometry['x_fit']
-    y_positions = image_container.ensembles[filter_list[0]].image_list[0].photometry['y_fit']
+    #   Assumes that the image series are already correlated
+    image_wcs = observation.image_series_dict[filter_list[0]].wcs
+    index_objects = observation.image_series_dict[filter_list[0]].image_list[0].photometry['id']
+    x_positions = observation.image_series_dict[filter_list[0]].image_list[0].photometry['x_fit']
+    y_positions = observation.image_series_dict[filter_list[0]].image_list[0].photometry['y_fit']
 
     # Make CMD table
     tbl = Table(
@@ -130,8 +134,8 @@ def mk_magnitudes_table_and_array(
     #   Add magnitude columns to table
     for filter_ in filter_list:
         #   Get image list
-        ensemble = image_container.ensembles[filter_]
-        image_list = ensemble.image_list
+        image_series = observation.image_series_dict[filter_]
+        image_list = image_series.image_list
 
         #   Lists for magnitudes and errors
         magnitude_list = []
@@ -186,7 +190,7 @@ def mk_magnitudes_table_and_array(
 
 
 #   TODO: Check where this function is used and whether it is safe to rename the parameters.
-def find_wcs(image_ensemble, reference_image_id=None, method='astrometry',
+def find_wcs(image_series: 'analyze.ImageSeries', reference_image_id=None, method='astrometry',
              rmcos=False, path_cos=None, x=None, y=None,
              force_wcs_determ=False, indent=2):
     """
@@ -194,7 +198,7 @@ def find_wcs(image_ensemble, reference_image_id=None, method='astrometry',
 
         Parameters
         ----------
-        image_ensemble      : `image.ensemble.class`
+        image_series
             Image class with all images taken in a specific filter
 
         reference_image_id  : `integer`, optional
@@ -230,7 +234,7 @@ def find_wcs(image_ensemble, reference_image_id=None, method='astrometry',
     """
     if reference_image_id is not None:
         #   Image
-        img = image_ensemble.image_list[reference_image_id]
+        img = image_series.image_list[reference_image_id]
 
         #   Test if the image contains already a WCS
         cal_wcs, wcs_file = base_aux.check_wcs_exists(img)
@@ -238,7 +242,7 @@ def find_wcs(image_ensemble, reference_image_id=None, method='astrometry',
         if not cal_wcs or force_wcs_determ:
             #   Calculate WCS -> astrometry.net
             if method == 'astrometry':
-                image_ensemble.set_wcs(
+                image_series.set_wcs(
                     base_aux.find_wcs_astrometry(
                         img,
                         cosmic_rays_removed=rmcos,
@@ -249,7 +253,7 @@ def find_wcs(image_ensemble, reference_image_id=None, method='astrometry',
 
             #   Calculate WCS -> ASTAP program
             elif method == 'astap':
-                image_ensemble.set_wcs(
+                image_series.set_wcs(
                     base_aux.find_wcs_astap(img, indent=indent)
                 )
 
@@ -260,7 +264,7 @@ def find_wcs(image_ensemble, reference_image_id=None, method='astrometry',
                         f"{style.Bcolors.FAIL} \nException in find_wcs(): '"
                         f"\n'x' or 'y' is None -> Exit {style.Bcolors.ENDC}"
                     )
-                image_ensemble.set_wcs(
+                image_series.set_wcs(
                     base_aux.find_wcs_twirl(img, x, y, indent=indent)
                 )
             #   Raise exception
@@ -271,9 +275,9 @@ def find_wcs(image_ensemble, reference_image_id=None, method='astrometry',
                     f"{style.Bcolors.ENDC}"
                 )
         else:
-            image_ensemble.set_wcs(extract_wcs(wcs_file))
+            image_series.set_wcs(extract_wcs(wcs_file))
     else:
-        for i, img in enumerate(image_ensemble.image_list):
+        for i, img in enumerate(image_series.image_list):
             #   Test if the image contains already a WCS
             cal_wcs = base_aux.check_wcs_exists(img)
 
@@ -312,7 +316,7 @@ def find_wcs(image_ensemble, reference_image_id=None, method='astrometry',
                 w = wcs.WCS(fits.open(img.path)[0].header)
 
             if i == 0:
-                image_ensemble.set_wcs(w)
+                image_series.set_wcs(w)
 
 
 def extract_wcs(wcs_path, image_wcs=None, rm_cosmics=False, filters=None):
@@ -944,14 +948,15 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
     )
 
 
-def prepare_and_plot_starmap_from_image_container(img_container, filter_list):
+def prepare_and_plot_starmap_from_observation(
+        observation: 'analyze.Observation', filter_list):
     """
-        Creates a star map using information from an image container
+        Creates a star map using information from an observation container
 
         Parameters
         ----------
-        img_container     : `image.container`
-            Container object with image ensemble objects for each filter
+        observation     
+            Container object with image series objects for each filter
 
         filter_list       : `list` of `strings`
             List with filter names
@@ -969,7 +974,7 @@ def prepare_and_plot_starmap_from_image_container(img_container, filter_list):
         rts = 'final version'
 
         #   Get reference image
-        image = img_container.ensembles[filter_].ref_img
+        image = observation.image_series_dict[filter_].ref_img
 
         #   Using multiprocessing to create the plot
         p = mp.Process(
@@ -992,16 +997,17 @@ def prepare_and_plot_starmap_from_image_container(img_container, filter_list):
     terminal_output.print_to_terminal('')
 
 
-def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
-                                                 calib_ys,
-                                                 plot_reference_only=True):
+def prepare_and_plot_starmap_from_image_series(
+        image_series: 'analyze.ImageSeries', calib_xs,
+        calib_ys,
+        plot_reference_only=True):
     """
-        Creates a star map using information from an image ensemble
+        Creates a star map using information from an image series
 
         Parameters
         ----------
-        img_ensemble    : `image ensemble`
-            Image img_ensemble class object
+        image_series
+            Image image_series class object
 
         calib_xs        : `numpy.ndarray` or `list` of `floats`
             Position of the calibration objects on the image in pixel
@@ -1022,7 +1028,7 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
     )
 
     #   Get image IDs, IDs of the objects, and pixel coordinates
-    img_ids = img_ensemble.get_image_ids()
+    img_ids = image_series.get_image_ids()
 
     #   Make new table with the position of the calibration stars
     tbl_xy_calib = Table(
@@ -1032,15 +1038,15 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
 
     #   Make the plot using multiprocessing
     for j, image_id in enumerate(img_ids):
-        if plot_reference_only and j != img_ensemble.reference_image_id:
+        if plot_reference_only and j != image_series.reference_image_id:
             continue
         p = mp.Process(
             target=plot.starmap,
             args=(
-                img_ensemble.outpath.name,
-                img_ensemble.image_list[j].get_data(),
-                img_ensemble.filt,
-                img_ensemble.image_list[j].photometry,
+                image_series.outpath.name,
+                image_series.image_list[j].get_data(),
+                image_series.filt,
+                image_series.image_list[j].photometry,
             ),
             kwargs={
                 'tbl_2': tbl_xy_calib,
@@ -1048,8 +1054,8 @@ def prepare_and_plot_starmap_from_image_ensemble(img_ensemble, calib_xs,
                 'label': 'Stars identified in all images',
                 # 'label_2': 'Calibration stars',
                 'label_2': 'Variable object',
-                'name_object': img_ensemble.object_name,
-                'wcs': img_ensemble.wcs,
+                'name_object': image_series.object_name,
+                'wcs': image_series.wcs,
             }
         )
         p.start()
@@ -1319,16 +1325,17 @@ def calibration_check_plots(
     # p.start()
 
 
-def derive_limiting_magnitude(image_container, filter_list, reference_img,
-                              aperture_radius=4., radii_unit='arcsec',
-                              indent=1):
+def derive_limiting_magnitude(
+        observation: 'analyze.Observation', filter_list, reference_img,
+        aperture_radius=4., radii_unit='arcsec',
+        indent=1):
     """
         Determine limiting magnitude
 
         Parameters
         ----------
-        image_container     : `image.container`
-            Container object with image ensemble objects for each filter
+        observation
+            Container object with image series objects for each filter
 
         filter_list         : `list` of `strings`
             List with filter names
@@ -1349,19 +1356,19 @@ def derive_limiting_magnitude(image_container, filter_list, reference_img,
             Indentation for the console output lines
             Default is ``1``.
     """
-    #   Get image ensembles
-    img_ensembles = image_container.ensembles
+    #   Get image series
+    image_series_dict = observation.image_series_dict
 
     #   Get magnitudes of reference image
     for i, filter_ in enumerate(filter_list):
-        #   Get image ensemble
-        ensemble = img_ensembles[filter_]
+        #   Get image series
+        image_series = image_series_dict[filter_]
 
         #   Get reference image
-        image = ensemble.image_list[reference_img]
+        image = image_series.image_list[reference_img]
 
         #   Get object position and magnitudes
-        photo = ensemble.image_list[reference_img].photometry
+        photo = image_series.image_list[reference_img].photometry
 
         try:
             magnitude_type = 'mag_cali_trans'
@@ -1516,16 +1523,17 @@ def rm_edge_objects(table, data_array, border=10, terminal_logger=None,
     return table[mask]
 
 
-def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
-                            g_mag_limit=20, separation_limit=1., sigma=3.,
-                            max_n_iterations_sigma_clipping=3):
+def proper_motion_selection(
+        image_series: 'analyze.ImageSeries', tbl, catalog="I/355/gaiadr3",
+        g_mag_limit=20, separation_limit=1., sigma=3.,
+        max_n_iterations_sigma_clipping=3):
     """
         Select a subset of objects based on their proper motion
 
         Parameters
         ----------
-        ensemble                        : `image.ensemble` object
-            Ensemble class object with all image data taken in a specific
+        image_series
+            Image series object with all image data taken in a specific
             filter
 
         tbl                             : `astropy.table.Table`
@@ -1553,7 +1561,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
             Default is ``3``.
     """
     #   Get wcs
-    w = ensemble.wcs
+    w = image_series.wcs
 
     #   Convert pixel coordinates to ra & dec
     coordinates = w.all_pix2world(tbl['x'], tbl['y'], 0)
@@ -1594,8 +1602,8 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
     #   Get data from the corresponding catalog for the objects in
     #   the field of view
     result = v.query_region(
-        ensemble.coord,
-        radius=ensemble.fov * u.arcmin,
+        image_series.coord,
+        radius=image_series.fov * u.arcmin,
     )
 
     #   Create SkyCoord object with coordinates of all Gaia objects
@@ -1662,7 +1670,7 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
     )
 
     #   Get image
-    image = ensemble.ref_img
+    image = image_series.ref_img
 
     #   Star map
     prepare_and_plot_starmap(
@@ -1695,14 +1703,15 @@ def proper_motion_selection(ensemble, tbl, catalog="I/355/gaiadr3",
     return tbl[id_img][mask]
 
 
-def region_selection(ensemble, coordinates_target, tbl, radius=600.):
+def region_selection(
+        image_series: 'analyze.ImageSeries', coordinates_target, tbl, radius=600.):
     """
         Select a subset of objects based on a target coordinate and a radius
 
         Parameters
         ----------
-        ensemble            : `image.ensemble` object
-            Ensemble class object with all image data taken in a specific
+        image_series
+            Image series object with all image data taken in a specific
             filter
 
         coordinates_target  : `astropy.coordinates.SkyCoord` object or `list` of `astropy.coordinates.SkyCoord` object
@@ -1724,7 +1733,7 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
             Mask that needs to be applied to the table.
     """
     #   Get wcs
-    w = ensemble.wcs
+    w = image_series.wcs
 
     #   Convert pixel coordinates to ra & dec
     coordinates = w.all_pix2world(tbl['x'], tbl['y'], 0)
@@ -1757,7 +1766,7 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
 
     #   Plot starmap
     prepare_and_plot_starmap(
-        ensemble.ref_img,
+        image_series.ref_img,
         tbl=Table(names=['x_fit', 'y_fit'], data=[tbl['x'], tbl['y']]),
         rts_pre='radius selection, image',
         label=f"Objects selected within {radius}'' of the target",
@@ -1766,15 +1775,16 @@ def region_selection(ensemble, coordinates_target, tbl, radius=600.):
     return tbl, mask
 
 
-def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
-                 separation_limit=1., max_distance=6., parameter_set=1):
+def find_cluster(
+        image_series: 'analyze.ImageSeries', tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
+        separation_limit=1., max_distance=6., parameter_set=1):
     """
         Identify cluster in data
 
         Parameters
         ----------
-        ensemble            : `image.ensemble` object
-            Ensemble class object with all image data taken in a specific
+        image_series
+            Image series object with all image data taken in a specific
             filter
 
         tbl                 : `astropy.table.Table`
@@ -1817,7 +1827,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
 
     """
     #   Get wcs
-    w = ensemble.wcs
+    w = image_series.wcs
 
     #   Convert pixel coordinates to ra & dec
     coordinates = w.all_pix2world(tbl['x'], tbl['y'], 0)
@@ -1831,7 +1841,7 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
     )
 
     #   Get reference image
-    image = ensemble.ref_img
+    image = image_series.ref_img
 
     ###
     #   Get Gaia data from Vizier
@@ -1861,13 +1871,13 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
     #   Get data from the corresponding catalog for the objects in
     #   the field of view
     result = v.query_region(
-        ensemble.coord,
-        radius=ensemble.fov * u.arcmin,
+        image_series.coord,
+        radius=image_series.fov * u.arcmin,
     )[0]
 
     #   Multiple objects can be specified. The first object is assumed to
     #   be the cluster of interest.
-    object_name = ensemble.object_name[0]
+    object_name = image_series.object_name[0]
 
     #   Restrict proper motion to Simbad value plus some margin
     custom_simbad = Simbad()
@@ -2060,16 +2070,17 @@ def find_cluster(ensemble, tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
     return tbl, id_img, mask, cluster_mask.values
 
 
-def save_magnitudes_ascii(container, tbl, trans=False, id_object=None, rts='',
-                          photometry_extraction_method='',
-                          add_file_path_to_container=True):
+def save_magnitudes_ascii(
+        observation: 'analyze.Observation', tbl, trans=False, id_object=None, rts='',
+        photometry_extraction_method='',
+        add_file_path_to_observation_object=True):
     """
         Save magnitudes as ASCII files
 
         Parameters
         ----------
-        container                       : `image.container`
-            Image container object with image ensemble objects for each
+        observation
+            Image container object with image series objects for each
             filter
 
         tbl                             : `astropy.table.Table`
@@ -2092,12 +2103,12 @@ def save_magnitudes_ascii(container, tbl, trans=False, id_object=None, rts='',
             Applied extraction method. Possibilities: ePSF or APER`
             Default is ``''``.
 
-        add_file_path_to_container      : `boolean`, optional
-            If True the file path will be added to the container object.
+        add_file_path_to_observation_object      : `boolean`, optional
+            If True the file path will be added to the observation object.
             Default is ``True``.
     """
     #   Check output directories
-    output_dir = list(container.ensembles.values())[0].outpath
+    output_dir = list(observation.image_series_dict.values())[0].outpath
     checks.check_output_directories(
         output_dir,
         output_dir / 'tables',
@@ -2111,11 +2122,11 @@ def save_magnitudes_ascii(container, tbl, trans=False, id_object=None, rts='',
     if photometry_extraction_method != '':
         photometry_extraction_method = f'_{photometry_extraction_method}'
 
-    #   Check if ``container`` object contains already entries
+    #   Check if observation object contains already entries
     #   for file names/paths. If not add dictionary.
-    photo_filepath = getattr(container, 'photo_filepath', None)
+    photo_filepath = getattr(observation, 'photo_filepath', None)
     if photo_filepath is None or not isinstance(photo_filepath, dict):
-        container.photo_filepath = {}
+        observation.photo_filepath = {}
 
     #   Set file name
     if trans:
@@ -2129,8 +2140,8 @@ def save_magnitudes_ascii(container, tbl, trans=False, id_object=None, rts='',
     out_path = output_dir / 'tables' / filename
 
     #   Add to object
-    if add_file_path_to_container:
-        container.photo_filepath[out_path] = trans
+    if add_file_path_to_observation_object:
+        observation.photo_filepath[out_path] = trans
 
     ###
     #   Define output formats for the table columns
@@ -2160,7 +2171,7 @@ def save_magnitudes_ascii(container, tbl, trans=False, id_object=None, rts='',
 
 
 def post_process_results(
-        img_container, filter_list, id_object=None, extraction_method='',
+        observation: 'analyze.Observation', filter_list, id_object=None, extraction_method='',
         extract_only_circular_region=False, region_radius=600,
         data_cluster=False, clean_objects_using_proper_motion=False,
         max_distance_cluster=6., find_cluster_para_set=1,
@@ -2172,8 +2183,8 @@ def post_process_results(
 
         Parameters
         ----------
-        img_container                       : `image.container`
-            Image container object with image ensemble objects for each
+        observation
+            Container object with image series objects for each
             filter
 
         filter_list                         : `list` of `string`
@@ -2227,7 +2238,7 @@ def post_process_results(
 
         tbl_list                            : `[astropy.table.Table]` or None, optional
             List with Tables containing magnitudes etc. If None are provided,
-            the tables will be read from the image container.
+            the tables will be read from the observation container.
             Default is ``None``.
 
         distribution_samples  : `integer`, optional
@@ -2239,17 +2250,14 @@ def post_process_results(
             and not data_cluster and not convert_magnitudes):
         return
 
-    #   Get image ensembles
-    img_ensembles = img_container.ensembles
-
-    #   Get paths to the tables with the data
-    # paths = img_container.photo_filepath
+    #   Get image series
+    image_series_dict = observation.image_series_dict
 
     #   Get astropy tables with positions and magnitudes
     if tbl_list is None or not tbl_list:
         tbl_list = [
-            (getattr(img_container, 'table_mags_transformed', None), True),
-            (getattr(img_container, 'table_mags_not_transformed', None), False),
+            (getattr(observation, 'table_mags_transformed', None), True),
+            (getattr(observation, 'table_mags_not_transformed', None), False),
         ]
 
     #   Loop over all Tables
@@ -2269,8 +2277,8 @@ def post_process_results(
         if extract_only_circular_region:
             if mask_region is None:
                 tbl, mask_region = region_selection(
-                    img_ensembles[filter_list[0]],
-                    img_container.coordinates_objects,
+                    image_series_dict[filter_list[0]],
+                    observation.coordinates_objects,
                     tbl,
                     radius=region_radius
                 )
@@ -2281,7 +2289,7 @@ def post_process_results(
         if data_cluster:
             if any(x is None for x in [img_id_cluster, mask_cluster, mask_objects]):
                 tbl, img_id_cluster, mask_cluster, mask_objects = find_cluster(
-                    img_ensembles[filter_list[0]],
+                    image_series_dict[filter_list[0]],
                     tbl,
                     max_distance=max_distance_cluster,
                     parameter_set=find_cluster_para_set,
@@ -2294,7 +2302,7 @@ def post_process_results(
         if clean_objects_using_proper_motion:
             if any(x is None for x in [img_id_pm, mask_pm]):
                 tbl, img_id_pm, mask_pm = proper_motion_selection(
-                    img_ensembles[filter_list[0]],
+                    image_series_dict[filter_list[0]],
                     tbl,
                 )
             else:
@@ -2318,13 +2326,13 @@ def post_process_results(
         else:
             rts = '_post_processed'
         save_magnitudes_ascii(
-            img_container,
+            observation,
             tbl,
             trans=trans,
             id_object=id_object,
             rts=rts,
             photometry_extraction_method=extraction_method,
-            add_file_path_to_container=False,
+            add_file_path_to_observation_object=False,
         )
 
 
@@ -2370,7 +2378,7 @@ def add_column_to_table(tbl, column_name, data, column_id):
 
 
 def distribution_from_table(
-        image: 'analyze.ImageEnsemble.Image',
+        image: 'analyze.Image',
         distribution_samples: int = 1000) -> unc:
     """
     Arrange the literature values in a numpy array or uncertainty array.
@@ -2585,7 +2593,7 @@ def convert_magnitudes_to_other_system(
 
 
 def find_filter_for_magnitude_transformation(
-        filter_list, calibration_filters, valid_filter_combinations=None):
+        filter_list, calibration_filters, valid_filter_combinations: list[list[str]] | None = None):
     """
     Identifies filter that can be used for magnitude transformation
 
@@ -2597,7 +2605,7 @@ def find_filter_for_magnitude_transformation(
     calibration_filters         : `list` of `strings`
         Names of the available filter with calibration data
 
-    valid_filter_combinations   : `list` of 'list` of `string` or None, optional
+    valid_filter_combinations
         Valid filter combinations to calculate magnitude transformation
         Default is ``None``.
 

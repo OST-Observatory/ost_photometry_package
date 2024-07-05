@@ -42,13 +42,14 @@ from astropy.stats import (gaussian_sigma_to_fwhm, sigma_clipped_stats)
 from astropy.modeling.fitting import LevMarLSQFitter
 from astropy.coordinates import SkyCoord, Angle, name_resolve
 import astropy.units as u
+from astropy.nddata import CCDData
 
 #   hips2fits module is not in the Ubuntu 22.04 package version
 #   of astroquery (0.4.1)
 # from astroquery.hips2fits import hips2fits
 from astroquery.hips2fits import hips2fitsClass
 
-from astropy.nddata import CCDData
+import regions
 
 from photutils.aperture import (
     aperture_photometry,
@@ -75,17 +76,50 @@ warnings.filterwarnings('ignore', category=UserWarning, append=True)
 ############################################################################
 
 
-#   TODO: Rename to observation?!
-class ImageContainer:
+class ObjectOfInterest:
+    def __init__(self, ra, dec, ra_unit, dec_unit, name):
+        #   Set right ascension
+        self.ra = ra
+
+        #   Set declination
+        self.dec = dec
+
+        #   Set right ascension unit
+        self.ra_unit = ra_unit
+
+        #   Set declination unit
+        self.dec_unit = dec_unit
+
+        #   Set object_name
+        self.name = name
+
+        #   Set sky coordinates object
+        self.coordinates_object = SkyCoord(
+            ra=ra,
+            dec=dec,
+            unit=(ra_unit, dec_unit),
+            frame="icrs"
+        )
+
+        #   ID of object in the image series
+        #   Syntax: {'filter': 'id'}
+        self.id_in_image_series = {}
+
+        #   Set defaults for period and transit time
+        self.transit_time = None
+        self.period = None
+
+
+class Observation:
     """
-        Container class for image class objects
+        Container class for all data taken during an observation session
     """
     #   TODO: Make this the default class that needs to be instated every time and that gives birth to the
-    #         tine series/ensembles and all the rest - add all the analysis functions to this class
+    #         tine series and all the rest - add all the analysis functions to this class
 
     def __init__(self, **kwargs):
         #   Prepare dictionary for image series
-        self.ensembles = {}
+        self.image_series_dict = {}
 
         #   Add additional keywords
         self.__dict__.update(kwargs)
@@ -113,7 +147,7 @@ class ImageContainer:
             if len_names == len(ra_objects) and len_names == len(ra_objects):
                 for i, (name, ra, dec) in enumerate(zip(object_names, ra_objects, dec_objects)):
                     self.objects_of_interest.append(
-                        self.ObjectOfInterest(
+                        ObjectOfInterest(
                             ra,
                             dec,
                             ra_unit,
@@ -131,7 +165,7 @@ class ImageContainer:
                 try:
                     sky_coordinates = SkyCoord.from_name(name)
                     self.objects_of_interest.append(
-                        self.ObjectOfInterest(
+                        ObjectOfInterest(
                             sky_coordinates.ra.degree,
                             sky_coordinates.dec.degree,
                             u.degree,
@@ -142,7 +176,7 @@ class ImageContainer:
                 #   Case 2b: Object cannot be resolved
                 except name_resolve.NameResolveError:
                     self.objects_of_interest.append(
-                        self.ObjectOfInterest(
+                        ObjectOfInterest(
                             None,
                             None,
                             None,
@@ -208,9 +242,9 @@ class ImageContainer:
     #   Get ePSF objects of all images
     def get_epsf(self):
         epsf_dict = {}
-        for key, ensemble in self.ensembles.items():
+        for key, image_series in self.image_series_dict.items():
             epsf_list = []
-            for img in ensemble.image_list:
+            for img in image_series.image_list:
                 epsf_list.append(img.epsf)
             epsf_dict[key] = epsf_list
 
@@ -219,10 +253,10 @@ class ImageContainer:
     #   Get ePSF object of the reference image
     def get_ref_epsf(self):
         epsf_dict = {}
-        for key, ensemble in self.ensembles.items():
-            reference_image_id = ensemble.reference_image_id
+        for key, image_series in self.image_series_dict.items():
+            reference_image_id = image_series.reference_image_id
 
-            img = ensemble.image_list[reference_image_id]
+            img = image_series.image_list[reference_image_id]
 
             epsf_dict[key] = img.epsf
 
@@ -231,10 +265,10 @@ class ImageContainer:
     #   Get reference image
     def get_ref_img(self):
         img_dict = {}
-        for key, ensemble in self.ensembles.items():
-            reference_image_id = ensemble.reference_image_id
+        for key, image_series in self.image_series_dict.items():
+            reference_image_id = image_series.reference_image_id
 
-            img = ensemble.image_list[reference_image_id]
+            img = image_series.image_list[reference_image_id]
 
             img_dict[key] = img.get_data()
 
@@ -243,69 +277,35 @@ class ImageContainer:
     #   Get residual image belonging to the reference image
     def get_ref_residual_img(self):
         img_dict = {}
-        for key, ensemble in self.ensembles.items():
-            reference_image_id = ensemble.reference_image_id
+        for key, image_series in self.image_series_dict.items():
+            reference_image_id = image_series.reference_image_id
 
-            img = ensemble.image_list[reference_image_id]
+            img = image_series.image_list[reference_image_id]
 
             img_dict[key] = img.residual_image
 
         return img_dict
 
-    #   Get image ensembles for a specific set of filter
-    def get_ensembles(self, filter_list):
-        ensembles = {}
+    #   Get image series for a specific set of filters
+    def get_image_series(self, filter_list):
+        image_series_dict = {}
         for filter_ in filter_list:
-            ensembles[filter_] = self.ensembles[filter_]
+            image_series_dict[filter_] = self.image_series_dict[filter_]
 
-        return ensembles
-
-    class ObjectOfInterest:
-        def __init__(self, ra, dec, ra_unit, dec_unit, name):
-            #   Set right ascension
-            self.ra = ra
-
-            #   Set declination
-            self.dec = dec
-
-            #   Set right ascension unit
-            self.ra_unit = ra_unit
-
-            #   Set declination unit
-            self.dec_unit = dec_unit
-
-            #   Set object_name
-            self.name = name
-
-            #   Set sky coordinates object
-            self.coordinates_object = SkyCoord(
-                ra=ra,
-                dec=dec,
-                unit=(ra_unit, dec_unit),
-                frame="icrs"
-            )
-
-            #   ID of object in the image series
-            #   Syntax: {'filter': 'id'}
-            self.id_in_image_series = {}
-
-            #   Set defaults for period and transit time
-            self.transit_time = None
-            self.period = None
+        return image_series_dict
 
     #   Get the IDs of the objects of interest within the detected objects on
     #   the images
-    #   TODO: Move this out of this class
     def get_ids_object_of_interest(
-            self, filter_=None, reference_ensemble_id=None):
-        if filter_ is None and reference_ensemble_id is None:
+            self, filter_=None, reference_image_series_id=None):
+        if filter_ is None and reference_image_series_id is None:
             terminal_output.print_to_terminal(
                 "Neither a filter nor an image series ID was provided to "
                 "compile the IDs for the objects of interest.The image series ID "
                 "is assumed to be 0.",
                 style_name='WARNING',
             )
-            reference_ensemble_id = 0
+            reference_image_series_id = 0
 
         object_of_interest_ids = []
         for object_ in self.objects_of_interest:
@@ -321,7 +321,7 @@ class ImageContainer:
                         ids_object_of_interest[
                             list(
                                 ids_object_of_interest.keys()
-                            )[reference_ensemble_id]
+                            )[reference_image_series_id]
                         ]
                     )
 
@@ -374,11 +374,56 @@ class ImageContainer:
         return dec_unit
 
 
-#   TODO: Rename to image series!!!!!!!!!
-class ImageEnsemble:
+#   Image class
+class Image:
     """
-        Image ensemble class: Used to handle multiple images, e.g.,
-        an image series taken in a specific filter
+        Image class: Provides relevant image information and some methods for
+                     handling image data.
+    """
+    def __init__(self, pd, filter_, object_names, path, file_name, output_dir):
+        #   Set image ID
+        self.pd = pd
+
+        #   Set filter
+        self.filt = filter_
+
+        #   TODO: rm parameter?
+        #   Set object name
+        self.object_name = object_names
+
+        #   Set file name
+        self.filename = file_name
+
+        #   Set complete path
+        self.path = Path(Path(path) / file_name)
+
+        #   Set path to output directory
+        self.outpath = Path(output_dir)
+
+        #   Set wcs default
+        self.wcs = None
+
+    #   Read image
+    def read_image(self):
+        return CCDData.read(self.path)
+
+    #   Get header
+    def get_header(self):
+        return CCDData.read(self.path).meta
+
+    #   Get data
+    def get_data(self):
+        return CCDData.read(self.path).data
+
+    #   Get shape
+    def get_shape(self):
+        return CCDData.read(self.path).data.shape
+
+
+class ImageSeries:
+    """
+        Image series class: Used to handle a series of images,
+                            e.g. taken with a specific filter.
     """
 
     def __init__(self, filter_, object_names, path, output_dir,
@@ -446,7 +491,7 @@ class ImageEnsemble:
         for image_id, file_name in enumerate(file_list):
             self.image_list.append(
                 #   Prepare image class instance
-                self.Image(image_id, filter_, object_names, path, file_name, output_dir)
+                Image(image_id, filter_, object_names, path, file_name, output_dir)
             )
 
             #   Calculate field of view and additional quantities and add
@@ -484,47 +529,6 @@ class ImageEnsemble:
 
         #   Set wcs default
         self.wcs = None
-
-    #   Image class
-    class Image:
-        def __init__(self, pd, filter_, object_names, path, file_name, output_dir):
-            #   Set image ID
-            self.pd = pd
-
-            #   Set filter
-            self.filt = filter_
-
-            #   TODO: rm parameter?
-            #   Set object name
-            self.object_name = object_names
-
-            #   Set file name
-            self.filename = file_name
-
-            #   Set complete path
-            self.path = Path(Path(path) / file_name)
-
-            #   Set path to output directory
-            self.outpath = Path(output_dir)
-
-            #   Set wcs default
-            self.wcs = None
-
-        #   Read image
-        def read_image(self):
-            return CCDData.read(self.path)
-
-        #   Get header
-        def get_header(self):
-            return CCDData.read(self.path).meta
-
-        #   Get data
-        def get_data(self):
-            return CCDData.read(self.path).data
-
-        #   Get shape
-        def get_shape(self):
-            return CCDData.read(self.path).data.shape
 
     #   Set wcs
     def set_wcs(self, w):
@@ -1935,29 +1939,30 @@ def extraction_aperture(image, radius_aperture, inner_annulus_radius,
 
 
 #   TODO: Check were this is used and if it is still functional, rename
-def correlate_preserve_calibration_objects(image_ensemble, filter_list,
-                                           calib_method='APASS',
-                                           magnitude_range=(0., 18.5),
-                                           vizier_dict=None, calib_file=None,
-                                           max_pixel_between_objects=3,
-                                           own_correlation_option=1,
-                                           verbose=False,
-                                           cross_identification_limit=1,
-                                           reference_image_id=0,
-                                           n_allowed_non_detections_object=1,
-                                           expected_bad_image_fraction=1.0,
-                                           protect_reference_obj=True,
-                                           plot_only_reference_starmap=True,
-                                           correlation_method='astropy',
-                                           separation_limit=2. * u.arcsec):
+def correlate_preserve_calibration_objects(
+        image_series: 'analyze.ImageSeries', filter_list,
+        calib_method='APASS',
+        magnitude_range=(0., 18.5),
+        vizier_dict: dict[str, str] | None = None, calib_file=None,
+        max_pixel_between_objects=3,
+        own_correlation_option=1,
+        verbose=False,
+        cross_identification_limit=1,
+        reference_image_id=0,
+        n_allowed_non_detections_object=1,
+        expected_bad_image_fraction=1.0,
+        protect_reference_obj=True,
+        plot_only_reference_starmap=True,
+        correlation_method='astropy',
+        separation_limit=2. * u.arcsec):
     """
         Correlate results from all images, while preserving the calibration
         stars
 
         Parameters
         ----------
-        image_ensemble                  : `image.ensemble` object
-            Ensemble class object with all image data taken in a specific
+        image_series
+            Image series object with all image data taken in a specific
             filter
 
         filter_list                     : `list` with `strings`
@@ -1971,7 +1976,7 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
             Magnitude range
             Default is ``(0.,18.5)``.
 
-        vizier_dict                     : `dictionary` or None, optional
+        vizier_dict
             Identifiers of catalogs, containing calibration data
             Default is ``None``.
 
@@ -2034,7 +2039,7 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
     #   Load calibration data
     #
     calib_tbl, column_names, ra_unit = calib.load_calibration_data_table(
-        image_ensemble.image_list[reference_image_id],
+        image_series.image_list[reference_image_id],
         filter_list,
         calibration_method=calib_method,
         magnitude_range=magnitude_range,
@@ -2065,10 +2070,10 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
         #   Find the calibration star
         #   TODO: Fix this
         id_calib_star, ref_count, x_calib_star, y_calib_star = correlate.posi_obj_srcor_img(
-            image_ensemble.image_list[reference_image_id],
+            image_series.image_list[reference_image_id],
             calib_tbl[column_names['ra']].data[k],
             calib_tbl[column_names['dec']].data[k],
-            image_ensemble.wcs,
+            image_series.wcs,
             dcr=max_pixel_between_objects,
             option=own_correlation_option,
             ra_unit=ra_unit,
@@ -2092,8 +2097,8 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
     ###
     #   Correlate the results from all images
     #
-    correlate.correlate_ensemble_images(
-        image_ensemble,
+    correlate.correlate_image_series_images(
+        image_series,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         cross_identification_limit=cross_identification_limit,
@@ -2108,210 +2113,41 @@ def correlate_preserve_calibration_objects(image_ensemble, filter_list,
     ###
     #   Plot image with the final positions overlaid (final version)
     #
-    utilities.prepare_and_plot_starmap_from_image_ensemble(
-        image_ensemble,
+    utilities.prepare_and_plot_starmap_from_image_series(
+        image_series,
         calib_x_pixel_positions,
         calib_y_pixel_positions,
         plot_reference_only=plot_only_reference_starmap,
     )
 
 
-#   TODO: Move to correlation
-def correlate_preserve_variable(
-        image_container, filter_, max_pixel_between_objects=3.,
-        own_correlation_option=1, cross_identification_limit=1,
-        reference_image_id=0, n_allowed_non_detections_object=1,
-        expected_bad_image_fraction=1.0, protect_reference_obj=True,
-        correlation_method='astropy', separation_limit=2. * u.arcsec,
-        verbose=False, plot_reference_only=True):
-    """
-        Correlate results from all images, while preserving the variable
-        star
-
-        Parameters
-        ----------
-        image_container                 : `image.container` object
-            Container object with image series and object of interest properties
-
-        filter_                         : `string`
-            Filter
-
-        max_pixel_between_objects       : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
-
-        own_correlation_option          : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
-
-        cross_identification_limit      : `integer`, optional
-            Cross-identification limit between multiple objects in the current
-            image and one object in the reference image. The current image is
-            rejected when this limit is reached.
-            Default is ``1``.
-
-        reference_image_id              : `integer`, optional
-            ID of the reference image
-            Default is ``0``.
-
-        n_allowed_non_detections_object : `integer`, optional
-            Maximum number of times an object may not be detected in an image.
-            When this limit is reached, the object will be removed.
-            Default is ``i`.
-
-        expected_bad_image_fraction     : `float`, optional
-            Fraction of low quality images, i.e. those images for which a
-            reduced number of objects with valid source positions are expected.
-            Default is ``1.0``.
-
-        protect_reference_obj           : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
-
-        correlation_method              : `string`, optional
-            Correlation method to be used to find the common objects on
-            the images.
-            Possibilities: ``astropy``, ``own``
-            Default is ``astropy``.
-
-        separation_limit                : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
-
-        verbose                         : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
-
-        plot_reference_only             : `boolean`, optional
-            If True only the starmap for the reference image will
-            be created.
-            Default is ``True``.
-    """
-    #   Get image series
-    image_series = image_container.ensembles[filter_]
-
-    #   Get object of interests
-    objects_of_interest = image_container.objects_of_interest
-
-    #   Find position of the variable star I
-    terminal_output.print_to_terminal(
-        "Identify the variable star",
-        indent=1,
-    )
-
-    # object_of_interest_ids, n_detections, _, _ =
-    correlate.identify_star_in_dataset(
-        image_series.image_list[reference_image_id].photometry['x_fit'],
-        image_series.image_list[reference_image_id].photometry['y_fit'],
-        objects_of_interest,
-        filter_,
-        image_series.wcs,
-        separation_limit=separation_limit,
-        max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
-        verbose=verbose,
-    )
-
-    ###
-    #   Check if variable star was detected I
-    #
-    # if n_detections == 0:
-    #     raise RuntimeError(
-    #         f"{style.Bcolors.FAIL} \tERROR: The variable object was not "
-    #         f"detected in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
-    #     )
-
-    #   Get object of interests ID list
-    object_of_interest_ids = image_container.get_ids_object_of_interest(filter_=filter_)
-
-    #   Correlate the stellar positions from the different filter
-    correlate.correlate_ensemble_images(
-        image_series,
-        max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
-        cross_identification_limit=cross_identification_limit,
-        reference_obj_ids=object_of_interest_ids,
-        n_allowed_non_detections_object=n_allowed_non_detections_object,
-        expected_bad_image_fraction=expected_bad_image_fraction,
-        protect_reference_obj=protect_reference_obj,
-        correlation_method=correlation_method,
-        separation_limit=separation_limit,
-    )
-
-    #   Find position of the variable star II
-    terminal_output.print_to_terminal(
-        "Re-identify the variable star",
-        indent=1,
-    )
-
-    # object_of_interest_ids, n_detections =
-    correlate.identify_star_in_dataset(
-        image_series.image_list[reference_image_id].photometry['x_fit'],
-        image_series.image_list[reference_image_id].photometry['y_fit'],
-        objects_of_interest,
-        filter_,
-        image_series.wcs,
-        separation_limit=separation_limit,
-        max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
-        verbose=verbose,
-    )
-
-    #   Convert ra & dec to pixel coordinates
-    coordinates_objects_of_interest = image_container.objects_of_interest_coordinates
-    x_position_object, y_position_object = image_series.wcs.all_world2pix(
-        coordinates_objects_of_interest.ra,
-        coordinates_objects_of_interest.dec,
-        0,
-    )
-
-    # ###
-    # #   Check if variable star was detected II
-    # #
-    # if n_detections == 0:
-    #     raise RuntimeError(
-    #         f"{style.Bcolors.FAIL} \tERROR: The variable was not detected "
-    #         f"in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
-    #     )
-
-    ###
-    #   Plot image with the final positions overlaid (final version)
-    #
-    utilities.prepare_and_plot_starmap_from_image_ensemble(
-        image_series,
-        [x_position_object],
-        [y_position_object],
-        plot_reference_only=plot_reference_only,
-    )
-
-
-def extract_multiprocessing(image_ensemble, n_cores_multiprocessing,
-                            sigma_object_psf,
-                            sigma_value_background_clipping=5.,
-                            multiplier_background_rms=5., size_epsf_region=25,
-                            fraction_epsf_stars=0.2,
-                            oversampling_factor_epsf=2, max_n_iterations_epsf=7,
-                            use_initial_positions_epsf=True,
-                            object_finder_method='IRAF',
-                            multiplier_background_rms_epsf=5.0,
-                            multiplier_dao_grouper_epsf=2.0,
-                            strict_cleaning_epsf_results=True,
-                            minimum_n_eps_stars=25,
-                            photometry_extraction_method='PSF',
-                            radius_aperture=5., inner_annulus_radius=7.,
-                            outer_annulus_radius=10., radii_unit='arcsec',
-                            strict_epsf_checks=True,
-                            identify_objects_on_image=True,
-                            plots_for_all_images=False,
-                            plot_for_reference_image_only=True):
+def extract_multiprocessing(
+        image_series: 'analyze.ImageSeries', n_cores_multiprocessing,
+        sigma_object_psf,
+        sigma_value_background_clipping=5.,
+        multiplier_background_rms=5., size_epsf_region=25,
+        fraction_epsf_stars=0.2,
+        oversampling_factor_epsf=2, max_n_iterations_epsf=7,
+        use_initial_positions_epsf=True,
+        object_finder_method='IRAF',
+        multiplier_background_rms_epsf=5.0,
+        multiplier_dao_grouper_epsf=2.0,
+        strict_cleaning_epsf_results=True,
+        minimum_n_eps_stars=25,
+        photometry_extraction_method='PSF',
+        radius_aperture=5., inner_annulus_radius=7.,
+        outer_annulus_radius=10., radii_unit='arcsec',
+        strict_epsf_checks=True,
+        identify_objects_on_image=True,
+        plots_for_all_images=False,
+        plot_for_reference_image_only=True):
     """
         Extract flux and object positions using multiprocessing
 
         Parameters
         ----------
-        image_ensemble                  : `image.ensemble` object
-            Ensemble class object with all image data taken in a specific
+        image_series
+            Image series object with all image data taken in a specific
             filter
 
         n_cores_multiprocessing         : `integer`
@@ -2412,7 +2248,7 @@ def extract_multiprocessing(image_ensemble, n_cores_multiprocessing,
             Default is ``True``.
     """
     #   Get filter
-    filter_ = image_ensemble.filt
+    filter_ = image_series.filt
 
     ###
     #   Find the stars (via DAO or IRAF StarFinder)
@@ -2421,12 +2257,12 @@ def extract_multiprocessing(image_ensemble, n_cores_multiprocessing,
     #
     # if not identify_objects_on_image:
     #     determine_background(
-    #         image_ensemble.ref_img,
+    #         image_series.ref_img,
     #         sigma_background=sigma_value_background_clipping,
     #     )
     #
     #     find_stars(
-    #         image_ensemble.ref_img,
+    #         image_series.ref_img,
     #         sigma_object_psf[filter_],
     #         multiplier_background_rms=multiplier_background_rms,
     #         method=object_finder_method,
@@ -2440,10 +2276,10 @@ def extract_multiprocessing(image_ensemble, n_cores_multiprocessing,
     executor = utilities.Executor(n_cores_multiprocessing)
 
     #   Main loop
-    for image in image_ensemble.image_list:
+    for image in image_series.image_list:
         #   Set positions of the reference image if required
         if not identify_objects_on_image:
-            image.positions = image_ensemble.ref_img.positions
+            image.positions = image_series.ref_img.positions
 
         #   Extract photometry
         executor.schedule(
@@ -2467,7 +2303,7 @@ def extract_multiprocessing(image_ensemble, n_cores_multiprocessing,
                 'strict_cleaning_epsf_results': strict_cleaning_epsf_results,
                 'minimum_n_eps_stars': minimum_n_eps_stars,
                 'strict_epsf_checks': strict_epsf_checks,
-                'id_reference_image': image_ensemble.reference_image_id,
+                'id_reference_image': image_series.reference_image_id,
                 'photometry_extraction_method': photometry_extraction_method,
                 'radius_aperture': radius_aperture,
                 'inner_annulus_radius': inner_annulus_radius,
@@ -2498,13 +2334,13 @@ def extract_multiprocessing(image_ensemble, n_cores_multiprocessing,
     #   Sort observation times and images & build dictionary for the
     #   tables with the extraction results
     tmp_list = []
-    for img in image_ensemble.image_list:
+    for img in image_series.image_list:
         for pd, tbl in res:
             if pd == img.pd:
                 img.photometry = tbl
                 tmp_list.append(img)
 
-    image_ensemble.image_list = tmp_list
+    image_series.image_list = tmp_list
 
 
 def main_extract(image, sigma_object_psf, multiprocessing=False,
@@ -2851,31 +2687,32 @@ def main_extract(image, sigma_object_psf, multiprocessing=False,
         return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
 
 
-def extract_flux(image_container, filter_list, name_objects, image_paths,
-                 output_dir, sigma_object_psf, wcs_method='astrometry',
-                 force_wcs_determ=False, sigma_value_background_clipping=5.,
-                 multiplier_background_rms=5., size_epsf_region=25,
-                 fraction_epsf_stars=0.2, oversampling_factor_epsf=2,
-                 max_n_iterations_epsf=7, use_initial_positions_epsf=True,
-                 object_finder_method='IRAF',
-                 multiplier_background_rms_epsf=5.0,
-                 multiplier_dao_grouper_epsf=2.0,
-                 strict_cleaning_epsf_results=True, minimum_n_eps_stars=25,
-                 reference_image_id=0, strict_epsf_checks=True,
-                 photometry_extraction_method='PSF', radius_aperture=5.,
-                 inner_annulus_radius=7., outer_annulus_radius=10.,
-                 radii_unit='arcsec', cosmic_ray_removal=False,
-                 limiting_contrast_rm_cosmics=5., read_noise=8.,
-                 sigma_clipping_value=4.5, saturation_level=65535.,
-                 plots_for_all_images=False,
-                 plot_for_reference_image_only=True):
+def extract_flux(
+        observation: Observation, filter_list, name_objects, image_paths,
+        output_dir, sigma_object_psf, wcs_method='astrometry',
+        force_wcs_determ=False, sigma_value_background_clipping=5.,
+        multiplier_background_rms=5., size_epsf_region=25,
+        fraction_epsf_stars=0.2, oversampling_factor_epsf=2,
+        max_n_iterations_epsf=7, use_initial_positions_epsf=True,
+        object_finder_method='IRAF',
+        multiplier_background_rms_epsf=5.0,
+        multiplier_dao_grouper_epsf=2.0,
+        strict_cleaning_epsf_results=True, minimum_n_eps_stars=25,
+        reference_image_id=0, strict_epsf_checks=True,
+        photometry_extraction_method='PSF', radius_aperture=5.,
+        inner_annulus_radius=7., outer_annulus_radius=10.,
+        radii_unit='arcsec', cosmic_ray_removal=False,
+        limiting_contrast_rm_cosmics=5., read_noise=8.,
+        sigma_clipping_value=4.5, saturation_level=65535.,
+        plots_for_all_images=False,
+        plot_for_reference_image_only=True):
     """
-        Extract flux and fill the image container
+        Extract flux and fill the observation container
 
         Parameters
         ----------
-        image_container                 : `image.container`
-            Container object with image ensemble objects for each filter
+        observation
+            Container object with image series objects for each filter
 
         filter_list                     : `list` of `string`
             Filter list
@@ -3031,8 +2868,8 @@ def extract_flux(image_container, filter_list, name_objects, image_paths,
         #   Check input paths
         checks.check_file(image_paths[filter_])
 
-        #   Initialize image ensemble object
-        image_container.ensembles[filter_] = current_ensemble = ImageEnsemble(
+        #   Initialize image series object
+        observation.image_series_dict[filter_] = current_image_series = ImageSeries(
             filter_,
             name_objects,
             image_paths[filter_],
@@ -3044,7 +2881,7 @@ def extract_flux(image_container, filter_list, name_objects, image_paths,
         #
         try:
             utilities.find_wcs(
-                current_ensemble,
+                current_image_series,
                 reference_image_id=0,
                 method=wcs_method,
                 force_wcs_determ=force_wcs_determ,
@@ -3054,12 +2891,12 @@ def extract_flux(image_container, filter_list, name_objects, image_paths,
             #   Get the WCS from one of the other filters, if they have one
             for wcs_filter in filter_list:
                 wcs = getattr(
-                    image_container.ensembles[wcs_filter],
+                    observation.image_series_dict[wcs_filter],
                     'wcs',
                     None,
                 )
                 if wcs is not None:
-                    current_ensemble.set_wcs(wcs)
+                    current_image_series.set_wcs(wcs)
                     terminal_output.print_to_terminal(
                         f"WCS could not be determined for filter {filter_}"
                         f"The WCS of filter {wcs_filter} will be used instead."
@@ -3075,7 +2912,7 @@ def extract_flux(image_container, filter_list, name_objects, image_paths,
         #   Main extraction
         #
         main_extract(
-            current_ensemble.image_list[reference_image_id],
+            current_image_series.image_list[reference_image_id],
             sigma_object_psf[filter_],
             sigma_value_background_clipping=sigma_value_background_clipping,
             multiplier_background_rms=multiplier_background_rms,
@@ -3110,7 +2947,7 @@ def extract_flux(image_container, filter_list, name_objects, image_paths,
         #
         p = mp.Process(
             target=plot.plot_epsf,
-            args=(output_dir, image_container.get_ref_epsf(),),
+            args=(output_dir, observation.get_ref_epsf(),),
         )
         p.start()
 
@@ -3121,8 +2958,8 @@ def extract_flux(image_container, filter_list, name_objects, image_paths,
             target=plot.plot_residual,
             args=(
                 name_objects,
-                image_container.get_ref_img(),
-                image_container.get_ref_residual_img(),
+                observation.get_ref_img(),
+                observation.get_ref_residual_img(),
                 output_dir,
             ),
             kwargs={
@@ -3133,186 +2970,194 @@ def extract_flux(image_container, filter_list, name_objects, image_paths,
 
 
 def extract_flux_multi(
-        image_container, filter_list, image_paths, output_dir,
-        sigma_object_psf, n_cores_multiprocessing=6, wcs_method='astrometry',
-        force_wcs_determ=False, sigma_value_background_clipping=5.,
-        multiplier_background_rms=5., size_epsf_region=25,
-        fraction_epsf_stars=0.2, oversampling_factor_epsf=2,
-        max_n_iterations_epsf=7, object_finder_method='IRAF',
-        multiplier_background_rms_epsf=5.0, multiplier_dao_grouper_epsf=2.0,
-        strict_cleaning_epsf_results=True, minimum_n_eps_stars=25,
-        strict_epsf_checks=True, photometry_extraction_method='PSF',
-        radius_aperture=5., inner_annulus_radius=7., outer_annulus_radius=10.,
-        radii_unit='arcsec', max_pixel_between_objects=3.,
-        own_correlation_option=1, cross_identification_limit=1,
-        reference_image_id=0, n_allowed_non_detections_object=1,
-        expected_bad_image_fraction=1.0, protect_reference_obj=True,
-        correlation_method='astropy', separation_limit=2. * u.arcsec,
-        verbose=False, identify_objects_on_image=True,
-        plots_for_all_images=False, plot_for_reference_image_only=True):
+        observation: Observation, filter_list: list[str],
+        image_paths: dict[str, str], output_dir: str,
+        sigma_object_psf: dict[str, float],
+        n_cores_multiprocessing: int = 6, wcs_method: str = 'astrometry',
+        force_wcs_determ: bool = False,
+        sigma_value_background_clipping: float = 5.,
+        multiplier_background_rms: float = 5., size_epsf_region: int = 25,
+        fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
+        max_n_iterations_epsf: int = 7, object_finder_method: str = 'IRAF',
+        multiplier_background_rms_epsf: float = 5.0,
+        multiplier_dao_grouper_epsf: float = 2.0,
+        strict_cleaning_epsf_results: bool = True,
+        minimum_n_eps_stars: int = 25, strict_epsf_checks: bool = True,
+        photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
+        inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
+        radii_unit: str = 'arcsec', max_pixel_between_objects: float = 3.,
+        own_correlation_option: int = 1, cross_identification_limit: int = 1,
+        reference_image_id: int = 0, n_allowed_non_detections_object: int = 1,
+        expected_bad_image_fraction: float = 1.0,
+        protect_reference_obj: bool = True,
+        correlation_method: str = 'astropy',
+        separation_limit: u = 2. * u.arcsec, verbose: bool = False,
+        identify_objects_on_image: bool = True,
+        plots_for_all_images: bool = False,
+        plot_for_reference_image_only: bool = True) -> None:
     """
         Extract flux from multiple images per filter and add results to
-        the image container
+        the observation container
 
         Parameters
         ----------
-        image_container                 : `image.container`
-            Container object with image ensemble objects for each filter
+        observation
+            Container object with image series objects for each filter
 
-        filter_list                     : `list` of `string`
+        filter_list
             Filter list
 
-        image_paths                     : `dictionary`
+        image_paths
             Paths to images: key - filter name; value - path
 
-        output_dir                      : `string`
+        output_dir
             Path, where the output should be stored.
 
-        sigma_object_psf                : `dictionary`
+        sigma_object_psf
             Sigma of the objects PSF, assuming it is a Gaussian
 
-        n_cores_multiprocessing         : `integer`, optional
+        n_cores_multiprocessing
             Number of cores to use for multicore processing
             Default is ``6``.
 
-        wcs_method                      : `string`, optional
+        wcs_method
             Method that should be used to determine the WCS.
             Default is ``'astrometry'``.
 
-        force_wcs_determ                : `boolean`, optional
+        force_wcs_determ
             If ``True`` a new WCS determination will be calculated even if
             a WCS is already present in the FITS Header.
             Default is ``False``.
 
-        sigma_value_background_clipping : `float`, optional
+        sigma_value_background_clipping
             Sigma used for the sigma clipping of the background
             Default is ``5.``.
 
-        multiplier_background_rms       : `float`, optional
+        multiplier_background_rms
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
             Default is ``7``.
 
-        size_epsf_region                : `integer`, optional
+        size_epsf_region
             Size of the extraction region in pixel
             Default is `25``.
 
-        fraction_epsf_stars             : `float`, optional
+        fraction_epsf_stars
             Fraction of all stars that should be used to calculate the ePSF
             Default is ``0.2``.
 
-        oversampling_factor_epsf        : `integer`, optional
+        oversampling_factor_epsf
             ePSF oversampling factor
             Default is ``2``.
 
-        max_n_iterations_epsf           : `integer`, optional
+        max_n_iterations_epsf
             Number of ePSF iterations
             Default is ``7``.
 
-        object_finder_method            : `string`, optional
+        object_finder_method
             Finder method DAO or IRAF
             Default is ``IRAF``.
 
-        multiplier_background_rms_epsf  : `float`, optional
+        multiplier_background_rms_epsf
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
             Default is ``5.0``.
 
-        multiplier_dao_grouper_epsf     : `float`, optional
+        multiplier_dao_grouper_epsf
             Multiplier for the DAO grouper
             Default is ``5.0``.
 
-        strict_cleaning_epsf_results    : `boolean`, optional
+        strict_cleaning_epsf_results
             If True objects with negative flux uncertainties will be removed
             Default is ``True``.
 
-        minimum_n_eps_stars             : `integer`, optional
+        minimum_n_eps_stars
             Minimal number of required ePSF stars
             Default is ``25``.
 
-        photometry_extraction_method    : `string`, optional
+        photometry_extraction_method
             Switch between aperture and ePSF photometry.
             Possibilities: 'PSF' & 'APER'
             Default is ``PSF``.
 
-        radius_aperture                 : `float`, optional
+        radius_aperture
             Radius of the stellar aperture
             Default is ``5``.
 
-        inner_annulus_radius            : `float`, optional
+        inner_annulus_radius
             Inner radius of the background annulus
             Default is ``7``.
 
-        outer_annulus_radius            : `float`, optional
+        outer_annulus_radius
             Outer radius of the background annulus
             Default is ``10``.
 
-        radii_unit                      : `string`, optional
+        radii_unit
             Unit of the radii above. Permitted values are
             ``pixel`` and ``arcsec``.
             Default is ``pixel``.
 
-        strict_epsf_checks              : `boolean`, optional
+        strict_epsf_checks
             If True a stringent test of the ePSF conditions is applied.
             Default is ``True``.
 
-        max_pixel_between_objects       : `float`, optional
+        max_pixel_between_objects
             Maximal distance between two objects in Pixel
             Default is ``3``.
 
-        own_correlation_option          : `integer`, optional
+        own_correlation_option
             Option for the srcor correlation function
             Default is ``1``.
 
-        cross_identification_limit      : `integer`, optional
+        cross_identification_limit
             Cross-identification limit between multiple objects in the current
             image and one object in the reference image. The current image is
             rejected when this limit is reached.
             Default is ``1``.
 
-        reference_image_id              : `integer`, optional
+        reference_image_id
             ID of the reference image
             Default is ``0``.
 
-        n_allowed_non_detections_object : `integer`, optional
+        n_allowed_non_detections_object
             Maximum number of times an object may not be detected in an image.
             When this limit is reached, the object will be removed.
             Default is ``i`.
 
-        expected_bad_image_fraction     : `float`, optional
+        expected_bad_image_fraction
             Fraction of low quality images, i.e. those images for which a
             reduced number of objects with valid source positions are expected.
             Default is ``1.0``.
 
-        protect_reference_obj           : `boolean`, optional
+        protect_reference_obj
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
 
-        correlation_method              : `string`, optional
+        correlation_method
             Correlation method to be used to find the common objects on
             the images.
             Possibilities: ``astropy``, ``own``
             Default is ``astropy``.
 
-        separation_limit                : `astropy.units`, optional
+        separation_limit
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
 
-        verbose                         : `boolean`, optional
+        verbose
             If True additional output will be printed to the command line.
             Default is ``False``.
 
-        identify_objects_on_image       : `boolean`, optional
+        identify_objects_on_image
             If `True` the objects on the image will be identified. If `False`
             it is assumed that object identification was performed in advance.
             Default is ``True``.
 
-        plots_for_all_images            : `boolean`, optional
+        plots_for_all_images
             If True star map plots for all stars are created
             Default is ``False``.
 
-        plot_for_reference_image_only   : `boolean`, optional
+        plot_for_reference_image_only
             If True a star map plot only for the reference image is created
             Default is ``True``.
     """
@@ -3333,10 +3178,10 @@ def extract_flux_multi(
             style_name='HEADER',
         )
 
-        #   Initialize image ensemble object
-        image_container.ensembles[filter_] = ImageEnsemble(
+        #   Initialize image series object
+        observation.image_series_dict[filter_] = ImageSeries(
             filter_,
-            image_container.get_object_of_interest_names(),
+            observation.get_object_of_interest_names(),
             image_paths[filter_],
             output_dir,
             reference_image_id=reference_image_id,
@@ -3346,7 +3191,7 @@ def extract_flux_multi(
         #   Find the WCS solution for the image
         #
         utilities.find_wcs(
-            image_container.ensembles[filter_],
+            observation.image_series_dict[filter_],
             reference_image_id=reference_image_id,
             method=wcs_method,
             force_wcs_determ=force_wcs_determ,
@@ -3358,7 +3203,7 @@ def extract_flux_multi(
         #   using multiprocessing
         #
         extract_multiprocessing(
-            image_container.ensembles[filter_],
+            observation.image_series_dict[filter_],
             n_cores_multiprocessing,
             sigma_object_psf,
             sigma_value_background_clipping=sigma_value_background_clipping,
@@ -3387,8 +3232,8 @@ def extract_flux_multi(
         #   Correlate results from all images, while preserving
         #   the variable star
         #
-        correlate_preserve_variable(
-            image_container,
+        correlate.correlate_preserve_variable(
+            observation,
             filter_,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
@@ -3404,161 +3249,164 @@ def extract_flux_multi(
         )
 
 
-#   TODO: Check ra and dec unit
 def correlate_calibrate(
-        image_container, filter_list, max_pixel_between_objects=3,
-        own_correlation_option=1, reference_image_id=0,
-        calibration_method='APASS', vizier_dict=None,
-        path_calibration_file=None, object_id=None,
-        magnitude_range=(0., 18.5), transformation_coefficients_dict=None,
-        derive_transformation_coefficients=False, plot_sigma=False,
-        photometry_extraction_method='', extract_only_circular_region=False,
-        region_radius=600, identify_data_cluster=False,
-        clean_objs_using_pm=False, max_distance_cluster=6.,
-        find_cluster_para_set=1, correlation_method='astropy',
-        separation_limit=2. * u.arcsec, aperture_radius=4.,
-        radii_unit='arcsec', convert_magnitudes=False,
-        target_filter_system='SDSS', region_to_select_calibration_stars=None,
-        calculate_zero_point_statistic=True, distribution_samples=1000):
+        observation: Observation, filter_list: list[str],
+        max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
+        reference_image_id: int = 0, calibration_method: str = 'APASS',
+        vizier_dict: dict[str, str] | None = None,
+        path_calibration_file: str | None = None, object_id: int = None,
+        magnitude_range: tuple[float, float] = (0., 18.5),
+        transformation_coefficients_dict: dict[str, (float | str)] | None = None,
+        derive_transformation_coefficients: bool = False,
+        plot_sigma: bool = False, photometry_extraction_method: str = '',
+        extract_only_circular_region: bool = False, region_radius: float = 600.,
+        identify_data_cluster: bool = False, clean_objs_using_pm: bool = False,
+        max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
+        correlation_method: str = 'astropy', separation_limit: u = 2. * u.arcsec,
+        aperture_radius: float = 4., radii_unit: str = 'arcsec',
+        convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
+        region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
+        calculate_zero_point_statistic: bool = True,
+        distribution_samples: int = 1000) -> None:
     """
         Correlate photometric extraction results from 2 images and calibrate
         the magnitudes.
 
         Parameters
         ----------
-        image_container                     : `image.container`
-            Container object with image ensemble objects for each filter
+        observation
+            Container object with image series objects for each filter
 
-        filter_list                         : `list` of `strings`
+        filter_list
             List with filter names
 
-        max_pixel_between_objects           : `float`, optional
+        max_pixel_between_objects
             Maximal distance between two objects in Pixel
             Default is ``3``.
 
-        own_correlation_option              : `integer`, optional
+        own_correlation_option
             Option for the srcor correlation function
             Default is ``1``.
 
-        reference_image_id                  : `integer`, optional
+        reference_image_id
             Reference image ID
             Default is ``0``.
 
-        calibration_method                  : `string`, optional
+        calibration_method
             Calibration method
             Default is ``APASS``.
 
-        vizier_dict                         : `dictionary` or `None`, optional
+        vizier_dict
             Dictionary with identifiers of the Vizier catalogs with valid
             calibration data
             Default is ``None``.
 
-        path_calibration_file               : `string`, optional
+        path_calibration_file
             Path to the calibration file
             Default is ``None``.
 
-        object_id                           : `integer` or `None`, optional
+        object_id
             ID of the object
             Default is ``None``.
 
-        magnitude_range                     : `tuple` or `float`, optional
+        magnitude_range
             Magnitude range
             Default is ``(0.,18.5)``.
 
-        transformation_coefficients_dict    : `dictionary`, optional
+        transformation_coefficients_dict
             Calibration coefficients for the magnitude transformation
             Default is ``None``.
 
-        derive_transformation_coefficients  : `boolean`, optional
+        derive_transformation_coefficients
             If True the magnitude transformation coefficients will be
             calculated from the current data even if calibration coefficients
             are available in the database.
             Default is ``False``
 
-        plot_sigma                          : `boolean', optional
+        plot_sigma
             If True sigma clipped magnitudes will be plotted.
             Default is ``False``.
 
-        photometry_extraction_method        : `string`, optional
+        photometry_extraction_method
             Applied extraction method. Possibilities: ePSF or APER`
             Default is ``''``.
 
-        extract_only_circular_region        : `boolean`, optional
+        extract_only_circular_region
             If True the extracted objects will be filtered such that only
             objects with ``radius`` will be returned.
             Default is ``False``.
 
-        region_radius                       : `float`, optional
+        region_radius
             Radius around the object in arcsec.
             Default is ``600``.
 
-        identify_data_cluster               : `boolean`, optional
+        identify_data_cluster
             If True cluster in the Gaia distance and proper motion data
             will be identified.
             Default is ``False``.
 
-        clean_objs_using_pm                 : `boolean`, optional
+        clean_objs_using_pm
             If True only the object list will be clean based on their
             proper motion.
             Default is ``False``.
 
-        max_distance_cluster                : `float`, optional
+        max_distance_cluster
             Expected maximal distance of the cluster in kpc. Used to
             restrict the parameter space to facilitate an easy
             identification of the star cluster.
             Default is ``6``.
 
-        find_cluster_para_set               : `integer`, optional
+        find_cluster_para_set
             Parameter set used to identify the star cluster in proper
             motion and distance data.
 
-        correlation_method                  : `string`, optional
+        correlation_method
             Correlation method to be used to find the common objects on
             the images.
             Possibilities: ``astropy``, ``own``
             Default is ``astropy``.
 
-        separation_limit                    : `astropy.units`, optional
+        separation_limit
             Allowed separation between objects.
             Default is ``2.*u.arcsec``.
 
-        aperture_radius                     : `float`, optional
+        aperture_radius
             Radius of the aperture used to derive the limiting magnitude
             Default is ``4``.
 
-        radii_unit                          : `string`, optional
+        radii_unit
             Unit of the radii above. Permitted values are
             ``pixel`` and ``arcsec``.
             Default is ``arcsec``.
 
-        convert_magnitudes                  : `boolean`, optional
+        convert_magnitudes
             If True the magnitudes will be converted to another
             filter systems specified in `target_filter_system`.
             Default is ``False``.
 
-        target_filter_system                : `string`, optional
+        target_filter_system
             Photometric system the magnitudes should be converted to
             Default is ``SDSS``.
 
-        region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
+        region_to_select_calibration_stars
             Region in which to select calibration stars. This is a useful
             feature in instances where not the entire field of view can be
             utilized for calibration purposes.
             Default is ``None``.
 
-        calculate_zero_point_statistic      : `boolean`, optional
+        calculate_zero_point_statistic
             If `True` a statistic on the zero points will be calculated.
             Default is ``True``.
 
-        distribution_samples                : `integer`, optional
+        distribution_samples
             Number of samples used for distributions
             Default is `1000`.
     """
     ###
     #   Correlate the stellar positions from the different filter
     #
-    correlate.correlate_ensembles(
-        image_container,
+    correlate.correlate_image_series(
+        observation,
         filter_list,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
@@ -3570,8 +3418,8 @@ def correlate_calibrate(
     #   Plot image with the final positions overlaid (final version)
     #
     if len(filter_list) > 1:
-        utilities.prepare_and_plot_starmap_from_image_container(
-            image_container,
+        utilities.prepare_and_plot_starmap_from_observation(
+            observation,
             filter_list,
         )
 
@@ -3580,7 +3428,7 @@ def correlate_calibrate(
     #
     #   Load calibration information
     calib.derive_calibration(
-        image_container,
+        observation,
         filter_list,
         calibration_method=calibration_method,
         max_pixel_between_objects=max_pixel_between_objects,
@@ -3590,7 +3438,7 @@ def correlate_calibrate(
         magnitude_range=magnitude_range,
         region_to_select_calibration_stars=region_to_select_calibration_stars,
     )
-    calibration_filters = image_container.CalibParameters.column_names
+    calibration_filters = observation.CalibParameters.column_names
 
     #   Find filter combinations for which magnitude transformation is possible
     _, usable_filter_combinations = utilities.find_filter_for_magnitude_transformation(
@@ -3601,7 +3449,7 @@ def correlate_calibrate(
     for filter_combination in usable_filter_combinations:
         #   Apply calibration and perform magnitude transformation
         trans.apply_calibration(
-            image_container,
+            observation,
             filter_combination,
             transformation_coefficients_dict=transformation_coefficients_dict,
             derive_transformation_coefficients=derive_transformation_coefficients,
@@ -3616,7 +3464,7 @@ def correlate_calibrate(
         #   of proper motion and distance using Gaia
         #
         utilities.post_process_results(
-            image_container,
+            observation,
             filter_combination,
             id_object=object_id,
             extraction_method=photometry_extraction_method,
@@ -3635,7 +3483,7 @@ def correlate_calibrate(
         #   Determine limiting magnitudes
         #
         utilities.derive_limiting_magnitude(
-            image_container,
+            observation,
             filter_combination,
             reference_image_id,
             aperture_radius=aperture_radius,
@@ -3644,134 +3492,142 @@ def correlate_calibrate(
 
 
 def calibrate_data_mk_light_curve(
-        image_container, filter_list,
-        output_dir, valid_filter_combinations=None, binning_factor=None,
-        transformation_coefficients_dict=None,
-        derive_transformation_coefficients=False, reference_image_id=0,
-        calibration_method='APASS', vizier_dict=None,
-        path_calibration_file=None, magnitude_range=(0., 18.5),
-        max_pixel_between_objects=3., own_correlation_option=1,
-        cross_identification_limit=1, n_allowed_non_detections_object=1,
-        expected_bad_image_fraction=1.0, protect_reference_obj=True,
-        photometry_extraction_method='', correlation_method='astropy',
-        separation_limit=2. * u.arcsec, verbose=False, plot_sigma=False,
-        region_to_select_calibration_stars=None,
-        calculate_zero_point_statistic=True, distribution_samples=1000):
+        observation: Observation, filter_list: list[str], output_dir: str,
+        valid_filter_combinations: list[list[str]] | None = None,
+        binning_factor: float | None = None,
+        transformation_coefficients_dict: dict[str, (float | str)] | None = None,
+        derive_transformation_coefficients: bool = False,
+        reference_image_id: int = 0, calibration_method: str = 'APASS',
+        vizier_dict: dict[str, str] | None = None,
+        path_calibration_file: str | None = None,
+        magnitude_range: tuple[float, float] = (0., 18.5),
+        max_pixel_between_objects: float = 3., own_correlation_option: int = 1,
+        cross_identification_limit: int = 1,
+        n_allowed_non_detections_object: int = 1,
+        expected_bad_image_fraction: float = 1.0,
+        protect_reference_obj: bool = True,
+        photometry_extraction_method: str = '',
+        correlation_method: str = 'astropy',
+        separation_limit: u =2. * u.arcsec, verbose: bool = False,
+        plot_sigma: bool = False,
+        region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
+        calculate_zero_point_statistic: bool = True,
+        distribution_samples: int = 1000) -> None:
     """
     Calculate magnitudes, calibrate, and plot light curves
 
     Parameters
     ----------
-    image_container                     : `image.container`
-        Container object with image ensemble objects for each filter
+    observation
+        Container object with image series objects for each filter
 
-    filter_list                         : `list` of `strings`
+    filter_list
         List with filter names
 
-    output_dir                          : `string`
+    output_dir
         Path, where the output should be stored.
 
-    valid_filter_combinations           : `list` of 'list` of `string` or None, optional
+    valid_filter_combinations
         Valid filter combinations to calculate magnitude transformation
         Default is ``None``.
 
-    binning_factor                      : `float`, optional
+    binning_factor
         Binning factor for the light curve.
         Default is ``None```.
 
-    transformation_coefficients_dict    : `dictionary`, optional
+    transformation_coefficients_dict
         Calibration coefficients for the magnitude transformation
         Default is ``None``.
 
-    derive_transformation_coefficients  : `boolean`, optional
+    derive_transformation_coefficients
         If True the magnitude transformation coefficients will be
         calculated from the current data even if calibration coefficients
         are available in the database.
         Default is ``False``
 
-    reference_image_id                  : `integer`, optional
+    reference_image_id
         ID of the reference image
         Default is ``0``.
 
-    calibration_method                  : `string`, optional
+    calibration_method
         Calibration method
         Default is ``APASS``.
 
-    vizier_dict                         : `dictionary` or `None`, optional
+    vizier_dict
         Dictionary with identifiers of the Vizier catalogs with valid
         calibration data
         Default is ``None``.
 
-    path_calibration_file               : `string`, optional
+    path_calibration_file
         Path to the calibration file
         Default is ``None``.
 
-    magnitude_range                     : `tuple` or `float`, optional
+    magnitude_range
         Magnitude range
         Default is ``(0.,18.5)``.
 
-    max_pixel_between_objects           : `float`, optional
+    max_pixel_between_objects
         Maximal distance between two objects in Pixel
         Default is ``3``.
 
-    own_correlation_option              : `integer`, optional
+    own_correlation_option
         Option for the srcor correlation function
         Default is ``1``.
 
-    cross_identification_limit          : `integer`, optional
+    cross_identification_limit
         Cross-identification limit between multiple objects in the current
         image and one object in the reference image. The current image is
         rejected when this limit is reached.
         Default is ``1``.
 
-    n_allowed_non_detections_object     : `integer`, optional
+    n_allowed_non_detections_object
         Maximum number of times an object may not be detected in an image.
         When this limit is reached, the object will be removed.
         Default is ``1`.
 
-    expected_bad_image_fraction         : `float`, optional
+    expected_bad_image_fraction
         Fraction of low quality images, i.e. those images for which a
         reduced number of objects with valid source positions are expected.
         Default is ``1.0``.
 
-    protect_reference_obj               : `boolean`, optional
+    protect_reference_obj
         If ``False`` also reference objects will be rejected, if they do
         not fulfill all criteria.
         Default is ``True``.
 
-    photometry_extraction_method        : `string`, optional
+    photometry_extraction_method
         Applied extraction method. Possibilities: ePSF or APER`
         Default is ``''``.
 
-    correlation_method                  : `string`, optional
+    correlation_method
         Correlation method to be used to find the common objects on
         the images.
         Possibilities: ``astropy``, ``own``
         Default is ``astropy``.
 
-    separation_limit                    : `astropy.units`, optional
+    separation_limit
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
 
-    verbose                             : `boolean`, optional
+    verbose
         If True additional output will be printed to the command line.
         Default is ``False``.
 
-    plot_sigma                          : `boolean', optional
+    plot_sigma
         If True sigma clipped magnitudes will be plotted.
         Default is ``False``.
 
-    region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
+    region_to_select_calibration_stars
         Region in which to select calibration stars. This is a useful
         feature in instances where not the entire field of view can be
         utilized for calibration purposes.
         Default is ``None``.
 
-    calculate_zero_point_statistic      : `boolean`, optional
+    calculate_zero_point_statistic
         If `True` a statistic on the zero points will be calculated.
         Default is ``True``.
 
-    distribution_samples                : `integer`, optional
+    distribution_samples
         Number of samples used for distributions
         Default is `1000`.
     """
@@ -3784,7 +3640,7 @@ def calibrate_data_mk_light_curve(
         correlate_with_observed_objects = False
 
     #   Make coordinates object for variable star
-    coordinates_objects_of_interest = image_container.objects_of_interest_coordinates
+    coordinates_objects_of_interest = observation.objects_of_interest_coordinates
     if coordinates_objects_of_interest is None:
         raise RuntimeError(
             f"SkyCoord object for objects of interest does not exit."
@@ -3798,7 +3654,7 @@ def calibrate_data_mk_light_curve(
 
     #   Load calibration information
     calib.derive_calibration(
-        image_container,
+        observation,
         filter_list,
         calibration_method=calibration_method,
         max_pixel_between_objects=max_pixel_between_objects,
@@ -3813,7 +3669,7 @@ def calibrate_data_mk_light_curve(
         reference_image_id=reference_image_id,
         coordinates_obj_to_rm=coordinates_objects_of_interest,
     )
-    calibration_filters = image_container.CalibParameters.column_names
+    calibration_filters = observation.CalibParameters.column_names
     terminal_output.print_to_terminal('')
 
     #   Determine usable filter combinations -> Filters must be in a valid
@@ -3827,8 +3683,8 @@ def calibrate_data_mk_light_curve(
 
     #   Correlate star positions from the different filter
     if valid_filter:
-        correlate.correlate_ensembles(
-            image_container,
+        correlate.correlate_image_series(
+            observation,
             valid_filter,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
@@ -3851,7 +3707,7 @@ def calibrate_data_mk_light_curve(
     for filter_set in usable_filter_combinations:
         #   Apply calibration and perform magnitude transformation
         trans.apply_calibration(
-            image_container,
+            observation,
             filter_set,
             transformation_coefficients_dict=transformation_coefficients_dict,
             derive_transformation_coefficients=derive_transformation_coefficients,
@@ -3862,7 +3718,7 @@ def calibrate_data_mk_light_curve(
         )
         #   TODO: Replace with table_mags_transformed
         calibrated_magnitudes = getattr(
-            image_container,
+            observation,
             # 'array_mags_not_transformed',
             'array_mags_transformed',
             None,
@@ -3879,11 +3735,11 @@ def calibrate_data_mk_light_curve(
             #
             #   Create a Time object for the observation times
             observation_times = Time(
-                image_container.ensembles[filter_].get_obs_time(),
+                observation.image_series_dict[filter_].get_obs_time(),
                 format='jd',
             )
 
-            for object_ in image_container.objects_of_interest:
+            for object_ in observation.objects_of_interest:
                 object_name = object_.name
                 id_object = object_.id_in_image_series[filter_]
                 transit_time = object_.transit_time
@@ -3956,28 +3812,28 @@ def calibrate_data_mk_light_curve(
                     style_name='WARNING',
                 )
 
-                #   Get ensemble
-                ensemble = image_container.ensembles[filter_]
+                #   Get image_series
+                image_series = observation.image_series_dict[filter_]
 
                 #   Quasi calibration of the flux data
-                trans.flux_calibration_ensemble(
-                    ensemble,
+                trans.flux_calibration_image_series(
+                    image_series,
                     distribution_samples=distribution_samples,
                 )
 
                 #   Normalize data if no calibration magnitudes are available
-                trans.flux_normalization_ensemble(
-                    ensemble,
+                trans.flux_normalization_image_series(
+                    image_series,
                     distribution_samples=distribution_samples
                 )
 
                 #   TODO: Is this necessary? Use return value?
-                plot_quantity = ensemble.quasi_calibrated_flux_normalized
-                # plot_quantity = ensemble.quasi_calibrated_flux
+                plot_quantity = image_series.quasi_calibrated_flux_normalized
+                # plot_quantity = image_series.quasi_calibrated_flux
             else:
                 #   Apply calibration
                 trans.apply_calibration(
-                    image_container,
+                    observation,
                     [filter_],
                     photometry_extraction_method=photometry_extraction_method,
                     calculate_zero_point_statistic=calculate_zero_point_statistic,
@@ -3985,7 +3841,7 @@ def calibrate_data_mk_light_curve(
                 )
                 #   TODO: Replace with table_mags_not_transformed and table_mags_transformed
                 plot_quantity = getattr(
-                    image_container,
+                    observation,
                     'array_mags_not_transformed',
                     None,
                 )
@@ -3996,11 +3852,11 @@ def calibrate_data_mk_light_curve(
             #
             #   Create a Time object for the observation times
             observation_times = Time(
-                image_container.ensembles[filter_].get_obs_time(),
+                observation.image_series_dict[filter_].get_obs_time(),
                 format='jd',
             )
 
-            for object_ in image_container.objects_of_interest:
+            for object_ in observation.objects_of_interest:
                 object_name = object_.name
                 id_object = object_.id_in_image_series[filter_]
                 transit_time = object_.transit_time
@@ -4049,38 +3905,38 @@ def calibrate_data_mk_light_curve(
                     )
 
 
-def subtract_archive_img_from_img(filter_, name_objects, image_paths,
-                                  output_dir, wcs_method='astrometry',
-                                  plot_comp=True,
-                                  hips_source='CDS/P/DSS2/blue'):
+def subtract_archive_img_from_img(
+        filter_: str, name_objects: list[str], image_paths: dict[str, str],
+        output_dir: str, wcs_method: str = 'astrometry',
+        plot_comp: bool = True, hips_source: str = 'CDS/P/DSS2/blue') -> None:
     """
         Subtraction of a reference/archival image from the input image.
         The installation of Hotpants is required.
 
         Parameters
         ----------
-        filter_                 : `string`
+        filter_
             Filter identifier
 
-        name_objects            : `list` of `string`
+        name_objects
             Name of the object
 
-        image_paths             : `dictionary`
+        image_paths
             Paths to images: key - filter name; value - path
 
-        output_dir              : `string`
+        output_dir
             Path, where the output should be stored.
 
-        wcs_method              : `string`, optional
+        wcs_method
             Method that should be used to determine the WCS.
             Default is ``'astrometry'``.
 
-        plot_comp               : `boolean`, optional
+        plot_comp
             If `True` a plot with the original and reference image will
             be created.
             Default is ``True``.
 
-        hips_source             : `string`
+        hips_source
             ID string of the image catalog that will be queried using the
             hips service.
             Default is ``CDS/P/DSS2/blue``.
@@ -4121,9 +3977,9 @@ def subtract_archive_img_from_img(filter_, name_objects, image_paths,
     ccd_image.write(file_path, overwrite=True)
 
     ###
-    #   Initialize image ensemble object
+    #   Initialize image series object
     #
-    image_ensemble = ImageEnsemble(
+    image_series = ImageSeries(
         filter_,
         name_objects,
         image_paths,
@@ -4134,7 +3990,7 @@ def subtract_archive_img_from_img(filter_, name_objects, image_paths,
     #   Find the WCS solution for the image
     #
     utilities.find_wcs(
-        image_ensemble,
+        image_series,
         reference_image_id=0,
         method=wcs_method,
         indent=3,
@@ -4155,7 +4011,7 @@ def subtract_archive_img_from_img(filter_, name_objects, image_paths,
     # hips_hdus = hips2fits.query_with_wcs(
     hips_hdus = hips_instance.query_with_wcs(
         hips=hips_source,
-        wcs=image_ensemble.wcs,
+        wcs=image_series.wcs,
         get_query_payload=False,
         format='fits',
         verbose=True,
@@ -4169,7 +4025,7 @@ def subtract_archive_img_from_img(filter_, name_objects, image_paths,
     if plot_comp:
         plot.compare_images(
             output_dir,
-            image_ensemble.image_list[0].get_data(),
+            image_series.image_list[0].get_data(),
             hips_hdus[0].data,
         )
 
@@ -4177,7 +4033,7 @@ def subtract_archive_img_from_img(filter_, name_objects, image_paths,
     #   Perform image subtraction
     #
     #   Get image and image data
-    ccd_image = image_ensemble.image_list[0].read_image()
+    ccd_image = image_series.image_list[0].read_image()
     hips_data = hips_hdus[0].data.astype('float64').byteswap().newbyteorder()
 
     #   Run Hotpants

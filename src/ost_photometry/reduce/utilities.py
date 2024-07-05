@@ -200,6 +200,13 @@ def get_instrument_info(image_file_collection, temperature_tolerance,
         )
     instrument = list(instruments)[0]
 
+    #   Sanitize camera strings from Kstars
+    #   TODO: Replace this with an alias list for the cameras
+    if 'QHY268M' in instrument:
+        instrument = 'QHY268M'
+    if 'QHY600M' in instrument:
+        instrument = 'QHY600M'
+
     #   Get the instrument in case of QHY cameras
     if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
         #   Get image dimensions and binning

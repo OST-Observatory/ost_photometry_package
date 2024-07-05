@@ -111,13 +111,6 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
         h               : `integer`
             Height in pixel
     """
-    #   Sanitize camera strings from Kstars
-    #   TODO: Replace this with an alias list for the cameras
-    if 'QHY268M' in camera:
-        camera = 'QHY268M'
-    if 'QHY600M' in camera:
-        camera = 'QHY600M'
-
     #   STF8300
     if camera in ['SBIG STF-8300 CCD Camera']:
         read_noise = 9.3
@@ -135,7 +128,7 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
                 extrapolate=False,
             )
             read_noise = spline(gain_setting)
-        except Exception as e:
+        except KeyError as e:
             terminal_output.print_to_terminal(
                 f'Camera: {camera}\n'
                 "   The read noise could not be determined... \n"
