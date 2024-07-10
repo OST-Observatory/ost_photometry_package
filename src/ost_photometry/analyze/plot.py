@@ -15,17 +15,20 @@ from astropy.visualization import (
     ZScaleInterval,
     simple_norm,
 )
+from astropy.table import Table
 from astropy.stats import sigma_clip as sigma_clipping
 from astropy.stats import sigma_clipped_stats
 from astropy.time import Time
 from astropy.timeseries import aggregate_downsample
 import astropy.units as u
+from astropy import wcs
 
 from scipy.spatial import KDTree
 
 from itertools import cycle
 
 from .. import checks, style, terminal_output, calibration_data
+from . import utilities
 
 import matplotlib.colors as mcol
 import matplotlib.cm as cm
@@ -42,19 +45,21 @@ plt.switch_backend('Agg')
 ############################################################################
 
 
-def compare_images(output_dir, original_image, comparison_image):
+def compare_images(
+        output_dir: str, original_image: np.ndarray,
+        comparison_image: np.ndarray) -> None:
     """
         Plot two images for comparison
 
         Parameters
         ----------
-        output_dir          : `string`
+        output_dir
             Output directory
 
-        original_image      : `numpy.ndarray`
+        original_image
             Original image data
 
-        comparison_image    : `numpy.ndarray`
+        comparison_image
             Comparison image data
     """
     #   Prepare plot
@@ -83,66 +88,70 @@ def compare_images(output_dir, original_image, comparison_image):
     plt.close()
 
 
-def starmap(output_dir, image, filter_, tbl, tbl_2=None,
-            label='Identified stars', label_2='Identified stars (set 2)',
-            rts=None, mode=None, name_object=None, wcs=None, terminal_logger=None,
-            indent=2):
+def starmap(
+        output_dir: str, image: np.ndarray, filter_: str, tbl: Table,
+        tbl_2: Table = None, label: str = 'Identified stars',
+        label_2: str = 'Identified stars (set 2)', rts: str | None = None,
+        mode: str | None = None, name_object: str | None = None,
+        wcs_image: wcs.WCS = None,
+        terminal_logger: terminal_output.TerminalLog | None = None,
+        indent: int = 2) -> None:
     """
         Plot star maps  -> overlays of the determined star positions on FITS
                         -> supports different versions
 
         Parameters
         ----------
-        output_dir      : `string`
+        output_dir
             Output directory
 
-        image           : `numpy.ndarray`
+        image
             Image data
 
-        filter_         : `string`
+        filter_
             Filter identifier
 
-        tbl             : `astropy.table.Table`
+        tbl
             Astropy table with data of the objects
 
-        tbl_2           : `astropy.table.Table`, optional
+        tbl_2
             Second astropy table with data of special objects
             Default is ``None``
 
-        label           : `string`, optional
+        label
             Identifier for the objects in `tbl`
             Default is ``Identified stars``
 
-        label_2         : `string`, optional
+        label_2
             Identifier for the objects in `tbl_2`
             Default is ``Identified stars (set 2)``
 
-        rts             : `string` or None, optional
+        rts
             Expression characterizing the plot
             Default is ``None``
 
-        mode            : `string` or None, optional
+        mode
             String used to switch between different plot modes
             Default is ``None``
 
-        name_object     : `list` of `string` or `string` or None, optional
+        name_object
             Name of the object
             Default is ``None``
 
-        wcs             : `astropy.wcs.WCS` or None, optional
+        wcs_image
             WCS information
             Default is ``None``
 
-        terminal_logger : `terminal_output.TerminalLog` or None, optional
+        terminal_logger
             Logger object. If provided, the terminal output will be directed
             to this object.
             Default is ``None``.
 
-        indent          : `integer`, optional
+        indent
             Indentation for the console output lines
             Default is ``2``.
     """
-    wcs = None
+    wcs_image = None
     #   Check output directories
     checks.check_output_directories(
         output_dir,
@@ -199,9 +208,9 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     #   Set layout
     fig = plt.figure(figsize=(20, 9))
 
-    if wcs is not None:
+    if wcs_image is not None:
         # ax = fig.add_subplot(projection=wcs)
-        ax = plt.subplot(projection=wcs)
+        ax = plt.subplot(projection=wcs_image)
         # ax = plt.subplot(projection=wcs)
     else:
         ax = fig.add_subplot()
@@ -317,7 +326,7 @@ def starmap(output_dir, image, filter_, tbl, tbl_2=None,
     ax.minorticks_on()
 
     #   Set labels
-    if wcs is not None:
+    if wcs_image is not None:
         ax.set_xlabel("Right ascension", fontsize=16)
         ax.set_ylabel("Declination", fontsize=16)
         # ax.coords[0].set_axislabel("Right ascension", fontsize=16)
@@ -658,16 +667,13 @@ def plot_epsf(
     plt.close()
 
 
-def plot_residual(name, image_orig, residual_image, output_dir,
+def plot_residual(image_orig, residual_image, output_dir,
                   name_object=None, terminal_logger=None, indent=1):
     """
         Plot the original and the residual image
 
         Parameters
         ----------
-        name                : `string`
-            Name of the plot
-
         image_orig          : `dictionary` {`string`: `numpy.ndarray`}
             Original image data
 
@@ -735,10 +741,8 @@ def plot_residual(name, image_orig, residual_image, output_dir,
             name_object = name_object[0:16] + ' ...'
 
     #   Set title of the complete plot
-    if name_object is None:
-        fig.suptitle(name, fontsize=17)
-    else:
-        fig.suptitle(f'{name} ({name_object})', fontsize=17)
+    if name_object is not None:
+        fig.suptitle(f'{name_object}', fontsize=17)
 
     i = 1
     for filter_, image in image_orig.items():
@@ -1114,65 +1118,79 @@ def light_curve_fold(
     plt.close()
 
 
-def plot_transform(output_dir, filter_1, filter_2, color_literature, fit_variable,
-                   a_fit, b_fit, b_err_fit, fit_function, air_mass,
-                   filter_=None, color_literature_err=None, fit_variable_err=None,
-                   name_object=None, image_id=None):
+def plot_transform(
+        output_dir: str, filter_1: str, filter_2: str,
+        color_literature: np.ndarray, fit_variable: np.ndarray, a_fit: float,
+        b_fit: float, b_err_fit: float, fit_function: utilities.lin_func,
+        air_mass: float, filter_: str | None = None,
+        color_literature_err: np.ndarray | None = None,
+        fit_variable_err: np.ndarray | None = None,
+        name_object: list[str] | str | None = None,
+        image_id: int | None = None, x_data_original: np.ndarray | None = None,
+        y_data_original: np.ndarray | None = None) -> None:
     """
         Plots illustrating magnitude transformation results
 
         Parameters
         ----------
-        output_dir              : `string`
+        output_dir
             Output directory
 
-        filter_1                : `string`
+        filter_1
             Filter 1
 
-        filter_2                : `string`
+        filter_2
             Filter 2
 
-        color_literature        : `numpy.ndarray`
+        color_literature
             Colors of the calibration stars
 
-        fit_variable            : `numpy.ndarray`
+        fit_variable
             Fit variable
 
-        a_fit                   : `float`
+        a_fit
             First parameter of the fit
 
-        b_fit                   : `float`
+        b_fit
             Second parameter of the fit
             Currently only two fit parameters are supported
             TODO: -> Needs to generalized
 
-        b_err_fit               : `float`
+        b_err_fit
             Error of `b`
 
-        fit_function            : `fit.function`
+        fit_function
             Fit function, used for determining the fit
 
-        air_mass                : `float`
+        air_mass
             Air mass
 
-        filter_                 : `string`, optional
+        filter_
             Filter, used to distinguish between the different plot options
             Default is ``None``
 
-        color_literature_err    : `numpy.ndarray`, optional
+        color_literature_err
             Color errors of the calibration stars
             Default is ``None``.
 
-        fit_variable_err        : `numpy.ndarray`, optional
+        fit_variable_err
             Fit variable errors
             Default is ``None``.
 
-        name_object             : `string` or `list` of `string`
+        name_object
             Name of the object
             Default is ``None``.
 
-        image_id                : `integer` or `None`, optional
+        image_id
             ID of the image
+
+        x_data_original
+            Original abscissa data with out any modification, which might
+            have been applied to data
+
+        y_data_original
+            Original ordinate data with out any modification, which might
+            have been applied to data
     """
     #   Check output directories
     checks.check_output_directories(
@@ -1234,6 +1252,15 @@ def plot_transform(output_dir, filter_1, filter_2, color_literature, fit_variabl
 
     #   Set title
     fig.suptitle(title, fontsize=20)
+
+    if x_data_original is not None and y_data_original is not None:
+        plt.scatter(
+            x_data_original,
+            y_data_original,
+            marker='o',
+            markersize=3,
+            color='darkred',
+        )
 
     #   Plot data
     plt.errorbar(
@@ -2578,27 +2605,27 @@ def mk_colormap(n_color_steps):
     return cpick
 
 
-def mk_line_cycler():
+def mk_line_cycler() -> cycle:
     """
         Make a line cycler
     """
-    lines = ["-", "--", "-.", ":"]
+    lines: list[str] = ["-", "--", "-.", ":"]
     return cycle(lines)
 
 
-def mk_color_cycler_symbols():
+def mk_color_cycler_symbols() -> cycle:
     """
         Make a color cycler
     """
-    colors = ['darkgreen', 'darkred', 'mediumblue', 'yellowgreen']
+    colors: list[str] = ['darkgreen', 'darkred', 'mediumblue', 'yellowgreen']
     return cycle(colors)
 
 
-def mk_color_cycler_error_bars():
+def mk_color_cycler_error_bars() -> cycle:
     """
         Make a color cycler
     """
-    colors = ['wheat', 'dodgerblue', 'violet', 'gold']
+    colors: list[str] = ['wheat', 'dodgerblue', 'violet', 'gold']
     return cycle(colors)
 
 

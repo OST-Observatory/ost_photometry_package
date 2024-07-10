@@ -23,6 +23,9 @@ import astropy.units as u
 from astropy.io import fits
 from astropy.time import Time
 from astropy import wcs
+from astropy.table import Table
+
+from photutils import psf
 
 import twirl
 
@@ -37,39 +40,226 @@ from . import checks, terminal_output, style, calibration_data
 ############################################################################
 
 
+# class Image:
+#     """
+#         Image object used to store and transport some data
+#     """
+#
+#     def __init__(self, pd, filter_, object_name, file_path, output_dir):
+#         self.pd = pd
+#         self.filter_ = filter_
+#         # self.object_name = object_name
+#         if isinstance(file_path, Path):
+#             self.filename = file_path.name
+#             self.path = file_path
+#         else:
+#             self.filename = file_path.split('/')[-1]
+#             self.path = Path(file_path)
+#         if isinstance(output_dir, Path):
+#             self.out_path = output_dir
+#         else:
+#             self.out_path = Path(output_dir)
+#
+#     #   Read image
+#     def read_image(self):
+#         return CCDData.read(self.path)
+#
+#     #   Get header
+#     def get_header(self):
+#         return CCDData.read(self.path).meta
+#
+#     #   Get data
+#     def get_data(self):
+#         return CCDData.read(self.path).data
+
+
 class Image:
     """
-        Image object used to store and transport some data
+        Image class: Provides relevant image information and some methods for
+                     handling image data.
     """
+    def __init__(
+            self, pd: int, filter_: str, path: str, output_dir: str) -> None:
+        #   Set image ID
+        self.pd: int = pd
 
-    def __init__(self, pd, filter_, object_name, file_path, output_dir):
-        self.pd = pd
-        self.filt = filter_
-        self.object_name = object_name
-        if isinstance(file_path, Path):
-            self.filename = file_path.name
-            self.path = file_path
+        #   Set filter
+        self.filter_: str = filter_
+
+        #   TODO: rm parameter?
+        #   Set object name
+        # self.object_name = object_names
+
+        #   Set file name and complete path
+        if isinstance(path, Path):
+            self.filename: str = path.name
+            self.path: Path = path
         else:
-            self.filename = file_path.split('/')[-1]
-            self.path = Path(file_path)
+            self.filename = path.split('/')[-1]
+            self.path: Path = Path(path)
+
+        #   Set path to output directory
         if isinstance(output_dir, Path):
-            self.outpath = output_dir
+            self.out_path: Path = output_dir
         else:
-            self.outpath = Path(output_dir)
+            self.out_path: Path = Path(output_dir)
+
+        #   Set wcs default
+        self.wcs: wcs.WCS | None = None
+
+        #   Add and calculate further image parameters
+        self.instrument: str | None = None
+        self.field_of_view_y: float | None = None
+        self.field_of_view_x: float | None = None
+        self.coordinates_image_center: SkyCoord | None = None
+        self.pixel_scale: float | None = None
+        self.fov_pixel_region: float | None = None
+        self.air_mass: float | None = None
+        self.jd: float | None = None
+        self.calculate_field_of_view_etc()
+
+        #   Prepare variables for later use
+        self.epsf: psf.EPSFModel | None = None
+        self.residual_image: np.ndarray | None = None
+        self.photometry: Table | None = None
+        self.positions: Table | None = None
+        self.magnitudes_with_zp: u.quantity.Quantity | None = None
 
     #   Read image
-    def read_image(self):
+    def read_image(self) -> CCDData:
         return CCDData.read(self.path)
 
     #   Get header
-    def get_header(self):
+    def get_header(self) -> dict[str, str]:
         return CCDData.read(self.path).meta
 
     #   Get data
-    def get_data(self):
+    def get_data(self) -> np.ndarray:
         return CCDData.read(self.path).data
 
+    #   Get shape
+    def get_shape(self) -> tuple[int, int]:
+        return CCDData.read(self.path).data.shape
 
+    def calculate_field_of_view_etc(self):
+        #   Get header
+        header = self.get_header()
+
+        #   Read focal length - set default to 3454. mm
+        focal_length = header.get('FOCALLEN', 3454.)
+
+        #   Read ra and dec of image center
+        ra = header.get('OBJCTRA', '00 00 00')
+        dec = header.get('OBJCTDEC', '+00 00 00')
+
+        #   Convert ra & dec to degrees
+        coordinates_sky = SkyCoord(
+            ra,
+            dec,
+            unit=(u.hourangle, u.deg),
+            frame="icrs",
+        )
+
+        #   Number of pixels
+        n_pixel_x = header.get('NAXIS1', 0)
+        n_pixel_y = header.get('NAXIS2', 0)
+
+        if n_pixel_x == 0:
+            raise ValueError(
+                f"{style.Bcolors.FAIL}\nException in calculate_field_of_view(): X "
+                f"dimension of the image is 0 {style.Bcolors.ENDC}"
+            )
+        if n_pixel_y == 0:
+            raise ValueError(
+                f"{style.Bcolors.FAIL}\nException in calculate_field_of_view(): Y "
+                f"dimension of the image is 0 {style.Bcolors.ENDC}"
+            )
+
+        #   Get binning
+        x_binning = header.get('XBINNING', 1)
+        y_binning = header.get('YBINNING', 1)
+
+        #   Set instrument
+        instrument = header.get('INSTRUME', '')
+
+        if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
+            #   Physical chip dimensions in pixel
+            physical_dimension_x = n_pixel_x * x_binning
+            physical_dimension_y = n_pixel_y * y_binning
+
+            #   Set instrument
+            if physical_dimension_x == 9576 and physical_dimension_y in [6387, 6388]:
+                instrument = 'QHY600M'
+            elif physical_dimension_x in [6280, 6279] and physical_dimension_y in [4210, 4209]:
+                instrument = 'QHY268M'
+            elif physical_dimension_x == 3864 and physical_dimension_y in [2180, 2178]:
+                instrument = 'QHY485C'
+            else:
+                instrument = ''
+
+        #   Calculate chip size in mm
+        if 'XPIXSZ' in header:
+            pixel_width = header['XPIXSZ']
+            chip_length = n_pixel_x * float(pixel_width) / 1000
+            chip_height = n_pixel_y * float(pixel_width) / 1000
+        else:
+            chip_length, chip_height = calibration_data.get_chip_dimensions(
+                instrument
+            )
+
+        #   Calculate field of view
+        field_of_view_x = 2 * np.arctan(chip_length / 2 / focal_length)
+        field_of_view_y = 2 * np.arctan(chip_height / 2 / focal_length)
+
+        #   Convert to arc min
+        field_of_view_x = field_of_view_x * 360. / 2. / np.pi * 60.
+        field_of_view_y = field_of_view_y * 360. / 2. / np.pi * 60.
+
+        #   Calculate pixel scale
+        pixel_scale = field_of_view_x * 60 / n_pixel_x
+
+        #   Create RectangleSkyRegion that covers the field of view
+        # region_sky = RectangleSkyRegion(
+        # center=coordinates_sky,
+        # width=field_of_view_x * u.rad,
+        # height=field_of_view_y * u.rad,
+        # angle=0 * u.deg,
+        # )
+        #   Create RectanglePixelRegion that covers the field of view
+        pixel_region = RectanglePixelRegion(
+            center=PixCoord(x=int(n_pixel_x / 2), y=int(n_pixel_y / 2)),
+            width=n_pixel_x,
+            height=n_pixel_y,
+        )
+
+        #   Add to image class
+        self.coordinates_image_center = coordinates_sky
+        self.field_of_view_x = field_of_view_x
+        self.field_of_view_y = field_of_view_y
+        self.instrument = instrument
+        self.pixel_scale = pixel_scale
+        # image.region_sky  = region_sky
+        self.fov_pixel_region = pixel_region
+
+        #   Add JD (observation time) and air mass from Header to image class
+        jd = header.get('JD', None)
+        if jd is None:
+            obs_time = header.get('DATE-OBS', None)
+            if not obs_time:
+                raise ValueError(
+                    f"{style.Bcolors.FAIL} \tERROR: No information about the "
+                    "observation time was found in the header"
+                    f"{style.Bcolors.ENDC}"
+                )
+            jd = Time(obs_time, format='fits').jd
+
+        self.jd = jd
+        self.air_mass = header.get('AIRMASS', 1.0)
+
+        #  Add instrument to image class
+        self.instrument = instrument
+
+#   TODO: Maybe remove?!
 def calculate_field_of_view(image, indent=2, verbose=True):
     """
         Calculate field of view, pixel scale, etc. ...
@@ -163,11 +353,11 @@ def calculate_field_of_view(image, indent=2, verbose=True):
     field_of_view_y = 2 * np.arctan(chip_height / 2 / focal_length)
 
     #   Convert to arc min
-    field_of_view = field_of_view_x * 360. / 2. / np.pi * 60.
+    field_of_view_x = field_of_view_x * 360. / 2. / np.pi * 60.
     field_of_view_y = field_of_view_y * 360. / 2. / np.pi * 60.
 
     #   Calculate pixel scale
-    pixel_scale = field_of_view * 60 / n_pixel_x
+    pixel_scale = field_of_view_x * 60 / n_pixel_x
 
     #   Create RectangleSkyRegion that covers the field of view
     # region_sky = RectangleSkyRegion(
@@ -184,13 +374,13 @@ def calculate_field_of_view(image, indent=2, verbose=True):
     )
 
     #   Add to image class
-    image.coord = coordinates_sky
-    image.fov = field_of_view
-    image.fov_y = field_of_view_y
+    image.coordinates_image_center = coordinates_sky
+    image.field_of_view_x = field_of_view_x
+    image.field_of_view_y = field_of_view_y
     image.instrument = instrument
-    image.pixscale = pixel_scale
+    image.pixel_scale = pixel_scale
     # image.region_sky  = region_sky
-    image.region_pix = pixel_region
+    image.fov_pixel_region = pixel_region
 
     #   Add JD (observation time) and air mass from Header to image class
     jd = header.get('JD', None)
@@ -310,7 +500,7 @@ def get_basename(path):
 def execution_time(function):
     """
         Decorator that reports the execution time
-        
+
         Parameters
         ----------
         function        : `function`
@@ -461,17 +651,17 @@ def find_wcs_astrometry(image, cosmic_rays_removed=False,
 
     #   Define WCS dir
     if wcs_working_dir is None:
-        wcs_working_dir = (image.outpath / 'wcs_images')
+        wcs_working_dir = (image.out_path / 'wcs_images')
     else:
         wcs_working_dir = checks.check_pathlib_path(wcs_working_dir)
         wcs_working_dir = wcs_working_dir / random_string_generator(7)
         checks.check_output_directories(wcs_working_dir)
 
     #   Check output directories
-    checks.check_output_directories(image.outpath, wcs_working_dir)
+    checks.check_output_directories(image.out_path, wcs_working_dir)
 
     #   RA & DEC
-    coordinates = image.coord
+    coordinates = image.coordinates_image_center
     ra = coordinates.ra.deg
     dec = coordinates.dec.deg
 
@@ -497,7 +687,7 @@ def find_wcs_astrometry(image, cosmic_rays_removed=False,
     # )
     command = (
         f'solve-field --overwrite --scale-units arcsecperpix --scale-low '
-        f'{image.pixscale - 0.1} --scale-high {image.pixscale + 0.1} --ra {ra} '
+        f'{image.pixel_scale - 0.1} --scale-high {image.pixel_scale + 0.1} --ra {ra} '
         f'--dec {dec} --radius 1.0 --dir {wcs_working_dir} --resort '
         '{} --fits-image'.format(str(wcs_file).replace(" ", "\ "))
     )
@@ -579,8 +769,8 @@ def find_wcs_twirl(image, object_pixel_position_x=None,
         n = len(objects)
     objects = objects[0:n]
 
-    coordinates = image.coord
-    field_of_view = image.fov
+    coordinates = image.coordinates_image_center
+    field_of_view = image.field_of_view_x
     print('n', n, 'field_of_view', field_of_view, coordinates.ra.deg, coordinates.dec.deg)
     #   Calculate WCS
     gaia_twirl = twirl.gaia_radecs(
@@ -651,7 +841,7 @@ def find_wcs_astap(image, indent=2):
     )
 
     #   Field of view in degrees
-    field_of_view = image.fov_y / 60.
+    field_of_view = image.field_of_view_y / 60.
 
     #   Path to image
     wcs_file = image.path
@@ -745,7 +935,7 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
 
         #   Set WCS dir
         if wcs_dir is None:
-            wcs_dir = (image.outpath / 'wcs_images')
+            wcs_dir = (image.out_path / 'wcs_images')
 
         #   Get image base name
         basename = get_basename(image.path)

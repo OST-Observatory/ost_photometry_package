@@ -257,7 +257,7 @@ def find_wcs(image_series: 'analyze.ImageSeries', reference_image_id=None, metho
                     base_aux.find_wcs_astap(img, indent=indent)
                 )
 
-            #   Calculate WCS -> twirl libary
+            #   Calculate WCS -> twirl library
             elif method == 'twirl':
                 if x is None or y is None:
                     raise RuntimeError(
@@ -920,8 +920,8 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
     if tbl is None:
         tbl = image.photometry
     data = image.get_data()
-    filter_ = image.filt
-    name = image.object_name
+    filter_ = image.filter_
+    # name = image.object_name
 
     #   Prepare table
     n_stars = len(tbl)
@@ -936,14 +936,14 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
 
     #   Plot star map
     plot.starmap(
-        image.outpath.name,
+        image.out_path.name,
         data,
         filter_,
         tbl_xy,
         label=label,
         rts=rts_pre,
-        name_object=name,
-        wcs=image.wcs,
+        # name_object=name,
+        wcs_image=image.wcs,
         terminal_logger=terminal_logger,
     )
 
@@ -974,13 +974,13 @@ def prepare_and_plot_starmap_from_observation(
         rts = 'final version'
 
         #   Get reference image
-        image = observation.image_series_dict[filter_].ref_img
+        image = observation.image_series_dict[filter_].reference_image
 
         #   Using multiprocessing to create the plot
         p = mp.Process(
             target=plot.starmap,
             args=(
-                image.outpath.name,
+                image.out_path.name,
                 image.get_data(),
                 filter_,
                 image.photometry,
@@ -989,7 +989,7 @@ def prepare_and_plot_starmap_from_observation(
                 'rts': rts,
                 'label': f'Stars identified in {filter_list[0]} and '
                          f'{filter_list[1]} filter',
-                'name_object': image.object_name,
+                # 'name_object': image.object_name,
                 'wcs': image.wcs,
             }
         )
@@ -1043,9 +1043,9 @@ def prepare_and_plot_starmap_from_image_series(
         p = mp.Process(
             target=plot.starmap,
             args=(
-                image_series.outpath.name,
+                image_series.out_path.name,
                 image_series.image_list[j].get_data(),
-                image_series.filt,
+                image_series.filter_,
                 image_series.image_list[j].photometry,
             ),
             kwargs={
@@ -1054,7 +1054,7 @@ def prepare_and_plot_starmap_from_image_series(
                 'label': 'Stars identified in all images',
                 # 'label_2': 'Calibration stars',
                 'label_2': 'Variable object',
-                'name_object': image_series.object_name,
+                # 'name_object': image_series.object_name,
                 'wcs': image_series.wcs,
             }
         )
@@ -1063,7 +1063,7 @@ def prepare_and_plot_starmap_from_image_series(
 
 
 def calibration_check_plots(
-        filter_, out_dir, name_object, image_id, filter_list,
+        filter_, out_dir, image_id, filter_list,
         color_observed, color_literature, ids_calibration_stars,
         literature_magnitudes, magnitudes, uncalibrated_magnitudes,
         color_observed_err=None, color_literature_err=None,
@@ -1081,10 +1081,7 @@ def calibration_check_plots(
         out_dir                     : `string`
             Output directory
 
-        name_object                 : `string`
-            Name of the object
-
-        image_id                    : `string`
+        image_id                    : `integer`
                 Expression characterizing the plot
 
         filter_list                 : `list` - `string`
@@ -1149,7 +1146,7 @@ def calibration_check_plots(
                 out_dir,
             ),
             kwargs={
-                'name_object': name_object,
+                # 'name_object': name_object,
                 'x_errors': [magnitudes_err],
                 'y_errors': [uncalibrated_magnitudes_err],
             }
@@ -1163,7 +1160,7 @@ def calibration_check_plots(
             f'{filter_}_no-calibration [mag]',
             f'mag-cali_mags_{filter_}_img_{image_id}',
             out_dir,
-            name_object=name_object,
+            # name_object=name_object,
             x_errors=[magnitudes_err],
             y_errors=[uncalibrated_magnitudes_err],
         )
@@ -1373,7 +1370,7 @@ def derive_limiting_magnitude(
         try:
             magnitude_type = 'mag_cali_trans'
             tbl_mag = photo.group_by(magnitude_type)
-        except:
+        except KeyError:
             magnitude_type = 'mag_cali_no-trans'
             tbl_mag = photo.group_by(magnitude_type)
 
@@ -1389,7 +1386,7 @@ def derive_limiting_magnitude(
         p = mp.Process(
             target=plot.starmap,
             args=(
-                image.outpath.name,
+                image.out_path.name,
                 image.get_data(),
                 filter_,
                 tbl_mag[:][-10:],
@@ -1398,7 +1395,7 @@ def derive_limiting_magnitude(
                 'label': '10 faintest objects',
                 'rts': rts,
                 'mode': 'mags',
-                'name_object': image.object_name,
+                # 'name_object': image.object_name,
                 'wcs': image.wcs,
             }
         )
@@ -1437,7 +1434,7 @@ def derive_limiting_magnitude(
         #   Set radius for the apertures
         radius = aperture_radius
         if radii_unit == 'arcsec':
-            radius = radius / image.pixscale
+            radius = radius / image.pixel_scale
 
         #   Setup ImageDepth object from the photutils package
         depth = ImageDepth(
@@ -1457,7 +1454,7 @@ def derive_limiting_magnitude(
         #   Plot sky apertures
         p = mp.Process(
             target=plot.plot_limiting_mag_sky_apertures,
-            args=(image.outpath.name, image.get_data(), mask, depth),
+            args=(image.out_path.name, image.get_data(), mask, depth),
         )
         p.start()
 
@@ -1468,9 +1465,9 @@ def derive_limiting_magnitude(
         )
         #   Remark: the error is only based on the zero point error
         terminal_output.print_to_terminal(
-                f"500 apertures, 5 sigma, 2 iterations: "
-                f"{mag_limit.pdf_median():6.2f} +/- "
-                f"{mag_limit.pdf_std():6.2f} mag",
+            f"500 apertures, 5 sigma, 2 iterations: "
+            f"{mag_limit.pdf_median():6.2f} +/- "
+            f"{mag_limit.pdf_std():6.2f} mag",
             indent=indent * 3,
         )
 
@@ -1602,8 +1599,8 @@ def proper_motion_selection(
     #   Get data from the corresponding catalog for the objects in
     #   the field of view
     result = v.query_region(
-        image_series.coord,
-        radius=image_series.fov * u.arcmin,
+        image_series.coordinates_image_center,
+        radius=image_series.field_of_view_x * u.arcmin,
     )
 
     #   Create SkyCoord object with coordinates of all Gaia objects
@@ -1670,7 +1667,7 @@ def proper_motion_selection(
     )
 
     #   Get image
-    image = image_series.ref_img
+    image = image_series.reference_image
 
     #   Star map
     prepare_and_plot_starmap(
@@ -1687,13 +1684,13 @@ def proper_motion_selection(
         [pm_de],
         'pm_DEC (mas/yr)',
         'compare_pm_',
-        image.outpath.name,
+        image.out_path.name,
     )
     plot.d3_scatter(
         [pm_ra],
         [pm_de],
         [distance],
-        image.outpath.name,
+        image.out_path.name,
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
@@ -1766,7 +1763,7 @@ def region_selection(
 
     #   Plot starmap
     prepare_and_plot_starmap(
-        image_series.ref_img,
+        image_series.reference_image,
         tbl=Table(names=['x_fit', 'y_fit'], data=[tbl['x'], tbl['y']]),
         rts_pre='radius selection, image',
         label=f"Objects selected within {radius}'' of the target",
@@ -1776,8 +1773,10 @@ def region_selection(
 
 
 def find_cluster(
-        image_series: 'analyze.ImageSeries', tbl, catalog="I/355/gaiadr3", g_mag_limit=20,
-        separation_limit=1., max_distance=6., parameter_set=1):
+        image_series: 'analyze.ImageSeries', tbl: Table, object_names: list[str],
+        catalog: str = "I/355/gaiadr3", g_mag_limit: float = 20.,
+        separation_limit: float = 1., max_distance: float = 6.,
+        parameter_set: int = 1) -> tuple[Table, int, np.ndarray, np.ndarray]:
     """
         Identify cluster in data
 
@@ -1787,41 +1786,45 @@ def find_cluster(
             Image series object with all image data taken in a specific
             filter
 
-        tbl                 : `astropy.table.Table`
+        tbl
             Table with position information
 
-        catalog             : `string`, optional
+        object_names
+            Names of the objects. This first entry in the list is assumed to
+            be the custer of interest.
+
+        catalog
             Identifier for the catalog to download.
             Default is ``I/350/gaiaedr3``.
 
-        g_mag_limit         : `float`, optional
+        g_mag_limit
             Limiting magnitude in the G band. Fainter objects will not be
             downloaded.
 
-        separation_limit    : `float`, optional
+        separation_limit
             Maximal allowed separation between objects in arcsec.
             Default is ``1``.
 
-        max_distance        : `float`, optional
+        max_distance
             Maximal distance of the star cluster.
             Default is ``6.``.
 
-        parameter_set       : `integer`, optional
+        parameter_set
             Predefined parameter sets can be used.
             Possibilities: ``1``, ``2``, ``3``
             Default is ``1``.
 
         Returns
         -------
-        tbl                 : `astropy.table.Table`
+        tbl
             Table with object position information
 
-        id_img              :
+        id_img
 
-        mask                : `boolean numpy.ndarray`
-            Mask that needs to be applied to the table.
+        mask
+            The mask that needs to be applied to the table.
 
-        cluster_mask        : `boolean numpy.ndarray`
+        cluster_mask
             Mask that identifies cluster members according to the user
             input.
 
@@ -1841,7 +1844,7 @@ def find_cluster(
     )
 
     #   Get reference image
-    image = image_series.ref_img
+    image = image_series.reference_image
 
     ###
     #   Get Gaia data from Vizier
@@ -1871,13 +1874,13 @@ def find_cluster(
     #   Get data from the corresponding catalog for the objects in
     #   the field of view
     result = v.query_region(
-        image_series.coord,
-        radius=image_series.fov * u.arcmin,
+        image_series.coordinates_image_center,
+        radius=image_series.field_of_view_x * u.arcmin,
     )[0]
 
     #   Multiple objects can be specified. The first object is assumed to
     #   be the cluster of interest.
-    object_name = image_series.object_name[0]
+    object_name = object_names[0]
 
     #   Restrict proper motion to Simbad value plus some margin
     custom_simbad = Simbad()
@@ -1999,7 +2002,7 @@ def find_cluster(
         pm_ra_group,
         pm_de_group,
         distance_group,
-        image.outpath.name,
+        image.out_path.name,
         # color=np.unique(pd_result['cluster']),
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
@@ -2012,7 +2015,7 @@ def find_cluster(
         pm_ra_group,
         pm_de_group,
         distance_group,
-        image.outpath.name,
+        image.out_path.name,
         # color=np.unique(pd_result['cluster']),
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
@@ -2108,7 +2111,7 @@ def save_magnitudes_ascii(
             Default is ``True``.
     """
     #   Check output directories
-    output_dir = list(observation.image_series_dict.values())[0].outpath
+    output_dir = list(observation.image_series_dict.values())[0].out_path
     checks.check_output_directories(
         output_dir,
         output_dir / 'tables',
@@ -2291,6 +2294,7 @@ def post_process_results(
                 tbl, img_id_cluster, mask_cluster, mask_objects = find_cluster(
                     image_series_dict[filter_list[0]],
                     tbl,
+                    observation.get_object_of_interest_names(),
                     max_distance=max_distance_cluster,
                     parameter_set=find_cluster_para_set,
                 )

@@ -2457,7 +2457,7 @@ def find_wcs(input_dir, output_dir, reference_image_id=0,
         output_dir,
     )
 
-    base_aux.calculate_field_of_view(reference_image)
+    # base_aux.calculate_field_of_view(reference_image)
 
     #   Test if the image contains already a WCS
     wcs_available = base_aux.check_wcs_exists(reference_image)
@@ -2568,7 +2568,7 @@ def find_wcs_all_images(input_dir, output_dir, force_wcs_determination=False,
             file_path / file_name,
             output_dir,
         )
-        base_aux.calculate_field_of_view(image_object, verbose=False)
+        # base_aux.calculate_field_of_view(image_object, verbose=False)
 
         #   Test if the image contains already a WCS
         wcs_available = base_aux.check_wcs_exists(image_object)

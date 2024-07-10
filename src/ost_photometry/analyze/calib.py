@@ -6,8 +6,6 @@ import requests
 
 import numpy as np
 
-# from uncertainties import unumpy
-
 from astroquery.vizier import Vizier
 from astroquery.simbad import Simbad
 
@@ -568,9 +566,9 @@ def load_calibration_data_table(
     if calibration_method == 'vsp':
         #   Load calibration info from AAVSO for variable stars
         calib_tbl, column_names = get_comp_stars_aavso(
-            image_like_object.coord,
+            image_like_object.coordinates_image_center,
             filters=filter_list,
-            field_of_view=1.5 * image_like_object.fov,
+            field_of_view=1.5 * image_like_object.field_of_view_x,
             magnitude_range=magnitude_range,
             indent=indent + 1,
         )
@@ -588,9 +586,9 @@ def load_calibration_data_table(
 
     elif calibration_method == 'simbad':
         calib_tbl, column_names = get_comp_stars_simbad(
-            image_like_object.coord,
+            image_like_object.coordinates_image_center,
             filters=filter_list,
-            field_of_view=1.5 * image_like_object.fov,
+            field_of_view=1.5 * image_like_object.field_of_view_x,
             magnitude_range=magnitude_range,
             indent=indent + 1,
         )
@@ -600,8 +598,8 @@ def load_calibration_data_table(
         #   Load info from Vizier
         calib_tbl, column_names, ra_unit = get_vizier_catalog(
             filter_list,
-            image_like_object.coord,
-            image_like_object.fov,
+            image_like_object.coordinates_image_center,
+            image_like_object.field_of_view_x,
             vizier_dict[calibration_method],
             magnitude_range=magnitude_range,
             indent=indent + 1,
@@ -797,8 +795,8 @@ def derive_calibration(
     )
 
     #   Get PixelRegion of the field of view and convert it SkyRegion
-    region_pix = image_series.region_pix
-    region_sky = region_pix.to_sky(wcs)
+    fov_pixel_region = image_series.fov_pixel_region
+    region_sky = fov_pixel_region.to_sky(wcs)
 
     #   Remove calibration stars that are not within the field of view
     mask = region_sky.contains(calibration_object_coordinates, wcs)
@@ -866,7 +864,7 @@ def derive_calibration(
         index_obj_instrument = None
 
     #   Add calibration data to observation container
-    observation.CalibParameters = CalibParameters(
+    observation.calib_parameters = CalibParameters(
         index_obj_instrument,
         column_names,
         calibration_tbl,
@@ -1037,7 +1035,7 @@ def correlate_with_calibration_objects(
             p = mp.Process(
                 target=plot.starmap,
                 args=(
-                    image_series.outpath.name,
+                    image_series.out_path.name,
                     #   Replace with reference image in the future
                     image_series.image_list[0].get_data(),
                     filter_,
@@ -1048,7 +1046,7 @@ def correlate_with_calibration_objects(
                     'label': 'downloaded calibration stars',
                     'label_2': 'matched calibration stars',
                     'rts': rts,
-                    'name_object': image_series.object_name,
+                    # 'name_object': image_series.object_name,
                     'wcs': image_series.wcs,
                 }
             )

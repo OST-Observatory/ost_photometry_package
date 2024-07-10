@@ -18,7 +18,7 @@ import typing
 if typing.TYPE_CHECKING:
     from . import analyze
 
-from .. import checks, style, calibration_data, terminal_output
+from .. import style, calibration_data, terminal_output
 
 
 ############################################################################
@@ -46,9 +46,9 @@ def progress_bar(count_value, total, suffix=''):
 
 
 def find_best_comparison_image_second_filter(
-        image_series: dict[str, 'analyze.ImageSeries'], current_image: 'analyze.Image',
+        image_series: dict[str, 'analyze.ImageSeries'], current_image: 'import src.ost_photometry.utilities,
         id_second_filter: int, filter_list: list[str]
-) -> 'analyze.ImageSeries.Image':
+        ) -> 'analyze.Image':
     """
     Prepare variables for magnitude transformation
 
@@ -78,7 +78,7 @@ def find_best_comparison_image_second_filter(
     obs_time_current_image = current_image.jd
     obs_times_images_second_filter = image_series[
         filter_list[id_second_filter]
-    ].get_obs_time()
+    ].get_observation_time()
 
     #   Find ID of the image with the nearest exposure time
     id_best_image_second_filter = np.argmin(
@@ -278,7 +278,7 @@ def derive_transformation_onthefly(
     #   TODO: Add here a sigma clipping on the color difference?
     sigma_clip_mask = sigma_clip(
         (color_literature - color_observed).pdf_median(),
-        # sigma=sigma,
+        sigma=1.5,
         # maxiters=max_n_iterations_sigma_clipping,
     ).mask
     sigma_clip_mask = np.invert(sigma_clip_mask)
@@ -324,7 +324,7 @@ def derive_transformation_onthefly(
 
     #   Plots magnitude difference (literature vs. measured) vs. color
     plot.plot_transform(
-        image.outpath.name,
+        image.out_path.name,
         filter_list[0],
         filter_list[1],
         color_literature_plot.value,
@@ -337,8 +337,9 @@ def derive_transformation_onthefly(
         filter_=filter_list[id_current_filter],
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_1_err,
-        name_object=image.object_name,
         image_id=image.pd,
+        x_data_original=diff_mag_1.pdf_median(),
+        y_data_original=color_literature.pdf_median(),
     )
 
     if id_current_filter == 0:
@@ -346,7 +347,7 @@ def derive_transformation_onthefly(
     else:
         other_filter = filter_list[0]
     plot.plot_transform(
-        image.outpath.name,
+        image.out_path.name,
         filter_list[0],
         filter_list[1],
         color_literature_plot.value,
@@ -359,8 +360,10 @@ def derive_transformation_onthefly(
         filter_=other_filter,
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_2_err,
-        name_object=image.object_name,
+        # name_object=image.object_name,
         image_id=image.pd,
+        x_data_original=diff_mag_2.pdf_median(),
+        y_data_original=color_literature.pdf_median(),
     )
 
     color_correction_filter_1 = unc.normal(
@@ -674,8 +677,7 @@ def apply_magnitude_transformation(
                         magnitudes_calibration_second_filter)
     utilities.calibration_check_plots(
         filter_list[filter_id],
-        image.outpath.name,
-        image.object_name,
+        image.out_path.name,
         image.pd,
         filter_list,
         # image.zp_mask,
@@ -699,23 +701,23 @@ def apply_magnitude_transformation(
 
 
 def calibrate_simple(
-        image: 'analyze.ImageSeries.Image',
+        image: 'analyze.Image',
         not_calibrated_magnitudes: unc.core.NdarrayDistribution,
         zp: unc.core.NdarrayDistribution,
-) -> tuple[Table, unc.core.NdarrayDistribution]:
+        ) -> tuple[Table, unc.core.NdarrayDistribution]:
     """
-        Calibrate magnitudes without magnitude transformation
+    Calibrate magnitudes without magnitude transformation
 
-        Parameters
-        ----------
-        image
-            Object with all image specific properties
+    Parameters
+    ----------
+    image
+        Object with all image specific properties
 
-        not_calibrated_magnitudes
-            Distribution of uncalibrated magnitudes
+    not_calibrated_magnitudes
+        Distribution of uncalibrated magnitudes
 
-        zp
-            Zero pint of the photometric calibration
+    zp
+        Zero pint of the photometric calibration
     """
     #   Get photometry table
     photometry_table = image.photometry
@@ -725,6 +727,7 @@ def calibrate_simple(
         not_calibrated_magnitudes.size,
         1,
     )
+    #   TODO: Check type of reshaped_magnitudes
 
     #   Calculate calibrated magnitudes
     calibrated_magnitudes = reshaped_magnitudes + zp
@@ -749,10 +752,9 @@ def calibrate_simple(
     return photometry_table, calibrated_magnitudes
 
 
-#   TODO: Convert to return values
-def flux_calibration_image_series(
+def quasi_flux_calibration_image_series(
         image_series: 'analyze.ImageSeries',
-        distribution_samples: int = 1000) -> None:
+        distribution_samples: int = 1000) -> unc.core.NdarrayDistribution:
     """
         Simple calibration for flux values. Assuming the median over all
         objects in an image as a quasi ZP.
@@ -766,6 +768,11 @@ def flux_calibration_image_series(
         distribution_samples
             Number of samples used for distributions
             Default is `1000`.
+
+        Returns
+        -------
+        flux_calibrated
+            Quasi calibrated flux
     """
     #   Get flux as numpy array
     flux, flux_error = image_series.get_flux_array()
@@ -789,32 +796,40 @@ def flux_calibration_image_series(
     normalization_factor = median[:, np.newaxis]
     flux_calibrated = flux_distribution / normalization_factor
 
-    #   Add to image series
-    image_series.quasi_calibrated_flux = flux_calibrated
+    return flux_calibrated
 
 
 #   TODO: Check if this can be improved based on distributions
 def flux_normalization_image_series(
         image_series: 'analyze.ImageSeries',
-        distribution_samples: int = 1000) -> None:
+        quasi_calibrated_flux: unc.core.NdarrayDistribution | None = None,
+        distribution_samples: int = 1000) -> np.ndarray:
     """
         Normalize flux of each object
 
         Parameters
         ----------
         image_series
-            image series object with flux and magnitudes of all objects in
+            Object with flux and magnitudes of all objects in
             all images within the image series
+
+        quasi_calibrated_flux
+            Quasi-calibrated object flux: The median over all objects is
+            used as the quasi ZP.
 
         distribution_samples
             Number of samples used for distributions
             Default is `1000`.
+
+        Returns
+        -------
+        normalized_flux
+            Normalized flux
     """
-    try:
-        flux_distribution = image_series.quasi_calibrated_flux
+    if quasi_calibrated_flux:
+        flux_distribution = quasi_calibrated_flux
         flux = flux_distribution.pdf_median()
-        flux_error = flux_distribution.pdf_std()
-    except AttributeError:
+    else:
         flux, flux_error = image_series.get_flux_array()
         flux_distribution = unc.normal(
             flux,
@@ -838,11 +853,11 @@ def flux_normalization_image_series(
     )
     normalized_flux = flux_distribution / normalization_factor
 
-    image_series.quasi_calibrated_flux_normalized = normalized_flux
+    return normalized_flux
 
 
 def prepare_zero_point(
-        image: 'analyze.ImageSeries.Image', id_filter: int,
+        image: 'analyze.Image', id_filter: int,
         literature_magnitude_list: list[unc.core.NdarrayDistribution],
         magnitudes_calibration_stars: unc.core.NdarrayDistribution,
         calculate_zero_point_statistic: bool = True,
@@ -886,14 +901,14 @@ def prepare_zero_point(
     #   Plot zero point statistics
     plot.histogram_statistic(
         [zp.pdf_median()],
-        f'Zero point ({image.filt})',
+        f'Zero point ({image.filter_})',
         '',
-        f'histogram_zero_point_{image.filt}',
-        image.outpath,
+        f'histogram_zero_point_{image.filter_}',
+        str(image.out_path),
         dataset_label=[
             ['All calibration objects'],
         ],
-        name_object=image.object_name,
+        # name_object=image.object_name,
     )
 
     #   TODO: Replace with distribution properties?
@@ -944,12 +959,12 @@ def prepare_zero_point(
 
 
 def calibrate_magnitudes_zero_point_core(
-        current_image: 'analyze.ImageSeries.Image',
+        current_image: 'analyze.Image',
         index_calibration_stars: np.ndarray, current_filter_id: int,
         literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000, multiprocessing: bool = False
-) -> tuple[int, Table, u.quantity.Quantity]:
+        ) -> tuple[int, Table, u.quantity.Quantity]:
     """
     Core module for zero point calibration that allows also for multicore
     processing
@@ -1088,7 +1103,7 @@ def calibrate_magnitudes_zero_point(
 
     #   Get calibration magnitudes
     literature_magnitudes = calib.distribution_from_calibration_table(
-        observation.CalibParameters,
+        observation.calib_parameters,
         filter_list,
         distribution_samples=distribution_samples,
     )
@@ -1107,7 +1122,7 @@ def calibrate_magnitudes_zero_point(
 
         #   Get IDs calibration data
         index_calibration_stars = getattr(
-            observation.CalibParameters,
+            observation.calib_parameters,
             'inds',
             None,
         )
@@ -1182,7 +1197,7 @@ def calibrate_magnitudes_transformation(
         observation: 'analyze.Observation', filter_list: (list[str] | set[str]),
         transformation_coefficients: dict[str, (float | str)] | None = None,
         derive_transformation_coefficients: bool = False, plot_sigma: bool = False,
-        distribution_samples: int = 1000, calculate_zero_point_statistic: bool = True,
+        distribution_samples: int = 1000,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
         indent: int = 1) -> None:
     """
@@ -1224,10 +1239,6 @@ def calibrate_magnitudes_transformation(
         Applied extraction method. Possibilities: ePSF or APER`
         Default is ``''``.
 
-    calculate_zero_point_statistic
-        If `True` a statistic on the zero points will be calculated.
-        Default is ``True``.
-
     distribution_samples
         Number of samples used for distributions
         Default is `1000`
@@ -1245,11 +1256,11 @@ def calibrate_magnitudes_transformation(
     image_series_dict = observation.image_series_dict
 
     #   Initialize list for
-    transformation_type_list = []
+    transformation_type_list: list[str | None] = []
 
     #   Get calibration magnitudes
     literature_magnitudes = calib.distribution_from_calibration_table(
-        observation.CalibParameters,
+        observation.calib_parameters,
         filter_list,
         distribution_samples=distribution_samples,
     )
@@ -1257,7 +1268,7 @@ def calibrate_magnitudes_transformation(
     #   Get IDs calibration data
     #   TODO: Check if these IDs apply to all filter/image series
     index_calibration_stars = getattr(
-        observation.CalibParameters,
+        observation.calib_parameters,
         'inds',
         None,
     )
@@ -1268,7 +1279,6 @@ def calibrate_magnitudes_transformation(
 
         #   Get image list
         image_list = current_image_series.image_list
-        n_images = len(image_list)
 
         #   Prepare transformation
         transformation_type, comparison_filter_id, trans_coefficients = check_transformation_requirements(
@@ -1286,8 +1296,7 @@ def calibrate_magnitudes_transformation(
             n_cores_multiprocessing = 12
             executor = utilities.Executor(n_cores_multiprocessing)
 
-            #   TODO: Remove current image ID
-            for current_image_id, current_image in enumerate(image_list):
+            for current_image in image_list:
                 #   Get magnitude array for first image
                 magnitudes_current_image = utilities.distribution_from_table(
                     current_image,
@@ -1390,7 +1399,7 @@ def calibrate_magnitudes_transformation(
     #   TODO: Remove this from apply calibration and move it to a function called save_calibration
     #         -> put it one level up
     #   With transformation
-    if not np.any(np.array(transformation_type_list) == None):
+    if any(transformation_type_list):
         #   Make astropy table
         table_transformed_magnitudes, array_transformed_magnitudes = utilities.mk_magnitudes_table_and_array(
             observation,
@@ -1490,7 +1499,6 @@ def apply_calibration(
         transformation_coefficients=transformation_coefficients_dict,
         derive_transformation_coefficients=derive_transformation_coefficients,
         distribution_samples=distribution_samples,
-        calculate_zero_point_statistic=calculate_zero_point_statistic,
         id_object=id_object,
         photometry_extraction_method=photometry_extraction_method,
         indent=indent,
@@ -1538,20 +1546,14 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
     id_filter = filter_list.index(current_filter)
 
     #   Get calibration parameters
-    calib_parameters = observation.CalibParameters
+    calib_parameters = observation.calib_parameters
 
     #   Get calibration data
-    literature_magnitudes = calib_parameters.mags_lit
+    literature_magnitudes = calib_parameters.calib_tbl
 
     #   Get required type for magnitude array.
-    unc = checks.check_unumpy_array(literature_magnitudes)
-
-    if unc:
-        test_magnitudes_filter_1 = literature_magnitudes[0][0]
-        test_magnitudes_filter_2 = literature_magnitudes[1][0]
-    else:
-        test_magnitudes_filter_1 = literature_magnitudes['mag'][0][0]
-        test_magnitudes_filter_2 = literature_magnitudes['mag'][1][0]
+    test_magnitudes_filter_1 = literature_magnitudes['mag'][0][0]
+    test_magnitudes_filter_2 = literature_magnitudes['mag'][1][0]
 
     #   Check if magnitudes are not zero
     if test_magnitudes_filter_1 != 0. and test_magnitudes_filter_2 != 0.:
@@ -1566,34 +1568,28 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
         # calib.get_observed_magnitudes_of_calibration_stars(image_key, observation)
 
         #   TODO: This needs to be checked as well, since the mags_fit might not be a parameter of image_1 or image_2
-        if unc:
-            magnitudes_observed_filter_1 = image_1.mags_fit
-            magnitudes_observed_filter_2 = image_2.mags_fit
-            magnitudes_observed_filter_key = image_key.mags_fit
+        magnitudes_observed_filter_1 = image_1.mags_fit['mag']
+        magnitudes_observed_filter_2 = image_2.mags_fit['mag']
+        magnitudes_observed_filter_key = image_key.mags_fit['mag']
+        magnitudes_observed_filter_1_err = image_1.mags_fit['err']
+        magnitudes_observed_filter_2_err = image_2.mags_fit['err']
+        magnitudes_observed_filter_key_err = image_key.mags_fit['err']
 
-        else:
-            magnitudes_observed_filter_1 = image_1.mags_fit['mag']
-            magnitudes_observed_filter_2 = image_2.mags_fit['mag']
-            magnitudes_observed_filter_key = image_key.mags_fit['mag']
-            magnitudes_observed_filter_1_err = image_1.mags_fit['err']
-            magnitudes_observed_filter_2_err = image_2.mags_fit['err']
-            magnitudes_observed_filter_key_err = image_key.mags_fit['err']
+        literature_magnitudes_errs = literature_magnitudes['err']
+        literature_magnitudes = literature_magnitudes['mag']
 
-            literature_magnitudes_errs = literature_magnitudes['err']
-            literature_magnitudes = literature_magnitudes['mag']
-
-            color_literature_err = utilities.err_prop(
-                literature_magnitudes_errs[0],
-                literature_magnitudes_errs[1],
-            )
-            color_observed_err = utilities.err_prop(
-                magnitudes_observed_filter_1_err,
-                magnitudes_observed_filter_2_err,
-            )
-            zero_err = utilities.err_prop(
-                literature_magnitudes_errs[id_filter],
-                magnitudes_observed_filter_key_err,
-            )
+        color_literature_err = utilities.err_prop(
+            literature_magnitudes_errs[0],
+            literature_magnitudes_errs[1],
+        )
+        color_observed_err = utilities.err_prop(
+            magnitudes_observed_filter_1_err,
+            magnitudes_observed_filter_2_err,
+        )
+        zero_err = utilities.err_prop(
+            literature_magnitudes_errs[id_filter],
+            magnitudes_observed_filter_key_err,
+        )
 
         color_literature = literature_magnitudes[0] - literature_magnitudes[1]
         color_observed = (magnitudes_observed_filter_1 -
@@ -1610,20 +1606,12 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
         #
 
         #   Plot variables
-        if unc:
-            color_literature_plot = unumpy.nominal_values(color_literature)
-            color_literature_err_plot = unumpy.std_devs(color_literature)
-            color_observed_plot = unumpy.nominal_values(color_observed)
-            color_observed_err_plot = unumpy.std_devs(color_observed)
-            zero_point_plot = unumpy.nominal_values(zero_point)
-            zero_point_err_plot = unumpy.std_devs(zero_point)
-        else:
-            color_literature_plot = color_literature
-            color_literature_err_plot = color_literature_err
-            color_observed_plot = color_observed
-            color_observed_err_plot = color_observed_err
-            zero_point_plot = zero_point
-            zero_point_err_plot = zero_err
+        color_literature_plot = color_literature
+        color_literature_err_plot = color_literature_err
+        color_observed_plot = color_observed
+        color_observed_err_plot = color_observed_err
+        zero_point_plot = zero_point
+        zero_point_err_plot = zero_err
 
         #   Color transform - Fit the data with fit_func
         #   Set sigma, using errors calculate above
@@ -1649,7 +1637,7 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
             indent=indent,
         )
         plot.plot_transform(
-            image_series_dict[filter_list[0]].outpath.name,
+            image_series_dict[filter_list[0]].out_path.name,
             filter_list[0],
             filter_list[1],
             color_literature_plot,
@@ -1661,7 +1649,7 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
             image_series_dict[filter_list[0]].get_air_mass()[0],
             color_literature_err=color_literature_err_plot,
             fit_variable_err=color_observed_err_plot,
-            name_object=image_series_dict[filter_list[0]].object_name,
+            # name_object=image_series_dict[filter_list[0]].object_name,
         )
 
         #  Mag transform - Fit the data with fit_func
@@ -1687,7 +1675,7 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
         )
 
         plot.plot_transform(
-            image_series_dict[filter_list[0]].outpath.name,
+            image_series_dict[filter_list[0]].out_path.name,
             filter_list[0],
             filter_list[1],
             color_literature_plot,
@@ -1700,7 +1688,7 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
             filter_=current_filter,
             color_literature_err=color_literature_err_plot,
             fit_variable_err=zero_point_err_plot,
-            name_object=image_series_dict[filter_list[0]].object_name,
+            # name_object=image_series_dict[filter_list[0]].object_name,
         )
 
         #   Redefine variables -> shorter variables

@@ -8,12 +8,10 @@ import typing
 
 from astropy import units as u
 
-from .analyze import Observation
-
 if typing.TYPE_CHECKING:
-    from . import analyze, utilities
+    from . import analyze
 
-from . import calib
+from . import calib, utilities
 from .. import style, terminal_output
 
 from astropy.coordinates import SkyCoord, matching
@@ -1386,7 +1384,7 @@ def correlate_image_series_images(
     #   Remove images that are rejected (bad images) during the correlation process.
     image_series.image_list = [image_series.image_list[i] for i in image_ids_arr]
     # image_series.image_list = np.delete(img_list, reject)
-    image_series.nfiles = len(image_ids_arr)
+    # image_series.nfiles = len(image_ids_arr)
     image_series.reference_image_id = new_reference_image_id
 
     #   Limit the photometry tables to common objects.
@@ -1581,7 +1579,7 @@ def correlate_image_series(
                     object_.id_in_image_series[filter_] = id_object
 
     #   Check if correlation with calibration data is necessary
-    calibration_parameters = getattr(observation, 'CalibParameters', None)
+    calibration_parameters = getattr(observation, 'calib_parameters', None)
 
     if calibration_parameters is not None and (calibration_parameters.inds is None
                                                or force_correlation_calibration_objects):
@@ -1615,17 +1613,18 @@ def correlate_image_series(
             indent=indent,
         )
 
-        observation.CalibParameters.calib_tbl = calibration_tbl
-        observation.CalibParameters.inds = index_obj_instrument
+        observation.calib_parameters.calib_tbl = calibration_tbl
+        observation.calib_parameters.inds = index_obj_instrument
 
 
 def correlate_preserve_variable(
-        observation: Observation, filter_, max_pixel_between_objects=3.,
-        own_correlation_option=1, cross_identification_limit=1,
-        reference_image_id=0, n_allowed_non_detections_object=1,
-        expected_bad_image_fraction=1.0, protect_reference_obj=True,
-        correlation_method='astropy', separation_limit=2. * u.arcsec,
-        verbose=False, plot_reference_only=True):
+        observation: 'analyze.Observation', filter_,
+        max_pixel_between_objects=3., own_correlation_option=1,
+        cross_identification_limit=1, reference_image_id=0,
+        n_allowed_non_detections_object=1, expected_bad_image_fraction=1.0,
+        protect_reference_obj=True, correlation_method='astropy',
+        separation_limit=2. * u.arcsec, verbose=False,
+        plot_reference_only=True) -> None:
     """
         Correlate results from all images, while preserving the variable
         star
@@ -1785,4 +1784,184 @@ def correlate_preserve_variable(
         [x_position_object],
         [y_position_object],
         plot_reference_only=plot_reference_only,
+    )
+
+
+#   TODO: Check were this is used and if it is still functional, rename
+def correlate_preserve_calibration_objects(
+        image_series: 'analyze.ImageSeries', filter_list: list[str, str],
+        calib_method: str = 'APASS',
+        magnitude_range: tuple[float, float] = (0., 18.5),
+        vizier_dict: dict[str, str] | None = None, calib_file=None,
+        max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
+        verbose: bool = False, cross_identification_limit: int = 1,
+        reference_image_id: int = 0, n_allowed_non_detections_object: int = 1,
+        expected_bad_image_fraction: float = 1.0,
+        protect_reference_obj: bool = True,
+        plot_only_reference_starmap: bool = True,
+        correlation_method: str = 'astropy',
+        separation_limit: u = 2. * u.arcsec) -> None:
+    """
+    Correlate results from all images, while preserving the calibration
+    stars
+
+    Parameters
+    ----------
+    image_series
+        Image series object with all image data taken in a specific
+        filter
+
+    filter_list                     : `list` with `strings`
+        Filter list
+
+    calib_method                    : `string`, optional
+        Calibration method
+        Default is ``APASS``.
+
+    magnitude_range                 : `tuple` or `float`, optional
+        Magnitude range
+        Default is ``(0.,18.5)``.
+
+    vizier_dict
+        Identifiers of catalogs, containing calibration data
+        Default is ``None``.
+
+    calib_file                      : `string`, optional
+        Path to the calibration file
+        Default is ``None``.
+
+    max_pixel_between_objects       : `float`, optional
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
+
+    own_correlation_option          : `integer`, optional
+        Option for the srcor correlation function
+        Default is ``1``.
+
+    verbose                         : `boolean`, optional
+        If True additional output will be printed to the command line.
+        Default is ``False``.
+
+    cross_identification_limit      : `integer`, optional
+        Cross-identification limit between multiple objects in the current
+        image and one object in the reference image. The current image is
+        rejected when this limit is reached.
+        Default is ``1``.
+
+    reference_image_id              : `integer`, optional
+        ID of the reference image
+        Default is ``0``.
+
+    n_allowed_non_detections_object : `integer`, optional
+        Maximum number of times an object may not be detected in an image.
+        When this limit is reached, the object will be removed.
+        Default is ``i`.
+
+    expected_bad_image_fraction     : `float`, optional
+        Fraction of low quality images, i.e. those images for which a
+        reduced number of objects with valid source positions are expected.
+        Default is ``1.0``.
+
+    protect_reference_obj           : `boolean`, optional
+        If ``False`` also reference objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``True``.
+
+    plot_only_reference_starmap     : `boolean`, optional
+        If True only the starmap for the reference image will be created.
+        Default is ``True``.
+
+    correlation_method              : `string`, optional
+        Correlation method to be used to find the common objects on
+        the images.
+        Possibilities: ``astropy``, ``own``
+        Default is ``astropy``.
+
+    separation_limit                : `astropy.units`, optional
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
+    """
+    ###
+    #   Load calibration data
+    #
+    calib_tbl, column_names, ra_unit = calib.load_calibration_data_table(
+        image_series.image_list[reference_image_id],
+        filter_list,
+        calibration_method=calib_method,
+        magnitude_range=magnitude_range,
+        vizier_dict=vizier_dict,
+        path_calibration_file=calib_file,
+    )
+
+    #   Number of calibration stars
+    n_calib_stars = len(calib_tbl)
+
+    if n_calib_stars == 0:
+        raise Exception(
+            f"{style.Bcolors.FAIL} \nNo match between calibrations stars and "
+            f"the\n extracted stars detected. -> EXIT {style.Bcolors.ENDC}"
+        )
+
+    ###
+    #   Find IDs of calibration stars to ensure they are not deleted in
+    #   the correlation process
+    #
+    #   Lists for IDs, and xy coordinates
+    calib_stars_ids = []
+    calib_x_pixel_positions = []
+    calib_y_pixel_positions = []
+
+    #   Loop over all calibration stars
+    for k in range(0, n_calib_stars):
+        #   Find the calibration star
+        #   TODO: Fix this
+        id_calib_star, ref_count, x_calib_star, y_calib_star = posi_obj_srcor_img(
+            image_series.image_list[reference_image_id],
+            calib_tbl[column_names['ra']].data[k],
+            calib_tbl[column_names['dec']].data[k],
+            image_series.wcs,
+            dcr=max_pixel_between_objects,
+            option=own_correlation_option,
+            ra_unit=ra_unit,
+            verbose=verbose,
+        )
+        if verbose:
+            terminal_output.print_to_terminal('')
+
+        #   Add ID and coordinates of the calibration star to the lists
+        if ref_count != 0:
+            calib_stars_ids.append(id_calib_star[1][0])
+            calib_x_pixel_positions.append(x_calib_star)
+            calib_y_pixel_positions.append(y_calib_star)
+    terminal_output.print_to_terminal(
+        f"{len(calib_stars_ids):d} matches",
+        indent=3,
+        style_name='OKBLUE',
+    )
+    terminal_output.print_to_terminal()
+
+    ###
+    #   Correlate the results from all images
+    #
+    correlate_image_series_images(
+        image_series,
+        max_pixel_between_objects=max_pixel_between_objects,
+        own_correlation_option=own_correlation_option,
+        cross_identification_limit=cross_identification_limit,
+        reference_obj_ids=calib_stars_ids,
+        n_allowed_non_detections_object=n_allowed_non_detections_object,
+        expected_bad_image_fraction=expected_bad_image_fraction,
+        protect_reference_obj=protect_reference_obj,
+        correlation_method=correlation_method,
+        separation_limit=separation_limit,
+    )
+
+    ###
+    #   Plot image with the final positions overlaid (final version)
+    #
+    utilities.prepare_and_plot_starmap_from_image_series(
+        image_series,
+        calib_x_pixel_positions,
+        calib_y_pixel_positions,
+        plot_reference_only=plot_only_reference_starmap,
     )
