@@ -1118,10 +1118,11 @@ def light_curve_fold(
     plt.close()
 
 
+#   TODO: Fix type hints for fit_function
 def plot_transform(
         output_dir: str, filter_1: str, filter_2: str,
         color_literature: np.ndarray, fit_variable: np.ndarray, a_fit: float,
-        b_fit: float, b_err_fit: float, fit_function: utilities.lin_func,
+        b_fit: float, b_err_fit: float, fit_function: any,
         air_mass: float, filter_: str | None = None,
         color_literature_err: np.ndarray | None = None,
         fit_variable_err: np.ndarray | None = None,

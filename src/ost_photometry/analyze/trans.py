@@ -17,6 +17,7 @@ from . import calib, correlate, utilities, plot
 import typing
 if typing.TYPE_CHECKING:
     from . import analyze
+    from .. import utilities
 
 from .. import style, calibration_data, terminal_output
 
@@ -46,7 +47,7 @@ def progress_bar(count_value, total, suffix=''):
 
 
 def find_best_comparison_image_second_filter(
-        image_series: dict[str, 'analyze.ImageSeries'], current_image: 'import src.ost_photometry.utilities,
+        image_series: dict[str, 'analyze.ImageSeries'], current_image: 'utilities.Image',
         id_second_filter: int, filter_list: list[str]
         ) -> 'analyze.Image':
     """
