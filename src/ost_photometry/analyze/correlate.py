@@ -1397,7 +1397,7 @@ def correlate_image_series(
         own_correlation_option=1, cross_identification_limit=1,
         reference_image_series_id=0, n_allowed_non_detections_object=1,
         expected_bad_image_fraction=1.0, protect_reference_obj=True,
-        correlation_method='astropy', separation_limit=2. * u.arcsec,
+        correlation_method='astropy', separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         force_correlation_calibration_objects=False, reference_image_id=0,
         verbose=False, indent=1):
     """
@@ -1451,7 +1451,7 @@ def correlate_image_series(
         Possibilities: ``astropy``, ``own``
         Default is ``astropy``.
 
-    separation_limit                        : `astropy.units`, optional
+    separation_limit
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
 

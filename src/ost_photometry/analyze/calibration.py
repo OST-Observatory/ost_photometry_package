@@ -292,13 +292,18 @@ def derive_transformation_onthefly(
     #   -> apply sigma clipping mask
     #   -> calculate pdf_median() for now before fitting
     #   TODO: Test with distributions
-    color_literature_plot = color_literature[sigma_clip_mask]
-    color_literature_err_plot = color_literature_plot.pdf_std()
-    color_literature_plot = color_literature_plot.pdf_median()
-    diff_mag_plot_1 = diff_mag_1[sigma_clip_mask]
-    diff_mag_plot_2 = diff_mag_2[sigma_clip_mask]
-    diff_mag_plot_1 = diff_mag_plot_1.pdf_median()
-    diff_mag_plot_2 = diff_mag_plot_2.pdf_median()
+    color_literature_err_plot = color_literature.pdf_std()
+    color_literature_plot = color_literature.pdf_median()
+    print(color_literature_plot)
+    diff_mag_plot_1 = diff_mag_1.pdf_median()
+    diff_mag_plot_2 = diff_mag_2.pdf_median()
+    # color_literature_plot = color_literature[sigma_clip_mask]
+    # color_literature_err_plot = color_literature_plot.pdf_std()
+    # color_literature_plot = color_literature_plot.pdf_median()
+    # diff_mag_plot_1 = diff_mag_1[sigma_clip_mask]
+    # diff_mag_plot_2 = diff_mag_2[sigma_clip_mask]
+    # diff_mag_plot_1 = diff_mag_plot_1.pdf_median()
+    # diff_mag_plot_2 = diff_mag_plot_2.pdf_median()
 
     #   Set
     sigma: np.ndarray = np.array(color_literature_err_plot)
@@ -328,6 +333,8 @@ def derive_transformation_onthefly(
         image.out_path.name,
         filter_list[0],
         filter_list[1],
+        filter_list[0],
+        filter_list[id_current_filter],
         color_literature_plot.value,
         diff_mag_plot_1.value,
         z_1,
@@ -335,22 +342,19 @@ def derive_transformation_onthefly(
         color_correction_filter_1_err,
         fit_func,
         image.air_mass,
-        filter_=filter_list[id_current_filter],
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_1_err,
         image_id=image.pd,
-        x_data_original=diff_mag_1.pdf_median(),
-        y_data_original=color_literature.pdf_median(),
+        x_data_original=color_literature.pdf_median(),
+        y_data_original=diff_mag_1.pdf_median(),
     )
 
-    if id_current_filter == 0:
-        other_filter = filter_list[1]
-    else:
-        other_filter = filter_list[0]
     plots.plot_transform(
         image.out_path.name,
         filter_list[0],
         filter_list[1],
+        filter_list[1],
+        filter_list[id_current_filter],
         color_literature_plot.value,
         diff_mag_plot_2.value,
         z_2,
@@ -358,27 +362,27 @@ def derive_transformation_onthefly(
         color_correction_filter_2_err,
         fit_func,
         image.air_mass,
-        filter_=other_filter,
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_2_err,
         # name_object=image.object_name,
         image_id=image.pd,
-        x_data_original=diff_mag_2.pdf_median(),
-        y_data_original=color_literature.pdf_median(),
+        x_data_original=color_literature.pdf_median(),
+        y_data_original=diff_mag_2.pdf_median(),
     )
 
-    color_correction_filter_1 = unc.normal(
-        color_correction_filter_1 * u.mag,
-        std=color_correction_filter_1_err * u.mag,
-        n_samples=distribution_samples,
-    )
-    color_correction_filter_2 = unc.normal(
-        color_correction_filter_2 * u.mag,
-        std=color_correction_filter_2_err * u.mag,
-        n_samples=distribution_samples,
-    )
+    # color_correction_filter_1 = unc.normal(
+    #     color_correction_filter_1 * u.mag,
+    #     std=color_correction_filter_1_err * u.mag,
+    #     n_samples=distribution_samples,
+    # )
+    # color_correction_filter_2 = unc.normal(
+    #     color_correction_filter_2 * u.mag,
+    #     std=color_correction_filter_2_err * u.mag,
+    #     n_samples=distribution_samples,
+    # )
 
-    return color_correction_filter_1, color_correction_filter_2
+    # return color_correction_filter_1, color_correction_filter_2
+    return color_correction_filter_1 * u.mag, color_correction_filter_2 * u.mag
 
 
 def transformation_core(
@@ -465,7 +469,6 @@ def transformation_core(
     color_observed = (calib_magnitudes_observed_filter_1 -
                       calib_magnitudes_observed_filter_2)
 
-    ###
     #   Apply magnitude transformation and calibration
     #
     #   Color

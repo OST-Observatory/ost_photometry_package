@@ -317,8 +317,8 @@ def starmap(
 
     #   Define the ticks
     ax.tick_params(
-        axis='both', 
-        which='both', 
+        axis='both',
+        which='both',
         # top=True, 
         # right=True,
         direction='in',
@@ -346,7 +346,7 @@ def starmap(
 
     #   Plot legend
     ax.legend(bbox_to_anchor=(0., 1.02, 1.0, 0.102), loc=3, ncol=2,
-               mode='expand', borderaxespad=0.)
+              mode='expand', borderaxespad=0.)
 
     #   Write the plot to disk
     if rts is None:
@@ -1120,10 +1120,10 @@ def light_curve_fold(
 
 #   TODO: Fix type hints for fit_function
 def plot_transform(
-        output_dir: str, filter_1: str, filter_2: str,
-        color_literature: np.ndarray, fit_variable: np.ndarray, a_fit: float,
-        b_fit: float, b_err_fit: float, fit_function: any,
-        air_mass: float, filter_: str | None = None,
+        output_dir: str, filter_1: str, filter_2: str, current_filter: str,
+        target_filter: str, color_literature: np.ndarray,
+        fit_variable: np.ndarray, a_fit: float, b_fit: float,
+        b_err_fit: float, fit_function: any, air_mass: float,
         color_literature_err: np.ndarray | None = None,
         fit_variable_err: np.ndarray | None = None,
         name_object: list[str] | str | None = None,
@@ -1142,6 +1142,12 @@ def plot_transform(
 
         filter_2
             Filter 2
+
+        current_filter
+            Current filter
+
+        target_filter
+            Filter for which the derived parameters will be used
 
         color_literature
             Colors of the calibration stars
@@ -1165,10 +1171,6 @@ def plot_transform(
 
         air_mass
             Air mass
-
-        filter_
-            Filter, used to distinguish between the different plot options
-            Default is ``None``
 
         color_literature_err
             Color errors of the calibration stars
@@ -1217,35 +1219,22 @@ def plot_transform(
 
     #   Set labels etc.
     air_mass = round(air_mass, 2)
-    if filter_ is None:
-        #   coeff  = 1./b
-        if name_object is None:
-            title = f'Color transform ({filter_1.lower()}-{filter_2.lower()}' \
-                    f' vs. {filter_1}-{filter_2}) (X = {air_mass})'
-        else:
-            title = f'Color transform ({filter_1.lower()}-{filter_2.lower()}' \
-                    f' vs. {filter_1}-{filter_2}) - {name_object} (X = {air_mass})'
-        y_label = f'{filter_1.lower()}-{filter_2.lower()} [mag]'
-        path = f'{output_dir}/trans_plots/{filter_1.lower()}{filter_2.lower()}' \
-               f'_{filter_1}{filter_2}{id_image_str}.pdf'
-        p_label = (f'slope = {b_fit:.5f}, T{filter_1.lower()}'
-                   f'{filter_2.lower()} = {1. / b_fit:.5f} +/- {b_err_fit:.5f}')
+    #   coeff  = b
+    if name_object is None:
+        title = f'{current_filter}{filter_1.lower()}{filter_2.lower()}' \
+                f'-mag transform ({current_filter}-{current_filter.lower()}' \
+                f' vs. {filter_1}-{filter_2}) (X = {air_mass}, ' \ 
+                f'target filter: {target_filter})'
     else:
-        #   coeff  = b
-        if name_object is None:
-            title = f'{filter_}{filter_1.lower()}{filter_2.lower()}' \
-                    f'-mag transform ({filter_}-{filter_.lower()}' \
-                    f' vs. {filter_1}-{filter_2}) (X = {air_mass})'
-        else:
-            title = f'{filter_}{filter_1.lower()}{filter_2.lower()}' \
-                    f'-mag transform ({filter_}-{filter_.lower()}' \
-                    f' vs. {filter_1}-{filter_2}) - {name_object}' \
-                    f' (X = {air_mass})'
-        y_label = f'{filter_}-{filter_.lower()} [mag]'
-        path = f'{output_dir}/trans_plots/{filter_}{filter_.lower()}' \
-               f'_{filter_1}{filter_2}{id_image_str}.pdf'
-        p_label = (f'slope = {b_fit:.5f}, C{filter_.lower()}_{filter_1.lower()}'
-                   f'{filter_2.lower()} = {b_fit:.5f} +/- {b_err_fit:.5f}')
+        title = f'{current_filter}{filter_1.lower()}{filter_2.lower()}' \
+                f'-mag transform ({current_filter}-{current_filter.lower()}' \
+                f' vs. {filter_1}-{filter_2}) - {name_object}' \
+                f' (X = {air_mass})'
+    y_label = f'{current_filter}-{current_filter.lower()} [mag]'
+    path = f'{output_dir}/trans_plots/{target_filter}_{current_filter}' \
+           f'{current_filter.lower()}_{filter_1}{filter_2}{id_image_str}.pdf'
+    p_label = (f'slope = {b_fit:.5f}, C{current_filter.lower()}_{filter_1.lower()}'
+               f'{filter_2.lower()} = {b_fit:.5f} +/- {b_err_fit:.5f}')
     x_label = f'{filter_1}-{filter_2} [mag]'
 
     #   Make plot
@@ -1260,7 +1249,11 @@ def plot_transform(
             y_data_original,
             marker='o',
             markersize=3,
+            capsize=2,
             color='darkred',
+            ecolor='wheat',
+            elinewidth=1,
+            linestyle='none',
         )
 
     #   Plot data
@@ -2398,7 +2391,6 @@ class MakeCMDs:
                         )
                         chi_square_color_list.append(chi_square_color)
                         chi_square_list.append(chi_square_total)
-
 
                         #   Plot chi square values
                         if chi_square_plot_mode == 'detailed':

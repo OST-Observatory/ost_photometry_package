@@ -681,7 +681,7 @@ def derive_calibration(
         max_pixel_between_objects=3., own_correlation_option=1,
         vizier_dict: dict[str, str] | None = None, path_calibration_file=None, id_object=None,
         magnitude_range=(0., 18.5), coordinates_obj_to_rm=None,
-        correlation_method='astropy', separation_limit=2. * u.arcsec,
+        correlation_method='astropy', separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         reference_filter=None, region_to_select_calibration_stars=None,
         correlate_with_observed_objects=True, reference_image_id=0, indent=1):
     """
