@@ -61,14 +61,13 @@ from photutils.aperture import (
     CircularAnnulus,
 )
 from photutils.background import Background2D, MedianBackground
-# from photutils.utils import calc_total_error
 
 import multiprocessing as mp
 
-from . import utilities, calib, trans, plot, correlate
+from . import utilities, calibration_data, calibration, plots, correlate
 # from . import subtraction
 
-from .. import style, checks, terminal_output, calibration_data
+from .. import style, checks, terminal_output
 
 from .. import utilities as base_utilities
 from ..utilities import Image
@@ -84,7 +83,8 @@ warnings.filterwarnings('ignore', category=UserWarning, append=True)
 class ObjectOfInterest:
     def __init__(
             self, ra: str | float | None, dec: str | float | None,
-            ra_unit: str | u | None, dec_unit: str | u | None, name: str):
+            ra_unit: str | u.quantity.Quantity | None,
+            dec_unit: str | u.quantity.Quantity | None, name: str):
         #   Set sky coordinates object
         self.coordinates_object = SkyCoord(
             ra=ra,
@@ -196,7 +196,7 @@ class ImageSeries:
         #   Set field of view
         self.field_of_view_x: float | None = getattr(
             self.reference_image,
-            'fov',
+            'field_of_view_x',
             None,
         )
 
@@ -217,7 +217,7 @@ class ImageSeries:
         #   Set coordinates of image center
         self.coordinates_image_center: SkyCoord | None = getattr(
             self.reference_image,
-            'coord',
+            'coordinates_image_center',
             None,
         )
 
@@ -457,11 +457,14 @@ class Observation:
                 self.objects_of_interest_coordinates = None
 
         #   Prepare attribute for calibration data
-        self.calib_parameters: calib.CalibParameters | None = None
+        self.calib_parameters: calibration_data.CalibParameters | None = None
 
+    #   TODO: Fix type hints
     #   Get ePSF objects of all images
-    def get_epsf(self) -> dict[str, list[psf.EPSFModel | None]]:
-        epsf_dict: dict[str, list[psf.EPSFModel | None]] = {}
+    # def get_epsf(self) -> dict[str, list[psf.EPSFModel | None]]:
+    #     epsf_dict: dict[str, list[psf.EPSFModel | None]] = {}
+    def get_epsf(self):
+        epsf_dict = {}
         for key, image_series in self.image_series_dict.items():
             epsf_list: list[psf.EPSFModel | None] = []
             for img in image_series.image_list:
@@ -470,9 +473,12 @@ class Observation:
 
         return epsf_dict
 
+    #   TODO: Fix type hints
     #   Get ePSF object of the reference image
-    def get_reference_epsf(self) -> dict[str, psf.EPSFModel | None]:
-        epsf_dict: dict[str, psf.EPSFModel | None] = {}
+    # def get_reference_epsf(self) -> dict[str, psf.EPSFModel | None]:
+    #     epsf_dict: dict[str, psf.EPSFModel | None] = {}
+    def get_reference_epsf(self):
+        epsf_dict = {}
         for key, image_series in self.image_series_dict.items():
             reference_image_id = image_series.reference_image_id
 
@@ -1163,13 +1169,13 @@ def determine_epsf(
     #   Plot the brightest ePSF stars
     if multiprocess_plots:
         p = mp.Process(
-            target=plot.plot_cutouts,
+            target=plots.plot_cutouts,
             args=(output_dir, stars, string),
             # kwargs={'name_object': name_object, }
         )
         p.start()
     else:
-        plot.plot_cutouts(
+        plots.plot_cutouts(
             output_dir,
             stars,
             string,
@@ -1872,7 +1878,7 @@ def extraction_aperture(
     #   Plot star map with aperture overlay
     #
     if plot_aperture_positions:
-        plot.plot_apertures(
+        plots.plot_apertures(
             image.out_path.name,
             data,
             aperture,
@@ -2345,7 +2351,7 @@ def main_extract(
         #
         if plots_for_all_images or (plot_for_reference_image_only
                                     and image.pd == id_reference_image):
-            plot.starmap(
+            plots.starmap(
                 image.out_path.name,
                 image.get_data(),
                 image.filter_,
@@ -2376,7 +2382,7 @@ def main_extract(
         ###
         #   Plot the ePSFs
         #
-        plot.plot_epsf(
+        plots.plot_epsf(
             image.out_path.name,
             {f'img-{image.pd}-{image.filter_}': image.epsf},
             terminal_logger=terminal_logger,
@@ -2404,7 +2410,7 @@ def main_extract(
         ###
         #   Plot original and residual image
         #
-        plot.plot_residual(
+        plots.plot_residual(
             {f'{image.filter_}, Image ID: {image.pd}': image.get_data()},
             {f'{image.filter_}, Image ID: {image.pd}': image.residual_image},
             image.out_path.name,
@@ -2728,7 +2734,7 @@ def extract_flux(
         #   Plot the ePSFs
         #
         p = mp.Process(
-            target=plot.plot_epsf,
+            target=plots.plot_epsf,
             args=(output_dir, observation.get_reference_epsf(),),
         )
         p.start()
@@ -2737,7 +2743,7 @@ def extract_flux(
         #   Plot original and residual image
         #
         p = mp.Process(
-            target=plot.plot_residual,
+            target=plots.plot_residual,
             args=(
                 observation.get_reference_image(),
                 observation.get_reference_image_residual(),
@@ -2772,8 +2778,8 @@ def extract_flux_multi(
         expected_bad_image_fraction: float = 1.0,
         protect_reference_obj: bool = True,
         correlation_method: str = 'astropy',
-        separation_limit: u = 2. * u.arcsec, verbose: bool = False,
-        identify_objects_on_image: bool = True,
+        separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+        verbose: bool = False, identify_objects_on_image: bool = True,
         plots_for_all_images: bool = False,
         plot_for_reference_image_only: bool = True) -> None:
     """
@@ -3042,7 +3048,8 @@ def correlate_calibrate(
         extract_only_circular_region: bool = False, region_radius: float = 600.,
         identify_data_cluster: bool = False, clean_objs_using_pm: bool = False,
         max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
-        correlation_method: str = 'astropy', separation_limit: u = 2. * u.arcsec,
+        correlation_method: str = 'astropy',
+        separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         aperture_radius: float = 4., radii_unit: str = 'arcsec',
         convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
         region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
@@ -3207,7 +3214,7 @@ def correlate_calibrate(
     #   Calibrate the magnitudes
     #
     #   Load calibration information
-    calib.derive_calibration(
+    calibration_data.derive_calibration(
         observation,
         filter_list,
         calibration_method=calibration_method,
@@ -3228,7 +3235,7 @@ def correlate_calibrate(
 
     for filter_combination in usable_filter_combinations:
         #   Apply calibration and perform magnitude transformation
-        trans.apply_calibration(
+        calibration.apply_calibration(
             observation,
             filter_combination,
             transformation_coefficients_dict=transformation_coefficients_dict,
@@ -3288,8 +3295,8 @@ def calibrate_data_mk_light_curve(
         protect_reference_obj: bool = True,
         photometry_extraction_method: str = '',
         correlation_method: str = 'astropy',
-        separation_limit: u = 2. * u.arcsec, verbose: bool = False,
-        plot_sigma: bool = False,
+        separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+        verbose: bool = False, plot_sigma: bool = False,
         region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000) -> None:
@@ -3433,7 +3440,7 @@ def calibrate_data_mk_light_curve(
     # )
 
     #   Load calibration information
-    calib.derive_calibration(
+    calibration_data.derive_calibration(
         observation,
         filter_list,
         calibration_method=calibration_method,
@@ -3486,7 +3493,7 @@ def calibrate_data_mk_light_curve(
     processed_filter = []
     for filter_set in usable_filter_combinations:
         #   Apply calibration and perform magnitude transformation
-        trans.apply_calibration(
+        calibration.apply_calibration(
             observation,
             filter_set,
             transformation_coefficients_dict=transformation_coefficients_dict,
@@ -3548,7 +3555,7 @@ def calibrate_data_mk_light_curve(
                 )
 
                 #   Plot light curve over JD
-                plot.light_curve_jd(
+                plots.light_curve_jd(
                     time_series,
                     filter_,
                     f'{filter_}_err',
@@ -3559,7 +3566,7 @@ def calibrate_data_mk_light_curve(
 
                 #   Plot the light curve folded on the period
                 if transit_time != '?' and period > 0.:
-                    plot.light_curve_fold(
+                    plots.light_curve_fold(
                         time_series,
                         filter_,
                         f'{filter_}_err',
@@ -3596,13 +3603,13 @@ def calibrate_data_mk_light_curve(
                 image_series = observation.image_series_dict[filter_]
 
                 #   Quasi calibration of the flux data
-                quasi_calibrated_flux = trans.quasi_flux_calibration_image_series(
+                quasi_calibrated_flux = calibration.quasi_flux_calibration_image_series(
                     image_series,
                     distribution_samples=distribution_samples,
                 )
 
                 #   Normalize data if no calibration magnitudes are available
-                quasi_calibrated_normalized_flux = trans.flux_normalization_image_series(
+                quasi_calibrated_normalized_flux = calibration.flux_normalization_image_series(
                     image_series,
                     quasi_calibrated_flux=quasi_calibrated_flux,
                     distribution_samples=distribution_samples
@@ -3611,7 +3618,7 @@ def calibrate_data_mk_light_curve(
                 plot_quantity = quasi_calibrated_normalized_flux
             else:
                 #   Apply calibration
-                trans.apply_calibration(
+                calibration.apply_calibration(
                     observation,
                     [filter_],
                     photometry_extraction_method=photometry_extraction_method,
@@ -3662,7 +3669,7 @@ def calibrate_data_mk_light_curve(
                 )
 
                 #   Plot light curve over JD
-                plot.light_curve_jd(
+                plots.light_curve_jd(
                     time_series,
                     filter_,
                     f'{filter_}_err',
@@ -3672,7 +3679,7 @@ def calibrate_data_mk_light_curve(
 
                 #   Plot the light curve folded on the period
                 if transit_time != '?' and period > 0.:
-                    plot.light_curve_fold(
+                    plots.light_curve_fold(
                         time_series,
                         filter_,
                         f'{filter_}_err',
@@ -3784,7 +3791,7 @@ def subtract_archive_img_from_img(
 
     #   Plot original and reference image
     if plot_comp:
-        plot.compare_images(
+        plots.compare_images(
             output_dir,
             image_series.image_list[0].get_data(),
             hips_hdus[0].data,

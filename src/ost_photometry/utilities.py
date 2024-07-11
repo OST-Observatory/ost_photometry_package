@@ -33,7 +33,7 @@ from regions import PixCoord, RectanglePixelRegion
 
 from pathlib import Path
 
-from . import checks, terminal_output, style, calibration_data
+from . import checks, terminal_output, style, calibration_parameters
 
 ############################################################################
 #                           Routines & definitions                         #
@@ -203,7 +203,7 @@ class Image:
             chip_length = n_pixel_x * float(pixel_width) / 1000
             chip_height = n_pixel_y * float(pixel_width) / 1000
         else:
-            chip_length, chip_height = calibration_data.get_chip_dimensions(
+            chip_length, chip_height = calibration_parameters.get_chip_dimensions(
                 instrument
             )
 
@@ -258,6 +258,7 @@ class Image:
 
         #  Add instrument to image class
         self.instrument = instrument
+
 
 #   TODO: Maybe remove?!
 def calculate_field_of_view(image, indent=2, verbose=True):
@@ -344,7 +345,7 @@ def calculate_field_of_view(image, indent=2, verbose=True):
         chip_length = n_pixel_x * pixel_width / 1000
         chip_height = n_pixel_y * pixel_width / 1000
     else:
-        chip_length, chip_height = calibration_data.get_chip_dimensions(
+        chip_length, chip_height = calibration_parameters.get_chip_dimensions(
             instrument
         )
 

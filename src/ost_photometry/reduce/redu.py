@@ -22,9 +22,9 @@ import astropy.units as u
 
 import astroalign as aa
 
-from . import utilities, plot
+from . import utilities, plots
 
-from .. import checks, style, terminal_output, calibration_data
+from .. import checks, style, terminal_output, calibration_parameters
 
 from .. import utilities as aux_general
 
@@ -240,7 +240,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
 
     #   Get image types
     if image_type_dir is None:
-        image_type_dir = calibration_data.get_image_types()
+        image_type_dir = calibration_parameters.get_image_types()
 
     #   Except if image collection is empty
     if not image_file_collection.files:
@@ -317,7 +317,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
 
     if (read_noise is None or gain is None or dark_rate is None
             or saturation_level is None):
-        camera_info = calibration_data.camera_info(
+        camera_info = calibration_parameters.camera_info(
             instrument,
             readout_mode,
             temperature,
@@ -938,13 +938,13 @@ def master_dark(image_path, output_dir, image_type, gain=None, read_noise=8.,
 
         #   Plot histogram
         if plot_plots:
-            plot.plot_histogram(
+            plots.plot_histogram(
                 combined_dark.data,
                 out_path,
                 gain,
                 exposure_time,
             )
-            plot.plot_dark_with_distributions(
+            plots.plot_dark_with_distributions(
                 combined_dark.data,
                 read_noise,
                 dark_rate,
@@ -1214,7 +1214,7 @@ def master_flat(image_path, output_dir, image_type, mk_bad_pixel_mask=True,
 
         #   Plot flat medians and means
         if plot_plots:
-            plot.plot_median_of_flat_fields(
+            plots.plot_median_of_flat_fields(
                 image_file_collection,
                 flat_image_type,
                 out_path,

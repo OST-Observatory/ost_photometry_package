@@ -41,9 +41,9 @@ import scipy.optimize as optimization
 
 from .. import utilities as base_aux
 
-from .. import checks, style, terminal_output, calibration_data
+from .. import checks, style, terminal_output, calibration_parameters
 
-from . import plot
+from . import plots
 
 import typing
 if typing.TYPE_CHECKING:
@@ -935,7 +935,7 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
         rts_pre += f': {image.pd}'
 
     #   Plot star map
-    plot.starmap(
+    plots.starmap(
         image.out_path.name,
         data,
         filter_,
@@ -978,7 +978,7 @@ def prepare_and_plot_starmap_from_observation(
 
         #   Using multiprocessing to create the plot
         p = mp.Process(
-            target=plot.starmap,
+            target=plots.starmap,
             args=(
                 image.out_path.name,
                 image.get_data(),
@@ -990,7 +990,7 @@ def prepare_and_plot_starmap_from_observation(
                 'label': f'Stars identified in {filter_list[0]} and '
                          f'{filter_list[1]} filter',
                 # 'name_object': image.object_name,
-                'wcs': image.wcs,
+                'wcs_image': image.wcs,
             }
         )
         p.start()
@@ -1041,7 +1041,7 @@ def prepare_and_plot_starmap_from_image_series(
         if plot_reference_only and j != image_series.reference_image_id:
             continue
         p = mp.Process(
-            target=plot.starmap,
+            target=plots.starmap,
             args=(
                 image_series.out_path.name,
                 image_series.image_list[j].get_data(),
@@ -1055,7 +1055,7 @@ def prepare_and_plot_starmap_from_image_series(
                 # 'label_2': 'Calibration stars',
                 'label_2': 'Variable object',
                 # 'name_object': image_series.object_name,
-                'wcs': image_series.wcs,
+                'wcs_image': image_series.wcs,
             }
         )
         p.start()
@@ -1136,7 +1136,7 @@ def calibration_check_plots(
     #   Comparison observed vs. literature magnitudes
     if multiprocessing:
         p = mp.Process(
-            target=plot.scatter,
+            target=plots.scatter,
             args=(
                 [magnitudes],
                 f'{filter_}_calibration [mag]',
@@ -1153,7 +1153,7 @@ def calibration_check_plots(
         )
         p.start()
     else:
-        plot.scatter(
+        plots.scatter(
             [magnitudes],
             f'{filter_}_calibration [mag]',
             [uncalibrated_magnitudes],
@@ -1175,7 +1175,7 @@ def calibration_check_plots(
         # )
         #
         # p = mp.Process(
-        #     target=plot.scatter,
+        #     target=plots.scatter,
         #     args=(
         #         [
         #             uncalibrated_magnitudes[ids_calibration_stars],
@@ -1213,7 +1213,7 @@ def calibration_check_plots(
         #     1,
         # )
         # p = mp.Process(
-        #     target=plot.scatter,
+        #     target=plots.scatter,
         #     args=(
         #         [color_literature, color_literature[mask]],
         #         f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
@@ -1236,7 +1236,7 @@ def calibration_check_plots(
         # p.start()
 
         # p = mp.Process(
-        #     target=plot.scatter,
+        #     target=plots.scatter,
         #     args=(
         #         [color_literature, color_literature[mask]],
         #         f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
@@ -1262,7 +1262,7 @@ def calibration_check_plots(
         # p.start()
 
         # p = mp.Process(
-        #     target=plot.scatter,
+        #     target=plots.scatter,
         #     args=(
         #         [color_literature, color_literature[mask]],
         #         f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
@@ -1295,7 +1295,7 @@ def calibration_check_plots(
     # #   Difference between literature values and calibration results
     # #   TODO: Add image ID to plot file name
     # p = mp.Process(
-    #     target=plot.scatter,
+    #     target=plots.scatter,
     #     args=(
     #         [literature_magnitudes, literature_magnitudes[mask]],
     #         f'{filter_}_literature [mag]',
@@ -1384,7 +1384,7 @@ def derive_limiting_magnitude(
         else:
             rts = 'faintest objects'
         p = mp.Process(
-            target=plot.starmap,
+            target=plots.starmap,
             args=(
                 image.out_path.name,
                 image.get_data(),
@@ -1396,7 +1396,7 @@ def derive_limiting_magnitude(
                 'rts': rts,
                 'mode': 'mags',
                 # 'name_object': image.object_name,
-                'wcs': image.wcs,
+                'wcs_image': image.wcs,
             }
         )
         p.start()
@@ -1453,7 +1453,7 @@ def derive_limiting_magnitude(
 
         #   Plot sky apertures
         p = mp.Process(
-            target=plot.plot_limiting_mag_sky_apertures,
+            target=plots.plot_limiting_mag_sky_apertures,
             args=(image.out_path.name, image.get_data(), mask, depth),
         )
         p.start()
@@ -1678,7 +1678,7 @@ def proper_motion_selection(
     )
 
     #   2D and 3D plot of the proper motion and the distance
-    plot.scatter(
+    plots.scatter(
         [pm_ra],
         'pm_RA * cos(DEC) (mas/yr)',
         [pm_de],
@@ -1686,7 +1686,7 @@ def proper_motion_selection(
         'compare_pm_',
         image.out_path.name,
     )
-    plot.d3_scatter(
+    plots.d3_scatter(
         [pm_ra],
         [pm_de],
         [distance],
@@ -1998,7 +1998,7 @@ def find_cluster(
         pm_ra_group.append(group.pmRA.values)
         pm_de_group.append(group.pmDE.values)
         distance_group.append(group.distance.values)
-    plot.d3_scatter(
+    plots.d3_scatter(
         pm_ra_group,
         pm_de_group,
         distance_group,
@@ -2011,7 +2011,7 @@ def find_cluster(
         pm_ra=pm_ra_object,
         pm_dec=pm_de_object,
     )
-    plot.d3_scatter(
+    plots.d3_scatter(
         pm_ra_group,
         pm_de_group,
         distance_group,
@@ -2026,7 +2026,7 @@ def find_cluster(
         display=True,
     )
 
-    # plot.D3_scatter(
+    # plots.D3_scatter(
     # [pd_result['pmRA']],
     # [pd_result['pmDE']],
     # [pd_result['distance']],
@@ -2074,41 +2074,42 @@ def find_cluster(
 
 
 def save_magnitudes_ascii(
-        observation: 'analyze.Observation', tbl, trans=False, id_object=None, rts='',
-        photometry_extraction_method='',
-        add_file_path_to_observation_object=True):
+        observation: 'analyze.Observation', tbl: Table,
+        magnitude_transformation: bool = False, id_object: int | None = None,
+        rts: str ='', photometry_extraction_method: str = '',
+        add_file_path_to_observation_object: bool = True) -> None:
     """
-        Save magnitudes as ASCII files
+    Save magnitudes as ASCII files
 
-        Parameters
-        ----------
-        observation
-            Image container object with image series objects for each
-            filter
+    Parameters
+    ----------
+    observation
+        Image container object with image series objects for each
+        filter
 
-        tbl                             : `astropy.table.Table`
-            Table with magnitudes
+    tbl
+        Table with magnitudes
 
-        trans                           : `boolean`, optional
-            If True a magnitude transformation was performed
-            Default is ``False``.
+    magnitude_transformation
+        If True a magnitude transformation was performed
+        Default is ``False``.
 
-        id_object                       : `integer` or `None`, optional
-            ID of the object
-            Default is ``None``.
+    id_object
+        ID of the object
+        Default is ``None``.
 
-        rts                             : `string`, optional
-            Additional string characterizing that should be included in the
-            file name.
-            Default is ``''``.
+    rts
+        Additional string characterizing that should be included in the
+        file name.
+        Default is ``''``.
 
-        photometry_extraction_method    : `string`, optional
-            Applied extraction method. Possibilities: ePSF or APER`
-            Default is ``''``.
+    photometry_extraction_method
+        Applied extraction method. Possibilities: ePSF or APER`
+        Default is ``''``.
 
-        add_file_path_to_observation_object      : `boolean`, optional
-            If True the file path will be added to the observation object.
-            Default is ``True``.
+    add_file_path_to_observation_object      : `boolean`, optional
+        If True the file path will be added to the observation object.
+        Default is ``True``.
     """
     #   Check output directories
     output_dir = list(observation.image_series_dict.values())[0].out_path
@@ -2132,7 +2133,7 @@ def save_magnitudes_ascii(
         observation.photo_filepath = {}
 
     #   Set file name
-    if trans:
+    if magnitude_transformation:
         #   Set file name for file with magnitude transformation
         filename = f'mags_TRANS_calibrated{photometry_extraction_method}{id_object}{rts}.dat'
     else:
@@ -2144,7 +2145,7 @@ def save_magnitudes_ascii(
 
     #   Add to object
     if add_file_path_to_observation_object:
-        observation.photo_filepath[out_path] = trans
+        observation.photo_filepath[out_path] = magnitude_transformation
 
     ###
     #   Define output formats for the table columns
@@ -2332,7 +2333,7 @@ def post_process_results(
         save_magnitudes_ascii(
             observation,
             tbl,
-            trans=trans,
+            magnitude_transformation=trans,
             id_object=id_object,
             rts=rts,
             photometry_extraction_method=extraction_method,
@@ -2545,7 +2546,7 @@ def convert_magnitudes_to_other_system(
         elif target_filter_system == 'SDSS':
             #   Get conversion function - only Jordi et a. (2005) currently
             #   available:
-            calib_functions = calibration_data \
+            calib_functions = calibration_parameters \
                 .filter_system_conversions['SDSS']['Jordi_et_al_2005']
 
             #   Convert magnitudes and add those to data dictionary and the Table
@@ -2624,7 +2625,7 @@ def find_filter_for_magnitude_transformation(
     """
 #   Load valid filter combinations, if none are supplied
     if valid_filter_combinations is None:
-        valid_filter_combinations = calibration_data.valid_filter_combinations_for_transformation
+        valid_filter_combinations = calibration_parameters.valid_filter_combinations_for_transformation
 
     #   Setup list for valid filter etc.
     valid_filter = []

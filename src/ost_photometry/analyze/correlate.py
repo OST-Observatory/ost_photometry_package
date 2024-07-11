@@ -11,7 +11,7 @@ from astropy import units as u
 if typing.TYPE_CHECKING:
     from . import analyze
 
-from . import calib, utilities
+from . import calibration_data, utilities
 from .. import style, terminal_output
 
 from astropy.coordinates import SkyCoord, matching
@@ -1599,7 +1599,7 @@ def correlate_image_series(
         #   Correlate with calibration stars
         #   -> assumes that calibration stars are already cleared of any reference objects
         #      or variable stars
-        calibration_tbl, index_obj_instrument = calib.correlate_with_calibration_objects(
+        calibration_tbl, index_obj_instrument = calibration_data.correlate_with_calibration_objects(
             list(image_series_dict.values())[reference_image_series_id],
             calibration_object_coordinates,
             calibration_tbl,
@@ -1800,7 +1800,7 @@ def correlate_preserve_calibration_objects(
         protect_reference_obj: bool = True,
         plot_only_reference_starmap: bool = True,
         correlation_method: str = 'astropy',
-        separation_limit: u = 2. * u.arcsec) -> None:
+        separation_limit: u.quantity.Quantity = 2. * u.arcsec) -> None:
     """
     Correlate results from all images, while preserving the calibration
     stars
@@ -1884,7 +1884,7 @@ def correlate_preserve_calibration_objects(
     ###
     #   Load calibration data
     #
-    calib_tbl, column_names, ra_unit = calib.load_calibration_data_table(
+    calib_tbl, column_names, ra_unit = calibration_data.load_calibration_data_table(
         image_series.image_list[reference_image_id],
         filter_list,
         calibration_method=calib_method,

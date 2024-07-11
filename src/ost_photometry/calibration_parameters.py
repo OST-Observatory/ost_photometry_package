@@ -826,6 +826,8 @@ def fitzpatrick_extinction_curve(r):
 
 
 def jordi_u(**kwargs):
+    distribution_samples = kwargs.get("distribution_samples")
+
     if all(filter_ in kwargs for filter_ in ['U', 'B', 'V', 'g']):
         U = kwargs.get("U")
         B = kwargs.get("B")

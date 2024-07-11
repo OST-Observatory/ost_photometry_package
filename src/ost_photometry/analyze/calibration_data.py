@@ -16,9 +16,9 @@ from astropy import uncertainty as unc
 
 import multiprocessing as mp
 
-from .. import style, calibration_data, terminal_output
+from .. import style, calibration_parameters, terminal_output
 
-from . import correlate, plot
+from . import correlate, plots
 
 import typing
 if typing.TYPE_CHECKING:
@@ -341,7 +341,7 @@ def get_vizier_catalog(filter_list, coordinates_image_center, field_of_view,
     )
 
     #   Get catalog specific columns
-    catalog_properties_dict = calibration_data.catalog_properties_dict[catalog_identifier]
+    catalog_properties_dict = calibration_parameters.catalog_properties_dict[catalog_identifier]
 
     #   Combine columns
     columns = (catalog_properties_dict['ra_dec_columns']
@@ -560,7 +560,7 @@ def load_calibration_data_table(
     """
     #   Get identifiers of catalogs if no has been provided
     if vizier_dict is None:
-        vizier_dict = calibration_data.vizier_dict
+        vizier_dict = calibration_parameters.vizier_dict
 
     #   Read calibration table
     if calibration_method == 'vsp':
@@ -1033,7 +1033,7 @@ def correlate_with_calibration_objects(
     for filter_ in filter_list:
         if 'mag' + filter_ in column_names:
             p = mp.Process(
-                target=plot.starmap,
+                target=plots.starmap,
                 args=(
                     image_series.out_path.name,
                     #   Replace with reference image in the future
@@ -1047,7 +1047,7 @@ def correlate_with_calibration_objects(
                     'label_2': 'matched calibration stars',
                     'rts': rts,
                     # 'name_object': image_series.object_name,
-                    'wcs': image_series.wcs,
+                    'wcs_image': image_series.wcs,
                 }
             )
             p.start()

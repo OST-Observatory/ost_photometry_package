@@ -27,7 +27,7 @@ from scipy.spatial import KDTree
 
 from itertools import cycle
 
-from .. import checks, style, terminal_output, calibration_data
+from .. import checks, style, terminal_output, calibration_parameters
 from . import utilities
 
 import matplotlib.colors as mcol
@@ -1255,7 +1255,7 @@ def plot_transform(
     fig.suptitle(title, fontsize=20)
 
     if x_data_original is not None and y_data_original is not None:
-        plt.scatter(
+        plt.errorbar(
             x_data_original,
             y_data_original,
             marker='o',
@@ -1914,11 +1914,11 @@ class MakeCMDs:
             relative_extinction = e_b_v
         else:
             #   Get effective filter wavelengths
-            filter_1_effective_wavelength = calibration_data.filter_effective_wavelength[self.filter_1]
-            filter_2_effective_wavelength = calibration_data.filter_effective_wavelength[self.filter_2]
+            filter_1_effective_wavelength = calibration_parameters.filter_effective_wavelength[self.filter_1]
+            filter_2_effective_wavelength = calibration_parameters.filter_effective_wavelength[self.filter_2]
 
             #   Get Fitzpatrick's extinction curve
-            extinction_curve = calibration_data.fitzpatrick_extinction_curve(rv)
+            extinction_curve = calibration_parameters.fitzpatrick_extinction_curve(rv)
 
             #   Get absolute extinction in the filter
             a_filter_1 = extinction_curve(10000. / filter_1_effective_wavelength) * e_b_v
@@ -3120,7 +3120,7 @@ def extinction_curves(rv):
 
     """
     #   Get Fitzpatrick law
-    fitzpatrick_extinction_curve = calibration_data.fitzpatrick_extinction_curve(rv)
+    fitzpatrick_extinction_curve = calibration_parameters.fitzpatrick_extinction_curve(rv)
 
     #   Get x (1/lambda) range
     x = np.arange(0, 4, 0.1)

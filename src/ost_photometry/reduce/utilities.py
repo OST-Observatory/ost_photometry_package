@@ -36,10 +36,10 @@ from skimage.transform import warp
 
 import astroalign as aa
 
-from .. import style, checks, calibration_data, terminal_output
+from .. import style, checks, calibration_parameters, terminal_output
 from .. import utilities as base_aux
 
-from . import plot
+from . import plots
 
 
 ############################################################################
@@ -795,7 +795,7 @@ def check_filter_keywords(path, temp_dir, image_type):
     # )
 
     #   Get image types
-    image_type_dict = calibration_data.get_image_types()
+    image_type_dict = calibration_parameters.get_image_types()
     image_type = image_type_dict[image_type]
 
     #   Find all images that have the correct image type
@@ -1104,7 +1104,7 @@ def cross_correlate_images(image_1, image_2, maximum_shift_x, maximum_shift_y,
 
     #   Debug plot showing the cc matrix
     if debug:
-        plot.cross_correlation_matrix(image_2, cc_matrix)
+        plots.cross_correlation_matrix(image_2, cc_matrix)
 
     #   Find the maximum in cc to identify the shift
     index_1, index_2 = np.unravel_index(cc_matrix.argmax(), cc_matrix.shape)
@@ -2060,7 +2060,7 @@ def estimate_fwhm(image_path, output_dir, image_type, plot_subplots=False,
 
             #   Plot subplots
             if plot_subplots:
-                plot.cutouts_fwhm_stars(
+                plots.cutouts_fwhm_stars(
                     out_path,
                     len(objects_tbl_filtered),
                     object_cutouts,
@@ -2767,7 +2767,7 @@ def update_header_information(image, n_image_stacked=1, new_target_name=None):
     #   Add filter system to the Header
     filter_ = image.meta['FILTER']
     try:
-        filter_system = calibration_data.filter_systems[filter_]
+        filter_system = calibration_parameters.filter_systems[filter_]
         image.meta['FILTER-S'] = filter_system
     except Exception as e:
         terminal_output.print_to_terminal(

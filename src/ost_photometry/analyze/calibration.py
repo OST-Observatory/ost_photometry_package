@@ -12,14 +12,14 @@ from astropy import uncertainty as unc
 from astropy.stats import sigma_clipped_stats, sigma_clip
 from astropy.table import Table
 
-from . import calib, correlate, utilities, plot
+from . import calibration_data, correlate, utilities, plots
 
 import typing
 if typing.TYPE_CHECKING:
     from . import analyze
     from .. import utilities
 
-from .. import style, calibration_data, terminal_output
+from .. import style, calibration_parameters, terminal_output
 
 
 ############################################################################
@@ -161,7 +161,7 @@ def check_transformation_requirements(
     else:
         #   Load coefficients coefficients
         if trans_coefficients is None:
-            trans_coefficients = calibration_data.get_transformation_calibration_values(
+            trans_coefficients = calibration_parameters.get_transformation_calibration_values(
                 observation.image_series_dict[filter_].start_jd
             )
             trans_coefficients_selection = utilities.find_transformation_coefficients(
@@ -324,7 +324,7 @@ def derive_transformation_onthefly(
         z_2_err = None
 
     #   Plots magnitude difference (literature vs. measured) vs. color
-    plot.plot_transform(
+    plots.plot_transform(
         image.out_path.name,
         filter_list[0],
         filter_list[1],
@@ -347,7 +347,7 @@ def derive_transformation_onthefly(
         other_filter = filter_list[1]
     else:
         other_filter = filter_list[0]
-    plot.plot_transform(
+    plots.plot_transform(
         image.out_path.name,
         filter_list[0],
         filter_list[1],
@@ -900,7 +900,7 @@ def prepare_zero_point(
     # image.zp = zp
 
     #   Plot zero point statistics
-    plot.histogram_statistic(
+    plots.histogram_statistic(
         [zp.pdf_median()],
         f'Zero point ({image.filter_})',
         '',
@@ -1028,7 +1028,7 @@ def calibrate_magnitudes_zero_point_core(
 
     #   Get extracted magnitudes of the calibration stars for the
     #   current image
-    magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
+    magnitudes_calibration_current_image = calibration_data.observed_magnitude_of_calibration_stars(
         magnitudes_current_image,
         index_calibration_stars,
     )
@@ -1103,7 +1103,7 @@ def calibrate_magnitudes_zero_point(
     image_series_dict = observation.image_series_dict
 
     #   Get calibration magnitudes
-    literature_magnitudes = calib.distribution_from_calibration_table(
+    literature_magnitudes = calibration_data.distribution_from_calibration_table(
         observation.calib_parameters,
         filter_list,
         distribution_samples=distribution_samples,
@@ -1188,7 +1188,7 @@ def calibrate_magnitudes_zero_point(
     utilities.save_magnitudes_ascii(
         observation,
         table_not_transformed_magnitudes,
-        trans=False,
+        magnitude_transformation=False,
         id_object=id_object,
         photometry_extraction_method=photometry_extraction_method,
     )
@@ -1260,7 +1260,7 @@ def calibrate_magnitudes_transformation(
     transformation_type_list: list[str | None] = []
 
     #   Get calibration magnitudes
-    literature_magnitudes = calib.distribution_from_calibration_table(
+    literature_magnitudes = calibration_data.distribution_from_calibration_table(
         observation.calib_parameters,
         filter_list,
         distribution_samples=distribution_samples,
@@ -1312,7 +1312,7 @@ def calibrate_magnitudes_transformation(
 
                 #   Get extracted magnitudes of the calibration stars for the
                 #   current image
-                magnitudes_calibration_current_image = calib.observed_magnitude_of_calibration_stars(
+                magnitudes_calibration_current_image = calibration_data.observed_magnitude_of_calibration_stars(
                     magnitudes_current_image,
                     index_calibration_stars,
                 )
@@ -1341,7 +1341,7 @@ def calibrate_magnitudes_transformation(
                 #   Get extracted magnitudes of the calibration stars
                 #   for the image in the comparison filter
                 #   -> required for magnitude transformation
-                magnitudes_calibration_comparison_image = calib.observed_magnitude_of_calibration_stars(
+                magnitudes_calibration_comparison_image = calibration_data.observed_magnitude_of_calibration_stars(
                     magnitudes_comparison_image,
                     index_calibration_stars,
                 )
@@ -1416,7 +1416,7 @@ def calibrate_magnitudes_transformation(
         utilities.save_magnitudes_ascii(
             observation,
             table_transformed_magnitudes,
-            trans=True,
+            magnitude_transformation=True,
             id_object=id_object,
             photometry_extraction_method=photometry_extraction_method,
             rts=f'_{filter_list[0]}-{filter_list[1]}'
@@ -1564,9 +1564,9 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
 
         #   Extract values from a structured Numpy array
         #   TODO: The following does not work anymore: Check!
-        # calib.get_observed_magnitudes_of_calibration_stars(image_1, observation)
-        # calib.get_observed_magnitudes_of_calibration_stars(image_2, observation)
-        # calib.get_observed_magnitudes_of_calibration_stars(image_key, observation)
+        # calibration_data.get_observed_magnitudes_of_calibration_stars(image_1, observation)
+        # calibration_data.get_observed_magnitudes_of_calibration_stars(image_2, observation)
+        # calibration_data.get_observed_magnitudes_of_calibration_stars(image_key, observation)
 
         #   TODO: This needs to be checked as well, since the mags_fit might not be a parameter of image_1 or image_2
         magnitudes_observed_filter_1 = image_1.mags_fit['mag']
@@ -1637,7 +1637,7 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
             f"Plot color transformation ({current_filter})",
             indent=indent,
         )
-        plot.plot_transform(
+        plots.plot_transform(
             image_series_dict[filter_list[0]].out_path.name,
             filter_list[0],
             filter_list[1],
@@ -1675,7 +1675,7 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
             indent=indent,
         )
 
-        plot.plot_transform(
+        plots.plot_transform(
             image_series_dict[filter_list[0]].out_path.name,
             filter_list[0],
             filter_list[1],
@@ -1827,7 +1827,7 @@ def calculate_trans(
     ###
     #   Calibrate transformation coefficients
     #
-    calib.derive_calibration(
+    calibration_data.derive_calibration(
         observation,
         filter_list,
         calibration_method=calibration_method,
