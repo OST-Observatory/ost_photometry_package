@@ -2,6 +2,7 @@
 #                               Libraries                                  #
 ############################################################################
 import sys
+import os
 
 import copy
 
@@ -20,6 +21,7 @@ if typing.TYPE_CHECKING:
     from .. import utilities
 
 from .. import style, calibration_parameters, terminal_output
+from .. import utilities as base_utilities
 
 
 ############################################################################
@@ -965,7 +967,7 @@ def calibrate_magnitudes_zero_point_core(
         literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000, multiprocessing: bool = False
-        ) -> tuple[int, u.quantity.Quantity, np.ndarray]:
+        ) -> tuple[int, u.quantity.Quantity | str, np.ndarray]:
     """
     Core module for zero point calibration that allows also for multicore
     processing
@@ -1051,11 +1053,19 @@ def calibrate_magnitudes_zero_point_core(
     )
 
     if multiprocessing:
+        tmp_save = True
         pd = copy.deepcopy(current_image.pd)
-        magnitudes = copy.deepcopy(calibrated_magnitudes.distribution)
         zp = copy.deepcopy(zp.pdf_median())
+        if not tmp_save:
+            magnitudes = copy.deepcopy(calibrated_magnitudes.distribution)
+            return pd, magnitudes, zp
+        else:
+            random_str = base_utilities.random_string_generator(7)
+            file_name = f'{pd}_{random_str}.npy'
+            np.save(f'/tmp/{pd}_{file_name}', calibrated_magnitudes.distribution)
 
-        return pd, magnitudes, zp
+            return pd, file_name, zp
+
 
 
 def calibrate_magnitudes_zero_point(
@@ -1158,16 +1168,21 @@ def calibrate_magnitudes_zero_point(
         #   Extract results
         res = executor.res
 
+        save_data_tmp = True
         #   Sort multiprocessing results
         tmp_list = []
         for image_ in image_series.image_list:
 
             for pd, magnitudes, zp in res:
                 if pd == image_.pd:
-                    # image_.photometry = tbl
-                    image_.magnitudes_with_zp = magnitudes
                     image_.zp = zp
                     tmp_list.append(image_)
+
+                    if save_data_tmp:
+                        magnitudes = np.load(magnitudes, allow_pickle=True)
+                        os.remove(magnitudes)
+
+                    image_.magnitudes_with_zp = magnitudes
 
                     #   Sigma clipping to rm outliers
                     _, median, stddev = sigma_clipped_stats(
