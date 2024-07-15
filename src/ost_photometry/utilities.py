@@ -124,6 +124,7 @@ class Image:
         self.photometry: Table | None = None
         self.positions: Table | None = None
         self.magnitudes_with_zp: u.quantity.Quantity | None = None
+        self.zp: np.ndarray | float | None = None
 
     #   Read image
     def read_image(self) -> CCDData:

@@ -278,7 +278,10 @@ def derive_transformation_onthefly(
     #   and literature color values to remove outliers
     #   TODO: Add here a sigma clipping on the color difference?
     sigma_clip_mask = sigma_clip(
-        (color_literature - color_observed).pdf_median(),
+        # (color_literature - color_observed).pdf_median(),
+        (magnitudes_observed_filter_2 - magnitudes_literature_filter_2 +
+         magnitudes_observed_filter_1 - magnitudes_literature_filter_1
+         ).pdf_median(),
         sigma=1.5,
         # maxiters=max_n_iterations_sigma_clipping,
     ).mask
@@ -292,18 +295,18 @@ def derive_transformation_onthefly(
     #   -> apply sigma clipping mask
     #   -> calculate pdf_median() for now before fitting
     #   TODO: Test with distributions
-    color_literature_err_plot = color_literature.pdf_std()
-    color_literature_plot = color_literature.pdf_median()
-    print(color_literature_plot)
-    diff_mag_plot_1 = diff_mag_1.pdf_median()
-    diff_mag_plot_2 = diff_mag_2.pdf_median()
-    # color_literature_plot = color_literature[sigma_clip_mask]
-    # color_literature_err_plot = color_literature_plot.pdf_std()
-    # color_literature_plot = color_literature_plot.pdf_median()
-    # diff_mag_plot_1 = diff_mag_1[sigma_clip_mask]
-    # diff_mag_plot_2 = diff_mag_2[sigma_clip_mask]
-    # diff_mag_plot_1 = diff_mag_plot_1.pdf_median()
-    # diff_mag_plot_2 = diff_mag_plot_2.pdf_median()
+    # color_literature_err_plot = color_literature.pdf_std()
+    # color_literature_plot = color_literature.pdf_median()
+    # print(color_literature_plot)
+    # diff_mag_plot_1 = diff_mag_1.pdf_median()
+    # diff_mag_plot_2 = diff_mag_2.pdf_median()
+    color_literature_plot = color_literature[sigma_clip_mask]
+    color_literature_err_plot = color_literature_plot.pdf_std()
+    color_literature_plot = color_literature_plot.pdf_median()
+    diff_mag_plot_1 = diff_mag_1[sigma_clip_mask]
+    diff_mag_plot_2 = diff_mag_2[sigma_clip_mask]
+    diff_mag_plot_1 = diff_mag_plot_1.pdf_median()
+    diff_mag_plot_2 = diff_mag_plot_2.pdf_median()
 
     #   Set
     sigma: np.ndarray = np.array(color_literature_err_plot)
@@ -684,7 +687,6 @@ def apply_magnitude_transformation(
         image.out_path.name,
         image.pd,
         filter_list,
-        # image.zp_mask,
         color_observed.pdf_median(),
         color_literature.pdf_median(),
         calibration_stars_ids,
@@ -708,7 +710,7 @@ def calibrate_simple(
         image: 'analyze.Image',
         not_calibrated_magnitudes: unc.core.NdarrayDistribution,
         zp: unc.core.NdarrayDistribution,
-        ) -> tuple[Table, unc.core.NdarrayDistribution]:
+        ) -> unc.core.NdarrayDistribution:
     """
     Calibrate magnitudes without magnitude transformation
 
@@ -737,11 +739,11 @@ def calibrate_simple(
     calibrated_magnitudes = reshaped_magnitudes + zp
 
     #   Sigma clipping to rm outliers
-    _, median, stddev = sigma_clipped_stats(
-        calibrated_magnitudes.distribution,
-        sigma=1.5,
-        axis=(1, 2),
-    )
+    # _, median, stddev = sigma_clipped_stats(
+    #     calibrated_magnitudes.distribution,
+    #     sigma=1.5,
+    #     axis=(1, 2),
+    # )
 
     #   TODO: Rewrite & test this
     #   If ZP is 0, calibrate with the median of all magnitudes
@@ -750,10 +752,10 @@ def calibrate_simple(
     #     calibrated_magnitudes = not_calibrated_magnitudes - np.median(not_calibrated_magnitudes)
 
     #   Add calibrated photometry to table of Image object
-    photometry_table['mag_cali_no-trans'] = median
-    photometry_table['mag_cali_no-trans_unc'] = stddev
+    # photometry_table['mag_cali_no-trans'] = median
+    # photometry_table['mag_cali_no-trans_unc'] = stddev
 
-    return photometry_table, calibrated_magnitudes
+    return calibrated_magnitudes
 
 
 def quasi_flux_calibration_image_series(
@@ -896,11 +898,6 @@ def prepare_zero_point(
     """
     #   Calculate zero point
     zp = literature_magnitude_list[id_filter] - magnitudes_calibration_stars
-    # terminal_output.print_to_terminal(
-    #     f"It is not possible to calculate the zero point.",
-    #     style_name='ERROR',
-    # )
-    # image.zp = zp
 
     #   Plot zero point statistics
     plots.histogram_statistic(
@@ -968,7 +965,7 @@ def calibrate_magnitudes_zero_point_core(
         literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000, multiprocessing: bool = False
-        ) -> tuple[int, Table, u.quantity.Quantity]:
+        ) -> tuple[int, u.quantity.Quantity, np.ndarray]:
     """
     Core module for zero point calibration that allows also for multicore
     processing
@@ -1047,7 +1044,7 @@ def calibrate_magnitudes_zero_point_core(
     )
 
     #   Calibration without transformation
-    photometry_table, calibrated_magnitudes = calibrate_simple(
+    calibrated_magnitudes = calibrate_simple(
         current_image,
         magnitudes_current_image,
         zp,
@@ -1055,10 +1052,10 @@ def calibrate_magnitudes_zero_point_core(
 
     if multiprocessing:
         pd = copy.deepcopy(current_image.pd)
-        tbl = copy.deepcopy(photometry_table)
         magnitudes = copy.deepcopy(calibrated_magnitudes.distribution)
+        zp = copy.deepcopy(zp.pdf_median())
 
-        return pd, tbl, magnitudes
+        return pd, magnitudes, zp
 
 
 def calibrate_magnitudes_zero_point(
@@ -1165,11 +1162,23 @@ def calibrate_magnitudes_zero_point(
         tmp_list = []
         for image_ in image_series.image_list:
 
-            for pd, tbl, magnitudes in res:
+            for pd, magnitudes, zp in res:
                 if pd == image_.pd:
-                    image_.photometry = tbl
+                    # image_.photometry = tbl
                     image_.magnitudes_with_zp = magnitudes
+                    image_.zp = zp
                     tmp_list.append(image_)
+
+                    #   Sigma clipping to rm outliers
+                    _, median, stddev = sigma_clipped_stats(
+                        magnitudes,
+                        sigma=1.5,
+                        axis=(1, 2),
+                    )
+
+                    #   Add calibrated photometry to table of Image object
+                    image_.photometry['mag_cali_no-trans'] = median
+                    image_.photometry['mag_cali_no-trans_unc'] = stddev
 
         # TODO: Check if this is necessary
         image_series.image_list = tmp_list

@@ -10,7 +10,7 @@ import numpy as np
 
 from pytimedinput import timedInput
 
-from astropy.table import Table
+from astropy.table import Table, Column
 from astropy.stats import sigma_clip
 from astropy.io import fits
 from astropy.coordinates import SkyCoord, matching
@@ -19,6 +19,7 @@ from astropy.modeling import models, fitting
 from astropy import uncertainty as unc
 import astropy.units as u
 from astropy import wcs
+from astropy.time import Time
 
 from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
@@ -39,7 +40,7 @@ import multiprocessing as mp
 
 import scipy.optimize as optimization
 
-from .. import utilities as base_aux
+from .. import utilities as base_utilities
 
 from .. import checks, style, terminal_output, calibration_parameters
 
@@ -55,21 +56,22 @@ if typing.TYPE_CHECKING:
 ############################################################################
 
 
-def err_prop(*args):
+def err_prop(*args) -> float | np.ndarray:
     """
-        Calculate error propagation
+    Calculate error propagation
 
-        Parameters
-        ----------
-        args        : `list` of `float`s or `numpy.ndarray`s
-            Sources of error that should be added up
+    Parameters
+    ----------
+    args        : `list` of `float`s or `numpy.ndarray`s
+        Sources of error that should be added up
 
-        Returns
-        -------
-        sum_error   : `float` or `numpy.ndarray`
-            Accumulated error
+    Returns
+    -------
+    sum_error
+        Accumulated error
     """
     #   Adding up the errors
+    sum_error: float = 0.
     for i, x in enumerate(args):
         if i == 0:
             sum_error = x
@@ -79,30 +81,32 @@ def err_prop(*args):
 
 
 def mk_magnitudes_table_and_array(
-        observation: 'analyze.Observation', filter_list, photometry_column_keyword):
+        observation: 'analyze.Observation', filter_list: list[str],
+        photometry_column_keyword: str
+        ) -> tuple[Table, dict[str, dict[str, np.ndarray]]]:
     """
-        Create and export astropy table with object positions and magnitudes
+    Create and export astropy table with object positions and magnitudes
 
-        Parameters
-        ----------
-        observation
-            Container object with image series objects for each filter
+    Parameters
+    ----------
+    observation
+        Container object with image series objects for each filter
 
-        filter_list                 : `list` of `string`
-            Filter
+    filter_list
+        Filter
 
-        photometry_column_keyword   : `string`
-            String used to identify the magnitude column in the
-            photometry tables
+    photometry_column_keyword
+        String used to identify the magnitude column in the
+        photometry tables
 
-        Returns
-        -------
-        tbl                         : `astropy.table.Table`
-            Table with CMD data
+    Returns
+    -------
+    tbl
+        Table with CMD data
 
-        stacked_magnitudes          : `dict` of `dict` of `numpy.ndarray`
-            Array with magnitudes and magnitude errors of all images in an
-            image series
+    stacked_magnitudes
+        Array with magnitudes and magnitude errors of all images in an
+        image series
     """
     #   Dictionary for stacked magnitudes
     stacked_magnitudes = {}
@@ -165,8 +169,8 @@ def mk_magnitudes_table_and_array(
         #   Make numpy array with magnitudes from all images in an imaging
         #   series and add this to the magnitude dictionary
         stacked_magnitudes[filter_] = {
-            'values':np.stack(magnitude_list),
-            'errors':np.stack(magnitude_error_list)
+            'values': np.stack(magnitude_list),
+            'errors': np.stack(magnitude_error_list)
         }
 
     # for ids in filter_image_ids:
@@ -190,62 +194,65 @@ def mk_magnitudes_table_and_array(
 
 
 #   TODO: Check where this function is used and whether it is safe to rename the parameters.
-def find_wcs(image_series: 'analyze.ImageSeries', reference_image_id=None, method='astrometry',
-             rmcos=False, path_cos=None, x=None, y=None,
-             force_wcs_determ=False, indent=2):
+def find_wcs(
+        image_series: 'analyze.ImageSeries',
+        reference_image_id: int | None = None, method: str = 'astrometry',
+        cosmics_removed: bool = False, path_cos: str | None = None,
+        x: np.ndarray | None = None, y: np.ndarray | None = None,
+        force_wcs_determ: bool = False, indent: int = 2) -> None:
     """
-        Meta function for finding image WCS
+    Meta function for finding image WCS
 
-        Parameters
-        ----------
-        image_series
-            Image class with all images taken in a specific filter
+    Parameters
+    ----------
+    image_series
+        Image class with all images taken in a specific filter
 
-        reference_image_id  : `integer`, optional
-            ID of the reference image
-            Default is ``None``.
+    reference_image_id
+        ID of the reference image
+        Default is ``None``.
 
-        method              : `string`, optional
-            Method to use for the WCS determination
-            Options: 'astrometry', 'astap', or 'twirl'
-            Default is ``astrometry``.
+    method
+        WCS determination method
+        Options: 'astrometry', 'astap', or 'twirl'
+        Default is ``astrometry``.
 
-        rmcos               : `boolean`, optional
-            If True the function assumes that the cosmic ray reduction
-            function was run before this function
-            Default is ``False``.
+    cosmics_removed
+        If True the function assumes that the cosmic ray reduction
+        function was run before this function
+        Default is ``False``.
 
-        path_cos            : `string`
-            Path to the image in case 'rmcos' is True
-            Default is ``None``.
+    path_cos
+        Path to the image in case 'cosmics_removed' is True
+        Default is ``None``.
 
-        x, y                : `numpy.ndarray`, optional
-            Pixel coordinates of the objects
-            Default is ``None``.
+    x, y
+        Pixel coordinates of the objects
+        Default is ``None``.
 
-        force_wcs_determ    : `boolean`, optional
-            If ``True`` a new WCS determination will be calculated even if
-            a WCS is already present in the FITS Header.
-            Default is ``False``.
+    force_wcs_determ
+        If ``True`` a new WCS determination will be calculated even if
+        a WCS is already present in the FITS Header.
+        Default is ``False``.
 
-        indent              : `integer`, optional
-            Indentation for the console output lines
-            Default is ``2``.
+    indent
+        Indentation for the console output lines
+        Default is ``2``.
     """
     if reference_image_id is not None:
         #   Image
         img = image_series.image_list[reference_image_id]
 
         #   Test if the image contains already a WCS
-        cal_wcs, wcs_file = base_aux.check_wcs_exists(img)
+        cal_wcs, wcs_file = base_utilities.check_wcs_exists(img)
 
         if not cal_wcs or force_wcs_determ:
             #   Calculate WCS -> astrometry.net
             if method == 'astrometry':
                 image_series.set_wcs(
-                    base_aux.find_wcs_astrometry(
+                    base_utilities.find_wcs_astrometry(
                         img,
-                        cosmic_rays_removed=rmcos,
+                        cosmic_rays_removed=cosmics_removed,
                         path_cosmic_cleaned_image=path_cos,
                         indent=indent,
                     )
@@ -254,7 +261,7 @@ def find_wcs(image_series: 'analyze.ImageSeries', reference_image_id=None, metho
             #   Calculate WCS -> ASTAP program
             elif method == 'astap':
                 image_series.set_wcs(
-                    base_aux.find_wcs_astap(img, indent=indent)
+                    base_utilities.find_wcs_astap(img, indent=indent)
                 )
 
             #   Calculate WCS -> twirl library
@@ -265,7 +272,7 @@ def find_wcs(image_series: 'analyze.ImageSeries', reference_image_id=None, metho
                         f"\n'x' or 'y' is None -> Exit {style.Bcolors.ENDC}"
                     )
                 image_series.set_wcs(
-                    base_aux.find_wcs_twirl(img, x, y, indent=indent)
+                    base_utilities.find_wcs_twirl(img, x, y, indent=indent)
                 )
             #   Raise exception
             else:
@@ -279,21 +286,21 @@ def find_wcs(image_series: 'analyze.ImageSeries', reference_image_id=None, metho
     else:
         for i, img in enumerate(image_series.image_list):
             #   Test if the image contains already a WCS
-            cal_wcs = base_aux.check_wcs_exists(img)
+            cal_wcs = base_utilities.check_wcs_exists(img)
 
             if not cal_wcs or force_wcs_determ:
                 #   Calculate WCS -> astrometry.net
                 if method == 'astrometry':
-                    w = base_aux.find_wcs_astrometry(
+                    w = base_utilities.find_wcs_astrometry(
                         img,
-                        cosmic_rays_removed=rmcos,
+                        cosmic_rays_removed=cosmics_removed,
                         path_cosmic_cleaned_image=path_cos,
                         indent=indent,
                     )
 
                 #   Calculate WCS -> ASTAP program
                 elif method == 'astap':
-                    w = base_aux.find_wcs_astap(img, indent=indent)
+                    w = base_utilities.find_wcs_astap(img, indent=indent)
 
                 #   Calculate WCS -> twirl library
                 elif method == 'twirl':
@@ -303,7 +310,7 @@ def find_wcs(image_series: 'analyze.ImageSeries', reference_image_id=None, metho
                             "find_wcs(): ' \n'x' or 'y' is None -> Exit"
                             f"{style.Bcolors.ENDC}"
                         )
-                    w = base_aux.find_wcs_twirl(img, x, y, indent=indent)
+                    w = base_utilities.find_wcs_twirl(img, x, y, indent=indent)
 
                 #   Raise exception
                 else:
@@ -319,28 +326,35 @@ def find_wcs(image_series: 'analyze.ImageSeries', reference_image_id=None, metho
                 image_series.set_wcs(w)
 
 
-def extract_wcs(wcs_path, image_wcs=None, rm_cosmics=False, filters=None):
+def extract_wcs(
+        wcs_path: str, image_wcs: str | None = None, rm_cosmics: bool = False,
+        filters: list[str] = None) -> wcs.WCS:
     """
-        Load wcs from FITS file
+    Load wcs from FITS file
 
-        Parameters
-        ----------
-        wcs_path         : `string`
-            Path to the image with the WCS or path to the directory that
-            contains this image
+    Parameters
+    ----------
+    wcs_path
+        Path to the image with the WCS or path to the directory that
+        contains this image
 
-        image_wcs       : `string`, optional
-            WCS image name. Needed in case `wcs_path` is only the path to
-            the image directory.
-            Default is ``None``.
+    image_wcs
+        WCS image name. Needed in case `wcs_path` is only the path to
+        the image directory.
+        Default is ``None``.
 
-        rm_cosmics      : `boolean`, optional
-            If True cosmic rays will be removed.
-            Default is ``False``.
+    rm_cosmics
+        If True cosmic rays will be removed.
+        Default is ``False``.
 
-        filters         : `list` of `string`, optional
-            Filter list
-            Default is ``None``.
+    filters
+        Filter list
+        Default is ``None``.
+
+    Returns
+    -------
+    w
+        WCS for the image
     """
     #   Open the image with the WCS solution
     if image_wcs is not None:
@@ -365,28 +379,31 @@ def extract_wcs(wcs_path, image_wcs=None, rm_cosmics=False, filters=None):
     return w
 
 
-def mk_time_series(observation_times, magnitudes, filter_, object_id):
+def mk_time_series(
+        observation_times: Time,
+        magnitudes: dict[str, dict[str, np.ndarray]],
+        filter_: str, object_id: int) -> TimeSeries:
     """
-        Make a time series object
+    Make a time series object
 
-        Parameters
-        ----------
-        observation_times   : `astropy.time.Time`
-            Observation times
+    Parameters
+    ----------
+    observation_times
+        Observation times
 
-        magnitudes          : `list` of `astropy.uncertainty.core.QuantityDistribution`
-            Magnitudes and uncertainties
+    magnitudes
+        Object magnitudes and uncertainties
 
-        filter_             : `string`
-            Filter
+    filter_
+        Filter
 
-        object_id           : `integer`
-            ID/Number of the object for with the time series should be
-            created
+    object_id
+        ID/Number of the object for with the time series should be
+        created
 
-        Returns
-        -------
-        ts                  : `astropy.timeseries.TimeSeries`
+    Returns
+    -------
+    ts
     """
     #   Get magnitude and error
     mags_obj = magnitudes[filter_]['values'][:, object_id]
@@ -411,40 +428,43 @@ def lin_func(x, a, b):
     return a + b * x
 
 
-def fit_curve(fit_func, x, y, x0, sigma):
+#   TODO: Add type hint for 'fit_func'
+def fit_curve(
+        fit_func, x: np.ndarray, y: np.ndarray, x0: np.ndarray, sigma: np.ndarray
+        ) -> tuple[float, float, float, float]:
     """
-        Fit curve with supplied fit function
+    Fit curve with supplied fit function
 
-        Parameters
-        ----------
-        fit_func        : `function`
-            Function used in the fitting process
+    Parameters
+    ----------
+    fit_func
+        Function used in the fitting process
 
-        x               : `numpy.ndarray`
-            Abscissa values
+    x
+        Abscissa values
 
-        y               : `numpy.ndarray`
-            Ordinate values
+    y
+        Ordinate values
 
-        x0              : `numpy.ndarray`
-            Initial guess for the fit parameters
+    x0
+        Initial guess for the fit parameters
 
-        sigma           : `numpy.ndarray`
-            Uncertainty of the ordinate values
+    sigma
+        Uncertainty of the ordinate values
 
-        Returns
-        -------
-        a               : `float`
-            Parameter I
+    Returns
+    -------
+    a
+        Parameter I
 
-        a_err           : `float`
-            Error parameter I
+    a_err
+        Error parameter I
 
-        b               : `float`
-            Parameter II
+    b
+        Parameter II
 
-        b_err           : `float`
-            Error parameter II
+    b_err
+        Error parameter II
     """
 
     #   Fit curve
@@ -465,20 +485,25 @@ def fit_curve(fit_func, x, y, x0, sigma):
     return a, a_err, b, b_err
 
 
-def fit_data_one_d(x, y, order):
+def fit_data_one_d(x: np.ndarray, y: np.ndarray, order: int):
     """
-        Fit polynomial to the provided data.
+    Fit polynomial to the provided data.
 
-        Parameters
-        ----------
-        x               : `numpy.ndarray`
-            X data values
+    Parameters
+    ----------
+    x
+        abscissa data values
 
-        y               : `numpy.ndarray`
-            Y data values
+    y
+        ordinate data values
 
-        order           : `integer`
-            Order of the polynomial to be fitted to the data
+    order
+        Polynomial order to be fitted to the data
+
+    Returns
+    -------
+    fit_poly
+        The fitted polynomial
     """
     #   Set model
     model = models.Polynomial1D(degree=order)
@@ -496,29 +521,34 @@ def fit_data_one_d(x, y, order):
             y,
         )
 
+    #   TODO: Check type of 'fit_poly'
     return fit_poly
 
 
-def flux_to_magnitudes(flux, flux_error):
+def flux_to_magnitudes(
+        flux: np.ndarray | Column, flux_error: np.ndarray | Column
+        ) -> tuple[np.ndarray | Column, np.ndarray | Column]:
     """
-        Calculate magnitudes from flux
+    Calculate magnitudes from flux
 
-        Parameters
-        ----------
-        flux            : `numpy.ndarray` or `astropy.table.Column`
-            Flux values
+    Parameters
+    ----------
+    flux
+        Flux values
 
-        flux_error      : `numpy.ndarray` or `astropy.table.Column`
-            Flux uncertainties
+    flux_error
+        Flux uncertainties
 
-        Returns
-        -------
-        mags            : `astropy.uncertainty.core.QuantityDistribution`
-            Numpy structured array containing magnitudes and corresponding
-            errors
+    Returns
+    -------
+    magnitudes
+        Object magnitudes
+
+    magnitudes_error
+        Object uncertainties
     """
-    #   Sanitize input parameters
     #   TODO: Check if the following is necessary
+    #   Sanitize input parameters
     # if np.ma.isMaskedArray(flux):
     #     flux = flux.filled()
     # if np.ma.isMaskedArray(flux_error):
@@ -531,39 +561,42 @@ def flux_to_magnitudes(flux, flux_error):
     return magnitudes, magnitudes_error
 
 
-def find_transformation_coefficients(filter_list, tsc_parameter_dict, filter_,
-                                     camera, verbose=False, indent=2):
+def find_transformation_coefficients(
+        filter_list: list[str],
+        tsc_parameter_dict: dict[str, dict[str, dict[str, float | str | list[str]]]] | None,
+        filter_: str, camera: str, verbose: bool = False, indent: int = 2
+        ) -> dict[str, float | str | list[str]] | None:
     """
-        Find the position of the filter from the 'tsc_parameter_dict'
-        dictionary with reference to 'filter_list'
+    Find the position of the filter from the 'tsc_parameter_dict'
+    dictionary with reference to 'filter_list'
 
-        Parameters
-        ----------
-        filter_list         : `list` - `string`
-            List of available filter, e.g., ['U', 'B', 'V', ...]
+    Parameters
+    ----------
+    filter_list
+        List of available filter, e.g., ['U', 'B', 'V', ...]
 
-        tsc_parameter_dict  : `dictionary` - `string`:`dictionary`
-            Magnitude transformation coefficients for different cameras.
-            Keys:  camera identifier
+    tsc_parameter_dict
+        Magnitude transformation coefficients for different cameras.
+        Keys:  camera identifier
 
-        filter_             : `string`
-            Filter for which calibration data will be selected
+    filter_
+        Filter for which calibration data will be selected
 
-        camera              : `string`
-            Camera used
+    camera
+        Instrument used
 
-        verbose             : `boolean`, optional
-            If ``True`` additional information will be printed to the console.
-            Default is ``False``.
+    verbose
+        If ``True`` additional information will be printed to the console.
+        Default is ``False``.
 
-        indent              : `integer`, optional
-            Indentation for the console output
-            Default is ``2``.
+    indent
+        Indentation for the console output
+        Default is ``2``.
 
-        Returns
-        -------
-        variable_1          : `dictionary`
-            Entry from dictionary 'in_dict' corresponding to filter 'filter_'
+    Returns
+    -------
+    variable_1
+        Entry from dictionary 'in_dict' corresponding to filter 'filter_'
     """
     #   Initialize list of bools
     cam_bools = []
@@ -610,33 +643,35 @@ def find_transformation_coefficients(filter_list, tsc_parameter_dict, filter_,
     return None
 
 
-def check_variable(filename, filetype, filter_1, filter_2, iso_column_type,
-                   iso_column):
+#   TODO: Remove
+def check_variable(
+        filename: str, filetype: str, filter_1: str, filter_2: str, iso_column_type,
+        iso_column):
     """
-        Check variables and set defaults for CMDs and isochrone plots
+    Check variables and set defaults for CMDs and isochrone plots
 
-        This function exists for backwards compatibility.
+    This function exists for backwards compatibility.
 
-        Parameters
-        ----------
-        filename            : `string`
-            Specified file name - can also be empty -> set default
+    Parameters
+    ----------
+    filename            : `string`
+        Specified file name - can also be empty -> set default
 
 
-        filetype            : `string`
-            Specified file type - can also be empty -> set default
+    filetype            : `string`
+        Specified file type - can also be empty -> set default
 
-        filter_1            : `string`
-            First filter
+    filter_1            : `string`
+        First filter
 
-        filter_2            : `string`
-            Second filter
+    filter_2            : `string`
+        Second filter
 
-        iso_column_type     : `dictionary`
-            Keys = filter - Values = type
+    iso_column_type     : `dictionary`
+        Keys = filter - Values = type
 
-        iso_column          : `dictionary`
-            Keys = filter - Values = column
+    iso_column          : `dictionary`
+        Keys = filter - Values = column
     """
 
     filename, filetype = check_variable_apparent_cmd(
@@ -653,17 +688,18 @@ def check_variable(filename, filetype, filter_1, filter_2, iso_column_type,
     return filename, filetype
 
 
+#   TODO: remove
 def check_variable_apparent_cmd(filename, filetype):
     """
-        Check variables and set defaults for CMDs and isochrone plots
+    Check variables and set defaults for CMDs and isochrone plots
 
-        Parameters
-        ----------
-        filename                : `string`
-            Specified file name - can also be empty -> set default
+    Parameters
+    ----------
+    filename                : `string`
+        Specified file name - can also be empty -> set default
 
-        filetype                : `string`
-            Specified file type - can also be empty -> set default
+    filetype                : `string`
+        Specified file type - can also be empty -> set default
     """
     #   Set figure type
     if filename == "?" or filename == "":
@@ -735,21 +771,22 @@ def check_variable_apparent_cmd(filename, filetype):
     return filename, filetype
 
 
+#   TODO: Remove
 def check_variable_absolute_cmd(filter_list, iso_column_type,
                                 iso_column):
     """
-        Check variables and set defaults for CMDs and isochrone plots
+    Check variables and set defaults for CMDs and isochrone plots
 
-        Parameters
-        ----------
-        filter_list           : `list` of `string`
-            Filter list
+    Parameters
+    ----------
+    filter_list           : `list` of `string`
+        Filter list
 
-        iso_column_type       : `dictionary`
-            Keys = filter - Values = type
+    iso_column_type       : `dictionary`
+        Keys = filter - Values = type
 
-        iso_column            : `dictionary`
-            Keys = filter - Values = column
+    iso_column            : `dictionary`
+        Keys = filter - Values = column
     """
     #   Check if the column declaration for the isochrones fits to the
     #   specified filter
@@ -778,14 +815,17 @@ class Executor:
         -> allows for easy catch of exceptions
     """
 
-    def __init__(self, process_num):
+    def __init__(self, process_num: int):
+        print('mp star method: ', mp.get_start_method())
+        mp.set_start_method('spawn', force=True)
+        print('mp star method: ', mp.get_start_method())
         #   Init multiprocessing pool
-        self.pool = mp.Pool(process_num, maxtasksperchild=6)
+        self.pool: mp.Pool = mp.Pool(process_num, maxtasksperchild=6)
         #   Init variables
-        self.res = []
-        self.err = None
+        self.res: list[any] = []
+        self.err: any = None
 
-    def collect_results(self, result):
+    def collect_results(self, result: any):
         """
             Uses apply_async's callback to set up a separate Queue
             for each process
@@ -831,30 +871,31 @@ class Executor:
         self.pool.join()
 
 
-def mk_ds9_region(x_pixel_positions, y_pixel_positions, pixel_radius, filename,
-                  wcs_object):
+def mk_ds9_region(
+        x_pixel_positions: np.ndarray, y_pixel_positions: np.ndarray,
+        pixel_radius: float, filename: str, wcs_object: wcs.WCS) -> None:
     """
-        Make and write a ds9 region file
+    Make and write a ds9 region file
 
-        Is this function still useful?
+    Is this function still useful?
 
 
-        Parameters
-        ----------
-        x_pixel_positions   : `numpy.ndarray`
-            X coordinates in pixel
+    Parameters
+    ----------
+    x_pixel_positions
+        X coordinates in pixel
 
-        y_pixel_positions   : `numpy.ndarray`
-            Y coordinates in pixel
+    y_pixel_positions
+        Y coordinates in pixel
 
-        pixel_radius        : `float`
-            Radius in pixel
+    pixel_radius
+        Radius in pixel
 
-        filename            : `string`
-            File name
+    filename
+        File name
 
-        wcs_object          : `astropy.wcs.WCS`
-            WCS information
+    wcs_object
+        WCS information
     """
     #   Create the region
     c_regs = []
@@ -876,45 +917,48 @@ def mk_ds9_region(x_pixel_positions, y_pixel_positions, pixel_radius, filename,
     reg.write(filename, format='ds9', overwrite=True)
 
 
-def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
-                             x_name='x_fit', y_name='y_fit', rts_pre='image',
-                             label='Stars with photometric extractions',
-                             add_image_id=True):
+def prepare_and_plot_starmap(
+        image: base_utilities.Image,
+        terminal_logger: terminal_output.TerminalLog | None = None,
+        tbl: Table = None, x_name: str = 'x_fit', y_name: str = 'y_fit',
+        rts_pre: str = 'image',
+        label: str = 'Stars with photometric extractions',
+        add_image_id: bool = True) -> None:
     """
-        Creates a star map using information from an Image object
+    Creates a star map using information from an Image object
 
-        Parameters
-        ----------
-        image           : `image.class`
-            Image class with all image specific properties
+    Parameters
+    ----------
+    image
+        Object with all image specific properties
 
-        terminal_logger : `terminal_output.TerminalLog` or None, optional
-            Logger object. If provided, the terminal output will be directed
-            to this object.
-            Default is ``None``.
+    terminal_logger
+        Logger object. If provided, the terminal output will be directed
+        to this object.
+        Default is ``None``.
 
-        tbl             : `astropy.table.Table` or `None`, optional
-            Table with position information.
-            Default is ``None``.
+    tbl
+        Table with position information.
+        Default is ``None``.
 
-        x_name          : `string`, optional
-            Name of the X column in ``tbl``.
-            Default is ``x_fit``.
+    x_name
+        Name of the X column in ``tbl``.
+        Default is ``x_fit``.
 
-        y_name          : `string`, optional
-            Name of the Y column in ``tbl``.
-            Default is ``y_fit``.
+    y_name
+        Name of the Y column in ``tbl``.
+        Default is ``y_fit``.
 
-        rts_pre         : `string`, optional
-            Expression used in the file name to characterizing the plot
+    rts_pre
+        Expression used in the file name to characterizing the plot
 
-        label           : `string`, optional
-            Label that characterizes the star map.
-            Default is ``Stars with photometric extractions``.
+    label
+        String that characterizes the star map.
+        Default is ``Stars with photometric extractions``.
 
-        add_image_id    : `boolean`, optional
-            If ``True`` the image ID will be added to the file name.
-            Default is ``True``.
+    add_image_id
+        If ``True`` the image ID will be added to the file name.
+        Default is ``True``.
     """
     #   Get table, data, filter, & object name
     if tbl is None:
@@ -949,7 +993,7 @@ def prepare_and_plot_starmap(image, terminal_logger=None, tbl=None,
 
 
 def prepare_and_plot_starmap_from_observation(
-        observation: 'analyze.Observation', filter_list):
+        observation: 'analyze.Observation', filter_list: list[str]) -> None:
     """
         Creates a star map using information from an observation container
 
@@ -958,7 +1002,7 @@ def prepare_and_plot_starmap_from_observation(
         observation     
             Container object with image series objects for each filter
 
-        filter_list       : `list` of `strings`
+        filter_list
             List with filter names
     """
     terminal_output.print_to_terminal(
@@ -998,29 +1042,29 @@ def prepare_and_plot_starmap_from_observation(
 
 
 def prepare_and_plot_starmap_from_image_series(
-        image_series: 'analyze.ImageSeries', calib_xs,
-        calib_ys,
-        plot_reference_only=True):
+        image_series: 'analyze.ImageSeries',
+        calib_xs: np.ndarray | list[float], calib_ys: np.ndarray | list[float],
+        plot_reference_only: bool = True) -> None:
     """
-        Creates a star map using information from an image series
+    Creates a star map using information from an image series
 
-        Parameters
-        ----------
-        image_series
-            Image image_series class object
+    Parameters
+    ----------
+    image_series
+        Image image_series class object
 
-        calib_xs        : `numpy.ndarray` or `list` of `floats`
-            Position of the calibration objects on the image in pixel
-            in X direction
+    calib_xs
+        Position of the calibration objects on the image in pixel
+        in X direction
 
-        calib_ys        : `numpy.ndarray` or `list`  of `floats`
-            Position of the calibration objects on the image in pixel
-            in Y direction
+    calib_ys
+        Position of the calibration objects on the image in pixel
+        in Y direction
 
-        plot_reference_only       : `boolean`, optional
-            If True only the starmap for the reference image will
-            be created.
-            Default is ``True``.
+    plot_reference_only
+        If True only the starmap for the reference image will
+        be created.
+        Default is ``True``.
     """
     terminal_output.print_to_terminal(
         "Plot star map with the objects identified on all images",
@@ -1062,75 +1106,73 @@ def prepare_and_plot_starmap_from_image_series(
         terminal_output.print_to_terminal('')
 
 
+#   TODO: Rewrite
 def calibration_check_plots(
-        filter_, out_dir, image_id, filter_list,
+        filter_: str, out_dir: str, image_id: int, filter_list,
         color_observed, color_literature, ids_calibration_stars,
-        literature_magnitudes, magnitudes, uncalibrated_magnitudes,
+        literature_magnitudes, magnitudes: np.ndarray, uncalibrated_magnitudes: np.ndarray,
         color_observed_err=None, color_literature_err=None,
-        literature_magnitudes_err=None, magnitudes_err=None,
-        uncalibrated_magnitudes_err=None, plot_sigma_switch=False,
+        literature_magnitudes_err=None, magnitudes_err: np.ndarray | None = None,
+        uncalibrated_magnitudes_err: np.ndarray | None = None, plot_sigma_switch=False,
         multiprocessing: bool = True):
     """
-        Useful plots to check the quality of the calibration process.
+    Useful plots to check the quality of the calibration process.
 
-        Parameters
-        ----------
-        filter_                     : `string`
-            Filter used
+    Parameters
+    ----------
+    filter_                     : `string`
+        Filter used
 
-        out_dir                     : `string`
-            Output directory
+    out_dir                     : `string`
+        Output directory
 
-        image_id                    : `integer`
-                Expression characterizing the plot
+    image_id                    : `integer`
+            Expression characterizing the plot
 
-        filter_list                 : `list` - `string`
-            Filter list
+    filter_list                 : `list` - `string`
+        Filter list
 
-        mask:                       : `numpy.ndarray`
-            Mask of stars that should be excluded
+    color_observed              : `numpy.ndarray` - `numpy.float64`
+        Instrument color of the calibration stars
 
-        color_observed              : `numpy.ndarray` - `numpy.float64`
-            Instrument color of the calibration stars
+    color_literature            : `numpy.ndarray` - `numpy.float64`
+        Literature color of the calibration stars
 
-        color_literature            : `numpy.ndarray` - `numpy.float64`
-            Literature color of the calibration stars
+    ids_calibration_stars       : `numpy.ndarray`
+        IDs of the calibration stars
 
-        ids_calibration_stars       : `numpy.ndarray`
-            IDs of the calibration stars
+    literature_magnitudes       : `numpy.ndarray`
+        Literature magnitudes of the objects that are used in the
+        calibration process
 
-        literature_magnitudes       : `numpy.ndarray`
-            Literature magnitudes of the objects that are used in the
-            calibration process
+    magnitudes                  : `numpy.ndarray`
+        Magnitudes of all observed objects
 
-        magnitudes                  : `numpy.ndarray`
-            Magnitudes of all observed objects
+    uncalibrated_magnitudes     : `numpy.ndarray`
+        Magnitudes of all observed objects but not calibrated yet
 
-        uncalibrated_magnitudes     : `numpy.ndarray`
-            Magnitudes of all observed objects but not calibrated yet
+    color_observed_err          : `numpy.ndarray' or ``None``, optional
+        Uncertainty in the instrument color of the calibration stars
 
-        color_observed_err          : `numpy.ndarray' or ``None``, optional
-            Uncertainty in the instrument color of the calibration stars
+    color_literature_err        : `numpy.ndarray' or ``None``, optional
+        Uncertainty in the literature color of the calibration stars
 
-        color_literature_err        : `numpy.ndarray' or ``None``, optional
-            Uncertainty in the literature color of the calibration stars
+    literature_magnitudes_err   : `numpy.ndarray`
+        Uncertainty in the literature magnitudes of the objects that are
+        used in the calibration process
 
-        literature_magnitudes_err   : `numpy.ndarray`
-            Uncertainty in the literature magnitudes of the objects that are
-            used in the calibration process
+    magnitudes_err              : `numpy.ndarray` or `None`, optional
+        Uncertainty in the magnitudes of the observed objects
 
-        magnitudes_err              : `numpy.ndarray` or `None`, optional
-            Uncertainty in the magnitudes of the observed objects
+    uncalibrated_magnitudes_err : `numpy.ndarray` or `None`, optional
+        Uncertainty in the uncalibrated magnitudes of the observed objects
 
-        uncalibrated_magnitudes_err : `numpy.ndarray` or `None`, optional
-            Uncertainty in the uncalibrated magnitudes of the observed objects
+    plot_sigma_switch           : `boolean`, optional
+        If True sigma clipped magnitudes will be plotted.
+        Default is ``False``.
 
-        plot_sigma_switch           : `boolean`, optional
-            If True sigma clipped magnitudes will be plotted.
-            Default is ``False``.
-
-        multiprocessing
-            If ``True'', multicore processing is allowed, otherwise not.
+    multiprocessing
+        If ``True'', multicore processing is allowed, otherwise not.
     """
     #   TODO: Cleanup & add new plots
     #   Comparison observed vs. literature magnitudes
@@ -1323,35 +1365,35 @@ def calibration_check_plots(
 
 
 def derive_limiting_magnitude(
-        observation: 'analyze.Observation', filter_list, reference_img,
-        aperture_radius=4., radii_unit='arcsec',
-        indent=1):
+        observation: 'analyze.Observation', filter_list: list[str],
+        reference_image_id: int, aperture_radius: float = 4.,
+        radii_unit: str = 'arcsec', indent: int = 1) -> None:
     """
-        Determine limiting magnitude
+    Determine limiting magnitude
 
-        Parameters
-        ----------
-        observation
-            Container object with image series objects for each filter
+    Parameters
+    ----------
+    observation
+        Container object with image series objects for each filter
 
-        filter_list         : `list` of `strings`
-            List with filter names
+    filter_list
+        List with filter names
 
-        reference_img       : `integer`, optional
-            ID of the reference image
-            Default is ``0``.
+    reference_image_id
+        ID of the reference image
+        Default is ``0``.
 
-        aperture_radius     : `float`, optional
-            Radius of the aperture used to derive the limiting magnitude
-            Default is ``4``.
+    aperture_radius
+        Radius of the aperture used to derive the limiting magnitude
+        Default is ``4``.
 
-        radii_unit          : `string`, optional
-            Unit of the radii above. Permitted are ``pixel`` and ``arcsec``.
-            Default is ``arcsec``.
+    radii_unit
+        Unit of the radii above. Permitted are ``pixel`` and ``arcsec``.
+        Default is ``arcsec``.
 
-        indent              : `integer`, optional
-            Indentation for the console output lines
-            Default is ``1``.
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
     """
     #   Get image series
     image_series_dict = observation.image_series_dict
@@ -1362,10 +1404,10 @@ def derive_limiting_magnitude(
         image_series = image_series_dict[filter_]
 
         #   Get reference image
-        image = image_series.image_list[reference_img]
+        image = image_series.image_list[reference_image_id]
 
         #   Get object position and magnitudes
-        photo = image_series.image_list[reference_img].photometry
+        photo = image_series.image_list[reference_image_id].photometry
 
         try:
             magnitude_type = 'mag_cali_trans'
@@ -1379,8 +1421,8 @@ def derive_limiting_magnitude(
         tbl_mag = tbl_mag[mask]
 
         #   Plot star map
-        if reference_img != '':
-            rts = f'faintest objects, image: {reference_img}'
+        if reference_image_id != '':
+            rts = f'faintest objects, image: {reference_image_id}'
         else:
             rts = 'faintest objects'
         p = mp.Process(
@@ -1444,7 +1486,7 @@ def derive_limiting_magnitude(
             niters=2,
             overlap=False,
             # seed=123,
-            zeropoint=np.median(image.zp).value,
+            zeropoint=image.zp,
             progress_bar=False,
         )
 
@@ -1472,32 +1514,34 @@ def derive_limiting_magnitude(
         )
 
 
-def rm_edge_objects(table, data_array, border=10, terminal_logger=None,
-                    indent=3):
+def rm_edge_objects(
+        table: Table, data_array: np.ndarray, border:  int = 10,
+        terminal_logger: terminal_output.TerminalLog | None = None,
+        indent: int = 3):
     """
-        Remove detected objects that are too close to the image edges
+    Remove detected objects that are too close to the image edges
 
-        Parameters
-        ----------
-        table               : `astropy.table.Table` object
-            Table with the object data
+    Parameters
+    ----------
+    table
+        Object data
 
-        data_array          : `numpy.ndarray`
-            Image data (2D)
+    data_array
+        Image data (2D)
 
-        border              : `integer`, optional
-            Distance to the edge of the image where objects may be
-            incomplete and should therefore be discarded.
-            Default is ``10``.
+    border
+        Distance to the edge of the image where objects may be
+        incomplete and should therefore be discarded.
+        Default is ``10``.
 
-        terminal_logger     : `terminal_output.TerminalLog` or None, optional
-            Logger object. If provided, the terminal output will be directed
-            to this object.
-            Default is ``None``.
+    terminal_logger
+        Logger object. If provided, the terminal output will be directed
+        to this object.
+        Default is ``None``.
 
-        indent              : `integer`, optional
-            Indentation for the console output lines
-            Default is ``3``.
+    indent
+        Indentation for the console output lines
+        Default is ``3``.
     """
     #   Border range
     hsize = border + 1
@@ -1521,41 +1565,42 @@ def rm_edge_objects(table, data_array, border=10, terminal_logger=None,
 
 
 def proper_motion_selection(
-        image_series: 'analyze.ImageSeries', tbl, catalog="I/355/gaiadr3",
-        g_mag_limit=20, separation_limit=1., sigma=3.,
-        max_n_iterations_sigma_clipping=3):
+        image_series: 'analyze.ImageSeries', tbl: Table,
+        catalog: str = "I/355/gaiadr3", g_mag_limit: int = 20,
+        separation_limit: float = 1., sigma: float = 3.,
+        max_n_iterations_sigma_clipping: int = 3) -> Column:
     """
-        Select a subset of objects based on their proper motion
+    Select a subset of objects based on their proper motion
 
-        Parameters
-        ----------
-        image_series
-            Image series object with all image data taken in a specific
-            filter
+    Parameters
+    ----------
+    image_series
+        Image series object with all image data taken in a specific
+        filter
 
-        tbl                             : `astropy.table.Table`
-            Table with position information
+    tbl
+        Table with position information
 
-        catalog                         : `string`, optional
-            Identifier for the catalog to download.
-            Default is ``I/350/gaiaedr3``.
+    catalog
+        Identifier for the catalog to download.
+        Default is ``I/350/gaiaedr3``.
 
-        g_mag_limit                     : `float`, optional
-            Limiting magnitude in the G band. Fainter objects will not be
-            downloaded.
+    g_mag_limit
+        Limiting magnitude in the G band. Fainter objects will not be
+        downloaded.
 
-        separation_limit                : `float`, optional
-            Maximal allowed separation between objects in arcsec.
-            Default is ``1``.
+    separation_limit
+        Maximal allowed separation between objects in arcsec.
+        Default is ``1``.
 
-        sigma                           : `float`, optional
-            Sigma value used in the sigma clipping of the proper motion
-            values.
-            Default is ``3``.
+    sigma
+        The sigma value used in the sigma clipping of the proper motion
+        values.
+        Default is ``3``.
 
-        max_n_iterations_sigma_clipping : `integer`, optional
-            Maximal number of iteration of the sigma clipping.
-            Default is ``3``.
+    max_n_iterations_sigma_clipping
+        Maximal number of iteration of the sigma clipping.
+        Default is ``3``.
     """
     #   Get wcs
     w = image_series.wcs
@@ -1701,33 +1746,35 @@ def proper_motion_selection(
 
 
 def region_selection(
-        image_series: 'analyze.ImageSeries', coordinates_target, tbl, radius=600.):
+        image_series: 'analyze.ImageSeries',
+        coordinates_target: SkyCoord | list[SkyCoord], tbl: Table,
+        radius: float = 600.) -> tuple[Table, np.ndarray]:
     """
-        Select a subset of objects based on a target coordinate and a radius
+    Select a subset of objects based on a target coordinate and a radius
 
-        Parameters
-        ----------
-        image_series
-            Image series object with all image data taken in a specific
-            filter
+    Parameters
+    ----------
+    image_series
+        Image series object with all image data taken in a specific
+        filter
 
-        coordinates_target  : `astropy.coordinates.SkyCoord` object or `list` of `astropy.coordinates.SkyCoord` object
-            Coordinates of the observed object such as a star cluster
+    coordinates_target
+        Coordinates of the observed object such as a star cluster
 
-        tbl                 : `astropy.table.Table`
-            Table with object position information
+    tbl
+        Table with object position information
 
-        radius              : `float`, optional
-            Radius around the object in arcsec.
-            Default is ``600``.
+    radius
+        Selection radius around the object in arcsec
+        Default is ``600``.
 
-        Returns
-        -------
-        tbl                 : `astropy.table.Table`
-            Table with object position information
+    Returns
+    -------
+    tbl
+        Table with object position information
 
-        mask                : `boolean numpy.ndarray`
-            Mask that needs to be applied to the table.
+    mask
+        Boolean mask applied to the table
     """
     #   Get wcs
     w = image_series.wcs
@@ -1778,56 +1825,55 @@ def find_cluster(
         separation_limit: float = 1., max_distance: float = 6.,
         parameter_set: int = 1) -> tuple[Table, int, np.ndarray, np.ndarray]:
     """
-        Identify cluster in data
+    Identify cluster in data
 
-        Parameters
-        ----------
-        image_series
-            Image series object with all image data taken in a specific
-            filter
+    Parameters
+    ----------
+    image_series
+        Image series object with all image data taken in a specific
+        filter
 
-        tbl
-            Table with position information
+    tbl
+        Table with position information
 
-        object_names
-            Names of the objects. This first entry in the list is assumed to
-            be the custer of interest.
+    object_names
+        Names of the objects. This first entry in the list is assumed to
+        be the custer of interest.
 
-        catalog
-            Identifier for the catalog to download.
-            Default is ``I/350/gaiaedr3``.
+    catalog
+        Identifier for the catalog to download.
+        Default is ``I/350/gaiaedr3``.
 
-        g_mag_limit
-            Limiting magnitude in the G band. Fainter objects will not be
-            downloaded.
+    g_mag_limit
+        Limiting magnitude in the G band. Fainter objects will not be
+        downloaded.
 
-        separation_limit
-            Maximal allowed separation between objects in arcsec.
-            Default is ``1``.
+    separation_limit
+        Maximal allowed separation between objects in arcsec.
+        Default is ``1``.
 
-        max_distance
-            Maximal distance of the star cluster.
-            Default is ``6.``.
+    max_distance
+        Maximal distance of the star cluster.
+        Default is ``6.``.
 
-        parameter_set
-            Predefined parameter sets can be used.
-            Possibilities: ``1``, ``2``, ``3``
-            Default is ``1``.
+    parameter_set
+        Predefined parameter sets can be used.
+        Possibilities: ``1``, ``2``, ``3``
+        Default is ``1``.
 
-        Returns
-        -------
-        tbl
-            Table with object position information
+    Returns
+    -------
+    tbl
+        Table with object position information
 
-        id_img
+    id_img
 
-        mask
-            The mask that needs to be applied to the table.
+    mask
+        The mask that needs to be applied to the table.
 
-        cluster_mask
-            Mask that identifies cluster members according to the user
-            input.
-
+    cluster_mask
+        Mask that identifies cluster members according to the user
+        input.
     """
     #   Get wcs
     w = image_series.wcs
@@ -2076,7 +2122,7 @@ def find_cluster(
 def save_magnitudes_ascii(
         observation: 'analyze.Observation', tbl: Table,
         magnitude_transformation: bool = False, id_object: int | None = None,
-        rts: str ='', photometry_extraction_method: str = '',
+        rts: str = '', photometry_extraction_method: str = '',
         add_file_path_to_observation_object: bool = True) -> None:
     """
     Save magnitudes as ASCII files
@@ -2175,79 +2221,82 @@ def save_magnitudes_ascii(
 
 
 def post_process_results(
-        observation: 'analyze.Observation', filter_list, id_object=None, extraction_method='',
-        extract_only_circular_region=False, region_radius=600,
-        data_cluster=False, clean_objects_using_proper_motion=False,
-        max_distance_cluster=6., find_cluster_para_set=1,
-        convert_magnitudes=False, target_filter_system='SDSS', tbl_list=None,
-        distribution_samples=1000):
+        observation: 'analyze.Observation', filter_list: list[str],
+        id_object: int | None = None, extraction_method: str = '',
+        extract_only_circular_region: bool = False, region_radius: float = 600,
+        data_cluster: bool = False,
+        clean_objects_using_proper_motion: bool = False,
+        max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
+        convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
+        tbl_list: list[Table] | None = None, distribution_samples: int = 1000
+        ) -> None:
     """
-        Restrict results to specific areas of the image and filter by means
-        of proper motion and distance using Gaia
+    Restrict results to specific areas of the image and filter by means
+    of proper motion and distance using Gaia
 
-        Parameters
-        ----------
-        observation
-            Container object with image series objects for each
-            filter
+    Parameters
+    ----------
+    observation
+        Container object with image series objects for each
+        filter
 
-        filter_list                         : `list` of `string`
-            Filter names
+    filter_list
+        Filter names
 
-        id_object                           : `integer` or `None`, optional
-            ID of the object
-            Default is ``None``.
+    id_object
+        ID of the object
+        Default is ``None``.
 
-        extraction_method                   : `string`, optional
-            Applied extraction method. Possibilities: ePSF or APER`
-            Default is ``''``.
+    extraction_method
+        Applied extraction method. Possibilities: ePSF or APER`
+        Default is ``''``.
 
-        extract_only_circular_region        : `boolean`, optional
-            If True the extracted objects will be filtered such that only
-            objects with ``radius`` will be returned.
-            Default is ``False``.
+    extract_only_circular_region
+        If True the extracted objects will be filtered such that only
+        objects with ``radius`` will be returned.
+        Default is ``False``.
 
-        region_radius                       : `float`, optional
-            Radius around the object in arcsec.
-            Default is ``600``.
+    region_radius
+        Radius around the object in arcsec.
+        Default is ``600``.
 
-        data_cluster                        : `boolean`, optional
-            If True cluster in the Gaia distance and proper motion data
-            will be identified.
-            Default is ``False``.
+    data_cluster
+        If True cluster in the Gaia distance and proper motion data
+        will be identified.
+        Default is ``False``.
 
-        clean_objects_using_proper_motion   : `boolean`, optional
-            If True only the object list will be clean based on their
-            proper motion.
-            Default is ``False``.
+    clean_objects_using_proper_motion
+        If True only the object list will be clean based on their
+        proper motion.
+        Default is ``False``.
 
-        max_distance_cluster                : `float`, optional
-            Expected maximal distance of the cluster in kpc. Used to
-            restrict the parameter space to facilitate an easy
-            identification of the star cluster.
-            Default is ``6``.
+    max_distance_cluster
+        Expected maximal distance of the cluster in kpc. Used to
+        restrict the parameter space to facilitate an easy
+        identification of the star cluster.
+        Default is ``6``.
 
-        find_cluster_para_set               : `integer`, optional
-            Parameter set used to identify the star cluster in proper
-            motion and distance data.
+    find_cluster_para_set
+        Parameter set used to identify the star cluster in proper
+        motion and distance data.
 
-        convert_magnitudes                  : `boolean`, optional
-            If True the magnitudes will be converted to another
-            filter systems specified in `target_filter_system`.
-            Default is ``False``.
+    convert_magnitudes
+        If True the magnitudes will be converted to another
+        filter systems specified in `target_filter_system`.
+        Default is ``False``.
 
-        target_filter_system                : `string`, optional
-            Photometric system the magnitudes should be converted to
-            Default is ``SDSS``.
+    target_filter_system
+        Photometric system the magnitudes should be converted to
+        Default is ``SDSS``.
 
-        tbl_list                            : `[astropy.table.Table]` or None, optional
-            List with Tables containing magnitudes etc. If None are provided,
-            the tables will be read from the observation container.
-            Default is ``None``.
+    tbl_list
+        List with Tables containing magnitudes etc. If None are provided,
+        the tables will be read from the observation container.
+        Default is ``None``.
 
-        distribution_samples  : `integer`, optional
-            Number of samples used for distributions
-            Default is `1000`.
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`.
     """
     #   Do nothing if no post process method were defined
     if (not extract_only_circular_region and not clean_objects_using_proper_motion
@@ -2282,7 +2331,7 @@ def post_process_results(
             if mask_region is None:
                 tbl, mask_region = region_selection(
                     image_series_dict[filter_list[0]],
-                    observation.coordinates_objects,
+                    observation.objects_of_interest_coordinates,
                     tbl,
                     radius=region_radius
                 )
@@ -2341,29 +2390,31 @@ def post_process_results(
         )
 
 
-def add_column_to_table(tbl, column_name, data, column_id):
+def add_column_to_table(
+        tbl: Table, column_name: str, data: unc.core.NdarrayDistribution,
+        column_id: int) -> Table:
     """
-        Adds data from a distribution to an astropy Table
+    Adds data from a distribution to an astropy Table
 
-        Parameters
-        ----------
-        tbl                 : `astropy.table.Table`
-            Table that already contains some data
+    Parameters
+    ----------
+    tbl
+        Table that already contains some data
 
-        column_name         : `string`
-            Name of the column to add
+    column_name
+        Name of the column to add
 
-        data                : `astropy.uncertainty.core.QuantityDistribution`
-            Data to add
+    data
+        The data that should be added to the table
 
-        column_id           : `integer`
-            Additional ID that identifies the column. If the
-            ID is not -1, it will be added to the column header.
+    column_id
+        Additional ID that identifies the column. If the
+        ID is not -1, it will be added to the column header.
 
-        Returns
-        -------
-        tbl                 : `astropy.table.Table`
-            Table with the added column
+    Returns
+    -------
+    tbl
+        Table with the added column
     """
     if column_id == -1:
         tbl.add_columns(
@@ -2384,7 +2435,7 @@ def add_column_to_table(tbl, column_name, data, column_id):
 
 def distribution_from_table(
         image: 'analyze.Image',
-        distribution_samples: int = 1000) -> unc:
+        distribution_samples: int = 1000) -> unc.core.NdarrayDistribution:
     """
     Arrange the literature values in a numpy array or uncertainty array.
 
@@ -2416,19 +2467,19 @@ def convert_magnitudes_to_other_system(
         tbl: Table, target_filter_system: str, distribution_samples=1000
         ) -> Table:
     """
-        Convert magnitudes from one magnitude system to another
+    Convert magnitudes from one magnitude system to another
 
-        Parameters
-        ----------
-        tbl                     : `astropy.table.Table`
-            Table with magnitudes
+    Parameters
+    ----------
+    tbl                     : `astropy.table.Table`
+        Table with magnitudes
 
-        target_filter_system    : `string`
-            Photometric system the magnitudes should be converted to
+    target_filter_system    : `string`
+        Photometric system the magnitudes should be converted to
 
-        distribution_samples    : `integer`, optional
-            Number of samples used for distributions
-            Default is `1000`.
+    distribution_samples    : `integer`, optional
+        Number of samples used for distributions
+        Default is `1000`.
     """
     #   Get column names
     column_names = tbl.colnames
@@ -2598,16 +2649,18 @@ def convert_magnitudes_to_other_system(
 
 
 def find_filter_for_magnitude_transformation(
-        filter_list, calibration_filters, valid_filter_combinations: list[list[str]] | None = None):
+        filter_list: list[str], calibration_filters: list[str],
+        valid_filter_combinations: list[list[str]] | None = None
+        ) -> tuple[set[str], list[list[str]]]:
     """
     Identifies filter that can be used for magnitude transformation
 
     Parameters
     ----------
-    filter_list                 : `list` of `strings`
+    filter_list
         List with observed filter names
 
-    calibration_filters         : `list` of `strings`
+    calibration_filters
         Names of the available filter with calibration data
 
     valid_filter_combinations
@@ -2616,10 +2669,10 @@ def find_filter_for_magnitude_transformation(
 
     Returns
     -------
-    valid_filter                : `list` of `string`
+    valid_filter
         Filter for which magnitude transformation is possible
 
-    usable_filter_combinations  : `list` of `list` od `string`
+    usable_filter_combinations
         Filter combinations for which magnitude transformation
         can be applied
     """

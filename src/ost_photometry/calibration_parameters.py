@@ -1307,19 +1307,21 @@ Tcs = {
 }
 
 
-def get_transformation_calibration_values(observation_jd):
+def get_transformation_calibration_values(
+        observation_jd: float
+        ) -> dict[str, dict[str, dict[str, float | str | list[str]]]] | None:
     """
-        Get the Tcs calibration values for the provided JD
+        Get the Magnitude transformation calibration values for the provided JD
 
         Parameters
         ----------
-        observation_jd   : `float`
+        observation_jd
             JD of the observation
 
         Returns
         -------
-        Tcs             : `dictionary`
-            Tcs calibration factors
+        Tcs
+            Magnitude transformation calibration factors
     """
     if observation_jd is not None:
         for key in Tcs.keys():

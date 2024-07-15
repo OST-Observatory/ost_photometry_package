@@ -1781,8 +1781,10 @@ def correlate_preserve_variable(
     #
     utilities.prepare_and_plot_starmap_from_image_series(
         image_series,
-        [x_position_object],
-        [y_position_object],
+        # [x_position_object],
+        # [y_position_object],
+        x_position_object,
+        y_position_object,
         plot_reference_only=plot_reference_only,
     )
 

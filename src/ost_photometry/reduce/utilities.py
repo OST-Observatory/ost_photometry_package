@@ -37,7 +37,7 @@ from skimage.transform import warp
 import astroalign as aa
 
 from .. import style, checks, calibration_parameters, terminal_output
-from .. import utilities as base_aux
+from .. import utilities as base_utilities
 
 from . import plots
 
@@ -71,7 +71,7 @@ def make_symbolic_links(path_list, temp_dir):
                 #   Check if a file of the same name already exist in the
                 #   temp directory
                 if os.path.isfile(os.path.join(temp_dir.name, file_)):
-                    random_string = base_aux.random_string_generator(7)
+                    random_string = base_utilities.random_string_generator(7)
                     new_filename = f'{random_string}_{file_}'
                 else:
                     new_filename = file_
@@ -2065,7 +2065,7 @@ def estimate_fwhm(image_path, output_dir, image_type, plot_subplots=False,
                     len(objects_tbl_filtered),
                     object_cutouts,
                     filter_,
-                    base_aux.get_basename(file_name),
+                    base_utilities.get_basename(file_name),
                 )
 
             ###
@@ -2449,7 +2449,7 @@ def find_wcs(input_dir, output_dir, reference_image_id=0,
     #
     reference_image_path = ifc_filtered.files[reference_image_id]
 
-    reference_image = base_aux.Image(
+    reference_image = base_utilities.Image(
         reference_image_id,
         reference_filter,
         'target',
@@ -2457,10 +2457,10 @@ def find_wcs(input_dir, output_dir, reference_image_id=0,
         output_dir,
     )
 
-    # base_aux.calculate_field_of_view(reference_image)
+    # base_utilities.calculate_field_of_view(reference_image)
 
     #   Test if the image contains already a WCS
-    wcs_available = base_aux.check_wcs_exists(reference_image)
+    wcs_available = base_utilities.check_wcs_exists(reference_image)
 
     ###
     #   Determine WCS
@@ -2561,17 +2561,17 @@ def find_wcs_all_images(input_dir, output_dir, force_wcs_determination=False,
     #
     for i, (current_ccd_image, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
         #   Prepare image object
-        image_object = base_aux.Image(
+        image_object = base_utilities.Image(
             i,
             'filter',
             'target',
             file_path / file_name,
             output_dir,
         )
-        # base_aux.calculate_field_of_view(image_object, verbose=False)
+        # base_utilities.calculate_field_of_view(image_object, verbose=False)
 
         #   Test if the image contains already a WCS
-        wcs_available = base_aux.check_wcs_exists(image_object)
+        wcs_available = base_utilities.check_wcs_exists(image_object)
 
         if not wcs_available or force_wcs_determination:
             wcs = find_wcs_core(
@@ -2625,7 +2625,7 @@ def find_wcs_core(image, wcs_method='astrometry', x_pixel_coordinates=None,
     #   astrometry.net:
     if wcs_method == 'astrometry':
         try:
-            wcs = base_aux.find_wcs_astrometry(
+            wcs = base_utilities.find_wcs_astrometry(
                 image,
                 wcs_working_dir='/tmp/',
                 indent=indent,
@@ -2641,7 +2641,7 @@ def find_wcs_core(image, wcs_method='astrometry', x_pixel_coordinates=None,
     #   ASTAP program
     elif wcs_method == 'astap':
         try:
-            wcs = base_aux.find_wcs_astap(
+            wcs = base_utilities.find_wcs_astap(
                 image,
                 indent=indent,
             )
@@ -2662,7 +2662,7 @@ def find_wcs_core(image, wcs_method='astrometry', x_pixel_coordinates=None,
                     f'{style.Bcolors.FAIL} \nException in find_wcs(): \n'
                     f"'x' or 'y' is None -> Exit {style.Bcolors.ENDC}"
                 )
-            wcs = base_aux.find_wcs_twirl(
+            wcs = base_utilities.find_wcs_twirl(
                 image,
                 x_pixel_coordinates,
                 y_pixel_coordinates,

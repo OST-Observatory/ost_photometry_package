@@ -1223,7 +1223,7 @@ def plot_transform(
     if name_object is None:
         title = f'{current_filter}{filter_1.lower()}{filter_2.lower()}' \
                 f'-mag transform ({current_filter}-{current_filter.lower()}' \
-                f' vs. {filter_1}-{filter_2}) (X = {air_mass}, ' \ 
+                f' vs. {filter_1}-{filter_2}) (X = {air_mass}, ' \
                 f'target filter: {target_filter})'
     else:
         title = f'{current_filter}{filter_1.lower()}{filter_2.lower()}' \
