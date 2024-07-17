@@ -10,6 +10,8 @@ import numpy as np
 
 from pytimedinput import timedInput
 
+from tqdm import tqdm
+
 from astropy.table import Table, Column
 from astropy.stats import sigma_clip
 from astropy.io import fits
@@ -816,7 +818,7 @@ class Executor:
     """
     #   TODO: Fix error propagation
 
-    def __init__(self, process_num: int):
+    def __init__(self, process_num: int, **kwargs):
         # print('mp star method: ', mp.get_start_method())
         # mp.set_start_method('spawn', force=True)
         # print('mp star method: ', mp.get_start_method())
@@ -826,6 +828,13 @@ class Executor:
         self.res: list[any] = []
         self.err: any = None
 
+        #   Add progress bar if requested
+        self.progress_bar: tqdm | None = None
+        self.add_progress_bar: bool | None = kwargs.get('add_progress_bar', None)
+        n_tasks: int | None = kwargs.get('n_tasks', None)
+        if self.add_progress_bar and n_tasks:
+            self.progress_bar = tqdm(total=n_tasks)
+
     def collect_results(self, result: any):
         """
             Uses apply_async's callback to set up a separate Queue
@@ -833,6 +842,7 @@ class Executor:
         """
         #   Catch all results
         self.res.append(result)
+        self.progress_bar.update(1)
 
     def callback_error(self, e):
         """

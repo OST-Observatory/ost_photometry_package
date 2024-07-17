@@ -722,7 +722,8 @@ def apply_magnitude_transformation(
     )
 
     if multiprocessing:
-        return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
+        # return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
+        return image.pd, image.photometry
 
 
 def calibrate_simple(
@@ -984,7 +985,7 @@ def calibrate_magnitudes_zero_point_core(
         literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000, multiprocessing: bool = False
-        ) -> tuple[int, np.ndarray]:
+        ) -> tuple[int, Table, np.ndarray]:
     """
     Core module for zero point calibration that allows also for multicore
     processing
@@ -1063,9 +1064,11 @@ def calibrate_magnitudes_zero_point_core(
         zp,
     )
 
-    pd = copy.deepcopy(current_image.pd)
-    zp = copy.deepcopy(zp.distribution)
-    return pd, zp
+    # pd = copy.deepcopy(current_image.pd)
+    # tbl = copy.deepcopy(current_image.photometry)
+    # zp = copy.deepcopy(zp.distribution)
+    # return pd, tbl, zp
+    return current_image.pd, current_image.photometry, zp.distribution
 
     # if multiprocessing:
     #     tmp_save = True
@@ -1141,7 +1144,8 @@ def calibrate_magnitudes_zero_point(
         image_list = image_series.image_list
 
         #   Initialize multiprocessing object
-        multiprocessing: bool = False
+        # multiprocessing: bool = False
+        multiprocessing: bool = True
         n_cores_multiprocessing: int = 12
         executor = utilities.Executor(n_cores_multiprocessing)
 
