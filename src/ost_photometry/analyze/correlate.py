@@ -10,7 +10,7 @@ import typing
 if typing.TYPE_CHECKING:
     from . import analyze, plots
 
-from . import calibration_data, utilities
+from . import calibration_data, utilities, plots
 from .. import style, terminal_output
 
 from astropy.coordinates import SkyCoord, matching
@@ -26,7 +26,7 @@ from astropy import wcs
 def determine_pixel_coordinates_obj_astropy(
         x_pixel_position_dataset: np.ndarray,
         y_pixel_position_dataset: np.ndarray,
-        objects_of_interest: list[analyze.ObjectOfInterest], filter_: str,
+        objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
         current_wcs: wcs.WCS, separation_limit: u.Quantity = 2. * u.arcsec
         ) -> None:
     """
@@ -98,7 +98,7 @@ def determine_pixel_coordinates_obj_astropy(
 def determine_pixel_coordinates_obj_srcor(
         x_pixel_position_dataset: np.ndarray,
         y_pixel_position_dataset: np.ndarray,
-        objects_of_interest: list[analyze.ObjectOfInterest], filter_: str,
+        objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
         current_wcs: wcs.WCS, max_pixel_between_objects: int = 3,
         own_correlation_option: int = 1, verbose: bool = False) -> None:
     """
@@ -196,7 +196,7 @@ def determine_pixel_coordinates_obj_srcor(
 
 def identify_star_in_dataset(
         x_pixel_positions: np.ndarray, y_pixel_positions: np.ndarray,
-        objects_of_interest: list[analyze.ObjectOfInterest], filter_: str,
+        objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
         current_wcs: wcs.WCS, separation_limit: u.Quantity = 2. * u.arcsec,
         max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
         verbose: bool = False, correlation_method: str = 'astropy') -> None:

@@ -2650,7 +2650,7 @@ def convert_magnitudes_to_other_system(
 
 
 def find_filter_for_magnitude_transformation(
-        filter_list: list[str], calibration_filters: list[str],
+        filter_list: list[str], calibration_filters: dict[str, str],
         valid_filter_combinations: list[list[str]] | None = None
         ) -> tuple[set[str], list[list[str]]]:
     """
@@ -2684,8 +2684,6 @@ def find_filter_for_magnitude_transformation(
     #   Setup list for valid filter etc.
     valid_filter = []
     usable_filter_combinations = []
-
-    print('calibration_filters: ', calibration_filters)
 
     #   Determine usable filter combinations -> Filters must be in a valid
     #   filter combination for the magnitude transformation and calibration

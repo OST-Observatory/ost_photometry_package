@@ -582,6 +582,556 @@ class Observation:
 
         return dec_list
 
+    def extract_flux(
+            self, filter_list: list[str], image_paths: dict[str, str],
+            output_dir: str, sigma_object_psf: dict[str, float],
+            wcs_method: str = 'astrometry', force_wcs_determ: bool = False,
+            sigma_value_background_clipping: float = 5.,
+            multiplier_background_rms: float = 5., size_epsf_region: int = 25,
+            fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
+            max_n_iterations_epsf: int = 7, use_initial_positions_epsf: bool = True,
+            object_finder_method: str = 'IRAF',
+            multiplier_background_rms_epsf: float = 5.0,
+            multiplier_dao_grouper_epsf: float = 2.0,
+            strict_cleaning_epsf_results: bool = True,
+            minimum_n_eps_stars: int = 25,
+            reference_image_id: int = 0, strict_epsf_checks: bool = True,
+            photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
+            inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
+            radii_unit: str = 'arcsec', cosmic_ray_removal: bool = False,
+            limiting_contrast_rm_cosmics: float = 5., read_noise: float = 8.,
+            sigma_clipping_value: float = 4.5, saturation_level: float = 65535.,
+            plots_for_all_images: bool = False,
+            plot_for_reference_image_only: bool = True) -> None:
+        """
+        Extract flux and fill the observation container
+
+        Parameters
+        ----------
+        filter_list
+            Filter list
+
+        image_paths
+            Paths to images: key - filter name; value - path
+
+        output_dir
+            Path, where the output should be stored.
+
+        sigma_object_psf
+            Sigma of the objects PSF, assuming it is a Gaussian
+
+        wcs_method
+            Method that should be used to determine the WCS.
+            Default is ``'astrometry'``.
+
+        force_wcs_determ
+            If ``True`` a new WCS determination will be calculated even if
+            a WCS is already present in the FITS Header.
+            Default is ``False``.
+
+        sigma_value_background_clipping
+            Sigma used for the sigma clipping of the background
+            Default is ``5.``.
+
+        multiplier_background_rms
+            Multiplier for the background RMS, used to calculate the
+            threshold to identify stars
+            Default is ``5.0``.
+
+        size_epsf_region
+            Size of the extraction region in pixel
+            Default is `25``.
+
+        fraction_epsf_stars
+            Fraction of all stars that should be used to calculate the ePSF
+            Default is ``0.2``.
+
+        oversampling_factor_epsf
+            ePSF oversampling factor
+            Default is ``2``.
+
+        max_n_iterations_epsf
+            Number of ePSF iterations
+            Default is ``7``.
+
+        use_initial_positions_epsf
+            If True the initial positions from a previous object
+            identification procedure will be used. If False the objects
+            will be identified by means of the ``method_finder`` method.
+            Default is ``True``.
+
+        object_finder_method
+            Finder method DAO or IRAF
+            Default is ``IRAF``.
+
+        multiplier_background_rms_epsf
+            Multiplier for the background RMS, used to calculate the
+            threshold to identify stars
+            Default is ``5.0``.
+
+        multiplier_dao_grouper_epsf
+            Multiplier for the DAO grouper
+            Default is ``5.0``.
+
+        strict_cleaning_epsf_results
+            If True objects with negative flux uncertainties will be removed
+            Default is ``True``.
+
+        minimum_n_eps_stars
+            Minimal number of required ePSF stars
+            Default is ``25``.
+
+        reference_image_id
+            ID of the reference image
+            Default is ``0``.
+
+        photometry_extraction_method
+            Switch between aperture and ePSF photometry.
+            Possibilities: 'PSF' & 'APER'
+            Default is ``PSF``.
+
+        radius_aperture
+            Radius of the stellar aperture
+            Default is ``5``.
+
+        inner_annulus_radius
+            Inner radius of the background annulus
+            Default is ``7``.
+
+        outer_annulus_radius
+            Outer radius of the background annulus
+            Default is ``10``.
+
+        radii_unit
+            Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
+            Default is ``arcsec``.
+
+        strict_epsf_checks
+            If True a stringent test of the ePSF conditions is applied.
+            Default is ``True``.
+
+        cosmic_ray_removal
+            If True cosmic rays will be removed from the image.
+            Default is ``False``.
+
+        limiting_contrast_rm_cosmics
+            Parameter for the cosmic ray removal: Minimum contrast between
+            Laplacian image and the fine structure image.
+            Default is ``5``.
+
+        read_noise
+            The read noise (e-) of the camera chip.
+            Default is ``8`` e-.
+
+        sigma_clipping_value
+            Parameter for the cosmic ray removal: Fractional detection limit
+            for neighboring pixels.
+            Default is ``4.5``.
+
+        saturation_level
+            Saturation limit of the camera chip.
+            Default is ``65535``.
+
+        plots_for_all_images
+            If True star map plots for all stars are created
+            Default is ``False``.
+
+        plot_for_reference_image_only
+            If True a star map plots only for the reference image [reference_image_id] is
+            created
+            Default is ``True``.
+        """
+        #   Check output directories
+        checks.check_output_directories(
+            output_dir,
+            os.path.join(output_dir, 'tables'),
+        )
+
+        ###
+        #   Loop over all filter
+        #
+        for filter_ in filter_list:
+            terminal_output.print_to_terminal(
+                f"Analyzing {filter_} images",
+                style_name='HEADER',
+            )
+
+            #   Check input paths
+            checks.check_file(image_paths[filter_])
+
+            #   Initialize image series object
+            self.image_series_dict[filter_] = current_image_series = ImageSeries(
+                filter_,
+                image_paths[filter_],
+                output_dir,
+            )
+
+            ###
+            #   Find the WCS solution for the image
+            #
+            try:
+                utilities.find_wcs(
+                    current_image_series,
+                    reference_image_id=0,
+                    method=wcs_method,
+                    force_wcs_determ=force_wcs_determ,
+                    indent=3,
+                )
+            #   TODO: Check if the exception cam be more specific
+            except Exception as e:
+                #   Get the WCS from one of the other filters, if they have one
+                for wcs_filter in filter_list:
+                    reference_wcs = getattr(
+                        self.image_series_dict[wcs_filter],
+                        'wcs',
+                        None,
+                    )
+                    if reference_wcs is not None:
+                        current_image_series.set_wcs(reference_wcs)
+                        terminal_output.print_to_terminal(
+                            f"WCS could not be determined for filter {filter_}"
+                            f"The WCS of filter {wcs_filter} will be used instead."
+                            f"This could lead to problems...",
+                            indent=1,
+                            style_name='WARNING',
+                        )
+                        break
+                else:
+                    raise RuntimeError(e)
+
+            ###
+            #   Main extraction
+            #
+            main_extract(
+                current_image_series.image_list[reference_image_id],
+                sigma_object_psf[filter_],
+                sigma_value_background_clipping=sigma_value_background_clipping,
+                multiplier_background_rms=multiplier_background_rms,
+                size_epsf_region=size_epsf_region,
+                fraction_epsf_stars=fraction_epsf_stars,
+                oversampling_factor_epsf=oversampling_factor_epsf,
+                max_n_iterations_epsf=max_n_iterations_epsf,
+                use_initial_positions_epsf=use_initial_positions_epsf,
+                object_finder_method=object_finder_method,
+                multiplier_background_rms_epsf=multiplier_background_rms_epsf,
+                multiplier_dao_grouper_epsf=multiplier_dao_grouper_epsf,
+                strict_cleaning_epsf_results=strict_cleaning_epsf_results,
+                minimum_n_eps_stars=minimum_n_eps_stars,
+                strict_epsf_checks=strict_epsf_checks,
+                photometry_extraction_method=photometry_extraction_method,
+                radius_aperture=radius_aperture,
+                inner_annulus_radius=inner_annulus_radius,
+                outer_annulus_radius=outer_annulus_radius,
+                radii_unit=radii_unit,
+                cosmic_ray_removal=cosmic_ray_removal,
+                limiting_contrast_rm_cosmics=limiting_contrast_rm_cosmics,
+                read_noise=read_noise,
+                sigma_clipping_value=sigma_clipping_value,
+                saturation_level=saturation_level,
+                plots_for_all_images=plots_for_all_images,
+                plot_for_reference_image_only=plot_for_reference_image_only,
+            )
+
+        if photometry_extraction_method == 'PSF':
+            ###
+            #   Plot the ePSFs
+            #
+            p = mp.Process(
+                target=plots.plot_epsf,
+                args=(output_dir, self.get_reference_epsf(),),
+            )
+            p.start()
+
+            ###
+            #   Plot original and residual image
+            #
+            p = mp.Process(
+                target=plots.plot_residual,
+                args=(
+                    self.get_reference_image(),
+                    self.get_reference_image_residual(),
+                    output_dir,
+                ),
+                kwargs={
+                    # 'name_object': 'reference image'
+                }
+            )
+            p.start()
+
+    def extract_flux_multi(
+            self, filter_list: list[str], image_paths: dict[str, str],
+            output_dir: str, sigma_object_psf: dict[str, float],
+            n_cores_multiprocessing: int = 6, wcs_method: str = 'astrometry',
+            force_wcs_determ: bool = False,
+            sigma_value_background_clipping: float = 5.,
+            multiplier_background_rms: float = 5., size_epsf_region: int = 25,
+            fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
+            max_n_iterations_epsf: int = 7, object_finder_method: str = 'IRAF',
+            multiplier_background_rms_epsf: float = 5.0,
+            multiplier_dao_grouper_epsf: float = 2.0,
+            strict_cleaning_epsf_results: bool = True,
+            minimum_n_eps_stars: int = 25, strict_epsf_checks: bool = True,
+            photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
+            inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
+            radii_unit: str = 'arcsec', max_pixel_between_objects: int = 3,
+            own_correlation_option: int = 1, cross_identification_limit: int = 1,
+            reference_image_id: int = 0, n_allowed_non_detections_object: int = 1,
+            expected_bad_image_fraction: float = 1.0,
+            protect_reference_obj: bool = True,
+            correlation_method: str = 'astropy',
+            separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+            verbose: bool = False, identify_objects_on_image: bool = True,
+            plots_for_all_images: bool = False,
+            plot_for_reference_image_only: bool = True) -> None:
+        """
+        Extract flux from multiple images per filter and add results to
+        the observation container
+
+        Parameters
+        ----------
+        filter_list
+            Filter list
+
+        image_paths
+            Paths to images: key - filter name; value - path
+
+        output_dir
+            Path, where the output should be stored.
+
+        sigma_object_psf
+            Sigma of the objects PSF, assuming it is a Gaussian
+
+        n_cores_multiprocessing
+            Number of cores to use for multicore processing
+            Default is ``6``.
+
+        wcs_method
+            Method that should be used to determine the WCS.
+            Default is ``'astrometry'``.
+
+        force_wcs_determ
+            If ``True`` a new WCS determination will be calculated even if
+            a WCS is already present in the FITS Header.
+            Default is ``False``.
+
+        sigma_value_background_clipping
+            Sigma used for the sigma clipping of the background
+            Default is ``5.``.
+
+        multiplier_background_rms
+            Multiplier for the background RMS, used to calculate the
+            threshold to identify stars
+            Default is ``7``.
+
+        size_epsf_region
+            Size of the extraction region in pixel
+            Default is `25``.
+
+        fraction_epsf_stars
+            Fraction of all stars that should be used to calculate the ePSF
+            Default is ``0.2``.
+
+        oversampling_factor_epsf
+            ePSF oversampling factor
+            Default is ``2``.
+
+        max_n_iterations_epsf
+            Number of ePSF iterations
+            Default is ``7``.
+
+        object_finder_method
+            Finder method DAO or IRAF
+            Default is ``IRAF``.
+
+        multiplier_background_rms_epsf
+            Multiplier for the background RMS, used to calculate the
+            threshold to identify stars
+            Default is ``5.0``.
+
+        multiplier_dao_grouper_epsf
+            Multiplier for the DAO grouper
+            Default is ``5.0``.
+
+        strict_cleaning_epsf_results
+            If True objects with negative flux uncertainties will be removed
+            Default is ``True``.
+
+        minimum_n_eps_stars
+            Minimal number of required ePSF stars
+            Default is ``25``.
+
+        photometry_extraction_method
+            Switch between aperture and ePSF photometry.
+            Possibilities: 'PSF' & 'APER'
+            Default is ``PSF``.
+
+        radius_aperture
+            Radius of the stellar aperture
+            Default is ``5``.
+
+        inner_annulus_radius
+            Inner radius of the background annulus
+            Default is ``7``.
+
+        outer_annulus_radius
+            Outer radius of the background annulus
+            Default is ``10``.
+
+        radii_unit
+            Unit of the radii above. Permitted values are
+            ``pixel`` and ``arcsec``.
+            Default is ``pixel``.
+
+        strict_epsf_checks
+            If True a stringent test of the ePSF conditions is applied.
+            Default is ``True``.
+
+        max_pixel_between_objects
+            Maximal distance between two objects in Pixel
+            Default is ``3``.
+
+        own_correlation_option
+            Option for the srcor correlation function
+            Default is ``1``.
+
+        cross_identification_limit
+            Cross-identification limit between multiple objects in the current
+            image and one object in the reference image. The current image is
+            rejected when this limit is reached.
+            Default is ``1``.
+
+        reference_image_id
+            ID of the reference image
+            Default is ``0``.
+
+        n_allowed_non_detections_object
+            Maximum number of times an object may not be detected in an image.
+            When this limit is reached, the object will be removed.
+            Default is ``i`.
+
+        expected_bad_image_fraction
+            Fraction of low quality images, i.e. those images for which a
+            reduced number of objects with valid source positions are expected.
+            Default is ``1.0``.
+
+        protect_reference_obj
+            If ``False`` also reference objects will be rejected, if they do
+            not fulfill all criteria.
+            Default is ``True``.
+
+        correlation_method
+            Correlation method to be used to find the common objects on
+            the images.
+            Possibilities: ``astropy``, ``own``
+            Default is ``astropy``.
+
+        separation_limit
+            Allowed separation between objects.
+            Default is ``2.*u.arcsec``.
+
+        verbose
+            If True additional output will be printed to the command line.
+            Default is ``False``.
+
+        identify_objects_on_image
+            If `True` the objects on the image will be identified. If `False`
+            it is assumed that object identification was performed in advance.
+            Default is ``True``.
+
+        plots_for_all_images
+            If True star map plots for all stars are created
+            Default is ``False``.
+
+        plot_for_reference_image_only
+            If True a star map plot only for the reference image is created
+            Default is ``True``.
+        """
+        ###
+        #   Check output directories
+        #
+        checks.check_output_directories(output_dir, os.path.join(output_dir, 'tables'))
+
+        ###
+        #   Check image directories
+        #
+        checks.check_dir(image_paths)
+
+        #   Outer loop over all filter
+        for filter_ in filter_list:
+            terminal_output.print_to_terminal(
+                f"Analyzing {filter_} images",
+                style_name='HEADER',
+            )
+
+            #   Initialize image series object
+            self.image_series_dict[filter_] = ImageSeries(
+                filter_,
+                image_paths[filter_],
+                output_dir,
+                reference_image_id=reference_image_id,
+            )
+
+            ###
+            #   Find the WCS solution for the image
+            #
+            utilities.find_wcs(
+                self.image_series_dict[filter_],
+                reference_image_id=reference_image_id,
+                method=wcs_method,
+                force_wcs_determ=force_wcs_determ,
+                indent=3,
+            )
+
+            ###
+            #   Main extraction of object positions and object fluxes
+            #   using multiprocessing
+            #
+            extract_multiprocessing(
+                self.image_series_dict[filter_],
+                n_cores_multiprocessing,
+                sigma_object_psf,
+                sigma_value_background_clipping=sigma_value_background_clipping,
+                multiplier_background_rms=multiplier_background_rms,
+                size_epsf_region=size_epsf_region,
+                fraction_epsf_stars=fraction_epsf_stars,
+                oversampling_factor_epsf=oversampling_factor_epsf,
+                max_n_iterations_epsf=max_n_iterations_epsf,
+                object_finder_method=object_finder_method,
+                multiplier_background_rms_epsf=multiplier_background_rms_epsf,
+                multiplier_dao_grouper_epsf=multiplier_dao_grouper_epsf,
+                strict_cleaning_epsf_results=strict_cleaning_epsf_results,
+                minimum_n_eps_stars=minimum_n_eps_stars,
+                strict_epsf_checks=strict_epsf_checks,
+                photometry_extraction_method=photometry_extraction_method,
+                radius_aperture=radius_aperture,
+                inner_annulus_radius=inner_annulus_radius,
+                outer_annulus_radius=outer_annulus_radius,
+                radii_unit=radii_unit,
+                identify_objects_on_image=identify_objects_on_image,
+                plots_for_all_images=plots_for_all_images,
+                plot_for_reference_image_only=plot_for_reference_image_only,
+            )
+
+            ###
+            #   Correlate results from all images, while preserving
+            #   the variable star
+            #
+            correlate.correlate_preserve_variable(
+                self,
+                filter_,
+                max_pixel_between_objects=max_pixel_between_objects,
+                own_correlation_option=own_correlation_option,
+                cross_identification_limit=cross_identification_limit,
+                reference_image_id=reference_image_id,
+                n_allowed_non_detections_object=n_allowed_non_detections_object,
+                expected_bad_image_fraction=expected_bad_image_fraction,
+                protect_reference_obj=protect_reference_obj,
+                verbose=verbose,
+                plot_reference_only=plot_for_reference_image_only,
+                correlation_method=correlation_method,
+                separation_limit=separation_limit,
+            )
+
 
 def rm_cosmic_rays(
         image: Image, limiting_contrast: float = 5., read_noise: float = 8.,
@@ -1535,7 +2085,7 @@ def compute_aperture_photometry_uncertainties(
 
     https://github.com/spacetelescope/wfc3_photometry
 
-    It computes the flux errors for aperture phtometry using the DAOPHOT
+    It computes the flux errors for aperture photometry using the DAOPHOT
     style computation:
 
     err = sqrt (Poisson_noise / gain
@@ -2474,565 +3024,565 @@ def main_extract(
     if multiprocessing:
         return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
 
-
-def extract_flux(
-        observation: Observation, filter_list: list[str],
-        image_paths: dict[str, str], output_dir: str,
-        sigma_object_psf: dict[str, float], wcs_method: str = 'astrometry',
-        force_wcs_determ: bool = False,
-        sigma_value_background_clipping: float = 5.,
-        multiplier_background_rms: float = 5., size_epsf_region: int = 25,
-        fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
-        max_n_iterations_epsf: int = 7, use_initial_positions_epsf: bool = True,
-        object_finder_method: str = 'IRAF',
-        multiplier_background_rms_epsf: float = 5.0,
-        multiplier_dao_grouper_epsf: float = 2.0,
-        strict_cleaning_epsf_results: bool = True,
-        minimum_n_eps_stars: int = 25,
-        reference_image_id: int = 0, strict_epsf_checks: bool = True,
-        photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
-        inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
-        radii_unit: str = 'arcsec', cosmic_ray_removal: bool = False,
-        limiting_contrast_rm_cosmics: float = 5., read_noise: float = 8.,
-        sigma_clipping_value: float = 4.5, saturation_level: float = 65535.,
-        plots_for_all_images: bool = False,
-        plot_for_reference_image_only: bool = True) -> None:
-    """
-    Extract flux and fill the observation container
-
-    Parameters
-    ----------
-    observation
-        Container object with image series objects for each filter
-
-    filter_list
-        Filter list
-
-    image_paths
-        Paths to images: key - filter name; value - path
-
-    output_dir
-        Path, where the output should be stored.
-
-    sigma_object_psf
-        Sigma of the objects PSF, assuming it is a Gaussian
-
-    wcs_method
-        Method that should be used to determine the WCS.
-        Default is ``'astrometry'``.
-
-    force_wcs_determ
-        If ``True`` a new WCS determination will be calculated even if
-        a WCS is already present in the FITS Header.
-        Default is ``False``.
-
-    sigma_value_background_clipping
-        Sigma used for the sigma clipping of the background
-        Default is ``5.``.
-
-    multiplier_background_rms
-        Multiplier for the background RMS, used to calculate the
-        threshold to identify stars
-        Default is ``5.0``.
-
-    size_epsf_region
-        Size of the extraction region in pixel
-        Default is `25``.
-
-    fraction_epsf_stars
-        Fraction of all stars that should be used to calculate the ePSF
-        Default is ``0.2``.
-
-    oversampling_factor_epsf
-        ePSF oversampling factor
-        Default is ``2``.
-
-    max_n_iterations_epsf
-        Number of ePSF iterations
-        Default is ``7``.
-
-    use_initial_positions_epsf
-        If True the initial positions from a previous object
-        identification procedure will be used. If False the objects
-        will be identified by means of the ``method_finder`` method.
-        Default is ``True``.
-
-    object_finder_method
-        Finder method DAO or IRAF
-        Default is ``IRAF``.
-
-    multiplier_background_rms_epsf
-        Multiplier for the background RMS, used to calculate the
-        threshold to identify stars
-        Default is ``5.0``.
-
-    multiplier_dao_grouper_epsf
-        Multiplier for the DAO grouper
-        Default is ``5.0``.
-
-    strict_cleaning_epsf_results
-        If True objects with negative flux uncertainties will be removed
-        Default is ``True``.
-
-    minimum_n_eps_stars
-        Minimal number of required ePSF stars
-        Default is ``25``.
-
-    reference_image_id
-        ID of the reference image
-        Default is ``0``.
-
-    photometry_extraction_method
-        Switch between aperture and ePSF photometry.
-        Possibilities: 'PSF' & 'APER'
-        Default is ``PSF``.
-
-    radius_aperture
-        Radius of the stellar aperture
-        Default is ``5``.
-
-    inner_annulus_radius
-        Inner radius of the background annulus
-        Default is ``7``.
-
-    outer_annulus_radius
-        Outer radius of the background annulus
-        Default is ``10``.
-
-    radii_unit
-        Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
-        Default is ``arcsec``.
-
-    strict_epsf_checks
-        If True a stringent test of the ePSF conditions is applied.
-        Default is ``True``.
-
-    cosmic_ray_removal
-        If True cosmic rays will be removed from the image.
-        Default is ``False``.
-
-    limiting_contrast_rm_cosmics
-        Parameter for the cosmic ray removal: Minimum contrast between
-        Laplacian image and the fine structure image.
-        Default is ``5``.
-
-    read_noise
-        The read noise (e-) of the camera chip.
-        Default is ``8`` e-.
-
-    sigma_clipping_value
-        Parameter for the cosmic ray removal: Fractional detection limit
-        for neighboring pixels.
-        Default is ``4.5``.
-
-    saturation_level
-        Saturation limit of the camera chip.
-        Default is ``65535``.
-
-    plots_for_all_images
-        If True star map plots for all stars are created
-        Default is ``False``.
-
-    plot_for_reference_image_only
-        If True a star map plots only for the reference image [reference_image_id] is
-        created
-        Default is ``True``.
-    """
-    #   Check output directories
-    checks.check_output_directories(
-        output_dir,
-        os.path.join(output_dir, 'tables'),
-    )
-
-    ###
-    #   Loop over all filter
-    #
-    for filter_ in filter_list:
-        terminal_output.print_to_terminal(
-            f"Analyzing {filter_} images",
-            style_name='HEADER',
-        )
-
-        #   Check input paths
-        checks.check_file(image_paths[filter_])
-
-        #   Initialize image series object
-        observation.image_series_dict[filter_] = current_image_series = ImageSeries(
-            filter_,
-            image_paths[filter_],
-            output_dir,
-        )
-
-        ###
-        #   Find the WCS solution for the image
-        #
-        try:
-            utilities.find_wcs(
-                current_image_series,
-                reference_image_id=0,
-                method=wcs_method,
-                force_wcs_determ=force_wcs_determ,
-                indent=3,
-            )
-        #   TODO: Check if the exception cam be more specific
-        except Exception as e:
-            #   Get the WCS from one of the other filters, if they have one
-            for wcs_filter in filter_list:
-                reference_wcs = getattr(
-                    observation.image_series_dict[wcs_filter],
-                    'wcs',
-                    None,
-                )
-                if reference_wcs is not None:
-                    current_image_series.set_wcs(reference_wcs)
-                    terminal_output.print_to_terminal(
-                        f"WCS could not be determined for filter {filter_}"
-                        f"The WCS of filter {wcs_filter} will be used instead."
-                        f"This could lead to problems...",
-                        indent=1,
-                        style_name='WARNING',
-                    )
-                    break
-            else:
-                raise RuntimeError(e)
-
-        ###
-        #   Main extraction
-        #
-        main_extract(
-            current_image_series.image_list[reference_image_id],
-            sigma_object_psf[filter_],
-            sigma_value_background_clipping=sigma_value_background_clipping,
-            multiplier_background_rms=multiplier_background_rms,
-            size_epsf_region=size_epsf_region,
-            fraction_epsf_stars=fraction_epsf_stars,
-            oversampling_factor_epsf=oversampling_factor_epsf,
-            max_n_iterations_epsf=max_n_iterations_epsf,
-            use_initial_positions_epsf=use_initial_positions_epsf,
-            object_finder_method=object_finder_method,
-            multiplier_background_rms_epsf=multiplier_background_rms_epsf,
-            multiplier_dao_grouper_epsf=multiplier_dao_grouper_epsf,
-            strict_cleaning_epsf_results=strict_cleaning_epsf_results,
-            minimum_n_eps_stars=minimum_n_eps_stars,
-            strict_epsf_checks=strict_epsf_checks,
-            photometry_extraction_method=photometry_extraction_method,
-            radius_aperture=radius_aperture,
-            inner_annulus_radius=inner_annulus_radius,
-            outer_annulus_radius=outer_annulus_radius,
-            radii_unit=radii_unit,
-            cosmic_ray_removal=cosmic_ray_removal,
-            limiting_contrast_rm_cosmics=limiting_contrast_rm_cosmics,
-            read_noise=read_noise,
-            sigma_clipping_value=sigma_clipping_value,
-            saturation_level=saturation_level,
-            plots_for_all_images=plots_for_all_images,
-            plot_for_reference_image_only=plot_for_reference_image_only,
-        )
-
-    if photometry_extraction_method == 'PSF':
-        ###
-        #   Plot the ePSFs
-        #
-        p = mp.Process(
-            target=plots.plot_epsf,
-            args=(output_dir, observation.get_reference_epsf(),),
-        )
-        p.start()
-
-        ###
-        #   Plot original and residual image
-        #
-        p = mp.Process(
-            target=plots.plot_residual,
-            args=(
-                observation.get_reference_image(),
-                observation.get_reference_image_residual(),
-                output_dir,
-            ),
-            kwargs={
-                # 'name_object': 'reference image'
-            }
-        )
-        p.start()
-
-
-def extract_flux_multi(
-        observation: Observation, filter_list: list[str],
-        image_paths: dict[str, str], output_dir: str,
-        sigma_object_psf: dict[str, float],
-        n_cores_multiprocessing: int = 6, wcs_method: str = 'astrometry',
-        force_wcs_determ: bool = False,
-        sigma_value_background_clipping: float = 5.,
-        multiplier_background_rms: float = 5., size_epsf_region: int = 25,
-        fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
-        max_n_iterations_epsf: int = 7, object_finder_method: str = 'IRAF',
-        multiplier_background_rms_epsf: float = 5.0,
-        multiplier_dao_grouper_epsf: float = 2.0,
-        strict_cleaning_epsf_results: bool = True,
-        minimum_n_eps_stars: int = 25, strict_epsf_checks: bool = True,
-        photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
-        inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
-        radii_unit: str = 'arcsec', max_pixel_between_objects: int = 3,
-        own_correlation_option: int = 1, cross_identification_limit: int = 1,
-        reference_image_id: int = 0, n_allowed_non_detections_object: int = 1,
-        expected_bad_image_fraction: float = 1.0,
-        protect_reference_obj: bool = True,
-        correlation_method: str = 'astropy',
-        separation_limit: u.quantity.Quantity = 2. * u.arcsec,
-        verbose: bool = False, identify_objects_on_image: bool = True,
-        plots_for_all_images: bool = False,
-        plot_for_reference_image_only: bool = True) -> None:
-    """
-    Extract flux from multiple images per filter and add results to
-    the observation container
-
-    Parameters
-    ----------
-    observation
-        Container object with image series objects for each filter
-
-    filter_list
-        Filter list
-
-    image_paths
-        Paths to images: key - filter name; value - path
-
-    output_dir
-        Path, where the output should be stored.
-
-    sigma_object_psf
-        Sigma of the objects PSF, assuming it is a Gaussian
-
-    n_cores_multiprocessing
-        Number of cores to use for multicore processing
-        Default is ``6``.
-
-    wcs_method
-        Method that should be used to determine the WCS.
-        Default is ``'astrometry'``.
-
-    force_wcs_determ
-        If ``True`` a new WCS determination will be calculated even if
-        a WCS is already present in the FITS Header.
-        Default is ``False``.
-
-    sigma_value_background_clipping
-        Sigma used for the sigma clipping of the background
-        Default is ``5.``.
-
-    multiplier_background_rms
-        Multiplier for the background RMS, used to calculate the
-        threshold to identify stars
-        Default is ``7``.
-
-    size_epsf_region
-        Size of the extraction region in pixel
-        Default is `25``.
-
-    fraction_epsf_stars
-        Fraction of all stars that should be used to calculate the ePSF
-        Default is ``0.2``.
-
-    oversampling_factor_epsf
-        ePSF oversampling factor
-        Default is ``2``.
-
-    max_n_iterations_epsf
-        Number of ePSF iterations
-        Default is ``7``.
-
-    object_finder_method
-        Finder method DAO or IRAF
-        Default is ``IRAF``.
-
-    multiplier_background_rms_epsf
-        Multiplier for the background RMS, used to calculate the
-        threshold to identify stars
-        Default is ``5.0``.
-
-    multiplier_dao_grouper_epsf
-        Multiplier for the DAO grouper
-        Default is ``5.0``.
-
-    strict_cleaning_epsf_results
-        If True objects with negative flux uncertainties will be removed
-        Default is ``True``.
-
-    minimum_n_eps_stars
-        Minimal number of required ePSF stars
-        Default is ``25``.
-
-    photometry_extraction_method
-        Switch between aperture and ePSF photometry.
-        Possibilities: 'PSF' & 'APER'
-        Default is ``PSF``.
-
-    radius_aperture
-        Radius of the stellar aperture
-        Default is ``5``.
-
-    inner_annulus_radius
-        Inner radius of the background annulus
-        Default is ``7``.
-
-    outer_annulus_radius
-        Outer radius of the background annulus
-        Default is ``10``.
-
-    radii_unit
-        Unit of the radii above. Permitted values are
-        ``pixel`` and ``arcsec``.
-        Default is ``pixel``.
-
-    strict_epsf_checks
-        If True a stringent test of the ePSF conditions is applied.
-        Default is ``True``.
-
-    max_pixel_between_objects
-        Maximal distance between two objects in Pixel
-        Default is ``3``.
-
-    own_correlation_option
-        Option for the srcor correlation function
-        Default is ``1``.
-
-    cross_identification_limit
-        Cross-identification limit between multiple objects in the current
-        image and one object in the reference image. The current image is
-        rejected when this limit is reached.
-        Default is ``1``.
-
-    reference_image_id
-        ID of the reference image
-        Default is ``0``.
-
-    n_allowed_non_detections_object
-        Maximum number of times an object may not be detected in an image.
-        When this limit is reached, the object will be removed.
-        Default is ``i`.
-
-    expected_bad_image_fraction
-        Fraction of low quality images, i.e. those images for which a
-        reduced number of objects with valid source positions are expected.
-        Default is ``1.0``.
-
-    protect_reference_obj
-        If ``False`` also reference objects will be rejected, if they do
-        not fulfill all criteria.
-        Default is ``True``.
-
-    correlation_method
-        Correlation method to be used to find the common objects on
-        the images.
-        Possibilities: ``astropy``, ``own``
-        Default is ``astropy``.
-
-    separation_limit
-        Allowed separation between objects.
-        Default is ``2.*u.arcsec``.
-
-    verbose
-        If True additional output will be printed to the command line.
-        Default is ``False``.
-
-    identify_objects_on_image
-        If `True` the objects on the image will be identified. If `False`
-        it is assumed that object identification was performed in advance.
-        Default is ``True``.
-
-    plots_for_all_images
-        If True star map plots for all stars are created
-        Default is ``False``.
-
-    plot_for_reference_image_only
-        If True a star map plot only for the reference image is created
-        Default is ``True``.
-    """
-    ###
-    #   Check output directories
-    #
-    checks.check_output_directories(output_dir, os.path.join(output_dir, 'tables'))
-
-    ###
-    #   Check image directories
-    #
-    checks.check_dir(image_paths)
-
-    #   Outer loop over all filter
-    for filter_ in filter_list:
-        terminal_output.print_to_terminal(
-            f"Analyzing {filter_} images",
-            style_name='HEADER',
-        )
-
-        #   Initialize image series object
-        observation.image_series_dict[filter_] = ImageSeries(
-            filter_,
-            image_paths[filter_],
-            output_dir,
-            reference_image_id=reference_image_id,
-        )
-
-        ###
-        #   Find the WCS solution for the image
-        #
-        utilities.find_wcs(
-            observation.image_series_dict[filter_],
-            reference_image_id=reference_image_id,
-            method=wcs_method,
-            force_wcs_determ=force_wcs_determ,
-            indent=3,
-        )
-
-        ###
-        #   Main extraction of object positions and object fluxes
-        #   using multiprocessing
-        #
-        extract_multiprocessing(
-            observation.image_series_dict[filter_],
-            n_cores_multiprocessing,
-            sigma_object_psf,
-            sigma_value_background_clipping=sigma_value_background_clipping,
-            multiplier_background_rms=multiplier_background_rms,
-            size_epsf_region=size_epsf_region,
-            fraction_epsf_stars=fraction_epsf_stars,
-            oversampling_factor_epsf=oversampling_factor_epsf,
-            max_n_iterations_epsf=max_n_iterations_epsf,
-            object_finder_method=object_finder_method,
-            multiplier_background_rms_epsf=multiplier_background_rms_epsf,
-            multiplier_dao_grouper_epsf=multiplier_dao_grouper_epsf,
-            strict_cleaning_epsf_results=strict_cleaning_epsf_results,
-            minimum_n_eps_stars=minimum_n_eps_stars,
-            strict_epsf_checks=strict_epsf_checks,
-            photometry_extraction_method=photometry_extraction_method,
-            radius_aperture=radius_aperture,
-            inner_annulus_radius=inner_annulus_radius,
-            outer_annulus_radius=outer_annulus_radius,
-            radii_unit=radii_unit,
-            identify_objects_on_image=identify_objects_on_image,
-            plots_for_all_images=plots_for_all_images,
-            plot_for_reference_image_only=plot_for_reference_image_only,
-        )
-
-        ###
-        #   Correlate results from all images, while preserving
-        #   the variable star
-        #
-        correlate.correlate_preserve_variable(
-            observation,
-            filter_,
-            max_pixel_between_objects=max_pixel_between_objects,
-            own_correlation_option=own_correlation_option,
-            cross_identification_limit=cross_identification_limit,
-            reference_image_id=reference_image_id,
-            n_allowed_non_detections_object=n_allowed_non_detections_object,
-            expected_bad_image_fraction=expected_bad_image_fraction,
-            protect_reference_obj=protect_reference_obj,
-            verbose=verbose,
-            plot_reference_only=plot_for_reference_image_only,
-            correlation_method=correlation_method,
-            separation_limit=separation_limit,
-        )
+#
+# def extract_flux(
+#         observation: Observation, filter_list: list[str],
+#         image_paths: dict[str, str], output_dir: str,
+#         sigma_object_psf: dict[str, float], wcs_method: str = 'astrometry',
+#         force_wcs_determ: bool = False,
+#         sigma_value_background_clipping: float = 5.,
+#         multiplier_background_rms: float = 5., size_epsf_region: int = 25,
+#         fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
+#         max_n_iterations_epsf: int = 7, use_initial_positions_epsf: bool = True,
+#         object_finder_method: str = 'IRAF',
+#         multiplier_background_rms_epsf: float = 5.0,
+#         multiplier_dao_grouper_epsf: float = 2.0,
+#         strict_cleaning_epsf_results: bool = True,
+#         minimum_n_eps_stars: int = 25,
+#         reference_image_id: int = 0, strict_epsf_checks: bool = True,
+#         photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
+#         inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
+#         radii_unit: str = 'arcsec', cosmic_ray_removal: bool = False,
+#         limiting_contrast_rm_cosmics: float = 5., read_noise: float = 8.,
+#         sigma_clipping_value: float = 4.5, saturation_level: float = 65535.,
+#         plots_for_all_images: bool = False,
+#         plot_for_reference_image_only: bool = True) -> None:
+#     """
+#     Extract flux and fill the observation container
+#
+#     Parameters
+#     ----------
+#     observation
+#         Container object with image series objects for each filter
+#
+#     filter_list
+#         Filter list
+#
+#     image_paths
+#         Paths to images: key - filter name; value - path
+#
+#     output_dir
+#         Path, where the output should be stored.
+#
+#     sigma_object_psf
+#         Sigma of the objects PSF, assuming it is a Gaussian
+#
+#     wcs_method
+#         Method that should be used to determine the WCS.
+#         Default is ``'astrometry'``.
+#
+#     force_wcs_determ
+#         If ``True`` a new WCS determination will be calculated even if
+#         a WCS is already present in the FITS Header.
+#         Default is ``False``.
+#
+#     sigma_value_background_clipping
+#         Sigma used for the sigma clipping of the background
+#         Default is ``5.``.
+#
+#     multiplier_background_rms
+#         Multiplier for the background RMS, used to calculate the
+#         threshold to identify stars
+#         Default is ``5.0``.
+#
+#     size_epsf_region
+#         Size of the extraction region in pixel
+#         Default is `25``.
+#
+#     fraction_epsf_stars
+#         Fraction of all stars that should be used to calculate the ePSF
+#         Default is ``0.2``.
+#
+#     oversampling_factor_epsf
+#         ePSF oversampling factor
+#         Default is ``2``.
+#
+#     max_n_iterations_epsf
+#         Number of ePSF iterations
+#         Default is ``7``.
+#
+#     use_initial_positions_epsf
+#         If True the initial positions from a previous object
+#         identification procedure will be used. If False the objects
+#         will be identified by means of the ``method_finder`` method.
+#         Default is ``True``.
+#
+#     object_finder_method
+#         Finder method DAO or IRAF
+#         Default is ``IRAF``.
+#
+#     multiplier_background_rms_epsf
+#         Multiplier for the background RMS, used to calculate the
+#         threshold to identify stars
+#         Default is ``5.0``.
+#
+#     multiplier_dao_grouper_epsf
+#         Multiplier for the DAO grouper
+#         Default is ``5.0``.
+#
+#     strict_cleaning_epsf_results
+#         If True objects with negative flux uncertainties will be removed
+#         Default is ``True``.
+#
+#     minimum_n_eps_stars
+#         Minimal number of required ePSF stars
+#         Default is ``25``.
+#
+#     reference_image_id
+#         ID of the reference image
+#         Default is ``0``.
+#
+#     photometry_extraction_method
+#         Switch between aperture and ePSF photometry.
+#         Possibilities: 'PSF' & 'APER'
+#         Default is ``PSF``.
+#
+#     radius_aperture
+#         Radius of the stellar aperture
+#         Default is ``5``.
+#
+#     inner_annulus_radius
+#         Inner radius of the background annulus
+#         Default is ``7``.
+#
+#     outer_annulus_radius
+#         Outer radius of the background annulus
+#         Default is ``10``.
+#
+#     radii_unit
+#         Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
+#         Default is ``arcsec``.
+#
+#     strict_epsf_checks
+#         If True a stringent test of the ePSF conditions is applied.
+#         Default is ``True``.
+#
+#     cosmic_ray_removal
+#         If True cosmic rays will be removed from the image.
+#         Default is ``False``.
+#
+#     limiting_contrast_rm_cosmics
+#         Parameter for the cosmic ray removal: Minimum contrast between
+#         Laplacian image and the fine structure image.
+#         Default is ``5``.
+#
+#     read_noise
+#         The read noise (e-) of the camera chip.
+#         Default is ``8`` e-.
+#
+#     sigma_clipping_value
+#         Parameter for the cosmic ray removal: Fractional detection limit
+#         for neighboring pixels.
+#         Default is ``4.5``.
+#
+#     saturation_level
+#         Saturation limit of the camera chip.
+#         Default is ``65535``.
+#
+#     plots_for_all_images
+#         If True star map plots for all stars are created
+#         Default is ``False``.
+#
+#     plot_for_reference_image_only
+#         If True a star map plots only for the reference image [reference_image_id] is
+#         created
+#         Default is ``True``.
+#     """
+#     #   Check output directories
+#     checks.check_output_directories(
+#         output_dir,
+#         os.path.join(output_dir, 'tables'),
+#     )
+#
+#     ###
+#     #   Loop over all filter
+#     #
+#     for filter_ in filter_list:
+#         terminal_output.print_to_terminal(
+#             f"Analyzing {filter_} images",
+#             style_name='HEADER',
+#         )
+#
+#         #   Check input paths
+#         checks.check_file(image_paths[filter_])
+#
+#         #   Initialize image series object
+#         observation.image_series_dict[filter_] = current_image_series = ImageSeries(
+#             filter_,
+#             image_paths[filter_],
+#             output_dir,
+#         )
+#
+#         ###
+#         #   Find the WCS solution for the image
+#         #
+#         try:
+#             utilities.find_wcs(
+#                 current_image_series,
+#                 reference_image_id=0,
+#                 method=wcs_method,
+#                 force_wcs_determ=force_wcs_determ,
+#                 indent=3,
+#             )
+#         #   TODO: Check if the exception cam be more specific
+#         except Exception as e:
+#             #   Get the WCS from one of the other filters, if they have one
+#             for wcs_filter in filter_list:
+#                 reference_wcs = getattr(
+#                     observation.image_series_dict[wcs_filter],
+#                     'wcs',
+#                     None,
+#                 )
+#                 if reference_wcs is not None:
+#                     current_image_series.set_wcs(reference_wcs)
+#                     terminal_output.print_to_terminal(
+#                         f"WCS could not be determined for filter {filter_}"
+#                         f"The WCS of filter {wcs_filter} will be used instead."
+#                         f"This could lead to problems...",
+#                         indent=1,
+#                         style_name='WARNING',
+#                     )
+#                     break
+#             else:
+#                 raise RuntimeError(e)
+#
+#         ###
+#         #   Main extraction
+#         #
+#         main_extract(
+#             current_image_series.image_list[reference_image_id],
+#             sigma_object_psf[filter_],
+#             sigma_value_background_clipping=sigma_value_background_clipping,
+#             multiplier_background_rms=multiplier_background_rms,
+#             size_epsf_region=size_epsf_region,
+#             fraction_epsf_stars=fraction_epsf_stars,
+#             oversampling_factor_epsf=oversampling_factor_epsf,
+#             max_n_iterations_epsf=max_n_iterations_epsf,
+#             use_initial_positions_epsf=use_initial_positions_epsf,
+#             object_finder_method=object_finder_method,
+#             multiplier_background_rms_epsf=multiplier_background_rms_epsf,
+#             multiplier_dao_grouper_epsf=multiplier_dao_grouper_epsf,
+#             strict_cleaning_epsf_results=strict_cleaning_epsf_results,
+#             minimum_n_eps_stars=minimum_n_eps_stars,
+#             strict_epsf_checks=strict_epsf_checks,
+#             photometry_extraction_method=photometry_extraction_method,
+#             radius_aperture=radius_aperture,
+#             inner_annulus_radius=inner_annulus_radius,
+#             outer_annulus_radius=outer_annulus_radius,
+#             radii_unit=radii_unit,
+#             cosmic_ray_removal=cosmic_ray_removal,
+#             limiting_contrast_rm_cosmics=limiting_contrast_rm_cosmics,
+#             read_noise=read_noise,
+#             sigma_clipping_value=sigma_clipping_value,
+#             saturation_level=saturation_level,
+#             plots_for_all_images=plots_for_all_images,
+#             plot_for_reference_image_only=plot_for_reference_image_only,
+#         )
+#
+#     if photometry_extraction_method == 'PSF':
+#         ###
+#         #   Plot the ePSFs
+#         #
+#         p = mp.Process(
+#             target=plots.plot_epsf,
+#             args=(output_dir, observation.get_reference_epsf(),),
+#         )
+#         p.start()
+#
+#         ###
+#         #   Plot original and residual image
+#         #
+#         p = mp.Process(
+#             target=plots.plot_residual,
+#             args=(
+#                 observation.get_reference_image(),
+#                 observation.get_reference_image_residual(),
+#                 output_dir,
+#             ),
+#             kwargs={
+#                 # 'name_object': 'reference image'
+#             }
+#         )
+#         p.start()
+#
+#
+# def extract_flux_multi(
+#         observation: Observation, filter_list: list[str],
+#         image_paths: dict[str, str], output_dir: str,
+#         sigma_object_psf: dict[str, float],
+#         n_cores_multiprocessing: int = 6, wcs_method: str = 'astrometry',
+#         force_wcs_determ: bool = False,
+#         sigma_value_background_clipping: float = 5.,
+#         multiplier_background_rms: float = 5., size_epsf_region: int = 25,
+#         fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
+#         max_n_iterations_epsf: int = 7, object_finder_method: str = 'IRAF',
+#         multiplier_background_rms_epsf: float = 5.0,
+#         multiplier_dao_grouper_epsf: float = 2.0,
+#         strict_cleaning_epsf_results: bool = True,
+#         minimum_n_eps_stars: int = 25, strict_epsf_checks: bool = True,
+#         photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
+#         inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
+#         radii_unit: str = 'arcsec', max_pixel_between_objects: int = 3,
+#         own_correlation_option: int = 1, cross_identification_limit: int = 1,
+#         reference_image_id: int = 0, n_allowed_non_detections_object: int = 1,
+#         expected_bad_image_fraction: float = 1.0,
+#         protect_reference_obj: bool = True,
+#         correlation_method: str = 'astropy',
+#         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+#         verbose: bool = False, identify_objects_on_image: bool = True,
+#         plots_for_all_images: bool = False,
+#         plot_for_reference_image_only: bool = True) -> None:
+#     """
+#     Extract flux from multiple images per filter and add results to
+#     the observation container
+#
+#     Parameters
+#     ----------
+#     observation
+#         Container object with image series objects for each filter
+#
+#     filter_list
+#         Filter list
+#
+#     image_paths
+#         Paths to images: key - filter name; value - path
+#
+#     output_dir
+#         Path, where the output should be stored.
+#
+#     sigma_object_psf
+#         Sigma of the objects PSF, assuming it is a Gaussian
+#
+#     n_cores_multiprocessing
+#         Number of cores to use for multicore processing
+#         Default is ``6``.
+#
+#     wcs_method
+#         Method that should be used to determine the WCS.
+#         Default is ``'astrometry'``.
+#
+#     force_wcs_determ
+#         If ``True`` a new WCS determination will be calculated even if
+#         a WCS is already present in the FITS Header.
+#         Default is ``False``.
+#
+#     sigma_value_background_clipping
+#         Sigma used for the sigma clipping of the background
+#         Default is ``5.``.
+#
+#     multiplier_background_rms
+#         Multiplier for the background RMS, used to calculate the
+#         threshold to identify stars
+#         Default is ``7``.
+#
+#     size_epsf_region
+#         Size of the extraction region in pixel
+#         Default is `25``.
+#
+#     fraction_epsf_stars
+#         Fraction of all stars that should be used to calculate the ePSF
+#         Default is ``0.2``.
+#
+#     oversampling_factor_epsf
+#         ePSF oversampling factor
+#         Default is ``2``.
+#
+#     max_n_iterations_epsf
+#         Number of ePSF iterations
+#         Default is ``7``.
+#
+#     object_finder_method
+#         Finder method DAO or IRAF
+#         Default is ``IRAF``.
+#
+#     multiplier_background_rms_epsf
+#         Multiplier for the background RMS, used to calculate the
+#         threshold to identify stars
+#         Default is ``5.0``.
+#
+#     multiplier_dao_grouper_epsf
+#         Multiplier for the DAO grouper
+#         Default is ``5.0``.
+#
+#     strict_cleaning_epsf_results
+#         If True objects with negative flux uncertainties will be removed
+#         Default is ``True``.
+#
+#     minimum_n_eps_stars
+#         Minimal number of required ePSF stars
+#         Default is ``25``.
+#
+#     photometry_extraction_method
+#         Switch between aperture and ePSF photometry.
+#         Possibilities: 'PSF' & 'APER'
+#         Default is ``PSF``.
+#
+#     radius_aperture
+#         Radius of the stellar aperture
+#         Default is ``5``.
+#
+#     inner_annulus_radius
+#         Inner radius of the background annulus
+#         Default is ``7``.
+#
+#     outer_annulus_radius
+#         Outer radius of the background annulus
+#         Default is ``10``.
+#
+#     radii_unit
+#         Unit of the radii above. Permitted values are
+#         ``pixel`` and ``arcsec``.
+#         Default is ``pixel``.
+#
+#     strict_epsf_checks
+#         If True a stringent test of the ePSF conditions is applied.
+#         Default is ``True``.
+#
+#     max_pixel_between_objects
+#         Maximal distance between two objects in Pixel
+#         Default is ``3``.
+#
+#     own_correlation_option
+#         Option for the srcor correlation function
+#         Default is ``1``.
+#
+#     cross_identification_limit
+#         Cross-identification limit between multiple objects in the current
+#         image and one object in the reference image. The current image is
+#         rejected when this limit is reached.
+#         Default is ``1``.
+#
+#     reference_image_id
+#         ID of the reference image
+#         Default is ``0``.
+#
+#     n_allowed_non_detections_object
+#         Maximum number of times an object may not be detected in an image.
+#         When this limit is reached, the object will be removed.
+#         Default is ``i`.
+#
+#     expected_bad_image_fraction
+#         Fraction of low quality images, i.e. those images for which a
+#         reduced number of objects with valid source positions are expected.
+#         Default is ``1.0``.
+#
+#     protect_reference_obj
+#         If ``False`` also reference objects will be rejected, if they do
+#         not fulfill all criteria.
+#         Default is ``True``.
+#
+#     correlation_method
+#         Correlation method to be used to find the common objects on
+#         the images.
+#         Possibilities: ``astropy``, ``own``
+#         Default is ``astropy``.
+#
+#     separation_limit
+#         Allowed separation between objects.
+#         Default is ``2.*u.arcsec``.
+#
+#     verbose
+#         If True additional output will be printed to the command line.
+#         Default is ``False``.
+#
+#     identify_objects_on_image
+#         If `True` the objects on the image will be identified. If `False`
+#         it is assumed that object identification was performed in advance.
+#         Default is ``True``.
+#
+#     plots_for_all_images
+#         If True star map plots for all stars are created
+#         Default is ``False``.
+#
+#     plot_for_reference_image_only
+#         If True a star map plot only for the reference image is created
+#         Default is ``True``.
+#     """
+#     ###
+#     #   Check output directories
+#     #
+#     checks.check_output_directories(output_dir, os.path.join(output_dir, 'tables'))
+#
+#     ###
+#     #   Check image directories
+#     #
+#     checks.check_dir(image_paths)
+#
+#     #   Outer loop over all filter
+#     for filter_ in filter_list:
+#         terminal_output.print_to_terminal(
+#             f"Analyzing {filter_} images",
+#             style_name='HEADER',
+#         )
+#
+#         #   Initialize image series object
+#         observation.image_series_dict[filter_] = ImageSeries(
+#             filter_,
+#             image_paths[filter_],
+#             output_dir,
+#             reference_image_id=reference_image_id,
+#         )
+#
+#         ###
+#         #   Find the WCS solution for the image
+#         #
+#         utilities.find_wcs(
+#             observation.image_series_dict[filter_],
+#             reference_image_id=reference_image_id,
+#             method=wcs_method,
+#             force_wcs_determ=force_wcs_determ,
+#             indent=3,
+#         )
+#
+#         ###
+#         #   Main extraction of object positions and object fluxes
+#         #   using multiprocessing
+#         #
+#         extract_multiprocessing(
+#             observation.image_series_dict[filter_],
+#             n_cores_multiprocessing,
+#             sigma_object_psf,
+#             sigma_value_background_clipping=sigma_value_background_clipping,
+#             multiplier_background_rms=multiplier_background_rms,
+#             size_epsf_region=size_epsf_region,
+#             fraction_epsf_stars=fraction_epsf_stars,
+#             oversampling_factor_epsf=oversampling_factor_epsf,
+#             max_n_iterations_epsf=max_n_iterations_epsf,
+#             object_finder_method=object_finder_method,
+#             multiplier_background_rms_epsf=multiplier_background_rms_epsf,
+#             multiplier_dao_grouper_epsf=multiplier_dao_grouper_epsf,
+#             strict_cleaning_epsf_results=strict_cleaning_epsf_results,
+#             minimum_n_eps_stars=minimum_n_eps_stars,
+#             strict_epsf_checks=strict_epsf_checks,
+#             photometry_extraction_method=photometry_extraction_method,
+#             radius_aperture=radius_aperture,
+#             inner_annulus_radius=inner_annulus_radius,
+#             outer_annulus_radius=outer_annulus_radius,
+#             radii_unit=radii_unit,
+#             identify_objects_on_image=identify_objects_on_image,
+#             plots_for_all_images=plots_for_all_images,
+#             plot_for_reference_image_only=plot_for_reference_image_only,
+#         )
+#
+#         ###
+#         #   Correlate results from all images, while preserving
+#         #   the variable star
+#         #
+#         correlate.correlate_preserve_variable(
+#             observation,
+#             filter_,
+#             max_pixel_between_objects=max_pixel_between_objects,
+#             own_correlation_option=own_correlation_option,
+#             cross_identification_limit=cross_identification_limit,
+#             reference_image_id=reference_image_id,
+#             n_allowed_non_detections_object=n_allowed_non_detections_object,
+#             expected_bad_image_fraction=expected_bad_image_fraction,
+#             protect_reference_obj=protect_reference_obj,
+#             verbose=verbose,
+#             plot_reference_only=plot_for_reference_image_only,
+#             correlation_method=correlation_method,
+#             separation_limit=separation_limit,
+#         )
 
 
 def correlate_calibrate(
