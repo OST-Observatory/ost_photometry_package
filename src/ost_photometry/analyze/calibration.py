@@ -2,7 +2,7 @@
 #                               Libraries                                  #
 ############################################################################
 import sys
-import os
+# import os
 
 import copy
 
@@ -13,6 +13,8 @@ from astropy import uncertainty as unc
 from astropy.stats import sigma_clipped_stats, sigma_clip
 from astropy.table import Table
 
+from regions import RectanglePixelRegion
+
 from . import calibration_data, correlate, utilities, plots
 
 import typing
@@ -21,7 +23,7 @@ if typing.TYPE_CHECKING:
     from .. import utilities
 
 from .. import style, calibration_parameters, terminal_output
-from .. import utilities as base_utilities
+# from .. import utilities as base_utilities
 
 
 ############################################################################
@@ -274,7 +276,7 @@ def derive_transformation_onthefly(
                         magnitudes_literature_filter_2)
 
     #   Color of the observed calibration stars
-    color_observed = magnitudes_observed_filter_1 - magnitudes_observed_filter_2
+    # color_observed = magnitudes_observed_filter_1 - magnitudes_observed_filter_2
 
     #   Perform sigma clipping on the difference between observed color
     #   and literature color values to remove outliers
@@ -392,6 +394,7 @@ def derive_transformation_onthefly(
 
 def transformation_core(
         image: 'analyze.Image',
+        magnitudes_current_filter: unc.core.NdarrayDistribution,
         magnitudes_literature_filter_1: unc.core.NdarrayDistribution,
         magnitudes_literature_filter_2: unc.core.NdarrayDistribution,
         calib_magnitudes_observed_filter_1: unc.core.NdarrayDistribution,
@@ -410,6 +413,9 @@ def transformation_core(
         ----------
         image
             Object with all image specific properties
+
+        magnitudes_current_filter
+            Magnitudes of the filter that should be transformed
 
         magnitudes_literature_filter_1
             Magnitudes of calibration stars from the literature
@@ -528,11 +534,21 @@ def transformation_core(
             f"{style.Bcolors.ENDC}"
         )
 
+        #   Reshape the magnitudes to allow broadcasting because zp is an array
+    magnitudes_current_filter = magnitudes_current_filter.reshape(
+        magnitudes_current_filter.size,
+        1,
+    )
+    #   TODO: Check type of reshaped_magnitudes
+
+    #   Apply zero point to magnitudes
+    magnitudes_with_zp = magnitudes_current_filter + unc.Distribution(image.zp)
+
     #   Calculate calibrated magnitudes
     color_term_all = c * color
     color_term_all = color_term_all.reshape(color_term_all.size, 1)
     color_term_calibration = c * color_observed
-    calibrated_magnitudes = unc.Distribution(image.magnitudes_with_zp) + color_term_all - color_term_calibration
+    calibrated_magnitudes = magnitudes_with_zp + color_term_all - color_term_calibration
 
     #   Sigma clipping to rm outliers
     _, median, stddev = sigma_clipped_stats(
@@ -661,6 +677,7 @@ def apply_magnitude_transformation(
 
     color_observed = transformation_core(
         image,
+        magnitudes_current_image,
         calib_magnitudes_literature[0],
         calib_magnitudes_literature[1],
         magnitudes_calibration_first_filter,
@@ -712,7 +729,7 @@ def calibrate_simple(
         image: 'analyze.Image',
         not_calibrated_magnitudes: unc.core.NdarrayDistribution,
         zp: unc.core.NdarrayDistribution,
-        ) -> unc.core.NdarrayDistribution:
+        ) -> None:
     """
     Calibrate magnitudes without magnitude transformation
 
@@ -740,12 +757,12 @@ def calibrate_simple(
     #   Calculate calibrated magnitudes
     calibrated_magnitudes = reshaped_magnitudes + zp
 
-    #   Sigma clipping to rm outliers
-    # _, median, stddev = sigma_clipped_stats(
-    #     calibrated_magnitudes.distribution,
-    #     sigma=1.5,
-    #     axis=(1, 2),
-    # )
+    #    Sigma clipping to rm outliers
+    _, median, stddev = sigma_clipped_stats(
+        calibrated_magnitudes.distribution,
+        sigma=1.5,
+        axis=(1, 2),
+    )
 
     #   TODO: Rewrite & test this
     #   If ZP is 0, calibrate with the median of all magnitudes
@@ -754,10 +771,10 @@ def calibrate_simple(
     #     calibrated_magnitudes = not_calibrated_magnitudes - np.median(not_calibrated_magnitudes)
 
     #   Add calibrated photometry to table of Image object
-    # photometry_table['mag_cali_no-trans'] = median
-    # photometry_table['mag_cali_no-trans_unc'] = stddev
+    photometry_table['mag_cali_no-trans'] = median
+    photometry_table['mag_cali_no-trans_unc'] = stddev
 
-    return calibrated_magnitudes
+    # return calibrated_magnitudes
 
 
 def quasi_flux_calibration_image_series(
@@ -967,7 +984,7 @@ def calibrate_magnitudes_zero_point_core(
         literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
         distribution_samples: int = 1000, multiprocessing: bool = False
-        ) -> tuple[int, u.quantity.Quantity | str, np.ndarray]:
+        ) -> tuple[int, np.ndarray]:
     """
     Core module for zero point calibration that allows also for multicore
     processing
@@ -1006,12 +1023,6 @@ def calibrate_magnitudes_zero_point_core(
 
     zp
         Zero point for the image
-
-    tbl
-        Table with the photometric data
-
-    magnitudes
-        Array with calibrated magnitudes
     """
     #   Restore the literature magnitudes as distributions
     #   -> This is necessary since astropy QuantityDistribution cannot be
@@ -1046,26 +1057,28 @@ def calibrate_magnitudes_zero_point_core(
     )
 
     #   Calibration without transformation
-    calibrated_magnitudes = calibrate_simple(
+    calibrate_simple(
         current_image,
         magnitudes_current_image,
         zp,
     )
 
-    if multiprocessing:
-        tmp_save = True
-        pd = copy.deepcopy(current_image.pd)
-        zp = copy.deepcopy(zp.pdf_median())
-        if not tmp_save:
-            magnitudes = copy.deepcopy(calibrated_magnitudes.distribution)
-            return pd, magnitudes, zp
-        else:
-            random_str = base_utilities.random_string_generator(7)
-            file_name = f'{pd}_{random_str}.npy'
-            np.save(f'/tmp/{pd}_{file_name}', calibrated_magnitudes.distribution)
+    pd = copy.deepcopy(current_image.pd)
+    zp = copy.deepcopy(zp.distribution)
+    return pd, zp
 
-            return pd, file_name, zp
-
+    # if multiprocessing:
+    #     tmp_save = True
+    #     if not tmp_save:
+    #         magnitudes = copy.deepcopy(calibrated_magnitudes.distribution)
+    #         return pd, magnitudes, zp
+    #     else:
+    #         random_str = base_utilities.random_string_generator(7)
+    #         file_name = f'{pd}_{random_str}.npy'
+    #         np.save(f'/tmp/{file_name}', calibrated_magnitudes.distribution.value)
+    #
+    #         return pd, file_name, zp
+    # else:
 
 
 def calibrate_magnitudes_zero_point(
@@ -1128,75 +1141,77 @@ def calibrate_magnitudes_zero_point(
         image_list = image_series.image_list
 
         #   Initialize multiprocessing object
-        n_cores_multiprocessing = 12
+        multiprocessing: bool = False
+        n_cores_multiprocessing: int = 12
         executor = utilities.Executor(n_cores_multiprocessing)
 
         #   Get IDs calibration data
         index_calibration_stars = getattr(
             observation.calib_parameters,
-            'inds',
+            'ids_calibration_objects',
             None,
         )
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
-            executor.schedule(
-                calibrate_magnitudes_zero_point_core,
-                args=(
+            if multiprocessing:
+                executor.schedule(
+                    calibrate_magnitudes_zero_point_core,
+                    args=(
+                        current_image,
+                        index_calibration_stars,
+                        current_filter_id,
+                        literature_magnitudes,
+                    ),
+                    kwargs={
+                        'calculate_zero_point_statistic': calculate_zero_point_statistic,
+                        'distribution_samples': distribution_samples,
+                        'multiprocessing': multiprocessing,
+                    }
+                )
+            else:
+                _, zp = calibrate_magnitudes_zero_point_core(
                     current_image,
                     index_calibration_stars,
                     current_filter_id,
                     literature_magnitudes,
-                ),
-                kwargs={
-                    'calculate_zero_point_statistic': calculate_zero_point_statistic,
-                    'distribution_samples': distribution_samples,
-                    'multiprocessing': True,
-                }
-            )
+                    calculate_zero_point_statistic=calculate_zero_point_statistic,
+                    distribution_samples=distribution_samples,
+                    multiprocessing=False,
+                )
+                current_image.zp = zp
 
-        #   Exit multiprocessing, if exceptions will occur
-        if executor.err is not None:
-            raise RuntimeError(
-                f'\n{style.Bcolors.FAIL}Zero point calibration using '
-                f' multiprocessing failed for {filter_} :({style.Bcolors.ENDC}'
-            )
+        if multiprocessing:
+            #   Exit multiprocessing, if exceptions will occur
+            if executor.err is not None:
+                raise RuntimeError(
+                    f'\n{style.Bcolors.FAIL}Zero point calibration using '
+                    f' multiprocessing failed for {filter_} :({style.Bcolors.ENDC}'
+                )
 
-        #   Close multiprocessing pool and wait until it finishes
-        executor.wait()
+            #   Close multiprocessing pool and wait until it finishes
+            executor.wait()
 
-        #   Extract results
-        res = executor.res
+            #   Extract results
+            res = executor.res
 
-        save_data_tmp = True
-        #   Sort multiprocessing results
-        tmp_list = []
-        for image_ in image_series.image_list:
+            # save_data_tmp = True
+            #   Sort multiprocessing results
+            tmp_list = []
+            for image_ in image_series.image_list:
+                for pd, zp in res:
+                    if pd == image_.pd:
+                        image_.zp = zp
+                        tmp_list.append(image_)
 
-            for pd, magnitudes, zp in res:
-                if pd == image_.pd:
-                    image_.zp = zp
-                    tmp_list.append(image_)
+                        # if save_data_tmp:
+                        #     magnitudes = np.load(magnitudes, allow_pickle=True)
+                        #     os.remove(magnitudes)
 
-                    if save_data_tmp:
-                        magnitudes = np.load(magnitudes, allow_pickle=True)
-                        os.remove(magnitudes)
+                        # image_.magnitudes_with_zp = magnitudes
 
-                    image_.magnitudes_with_zp = magnitudes
-
-                    #   Sigma clipping to rm outliers
-                    _, median, stddev = sigma_clipped_stats(
-                        magnitudes,
-                        sigma=1.5,
-                        axis=(1, 2),
-                    )
-
-                    #   Add calibrated photometry to table of Image object
-                    image_.photometry['mag_cali_no-trans'] = median
-                    image_.photometry['mag_cali_no-trans_unc'] = stddev
-
-        # TODO: Check if this is necessary
-        image_series.image_list = tmp_list
+            # TODO: Check if this is necessary
+            image_series.image_list = tmp_list
 
     #   Save results as ASCII files
     #   Make astropy table
@@ -1297,7 +1312,7 @@ def calibrate_magnitudes_transformation(
     #   TODO: Check if these IDs apply to all filter/image series
     index_calibration_stars = getattr(
         observation.calib_parameters,
-        'inds',
+        'ids_calibration_objects',
         None,
     )
 
@@ -1534,38 +1549,40 @@ def apply_calibration(
 
 
 #   TODO: Rewrite
-def determine_transformation(observation: 'analyze.Observation', current_filter, filter_list,
-                             tbl_transformation_coefficients,
-                             fit_function=utilities.lin_func,
-                             apply_uncertainty_weights=True, indent=2):
+def determine_transformation(
+        observation: 'analyze.Observation', current_filter: str,
+        filter_list: list[str], tbl_transformation_coefficients: Table,
+        fit_function=utilities.lin_func,
+        apply_uncertainty_weights: bool = True, indent: int = 2
+        ) -> None:
     """
-        Determine the magnitude transformation factors
+    Determine the magnitude transformation factors
 
-        Parameters
-        ----------
-        observation
-            Container object with image series objects for each filter
+    Parameters
+    ----------
+    observation
+        Container object with image series objects for each filter
 
-        current_filter                  : `string`
-            Current filter
+    current_filter
+        Current filter
 
-        filter_list                     : `list` of `strings`
-            List of filter
+    filter_list
+        List of filter
 
-        tbl_transformation_coefficients : `astropy.table.Table`
-            Astropy Table for the transformation coefficients
+    tbl_transformation_coefficients
+        Astropy Table for the transformation coefficients
 
-        fit_function                    : `function`, optional
-            Fit function to use for determining the calibration factors
-            Default is ``lin_func``
+    fit_function
+        Fit function to use for determining the calibration factors
+        Default is ``lin_func``
 
-        apply_uncertainty_weights       : `boolean`, optional
-            If True the transformation fit will be weighted by the
-            uncertainties of the data points.
+    apply_uncertainty_weights
+        If True the transformation fit will be weighted by the
+        uncertainties of the data points.
 
-        indent                          : `integer`, optional
-            Indentation for the console output lines
-            Default is ``2``.
+    indent
+        Indentation for the console output lines
+        Default is ``2``.
     """
     #   Get image series
     image_series_dict = observation.image_series_dict
@@ -1668,6 +1685,8 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
             image_series_dict[filter_list[0]].out_path.name,
             filter_list[0],
             filter_list[1],
+            current_filter,
+            current_filter,
             color_literature_plot,
             color_observed_plot,
             a,
@@ -1706,6 +1725,8 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
             image_series_dict[filter_list[0]].out_path.name,
             filter_list[0],
             filter_list[1],
+            current_filter,
+            current_filter,
             color_literature_plot,
             zero_point_plot,
             z_dash,
@@ -1713,7 +1734,6 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
             t_mag_err,
             fit_function,
             image_series_dict[filter_list[0]].get_air_mass()[0],
-            filter_=current_filter,
             color_literature_err=color_literature_err_plot,
             fit_variable_err=zero_point_err_plot,
             # name_object=image_series_dict[filter_list[0]].object_name,
@@ -1769,64 +1789,68 @@ def determine_transformation(observation: 'analyze.Observation', current_filter,
 
 #   TODO: Rewrite
 def calculate_trans(
-        observation: 'analyze.Observation', key_filter, filter_list,
-        tbl_transformation_coefficients,
-        apply_uncertainty_weights=True,
-        max_pixel_between_objects=3., own_correlation_option=1,
-        calibration_method='APASS', vizier_dict: dict[str, str] | None = None,
-        calibration_file=None, magnitude_range=(0., 18.5),
-        region_to_select_calibration_stars=None):
+        observation: 'analyze.Observation', key_filter: str,
+        filter_list: list[str],
+        tbl_transformation_coefficients: Table,
+        apply_uncertainty_weights: bool = True,
+        max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
+        calibration_method: str = 'APASS',
+        vizier_dict: dict[str, str] | None = None,
+        calibration_file: str | None = None,
+        magnitude_range: tuple[float, float] = (0., 18.5),
+        region_to_select_calibration_stars: RectanglePixelRegion | None = None
+        ) -> None:
     """
-        Calculate the transformation coefficients
+    Calculate the transformation coefficients
 
-        Parameters
-        ----------
-        observation
-            Container object with image series objects for each filter
+    Parameters
+    ----------
+    observation
+        Container object with image series objects for each filter
 
-        key_filter                      : `string`
-            Current filter
+    key_filter
+        Current filter
 
-        filter_list                     : `list` of `strings`
-            List of filter
+    filter_list
+        List of filter
 
-        tbl_transformation_coefficients : `astropy.table.Table`
-            Astropy Table for the transformation coefficients
+    tbl_transformation_coefficients
+        Astropy Table for the transformation coefficients
 
-        apply_uncertainty_weights       : `boolean`, optional
-            If True the transformation fit will be weighted by the
-            uncertainties of the data points.
+    apply_uncertainty_weights
+        If True the transformation fit will be weighted by the
+        uncertainties of the data points.
 
-        max_pixel_between_objects       : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
+    max_pixel_between_objects
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
 
-        own_correlation_option          : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
+    own_correlation_option
+        Option for the srcor correlation function
+        Default is ``1``.
 
-        calibration_method              : `string`, optional
-            Calibration method
-            Default is ``APASS``.
+    calibration_method
+        Calibration method
+        Default is ``APASS``.
 
-        vizier_dict                     : `dictionary` or `None`, optional
-            Dictionary with identifiers of the Vizier catalogs with valid
-            calibration data
-            Default is ``None``.
+    vizier_dict
+        Dictionary with identifiers of the Vizier catalogs with valid
+        calibration data
+        Default is ``None``.
 
-        calibration_file                : `string`, optional
-            Path to the calibration file
-            Default is ``None``.
+    calibration_file
+        Path to the calibration file
+        Default is ``None``.
 
-        magnitude_range                 : `tuple` or `float`, optional
-            Magnitude range
-            Default is ``(0.,18.5)``.
+    magnitude_range
+        Magnitude range
+        Default is ``(0.,18.5)``.
 
-        region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
-            Region in which to select calibration stars. This is a useful
-            feature in instances where not the entire field of view can be
-            utilized for calibration purposes.
-            Default is ``None``.
+    region_to_select_calibration_stars
+        Region in which to select calibration stars. This is a useful
+        feature in instances where not the entire field of view can be
+        utilized for calibration purposes.
+        Default is ``None``.
     """
     #   Sanitize dictionary with Vizier catalog information
     if vizier_dict is None:

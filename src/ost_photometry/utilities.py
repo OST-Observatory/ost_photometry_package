@@ -113,7 +113,7 @@ class Image:
         self.field_of_view_x: float | None = None
         self.coordinates_image_center: SkyCoord | None = None
         self.pixel_scale: float | None = None
-        self.fov_pixel_region: float | None = None
+        self.fov_pixel_region: RectanglePixelRegion | None = None
         self.air_mass: float | None = None
         self.jd: float | None = None
         self.calculate_field_of_view_etc()
@@ -123,8 +123,8 @@ class Image:
         self.residual_image: np.ndarray | None = None
         self.photometry: Table | None = None
         self.positions: Table | None = None
-        self.magnitudes_with_zp: u.quantity.Quantity | None = None
-        self.zp: np.ndarray | float | None = None
+        # self.magnitudes_with_zp: u.quantity.Quantity | None = None
+        self.zp: np.ndarray | None = None
 
     #   Read image
     def read_image(self) -> CCDData:

@@ -1,186 +1,66 @@
 ############################################################################
 #                               Libraries                                  #
 ############################################################################
+import multiprocessing as mp
 
 import numpy as np
 
 import typing
 
-from astropy import units as u
-
 if typing.TYPE_CHECKING:
-    from . import analyze
+    from . import analyze, plots
 
 from . import calibration_data, utilities
 from .. import style, terminal_output
 
 from astropy.coordinates import SkyCoord, matching
 import astropy.units as u
-
+from astropy.table import Table
+from astropy import wcs
 
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
 
 
-# def determine_pixel_coordinates_obj_astropy(
-#         x_pixel_position_dataset, y_pixel_position_dataset, ra_objects,
-#         dec_objects, wcs, ra_unit=u.hourangle, dec_unit=u.deg,
-#         separation_limit=2. * u.arcsec):
-#     """
-#         Find the image coordinates of a star based on the stellar
-#         coordinates and the WCS of the image, using astropy matching
-#         algorithms.
-#
-#         Parameters
-#         ----------
-#         x_pixel_position_dataset    : `numpy.ndarray`
-#             Positions of the objects in Pixel in X direction
-#
-#         y_pixel_position_dataset    : `numpy.ndarray`
-#             Positions of the objects in Pixel in Y direction
-#
-#         ra_objects                  : `string` or `list` of `string`
-#             Right ascension of the object
-#
-#         dec_objects                 : `string` or `list` of `string`
-#             Declination of the object
-#
-#         wcs                         : `astropy.wcs.WCS`
-#             WCS info
-#
-#         ra_unit                     : `astropy.units`, optional
-#             Right ascension unit
-#             Default is ``u.hourangle``.
-#
-#         dec_unit                    : `astropy.units`, optional
-#             Declination unit
-#             Default is ``u.deg``.
-#
-#         separation_limit            : `astropy.units`, optional
-#             Allowed separation between objects.
-#             Default is ``2.*u.arcsec``.
-#
-#         Returns
-#         -------
-#         index_object                : `numpy.ndarray`
-#             Index positions of matched objects in the images. Is -1 is no
-#             objects were found.
-#
-#         count                       : `integer`
-#             Number of times the object has been identified on the image
-#
-#         obj_pixel_position_x        : `float`
-#             X coordinates of the objects in pixel
-#
-#         obj_pixel_position_y        : `float`
-#             Y coordinates of the objects in pixel
-#     """
-#     #   Make coordinates object
-#     #   TODO: Check - Replace with SkyCoord from Observation object?
-#     coordinates_objects = SkyCoord(
-#         ra_objects,
-#         dec_objects,
-#         unit=(ra_unit, dec_unit),
-#         frame="icrs",
-#     )
-#
-#     #   Convert ra & dec to pixel coordinates
-#     obj_pixel_position_x, obj_pixel_position_y = wcs.all_world2pix(
-#         coordinates_objects.ra,
-#         coordinates_objects.dec,
-#         0,
-#     )
-#
-#     #   Create SkyCoord object for dataset
-#     coordinates_dataset = SkyCoord.from_pixel(
-#         x_pixel_position_dataset,
-#         y_pixel_position_dataset,
-#         wcs,
-#     )
-#
-#     #   Find matches in the dataset
-#     index_object_list = []
-#     for coordinate_object in coordinates_objects:
-#         separation = coordinates_dataset.separation(coordinate_object)
-#         mask = separation < separation_limit
-#         object_id = np.argwhere(mask).ravel()
-#
-#         if len(object_id) > 1:
-#             #   Note: with an 'object of interest' object a better error
-#             #   message would be feasible
-#             terminal_output.print_to_terminal(
-#                 f"More than one object detected within the separation limit to "
-#                 f"the object of interest at the following coordinates "
-#                 f"{coordinate_object.ra} {coordinate_object.dec}. Use the "
-#                 f"object that is the closest.",
-#                 style_name='WARNING',
-#             )
-#             object_id = np.argmin(separation)
-#         if not object_id:
-#             terminal_output.print_to_terminal(
-#                 f"No object detected within the separation limit to "
-#                 f"the object of interest at the following coordinates "
-#                 f"{coordinate_object.ra} {coordinate_object.dec}. Set object "
-#                 f"ID to None",
-#                 style_name='WARNING',
-#             )
-#             object_id = None
-#
-#         index_object_list.append(object_id)
-#
-#     #   TODO: This does not work as intended
-#     # if isinstance(ra_objects, list):
-#     #     mask = np.zeros(len(coordinates_dataset), dtype=bool)
-#     #     for coordinate_object in coordinates_objects:
-#     #         separation = coordinates_dataset.separation(coordinate_object)
-#     #
-#     #         #   Calculate mask of all object closer than ``radius``
-#     #         mask = mask | (separation < separation_limit)
-#     # #   TODO: Check if this else is necessary
-#     # else:
-#     #     mask = coordinates_dataset.separation(coordinates_objects) < separation_limit
-#     #
-#     # index_object = np.argwhere(mask).ravel()
-#
-#     return index_object_list, len(index_object_list), obj_pixel_position_x, obj_pixel_position_y
-
-
 def determine_pixel_coordinates_obj_astropy(
-        x_pixel_position_dataset, y_pixel_position_dataset,
-        objects_of_interest, filter_, wcs, separation_limit=2. * u.arcsec):
+        x_pixel_position_dataset: np.ndarray,
+        y_pixel_position_dataset: np.ndarray,
+        objects_of_interest: list[analyze.ObjectOfInterest], filter_: str,
+        current_wcs: wcs.WCS, separation_limit: u.Quantity = 2. * u.arcsec
+        ) -> None:
     """
-        Find the image coordinates of a star based on the stellar
-        coordinates and the WCS of the image, using astropy matching
-        algorithms.
+    Find the image coordinates of a star based on the stellar
+    coordinates and the WCS of the image, using astropy matching
+    algorithms.
 
-        Parameters
-        ----------
-        x_pixel_position_dataset    : `numpy.ndarray`
-            Positions of the objects in Pixel in X direction
+    Parameters
+    ----------
+    x_pixel_position_dataset
+        Positions of the objects in Pixel in X direction
 
-        y_pixel_position_dataset    : `numpy.ndarray`
-            Positions of the objects in Pixel in Y direction
+    y_pixel_position_dataset
+        Positions of the objects in Pixel in Y direction
 
-        objects_of_interest         : `observation.objects_of_interest`
-            Object with 'object of interest' properties
+    objects_of_interest
+        Object with 'object of interest' properties
 
-        filter_                     : `string`
-            Filter identifier
+    filter_
+        Filter identifier
 
-        wcs                         : `astropy.wcs.WCS`
-            WCS info
+    current_wcs
+        WCS info
 
 
-        separation_limit            : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
+    separation_limit
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
     """
     #   Create SkyCoord object for dataset
     coordinates_dataset = SkyCoord.from_pixel(
         x_pixel_position_dataset,
         y_pixel_position_dataset,
-        wcs,
+        current_wcs,
     )
 
     for object_ in objects_of_interest:
@@ -216,41 +96,43 @@ def determine_pixel_coordinates_obj_astropy(
 
 
 def determine_pixel_coordinates_obj_srcor(
-        x_pixel_position_dataset, y_pixel_position_dataset,
-        objects_of_interest, filter_, wcs, max_pixel_between_objects=3,
-        own_correlation_option=1, verbose=False):
+        x_pixel_position_dataset: np.ndarray,
+        y_pixel_position_dataset: np.ndarray,
+        objects_of_interest: list[analyze.ObjectOfInterest], filter_: str,
+        current_wcs: wcs.WCS, max_pixel_between_objects: int = 3,
+        own_correlation_option: int = 1, verbose: bool = False) -> None:
     """
-        Find the image coordinates of a star based on the stellar
-        coordinates and the WCS of the image
+    Find the image coordinates of a star based on the stellar
+    coordinates and the WCS of the image
 
-        Parameters
-        ----------
-        x_pixel_position_dataset    : `numpy.ndarray`
-            Positions of the objects in Pixel in X direction
+    Parameters
+    ----------
+    x_pixel_position_dataset
+        Positions of the objects in Pixel in X direction
 
-        y_pixel_position_dataset    : `numpy.ndarray`
-            Positions of the objects in Pixel in Y direction
+    y_pixel_position_dataset
+        Positions of the objects in Pixel in Y direction
 
-        objects_of_interest         : `observation.objects_of_interest`
-            Object with 'object of interest' properties
+    objects_of_interest
+        Object with 'object of interest' properties
 
-        filter_                     : `string`
-            Filter identifier
+    filter_
+        Filter identifier
 
-        wcs                         : `astropy.wcs.WCS`
-            WCS info
+    current_wcs
+        WCS info
 
-        max_pixel_between_objects   : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
+    max_pixel_between_objects
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
 
-        own_correlation_option      : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
+    own_correlation_option
+        Option for the srcor correlation function
+        Default is ``1``.
 
-        verbose                     : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
+    verbose
+        If True additional output will be printed to the command line.
+        Default is ``False``.
     """
     #   Number of objects
     n_obj_dataset = len(x_pixel_position_dataset)
@@ -266,7 +148,7 @@ def determine_pixel_coordinates_obj_srcor(
         coordinates_object = object_.coordinates_object
 
         #   Convert ra & dec to pixel coordinates
-        obj_pixel_position_x, obj_pixel_position_y = wcs.all_world2pix(
+        obj_pixel_position_x, obj_pixel_position_y = current_wcs.all_world2pix(
             coordinates_object.ra,
             coordinates_object.dec,
             0,
@@ -309,70 +191,57 @@ def determine_pixel_coordinates_obj_srcor(
             object_id = object_id[0]
 
         #   Add ID to object of interest
-            object_.id_in_image_series[filter_] = object_id
+        object_.id_in_image_series[filter_] = object_id
 
 
 def identify_star_in_dataset(
-        x_pixel_positions, y_pixel_positions, objects_of_interest, filter_,
-        wcs, separation_limit=2. * u.arcsec, max_pixel_between_objects=3,
-        own_correlation_option=1, verbose=False, correlation_method='astropy'):
+        x_pixel_positions: np.ndarray, y_pixel_positions: np.ndarray,
+        objects_of_interest: list[analyze.ObjectOfInterest], filter_: str,
+        current_wcs: wcs.WCS, separation_limit: u.Quantity = 2. * u.arcsec,
+        max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
+        verbose: bool = False, correlation_method: str = 'astropy') -> None:
     """
-        Identify a specific star based on its right ascension and declination
-        in a dataset of pixel coordinates. Requires a valid WCS.
+    Identify a specific star based on its right ascension and declination
+    in a dataset of pixel coordinates. Requires a valid WCS.
 
-        Parameters
-        ----------
-        x_pixel_positions           : `numpy.ndarray`
-            Object positions in pixel coordinates. X direction.
+    Parameters
+    ----------
+    x_pixel_positions
+        Object positions in pixel coordinates. X direction.
 
-        y_pixel_positions           : `numpy.ndarray`
-            Object positions in pixel coordinates. Y direction.
+    y_pixel_positions
+        Object positions in pixel coordinates. Y direction.
 
-        objects_of_interest         : `observation.objects_of_interest`
-            Object with 'object of interest' properties
+    objects_of_interest
+        Object with 'object of interest' properties
 
-        filter_                     : `string`
-            Filter identifier
+    filter_
+        Filter identifier
 
-        wcs                         : `astropy.wcs` object
-            WCS information
+    current_wcs
+        WCS information
 
-        separation_limit            : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
+    separation_limit
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
 
-        max_pixel_between_objects   : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
+    max_pixel_between_objects
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
 
-        own_correlation_option      : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
+    own_correlation_option
+        Option for the srcor correlation function
+        Default is ``1``.
 
-        verbose                     : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
+    verbose
+        If True additional output will be printed to the command line.
+        Default is ``False``.
 
-        correlation_method          : `string`, optional
-            Correlation method to be used to find the common objects on
-            the images.
-            Possibilities: ``astropy``, ``own``
-            Default is ``astropy``.
-
-
-        Returns
-        -------
-        index_obj                   : `numpy.ndarray`
-            Index positions of the object.
-
-        count                       : `integer`
-            Number of times the object has been identified on the image
-
-        obj_pixel_position_x        : `float`
-            X coordinates of the objects in pixel
-
-        obj_pixel_position_y        : `float`
-            Y coordinates of the objects in pixel
+    correlation_method
+        Correlation method to be used to find the common objects on
+        the images.
+        Possibilities: ``astropy``, ``own``
+        Default is ``astropy``.
     """
     if correlation_method == 'astropy':
         determine_pixel_coordinates_obj_astropy(
@@ -380,7 +249,7 @@ def identify_star_in_dataset(
             y_pixel_positions,
             objects_of_interest,
             filter_,
-            wcs,
+            current_wcs,
             separation_limit=separation_limit,
         )
 
@@ -390,7 +259,7 @@ def identify_star_in_dataset(
             y_pixel_positions,
             objects_of_interest,
             filter_,
-            wcs,
+            current_wcs,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             verbose=verbose,
@@ -404,114 +273,120 @@ def identify_star_in_dataset(
 
 
 def correlate_datasets(
-        x_pixel_positions, y_pixel_positions, wcs, n_objects, n_images,
-        dataset_type='image', reference_dataset_id=0, reference_obj_ids=None,
-        protect_reference_obj=True, n_allowed_non_detections_object=1,
-        separation_limit=2. * u.arcsec, advanced_cleanup=True,
-        max_pixel_between_objects=3., expected_bad_image_fraction=1.0,
-        own_correlation_option=1, cross_identification_limit=1,
-        correlation_method='astropy'):
+        x_pixel_positions: list[np.ndarray],
+        y_pixel_positions: list[np.ndarray],
+        current_wcs: wcs.WCS, n_objects: int, n_images: int,
+        dataset_type: str = 'image', reference_dataset_id: int = 0,
+        reference_obj_ids: list[int] | None = None,
+        protect_reference_obj: bool = True,
+        n_allowed_non_detections_object: int = 1,
+        separation_limit: u.Quantity = 2. * u.arcsec,
+        advanced_cleanup: bool = True,
+        max_pixel_between_objects: float = 3.,
+        expected_bad_image_fraction: float = 1.0,
+        own_correlation_option: int = 1, cross_identification_limit: int = 1,
+        correlation_method: str = 'astropy'
+        ) -> tuple[np.ndarray, int, np.ndarray, int]:
     """
-        Correlate the pixel positions from different dataset such as
-        images or image series.
+    Correlate the pixel positions from different dataset such as
+    images or image series.
 
-        Parameters
-        ----------
-        x_pixel_positions               : `list` or `list` of `lists` with `floats`
-            Pixel positions in X direction
+    Parameters
+    ----------
+    x_pixel_positions
+        Pixel positions in X direction
 
-        y_pixel_positions               : `list` or `list` of `lists` with `floats`
-            Pixel positions in Y direction
+    y_pixel_positions
+        Pixel positions in Y direction
 
-        wcs                             : `astropy.wcs.WCS`
-            WCS information
+    current_wcs
+        WCS information
 
-        n_objects                       : `integer`
-            Number of objects
+    n_objects
+        Number of objects
 
-        n_images                        : `integer`
-            Number of images
+    n_images
+        Number of images
 
-        dataset_type                    : `string`
-            Characterizes the dataset.
-            Default is ``image``.
+    dataset_type
+        Characterizes the dataset.
+        Default is ``image``.
 
-        reference_dataset_id            : `integer`, optional
-            ID of the reference dataset
-            Default is ``0``.
+    reference_dataset_id
+        ID of the reference dataset
+        Default is ``0``.
 
-        reference_obj_ids               : `list` of `integer` or `numpy.ndarray` or `None`, optional
-            IDs of the reference objects. The reference objects will not be
-            removed from the list of objects.
-            Default is ``None``.
+    reference_obj_ids
+        IDs of the reference objects. The reference objects will not be
+        removed from the list of objects.
+        Default is ``None``.
 
-        protect_reference_obj           : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
+    protect_reference_obj
+        If ``False`` also reference objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``True``.
 
-        n_allowed_non_detections_object : `integer`, optional
-            Maximum number of times an object may not be detected in an image.
-            When this limit is reached, the object will be removed.
-            Default is ``i`.
+    n_allowed_non_detections_object
+        Maximum number of times an object may not be detected in an image.
+        When this limit is reached, the object will be removed.
+        Default is ``i`.
 
-        separation_limit                : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
+    separation_limit
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
 
-        advanced_cleanup                : `boolean`, optional
-            If ``True`` a multilevel cleanup of the results will be
-            attempted. If ``False`` only the minimal necessary removal of
-            objects that are not on all datasets will be performed.
-            Default is ``True``.
+    advanced_cleanup
+        If ``True`` a multilevel cleanup of the results will be
+        attempted. If ``False`` only the minimal necessary removal of
+        objects that are not on all datasets will be performed.
+        Default is ``True``.
 
-        max_pixel_between_objects       : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
+    max_pixel_between_objects
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
 
-        expected_bad_image_fraction     : `float`, optional
-            Fraction of low quality images, i.e. those images for which a
-            reduced number of objects with valid source positions are expected.
-            Default is ``1.0``.
+    expected_bad_image_fraction
+        Fraction of low quality images, i.e. those images for which a
+        reduced number of objects with valid source positions are expected.
+        Default is ``1.0``.
 
-        own_correlation_option          : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
+    own_correlation_option
+        Option for the srcor correlation function
+        Default is ``1``.
 
-        cross_identification_limit      : `integer`, optional
-            Cross-identification limit between multiple objects in the current
-            image and one object in the reference image. The current image is
-            rejected when this limit is reached.
-            Default is ``1``.
+    cross_identification_limit
+        Cross-identification limit between multiple objects in the current
+        image and one object in the reference image. The current image is
+        rejected when this limit is reached.
+        Default is ``1``.
 
-        correlation_method              : `string`, optional
-            Correlation method to be used to find the common objects on
-            the images.
-            Possibilities: ``astropy``, ``own``
-            Default is ``astropy``.
+    correlation_method
+        Correlation method to be used to find the common objects on
+        the images.
+        Possibilities: ``astropy``, ``own``
+        Default is ``astropy``.
 
+    Returns
+    -------
+    correlation_index
+        IDs of the correlated objects
 
-        Returns
-        -------
-        correlation_index               : `numpy.ndarray`
-            IDs of the correlated objects
+    new_reference_image_id
+        New ID of the reference image
+        Default is ``0``.
 
-        new_reference_image_id          : `integer`, optional
-            New ID of the reference image
-            Default is ``0``.
+    rejected_images
+        IDs of the images that were rejected because of insufficient quality
 
-        rejected_images                 : `numpy.ndarray`
-            IDs of the images that were rejected because of insufficient quality
-
-        n_common_objects                : `integer`
-            Number of objects found on all datasets
+    n_common_objects
+        Number of objects found on all datasets
     """
     if correlation_method == 'astropy':
         #   Astropy version: 2x faster than own
         correlation_index, rejected_images = correlation_astropy(
             x_pixel_positions,
             y_pixel_positions,
-            wcs,
+            current_wcs,
             reference_dataset_id=reference_dataset_id,
             reference_obj_ids=reference_obj_ids,
             expected_bad_image_fraction=n_allowed_non_detections_object,
@@ -604,60 +479,64 @@ def correlate_datasets(
 
 
 def correlation_astropy(
-        x_pixel_positions, y_pixel_positions, wcs, reference_dataset_id=0,
-        reference_obj_ids=None, expected_bad_image_fraction=1,
-        protect_reference_obj=True, separation_limit=2. * u.arcsec,
-        advanced_cleanup=True):
+        x_pixel_positions: list[np.ndarray],
+        y_pixel_positions: list[np.ndarray], current_wcs: wcs.WCS,
+        reference_dataset_id: int = 0,
+        reference_obj_ids: list[int] | None = None,
+        expected_bad_image_fraction: int = 1,
+        protect_reference_obj: bool = True,
+        separation_limit: u.Quantity = 2. * u.arcsec,
+        advanced_cleanup: bool = True) -> tuple[np.ndarray, np.ndarray]:
     """
-        Correlation based on astropy matching algorithm
+    Correlation based on astropy matching algorithm
 
-        Parameters
-        ----------
-        x_pixel_positions           : `list` of `numpy.ndarray`
-            Object positions in pixel coordinates. X direction.
+    Parameters
+    ----------
+    x_pixel_positions
+        Object positions in pixel coordinates. X direction.
 
-        y_pixel_positions           : `list` of `numpy.ndarray`
-            Object positions in pixel coordinates. Y direction.
+    y_pixel_positions
+        Object positions in pixel coordinates. Y direction.
 
-        wcs                         : `astropy.wcs ` object
-            WCS information
+    current_wcs
+        WCS information
 
-        reference_dataset_id        : `integer`, optional
-            ID of the reference dataset
-            Default is ``0``.
+    reference_dataset_id
+        ID of the reference dataset
+        Default is ``0``.
 
-        reference_obj_ids           : `list` of `integer` or `numpy.ndarray` or None, optional
-            IDs of the reference objects. The reference objects will not be
-            removed from the list of objects.
-            Default is ``None``.
+    reference_obj_ids
+        IDs of the reference objects. The reference objects will not be
+        removed from the list of objects.
+        Default is ``None``.
 
-        expected_bad_image_fraction : `integer`, optional
-            Maximum number of times an object may not be detected in an image.
-            When this limit is reached, the object will be removed.
-            Default is ``1``.
+    expected_bad_image_fraction
+        Maximum number of times an object may not be detected in an image.
+        When this limit is reached, the object will be removed.
+        Default is ``1``.
 
-        protect_reference_obj       : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
+    protect_reference_obj
+        If ``False`` also reference objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``True``.
 
-        separation_limit            : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
+    separation_limit
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
 
-        advanced_cleanup            : `boolean`, optional
-            If ``True`` a multilevel cleanup of the results will be
-            attempted. If ``False`` only the minimal necessary removal of
-            objects that are not on all datasets will be performed.
-            Default is ``True``.
+    advanced_cleanup
+        If ``True`` a multilevel cleanup of the results will be
+        attempted. If ``False`` only the minimal necessary removal of
+        objects that are not on all datasets will be performed.
+        Default is ``True``.
 
-        Returns
-        -------
-        index_array                     : `numpy.ndarray`
-            IDs of the correlated objects
+    Returns
+    -------
+    index_array
+        IDs of the correlated objects
 
-        rejected_images                 : `numpy.ndarray`
-            IDs of the images that were rejected because of insufficient quality
+    rejected_images
+        IDs of the images that were rejected because of insufficient quality
     """
     #   Sanitize reference object
     if reference_obj_ids is None:
@@ -670,7 +549,7 @@ def correlation_astropy(
     reference_coordinates = SkyCoord.from_pixel(
         x_pixel_positions[reference_dataset_id],
         y_pixel_positions[reference_dataset_id],
-        wcs,
+        current_wcs,
     )
 
     #   Prepare index array and fill in values for the reference dataset
@@ -700,7 +579,7 @@ def correlation_astropy(
                 current_coordinates = SkyCoord.from_pixel(
                     x_pixel_positions[i],
                     y_pixel_positions[i],
-                    wcs,
+                    current_wcs,
                 )
 
                 #   Find matches between the datasets
@@ -745,7 +624,7 @@ def correlation_astropy(
             id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - reference_obj_ids
             id_reference_obj_in_rejected_objects = np.argwhere(
                 id_difference == 0.
-            )[:,0]
+            )[:, 0]
             rejected_object_ids = np.delete(
                 rejected_object_ids,
                 id_reference_obj_in_rejected_objects
@@ -809,7 +688,7 @@ def correlation_astropy(
             id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - reference_obj_ids
             id_reference_obj_in_rejected_objects = np.argwhere(
                 id_difference == 0.
-            )[:,0]
+            )[:, 0]
             rejected_object_ids = np.delete(
                 rejected_object_ids,
                 id_reference_obj_in_rejected_objects
@@ -842,128 +721,130 @@ def correlation_astropy(
     return index_array, rejected_images
 
 
-def correlation_own(x_pixel_positions, y_pixel_positions,
-                    max_pixel_between_objects=3.,
-                    expected_bad_image_fraction=1.0,
-                    cross_identification_limit=1, reference_dataset_id=0,
-                    reference_obj_id=None,
-                    n_allowed_non_detections_object=1, indent=1, option=None,
-                    magnitudes=None, silent=False,
-                    protect_reference_obj=True):
+def correlation_own(
+        x_pixel_positions: np.ndarray, y_pixel_positions: np.ndarray,
+        max_pixel_between_objects: float = 3.,
+        expected_bad_image_fraction: float = 1.0,
+        cross_identification_limit: int = 1, reference_dataset_id: int = 0,
+        reference_obj_id: list[int] | None = None,
+        n_allowed_non_detections_object: int = 1, indent: int = 1,
+        option: int | None = None, magnitudes: np.ndarray | None = None,
+        silent: bool = False, protect_reference_obj: bool = True
+        ) -> tuple[np.ndarray, np.ndarray | int, int, np.ndarray]:
     """
-        Correlate source positions from several images (e.g., different images)
+    Correlate source positions from several images (e.g., different images)
 
-        Source matching is done by finding objects within a specified
-        radius. The code is adapted from the standard srcor routine from
-        the IDL Astronomy User's Library. The normal srcor routine was
-        extended to fit the requirements of the C7 experiment within the
-        astrophysics lab course at Potsdam University.
+    Source matching is done by finding objects within a specified
+    radius. The code is adapted from the standard srcor routine from
+    the IDL Astronomy User's Library. The normal srcor routine was
+    extended to fit the requirements of the C7 experiment within the
+    astrophysics lab course at Potsdam University.
 
-        SOURCE: Adapted from the IDL Astro Library
+    SOURCE: Adapted from the IDL Astro Library
 
-        Parameters
-        ----------
-        x_pixel_positions               : `numpy.ndarray`
+    Parameters
+    ----------
+    x_pixel_positions
 
-        y_pixel_positions               : `numpy.ndarray`
-            Arrays of x and y coordinates (several columns each). The
-            following syntax is expected: x[array of source
-            positions]. The program marches through the columns
-            element by element, looking for the closest match.
+    y_pixel_positions
+        Arrays of x and y coordinates (several columns each). The
+        following syntax is expected: x[array of source
+        positions]. The program marches through the columns
+        element by element, looking for the closest match.
 
-        max_pixel_between_objects       : `float`, optional
-            Critical radius outside which correlations are rejected,
-            but see 'option' below.
-            Default is ````.
+    max_pixel_between_objects
+        Critical radius outside which correlations are rejected,
+        but see 'option' below.
+        Default is ````.
 
-        expected_bad_image_fraction     : `float`, optional
-            Fraction of low quality images, i.e. those images for which a
-            reduced number of objects with valid source positions are expected.
-            positions.
-            Default is ``1.0``.
+    expected_bad_image_fraction
+        Fraction of low quality images, i.e. those images for which a
+        reduced number of objects with valid source positions are expected.
+        positions.
+        Default is ``1.0``.
 
-        cross_identification_limit      : `integer`, optional
-            Cross-identification limit between multiple objects in the current
-            image and one object in the reference image. The current image is
-            rejected when this limit is reached.
-            Default is ``1``.
+    cross_identification_limit
+        Cross-identification limit between multiple objects in the current
+        image and one object in the reference image. The current image is
+        rejected when this limit is reached.
+        Default is ``1``.
 
-        reference_dataset_id            : `integer`, optional
-            ID of the reference dataset (e.g., an image).
-            Default is ``0``.
+    reference_dataset_id
+        ID of the reference dataset (e.g., an image).
+        Default is ``0``.
 
-        reference_obj_id                : `integer`, optional
-            Ids of the reference objects. The reference objects will not be
-            removed from the list of objects.
-            Default is ``None``.
+    reference_obj_id
+        Ids of the reference objects. The reference objects will not be
+        removed from the list of objects.
+        Default is ``None``.
 
-        n_allowed_non_detections_object : `integer`, optional
-            Maximum number of times an object may not be detected in an image.
-            When this limit is reached, the object will be removed.
-            Default is ``1``.
+    n_allowed_non_detections_object
+        Maximum number of times an object may not be detected in an image.
+        When this limit is reached, the object will be removed.
+        Default is ``1``.
 
-        indent                          : `integer`, optional
-            Indentation for the console output lines
-            Default is ``1``.
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
 
-        option                          : `integer`, optional
-            Changes behavior of the program & description of output
-            lists slightly, as follows:
-              OPTION=0 | left out
-                    For each object of the reference image the closest match
-                    from all other images is found, but if none is found within
-                    the distance of 'dcr', the match is thrown out. Thus, the
-                    index of that object will not appear in the 'ind' output
-                    array.
-              OPTION=1
-                    Forces the output mapping to be one-to-one.  OPTION=0
-                    results, in general, in a many-to-one mapping from the
-                    reference image to the all other images. Under OPTION=1, a
-                    further processing step is performed to keep only the
-                    minimum-distance match, whenever an entry from the
-                    reference image appears more than once in the initial
-                    mapping.
-                    Caution: The entries that exceed the distance of the
-                             minimum-distance match will be removed from all
-                             images. Hence, selection of reference image
-                             matters.
-              OPTION=2
-                    Same as OPTION=1, except that all entries which appears
-                    more than once in the initial mapping will be removed from
-                    all images independent of distance.
-              OPTION=3
-                    All matches that are within 'dcr' are returned
-            Default is ``None``.
+    option
+        Changes behavior of the program & description of output
+        lists slightly, as follows:
+          OPTION=0 | left out
+                For each object of the reference image the closest match
+                from all other images is found, but if none is found within
+                the distance of 'dcr', the match is thrown out. Thus, the
+                index of that object will not appear in the 'ind' output
+                array.
+          OPTION=1
+                Forces the output mapping to be one-to-one.  OPTION=0
+                results, in general, in a many-to-one mapping from the
+                reference image to the all other images. Under OPTION=1, a
+                further processing step is performed to keep only the
+                minimum-distance match, whenever an entry from the
+                reference image appears more than once in the initial
+                mapping.
+                Caution: The entries that exceed the distance of the
+                         minimum-distance match will be removed from all
+                         images. Hence, selection of reference image
+                         matters.
+          OPTION=2
+                Same as OPTION=1, except that all entries which appears
+                more than once in the initial mapping will be removed from
+                all images independent of distance.
+          OPTION=3
+                All matches that are within 'dcr' are returned
+        Default is ``None``.
 
-        magnitudes                      : `numpy.ndarray`, optional
-            An array of stellar magnitudes corresponding to x and y.
-            If magnitude is supplied, the brightest objects within
-            'max_pixel_between_objects' is taken as a match. The option keyword
-            is set to 4 internally.
-            Default is ``None``.
+    magnitudes
+        An array of stellar magnitudes corresponding to x and y.
+        If magnitude is supplied, the brightest objects within
+        'max_pixel_between_objects' is taken as a match. The option keyword
+        is set to 4 internally.
+        Default is ``None``.
 
-        silent                          : `boolean`, optional
-            Suppresses output if True.
-            Default is ``False``.
+    silent
+        Suppresses output if True.
+        Default is ``False``.
 
-        protect_reference_obj           : `boolean`, optional
-            Also reference objects will be rejected if Falls.
-            Default is ``True``.
+    protect_reference_obj
+        Also reference objects will be rejected if Falls.
+        Default is ``True``.
 
-        Returns
-        -------
-        index_array                     : `numpy.ndarray`
-            Array of index positions of matched objects in the images,
-            set to -1 if no matches are found.
+    Returns
+    -------
+    index_array
+        Array of index positions of matched objects in the images,
+        set to -1 if no matches are found.
 
-        rejected_images                 : `numpy.ndarray`
-            Vector with indexes of all images which should be removed
+    rejected_images
+        Vector with indexes of all images which should be removed
 
-        count                           : `integer`
-            Integer giving number of matches returned
+    count
+        Integer giving number of matches returned
 
-        rejected_objects                : `numpy.ndarray`
-            Vector with indexes of all objects which should be removed
+    rejected_objects
+        Vector with indexes of all objects which should be removed
     """
     #   Sanitize reference object
     if reference_obj_id is None:
@@ -1013,15 +894,21 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
     #
 
     #   Outer loop to allow for a pre burner to rejected_images objects that
-    #   are on not enough images
+    #   are not detected on enough images
+    #
+    #   Initialize counter of mutual sources and rejected objects
+    count = 0
     rejected_objects = 0
+    #
+    index_array: np.ndarray | None = None
+    rejected_img = np.zeros(n_images, dtype=int)
     for z in range(0, 2):
         #    Prepare index and rejected_images arrays
         #       <- arbitrary * 10 to allow for multi identifications (option 3)
         index_array = np.zeros((n_images, n_objects * 10), dtype=int) - 1
         rejected_img = np.zeros(n_images, dtype=int)
         rejected_obj = np.zeros(n_objects, dtype=int)
-        #   Initialize counter of mutual sources
+        #   Reset counter of mutual sources
         count = 0
 
         #   Loop over the number of objects
@@ -1049,8 +936,8 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
                         comparison_y_pixel_positions[comparison_y_pixel_positions == 0] = 9E13
 
                         #   Calculate radii
-                        d2 = (x_pixel_positions[i, reference_dataset_id] - comparison_x_pixel_positions) ** 2 \
-                             + (y_pixel_positions[i, reference_dataset_id] - comparison_y_pixel_positions) ** 2
+                        d2 = ((x_pixel_positions[i, reference_dataset_id] - comparison_x_pixel_positions) ** 2
+                              + (y_pixel_positions[i, reference_dataset_id] - comparison_y_pixel_positions) ** 2)
 
                         if option == 3:
                             #   Find objects with distances that are smaller
@@ -1135,7 +1022,7 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
         index_array = index_array[:, 0:count]
         _correlation_index_2 = np.zeros(count, dtype=int) - 1
     else:
-        rejected_images = -1
+        rejected_images: int | np.ndarray = -1
         return index_array, rejected_images, count, rejected_objects
 
     #   Return in case of option 0 and 3
@@ -1283,63 +1170,68 @@ def correlation_own(x_pixel_positions, y_pixel_positions,
 
 
 def correlate_image_series_images(
-        image_series: 'analyze.ImageSeries', max_pixel_between_objects=3., own_correlation_option=1,
-        cross_identification_limit=1, reference_obj_ids=None,
-        n_allowed_non_detections_object=1, expected_bad_image_fraction=1.0,
-        protect_reference_obj=True, correlation_method='astropy',
-        separation_limit=2. * u.arcsec):
+        image_series: 'analyze.ImageSeries',
+        max_pixel_between_objects: float = 3.,
+        own_correlation_option: int = 1,
+        cross_identification_limit: int = 1,
+        reference_obj_ids: list[int] | None = None,
+        n_allowed_non_detections_object: int = 1,
+        expected_bad_image_fraction: float = 1.0,
+        protect_reference_obj: bool = True,
+        correlation_method: str = 'astropy',
+        separation_limit: u.Quantity = 2. * u.arcsec) -> None:
     """
-        Correlate object positions from all stars in an image series to
-        identify those objects that are visible on all images
+    Correlate object positions from all stars in an image series to
+    identify those objects that are visible on all images
 
-        Parameters
-        ----------
-        image_series
-            Image series of images, e.g., taken in one filter
+    Parameters
+    ----------
+    image_series
+        Image series of images, e.g., taken in one filter
 
-        max_pixel_between_objects       : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
+    max_pixel_between_objects
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
 
-        own_correlation_option          : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
+    own_correlation_option
+        Option for the srcor correlation function
+        Default is ``1``.
 
-        cross_identification_limit      : `integer`, optional
-            Cross-identification limit between multiple objects in the current
-            image and one object in the reference image. The current image is
-            rejected when this limit is reached.
-            Default is ``1``.
+    cross_identification_limit
+        Cross-identification limit between multiple objects in the current
+        image and one object in the reference image. The current image is
+        rejected when this limit is reached.
+        Default is ``1``.
 
-        reference_obj_ids               : `list` of `integer` or `numpy.ndarray` or None, optional
-            IDs of the reference objects. The reference objects will not be
-            removed from the list of objects.
-            Default is ``None``.
+    reference_obj_ids
+        IDs of the reference objects. The reference objects will not be
+        removed from the list of objects.
+        Default is ``None``.
 
-        n_allowed_non_detections_object : `integer`, optional
-            Maximum number of times an object may not be detected in an image.
-            When this limit is reached, the object will be removed.
-            Default is ``i`.
+    n_allowed_non_detections_object
+        Maximum number of times an object may not be detected in an image.
+        When this limit is reached, the object will be removed.
+        Default is ``i`.
 
-        expected_bad_image_fraction     : `float`, optional
-            Fraction of low quality images, i.e. those images for which a
-            reduced number of objects with valid source positions are expected.
-            Default is ``1.0``.
+    expected_bad_image_fraction
+        Fraction of low quality images, i.e. those images for which a
+        reduced number of objects with valid source positions are expected.
+        Default is ``1.0``.
 
-        protect_reference_obj           : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
+    protect_reference_obj
+        If ``False`` also reference objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``True``.
 
-        correlation_method              : `string`, optional
-            Correlation method to be used to find the common objects on
-            the images.
-            Possibilities: ``astropy``, ``own``
-            Default is ``astropy``.
+    correlation_method
+        Correlation method to be used to find the common objects on
+        the images.
+        Possibilities: ``astropy``, ``own``
+        Default is ``astropy``.
 
-        separation_limit                : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
+    separation_limit
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
     """
     #   Number of images
     n_images = len(image_series.image_list)
@@ -1353,7 +1245,7 @@ def correlate_image_series_images(
     )
 
     #   Get WCS
-    wcs = image_series.wcs
+    current_wcs = image_series.wcs
 
     #   Extract pixel positions of the objects
     x, y, n_objects = image_series.get_object_positions_pixel()
@@ -1363,7 +1255,7 @@ def correlate_image_series_images(
     correlation_index, new_reference_image_id, rejected_images, _ = correlate_datasets(
         x,
         y,
-        wcs,
+        current_wcs,
         n_objects,
         n_images,
         reference_dataset_id=image_series.reference_image_id,
@@ -1393,13 +1285,18 @@ def correlate_image_series_images(
 
 
 def correlate_image_series(
-        observation: 'analyze.Observation', filter_list, max_pixel_between_objects=3.,
-        own_correlation_option=1, cross_identification_limit=1,
-        reference_image_series_id=0, n_allowed_non_detections_object=1,
-        expected_bad_image_fraction=1.0, protect_reference_obj=True,
-        correlation_method='astropy', separation_limit: u.quantity.Quantity = 2. * u.arcsec,
-        force_correlation_calibration_objects=False, reference_image_id=0,
-        verbose=False, indent=1):
+        observation: 'analyze.Observation', filter_list: list[str],
+        max_pixel_between_objects: int = 3,
+        own_correlation_option: int = 1, cross_identification_limit: int = 1,
+        reference_image_series_id: int = 0,
+        n_allowed_non_detections_object: int = 1,
+        expected_bad_image_fraction: float = 1.0,
+        protect_reference_obj: bool = True,
+        correlation_method: str = 'astropy',
+        separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+        force_correlation_calibration_objects: bool = False,
+        reference_image_id: int = 0, verbose: bool = False, indent: int = 1
+        ) -> None:
     """
     Correlate star lists from the stacked images of all filters to find
     those stars that are visible on all images
@@ -1409,43 +1306,43 @@ def correlate_image_series(
     observation
         Container object with image series objects for each filter
 
-    filter_list                             : `list` or `set` of `string`
+    filter_list
         List with filter identifiers.
 
-    max_pixel_between_objects               : `float`, optional
+    max_pixel_between_objects
         Maximal distance between two objects in Pixel
         Default is ``3``.
 
-    own_correlation_option                  : `integer`, optional
+    own_correlation_option
         Option for the srcor correlation function
         Default is ``1``.
 
-    cross_identification_limit              : `integer`, optional
+    cross_identification_limit
         Cross-identification limit between multiple objects in the current
         image and one object in the reference image. The current image is
         rejected when this limit is reached.
         Default is ``1``.
 
-    reference_image_series_id                   : `integer`, optional
+    reference_image_series_id
         ID of the reference image
         Default is ``0``.
 
-    n_allowed_non_detections_object         : `integer`, optional
+    n_allowed_non_detections_object
         Maximum number of times an object may not be detected in an image.
         When this limit is reached, the object will be removed.
         Default is ``i`.
 
-    expected_bad_image_fraction             : `float`, optional
+    expected_bad_image_fraction
         Fraction of low quality images, i.e. those images for which a
         reduced number of objects with valid source positions are expected.
         Default is ``1.0``.
 
-    protect_reference_obj                   : `boolean`, optional
+    protect_reference_obj
         If ``False`` also reference objects will be rejected, if they do
         not fulfill all criteria.
         Default is ``True``.
 
-    correlation_method                      : `string`, optional
+    correlation_method
         Correlation method to be used to find the common objects on
         the images.
         Possibilities: ``astropy``, ``own``
@@ -1455,20 +1352,20 @@ def correlate_image_series(
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
 
-    force_correlation_calibration_objects   : `boolean`, optional
+    force_correlation_calibration_objects
         If ``True`` the correlation between the already correlated
         series and the calibration data will be enforced.
         Default is ``False``
 
-    reference_image_id                      : `integer`, optional
+    reference_image_id
         ID of the reference image
         Default is ``0``.
 
-    verbose                                 : `boolean`, optional
+    verbose
         If True additional output will be printed to the command line.
         Default is ``False``.
 
-    indent                              : `integer`, optional
+    indent
         Indentation for the console output lines
         Default is ``1``.
     """
@@ -1581,7 +1478,7 @@ def correlate_image_series(
     #   Check if correlation with calibration data is necessary
     calibration_parameters = getattr(observation, 'calib_parameters', None)
 
-    if calibration_parameters is not None and (calibration_parameters.inds is None
+    if calibration_parameters is not None and (calibration_parameters.ids_calibration_objects is None
                                                or force_correlation_calibration_objects):
         calibration_tbl = calibration_parameters.calib_tbl
         column_names = calibration_parameters.column_names
@@ -1599,7 +1496,7 @@ def correlate_image_series(
         #   Correlate with calibration stars
         #   -> assumes that calibration stars are already cleared of any reference objects
         #      or variable stars
-        calibration_tbl, index_obj_instrument = calibration_data.correlate_with_calibration_objects(
+        calibration_tbl, index_obj_instrument = correlate_with_calibration_objects(
             list(image_series_dict.values())[reference_image_series_id],
             calibration_object_coordinates,
             calibration_tbl,
@@ -1614,80 +1511,82 @@ def correlate_image_series(
         )
 
         observation.calib_parameters.calib_tbl = calibration_tbl
-        observation.calib_parameters.inds = index_obj_instrument
+        observation.calib_parameters.ids_calibration_objects = index_obj_instrument
 
 
 def correlate_preserve_variable(
-        observation: 'analyze.Observation', filter_,
-        max_pixel_between_objects=3., own_correlation_option=1,
-        cross_identification_limit=1, reference_image_id=0,
-        n_allowed_non_detections_object=1, expected_bad_image_fraction=1.0,
-        protect_reference_obj=True, correlation_method='astropy',
-        separation_limit=2. * u.arcsec, verbose=False,
-        plot_reference_only=True) -> None:
+        observation: 'analyze.Observation', filter_: str,
+        max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
+        cross_identification_limit: int = 1, reference_image_id: int = 0,
+        n_allowed_non_detections_object: int = 1,
+        expected_bad_image_fraction: float = 1.0,
+        protect_reference_obj: bool = True,
+        correlation_method: str = 'astropy',
+        separation_limit: u.Quantity = 2. * u.arcsec, verbose: bool = False,
+        plot_reference_only: bool = True) -> None:
     """
-        Correlate results from all images, while preserving the variable
-        star
+    Correlate results from all images, while preserving the variable
+    star
 
-        Parameters
-        ----------
-        observation
-            Container object with image series and object of interest properties
+    Parameters
+    ----------
+    observation
+        Container object with image series and object of interest properties
 
-        filter_                         : `string`
-            Filter
+    filter_
+        Filter
 
-        max_pixel_between_objects       : `float`, optional
-            Maximal distance between two objects in Pixel
-            Default is ``3``.
+    max_pixel_between_objects
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
 
-        own_correlation_option          : `integer`, optional
-            Option for the srcor correlation function
-            Default is ``1``.
+    own_correlation_option
+        Option for the srcor correlation function
+        Default is ``1``.
 
-        cross_identification_limit      : `integer`, optional
-            Cross-identification limit between multiple objects in the current
-            image and one object in the reference image. The current image is
-            rejected when this limit is reached.
-            Default is ``1``.
+    cross_identification_limit
+        Cross-identification limit between multiple objects in the current
+        image and one object in the reference image. The current image is
+        rejected when this limit is reached.
+        Default is ``1``.
 
-        reference_image_id              : `integer`, optional
-            ID of the reference image
-            Default is ``0``.
+    reference_image_id
+        ID of the reference image
+        Default is ``0``.
 
-        n_allowed_non_detections_object : `integer`, optional
-            Maximum number of times an object may not be detected in an image.
-            When this limit is reached, the object will be removed.
-            Default is ``i`.
+    n_allowed_non_detections_object
+        Maximum number of times an object may not be detected in an image.
+        When this limit is reached, the object will be removed.
+        Default is ``i`.
 
-        expected_bad_image_fraction     : `float`, optional
-            Fraction of low quality images, i.e. those images for which a
-            reduced number of objects with valid source positions are expected.
-            Default is ``1.0``.
+    expected_bad_image_fraction
+        Fraction of low quality images, i.e. those images for which a
+        reduced number of objects with valid source positions are expected.
+        Default is ``1.0``.
 
-        protect_reference_obj           : `boolean`, optional
-            If ``False`` also reference objects will be rejected, if they do
-            not fulfill all criteria.
-            Default is ``True``.
+    protect_reference_obj
+        If ``False`` also reference objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``True``.
 
-        correlation_method              : `string`, optional
-            Correlation method to be used to find the common objects on
-            the images.
-            Possibilities: ``astropy``, ``own``
-            Default is ``astropy``.
+    correlation_method
+        Correlation method to be used to find the common objects on
+        the images.
+        Possibilities: ``astropy``, ``own``
+        Default is ``astropy``.
 
-        separation_limit                : `astropy.units`, optional
-            Allowed separation between objects.
-            Default is ``2.*u.arcsec``.
+    separation_limit
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
 
-        verbose                         : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
+    verbose
+        If True additional output will be printed to the command line.
+        Default is ``False``.
 
-        plot_reference_only             : `boolean`, optional
-            If True only the starmap for the reference image will
-            be created.
-            Default is ``True``.
+    plot_reference_only
+        If True only the starmap for the reference image will
+        be created.
+        Default is ``True``.
     """
     #   Get image series
     image_series = observation.image_series_dict[filter_]
@@ -1791,7 +1690,7 @@ def correlate_preserve_variable(
 
 #   TODO: Check were this is used and if it is still functional, rename
 def correlate_preserve_calibration_objects(
-        image_series: 'analyze.ImageSeries', filter_list: list[str, str],
+        image_series: 'analyze.ImageSeries', filter_list: list[str],
         calib_method: str = 'APASS',
         magnitude_range: tuple[float, float] = (0., 18.5),
         vizier_dict: dict[str, str] | None = None, calib_file=None,
@@ -1813,14 +1712,14 @@ def correlate_preserve_calibration_objects(
         Image series object with all image data taken in a specific
         filter
 
-    filter_list                     : `list` with `strings`
+    filter_list
         Filter list
 
-    calib_method                    : `string`, optional
+    calib_method
         Calibration method
         Default is ``APASS``.
 
-    magnitude_range                 : `tuple` or `float`, optional
+    magnitude_range
         Magnitude range
         Default is ``(0.,18.5)``.
 
@@ -1828,64 +1727,62 @@ def correlate_preserve_calibration_objects(
         Identifiers of catalogs, containing calibration data
         Default is ``None``.
 
-    calib_file                      : `string`, optional
+    calib_file
         Path to the calibration file
         Default is ``None``.
 
-    max_pixel_between_objects       : `float`, optional
+    max_pixel_between_objects
         Maximal distance between two objects in Pixel
         Default is ``3``.
 
-    own_correlation_option          : `integer`, optional
+    own_correlation_option
         Option for the srcor correlation function
         Default is ``1``.
 
-    verbose                         : `boolean`, optional
+    verbose
         If True additional output will be printed to the command line.
         Default is ``False``.
 
-    cross_identification_limit      : `integer`, optional
+    cross_identification_limit
         Cross-identification limit between multiple objects in the current
         image and one object in the reference image. The current image is
         rejected when this limit is reached.
         Default is ``1``.
 
-    reference_image_id              : `integer`, optional
+    reference_image_id
         ID of the reference image
         Default is ``0``.
 
-    n_allowed_non_detections_object : `integer`, optional
+    n_allowed_non_detections_object
         Maximum number of times an object may not be detected in an image.
         When this limit is reached, the object will be removed.
         Default is ``i`.
 
-    expected_bad_image_fraction     : `float`, optional
+    expected_bad_image_fraction
         Fraction of low quality images, i.e. those images for which a
         reduced number of objects with valid source positions are expected.
         Default is ``1.0``.
 
-    protect_reference_obj           : `boolean`, optional
+    protect_reference_obj
         If ``False`` also reference objects will be rejected, if they do
         not fulfill all criteria.
         Default is ``True``.
 
-    plot_only_reference_starmap     : `boolean`, optional
+    plot_only_reference_starmap
         If True only the starmap for the reference image will be created.
         Default is ``True``.
 
-    correlation_method              : `string`, optional
+    correlation_method
         Correlation method to be used to find the common objects on
         the images.
         Possibilities: ``astropy``, ``own``
         Default is ``astropy``.
 
-    separation_limit                : `astropy.units`, optional
+    separation_limit
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
     """
-    ###
     #   Load calibration data
-    #
     calib_tbl, column_names, ra_unit = calibration_data.load_calibration_data_table(
         image_series.image_list[reference_image_id],
         filter_list,
@@ -1904,7 +1801,6 @@ def correlate_preserve_calibration_objects(
             f"the\n extracted stars detected. -> EXIT {style.Bcolors.ENDC}"
         )
 
-    ###
     #   Find IDs of calibration stars to ensure they are not deleted in
     #   the correlation process
     #
@@ -1940,11 +1836,9 @@ def correlate_preserve_calibration_objects(
         indent=3,
         style_name='OKBLUE',
     )
-    terminal_output.print_to_terminal()
+    terminal_output.print_to_terminal('')
 
-    ###
     #   Correlate the results from all images
-    #
     correlate_image_series_images(
         image_series,
         max_pixel_between_objects=max_pixel_between_objects,
@@ -1958,12 +1852,201 @@ def correlate_preserve_calibration_objects(
         separation_limit=separation_limit,
     )
 
-    ###
     #   Plot image with the final positions overlaid (final version)
-    #
     utilities.prepare_and_plot_starmap_from_image_series(
         image_series,
         calib_x_pixel_positions,
         calib_y_pixel_positions,
         plot_reference_only=plot_only_reference_starmap,
     )
+
+
+def correlate_with_calibration_objects(
+        image_series: 'analyze.ImageSeries',
+        calibration_object_coordinates: SkyCoord,
+        calibration_tbl: Table, filter_list: list[str],
+        column_names: dict[str, str], correlation_method: str = 'astropy',
+        separation_limit: u.Quantity = 2. * u.arcsec,
+        max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
+        id_object: int | None = None, reference_image_id: int = 0,
+        indent: int = 1) -> tuple[Table, np.ndarray]:
+    """
+    Correlate observed objects with calibration stars
+
+    Parameters
+    ----------
+    image_series
+        Class with all images of a specific image series
+
+    calibration_object_coordinates
+        Coordinates of the calibration objects
+
+    calibration_tbl
+        Table with calibration data
+
+    filter_list
+        Filter list
+
+    column_names
+        Actual names of the columns in calibration_tbl versus
+        the internal default names
+
+    correlation_method
+        Correlation method to be used to find the common objects on
+        the images.
+        Possibilities: ``astropy``, ``own``
+        Default is ``astropy``.
+
+    separation_limit
+        Allowed separation between objects.
+        Default is ``2.*u.arcsec``.
+
+    max_pixel_between_objects
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
+
+    own_correlation_option
+        Option for the srcor correlation function
+        Default is ``1``.
+
+    id_object
+        ID of the object
+        Default is ``None``.
+
+    reference_image_id
+        ID of the reference image
+        Default is ``0``.
+
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
+
+    Returns
+    -------
+    calibration_tbl_sort
+        Sorted table with calibration data
+
+    index_obj_instrument
+        Index of the observed stars that correspond to the calibration stars
+    """
+    #   Pixel positions of the observed object
+    pixel_position_obj_x = image_series.image_list[reference_image_id].photometry['x_fit']
+    pixel_position_obj_y = image_series.image_list[reference_image_id].photometry['y_fit']
+
+    #   Pixel positions of calibration object
+    pixel_position_cali_x, pixel_position_cali_y = calibration_object_coordinates.to_pixel(image_series.wcs)
+
+    if correlation_method == 'astropy':
+        #   Create coordinates object
+        object_coordinates = SkyCoord.from_pixel(
+            pixel_position_obj_x,
+            pixel_position_obj_y,
+            image_series.wcs,
+        )
+
+        #   Find matches between the datasets
+        index_obj_instrument, index_obj_literature, _, _ = matching.search_around_sky(
+            object_coordinates,
+            calibration_object_coordinates,
+            separation_limit,
+        )
+
+        n_identified_literature_objs = len(index_obj_literature)
+
+    elif correlation_method == 'own':
+        #   Max. number of objects
+        n_obj_max = np.max(len(pixel_position_obj_x), len(pixel_position_cali_x))
+
+        #   Define and fill new arrays
+        pixel_position_all_x = np.zeros((n_obj_max, 2))
+        pixel_position_all_y = np.zeros((n_obj_max, 2))
+        pixel_position_all_x[0:len(pixel_position_obj_x), 0] = pixel_position_obj_x
+        pixel_position_all_x[0:len(pixel_position_cali_x), 1] = pixel_position_cali_x
+        pixel_position_all_y[0:len(pixel_position_obj_y), 0] = pixel_position_obj_y
+        pixel_position_all_y[0:len(pixel_position_cali_y), 1] = pixel_position_cali_y
+
+        #   Correlate calibration stars with stars on the image
+        correlated_indexes, rejected_images, n_identified_literature_objs, rejected_obj = correlation_own(
+            pixel_position_all_x,
+            pixel_position_all_y,
+            max_pixel_between_objects=max_pixel_between_objects,
+            option=own_correlation_option,
+        )
+        index_obj_instrument = correlated_indexes[0]
+        index_obj_literature = correlated_indexes[1]
+
+    else:
+        raise ValueError(
+            f'The correlation method needs to either "astropy" or "own". Got '
+            f'{correlation_method} instead.'
+        )
+
+    if n_identified_literature_objs == 0:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \nNo calibration star was identified "
+            f"-> EXIT {style.Bcolors.ENDC}"
+        )
+    if n_identified_literature_objs == 1:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}\nOnly one calibration star was identified\n"
+            "Unfortunately, that is not enough at the moment\n"
+            f"-> EXIT {style.Bcolors.ENDC}"
+        )
+
+    #   Limit calibration table to common objects
+    calibration_tbl_sort = calibration_tbl[index_obj_literature]
+
+    ###
+    #   Plots
+    #
+    #   Make new arrays based on the correlation results
+    pixel_position_common_objs_x = pixel_position_obj_x[list(index_obj_instrument)]
+    pixel_position_common_objs_y = pixel_position_obj_y[list(index_obj_instrument)]
+    index_common_new = np.arange(n_identified_literature_objs)
+
+    #   Add pixel positions and object ids to the calibration table
+    calibration_tbl_sort.add_columns(
+        [np.intc(index_common_new), pixel_position_common_objs_x, pixel_position_common_objs_y],
+        names=['id', 'xcentroid', 'ycentroid']
+    )
+
+    calibration_tbl.add_columns(
+        [np.arange(0, len(pixel_position_cali_y)), pixel_position_cali_x, pixel_position_cali_y],
+        names=['id', 'xcentroid', 'ycentroid']
+    )
+
+    #   Plot star map with calibration stars
+    if id_object is not None:
+        rts = f'calibration - object: {id_object}'
+    else:
+        rts = 'calibration'
+    for filter_ in filter_list:
+        if 'mag' + filter_ in column_names:
+            p = mp.Process(
+                target=plots.starmap,
+                args=(
+                    image_series.out_path.name,
+                    #   Replace with reference image in the future
+                    image_series.image_list[0].get_data(),
+                    filter_,
+                    calibration_tbl,
+                ),
+                kwargs={
+                    'tbl_2': calibration_tbl_sort,
+                    'label': 'downloaded calibration stars',
+                    'label_2': 'matched calibration stars',
+                    'rts': rts,
+                    # 'name_object': image_series.object_name,
+                    'wcs_image': image_series.wcs,
+                }
+            )
+            p.start()
+
+    terminal_output.print_to_terminal(
+        f"{len(calibration_tbl_sort)} calibration stars have been matched to"
+        f" observed stars",
+        indent=indent + 2,
+        style_name='OKBLUE',
+    )
+
+    return calibration_tbl_sort, index_obj_instrument

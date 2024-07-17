@@ -814,11 +814,12 @@ class Executor:
         Class that handles the multiprocessing, using apply_async.
         -> allows for easy catch of exceptions
     """
+    #   TODO: Fix error propagation
 
     def __init__(self, process_num: int):
-        print('mp star method: ', mp.get_start_method())
-        mp.set_start_method('spawn', force=True)
-        print('mp star method: ', mp.get_start_method())
+        # print('mp star method: ', mp.get_start_method())
+        # mp.set_start_method('spawn', force=True)
+        # print('mp star method: ', mp.get_start_method())
         #   Init multiprocessing pool
         self.pool: mp.Pool = mp.Pool(process_num, maxtasksperchild=6)
         #   Init variables
@@ -1486,7 +1487,7 @@ def derive_limiting_magnitude(
             niters=2,
             overlap=False,
             # seed=123,
-            zeropoint=image.zp,
+            zeropoint=np.median(image.zp),
             progress_bar=False,
         )
 
@@ -2053,7 +2054,7 @@ def find_cluster(
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
-        string='_3D_cluster_',
+        # string='_3D_cluster_',
         pm_ra=pm_ra_object,
         pm_dec=pm_de_object,
     )
@@ -2066,7 +2067,7 @@ def find_cluster(
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
-        string='_3D_cluster_',
+        # string='_3D_cluster_',
         pm_ra=pm_ra_object,
         pm_dec=pm_de_object,
         display=True,
@@ -2683,6 +2684,8 @@ def find_filter_for_magnitude_transformation(
     #   Setup list for valid filter etc.
     valid_filter = []
     usable_filter_combinations = []
+
+    print('calibration_filters: ', calibration_filters)
 
     #   Determine usable filter combinations -> Filters must be in a valid
     #   filter combination for the magnitude transformation and calibration

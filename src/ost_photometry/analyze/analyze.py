@@ -46,7 +46,7 @@ import astropy.units as u
 from astropy.nddata import CCDData
 from astropy import wcs
 
-from regions import PixCoord, RectanglePixelRegion
+from regions import RectanglePixelRegion
 
 #   hips2fits module is not in the Ubuntu 22.04 package version
 #   of astroquery (0.4.1)
@@ -104,11 +104,11 @@ class ObjectOfInterest:
 
         #   ID of object in the image series
         #   Syntax: {'filter': 'id'}
-        self.id_in_image_series = {}
+        self.id_in_image_series: dict[str, int] = {}
 
         #   Set defaults for period and transit time
-        self.transit_time = None
-        self.period = None
+        self.transit_time: str | None = None
+        self.period: float | None = None
 
 
 class ImageSeries:
@@ -201,7 +201,7 @@ class ImageSeries:
         )
 
         #   Set PixelRegion for the field of view
-        self.fov_pixel_region: float | None = getattr(
+        self.fov_pixel_region: RectanglePixelRegion | None = getattr(
             self.reference_image,
             'fov_pixel_region',
             None,
@@ -525,7 +525,7 @@ class Observation:
     def get_ids_object_of_interest(
             self, filter_: str | None = None,
             reference_image_series_id: int | None = None
-            ) -> list[ObjectOfInterest]:
+            ) -> list[int]:
         if filter_ is None and reference_image_series_id is None:
             terminal_output.print_to_terminal(
                 "Neither a filter nor an image series ID was provided to "
@@ -535,7 +535,7 @@ class Observation:
             )
             reference_image_series_id: int = 0
 
-        object_of_interest_ids: list[ObjectOfInterest] = []
+        object_of_interest_ids: list[int] = []
         for object_ in self.objects_of_interest:
             ids_object_of_interest = object_.id_in_image_series
             if ids_object_of_interest:
@@ -2772,7 +2772,7 @@ def extract_flux_multi(
         minimum_n_eps_stars: int = 25, strict_epsf_checks: bool = True,
         photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
         inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
-        radii_unit: str = 'arcsec', max_pixel_between_objects: float = 3.,
+        radii_unit: str = 'arcsec', max_pixel_between_objects: int = 3,
         own_correlation_option: int = 1, cross_identification_limit: int = 1,
         reference_image_id: int = 0, n_allowed_non_detections_object: int = 1,
         expected_bad_image_fraction: float = 1.0,
@@ -3288,7 +3288,7 @@ def calibrate_data_mk_light_curve(
         vizier_dict: dict[str, str] | None = None,
         path_calibration_file: str | None = None,
         magnitude_range: tuple[float, float] = (0., 18.5),
-        max_pixel_between_objects: float = 3., own_correlation_option: int = 1,
+        max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
         cross_identification_limit: int = 1,
         n_allowed_non_detections_object: int = 1,
         expected_bad_image_fraction: float = 1.0,

@@ -18,17 +18,23 @@ from astropy.visualization import (
 from astropy.table import Table
 from astropy.stats import sigma_clip as sigma_clipping
 from astropy.stats import sigma_clipped_stats
+from astropy.modeling import fitting
 from astropy.time import Time
 from astropy.timeseries import aggregate_downsample
 import astropy.units as u
+from astropy.timeseries import TimeSeries
 from astropy import wcs
+
+from photutils.aperture import CircularAperture, CircularAnnulus
+from photutils.psf import EPSFStars, EPSFModel
+from photutils.utils import ImageDepth
 
 from scipy.spatial import KDTree
 
 from itertools import cycle
 
 from .. import checks, style, terminal_output, calibration_parameters
-from . import utilities
+from .. import utilities as base_utilities
 
 import matplotlib.colors as mcol
 import matplotlib.cm as cm
@@ -106,7 +112,7 @@ def starmap(
             Output directory
 
         image
-            Image data
+            The image data
 
         filter_
             Filter identifier
@@ -370,28 +376,30 @@ def starmap(
     plt.close()
 
 
-def plot_apertures(output_dir, image, aperture, annulus_aperture,
-                   filename_string):
+def plot_apertures(
+        output_dir: str, image: base_utilities.Image,
+        aperture: CircularAperture, annulus_aperture: CircularAnnulus,
+        filename_string: str) -> None:
     """
-        Plot the apertures used for extracting the stellar fluxes
-               (star map plot for aperture photometry)
+    Plot the apertures used for extracting the stellar fluxes
+           (star map plot for aperture photometry)
 
-        Parameters
-        ----------
-        output_dir          : `string`
-            Output directory
+    Parameters
+    ----------
+    output_dir
+        Output directory
 
-        image               : `numpy.ndarray`
-            Image data (2D)
+    image
+        2D Image data
 
-        aperture            : `photutils.aperture.CircularAperture`
-            Apertures used to extract the stellar flux
+    aperture
+        Apertures used to extract the stellar flux
 
-        annulus_aperture    : `photutils.aperture.CircularAnnulus`
-            Apertures used to extract the background flux
+    annulus_aperture
+        Apertures used to extract the background flux
 
-        filename_string     : `string`
-            String characterizing the output file
+    filename_string
+        String characterizing the output file
     """
     #   Check output directories
     checks.check_output_directories(
@@ -460,38 +468,40 @@ def plot_apertures(output_dir, image, aperture, annulus_aperture,
     plt.close()
 
 
-def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
-                 max_plot_stars=25, name_object=None, indent=2):
+def plot_cutouts(output_dir: str, stars: EPSFStars, identifier: str,
+                 terminal_logger: terminal_output.TerminalLog | None = None,
+                 max_plot_stars: int = 25, name_object: str | None = None,
+                 indent: int = 2) -> None:
     """
-        Plot the cutouts of the stars used to estimate the ePSF
+    Plot the cutouts of the stars used to estimate the ePSF
 
-        Parameters
-        ----------
-        output_dir      : `string`
-            Output directory
+    Parameters
+    ----------
+    output_dir
+        Output directory
 
-        stars           : `numpy.ndarray`
-            Numpy array with cutouts of the ePSF stars
+    stars
+        Numpy array with cutouts of the ePSF stars
 
-        identifier      : `string`
-            String characterizing the plot
+    identifier
+        String characterizing the plot
 
-        terminal_logger : `terminal_output.TerminalLog` or None, optional
-            Logger object. If provided, the terminal output will be directed
-            to this object.
-            Default is ``None``.
+    terminal_logger
+        Logger object. If provided, the terminal output will be directed
+        to this object.
+        Default is ``None``.
 
-        max_plot_stars  : `integer`, optional
-            Maximum number of cutouts to plot
-            Default is ``25``.
+    max_plot_stars
+        Maximum number of cutouts to plot
+        Default is ``25``.
 
-        name_object     : `list` of `string` or `string`, optional
-            Name of the object
-            Default is ``None``.
+    name_object
+        Name of the object
+        Default is ``None``.
 
-        indent          : `integer`, optional
-            Indentation for the console output lines.
-            Default is ``2``.
+    indent
+        Indentation for the console output lines.
+        Default is ``2``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -562,30 +572,34 @@ def plot_cutouts(output_dir, stars, identifier, terminal_logger=None,
 
 
 def plot_epsf(
-        output_dir, epsf, name_object=None, terminal_logger=None, indent=1):
+        output_dir: str, epsf: dict[str, EPSFModel],
+        name_object: str | None = None,
+        terminal_logger: terminal_output.TerminalLog | None = None,
+        indent: int = 1) -> None:
     """
-        Plot the ePSF image of all filters
 
-        Parameters
-        ----------
-        output_dir      : `string`
-            Output directory
+    Plot the ePSF image of all filters
 
-        epsf            : `epsf.object` ???
-            ePSF object, usually constructed by epsf_builder
+    Parameters
+    ----------
+    output_dir
+        Output directory
 
-        name_object     : `list` of string` or `string`, optional
-            Name of the object
-            Default is ``None``.
+    epsf
+        PSF object, usually constructed by epsf_builder
 
-        terminal_logger : `terminal_output.TerminalLog` or None, optional
-            Logger object. If provided, the terminal output will be directed
-            to this object.
-            Default is ``None``.
+    name_object
+        Name of the object
+        Default is ``None``.
 
-        indent          : `integer`, optional
-            Indentation for the console output lines
-            Default is ``1``.
+    terminal_logger
+        Logger object. If provided, the terminal output will be directed
+        to this object.
+        Default is ``None``.
+
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -667,34 +681,38 @@ def plot_epsf(
     plt.close()
 
 
-def plot_residual(image_orig, residual_image, output_dir,
-                  name_object=None, terminal_logger=None, indent=1):
+def plot_residual(
+        image_orig: dict[str, np.ndarray],
+        residual_image: dict[str, np.ndarray],
+        output_dir: str, name_object: str | None = None,
+        terminal_logger: terminal_output.TerminalLog | None = None,
+        indent: int = 1) -> None:
     """
-        Plot the original and the residual image
+    Plot the original and the residual image
 
-        Parameters
-        ----------
-        image_orig          : `dictionary` {`string`: `numpy.ndarray`}
-            Original image data
+    Parameters
+    ----------
+    image_orig
+        Original image data
 
-        residual_image      : `dictionary` {`string`: `numpy.ndarray`}
-            Residual image data
+    residual_image
+        Residual image data
 
-        output_dir          : `string`
-            Output directory
+    output_dir
+        Output directory
 
-        name_object         : `list` of `string` or `string`, optional
-            Name of the object
-            Default is ``None``.
+    name_object
+        Name of the object
+        Default is ``None``.
 
-        terminal_logger     : `terminal_output.TerminalLog` or None, optional
-            Logger object. If provided, the terminal output will be directed
-            to this object.
-            Default is ``None``.
+    terminal_logger
+        Logger object. If provided, the terminal output will be directed
+        to this object.
+        Default is ``None``.
 
-        indent              : `integer`, optional
-            Indentation for the console output lines
-            Default is ``1``.
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -745,6 +763,7 @@ def plot_residual(image_orig, residual_image, output_dir,
         fig.suptitle(f'{name_object}', fontsize=17)
 
     i = 1
+    filter_ = None
     for filter_, image in image_orig.items():
         #   Plot original image
         #   Set up normalization for the image
@@ -832,36 +851,37 @@ def plot_residual(image_orig, residual_image, output_dir,
 
 
 def light_curve_jd(
-        ts, data_column, err_column, output_dir, error_bars=True,
-        name_object=None, file_name_suffix=''):
+        ts: TimeSeries, data_column: str, err_column: str, output_dir: str,
+        error_bars: bool = True, name_object: str | None = None,
+        file_name_suffix: str = '') -> None:
     """
-        Plot the light curve over Julian Date
+    Plot the light curve over Julian Date
 
-        Parameters
-        ----------
-        ts                  : `astropy.timeseries.TimeSeries`
-            Time series
+    Parameters
+    ----------
+    ts
+        Time series
 
-        data_column         : `string`
-            Filter
+    data_column
+        Filter
 
-        err_column          : `string`
-            Name of the error column
+    err_column
+        Name of the error column
 
-        output_dir          : `string`
-            Output directory
+    output_dir
+        Output directory
 
-        error_bars          : `boolean`, optional
-            If True error bars will be plotted.
-            Default is ``False``.
+    error_bars
+        If True error bars will be plotted.
+        Default is ``False``.
 
-        name_object         : `string`, optional
-            Name of the object
-            Default is ``None``.
+    name_object
+        Name of the object
+        Default is ``None``.
 
-        file_name_suffix    : `string`, optional
-            Suffix to add to the file name
-            Default is ``''``
+    file_name_suffix
+        Suffix to add to the file name
+        Default is ``''``
     """
     #   Check output directories
     checks.check_output_directories(
@@ -947,47 +967,48 @@ def light_curve_jd(
 
 
 def light_curve_fold(
-        time_series, data_column, err_column, output_dir, transit_time, period,
-        binning_factor=None, error_bars=True, name_object=None,
-        file_name_suffix=''):
+        time_series: TimeSeries, data_column: str, err_column: str,
+        output_dir: str, transit_time: str, period: float,
+        binning_factor: float | None = None, error_bars: bool = True,
+        name_object: str | None = None, file_name_suffix: str = '') -> None:
     """
-        Plot a folded light curve
+    Plot a folded light curve
 
-        Parameters
-        ----------
-        time_series         : `astropy.timeseries.TimeSeries`
-            Time series
+    Parameters
+    ----------
+    time_series
+        Time series
 
-        data_column         : `string`
-            Filter
+    data_column
+        Filter
 
-        err_column          : `string`
-            Name of the error column
+    err_column
+        Name of the error column
 
-        output_dir          : `string`
-            Output directory
+    output_dir
+        Output directory
 
-        transit_time        : `string`
-            Time of the transit - Format example: "2020-09-18T01:00:00"
+    transit_time
+        Time of the transit - Format example: "2020-09-18T01:00:00"
 
-        period              : `float`
-            Period in days
+    period
+        The period in days
 
-        binning_factor      : `float`, optional
-            Light-curve binning-factor in days
-            Default is ``None``.
+    binning_factor
+        Light-curve binning-factor in days
+        Default is ``None``.
 
-        error_bars          : `boolean`, optional
-            If True error bars will be plotted.
-            Default is ``False``.
+    error_bars
+        If True error bars will be plotted.
+        Default is ``False``.
 
-        name_object         : `string`, optional
-            Name of the object
-            Default is ``None``.
+    name_object
+        Name of the object
+        Default is ``None``.
 
-        file_name_suffix    : `string`, optional
-            Suffix to add to the file name
-            Default is ``''``
+    file_name_suffix
+        Suffix to add to the file name
+        Default is ``''``
     """
     #   Check output directories
     checks.check_output_directories(
@@ -1130,70 +1151,70 @@ def plot_transform(
         image_id: int | None = None, x_data_original: np.ndarray | None = None,
         y_data_original: np.ndarray | None = None) -> None:
     """
-        Plots illustrating magnitude transformation results
+    Plots illustrating magnitude transformation results
 
-        Parameters
-        ----------
-        output_dir
-            Output directory
+    Parameters
+    ----------
+    output_dir
+        Output directory
 
-        filter_1
-            Filter 1
+    filter_1
+        Filter 1
 
-        filter_2
-            Filter 2
+    filter_2
+        Filter 2
 
-        current_filter
-            Current filter
+    current_filter
+        Current filter
 
-        target_filter
-            Filter for which the derived parameters will be used
+    target_filter
+        Filter for which the derived parameters will be used
 
-        color_literature
-            Colors of the calibration stars
+    color_literature
+        Colors of the calibration stars
 
-        fit_variable
-            Fit variable
+    fit_variable
+        Fit variable
 
-        a_fit
-            First parameter of the fit
+    a_fit
+        First parameter of the fit
 
-        b_fit
-            Second parameter of the fit
-            Currently only two fit parameters are supported
-            TODO: -> Needs to generalized
+    b_fit
+        Second parameter of the fit
+        Currently only two fit parameters are supported
+        TODO: -> Needs to generalized
 
-        b_err_fit
-            Error of `b`
+    b_err_fit
+        Error of `b`
 
-        fit_function
-            Fit function, used for determining the fit
+    fit_function
+        Fit function, used for determining the fit
 
-        air_mass
-            Air mass
+    air_mass
+        Air mass
 
-        color_literature_err
-            Color errors of the calibration stars
-            Default is ``None``.
+    color_literature_err
+        Color errors of the calibration stars
+        Default is ``None``.
 
-        fit_variable_err
-            Fit variable errors
-            Default is ``None``.
+    fit_variable_err
+        Fit variable errors
+        Default is ``None``.
 
-        name_object
-            Name of the object
-            Default is ``None``.
+    name_object
+        Name of the object
+        Default is ``None``.
 
-        image_id
-            ID of the image
+    image_id
+        ID of the image
 
-        x_data_original
-            Original abscissa data with out any modification, which might
-            have been applied to data
+    x_data_original
+        Original abscissa data with out any modification, which might
+        have been applied to data
 
-        y_data_original
-            Original ordinate data with out any modification, which might
-            have been applied to data
+    y_data_original
+        Original ordinate data with out any modification, which might
+        have been applied to data
     """
     #   Check output directories
     checks.check_output_directories(
@@ -1326,42 +1347,46 @@ class MakeCMDs:
         * to fit isochrone to the absolute CMD
     """
 
-    def __init__(self, name_of_star_cluster, file_name, file_type, filter_2,
-                 filter_1, magnitude_color, magnitude_filter_2, color_err=None,
-                 magnitude_filter_2_err=None, output_dir='output'):
+    def __init__(
+            self, name_of_star_cluster: str, file_name: str, file_type: str,
+            filter_2: str, filter_1: str, magnitude_color: np.ndarray,
+            magnitude_filter_2: np.ndarray,
+            color_err: np.ndarray | None = None,
+            magnitude_filter_2_err: np.ndarray | None = None,
+            output_dir: str = 'output') -> None:
         """
         Parameters
         ----------
-        name_of_star_cluster        : `string`
+        name_of_star_cluster
             Name of cluster
 
-        file_name                   : `string`
+        file_name
             Base name of the file to write
 
-        file_type                   : `string`
+        file_type
             File type
 
-        filter_2                    : `string`
+        filter_2
             First filter
 
-        filter_1                    : `string`
+        filter_1
             Second filter
 
-        magnitude_color             : `numpy.ndarray`
+        magnitude_color
             Color - 1D
 
-        magnitude_filter_2          : `numpy.ndarray`
+        magnitude_filter_2
             Filter magnitude - 1D
 
-        color_err                   : `numpy.ndarray' or ``None``, optional
+        color_err
             Error for ``mag_color``
             Default is ``None``.
 
-        magnitude_filter_2_err      : `numpy.ndarray' or ``None``, optional
+        magnitude_filter_2_err
             Error for ``magnitude_filter_2``
             Default is ``None``.
 
-        output_dir                  : `string`, optional
+        output_dir
             Output directory
             Default is ``output``.
         """
@@ -1377,27 +1402,33 @@ class MakeCMDs:
         self.magnitude_filter_2_err = magnitude_filter_2_err
         self.output_dir = output_dir
 
-    def set_cmd_plot_details(self, y_range_max, y_range_min,
-                             x_range_max, x_range_min, ax):
+        #   Additional attributes filled later
+        self.magnitude_filter_2_absolute: np.ndarray | None = None
+        self.magnitude_color_absolute: np.ndarray | None = None
+
+    def set_cmd_plot_details(
+            self, y_range_max: str | float, y_range_min: str | float,
+            x_range_max: str | float, x_range_min: str | float,
+            ax: plt.subplot) -> None:
         """
-            Check the CMD plot dimensions and set defaults
+        Check the CMD plot dimensions and set defaults
 
-            Parameters
-            ----------
-            y_range_max         : `float`
-                The maximum of the plot range in Y direction
+        Parameters
+        ----------
+        y_range_max
+            The maximum of the plot range in Y direction
 
-            y_range_min         : `float`
-                The minimum of the plot range in Y direction
+        y_range_min
+            The minimum of the plot range in Y direction
 
-            x_range_max         : `float`
-                The maximum of the plot range in X direction
+        x_range_max
+            The maximum of the plot range in X direction
 
-            x_range_min         : `float`
-                The minimum of the plot range in X direction
+        x_range_min
+            The minimum of the plot range in X direction
 
-            ax                  : `matplotlib.pyplot.subplot`
-                Subplot
+        ax
+            Subplot
         """
         #   Check for absolute vs. apparent CMD
         try:
@@ -1462,13 +1493,13 @@ class MakeCMDs:
             else:
                 ax.set_xlim([float(x_range_min), float(x_range_max)])
 
-    def write_cmd(self, plot_type):
+    def write_cmd(self, plot_type: str):
         """
         Write plot to disk
 
         Parameters
         ----------
-        plot_type                   : `string`
+        plot_type
             Plot type
         """
         cmd_dir = f'{self.output_dir}/cmds'
@@ -1502,9 +1533,11 @@ class MakeCMDs:
                 bbox_inches="tight",
             )
 
-    def decode_isochrone_filter_relation(self, isochrone_column_type,
-                                         isochrone_column, current_filter,
-                                         relation_list, recursion_number):
+    def decode_isochrone_filter_relation(
+            self, isochrone_column_type: dict[str, str],
+            isochrone_column: dict[str, int], current_filter: str,
+            relation_list: list[tuple[int, int]], recursion_number: int
+            ) -> list[tuple[int, int]]:
         """
         Decodes relationship between isochrone entries. It fills a list with
         tuples of two in integer each. The first integer gives the ID of the filter
@@ -1515,31 +1548,31 @@ class MakeCMDs:
 
         Parameter
         ---------
-        isochrone_column_type   : `dictionary`
+        isochrone_column_type
             Type of the columns from the ISO file
             Keys = filter : `string`
             Values = type : `string`
 
-        isochrone_column        : `dictionary`
+        isochrone_column
             Columns to use from the ISO file.
             Keys = filter           : `string`
             Values = column numbers : `integer`
 
-        current_filter          : `string`
+        current_filter
             Current filter
 
-        relation_list           : `list` of `tuple` of `integer`
+        relation_list
             List with relations. Each tuple is one relationship. In each tuple the
             first integer gives the ID of the filter and the second one determines
             how the magnitude is derived from the relationships. The second integer
             can be 1 or -1 and determines whether the isochrone magnitude of this
             particular relationship must be added or subtracted.
 
-        recursion_number        : `integer`
+        recursion_number
 
         Returns
         -------
-        relation_list           : `list` of `tuple` of `integer`
+        relation_list
             See above
         """
         #   Exit if recursion is two high
@@ -1583,26 +1616,28 @@ class MakeCMDs:
             return relation_list
 
     @staticmethod
-    def apply_isochrone_filter_relation(relation_list, iso_data_line):
+    def apply_isochrone_filter_relation(
+            relation_list: list[tuple[int, int]], iso_data_line: list[str]
+            ) -> float:
         """
         Uses isochrone filter relation such as color to derive individual
         magnitudes
 
         Parameter
         ---------
-        relation_list       : `list` of `tuple` of `integer`
+        relation_list
             List with relations. Each tuple is one relationship. In each tuple the
             first integer gives the ID of the filter and the second one determines
             how the magnitude is derived from the relationships. The second integer
             can be 1 or -1 and determines whether the isochrone magnitude of this
             particular relationship must be added or subtracted.
 
-        iso_data_line       : `list` of `string`
+        iso_data_line
             Line with iso data - list of strings
 
         Returns
         -------
-        target_magnitude    : `float`
+        target_magnitude
             Calculated magnitude
         """
         target_magnitude = 0.
@@ -1614,46 +1649,47 @@ class MakeCMDs:
 
         return target_magnitude
 
-    def fill_lists_with_isochrone_magnitudes(self, isochrone_data_line,
-                                             isochrone_relation_filter_1,
-                                             isochrone_relation_filter_2,
-                                             isochrone_magnitude_2,
-                                             isochrone_color):
+    def fill_lists_with_isochrone_magnitudes(
+            self, isochrone_data_line: list[str],
+            isochrone_relation_filter_1: list[tuple[int, int]],
+            isochrone_relation_filter_2: list[tuple[int, int]],
+            isochrone_magnitude_2: list[float], isochrone_color: list[float]
+            ) -> tuple[list[float], list[float]]:
         """
         Sort magnitudes and colors from isochrone files into lists and calculate
         the required color if necessary
 
         Parameter
         ---------
-        isochrone_data_line     : `list` of `string`
+        isochrone_data_line
             Line with iso data - list of strings
 
-        isochrone_relation_filter_1  : `list` of `tuple` of `integer`
+        isochrone_relation_filter_1
             List with relation for filter 1. Each tuple is one relationship. In
             each tuple the first integer gives the ID of the filter and the second
             one determines how the magnitude is derived from the relationships. The
             second integer can be 1 or -1 and determines whether the isochrone
             magnitude of this particular relationship must be added or subtracted.
 
-        isochrone_relation_filter_2  : `list` of `tuple` of `integer`
+        isochrone_relation_filter_2
             List with relation for filter 2. Each tuple is one relationship. In
             each tuple the first integer gives the ID of the filter and the second
             one determines how the magnitude is derived from the relationships. The
             second integer can be 1 or -1 and determines whether the isochrone
             magnitude of this particular relationship must be added or subtracted.
 
-        isochrone_magnitude_2   : `list` of `float`
+        isochrone_magnitude_2
             List to fill with magnitudes (second filter)
 
-        isochrone_color         : `list` of `float`
+        isochrone_color
             List to fill with color values
 
         Returns
         -------
-        isochrone_magnitude_2   : `list` of `float`
+        isochrone_magnitude_2
             Magnitude list (second filter)
 
-        isochrone_color         : `list` of `float`
+        isochrone_color
             Color list
         """
         #   Calculate magnitudes and color
@@ -1673,36 +1709,36 @@ class MakeCMDs:
         return isochrone_magnitude_2, isochrone_color
 
     @staticmethod
-    def calculate_chi_square(magnitude_filter_2, magnitude_color,
-                             isochrone_array, nearst_neighbour_indexes):
+    def calculate_chi_square(
+            magnitude_filter_2: np.ndarray, magnitude_color: np.ndarray,
+            isochrone_array: np.ndarray, nearst_neighbour_indexes: np.ndarray
+            ) -> tuple[np.ndarray, np.ndarray, list[float]]:
         """
-
         Parameters
         ----------
-        magnitude_filter_2              : `numpy.ndarray`
+        magnitude_filter_2
             Object magnitudes of filter 2
 
-        magnitude_color                 : `numpy.ndarray`
+        magnitude_color
             Object colors
 
-        isochrone_array                 : `numpy.ndarray`
+        isochrone_array
             Array with isochrone data
 
-        nearst_neighbour_indexes        : `list` of `integer`
+        nearst_neighbour_indexes
             Indexes of the nearest isochrone points to the reference points
             of the observed objects.
 
         Returns
         -------
-        chi_square_magnitude_2          : `numpy.ndarray`
+        chi_square_magnitude_2
             Chi square based on object magnitudes
 
-        chi_square_color                : `numpy.ndarray`
+        chi_square_color
             Chi square based on object color
 
-        chi_square_list                 : `list` of `float`
+        chi_square_list
             See above
-
         """
         #   Calculate chi square
         chi_square_magnitude_2 = np.square(
@@ -1715,30 +1751,31 @@ class MakeCMDs:
 
         return chi_square_magnitude_2, chi_square_color, chi_square_total
 
-    def plot_apparent_cmd(self, figure_size_x='', figure_size_y='',
-                          y_plot_range_max='', y_plot_range_min='',
-                          x_plot_range_max='', x_plot_range_min=''):
+    def plot_apparent_cmd(
+            self, figure_size_x: str = '', figure_size_y: str = '',
+            y_plot_range_max: str = '', y_plot_range_min: str = '',
+            x_plot_range_max: str = '', x_plot_range_min: str = '') -> None:
         """
         Plot calibrated cmd with apparent magnitudes
 
         Parameters
         ----------
-        figure_size_x               : `float`
+        figure_size_x
             Figure size in cm (x direction)
 
-        figure_size_y               : `float`
+        figure_size_y
             Figure size in cm (y direction)
 
-        y_plot_range_max            : `float`
+        y_plot_range_max
             The maximum of the plot range in Y direction
 
-        y_plot_range_min            : `float`
+        y_plot_range_min
             The minimum of the plot range in Y direction
 
-        x_plot_range_max            : `float`
+        x_plot_range_max
             The maximum of the plot range in X direction
 
-        x_plot_range_min            : `float`
+        x_plot_range_min
             The minimum of the plot range in X direction
         """
         #   Initialize, set defaults and check plot dimensions
@@ -1785,121 +1822,123 @@ class MakeCMDs:
         self.write_cmd('apparent')
         plt.close()
 
-    def plot_absolute_cmd(self, e_b_v, m_m, isochrones, isochrone_type,
-                          isochrone_column_type, isochrone_column,
-                          isochrone_log_age, isochrone_keyword,
-                          isochrone_legend, figure_size_x='', figure_size_y='',
-                          y_plot_range_max='', y_plot_range_min='',
-                          x_plot_range_max='', x_plot_range_min='',
-                          rv=3.1, fit_isochrone=False,
-                          magnitude_fit_range=(None, None),
-                          n_bin_observation=40,
-                          fiduciary_points_observation=None,
-                          fiduciary_points_isochrones=False,
-                          chi_square_plot_mode=None):
+    def plot_absolute_cmd(
+            self, e_b_v: float, m_m: float, isochrones: str,
+            isochrone_type: str, isochrone_column_type: dict[str, str],
+            isochrone_column: dict[str, int], isochrone_log_age: bool,
+            isochrone_keyword: str, isochrone_legend: bool,
+            figure_size_x: str = '', figure_size_y: str = '',
+            y_plot_range_max: str = '', y_plot_range_min: str = '',
+            x_plot_range_max: str = '', x_plot_range_min: str = '',
+            rv: float = 3.1, fit_isochrone: bool = False,
+            magnitude_fit_range: tuple[float | None, float | None] = (None, None),
+            n_bin_observation: int = 40,
+            fiduciary_points_observation: bool | None = None,
+            fiduciary_points_isochrones: bool = False,
+            chi_square_plot_mode: str | None = None) -> None:
         """
-            Plot calibrated CMD with
-                * magnitudes corrected for reddening and distance
-                * isochrones
+        Plot calibrated CMD with
+            * magnitudes corrected for reddening and distance
+            * isochrones
 
-            Parameters
-            ----------
-            e_b_v                       : `float`
-                Relative extinction between B and V band
+        Parameters
+        ----------
+        e_b_v                       : `float`
+            Relative extinction between B and V band
 
-            m_m                         : `float`
-                Distance modulus
+        m_m                         : `float`
+            Distance modulus
 
-            isochrones                  : `string`
-                Path to the isochrone directory or the isochrone file
+        isochrones                  : `string`
+            Path to the isochrone directory or the isochrone file
 
-            isochrone_type              : `string`
-                Type of 'isochrones'
-                Possibilities: 'directory' or 'file'
+        isochrone_type              : `string`
+            Type of 'isochrones'
+            Possibilities: 'directory' or 'file'
 
-            isochrone_column_type       : `dictionary`
-                Keys = filter : `string`
-                Values = type : `string`
+        isochrone_column_type       : `dictionary`
+            Keys = filter : `string`
+            Values = type : `string`
 
-            isochrone_column            : `dictionary`
-                Keys = filter           : `string`
-                Values = column numbers : `integer`
+        isochrone_column            : `dictionary`
+            Keys = filter           : `string`
+            Values = column numbers : `integer`
 
-            isochrone_log_age           : `boolean`
-                Logarithmic age
+        isochrone_log_age           : `boolean`
+            Logarithmic age
 
-            isochrone_keyword           : `string`
-                Keyword to identify a new isochrone
+        isochrone_keyword           : `string`
+            Keyword to identify a new isochrone
 
-            isochrone_legend            : `boolean`
-                If True plot legend for isochrones.
+        isochrone_legend            : `boolean`
+            If True plot legend for isochrones.
 
-            rv                          : `float`, optional
-                Ration between absolute and relative extinction
-                Default is ``3.1``.
+        rv                          : `float`, optional
+            Ration between absolute and relative extinction
+            Default is ``3.1``.
 
-            figure_size_x               : `float`, optional
-                Figure size in cm (x direction)
-                Default is ````.
+        figure_size_x               : `float`, optional
+            Figure size in cm (x direction)
+            Default is ````.
 
-            figure_size_y               : `float`, optional
-                Figure size in cm (y direction)
-                Default is ````.
+        figure_size_y               : `float`, optional
+            Figure size in cm (y direction)
+            Default is ````.
 
-            y_plot_range_max            : `float`, optional
-                The maximum of the plot range in Y
-                                    direction
-                Default is ````.
+        y_plot_range_max            : `float`, optional
+            The maximum of the plot range in Y
+                                direction
+            Default is ````.
 
-            y_plot_range_min            : `float`, optional
-                The minimum of the plot range in Y
-                                    direction
-                Default is ````.
+        y_plot_range_min            : `float`, optional
+            The minimum of the plot range in Y
+                                direction
+            Default is ````.
 
-            x_plot_range_max            : `float`, optional
-                The maximum of the plot range in X
-                                    direction
-                Default is ````.
+        x_plot_range_max            : `float`, optional
+            The maximum of the plot range in X
+                                direction
+            Default is ````.
 
-            x_plot_range_min            : `float`, optional
-                The minimum of the plot range in X direction
+        x_plot_range_min            : `float`, optional
+            The minimum of the plot range in X direction
 
-            fit_isochrone               : `bool`, optional
-                If `True`, the best fitting isochrone will be determined.
-                Default is ``False``.
+        fit_isochrone               : `bool`, optional
+            If `True`, the best fitting isochrone will be determined.
+            Default is ``False``.
 
-            magnitude_fit_range         : `tuple` of `float` or `None`
-                Magnitude range to be used for the isochrone fitting and binning
-                of the observations. If set to None, the minimum and maximum
-                value are used.
-                Default is ``(None, None)``,
+        magnitude_fit_range         : `tuple` of `float` or `None`
+            Magnitude range to be used for the isochrone fitting and binning
+            of the observations. If set to None, the minimum and maximum
+            value are used.
+            Default is ``(None, None)``,
 
-            n_bin_observation           : `integer`, optional
-                Number of bins into which the observation data will be combined.
-                Default is ``40``.
+        n_bin_observation           : `integer`, optional
+            Number of bins into which the observation data will be combined.
+            Default is ``40``.
 
-            fiduciary_points_observation : `bool` or `None`, optional
-                Determined if the binned observation will be plotted. Is set to
-                `True` if fit_isochrone is `True` with the exception that
-                fiduciary_points_observation is explicitly set to `False`.
-                Default is ``None``.
+        fiduciary_points_observation : `bool` or `None`, optional
+            Determined if the binned observation will be plotted. Is set to
+            `True` if fit_isochrone is `True` with the exception that
+            fiduciary_points_observation is explicitly set to `False`.
+            Default is ``None``.
 
-            fiduciary_points_isochrones  : `bool`, optional
-                If 'True', the isochrone points closest to the fiduciary observation
-                points will be plotted.
-                Default is ``False``.
+        fiduciary_points_isochrones  : `bool`, optional
+            If 'True', the isochrone points closest to the fiduciary observation
+            points will be plotted.
+            Default is ``False``.
 
-            chi_square_plot_mode        : `string` or None, optional
-                Mode to plot the chi square values from the isochrone fits.
-                Possibilities: 1. simple   -> Combined chi square values shown on
-                                              the right hand side.
-                               2. detailed -> Chi square values split according
-                                              to X and Y contributions. Plots are
-                                              on top and on the right hand side of
-                                              the CMD
-                If `None` and fit_isochrone is `True` chi_square_plot_mode is set
-                to `simple`.
-                Default is ``None``.
+        chi_square_plot_mode        : `string` or None, optional
+            Mode to plot the chi square values from the isochrone fits.
+            Possibilities: 1. simple   -> Combined chi square values shown on
+                                          the right hand side.
+                           2. detailed -> Chi square values split according
+                                          to X and Y contributions. Plots are
+                                          on top and on the right hand side of
+                                          the CMD
+            If `None` and fit_isochrone is `True` chi_square_plot_mode is set
+            to `simple`.
+            Default is ``None``.
         """
         #   Correct for reddening and distance
         if self.filter_1 == 'B' and self.filter_2 == 'V':
@@ -2034,6 +2073,10 @@ class MakeCMDs:
                     alpha=0.9,
                     zorder=99.,
                 )
+        else:
+            magnitude_binned_array = None
+            magnitude_filter_2_binned = None
+            magnitude_color_binned = None
 
         ###
         #   Plot isochrones
@@ -2064,6 +2107,9 @@ class MakeCMDs:
                 ax2 = fig.add_subplot(spec[2])
             elif chi_square_plot_mode == 'simple' and fit_isochrone:
                 ax2 = fig.add_subplot(spec[2])
+            else:
+                ax1 = None
+                ax2 = None
 
             #   Prepare list for chi square values
             age_list = []
@@ -2169,6 +2215,9 @@ class MakeCMDs:
                             magnitude_binned_array,
                             k=1,
                         )
+                    else:
+                        nearst_neighbour_indexes = None
+                        isochrone_array = None
 
                     #   Plot iso lines
                     if fiduciary_points_isochrones:
@@ -2503,22 +2552,22 @@ class MakeCMDs:
         plt.close()
 
 
-def initialize_plot(size_x, size_y):
+def initialize_plot(size_x: str, size_y: str) -> plt.figure:
     """
-        Check the plot dimensions and set defaults
+    Check the plot dimensions and set defaults
 
-        Parameters
-        ----------
-        size_x              : `float`
-            Figure size in cm (x direction)
+    Parameters
+    ----------
+    size_x
+        Figure size in cm (x direction)
 
-        size_y              : `float`
-            Figure size in cm (y direction)
+    size_y
+        Figure size in cm (y direction)
 
-        Returns
-        -------
-        fig                 : `matplotlib.pyplot.figure`
-            Figure object
+    Returns
+    -------
+    fig
+        Figure object
     """
     #   Set figure size
     if size_x == "" or size_x == "?" or size_y == "" or size_y == "?":
@@ -2533,20 +2582,21 @@ def initialize_plot(size_x, size_y):
     return fig
 
 
-def mk_ticks_labels(y_axis_lable, x_axis_lable, ax):
+def mk_ticks_labels(
+        y_axis_label: str, x_axis_label: str, ax: plt.subplot) -> None:
     """
-        Set default ticks and labels
+    Set default ticks and labels
 
-        Parameters
-        ----------
-        y_axis_lable    : `string`
-            Filter
+    Parameters
+    ----------
+    y_axis_label
+        Filter
 
-        x_axis_lable    : `string`
-            Color
+    x_axis_label
+        Color
 
-        ax                  : `matplotlib.pyplot.subplot`
-            Subplot
+    ax
+        Subplot
     """
     #   Set ticks
     ax.tick_params(
@@ -2560,8 +2610,8 @@ def mk_ticks_labels(y_axis_lable, x_axis_lable, ax):
     ax.grid(True, color='lightgray', linestyle='--')
 
     #   Set labels
-    ax.set_xlabel(x_axis_lable)
-    ax.set_ylabel(y_axis_lable)
+    ax.set_xlabel(x_axis_label)
+    ax.set_ylabel(y_axis_label)
 
 
 class MaxRecursionError(Exception):
@@ -2652,60 +2702,58 @@ def click_point(event):
     print('+++++++++++++++++++++')
 
 
-def d3_scatter(xs, ys, zs, output_dir, color=None, name_x='', name_y='',
-               name_z='', string='_3D_', pm_ra=None, pm_dec=None,
-               display=False):
+def d3_scatter(
+        xs: list[np.ndarray], ys: list[np.ndarray], zs: list[np.ndarray],
+        output_dir: str, color: list[str] | None = None, name_x: str = '',
+        name_y: str = '', name_z: str = '', pm_ra: float | None = None,
+        pm_dec: float | None = None, display: bool = False) -> None:
     """
-        Make a 2D scatter plot
+    Make a 3D scatter plot
 
-        Parameters
-        ----------
-        xs           : `list` of `numpy.ndarray`s
-            X values
+    Parameters
+    ----------
+    xs
+        X values
 
-        ys          : `list` of `numpy.ndarray`s
-            Y values
+    ys
+        Y values
 
-        zs          : `list` of `numpy.ndarray`s
-            Z values
+    zs
+        Z values
 
-        color       : `list` of `string`
-            Color definitions
+    color
+        Specifiers for the color
 
-        output_dir  : `string`
-            Output directory
+    output_dir
+        Output directory
 
-        name_x      : `string`, optional
-            Label for the X axis
-            Default is ````.
+    name_x
+        Label for the X axis
+        Default is ````.
 
-        name_y      : `string`, optional
-            Label for the Y axis
-            Default is ````.
+    name_y
+        Label for the Y axis
+        Default is ````.
 
-        name_z      : `string`, optional
-            Label for the Z axis
-            Default is ````.
+    name_z
+        Label for the Z axis
+        Default is ````.
 
-        string      : `string`, optional
-            String characterizing the output file
-            Default is ``_3D_``.
+    pm_ra
+        Literature proper motion in right ascension.
+        If not ``None`` the value will be printed to the plot.
+        Default is ``None``.
 
-        pm_ra       : `float`, optional
-            Literature proper motion in right ascension.
-            If not ``None`` the value will be printed to the plot.
-            Default is ``None``.
+    pm_dec
+        Literature proper motion in declination.
+        If not ``None`` the value will be printed to the plot.
+        Default is ``None``.
 
-        pm_dec      : `float`, optional
-            Literature proper motion in declination.
-            If not ``None`` the value will be printed to the plot.
-            Default is ``None``.
-
-        display     : `boolean`, optional
-            If ``True`` the 3D plot will be displayed in an interactive
-            window. If ``False`` four views of the 3D plot will be saved to
-            a file.
-            Default is ``False``.
+    display
+        If ``True`` the 3D plot will be displayed in an interactive
+        window. If ``False`` four views of the 3D plot will be saved to
+        a file.
+        Default is ``False``.
     """
     #   Switch backend to allow direct display of the plot
     if display:
@@ -2869,55 +2917,59 @@ def d3_scatter(xs, ys, zs, output_dir, color=None, name_x='', name_y='',
         plt.close()
 
 
-def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
-            y_errors=None, dataset_label=None, name_object=None, fits=None,
-            one_to_one=False):
+def scatter(
+        x_values: list[np.ndarray], name_x: str, y_values: list[np.ndarray],
+        name_y: str, rts: str, output_dir: str,
+        x_errors: list[np.ndarray] | None = None,
+        y_errors: list[np.ndarray] | None = None,
+        dataset_label: list[str] | None = None, name_object: str | None = None,
+        fits: list[fitting] | None = None, one_to_one: bool = False) -> None:
     """
-        Plot magnitudes
+    Plot magnitudes
 
-        Parameters
-        ----------
-        x_values        : `list` of `numpy.ndarray`
-            List of arrays with X values
+    Parameters
+    ----------
+    x_values
+        List of arrays with X values
 
-        name_x          : `string`
-            Name of quantity 1
+    name_x
+        Name of quantity 1
 
-        y_values        : `list` of `numpy.ndarray`
-            List of arrays with Y values
+    y_values
+        List of arrays with Y values
 
-        name_y          : `string`
-            Name of quantity 2
+    name_y
+        Name of quantity 2
 
-        rts             : `string`
-            Expression characterizing the plot
+    rts
+        Expression characterizing the plot
 
-        output_dir      : `string`
-            Output directory
+    output_dir
+        Output directory
 
-        x_errors        : `list` of `numpy.ndarray' or ``None``, optional
-            Errors for the X values
-            Default is ``None``.
+    x_errors
+        Errors for the X values
+        Default is ``None``.
 
-        y_errors        : `list` of `numpy.ndarray' or ``None``, optional
-            Errors for the Y values
-            Default is ``None``.
+    y_errors
+        Errors for the Y values
+        Default is ``None``.
 
-        dataset_label   : 'list` of 'string` or `None`, optional
-            Label for the datasets
-            Default is ``None``.
+    dataset_label
+        Label for the datasets
+        Default is ``None``.
 
-        name_object     : `string`, optional
-            Name of the object
-            Default is ``None``
+    name_object
+        Name of the object
+        Default is ``None``
 
-        fits            : `list` of `astropy.modeling.fitting` instance, optional
-            Fits to the data
-            Default is ``None``.
+    fits
+        List of objects, representing fits to the data
+        Default is ``None``.
 
-        one_to_one      : `boolean`, optional
-            If True a 1:1 line will be plotted.
-            Default is ``False``.
+    one_to_one
+        If True a 1:1 line will be plotted.
+        Default is ``False``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -3021,23 +3073,25 @@ def scatter(x_values, name_x, y_values, name_y, rts, output_dir, x_errors=None,
     plt.close()
 
 
-def plot_limiting_mag_sky_apertures(output_dir, img_data, mask, image_depth):
+def plot_limiting_mag_sky_apertures(
+        output_dir: str, img_data: np.ndarray, mask: np.ndarray,
+        image_depth: ImageDepth) -> None:
     """
-        Plot the sky apertures that are used to estimate the limiting magnitude
+    Plot the sky apertures that are used to estimate the limiting magnitude
 
-        Parameters
-        ----------
-        output_dir          : `string`
-            Output directory
+    Parameters
+    ----------
+    output_dir
+        Output directory
 
-        img_data            : `numpy.ndarray`
-            Image data
+    img_data
+        Image data
 
-        mask                : `numpy.ndarray`
-            Mask showing the position of detected objects
+    mask
+        Indicating the position of detected objects
 
-        image_depth         : `photutils.utils.ImageDepth`
-            Object used to derive the limiting magnitude
+    image_depth
+        Object used to derive the limiting magnitude
     """
     #   Check output directories
     checks.check_output_directories(
@@ -3097,19 +3151,15 @@ def plot_limiting_mag_sky_apertures(output_dir, img_data, mask, image_depth):
     plt.close()
 
 
-def extinction_curves(rv):
+def extinction_curves(rv: float) -> None:
     """
-        Plots extinction curves
-        Currently only Fitzpatrick (without most of the UV range) is supported
+    Plots extinction curves
+    Currently only Fitzpatrick (without most of the UV range) is supported
 
-        Parameters
-        ----------
-        rv              : `float`
-        Ration of absolute to relative extinction: AV/E(B-V)
-
-        Returns
-        -------
-
+    Parameters
+    ----------
+    rv
+    Ration of absolute to relative extinction: AV/E(B-V)
     """
     #   Get Fitzpatrick law
     fitzpatrick_extinction_curve = calibration_parameters.fitzpatrick_extinction_curve(rv)
@@ -3146,36 +3196,38 @@ def extinction_curves(rv):
     plt.close()
 
 
-def filled_iso_contours(object_table, shape_image, filter_, output_dir='./',
-                        fraction_bright_objects_to_use=0.2,
-                        spacing_grid_positions=20, object_property='fwhm'):
+def filled_iso_contours(
+        object_table: Table, shape_image: tuple[int, int], filter_: str,
+        output_dir: str = './', fraction_bright_objects_to_use: float = 0.2,
+        spacing_grid_positions: int = 20, object_property: str = 'fwhm'
+        ) -> None:
     """
     Filled iso contour surfaces
 
     Parameter
     ---------
-    object_table                    : `astropy.table.Table`
+    object_table
         Table with object positions (XY) in Pixel
 
-    shape_image                     : `tuple` of integer`
+    shape_image
         Dimension of the input image
 
-    filter_                         : `string`
+    filter_
         Filter name
 
-    output_dir                      : `pathlib.Path`, optional
+    output_dir
         Path to the directory where the master files should be saved to
         Default is ``.``.
 
-    fraction_bright_objects_to_use  : `float`, optional
+    fraction_bright_objects_to_use
         Fraction of bright objects to use for iso contour determination
         Default is ``0.2``
 
-    spacing_grid_positions          : `integer`, optional
+    spacing_grid_positions
         Spacing between grid positions, usually in Pixel.
         Default is ``20``
 
-    object_property                 : `string`, optional
+    object_property
         Property of the objects used to derive the iso contour levels
         Default is ``fwhm``
     """
@@ -3246,37 +3298,39 @@ def filled_iso_contours(object_table, shape_image, filter_, output_dir='./',
 
 
 def histogram_statistic(
-        parameter_list_0, name_x, name_y, rts, output_dir, dataset_label,
-        name_object=None, parameter_list_1=None):
+        parameter_list_0: list[np.ndarray], name_x: str, name_y: str, rts: str,
+        output_dir: str, dataset_label: list[list[str]] | None = None,
+        name_object: str = None, parameter_list_1: list[np.ndarray] = None
+        ) -> None:
     """
     Plots histogram statistics on properties such as the zero point
 
     Parameters
     ----------
-    parameter_list_0    : `list` of `numpy.ndarray`
+    parameter_list_0
         List of arrays with parameters to plot
 
-    name_x              : `string`
+    name_x
         Name of quantity 1
 
-    name_y              : `string`
+    name_y
         Name of quantity 2
 
-    rts                 : `string`
+    rts
         Expression characterizing the plot
 
-    output_dir          : `string`
+    output_dir
         Output directory
 
-    dataset_label       : `list` of `list` of `string` or `None`, optional
+    dataset_label
         Label for the datasets
         Default is ``None``.
 
-    name_object         : `string`, optional
+    name_object
         Name of the object
         Default is ``None``
 
-    parameter_list_1    : `list` of `numpy.ndarray`, optional
+    parameter_list_1
         Second list of arrays with parameters to plot such as sigma
         clipped values of parameter_list_0
         Default is ``None``

@@ -11,14 +11,13 @@ from astroquery.simbad import Simbad
 
 from astropy.table import Table
 import astropy.units as u
-from astropy.coordinates import SkyCoord, matching
+from astropy.coordinates import SkyCoord
 from astropy import uncertainty as unc
 
-import multiprocessing as mp
+from regions import RectanglePixelRegion
 
+from . import correlate
 from .. import style, calibration_parameters, terminal_output
-
-from . import correlate, plots
 
 import typing
 if typing.TYPE_CHECKING:
@@ -31,8 +30,10 @@ if typing.TYPE_CHECKING:
 
 
 class CalibParameters:
-    def __init__(self, index, column_names, calib_tbl, **kwargs):
-        self.inds = index
+    def __init__(
+            self, index: np.ndarray, column_names: dict[str, str],
+            calib_tbl: Table, **kwargs):
+        self.ids_calibration_objects = index
         self.column_names = column_names
         self.calib_tbl = calib_tbl
 
@@ -40,8 +41,8 @@ class CalibParameters:
         self.__dict__.update(kwargs)
 
         #   Check for right ascension and declination
-        ra_unit = kwargs.get('ra_unit', None)
-        dec_unit = kwargs.get('dec_unit', None)
+        ra_unit: u.core.Unit | None = kwargs.get('ra_unit', None)
+        dec_unit: u.core.Unit | None = kwargs.get('dec_unit', None)
         if ra_unit is not None:
             self.ra_unit = ra_unit
         else:
@@ -52,39 +53,42 @@ class CalibParameters:
             self.dec_unit = u.deg
 
 
-def get_comp_stars_aavso(coordinates_sky, filters=None, field_of_view=18.5,
-                         magnitude_range=(0., 18.5), indent=2):
+def get_comp_stars_aavso(
+        coordinates_sky: SkyCoord, filters: list[str] | None = None,
+        field_of_view: float = 18.5,
+        magnitude_range: tuple[float, float] = (0., 18.5), indent: int = 2
+        ) -> tuple[Table, dict[str, str]]:
     """
-        Download calibration info for variable stars from AAVSO
+    Download calibration info for variable stars from AAVSO
 
-        Parameters
-        ----------
-        coordinates_sky  : `astropy.coordinates.SkyCoord`
-            Coordinates of the field of field_of_view
+    Parameters
+    ----------
+    coordinates_sky
+        Coordinates of the field of field_of_view
 
-        filters          : `list` of `string` or `None`, optional
-            Filter names
-            Default is ``None``.
+    filters
+        Filter names
+        Default is ``None``.
 
-        field_of_view   : `float`, optional
-            Field of view in arc minutes
-            Default is ``18.5``.
+    field_of_view
+        Field of view in arc minutes
+        Default is ``18.5``.
 
-        magnitude_range : `tuple` of `float`, optional
-            Magnitude range
-            Default is ``(0.,18.5)``.
+    magnitude_range
+        Magnitude range
+        Default is ``(0.,18.5)``.
 
-        indent          : `integer`, optional
-            Indentation for the console output
-            Default is ``2``.
+    indent
+        Indentation for the console output
+        Default is ``2``.
 
-        Returns
-        -------
-        tbl             : `astropy.table.Table`
-            Table with calibration information
+    Returns
+    -------
+    tbl
+        Table with calibration information
 
-        column_dict     : `dictionary` - 'string':`string`
-            Dictionary with column names vs default names
+    column_dict
+        Dictionary with column names vs default names
     """
     terminal_output.print_to_terminal(
         "Downloading calibration data from www.aavso.org",
@@ -173,39 +177,42 @@ def get_comp_stars_aavso(coordinates_sky, filters=None, field_of_view=18.5,
         return tbl, column_dict
 
 
-def get_comp_stars_simbad(coordinates_sky, filters=None, field_of_view=18.5,
-                          magnitude_range=(0., 18.5), indent=2):
+def get_comp_stars_simbad(
+        coordinates_sky: SkyCoord, filters: list[str] | None = None,
+        field_of_view: float = 18.5,
+        magnitude_range: tuple[float, float] = (0., 18.5), indent: int = 2
+        ) -> tuple[Table, dict[str, str]]:
     """
-        Download calibration info from Simbad
+    Download calibration info from Simbad
 
-        Parameters
-        ----------
-        coordinates_sky  : `astropy.coordinates.SkyCoord`
-            Coordinates of the field of field_of_view
+    Parameters
+    ----------
+    coordinates_sky
+        Coordinates of the field of field_of_view
 
-        filters          : `list` of `string` or `None`, optional
-            Filter names
-            Default is ``None``.
+    filters
+        Filter names
+        Default is ``None``.
 
-        field_of_view   : `float`, optional
-            Field of view in arc minutes
-            Default is ``18.5``.
+    field_of_view
+        Field of view in arc minutes
+        Default is ``18.5``.
 
-        magnitude_range : `tuple` of `float`, optional
-            Magnitude range
-            Default is ``(0.,18.5)``.
+    magnitude_range
+        Magnitude range
+        Default is ``(0.,18.5)``.
 
-        indent          : `integer`, optional
-            Indentation for the console output
-            Default is ``2``.
+    indent
+        Indentation for the console output
+        Default is ``2``.
 
-        Returns
-        -------
-        tbl             : `astropy.table.Table`
-            Table with calibration information
+    Returns
+    -------
+    tbl
+        Table with calibration information
 
-        column_dict     : `dictionary` - 'string':`string`
-            Dictionary with column names vs default names
+    column_dict
+        Dictionary with column names vs default names
     """
     terminal_output.print_to_terminal(
         "Downloading calibration data from Simbad",
@@ -297,43 +304,45 @@ def get_comp_stars_simbad(coordinates_sky, filters=None, field_of_view=18.5,
     return simbad_table, column_dict
 
 
-def get_vizier_catalog(filter_list, coordinates_image_center, field_of_view,
-                       catalog_identifier, magnitude_range=(0., 18.5),
-                       indent=2):
+def get_vizier_catalog(
+        filter_list: list[str], coordinates_image_center: SkyCoord,
+        field_of_view: float, catalog_identifier: str,
+        magnitude_range: tuple[float, float] = (0., 18.5),
+        indent: int = 2) -> tuple[Table, dict[str, str], str]:
     """
-        Download catalog with calibration info from Vizier
+    Download catalog with calibration info from Vizier
 
-        Parameters
-        ----------
-        filter_list                 : `list` of `string`
-            Filter names
+    Parameters
+    ----------
+    filter_list
+        Filter names
 
-        coordinates_image_center    : `astropy.coordinates.SkyCoord`
-            Coordinates of the field of field_of_view
+    coordinates_image_center
+        Coordinates of the field of field_of_view
 
-        field_of_view               : `float`
-            Field of view in arc minutes
+    field_of_view
+        Field of view in arc minutes
 
-        catalog_identifier          : `string`
-            Catalog identifier
+    catalog_identifier
+        Catalog identifier
 
-        magnitude_range             : `tuple` of `float`, optional
-            Magnitude range
-            Default is ``(0.,18.5)``.
+    magnitude_range
+        Magnitude range
+        Default is ``(0.,18.5)``.
 
-        indent                      : `integer`, optional
-            Indentation for the console output
-            Default is ``2``.
+    indent
+        Indentation for the console output
+        Default is ``2``.
 
-        Returns
-        -------
-        tbl                         : `astropy.table.Table`
-            Table with calibration information
+    Returns
+    -------
+    tbl
+        Table with calibration information
 
-        column_dict                 : `dictionary` - 'string':`string`
-            Dictionary with column names vs default names
+    column_dict
+        Dictionary with column names vs default names
 
-        ra_unit
+    ra_unit
     """
     terminal_output.print_to_terminal(
         f"Downloading calibration data from Vizier: {catalog_identifier}",
@@ -369,7 +378,7 @@ def get_vizier_catalog(filter_list, coordinates_image_center, field_of_view,
             indent=indent + 1,
             style_name='WARNING',
         )
-        return Table(), {}
+        return Table(), {}, ''
 
     result = table_list[0]
 
@@ -435,34 +444,36 @@ def get_vizier_catalog(filter_list, coordinates_image_center, field_of_view,
     return result, column_dict, catalog_properties_dict['ra_unit']
 
 
-def read_votable_simbad(path_calibration_file, filter_list, magnitude_range=(0., 18.5),
-                        indent=2):
+def read_votable_simbad(
+        path_calibration_file: str, filter_list: list[str],
+        magnitude_range: tuple[float, float] = (0., 18.5),
+        indent: int = 2) -> tuple[Table, dict[str, str]]:
     """
-        Read table in VO format already downloaded from Simbad
+    Read table in VO format already downloaded from Simbad
 
-        Parameters
-        ----------
-        path_calibration_file   : `string`
-            Path to the calibration file
+    Parameters
+    ----------
+    path_calibration_file
+        Path to the calibration file
 
-        filter_list             : `list` of `string`
-            Filter names
+    filter_list
+        Filter names
 
-        magnitude_range         : `tuple` of `float`, optional
-            Magnitude range
-            Default is ``(0.,18.5)``.
+    magnitude_range
+        Magnitude range
+        Default is ``(0.,18.5)``.
 
-        indent                  : `integer`, optional
-            Indentation for the console output
-            Default is ``2``.
+    indent
+        Indentation for the console output
+        Default is ``2``.
 
-        Returns
-        -------
-        tbl                     : `astropy.table.Table`
-            Table with calibration information
+    Returns
+    -------
+    tbl
+        Table with calibration information
 
-        column_dict             : `dictionary` - 'string':`string`
-            Dictionary with column names vs default names
+    column_dict
+        Dictionary with column names vs default names
     """
     terminal_output.print_to_terminal(
         f"Read calibration data from a VO table: {path_calibration_file}",
@@ -513,50 +524,53 @@ def read_votable_simbad(path_calibration_file, filter_list, magnitude_range=(0.,
 
 
 def load_calibration_data_table(
-        image_like_object: 'analyze.ImageSeries | analyze.Image', filter_list, calibration_method='APASS',
-        magnitude_range=(0., 18.5), vizier_dict: dict[str, str] | None = None,
-        path_calibration_file=None, indent=1):
+        image_like_object: 'analyze.ImageSeries | analyze.Image',
+        filter_list: list[str], calibration_method: str = 'APASS',
+        magnitude_range: tuple[float, float] = (0., 18.5),
+        vizier_dict: dict[str, str] | None = None,
+        path_calibration_file: str | None = None, indent: int = 1
+        ) -> tuple[Table, dict[str, str], u.core.Unit]:
     """
-        Load calibration information
+    Load calibration information
 
-        Parameters
-        ----------
-        image_like_object
-            Class object with all image specific properties
+    Parameters
+    ----------
+    image_like_object
+        Class object with all image specific properties
 
-        filter_list             : `list` with `strings`
-            Filter list
+    filter_list
+        Filter list
 
-        calibration_method      : `string`, optional
-            Calibration method
-            Default is ``APASS``.
+    calibration_method
+        Calibration method
+        Default is ``APASS``.
 
-        magnitude_range         : `tuple` or `float`, optional
-            Magnitude range
-            Default is ``(0.,18.5)``.
+    magnitude_range
+        Magnitude range
+        Default is ``(0.,18.5)``.
 
-        vizier_dict
-            Vizier identifiers of catalogs that can be used for calibration.
-            Default is ``None``.
+    vizier_dict
+        Vizier identifiers of catalogs that can be used for calibration.
+        Default is ``None``.
 
-        path_calibration_file   : `string`, optional
-            Path to the calibration file
-            Default is ``None``.
+    path_calibration_file
+        Path to the calibration file
+        Default is ``None``.
 
-        indent          : `integer`, optional
-            Indentation for the console output lines
-            Default is ``1``.
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
 
-        Returns
-        -------
-        calib_tbl       : `astropy.table.Table`
-            Astropy table with the calibration data
+    Returns
+    -------
+    calib_tbl
+        Astropy table with the calibration data
 
-        column_names    : `dictionary`
-            Column names versus the internal default names
+    column_names
+        Column names versus the internal default names
 
-        ra_unit         : `astropy.unit`
-            Returns also the right ascension unit in case it changed
+    ra_unit
+        Returns also the right ascension unit in case it changed
     """
     #   Get identifiers of catalogs if no has been provided
     if vizier_dict is None:
@@ -649,24 +663,25 @@ def load_calibration_data_table(
 
 def observed_magnitude_of_calibration_stars(
         magnitude_distribution: unc.core.NdarrayDistribution | u.quantity.Quantity,
-        calibration_stars_ids: np.ndarray) -> unc.core.NdarrayDistribution | u.quantity.Quantity:
+        calibration_stars_ids: np.ndarray
+        ) -> unc.core.NdarrayDistribution | u.quantity.Quantity:
     """
-        Sort and rearrange the distribution of extracted magnitudes so that
-        the returned distribution contains the extracted magnitudes of the
-        calibration stars.
+    Sort and rearrange the distribution of extracted magnitudes so that
+    the returned distribution contains the extracted magnitudes of the
+    calibration stars.
 
-        Parameters
-        ----------
-        magnitude_distribution
-            Distribution with image magnitudes
+    Parameters
+    ----------
+    magnitude_distribution
+        Distribution with image magnitudes
 
-        calibration_stars_ids
-            IDs of the stars for which calibration data is available
+    calibration_stars_ids
+        IDs of the stars for which calibration data is available
 
-        Returns
-        -------
-        distribution_calibration_observed
-            Rearrange distribution
+    Returns
+    -------
+    distribution_calibration_observed
+        Rearrange distribution
     """
     #   Sort magnitudes
     distribution_calibration_observed = magnitude_distribution[
@@ -677,13 +692,19 @@ def observed_magnitude_of_calibration_stars(
 
 
 def derive_calibration(
-        observation: 'analyze.Observation', filter_list, calibration_method='APASS',
-        max_pixel_between_objects=3., own_correlation_option=1,
-        vizier_dict: dict[str, str] | None = None, path_calibration_file=None, id_object=None,
-        magnitude_range=(0., 18.5), coordinates_obj_to_rm=None,
-        correlation_method='astropy', separation_limit: u.quantity.Quantity = 2. * u.arcsec,
-        reference_filter=None, region_to_select_calibration_stars=None,
-        correlate_with_observed_objects=True, reference_image_id=0, indent=1):
+        observation: 'analyze.Observation', filter_list: list[str],
+        calibration_method: str = 'APASS', max_pixel_between_objects: int = 3,
+        own_correlation_option: int = 1,
+        vizier_dict: dict[str, str] | None = None,
+        path_calibration_file: str | None = None, id_object: int | None = None,
+        magnitude_range: tuple[float, float] = (0., 18.5),
+        coordinates_obj_to_rm: SkyCoord | None = None,
+        correlation_method: str = 'astropy',
+        separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+        reference_filter: str | None = None,
+        region_to_select_calibration_stars: RectanglePixelRegion | None = None,
+        correlate_with_observed_objects: bool = True,
+        reference_image_id: int = 0, indent: int = 1) -> None:
     """
     Find suitable calibration stars
 
@@ -692,18 +713,18 @@ def derive_calibration(
     observation
         Container object with image series objects for each filter
 
-    filter_list                         : `list` or set` of `string`
+    filter_list
         Filter list
 
-    calibration_method                  : `string`, optional
+    calibration_method
         Calibration method
         Default is ``APASS``.
 
-    max_pixel_between_objects           : `float`, optional
+    max_pixel_between_objects
         Maximal distance between two objects in Pixel
         Default is ``3``.
 
-    own_correlation_option              : `integer`, optional
+    own_correlation_option
         Option for the srcor correlation function
         Default is ``1``.
 
@@ -712,52 +733,52 @@ def derive_calibration(
         calibration data
         Default is ``None``.
 
-    path_calibration_file               : `string`, optional
+    path_calibration_file
         Path to the calibration file
         Default is ``None``.
 
-    id_object                           : `integer`, optional
+    id_object
         ID of the object
         Default is ``None``.
 
-    magnitude_range                     : `tuple` or `float`, optional
+    magnitude_range
         Magnitude range
         Default is ``(0.,18.5)``.
 
-    coordinates_obj_to_rm               : `astropy.coordinates.SkyCoord`, optional
+    coordinates_obj_to_rm
         Coordinates of an object that should not be used for calibrating
         the data.
         Default is ``None``.
 
-    correlation_method                  : `string`, optional
+    correlation_method
         Correlation method to be used to find the common objects on
         the images.
         Possibilities: ``astropy``, ``own``
         Default is ``astropy``.
 
-    separation_limit                    : `astropy.units`, optional
+    separation_limit
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
 
-    reference_filter                    : `string` or `None`, optional
+    reference_filter
         Name of the reference filter
         Default is ``None`.
 
-    region_to_select_calibration_stars  : `regions.RectanglePixelRegion`, optional
+    region_to_select_calibration_stars
         Region in which to select calibration stars. This is a useful
         feature in instances where not the entire field of view can be
         utilized for calibration purposes.
         Default is ``None``.
 
-    correlate_with_observed_objects     : `boolean`, optional
+    correlate_with_observed_objects
         If ``True`` the downloaded calibration objects will be correlated
         with the observed objects to get a valid set of calibration objects
 
-    reference_image_id                  : `integer`, optional
+    reference_image_id
         ID of the reference image
         Default is ``0``.
 
-    indent                              : `integer`, optional
+    indent
         Indentation for the console output lines
         Default is ``1``.
     """
@@ -846,7 +867,7 @@ def derive_calibration(
     )
 
     if correlate_with_observed_objects:
-        calibration_tbl, index_obj_instrument = correlate_with_calibration_objects(
+        calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
             image_series,
             calibration_object_coordinates,
             calibration_tbl,
@@ -872,205 +893,15 @@ def derive_calibration(
     )
 
 
-#   TODO: Move to correlate
-def correlate_with_calibration_objects(
-        image_series: 'analyze.ImageSeries', calibration_object_coordinates,
-        calibration_tbl,
-        filter_list, column_names, correlation_method='astropy',
-        separation_limit=2. * u.arcsec, max_pixel_between_objects=3.,
-        own_correlation_option=1, id_object=None, reference_image_id=0,
-        indent=1):
-    """
-    Correlate observed objects with calibration stars
-
-    Parameters
-    ----------
-    image_series
-        Class with all images of a specific image series
-
-    calibration_object_coordinates      : `astropy.coordinates.SkyCoord`
-        Coordinates of the calibration objects
-
-    calibration_tbl                     : `astropy.table.Table`
-        Table with calibration data
-
-    filter_list                         : `list` or set` of `string`
-        Filter list
-
-    column_names                        : `dictionary`
-        Actual names of the columns in calibration_tbl versus
-        the internal default names
-
-    correlation_method                  : `string`, optional
-        Correlation method to be used to find the common objects on
-        the images.
-        Possibilities: ``astropy``, ``own``
-        Default is ``astropy``.
-
-    separation_limit                    : `astropy.units`, optional
-        Allowed separation between objects.
-        Default is ``2.*u.arcsec``.
-
-    max_pixel_between_objects           : `float`, optional
-        Maximal distance between two objects in Pixel
-        Default is ``3``.
-
-    own_correlation_option              : `integer`, optional
-        Option for the srcor correlation function
-        Default is ``1``.
-
-    id_object                           : `integer`, optional
-        ID of the object
-        Default is ``None``.
-
-    reference_image_id                  : `integer`, optional
-        ID of the reference image
-        Default is ``0``.
-
-    indent                              : `integer`, optional
-        Indentation for the console output lines
-        Default is ``1``.
-
-    Returns
-    -------
-    calibration_tbl_sort                : `astropy.table.Table`
-        Sorted table with calibration data
-
-    index_obj_instrument                : `numpy.ndarray`
-        Index of the observed stars that correspond to the calibration stars
-    """
-    #   Pixel positions of the observed object
-    pixel_position_obj_x = image_series.image_list[reference_image_id].photometry['x_fit']
-    pixel_position_obj_y = image_series.image_list[reference_image_id].photometry['y_fit']
-
-    #   Pixel positions of calibration object
-    pixel_position_cali_x, pixel_position_cali_y = calibration_object_coordinates.to_pixel(image_series.wcs)
-
-    if correlation_method == 'astropy':
-        #   Create coordinates object
-        object_coordinates = SkyCoord.from_pixel(
-            pixel_position_obj_x,
-            pixel_position_obj_y,
-            image_series.wcs,
-        )
-
-        #   Find matches between the datasets
-        index_obj_instrument, index_obj_literature, _, _ = matching.search_around_sky(
-            object_coordinates,
-            calibration_object_coordinates,
-            separation_limit,
-        )
-
-        n_identified_literature_objs = len(index_obj_literature)
-
-    elif correlation_method == 'own':
-        #   Max. number of objects
-        n_obj_max = np.max(len(pixel_position_obj_x), len(pixel_position_cali_x))
-
-        #   Define and fill new arrays
-        pixel_position_all_x = np.zeros((n_obj_max, 2))
-        pixel_position_all_y = np.zeros((n_obj_max, 2))
-        pixel_position_all_x[0:len(pixel_position_obj_x), 0] = pixel_position_obj_x
-        pixel_position_all_x[0:len(pixel_position_cali_x), 1] = pixel_position_cali_x
-        pixel_position_all_y[0:len(pixel_position_obj_y), 0] = pixel_position_obj_y
-        pixel_position_all_y[0:len(pixel_position_cali_y), 1] = pixel_position_cali_y
-
-        #   Correlate calibration stars with stars on the image
-        correlated_indexes, rejected_images, n_identified_literature_objs, rejected_obj = correlate.correlation_own(
-            pixel_position_all_x,
-            pixel_position_all_y,
-            max_pixel_between_objects=max_pixel_between_objects,
-            option=own_correlation_option,
-        )
-        index_obj_instrument = correlated_indexes[0]
-        index_obj_literature = correlated_indexes[1]
-
-    else:
-        raise ValueError(
-            f'The correlation method needs to either "astropy" or "own". Got '
-            f'{correlation_method} instead.'
-        )
-
-    if n_identified_literature_objs == 0:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNo calibration star was identified "
-            f"-> EXIT {style.Bcolors.ENDC}"
-        )
-    if n_identified_literature_objs == 1:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL}\nOnly one calibration star was identified\n"
-            "Unfortunately, that is not enough at the moment\n"
-            f"-> EXIT {style.Bcolors.ENDC}"
-        )
-
-    #   Limit calibration table to common objects
-    calibration_tbl_sort = calibration_tbl[index_obj_literature]
-
-    ###
-    #   Plots
-    #
-    #   Make new arrays based on the correlation results
-    pixel_position_common_objs_x = pixel_position_obj_x[list(index_obj_instrument)]
-    pixel_position_common_objs_y = pixel_position_obj_y[list(index_obj_instrument)]
-    index_common_new = np.arange(n_identified_literature_objs)
-
-    #   Add pixel positions and object ids to the calibration table
-    calibration_tbl_sort.add_columns(
-        [np.intc(index_common_new), pixel_position_common_objs_x, pixel_position_common_objs_y],
-        names=['id', 'xcentroid', 'ycentroid']
-    )
-
-    calibration_tbl.add_columns(
-        [np.arange(0, len(pixel_position_cali_y)), pixel_position_cali_x, pixel_position_cali_y],
-        names=['id', 'xcentroid', 'ycentroid']
-    )
-
-    #   Plot star map with calibration stars
-    if id_object is not None:
-        rts = f'calibration - object: {id_object}'
-    else:
-        rts = 'calibration'
-    for filter_ in filter_list:
-        if 'mag' + filter_ in column_names:
-            p = mp.Process(
-                target=plots.starmap,
-                args=(
-                    image_series.out_path.name,
-                    #   Replace with reference image in the future
-                    image_series.image_list[0].get_data(),
-                    filter_,
-                    calibration_tbl,
-                ),
-                kwargs={
-                    'tbl_2': calibration_tbl_sort,
-                    'label': 'downloaded calibration stars',
-                    'label_2': 'matched calibration stars',
-                    'rts': rts,
-                    # 'name_object': image_series.object_name,
-                    'wcs_image': image_series.wcs,
-                }
-            )
-            p.start()
-
-    terminal_output.print_to_terminal(
-        f"{len(calibration_tbl_sort)} calibration stars have been matched to"
-        f" observed stars",
-        indent=indent + 2,
-        style_name='OKBLUE',
-    )
-
-    return calibration_tbl_sort, index_obj_instrument
-
-
 def distribution_from_calibration_table(
-        calibration_parameters: CalibParameters, filter_list: list[str],
+        parameters_calibration: CalibParameters, filter_list: list[str],
         distribution_samples: int = 1000) -> list[u.quantity.Quantity]:
     """
         Arrange the literature values in a numpy array or uncertainty array.
 
         Parameters
         ----------
-        calibration_parameters
+        parameters_calibration
             Class instance with calibration data
 
         filter_list
@@ -1086,10 +917,10 @@ def distribution_from_calibration_table(
             Normal distribution representing literature magnitudes
     """
     #   Get column names
-    calib_column_names = calibration_parameters.column_names
+    calib_column_names = parameters_calibration.column_names
 
     #   Get calibration table
-    calibration_data_table = calibration_parameters.calib_tbl
+    calibration_data_table = parameters_calibration.calib_tbl
 
     distribution_list: list[u.quantity.Quantity] = []
     for filter_ in filter_list:
