@@ -195,13 +195,14 @@ def mk_magnitudes_table_and_array(
     return tbl, stacked_magnitudes
 
 
-#   TODO: Check where this function is used and whether it is safe to rename the parameters.
 def find_wcs(
         image_series: 'analyze.ImageSeries',
         reference_image_id: int | None = None, method: str = 'astrometry',
-        cosmics_removed: bool = False, path_cos: str | None = None,
-        x: np.ndarray | None = None, y: np.ndarray | None = None,
-        force_wcs_determ: bool = False, indent: int = 2) -> None:
+        cosmics_removed: bool = False,
+        image_path_cosmics_removed: str | None = None,
+        object_x_coordinates: np.ndarray | None = None,
+        object_y_coordinates: np.ndarray | None = None,
+        force_wcs_determination: bool = False, indent: int = 2) -> None:
     """
     Meta function for finding image WCS
 
@@ -224,15 +225,15 @@ def find_wcs(
         function was run before this function
         Default is ``False``.
 
-    path_cos
+    image_path_cosmics_removed
         Path to the image in case 'cosmics_removed' is True
         Default is ``None``.
 
-    x, y
+    object_x_coordinates, object_y_coordinates
         Pixel coordinates of the objects
         Default is ``None``.
 
-    force_wcs_determ
+    force_wcs_determination
         If ``True`` a new WCS determination will be calculated even if
         a WCS is already present in the FITS Header.
         Default is ``False``.
@@ -248,14 +249,14 @@ def find_wcs(
         #   Test if the image contains already a WCS
         cal_wcs, wcs_file = base_utilities.check_wcs_exists(img)
 
-        if not cal_wcs or force_wcs_determ:
+        if not cal_wcs or force_wcs_determination:
             #   Calculate WCS -> astrometry.net
             if method == 'astrometry':
                 image_series.set_wcs(
                     base_utilities.find_wcs_astrometry(
                         img,
                         cosmic_rays_removed=cosmics_removed,
-                        path_cosmic_cleaned_image=path_cos,
+                        path_cosmic_cleaned_image=image_path_cosmics_removed,
                         indent=indent,
                     )
                 )
@@ -268,13 +269,13 @@ def find_wcs(
 
             #   Calculate WCS -> twirl library
             elif method == 'twirl':
-                if x is None or y is None:
+                if object_x_coordinates is None or object_y_coordinates is None:
                     raise RuntimeError(
                         f"{style.Bcolors.FAIL} \nException in find_wcs(): '"
                         f"\n'x' or 'y' is None -> Exit {style.Bcolors.ENDC}"
                     )
                 image_series.set_wcs(
-                    base_utilities.find_wcs_twirl(img, x, y, indent=indent)
+                    base_utilities.find_wcs_twirl(img, object_x_coordinates, object_y_coordinates, indent=indent)
                 )
             #   Raise exception
             else:
@@ -290,13 +291,13 @@ def find_wcs(
             #   Test if the image contains already a WCS
             cal_wcs = base_utilities.check_wcs_exists(img)
 
-            if not cal_wcs or force_wcs_determ:
+            if not cal_wcs or force_wcs_determination:
                 #   Calculate WCS -> astrometry.net
                 if method == 'astrometry':
                     w = base_utilities.find_wcs_astrometry(
                         img,
                         cosmic_rays_removed=cosmics_removed,
-                        path_cosmic_cleaned_image=path_cos,
+                        path_cosmic_cleaned_image=image_path_cosmics_removed,
                         indent=indent,
                     )
 
@@ -306,13 +307,13 @@ def find_wcs(
 
                 #   Calculate WCS -> twirl library
                 elif method == 'twirl':
-                    if x is None or y is None:
+                    if object_x_coordinates is None or object_y_coordinates is None:
                         raise RuntimeError(
                             f"{style.Bcolors.FAIL} \nException in "
                             "find_wcs(): ' \n'x' or 'y' is None -> Exit"
                             f"{style.Bcolors.ENDC}"
                         )
-                    w = base_utilities.find_wcs_twirl(img, x, y, indent=indent)
+                    w = base_utilities.find_wcs_twirl(img, object_x_coordinates, object_y_coordinates, indent=indent)
 
                 #   Raise exception
                 else:
@@ -365,7 +366,7 @@ def extract_wcs(
             if filters is None:
                 raise Exception(
                     f"{style.Bcolors.FAIL} \nException in extract_wcs(): '"
-                    "\n'rmcos=True' buit no 'filters' given -> Exit"
+                    "\n'rm_cosmics=True' but no 'filters' given -> Exit"
                     f"{style.Bcolors.ENDC}"
                 )
             basename = f'img_cut_{filters[0]}_lacosmic'
@@ -422,11 +423,23 @@ def prepare_time_series_data(
                 else:
                     magnitude_column_names.append(col_name)
 
+        print(
+            'type(data[magnitude_column_names][object_id].as_void())',
+            type(data[magnitude_column_names][object_id].as_void())
+        )
+        print(dir(data[magnitude_column_names][object_id].as_void()))
+        #   Convert magnitudes to numpy.ndarray
         magnitudes = np.array(
             data[magnitude_column_names][object_id].as_void()
         )
+        magnitudes = magnitudes.view(
+            (magnitudes.dtype[0], len(magnitudes.dtype.names))
+        )
         magnitude_errors = np.array(
             data[err_column_names][object_id].as_void()
+        )
+        magnitude_errors = magnitude_errors.view(
+            (magnitude_errors.dtype[0], len(magnitude_errors.dtype.names))
         )
         return magnitudes, magnitude_errors
 
@@ -476,8 +489,6 @@ def mk_time_series(
     # errs_obj = magnitudes[filter_]['errors'][:, object_id]
 
     #   Make time series and use reshape to get a justified array
-    #   TODO: Check if the reshape below is necessary
-    print('magnitudes', magnitudes)
     ts = TimeSeries(
         time=observation_times,
         data={
@@ -713,169 +724,169 @@ def find_transformation_coefficients(
 
 
 #   TODO: Remove
-def check_variable(
-        filename: str, filetype: str, filter_1: str, filter_2: str, iso_column_type,
-        iso_column):
-    """
-    Check variables and set defaults for CMDs and isochrone plots
-
-    This function exists for backwards compatibility.
-
-    Parameters
-    ----------
-    filename            : `string`
-        Specified file name - can also be empty -> set default
-
-
-    filetype            : `string`
-        Specified file type - can also be empty -> set default
-
-    filter_1            : `string`
-        First filter
-
-    filter_2            : `string`
-        Second filter
-
-    iso_column_type     : `dictionary`
-        Keys = filter - Values = type
-
-    iso_column          : `dictionary`
-        Keys = filter - Values = column
-    """
-
-    filename, filetype = check_variable_apparent_cmd(
-        filename,
-        filetype,
-    )
-
-    check_variable_absolute_cmd(
-        [filter_1, filter_2],
-        iso_column_type,
-        iso_column,
-    )
-
-    return filename, filetype
+# def check_variable(
+#         filename: str, filetype: str, filter_1: str, filter_2: str, iso_column_type,
+#         iso_column):
+#     """
+#     Check variables and set defaults for CMDs and isochrone plots
+#
+#     This function exists for backwards compatibility.
+#
+#     Parameters
+#     ----------
+#     filename            : `string`
+#         Specified file name - can also be empty -> set default
+#
+#
+#     filetype            : `string`
+#         Specified file type - can also be empty -> set default
+#
+#     filter_1            : `string`
+#         First filter
+#
+#     filter_2            : `string`
+#         Second filter
+#
+#     iso_column_type     : `dictionary`
+#         Keys = filter - Values = type
+#
+#     iso_column          : `dictionary`
+#         Keys = filter - Values = column
+#     """
+#
+#     filename, filetype = check_variable_apparent_cmd(
+#         filename,
+#         filetype,
+#     )
+#
+#     check_variable_absolute_cmd(
+#         [filter_1, filter_2],
+#         iso_column_type,
+#         iso_column,
+#     )
+#
+#     return filename, filetype
 
 
 #   TODO: remove
-def check_variable_apparent_cmd(filename, filetype):
-    """
-    Check variables and set defaults for CMDs and isochrone plots
-
-    Parameters
-    ----------
-    filename                : `string`
-        Specified file name - can also be empty -> set default
-
-    filetype                : `string`
-        Specified file type - can also be empty -> set default
-    """
-    #   Set figure type
-    if filename == "?" or filename == "":
-        terminal_output.print_to_terminal(
-            '[Warning] No filename given, us default (cmd)',
-            indent=1,
-            style_name='WARNING',
-        )
-        filename = 'cmd'
-
-    if filetype == '?' or filetype == '':
-        terminal_output.print_to_terminal(
-            '[Warning] No filetype given, use default (pdf)',
-            indent=1,
-            style_name='WARNING',
-        )
-        filetype = 'pdf'
-
-    #   Check if file type is valid and set default
-    filetype_list = ['pdf', 'png', 'eps', 'ps', 'svg']
-    if filetype not in filetype_list:
-        terminal_output.print_to_terminal(
-            '[Warning] Unknown filetype given, use default instead (pdf)',
-            indent=1,
-            style_name='WARNING',
-        )
-        filetype = 'pdf'
-
-    # #   Check if calibration parameter is consistent with the number of
-    # #   filter
-    # if zero_points_dict:
-    #     if len(filter_list) != len(zero_points_dict):
-    #         if len(filter_list) > len(zero_points_dict):
-    #             terminal_output.print_to_terminal(
-    #                 "[Error] More filter ('filter') specified than zero"
-    #                 " points ('zero_points_dict')",
-    #                 indent=1,
-    #                 style_name='ERROR',
-    #             )
-    #             sys.exit()
-    #         else:
-    #             terminal_output.print_to_terminal(
-    #                 "[Error] More zero points ('zero_points_dict') "
-    #                 "specified than filter ('filter')",
-    #                 indent=1,
-    #                 style_name='ERROR',
-    #             )
-    #             sys.exit()
-
-    # #   Valid filter combinations
-    # valid_filter_combination = {
-    #     'U': 'B',
-    #     'B': 'V',
-    #     'V': 'R',
-    #     'R': 'I',
-    #     'H': 'J',
-    #     'J': 'K',
-    # }
-    # if filter_1 in valid_filter_combination.keys():
-    #     second_filter = valid_filter_combination[filter_1]
-    #     if second_filter in filter_list:
-    #         return filename, filetype, second_filter
-    #     else:
-    #         index_filter_1 = filter_list.index(filter_1)
-    #         if index_filter_1 + 1 < len(filter_list):
-    #             return filename, filetype, filter_list[index_filter_1 + 1]
-    #
-    # return filename, filetype, False
-    return filename, filetype
+# def check_variable_apparent_cmd(filename, filetype):
+#     """
+#     Check variables and set defaults for CMDs and isochrone plots
+#
+#     Parameters
+#     ----------
+#     filename                : `string`
+#         Specified file name - can also be empty -> set default
+#
+#     filetype                : `string`
+#         Specified file type - can also be empty -> set default
+#     """
+#     #   Set figure type
+#     if filename == "?" or filename == "":
+#         terminal_output.print_to_terminal(
+#             '[Warning] No filename given, us default (cmd)',
+#             indent=1,
+#             style_name='WARNING',
+#         )
+#         filename = 'cmd'
+#
+#     if filetype == '?' or filetype == '':
+#         terminal_output.print_to_terminal(
+#             '[Warning] No filetype given, use default (pdf)',
+#             indent=1,
+#             style_name='WARNING',
+#         )
+#         filetype = 'pdf'
+#
+#     #   Check if file type is valid and set default
+#     filetype_list = ['pdf', 'png', 'eps', 'ps', 'svg']
+#     if filetype not in filetype_list:
+#         terminal_output.print_to_terminal(
+#             '[Warning] Unknown filetype given, use default instead (pdf)',
+#             indent=1,
+#             style_name='WARNING',
+#         )
+#         filetype = 'pdf'
+#
+#     # #   Check if calibration parameter is consistent with the number of
+#     # #   filter
+#     # if zero_points_dict:
+#     #     if len(filter_list) != len(zero_points_dict):
+#     #         if len(filter_list) > len(zero_points_dict):
+#     #             terminal_output.print_to_terminal(
+#     #                 "[Error] More filter ('filter') specified than zero"
+#     #                 " points ('zero_points_dict')",
+#     #                 indent=1,
+#     #                 style_name='ERROR',
+#     #             )
+#     #             sys.exit()
+#     #         else:
+#     #             terminal_output.print_to_terminal(
+#     #                 "[Error] More zero points ('zero_points_dict') "
+#     #                 "specified than filter ('filter')",
+#     #                 indent=1,
+#     #                 style_name='ERROR',
+#     #             )
+#     #             sys.exit()
+#
+#     # #   Valid filter combinations
+#     # valid_filter_combination = {
+#     #     'U': 'B',
+#     #     'B': 'V',
+#     #     'V': 'R',
+#     #     'R': 'I',
+#     #     'H': 'J',
+#     #     'J': 'K',
+#     # }
+#     # if filter_1 in valid_filter_combination.keys():
+#     #     second_filter = valid_filter_combination[filter_1]
+#     #     if second_filter in filter_list:
+#     #         return filename, filetype, second_filter
+#     #     else:
+#     #         index_filter_1 = filter_list.index(filter_1)
+#     #         if index_filter_1 + 1 < len(filter_list):
+#     #             return filename, filetype, filter_list[index_filter_1 + 1]
+#     #
+#     # return filename, filetype, False
+#     return filename, filetype
 
 
 #   TODO: Remove
-def check_variable_absolute_cmd(filter_list, iso_column_type,
-                                iso_column):
-    """
-    Check variables and set defaults for CMDs and isochrone plots
-
-    Parameters
-    ----------
-    filter_list           : `list` of `string`
-        Filter list
-
-    iso_column_type       : `dictionary`
-        Keys = filter - Values = type
-
-    iso_column            : `dictionary`
-        Keys = filter - Values = column
-    """
-    #   Check if the column declaration for the isochrones fits to the
-    #   specified filter
-    for filter_ in filter_list:
-        if filter_ not in iso_column_type.keys():
-            terminal_output.print_to_terminal(
-                f"[Error] No entry for filter {filter_} specified in "
-                f"'ISOcolumntype'",
-                indent=1,
-                style_name='FAIL',
-            )
-            sys.exit()
-        if filter_ not in iso_column.keys():
-            terminal_output.print_to_terminal(
-                f"[Error] No entry for filter {filter_} specified in"
-                " 'ISOcolumn'",
-                indent=1,
-                style_name='FAIL',
-            )
-            sys.exit()
+# def check_variable_absolute_cmd(filter_list, iso_column_type,
+#                                 iso_column):
+#     """
+#     Check variables and set defaults for CMDs and isochrone plots
+#
+#     Parameters
+#     ----------
+#     filter_list           : `list` of `string`
+#         Filter list
+#
+#     iso_column_type       : `dictionary`
+#         Keys = filter - Values = type
+#
+#     iso_column            : `dictionary`
+#         Keys = filter - Values = column
+#     """
+#     #   Check if the column declaration for the isochrones fits to the
+#     #   specified filter
+#     for filter_ in filter_list:
+#         if filter_ not in iso_column_type.keys():
+#             terminal_output.print_to_terminal(
+#                 f"[Error] No entry for filter {filter_} specified in "
+#                 f"'ISOcolumntype'",
+#                 indent=1,
+#                 style_name='FAIL',
+#             )
+#             sys.exit()
+#         if filter_ not in iso_column.keys():
+#             terminal_output.print_to_terminal(
+#                 f"[Error] No entry for filter {filter_} specified in"
+#                 " 'ISOcolumn'",
+#                 indent=1,
+#                 style_name='FAIL',
+#             )
+#             sys.exit()
 
 
 class Executor:
@@ -1191,76 +1202,81 @@ def prepare_and_plot_starmap_from_image_series(
         terminal_output.print_to_terminal('')
 
 
-#   TODO: Rewrite
 def calibration_check_plots(
-        filter_: str, out_dir: str, image_id: int, filter_list,
-        color_observed, color_literature, ids_calibration_stars,
-        literature_magnitudes, magnitudes: np.ndarray, uncalibrated_magnitudes: np.ndarray,
-        color_observed_err=None, color_literature_err=None,
-        literature_magnitudes_err=None, magnitudes_err: np.ndarray | None = None,
-        uncalibrated_magnitudes_err: np.ndarray | None = None, plot_sigma_switch=False,
-        multiprocessing: bool = True):
+        filter_: str, out_dir: str, image_id: int,
+        ids_calibration_stars: np.ndarray, literature_magnitudes: np.ndarray,
+        magnitudes: np.ndarray, uncalibrated_magnitudes: np.ndarray,
+        filter_list: list[str] | None = None, color_observed: np.ndarray | None = None,
+        color_literature: np.ndarray | None = None, color_observed_err=None,
+        color_literature_err=None, literature_magnitudes_err=None,
+        magnitudes_err: np.ndarray | None = None,
+        uncalibrated_magnitudes_err: np.ndarray | None = None,
+        multiprocessing: bool = True) -> None:
     """
     Useful plots to check the quality of the calibration process.
 
     Parameters
     ----------
-    filter_                     : `string`
+    filter_
         Filter used
 
-    out_dir                     : `string`
+    out_dir
         Output directory
 
-    image_id                    : `integer`
+    image_id
             Expression characterizing the plot
 
-    filter_list                 : `list` - `string`
-        Filter list
-
-    color_observed              : `numpy.ndarray` - `numpy.float64`
-        Instrument color of the calibration stars
-
-    color_literature            : `numpy.ndarray` - `numpy.float64`
-        Literature color of the calibration stars
-
-    ids_calibration_stars       : `numpy.ndarray`
+    ids_calibration_stars
         IDs of the calibration stars
 
-    literature_magnitudes       : `numpy.ndarray`
+    literature_magnitudes
         Literature magnitudes of the objects that are used in the
         calibration process
 
-    magnitudes                  : `numpy.ndarray`
-        Magnitudes of all observed objects
+    magnitudes
+        Array with magnitudes of all observed objects
 
-    uncalibrated_magnitudes     : `numpy.ndarray`
+    uncalibrated_magnitudes
         Magnitudes of all observed objects but not calibrated yet
 
-    color_observed_err          : `numpy.ndarray' or ``None``, optional
+    filter_list
+        Filter list
+        Default is ``None``.
+
+    color_observed
+        Instrument color of the calibration stars
+        Default is ``None``.
+
+    color_literature
+        Literature color of the calibration stars
+        Default is ``None``.
+
+    color_observed_err
         Uncertainty in the instrument color of the calibration stars
+        Default is ``None``.
 
-    color_literature_err        : `numpy.ndarray' or ``None``, optional
+    color_literature_err
         Uncertainty in the literature color of the calibration stars
+        Default is ``None``.
 
-    literature_magnitudes_err   : `numpy.ndarray`
+    literature_magnitudes_err
         Uncertainty in the literature magnitudes of the objects that are
         used in the calibration process
+        Default is ``None``.
 
-    magnitudes_err              : `numpy.ndarray` or `None`, optional
+    magnitudes_err
         Uncertainty in the magnitudes of the observed objects
+        Default is ``None``.
 
-    uncalibrated_magnitudes_err : `numpy.ndarray` or `None`, optional
+    uncalibrated_magnitudes_err
         Uncertainty in the uncalibrated magnitudes of the observed objects
-
-    plot_sigma_switch           : `boolean`, optional
-        If True sigma clipped magnitudes will be plotted.
-        Default is ``False``.
+        Default is ``None``.
 
     multiprocessing
         If ``True'', multicore processing is allowed, otherwise not.
+        Default is ``True``.
     """
-    #   TODO: Cleanup & add new plots
-    #   Comparison observed vs. literature magnitudes
+    #   Comparison calibrated vs. uncalibrated magnitudes
     if multiprocessing:
         p = mp.Process(
             target=plots.scatter,
@@ -1292,161 +1308,152 @@ def calibration_check_plots(
             y_errors=[uncalibrated_magnitudes_err],
         )
 
-    #   Illustration of sigma clipping on calibration magnitudes
-    # if plot_sigma_switch:
+    #   Comparison observed vs. literature magnitudes
+    #   Make fit
+    fit = fit_data_one_d(
+        uncalibrated_magnitudes[ids_calibration_stars],
+        literature_magnitudes,
+        1,
+    )
+
+    if multiprocessing:
+        p = mp.Process(
+            target=plots.scatter,
+            args=(
+                [uncalibrated_magnitudes[ids_calibration_stars]],
+                f'{filter_}_measured [mag]',
+                [literature_magnitudes],
+                f'{filter_}_literature [mag]',
+                f'mags_sigma_{filter_}_img_{image_id}',
+                out_dir,
+            ),
+            kwargs={
+                # 'name_object': name_object,
+                'fits': [None, fit],
+                'x_errors': [
+                    uncalibrated_magnitudes_err[ids_calibration_stars]
+                ],
+                'y_errors': [
+                    literature_magnitudes_err
+                ],
+                'dataset_label': [
+                    'without sigma clipping',
+                    'with sigma clipping',
+                ],
+            }
+        )
+        p.start()
+    else:
+        plots.scatter(
+            [uncalibrated_magnitudes[ids_calibration_stars]],
+            f'{filter_}_measured [mag]',
+            [literature_magnitudes],
+            f'{filter_}_literature [mag]',
+            f'mags_sigma_{filter_}_img_{image_id}',
+            out_dir,
+            # 'name_object': name_object,
+            fits=[None, fit],
+            x_errors=uncalibrated_magnitudes_err[ids_calibration_stars],
+            y_errors=[literature_magnitudes_err],
+            dataset_label=[
+                'without sigma clipping',
+                'with sigma clipping',
+            ],
+        )
+
+    #   Comparison observed vs. literature color
+    if all([color_observed, color_literature, filter_list]):
         #   Make fit
-        # fit = fit_data_one_d(
-        #     uncalibrated_magnitudes[ids_calibration_stars][mask],
-        #     literature_magnitudes[mask],
-        #     1,
-        # )
-        #
-        # p = mp.Process(
-        #     target=plots.scatter,
-        #     args=(
-        #         [
-        #             uncalibrated_magnitudes[ids_calibration_stars],
-        #             uncalibrated_magnitudes[ids_calibration_stars][mask]
-        #         ],
-        #         f'{filter_}_measured [mag]',
-        #         [literature_magnitudes, literature_magnitudes[mask]],
-        #         f'{filter_}_literature [mag]',
-        #         f'mags_sigma_{filter_}_img_{image_id}',
-        #         out_dir,
-        #     ),
-        #     kwargs={
-        #         'name_object': name_object,
-        #         'fits': [None, fit],
-        #         'x_errors': [
-        #             uncalibrated_magnitudes_err[ids_calibration_stars],
-        #             uncalibrated_magnitudes_err[ids_calibration_stars][mask]
-        #         ],
-        #         'y_errors': [
-        #             literature_magnitudes_err,
-        #             literature_magnitudes_err[mask]
-        #         ],
-        #         'dataset_label': [
-        #             'without sigma clipping',
-        #             'with sigma clipping',
-        #         ],
-        #     }
-        # )
-        # p.start()
+        fit = fit_data_one_d(
+            color_literature,
+            color_observed,
+            1,
+        )
 
-        # #   Make fit for test purposes TODO: Check that the settings are correct.
-        # fit = fit_data_one_d(
-        #     color_literature[mask],
-        #     color_observed[mask],
-        #     1,
-        # )
-        # p = mp.Process(
-        #     target=plots.scatter,
-        #     args=(
-        #         [color_literature, color_literature[mask]],
-        #         f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
-        #         [color_observed, color_observed[mask]],
-        #         f'{filter_list[0]}-{filter_list[1]}_measured [mag]',
-        #         f'color_sigma_{filter_}_img_{image_id}',
-        #         out_dir,
-        #     ),
-        #     kwargs={
-        #         'name_object': name_object,
-        #         'x_errors': [color_literature_err, color_literature_err[mask]],
-        #         'y_errors': [color_observed_err, color_observed_err[mask]],
-        #         'dataset_label': [
-        #             'without sigma clipping',
-        #             'with sigma clipping',
-        #         ],
-        #         'fits': [fit, fit],
-        #     }
-        # )
-        # p.start()
+        if multiprocessing:
+            p = mp.Process(
+                target=plots.scatter,
+                args=(
+                    [color_literature],
+                    f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
+                    [color_observed],
+                    f'{filter_list[0]}-{filter_list[1]}_measured [mag]',
+                    f'color_sigma_{filter_}_img_{image_id}',
+                    out_dir,
+                ),
+                kwargs={
+                    # 'name_object': name_object,
+                    'x_errors': [color_literature_err],
+                    'y_errors': [color_observed_err],
+                    'dataset_label': [
+                        'without sigma clipping',
+                        'with sigma clipping',
+                    ],
+                    'fits': [fit, fit],
+                }
+            )
+            p.start()
+        else:
+            plots.scatter(
+                [color_literature],
+                f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
+                [color_observed],
+                f'{filter_list[0]}-{filter_list[1]}_measured [mag]',
+                f'color_sigma_{filter_}_img_{image_id}',
+                out_dir,
+                # 'name_object': name_object,
+                x_errors=[color_literature_err],
+                y_errors=[color_observed_err],
+                dataset_label=[
+                    'without sigma clipping',
+                    'with sigma clipping',
+                ],
+                fits=[fit, fit],
+            )
 
-        # p = mp.Process(
-        #     target=plots.scatter,
-        #     args=(
-        #         [color_literature, color_literature[mask]],
-        #         f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature [mag]',
-        #         [color_literature - color_observed, color_literature[mask] - color_observed[mask]],
-        #         f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_literature - '
-        #         f'{filter_list[id_filter_1]}-{filter_list[id_filter_2]}_measured [mag]',
-        #         f'delta_color_sigma_{filter_}_img_{image_id}',
-        #         out_dir,
-        #     ),
-        #     kwargs={
-        #         'name_object': name_object,
-        #         'x_errors': [color_lit_err, color_lit_err[mask]],
-        #         'y_errors': [
-        #             err_prop(color_fit_err, color_lit_err),
-        #             err_prop(color_fit_err[mask], color_lit_err[mask])
-        #         ],
-        #         'dataset_label': [
-        #             'without sigma clipping',
-        #             'with sigma clipping',
-        #         ],
-        #     }
-        # )
-        # p.start()
-
-        # p = mp.Process(
-        #     target=plots.scatter,
-        #     args=(
-        #         [color_literature, color_literature[mask]],
-        #         f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
-        #         [
-        #             2 * literature_magnitudes - color_literature -
-        #             2 * magnitudes[ids_calibration_stars] + color_observed,
-        #             2 * literature_magnitudes[mask] - color_literature[mask] -
-        #             2 * magnitudes[ids_calibration_stars][mask] + color_observed[mask]
-        #         ],
-        #         f'{filter_list[0]} + {filter_list[1]}_measured [mag]'
-        #         f' - {filter_list[0]} - {filter_list[1]}_literature',
-        #         f'delta_magnitudes_sigma_{filter_}_img_{image_id}',
-        #         out_dir,
-        #     ),
-        #     kwargs={
-        #         'name_object': name_object,
-        #         'x_errors': [color_literature_err, color_literature_err[mask]],
-        #         'y_errors': [
-        #             err_prop(color_observed_err, color_literature_err),
-        #             err_prop(color_observed_err[mask], color_literature_err[mask])
-        #         ],
-        #         'dataset_label': [
-        #             'without sigma clipping',
-        #             'with sigma clipping',
-        #         ],
-        #     }
-        # )
-        # p.start()
-
-    # #   Difference between literature values and calibration results
-    # #   TODO: Add image ID to plot file name
-    # p = mp.Process(
-    #     target=plots.scatter,
-    #     args=(
-    #         [literature_magnitudes, literature_magnitudes[mask]],
-    #         f'{filter_}_literature [mag]',
-    #         [
-    #             magnitudes[ids_calibration_stars] - literature_magnitudes,
-    #             magnitudes[ids_calibration_stars][mask] - literature_magnitudes[mask]
-    #         ],
-    #         f'{filter_}_observed - {filter_}_literature [mag]',
-    #         'magnitudes_literature-vs-observed',
-    #         out_dir,
-    #     ),
-    #     kwargs={
-    #         'x_errors': [literature_magnitudes_err, literature_magnitudes_err[mask]],
-    #         'y_errors': [
-    #             err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
-    #             err_prop(magnitudes_err[ids_calibration_stars][mask], literature_magnitudes_err[mask]),
-    #         ],
-    #         'dataset_label': [
-    #             'without sigma clipping',
-    #             'with sigma clipping',
-    #         ],
-    #     },
-    # )
-    # p.start()
+    #   Difference between literature values and calibration results
+    if multiprocessing:
+        p = mp.Process(
+            target=plots.scatter,
+            args=(
+                [literature_magnitudes],
+                f'{filter_}_literature [mag]',
+                [
+                    magnitudes[ids_calibration_stars] - literature_magnitudes,
+                ],
+                f'{filter_}_observed - {filter_}_literature [mag]',
+                f'magnitudes_literature-vs-observed_{image_id}',
+                out_dir,
+            ),
+            kwargs={
+                'x_errors': [literature_magnitudes_err],
+                'y_errors': [
+                    err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
+                ],
+                'dataset_label': [
+                    'without sigma clipping',
+                    'with sigma clipping',
+                ],
+            },
+        )
+        p.start()
+    else:
+        plots.scatter(
+            [literature_magnitudes],
+            f'{filter_}_literature [mag]',
+            [magnitudes[ids_calibration_stars] - literature_magnitudes],
+            f'{filter_}_observed - {filter_}_literature [mag]',
+            f'magnitudes_literature-vs-observed_{image_id}',
+            out_dir,
+            x_errors=[literature_magnitudes_err],
+            y_errors=[
+                err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
+            ],
+            dataset_label=[
+                'without sigma clipping',
+                'with sigma clipping',
+            ],
+        )
 
 
 def derive_limiting_magnitude(

@@ -2367,9 +2367,9 @@ def trim_image_simple(image_file_collection, output_path,
     return ccdp.ImageFileCollection(output_path_trimmed)
 
 
-def find_wcs(input_dir, output_dir, reference_image_id=0,
-             force_wcs_determination=False, wcs_method='astrometry',
-             x_pixel_coordinates=None, y_pixel_coordinates=None, indent=2):
+def determine_wcs(input_dir, output_dir, reference_image_id=0,
+                  force_wcs_determination=False, wcs_method='astrometry',
+                  x_pixel_coordinates=None, y_pixel_coordinates=None, indent=2):
     """
         Determine the WCS of the reference image and add the WCS to all
         images in the input directory. The latter is to save computing time.
@@ -2466,7 +2466,7 @@ def find_wcs(input_dir, output_dir, reference_image_id=0,
     #   Determine WCS
     #
     if not wcs_available or force_wcs_determination:
-        wcs = find_wcs_core(
+        wcs = determine_wcs_core(
             reference_image,
             wcs_method=wcs_method,
             x_pixel_coordinates=x_pixel_coordinates,
@@ -2485,10 +2485,10 @@ def find_wcs(input_dir, output_dir, reference_image_id=0,
                 image.write(output_dir / file_name, overwrite=True)
 
 
-def find_wcs_all_images(input_dir, output_dir, force_wcs_determination=False,
-                        wcs_method='astrometry', x_pixel_coordinates=None,
-                        y_pixel_coordinates=None, only_combined_images=False,
-                        image_type=None, indent=2):
+def determine_wcs_all_images(input_dir, output_dir, force_wcs_determination=False,
+                             wcs_method='astrometry', x_pixel_coordinates=None,
+                             y_pixel_coordinates=None, only_combined_images=False,
+                             image_type=None, indent=2):
     """
         Determine the WCS of each image individually. Images can be filtered
         based on image type and the 'combined' keyword.
@@ -2574,7 +2574,7 @@ def find_wcs_all_images(input_dir, output_dir, force_wcs_determination=False,
         wcs_available = base_utilities.check_wcs_exists(image_object)
 
         if not wcs_available or force_wcs_determination:
-            wcs = find_wcs_core(
+            wcs = determine_wcs_core(
                 image_object,
                 wcs_method=wcs_method,
                 x_pixel_coordinates=x_pixel_coordinates,
@@ -2590,8 +2590,8 @@ def find_wcs_all_images(input_dir, output_dir, force_wcs_determination=False,
                 current_ccd_image.write(output_dir / file_name, overwrite=True)
 
 
-def find_wcs_core(image, wcs_method='astrometry', x_pixel_coordinates=None,
-                  y_pixel_coordinates=None, indent=2):
+def determine_wcs_core(image, wcs_method='astrometry', x_pixel_coordinates=None,
+                       y_pixel_coordinates=None, indent=2):
     """
         Branch between different WCS methods
 

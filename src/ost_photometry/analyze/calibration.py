@@ -697,27 +697,24 @@ def apply_magnitude_transformation(
     )
 
     #   Quality control plots
-    #   TODO: Rename to transformation_check_plots?
-    #   TODO: Move to a different place to allow also plot using simple calibration!
     color_literature = (magnitudes_calibration_first_filter -
                         magnitudes_calibration_second_filter)
     utilities.calibration_check_plots(
         filter_list[filter_id],
         image.out_path.name,
         image.pd,
-        filter_list,
-        color_observed.pdf_median(),
-        color_literature.pdf_median(),
         calibration_stars_ids,
         calib_magnitudes_literature[filter_id].pdf_median(),
         image.photometry['mag_cali_trans'],
         magnitudes_current_image.pdf_median(),
+        filter_list=filter_list,
+        color_observed=color_observed.pdf_median(),
+        color_literature=color_literature.pdf_median(),
         color_observed_err=color_observed.pdf_std(),
         color_literature_err=color_literature.pdf_std(),
         literature_magnitudes_err=calib_magnitudes_literature[filter_id].pdf_std(),
         magnitudes_err=image.photometry['mag_cali_trans_unc'],
         uncalibrated_magnitudes_err=magnitudes_current_image.pdf_std(),
-        plot_sigma_switch=plot_sigma,
         multiprocessing=not multiprocessing,
     )
 
@@ -1059,24 +1056,22 @@ def calibrate_magnitudes_zero_point_core(
         zp,
     )
 
-    # pd = copy.deepcopy(current_image.pd)
-    # tbl = copy.deepcopy(current_image.photometry)
-    # zp = copy.deepcopy(zp.distribution)
-    # return pd, tbl, zp
-    return current_image.pd, current_image.photometry, zp.distribution
+    #   Quality control plots
+    utilities.calibration_check_plots(
+        current_image.filter_,
+        current_image.out_path.name,
+        current_image.pd,
+        index_calibration_stars,
+        literature_magnitudes[current_filter_id].pdf_median(),
+        current_image.photometry['mag_cali_no_trans'],
+        magnitudes_current_image.pdf_median(),
+        literature_magnitudes_err=literature_magnitudes[current_filter_id].pdf_std(),
+        magnitudes_err=current_image.photometry['mag_cali_trans_unc'],
+        uncalibrated_magnitudes_err=magnitudes_current_image.pdf_std(),
+        multiprocessing=False,
+    )
 
-    # if multiprocessing:
-    #     tmp_save = True
-    #     if not tmp_save:
-    #         magnitudes = copy.deepcopy(calibrated_magnitudes.distribution)
-    #         return pd, magnitudes, zp
-    #     else:
-    #         random_str = base_utilities.random_string_generator(7)
-    #         file_name = f'{pd}_{random_str}.npy'
-    #         np.save(f'/tmp/{file_name}', calibrated_magnitudes.distribution.value)
-    #
-    #         return pd, file_name, zp
-    # else:
+    return current_image.pd, current_image.photometry, zp.distribution
 
 
 def calibrate_magnitudes_zero_point(
@@ -1134,7 +1129,6 @@ def calibrate_magnitudes_zero_point(
         distribution_samples=distribution_samples,
     )
 
-    #   TODO: Prepare this for multithreading
     for current_filter_id, filter_ in enumerate(filter_list):
         #   Get image series
         image_series = image_series_dict[filter_]

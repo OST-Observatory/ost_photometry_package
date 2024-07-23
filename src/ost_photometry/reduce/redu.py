@@ -503,7 +503,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
         #   Determine WCS and add it to all reduced images
         #
         terminal_output.print_to_terminal("Determine WCS ...", indent=1)
-        utilities.find_wcs_all_images(
+        utilities.determine_wcs_all_images(
             output_path / 'shifted_and_trimmed',
             output_path / 'shifted_and_trimmed',
             wcs_method=wcs_method,
@@ -544,7 +544,7 @@ def reduce_main(image_path, output_dir, image_type_dir=None, gain=None,
             #
             terminal_output.print_to_terminal("Determine WCS ...", indent=1)
 
-            utilities.find_wcs_all_images(
+            utilities.determine_wcs_all_images(
                 output_path,
                 output_path,
                 force_wcs_determination=force_wcs_determination,

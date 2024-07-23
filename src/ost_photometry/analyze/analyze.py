@@ -775,7 +775,7 @@ class Observation:
                     current_image_series,
                     reference_image_id=0,
                     method=wcs_method,
-                    force_wcs_determ=force_wcs_determ,
+                    force_wcs_determination=force_wcs_determ,
                     indent=3,
                 )
             #   TODO: Check if the exception cam be more specific
@@ -1079,7 +1079,7 @@ class Observation:
                 self.image_series_dict[filter_],
                 reference_image_id=reference_image_id,
                 method=wcs_method,
-                force_wcs_determ=force_wcs_determ,
+                force_wcs_determination=force_wcs_determ,
                 indent=3,
             )
 
