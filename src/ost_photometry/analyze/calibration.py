@@ -699,7 +699,7 @@ def apply_magnitude_transformation(
     #   Quality control plots
     color_literature = (magnitudes_calibration_first_filter -
                         magnitudes_calibration_second_filter)
-    utilities.calibration_check_plots(
+    plots.calibration_check_plots(
         filter_list[filter_id],
         image.out_path.name,
         image.pd,
@@ -707,6 +707,7 @@ def apply_magnitude_transformation(
         calib_magnitudes_literature[filter_id].pdf_median(),
         image.photometry['mag_cali_trans'],
         magnitudes_current_image.pdf_median(),
+        'magnitude_transformation',
         filter_list=filter_list,
         color_observed=color_observed.pdf_median(),
         color_literature=color_literature.pdf_median(),
@@ -1057,16 +1058,17 @@ def calibrate_magnitudes_zero_point_core(
     )
 
     #   Quality control plots
-    utilities.calibration_check_plots(
+    plots.calibration_check_plots(
         current_image.filter_,
         current_image.out_path.name,
         current_image.pd,
         index_calibration_stars,
         literature_magnitudes[current_filter_id].pdf_median(),
-        current_image.photometry['mag_cali_no_trans'],
+        current_image.photometry['mag_cali_no-trans'],
         magnitudes_current_image.pdf_median(),
+        'simple_calibration',
         literature_magnitudes_err=literature_magnitudes[current_filter_id].pdf_std(),
-        magnitudes_err=current_image.photometry['mag_cali_trans_unc'],
+        magnitudes_err=current_image.photometry['mag_cali_no-trans_unc'],
         uncalibrated_magnitudes_err=magnitudes_current_image.pdf_std(),
         multiprocessing=False,
     )
