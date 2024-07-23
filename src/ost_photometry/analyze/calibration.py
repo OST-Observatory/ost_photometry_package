@@ -829,7 +829,7 @@ def quasi_flux_calibration_image_series(
 def flux_normalization_image_series(
         image_series: 'analyze.ImageSeries',
         quasi_calibrated_flux: unc.core.NdarrayDistribution | None = None,
-        distribution_samples: int = 1000) -> np.ndarray:
+        distribution_samples: int = 1000) -> unc.core.NdarrayDistribution:
     """
         Normalize flux of each object
 
@@ -984,8 +984,7 @@ def calibrate_magnitudes_zero_point_core(
         index_calibration_stars: np.ndarray, current_filter_id: int,
         literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
-        distribution_samples: int = 1000, multiprocessing: bool = False
-        ) -> tuple[int, Table, np.ndarray]:
+        distribution_samples: int = 1000) -> tuple[int, Table, np.ndarray]:
     """
     Core module for zero point calibration that allows also for multicore
     processing
@@ -1012,10 +1011,6 @@ def calibrate_magnitudes_zero_point_core(
     distribution_samples
         Number of samples used for distributions
         Default is `1000`.
-
-    multiprocessing
-        Switch to distinguish between single and multicore processing
-        Default is ``False``.
 
     Returns
     -------
@@ -1088,7 +1083,7 @@ def calibrate_magnitudes_zero_point(
         observation: 'analyze.Observation', filter_list: (list[str] | set[str]),
         distribution_samples: int = 1000, calculate_zero_point_statistic: bool = True,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
-        indent: int = 1) -> None:
+        n_cores_multiprocessing: int | None = None, indent: int = 1) -> None:
     """
     Apply the zero points to the magnitudes
 
@@ -1115,6 +1110,10 @@ def calibrate_magnitudes_zero_point(
     photometry_extraction_method
         Applied extraction method. Possibilities: ePSF or APER`
         Default is ``''``.
+
+    n_cores_multiprocessing
+        Number of core used for multicore processing
+        Default is ``None``.
 
     indent
         Indentation for the console output lines
@@ -1144,10 +1143,11 @@ def calibrate_magnitudes_zero_point(
         image_list = image_series.image_list
 
         #   Initialize multiprocessing object
-        # multiprocessing: bool = False
-        multiprocessing: bool = True
-        n_cores_multiprocessing: int = 12
-        executor = utilities.Executor(n_cores_multiprocessing)
+        executor = utilities.Executor(
+            n_cores_multiprocessing,
+            add_progress_bar=True,
+            n_tasks=len(image_series.image_list),
+        )
 
         #   Get IDs calibration data
         index_calibration_stars = getattr(
@@ -1158,64 +1158,51 @@ def calibrate_magnitudes_zero_point(
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
-            if multiprocessing:
-                executor.schedule(
-                    calibrate_magnitudes_zero_point_core,
-                    args=(
-                        current_image,
-                        index_calibration_stars,
-                        current_filter_id,
-                        literature_magnitudes,
-                    ),
-                    kwargs={
-                        'calculate_zero_point_statistic': calculate_zero_point_statistic,
-                        'distribution_samples': distribution_samples,
-                        'multiprocessing': multiprocessing,
-                    }
-                )
-            else:
-                _, zp = calibrate_magnitudes_zero_point_core(
+            executor.schedule(
+                calibrate_magnitudes_zero_point_core,
+                args=(
                     current_image,
                     index_calibration_stars,
                     current_filter_id,
                     literature_magnitudes,
-                    calculate_zero_point_statistic=calculate_zero_point_statistic,
-                    distribution_samples=distribution_samples,
-                    multiprocessing=False,
-                )
-                current_image.zp = zp
+                ),
+                kwargs={
+                    'calculate_zero_point_statistic': calculate_zero_point_statistic,
+                    'distribution_samples': distribution_samples,
+                }
+            )
 
-        if multiprocessing:
-            #   Exit multiprocessing, if exceptions will occur
-            if executor.err is not None:
-                raise RuntimeError(
-                    f'\n{style.Bcolors.FAIL}Zero point calibration using '
-                    f' multiprocessing failed for {filter_} :({style.Bcolors.ENDC}'
-                )
+        #   Exit multiprocessing, if exceptions will occur
+        if executor.err is not None:
+            raise RuntimeError(
+                f'\n{style.Bcolors.FAIL}Zero point calibration using '
+                f' multiprocessing failed for {filter_} :({style.Bcolors.ENDC}'
+            )
 
-            #   Close multiprocessing pool and wait until it finishes
-            executor.wait()
+        #   Close multiprocessing pool and wait until it finishes
+        executor.wait()
 
-            #   Extract results
-            res = executor.res
+        #   Extract results
+        res = executor.res
 
-            # save_data_tmp = True
-            #   Sort multiprocessing results
-            tmp_list = []
-            for image_ in image_series.image_list:
-                for pd, zp in res:
-                    if pd == image_.pd:
-                        image_.zp = zp
-                        tmp_list.append(image_)
+        # save_data_tmp = True
+        #   Sort multiprocessing results
+        tmp_list = []
+        for image_ in image_series.image_list:
+            for pd, tbl, zp in res:
+                if pd == image_.pd:
+                    image_.zp = zp
+                    image_.photometry = tbl
+                    tmp_list.append(image_)
 
-                        # if save_data_tmp:
-                        #     magnitudes = np.load(magnitudes, allow_pickle=True)
-                        #     os.remove(magnitudes)
+                    # if save_data_tmp:
+                    #     magnitudes = np.load(magnitudes, allow_pickle=True)
+                    #     os.remove(magnitudes)
 
-                        # image_.magnitudes_with_zp = magnitudes
+                    # image_.magnitudes_with_zp = magnitudes
 
-            # TODO: Check if this is necessary
-            image_series.image_list = tmp_list
+        # TODO: Check if this is necessary
+        image_series.image_list = tmp_list
 
     #   Save results as ASCII files
     #   Make astropy table
@@ -1228,7 +1215,7 @@ def calibrate_magnitudes_zero_point(
     #   TODO: This is also messy and needs a cleanup
     #   Add table and array to observation container
     observation.table_mags_not_transformed = table_not_transformed_magnitudes
-    observation.array_mags_not_transformed = array_not_transformed_magnitudes
+    # observation.array_mags_not_transformed = array_not_transformed_magnitudes
 
     #   Save to file
     utilities.save_magnitudes_ascii(
@@ -1243,10 +1230,10 @@ def calibrate_magnitudes_zero_point(
 def calibrate_magnitudes_transformation(
         observation: 'analyze.Observation', filter_list: (list[str] | set[str]),
         transformation_coefficients: dict[str, (float | str)] | None = None,
-        derive_transformation_coefficients: bool = False, plot_sigma: bool = False,
-        distribution_samples: int = 1000,
+        derive_transformation_coefficients: bool = False,
+        plot_sigma: bool = False, distribution_samples: int = 1000,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
-        indent: int = 1) -> None:
+        n_cores_multiprocessing: int | None = None, indent: int = 1) -> None:
     """
     Apply magnitude transformation
 
@@ -1288,7 +1275,11 @@ def calibrate_magnitudes_transformation(
 
     distribution_samples
         Number of samples used for distributions
-        Default is `1000`
+        Default is ``1000``.
+
+    n_cores_multiprocessing
+        Number of core used for multicore processing
+        Default is ``None``.
 
     indent
         Indentation for the console output lines
@@ -1340,8 +1331,11 @@ def calibrate_magnitudes_transformation(
         if transformation_type is not None:
 
             #   Initialize multiprocessing object
-            n_cores_multiprocessing = 12
-            executor = utilities.Executor(n_cores_multiprocessing)
+            executor = utilities.Executor(
+                n_cores_multiprocessing,
+                add_progress_bar=True,
+                n_tasks=len(image_list),
+            )
 
             for current_image in image_list:
                 #   Get magnitude array for first image
@@ -1455,8 +1449,9 @@ def calibrate_magnitudes_transformation(
         )
 
         #   Add table to observation container
+        #   TODO: Define in observations
         observation.table_mags_transformed = table_transformed_magnitudes
-        observation.array_mags_transformed = array_transformed_magnitudes
+        # observation.array_mags_transformed = array_transformed_magnitudes
 
         #   Save to file
         utilities.save_magnitudes_ascii(
@@ -1481,73 +1476,79 @@ def apply_calibration(
         derive_transformation_coefficients: bool = False, plot_sigma: bool = False,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
         calculate_zero_point_statistic: bool = True, distribution_samples: int = 1000,
-        indent: int = 1) -> None:
+        n_cores_multiprocessing: int | None = None, indent: int = 1) -> None:
     """
-        Apply the zero points to the magnitudes and perform a magnitude
-        transformation if possible
+    Apply the zero points to the magnitudes and perform a magnitude
+    transformation if possible
 
-        Parameters
-        ----------
-        observation
-            Container object with image series objects for each filter
+    Parameters
+    ----------
+    observation
+        Container object with image series objects for each filter
 
-        filter_list
-            Filter names
+    filter_list
+        Filter names
 
-        transformation_coefficients_dict
-            Calibration coefficients for the magnitude transformation
-            Default is ``None``.
+    transformation_coefficients_dict
+        Calibration coefficients for the magnitude transformation
+        Default is ``None``.
 
-        derive_transformation_coefficients
-            If True the magnitude transformation coefficients will be
-            calculated from the current data even if calibration coefficients
-            are available in the database.
-            Default is ``False``
+    derive_transformation_coefficients
+        If True the magnitude transformation coefficients will be
+        calculated from the current data even if calibration coefficients
+        are available in the database.
+        Default is ``False``
 
-        plot_sigma
-            If True sigma clipped magnitudes will be plotted.
-            Default is ``False``.
+    plot_sigma
+        If True sigma clipped magnitudes will be plotted.
+        Default is ``False``.
 
-        id_object
-            ID of the object
-            Default is ``None``.
+    id_object
+        ID of the object
+        Default is ``None``.
 
-        photometry_extraction_method
-            Applied extraction method. Possibilities: ePSF or APER`
-            Default is ``''``.
+    photometry_extraction_method
+        Applied extraction method. Possibilities: ePSF or APER`
+        Default is ``''``.
 
-        calculate_zero_point_statistic
-            If `True` a statistic on the zero points will be calculated.
-            Default is ``True``.
+    calculate_zero_point_statistic
+        If `True` a statistic on the zero points will be calculated.
+        Default is ``True``.
 
-        distribution_samples
-            Number of samples used for distributions
-            Default is `1000`
+    distribution_samples
+        Number of samples used for distributions
+        Default is ``1000``.
 
-        indent
-            Indentation for the console output lines
-            Default is ``1``.
+    n_cores_multiprocessing
+        Number of core used for multicore processing
+        Default is ``None``.
+
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
     """
     #   Apply zero point calibration
     calibrate_magnitudes_zero_point(
-        observation=observation,
-        filter_list=filter_list,
+        observation,
+        filter_list,
         distribution_samples=distribution_samples,
         calculate_zero_point_statistic=calculate_zero_point_statistic,
         id_object=id_object,
         photometry_extraction_method=photometry_extraction_method,
+        n_cores_multiprocessing=n_cores_multiprocessing,
         indent=indent,
     )
 
     #   Apply magnitude transformation
     calibrate_magnitudes_transformation(
-        observation=observation,
-        filter_list=filter_list,
+        observation,
+        filter_list,
         transformation_coefficients=transformation_coefficients_dict,
         derive_transformation_coefficients=derive_transformation_coefficients,
         distribution_samples=distribution_samples,
         id_object=id_object,
         photometry_extraction_method=photometry_extraction_method,
+        n_cores_multiprocessing=n_cores_multiprocessing,
         indent=indent,
     )
 

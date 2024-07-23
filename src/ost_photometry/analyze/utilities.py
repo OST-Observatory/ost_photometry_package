@@ -188,9 +188,9 @@ def mk_magnitudes_table_and_array(
     #     )
 
     #   Sort table
-    tbl = tbl.group_by(
-        f'{filter_list[0]} (0)'
-    )
+    # tbl = tbl.group_by(
+    #     f'{filter_list[0]} (0)'
+    # )
 
     return tbl, stacked_magnitudes
 
@@ -381,10 +381,68 @@ def extract_wcs(
     return w
 
 
+def prepare_time_series_data(
+        data: unc.core.NdarrayDistribution | Table,
+        filter_: str, object_id: int
+        ) -> tuple[np.ndarray, np.ndarray]:
+    """
+    This function prepares the data for the creation of time series objects.
+    The input data for the time series can be of different type (expects
+    astropy distribution or a Table). This function sanitizes
+    the input data and returns a dictionary with an array for the magnitudes
+    and another one for the magnitudes errors.
+
+    Parameters
+    ----------
+    data
+        Input data
+
+    filter_
+        Filter the data is associated with
+
+    object_id
+        Index of the object of interest
+
+    Returns
+    -------
+    magnitudes
+        Magnitude values
+
+    magnitude_errors
+        Magnitude errors
+    """
+    if isinstance(data, Table):
+        column_names = data.colnames
+        err_column_names = []
+        magnitude_column_names = []
+        for col_name in column_names:
+            if filter_ in col_name:
+                if 'err' in col_name:
+                    err_column_names.append(col_name)
+                else:
+                    magnitude_column_names.append(col_name)
+
+        magnitudes = np.array(
+            data[magnitude_column_names][object_id].as_void()
+        )
+        magnitude_errors = np.array(
+            data[err_column_names][object_id].as_void()
+        )
+        return magnitudes, magnitude_errors
+
+    if isinstance(data, unc.core.NdarrayDistribution):
+        return data.pdf_median()[object_id], data.pdf_std()[object_id]
+    else:
+        print('Add error message')
+
+
 def mk_time_series(
         observation_times: Time,
-        magnitudes: dict[str, dict[str, np.ndarray]],
-        filter_: str, object_id: int) -> TimeSeries:
+        # magnitudes: dict[str, dict[str, np.ndarray]],
+        magnitudes: np.ndarray, magnitude_errors: np.ndarray,
+        filter_: str,
+        # object_id: int
+        ) -> TimeSeries:
     """
     Make a time series object
 
@@ -393,31 +451,40 @@ def mk_time_series(
     observation_times
         Observation times
 
+    # magnitudes
+    #     Object magnitudes and uncertainties
+
     magnitudes
-        Object magnitudes and uncertainties
+        Object magnitudes
+
+    magnitude_errors
+        Object uncertainties
 
     filter_
         Filter
 
-    object_id
-        ID/Number of the object for with the time series should be
-        created
+    # object_id
+    #     ID/Number of the object for with the time series should be
+    #     created
 
     Returns
     -------
     ts
     """
     #   Get magnitude and error
-    mags_obj = magnitudes[filter_]['values'][:, object_id]
-    errs_obj = magnitudes[filter_]['errors'][:, object_id]
+    # mags_obj = magnitudes[filter_]['values'][:, object_id]
+    # errs_obj = magnitudes[filter_]['errors'][:, object_id]
 
     #   Make time series and use reshape to get a justified array
     #   TODO: Check if the reshape below is necessary
+    print('magnitudes', magnitudes)
     ts = TimeSeries(
         time=observation_times,
         data={
-            filter_: mags_obj.reshape(mags_obj.size, ) * u.mag,
-            filter_ + '_err': errs_obj.reshape(errs_obj.size, ) * u.mag,
+            # filter_: mags_obj.reshape(mags_obj.size, ) * u.mag,
+            # filter_ + '_err': errs_obj.reshape(errs_obj.size, ) * u.mag,
+            filter_: magnitudes * u.mag,
+            filter_ + '_err': magnitude_errors * u.mag,
         }
     )
     return ts
@@ -818,10 +885,14 @@ class Executor:
     """
     #   TODO: Fix error propagation
 
-    def __init__(self, process_num: int, **kwargs):
+    def __init__(self, process_num: int | None, **kwargs):
         # print('mp star method: ', mp.get_start_method())
-        # mp.set_start_method('spawn', force=True)
+        mp.set_start_method('spawn', force=True)
         # print('mp star method: ', mp.get_start_method())
+
+        if not process_num:
+            process_num: int = int(mp.cpu_count()/2)
+
         #   Init multiprocessing pool
         self.pool: mp.Pool = mp.Pool(process_num, maxtasksperchild=6)
         #   Init variables
@@ -842,7 +913,8 @@ class Executor:
         """
         #   Catch all results
         self.res.append(result)
-        self.progress_bar.update(1)
+        if self.progress_bar:
+            self.progress_bar.update(1)
 
     def callback_error(self, e):
         """
@@ -880,6 +952,8 @@ class Executor:
         """
         self.pool.close()
         self.pool.join()
+        if self.progress_bar:
+            print('')
 
 
 def mk_ds9_region(

@@ -12,23 +12,25 @@ if typing.TYPE_CHECKING:
 
 from . import calibration_data, utilities, plots
 from .. import style, terminal_output
+from .. import utilities as base_utilities
 
 from astropy.coordinates import SkyCoord, matching
 import astropy.units as u
 from astropy.table import Table
 from astropy import wcs
 
+
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
 
 
-def determine_pixel_coordinates_obj_astropy(
+def find_objects_of_interest_astropy(
         x_pixel_position_dataset: np.ndarray,
         y_pixel_position_dataset: np.ndarray,
         objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
         current_wcs: wcs.WCS, separation_limit: u.Quantity = 2. * u.arcsec
-        ) -> None:
+) -> None:
     """
     Find the image coordinates of a star based on the stellar
     coordinates and the WCS of the image, using astropy matching
@@ -95,7 +97,7 @@ def determine_pixel_coordinates_obj_astropy(
         object_.id_in_image_series[filter_] = object_id
 
 
-def determine_pixel_coordinates_obj_srcor(
+def find_objects_of_interest_srcor(
         x_pixel_position_dataset: np.ndarray,
         y_pixel_position_dataset: np.ndarray,
         objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
@@ -194,7 +196,7 @@ def determine_pixel_coordinates_obj_srcor(
         object_.id_in_image_series[filter_] = object_id
 
 
-def identify_star_in_dataset(
+def identify_object_of_interest_in_dataset(
         x_pixel_positions: np.ndarray, y_pixel_positions: np.ndarray,
         objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
         current_wcs: wcs.WCS, separation_limit: u.Quantity = 2. * u.arcsec,
@@ -244,7 +246,7 @@ def identify_star_in_dataset(
         Default is ``astropy``.
     """
     if correlation_method == 'astropy':
-        determine_pixel_coordinates_obj_astropy(
+        find_objects_of_interest_astropy(
             x_pixel_positions,
             y_pixel_positions,
             objects_of_interest,
@@ -254,7 +256,7 @@ def identify_star_in_dataset(
         )
 
     elif correlation_method == 'own':
-        determine_pixel_coordinates_obj_srcor(
+        find_objects_of_interest_srcor(
             x_pixel_positions,
             y_pixel_positions,
             objects_of_interest,
@@ -286,7 +288,7 @@ def correlate_datasets(
         expected_bad_image_fraction: float = 1.0,
         own_correlation_option: int = 1, cross_identification_limit: int = 1,
         correlation_method: str = 'astropy'
-        ) -> tuple[np.ndarray, int, np.ndarray, int]:
+) -> tuple[np.ndarray, int, np.ndarray, int]:
     """
     Correlate the pixel positions from different dataset such as
     images or image series.
@@ -634,7 +636,6 @@ def correlation_astropy(
         index_array = np.delete(index_array, rejected_object_ids, 1)
 
         #   Calculate new reference object position
-        #   TODO: Check if this needs to be adjusted to account for multiple reference objects -> Done?
         if not isinstance(reference_obj_ids, np.ndarray):
             reference_obj_ids = np.array(reference_obj_ids)
         for index, reference_obj_id in np.ndenumerate(reference_obj_ids):
@@ -730,7 +731,7 @@ def correlation_own(
         n_allowed_non_detections_object: int = 1, indent: int = 1,
         option: int | None = None, magnitudes: np.ndarray | None = None,
         silent: bool = False, protect_reference_obj: bool = True
-        ) -> tuple[np.ndarray, np.ndarray | int, int, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray | int, int, np.ndarray]:
     """
     Correlate source positions from several images (e.g., different images)
 
@@ -1285,7 +1286,7 @@ def correlate_image_series_images(
 
 
 def correlate_image_series(
-        observation: 'analyze.Observation', filter_list: list[str],
+        observation: 'analyze.Observation', filter_list: list[str] | set[str],
         max_pixel_between_objects: int = 3,
         own_correlation_option: int = 1, cross_identification_limit: int = 1,
         reference_image_series_id: int = 0,
@@ -1296,7 +1297,7 @@ def correlate_image_series(
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         force_correlation_calibration_objects: bool = False,
         reference_image_id: int = 0, verbose: bool = False, indent: int = 1
-        ) -> None:
+) -> None:
     """
     Correlate star lists from the stacked images of all filters to find
     those stars that are visible on all images
@@ -1448,12 +1449,8 @@ def correlate_image_series(
             "Identify objects of interest",
         )
 
-        #   TODO: Check if this is necessary
-        #   TODO: Remove loop -> replace with image_series_dict[filter_list[reference_image_series_id]]
-        # for id_series, series in enumerate(image_series_dict.values()):
-        #     if id_series == reference_image_series_id:
         series = image_series_dict[reference_filter]
-        identify_star_in_dataset(
+        identify_object_of_interest_in_dataset(
             series.image_list[reference_image_id].photometry['x_fit'],
             series.image_list[reference_image_id].photometry['y_fit'],
             objects_of_interest,
@@ -1468,7 +1465,7 @@ def correlate_image_series(
         #   Replicate IDs for the objects of interest
         #   -> This is required, since the identification above is only for the
         #      reference filter / image series
-        #   TODO: Check if there is a better solution
+        #   TODO: Is there a better solution?
         for object_ in objects_of_interest:
             id_object = object_.id_in_image_series[reference_filter]
             for filter_ in filter_list:
@@ -1601,7 +1598,7 @@ def correlate_preserve_variable(
     )
 
     # object_of_interest_ids, n_detections, _, _ =
-    identify_star_in_dataset(
+    identify_object_of_interest_in_dataset(
         image_series.image_list[reference_image_id].photometry['x_fit'],
         image_series.image_list[reference_image_id].photometry['y_fit'],
         objects_of_interest,
@@ -1646,7 +1643,7 @@ def correlate_preserve_variable(
     )
 
     # object_of_interest_ids, n_detections =
-    identify_star_in_dataset(
+    identify_object_of_interest_in_dataset(
         image_series.image_list[reference_image_id].photometry['x_fit'],
         image_series.image_list[reference_image_id].photometry['y_fit'],
         objects_of_interest,
@@ -1688,7 +1685,107 @@ def correlate_preserve_variable(
     )
 
 
-#   TODO: Check were this is used and if it is still functional, rename
+def determine_object_position(
+        image: base_utilities.Image, ra_obj: float, dec_obj: float, w: wcs.WCS,
+        maximal_pixel_between_objects: float = 3.,
+        own_correlation_option: int = 1,
+        ra_unit: u.quantity.Quantity = u.hourangle,
+        dec_unit: u.quantity.Quantity = u.deg, verbose: bool = False
+) -> tuple[np.ndarray, int, np.ndarray, np.ndarray]:
+    """
+    Find the image coordinates of a star based on the stellar
+    coordinates and the WCS of the image
+
+    Parameters
+    ----------
+    image
+        Object with all image specific properties
+
+    ra_obj
+        Right ascension of the object
+
+    dec_obj
+        Declination of the object
+
+    w
+        WCS infos
+
+    maximal_pixel_between_objects
+        Maximal distance between two objects in Pixel
+        Default is ``3``.
+
+    own_correlation_option
+        Option for the srcor correlation function
+        Default is ``1``.
+
+    ra_unit
+        Right ascension unit
+        Default is ``u.hourangle``.
+
+    dec_unit
+        Declination unit
+        Default is ``u.deg``.
+
+    verbose
+        If True additional output will be printed to the command line.
+        Default is ``False``.
+
+    Returns
+    -------
+    indexes
+        Index positions of matched objects in the origins. Is -1 is no
+        objects were found.
+
+    count
+        Number of times the object has been identified on the image
+
+    x_position_object
+        X coordinates of the objects in pixel
+
+    y_position_object
+        Y coordinates of the objects in pixel
+    """
+    #   Make coordinates object
+    coord_obj = SkyCoord(
+        ra_obj,
+        dec_obj,
+        unit=(ra_unit, dec_unit),
+        frame="icrs",
+    )
+
+    #   Convert ra & dec to pixel coordinates
+    x_position_object, y_position_object = w.all_world2pix(
+        coord_obj.ra,
+        coord_obj.dec,
+        0
+    )
+
+    #   Get photometry tabel
+    tbl = image.photometry
+
+    #   Number of objects
+    count = len(tbl['x_fit'])
+
+    #   Define and fill new arrays to allow correlation
+    x_position_all = np.zeros((count, 2))
+    y_position_all = np.zeros((count, 2))
+    x_position_all[0, 0] = x_position_object
+    x_position_all[0:count, 1] = tbl['x_fit']
+    y_position_all[0, 0] = y_position_object
+    y_position_all[0:count, 1] = tbl['y_fit']
+
+    #   Correlate calibration stars with stars on the image
+    indexes, reject, count, reject_obj = correlation_own(
+        x_position_all,
+        y_position_all,
+        maximal_pixel_between_objects,
+        option=own_correlation_option,
+        silent=not verbose,
+    )
+
+    return indexes, count, x_position_object, y_position_object
+
+
 def correlate_preserve_calibration_objects(
         image_series: 'analyze.ImageSeries', filter_list: list[str],
         calib_method: str = 'APASS',
@@ -1812,14 +1909,13 @@ def correlate_preserve_calibration_objects(
     #   Loop over all calibration stars
     for k in range(0, n_calib_stars):
         #   Find the calibration star
-        #   TODO: Fix this
-        id_calib_star, ref_count, x_calib_star, y_calib_star = posi_obj_srcor_img(
+        id_calib_star, ref_count, x_calib_star, y_calib_star = determine_object_position(
             image_series.image_list[reference_image_id],
             calib_tbl[column_names['ra']].data[k],
             calib_tbl[column_names['dec']].data[k],
             image_series.wcs,
-            dcr=max_pixel_between_objects,
-            option=own_correlation_option,
+            maximal_pixel_between_objects=max_pixel_between_objects,
+            own_correlation_option=own_correlation_option,
             ra_unit=ra_unit,
             verbose=verbose,
         )

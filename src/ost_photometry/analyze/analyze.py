@@ -164,10 +164,6 @@ class ImageSeries:
         #   Set path to output directory
         self.out_path: Path = Path(output_dir)
 
-        #   TODO: rm parameter?
-        #   Set object name
-        # self.object_name = object_names
-
         #   Fill image list
         terminal_output.print_to_terminal(
             "Read images and calculate field of view, PIXEL scale, etc. ... ",
@@ -459,6 +455,10 @@ class Observation:
         #   Prepare attribute for calibration data
         self.calib_parameters: calibration_data.CalibParameters | None = None
 
+        #   Prepare attribute for calibrated data
+        self.table_mags_transformed: Table | None = None
+        self.table_mags_not_transformed: Table | None = None
+
     #   TODO: Fix type hints
     #   Get ePSF objects of all images
     # def get_epsf(self) -> dict[str, list[psf.EPSFModel | None]]:
@@ -513,7 +513,8 @@ class Observation:
         return img_dict
 
     #   Get image series for a specific set of filters
-    def get_image_series(self, filter_list: list[str]) -> dict[str, ImageSeries]:
+    def get_image_series(
+            self, filter_list: list[str] | set[str]) -> dict[str, ImageSeries]:
         image_series_dict: dict[str, ImageSeries] = {}
         for filter_ in filter_list:
             image_series_dict[filter_] = self.image_series_dict[filter_]
@@ -1131,6 +1132,682 @@ class Observation:
                 correlation_method=correlation_method,
                 separation_limit=separation_limit,
             )
+
+    def correlate_calibrate(
+            self, filter_list: list[str], max_pixel_between_objects: int = 3,
+            own_correlation_option: int = 1, reference_image_id: int = 0,
+            calibration_method: str = 'APASS',
+            vizier_dict: dict[str, str] | None = None,
+            path_calibration_file: str | None = None, object_id: int = None,
+            magnitude_range: tuple[float, float] = (0., 18.5),
+            transformation_coefficients_dict: dict[str, (float | str)] | None = None,
+            derive_transformation_coefficients: bool = False,
+            plot_sigma: bool = False, photometry_extraction_method: str = '',
+            extract_only_circular_region: bool = False, region_radius: float = 600.,
+            identify_data_cluster: bool = False, clean_objs_using_pm: bool = False,
+            max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
+            correlation_method: str = 'astropy',
+            separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+            aperture_radius: float = 4., radii_unit: str = 'arcsec',
+            convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
+            region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
+            calculate_zero_point_statistic: bool = True,
+            distribution_samples: int = 1000) -> None:
+        """
+        Correlate photometric extraction results from 2 images and calibrate
+        the magnitudes.
+
+        Parameters
+        ----------
+        filter_list
+            List with filter names
+
+        max_pixel_between_objects
+            Maximal distance between two objects in Pixel
+            Default is ``3``.
+
+        own_correlation_option
+            Option for the srcor correlation function
+            Default is ``1``.
+
+        reference_image_id
+            Reference image ID
+            Default is ``0``.
+
+        calibration_method
+            Calibration method
+            Default is ``APASS``.
+
+        vizier_dict
+            Dictionary with identifiers of the Vizier catalogs with valid
+            calibration data
+            Default is ``None``.
+
+        path_calibration_file
+            Path to the calibration file
+            Default is ``None``.
+
+        object_id
+            ID of the object
+            Default is ``None``.
+
+        magnitude_range
+            Magnitude range
+            Default is ``(0.,18.5)``.
+
+        transformation_coefficients_dict
+            Calibration coefficients for the magnitude transformation
+            Default is ``None``.
+
+        derive_transformation_coefficients
+            If True the magnitude transformation coefficients will be
+            calculated from the current data even if calibration coefficients
+            are available in the database.
+            Default is ``False``
+
+        plot_sigma
+            If True sigma clipped magnitudes will be plotted.
+            Default is ``False``.
+
+        photometry_extraction_method
+            Applied extraction method. Possibilities: ePSF or APER`
+            Default is ``''``.
+
+        extract_only_circular_region
+            If True the extracted objects will be filtered such that only
+            objects with ``radius`` will be returned.
+            Default is ``False``.
+
+        region_radius
+            Radius around the object in arcsec.
+            Default is ``600``.
+
+        identify_data_cluster
+            If True cluster in the Gaia distance and proper motion data
+            will be identified.
+            Default is ``False``.
+
+        clean_objs_using_pm
+            If True only the object list will be clean based on their
+            proper motion.
+            Default is ``False``.
+
+        max_distance_cluster
+            Expected maximal distance of the cluster in kpc. Used to
+            restrict the parameter space to facilitate an easy
+            identification of the star cluster.
+            Default is ``6``.
+
+        find_cluster_para_set
+            Parameter set used to identify the star cluster in proper
+            motion and distance data.
+
+        correlation_method
+            Correlation method to be used to find the common objects on
+            the images.
+            Possibilities: ``astropy``, ``own``
+            Default is ``astropy``.
+
+        separation_limit
+            Allowed separation between objects.
+            Default is ``2.*u.arcsec``.
+
+        aperture_radius
+            Radius of the aperture used to derive the limiting magnitude
+            Default is ``4``.
+
+        radii_unit
+            Unit of the radii above. Permitted values are
+            ``pixel`` and ``arcsec``.
+            Default is ``arcsec``.
+
+        convert_magnitudes
+            If True the magnitudes will be converted to another
+            filter systems specified in `target_filter_system`.
+            Default is ``False``.
+
+        target_filter_system
+            Photometric system the magnitudes should be converted to
+            Default is ``SDSS``.
+
+        region_to_select_calibration_stars
+            Region in which to select calibration stars. This is a useful
+            feature in instances where not the entire field of view can be
+            utilized for calibration purposes.
+            Default is ``None``.
+
+        calculate_zero_point_statistic
+            If `True` a statistic on the zero points will be calculated.
+            Default is ``True``.
+
+        distribution_samples
+            Number of samples used for distributions
+            Default is `1000`.
+        """
+        ###
+        #   Correlate the stellar positions from the different filter
+        #
+        correlate.correlate_image_series(
+            self,
+            filter_list,
+            max_pixel_between_objects=max_pixel_between_objects,
+            own_correlation_option=own_correlation_option,
+            correlation_method=correlation_method,
+            separation_limit=separation_limit,
+        )
+
+        ###
+        #   Plot image with the final positions overlaid (final version)
+        #
+        if len(filter_list) > 1:
+            utilities.prepare_and_plot_starmap_from_observation(
+                self,
+                filter_list,
+            )
+
+        ###
+        #   Calibrate the magnitudes
+        #
+        #   Load calibration information
+        calibration_data.derive_calibration(
+            self,
+            filter_list,
+            calibration_method=calibration_method,
+            max_pixel_between_objects=max_pixel_between_objects,
+            own_correlation_option=own_correlation_option,
+            vizier_dict=vizier_dict,
+            path_calibration_file=path_calibration_file,
+            magnitude_range=magnitude_range,
+            region_to_select_calibration_stars=region_to_select_calibration_stars,
+        )
+        calibration_filters = self.calib_parameters.column_names
+
+        #   Find filter combinations for which magnitude transformation is possible
+        _, usable_filter_combinations = utilities.find_filter_for_magnitude_transformation(
+            filter_list,
+            calibration_filters,
+        )
+
+        for filter_combination in usable_filter_combinations:
+            #   Apply calibration and perform magnitude transformation
+            calibration.apply_calibration(
+                self,
+                filter_combination,
+                transformation_coefficients_dict=transformation_coefficients_dict,
+                derive_transformation_coefficients=derive_transformation_coefficients,
+                plot_sigma=plot_sigma,
+                photometry_extraction_method=photometry_extraction_method,
+                calculate_zero_point_statistic=calculate_zero_point_statistic,
+                distribution_samples=distribution_samples,
+            )
+
+            ###
+            #   Restrict results to specific areas of the image and filter by means
+            #   of proper motion and distance using Gaia
+            #
+            utilities.post_process_results(
+                self,
+                filter_combination,
+                id_object=object_id,
+                extraction_method=photometry_extraction_method,
+                extract_only_circular_region=extract_only_circular_region,
+                region_radius=region_radius,
+                data_cluster=identify_data_cluster,
+                clean_objects_using_proper_motion=clean_objs_using_pm,
+                max_distance_cluster=max_distance_cluster,
+                find_cluster_para_set=find_cluster_para_set,
+                convert_magnitudes=convert_magnitudes,
+                target_filter_system=target_filter_system,
+                distribution_samples=distribution_samples,
+            )
+
+            ###
+            #   Determine limiting magnitudes
+            #
+            utilities.derive_limiting_magnitude(
+                self,
+                filter_combination,
+                reference_image_id,
+                aperture_radius=aperture_radius,
+                radii_unit=radii_unit,
+            )
+
+    def calibrate_data_mk_light_curve(
+            self, filter_list: list[str], output_dir: str,
+            valid_filter_combinations: list[list[str]] | None = None,
+            binning_factor: float | None = None,
+            transformation_coefficients_dict: dict[str, (float | str)] | None = None,
+            derive_transformation_coefficients: bool = False,
+            reference_image_id: int = 0, calibration_method: str = 'APASS',
+            vizier_dict: dict[str, str] | None = None,
+            path_calibration_file: str | None = None,
+            magnitude_range: tuple[float, float] = (0., 18.5),
+            max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
+            cross_identification_limit: int = 1,
+            n_allowed_non_detections_object: int = 1,
+            expected_bad_image_fraction: float = 1.0,
+            protect_reference_obj: bool = True,
+            photometry_extraction_method: str = '',
+            correlation_method: str = 'astropy',
+            separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+            verbose: bool = False, plot_sigma: bool = False,
+            region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
+            calculate_zero_point_statistic: bool = True,
+            n_cores_multiprocessing_calibration: int | None = None,
+            distribution_samples: int = 1000) -> None:
+        """
+        Calculate magnitudes, calibrate, and plot light curves
+
+        Parameters
+        ----------
+        filter_list
+            List with filter names
+
+        output_dir
+            Path, where the output should be stored.
+
+        valid_filter_combinations
+            Valid filter combinations to calculate magnitude transformation
+            Default is ``None``.
+
+        binning_factor
+            Binning factor for the light curve.
+            Default is ``None```.
+
+        transformation_coefficients_dict
+            Calibration coefficients for the magnitude transformation
+            Default is ``None``.
+
+        derive_transformation_coefficients
+            If True the magnitude transformation coefficients will be
+            calculated from the current data even if calibration coefficients
+            are available in the database.
+            Default is ``False``
+
+        reference_image_id
+            ID of the reference image
+            Default is ``0``.
+
+        calibration_method
+            Calibration method
+            Default is ``APASS``.
+
+        vizier_dict
+            Dictionary with identifiers of the Vizier catalogs with valid
+            calibration data
+            Default is ``None``.
+
+        path_calibration_file
+            Path to the calibration file
+            Default is ``None``.
+
+        magnitude_range
+            Magnitude range
+            Default is ``(0.,18.5)``.
+
+        max_pixel_between_objects
+            Maximal distance between two objects in Pixel
+            Default is ``3``.
+
+        own_correlation_option
+            Option for the srcor correlation function
+            Default is ``1``.
+
+        cross_identification_limit
+            Cross-identification limit between multiple objects in the current
+            image and one object in the reference image. The current image is
+            rejected when this limit is reached.
+            Default is ``1``.
+
+        n_allowed_non_detections_object
+            Maximum number of times an object may not be detected in an image.
+            When this limit is reached, the object will be removed.
+            Default is ``1`.
+
+        expected_bad_image_fraction
+            Fraction of low quality images, i.e. those images for which a
+            reduced number of objects with valid source positions are expected.
+            Default is ``1.0``.
+
+        protect_reference_obj
+            If ``False`` also reference objects will be rejected, if they do
+            not fulfill all criteria.
+            Default is ``True``.
+
+        photometry_extraction_method
+            Applied extraction method. Possibilities: ePSF or APER`
+            Default is ``''``.
+
+        correlation_method
+            Correlation method to be used to find the common objects on
+            the images.
+            Possibilities: ``astropy``, ``own``
+            Default is ``astropy``.
+
+        separation_limit
+            Allowed separation between objects.
+            Default is ``2.*u.arcsec``.
+
+        verbose
+            If True additional output will be printed to the command line.
+            Default is ``False``.
+
+        plot_sigma
+            If True sigma clipped magnitudes will be plotted.
+            Default is ``False``.
+
+        region_to_select_calibration_stars
+            Region in which to select calibration stars. This is a useful
+            feature in instances where not the entire field of view can be
+            utilized for calibration purposes.
+            Default is ``None``.
+
+        calculate_zero_point_statistic
+            If `True` a statistic on the zero points will be calculated.
+            Default is ``True``.
+
+        n_cores_multiprocessing_calibration
+            Number of core used for multicore processing
+            Default is ``None``.
+
+        distribution_samples
+            Number of samples used for distributions
+            Default is ``1000``.
+        """
+        #   Check if correlation with observed objects can be applied directly
+        #   after loading the calibration data. If only one filter and thus one
+        #   image series is available, correlation will be applied immediately.
+        if len(filter_list) == 1:
+            correlate_with_observed_objects = True
+        else:
+            correlate_with_observed_objects = False
+
+        #   Make coordinates object for variable star
+        coordinates_objects_of_interest = self.objects_of_interest_coordinates
+        if coordinates_objects_of_interest is None:
+            raise RuntimeError(
+                f"SkyCoord object for objects of interest does not exit."
+            )
+        # coordinates_objects_of_interest = SkyCoord(
+        #     ra_object,
+        #     dec_object,
+        #     unit=(ra_unit, dec_unit),
+        #     frame="icrs",
+        # )
+
+        #   Load calibration information
+        calibration_data.derive_calibration(
+            self,
+            filter_list,
+            calibration_method=calibration_method,
+            max_pixel_between_objects=max_pixel_between_objects,
+            own_correlation_option=own_correlation_option,
+            vizier_dict=vizier_dict,
+            path_calibration_file=path_calibration_file,
+            magnitude_range=magnitude_range,
+            correlation_method=correlation_method,
+            separation_limit=separation_limit,
+            region_to_select_calibration_stars=region_to_select_calibration_stars,
+            correlate_with_observed_objects=correlate_with_observed_objects,
+            reference_image_id=reference_image_id,
+            coordinates_obj_to_rm=coordinates_objects_of_interest,
+        )
+        calibration_filters = self.calib_parameters.column_names
+        terminal_output.print_to_terminal('')
+
+        #   Determine usable filter combinations -> Filters must be in a valid
+        #   filter combination for the magnitude transformation and calibration
+        #   data must be available for the filter.
+        valid_filter, usable_filter_combinations = utilities.find_filter_for_magnitude_transformation(
+            filter_list,
+            calibration_filters,
+            valid_filter_combinations=valid_filter_combinations,
+        )
+
+        #   Correlate star positions from the different filter
+        if valid_filter:
+            correlate.correlate_image_series(
+                self,
+                valid_filter,
+                max_pixel_between_objects=max_pixel_between_objects,
+                own_correlation_option=own_correlation_option,
+                cross_identification_limit=cross_identification_limit,
+                n_allowed_non_detections_object=n_allowed_non_detections_object,
+                expected_bad_image_fraction=expected_bad_image_fraction,
+                protect_reference_obj=protect_reference_obj,
+                correlation_method=correlation_method,
+                separation_limit=separation_limit,
+                verbose=verbose,
+                reference_image_id=reference_image_id,
+            )
+
+        ###
+        #   Calibrate magnitudes
+        #
+        #   Perform magnitude transformation
+        #   TODO: Convert this to matrix calculation over all filter simultaneously
+        processed_filter = []
+        for filter_set in usable_filter_combinations:
+            #   Apply calibration and perform magnitude transformation
+            calibration.apply_calibration(
+                self,
+                filter_set,
+                transformation_coefficients_dict=transformation_coefficients_dict,
+                derive_transformation_coefficients=derive_transformation_coefficients,
+                photometry_extraction_method=photometry_extraction_method,
+                plot_sigma=plot_sigma,
+                calculate_zero_point_statistic=calculate_zero_point_statistic,
+                n_cores_multiprocessing=n_cores_multiprocessing_calibration,
+                distribution_samples=distribution_samples,
+            )
+            #   TODO: Replace with table_mags_transformed
+            # calibrated_magnitudes = getattr(
+            #     self,
+            #     # 'array_mags_not_transformed',
+            #     'array_mags_transformed',
+            #     None,
+            # )
+
+            for filter_ in filter_set:
+                terminal_output.print_to_terminal(
+                    f"Working on filter: {filter_}",
+                    style_name='OKBLUE',
+                )
+
+                ###
+                #   Plot light curve
+                #
+                #   Create a Time object for the observation times
+                observation_times = Time(
+                    self.image_series_dict[filter_].get_observation_time(),
+                    format='jd',
+                )
+
+                for object_ in self.objects_of_interest:
+                    object_name = object_.name
+                    id_object = object_.id_in_image_series[filter_]
+                    transit_time = object_.transit_time
+                    period = object_.period
+
+                    #   Prepare data for time series
+                    magnitudes, magnitudes_error = utilities.prepare_time_series_data(
+                        self.table_mags_transformed,
+                        filter_,
+                        id_object,
+                    )
+
+                    #   Create a time series object
+                    time_series = utilities.mk_time_series(
+                        observation_times,
+                        magnitudes,
+                        magnitudes_error,
+                        # calibrated_magnitudes,
+                        filter_,
+                        # id_object,
+                    )
+
+                    #   Write time series
+                    time_series.write(
+                        f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
+                        f'_{filter_set[0]}-{filter_set[1]}.dat',
+                        format='ascii',
+                        overwrite=True,
+                    )
+                    time_series.write(
+                        f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
+                        f'_{filter_set[0]}-{filter_set[1]}.csv',
+                        format='ascii.csv',
+                        overwrite=True,
+                    )
+
+                    #   Plot light curve over JD
+                    plots.light_curve_jd(
+                        time_series,
+                        filter_,
+                        f'{filter_}_err',
+                        output_dir,
+                        name_object=object_name,
+                        file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
+                    )
+
+                    #   Plot the light curve folded on the period
+                    if transit_time != '?' and period > 0.:
+                        plots.light_curve_fold(
+                            time_series,
+                            filter_,
+                            f'{filter_}_err',
+                            output_dir,
+                            transit_time,
+                            period,
+                            binning_factor=binning_factor,
+                            name_object=object_name,
+                            file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
+                        )
+
+                    processed_filter.append(filter_)
+
+        #   Process those filters for which magnitude transformation is not possible
+        for filter_ in filter_list:
+            #   Check if filter is not yet processed
+            if filter_ not in processed_filter:
+                terminal_output.print_to_terminal(
+                    f"Working on filter: {filter_}",
+                    style_name='OKBLUE',
+                )
+
+                #   Check if calibration data is available
+                if f'mag{filter_}' not in calibration_filters:
+                    terminal_output.print_to_terminal(
+                        "Magnitude calibration not possible because no "
+                        f"calibration data is available for filter {filter_}. "
+                        "Use normalized flux for light curve.",
+                        indent=2,
+                        style_name='WARNING',
+                    )
+
+                    #   Get image_series
+                    image_series = self.image_series_dict[filter_]
+
+                    #   Quasi calibration of the flux data
+                    quasi_calibrated_flux = calibration.quasi_flux_calibration_image_series(
+                        image_series,
+                        distribution_samples=distribution_samples,
+                    )
+
+                    #   Normalize data if no calibration magnitudes are available
+                    quasi_calibrated_normalized_flux = calibration.flux_normalization_image_series(
+                        image_series,
+                        quasi_calibrated_flux=quasi_calibrated_flux,
+                        distribution_samples=distribution_samples
+                    )
+
+                    plot_quantity = quasi_calibrated_normalized_flux
+                else:
+                    #   Apply calibration
+                    calibration.apply_calibration(
+                        self,
+                        [filter_],
+                        photometry_extraction_method=photometry_extraction_method,
+                        calculate_zero_point_statistic=calculate_zero_point_statistic,
+                        n_cores_multiprocessing=n_cores_multiprocessing_calibration,
+                        distribution_samples=distribution_samples,
+                    )
+                    #   TODO: Replace with table_mags_not_transformed and table_mags_transformed
+                    # plot_quantity = getattr(
+                    #     self,
+                    #     'array_mags_not_transformed',
+                    #     None,
+                    # )
+                    plot_quantity = self.table_mags_not_transformed
+
+                #   TODO: Make lightcurve plots for all object + highlight calibration stars
+                ###
+                #   Plot light curve
+                #
+                #   Create a Time object for the observation times
+                observation_times = Time(
+                    self.image_series_dict[filter_].get_observation_time(),
+                    format='jd',
+                )
+
+                for object_ in self.objects_of_interest:
+                    object_name = object_.name
+                    id_object = object_.id_in_image_series[filter_]
+                    transit_time = object_.transit_time
+                    period = object_.period
+
+                    #   Prepare data for time series
+                    magnitudes, magnitudes_error = utilities.prepare_time_series_data(
+                        plot_quantity,
+                        filter_,
+                        id_object,
+                    )
+
+                    #   Create a time series object
+                    #   TODO: Bug - mk_time_series expects dict but gets np.ndarray, if no
+                    #               calibration with literature values is possible
+                    time_series = utilities.mk_time_series(
+                        observation_times,
+                        magnitudes,
+                        magnitudes_error,
+                        # plot_quantity,
+                        filter_,
+                        # id_object,
+                    )
+
+                    #   Write time series
+                    time_series.write(
+                        f'{output_dir}/tables/light_curve_{object_name}_{filter_}.dat',
+                        format='ascii',
+                        overwrite=True,
+                    )
+                    time_series.write(
+                        f'{output_dir}/tables/light_curve_{object_name}_{filter_}.csv',
+                        format='ascii.csv',
+                        overwrite=True,
+                    )
+
+                    #   Plot light curve over JD
+                    plots.light_curve_jd(
+                        time_series,
+                        filter_,
+                        f'{filter_}_err',
+                        output_dir,
+                        name_object=object_name,
+                    )
+
+                    #   Plot the light curve folded on the period
+                    if transit_time != '?' and period > 0.:
+                        plots.light_curve_fold(
+                            time_series,
+                            filter_,
+                            f'{filter_}_err',
+                            output_dir,
+                            transit_time,
+                            period,
+                            binning_factor=binning_factor,
+                            name_object=object_name,
+                        )
 
 
 def rm_cosmic_rays(
@@ -3023,1222 +3700,6 @@ def main_extract(
 
     if multiprocessing:
         return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
-
-#
-# def extract_flux(
-#         observation: Observation, filter_list: list[str],
-#         image_paths: dict[str, str], output_dir: str,
-#         sigma_object_psf: dict[str, float], wcs_method: str = 'astrometry',
-#         force_wcs_determ: bool = False,
-#         sigma_value_background_clipping: float = 5.,
-#         multiplier_background_rms: float = 5., size_epsf_region: int = 25,
-#         fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
-#         max_n_iterations_epsf: int = 7, use_initial_positions_epsf: bool = True,
-#         object_finder_method: str = 'IRAF',
-#         multiplier_background_rms_epsf: float = 5.0,
-#         multiplier_dao_grouper_epsf: float = 2.0,
-#         strict_cleaning_epsf_results: bool = True,
-#         minimum_n_eps_stars: int = 25,
-#         reference_image_id: int = 0, strict_epsf_checks: bool = True,
-#         photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
-#         inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
-#         radii_unit: str = 'arcsec', cosmic_ray_removal: bool = False,
-#         limiting_contrast_rm_cosmics: float = 5., read_noise: float = 8.,
-#         sigma_clipping_value: float = 4.5, saturation_level: float = 65535.,
-#         plots_for_all_images: bool = False,
-#         plot_for_reference_image_only: bool = True) -> None:
-#     """
-#     Extract flux and fill the observation container
-#
-#     Parameters
-#     ----------
-#     observation
-#         Container object with image series objects for each filter
-#
-#     filter_list
-#         Filter list
-#
-#     image_paths
-#         Paths to images: key - filter name; value - path
-#
-#     output_dir
-#         Path, where the output should be stored.
-#
-#     sigma_object_psf
-#         Sigma of the objects PSF, assuming it is a Gaussian
-#
-#     wcs_method
-#         Method that should be used to determine the WCS.
-#         Default is ``'astrometry'``.
-#
-#     force_wcs_determ
-#         If ``True`` a new WCS determination will be calculated even if
-#         a WCS is already present in the FITS Header.
-#         Default is ``False``.
-#
-#     sigma_value_background_clipping
-#         Sigma used for the sigma clipping of the background
-#         Default is ``5.``.
-#
-#     multiplier_background_rms
-#         Multiplier for the background RMS, used to calculate the
-#         threshold to identify stars
-#         Default is ``5.0``.
-#
-#     size_epsf_region
-#         Size of the extraction region in pixel
-#         Default is `25``.
-#
-#     fraction_epsf_stars
-#         Fraction of all stars that should be used to calculate the ePSF
-#         Default is ``0.2``.
-#
-#     oversampling_factor_epsf
-#         ePSF oversampling factor
-#         Default is ``2``.
-#
-#     max_n_iterations_epsf
-#         Number of ePSF iterations
-#         Default is ``7``.
-#
-#     use_initial_positions_epsf
-#         If True the initial positions from a previous object
-#         identification procedure will be used. If False the objects
-#         will be identified by means of the ``method_finder`` method.
-#         Default is ``True``.
-#
-#     object_finder_method
-#         Finder method DAO or IRAF
-#         Default is ``IRAF``.
-#
-#     multiplier_background_rms_epsf
-#         Multiplier for the background RMS, used to calculate the
-#         threshold to identify stars
-#         Default is ``5.0``.
-#
-#     multiplier_dao_grouper_epsf
-#         Multiplier for the DAO grouper
-#         Default is ``5.0``.
-#
-#     strict_cleaning_epsf_results
-#         If True objects with negative flux uncertainties will be removed
-#         Default is ``True``.
-#
-#     minimum_n_eps_stars
-#         Minimal number of required ePSF stars
-#         Default is ``25``.
-#
-#     reference_image_id
-#         ID of the reference image
-#         Default is ``0``.
-#
-#     photometry_extraction_method
-#         Switch between aperture and ePSF photometry.
-#         Possibilities: 'PSF' & 'APER'
-#         Default is ``PSF``.
-#
-#     radius_aperture
-#         Radius of the stellar aperture
-#         Default is ``5``.
-#
-#     inner_annulus_radius
-#         Inner radius of the background annulus
-#         Default is ``7``.
-#
-#     outer_annulus_radius
-#         Outer radius of the background annulus
-#         Default is ``10``.
-#
-#     radii_unit
-#         Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
-#         Default is ``arcsec``.
-#
-#     strict_epsf_checks
-#         If True a stringent test of the ePSF conditions is applied.
-#         Default is ``True``.
-#
-#     cosmic_ray_removal
-#         If True cosmic rays will be removed from the image.
-#         Default is ``False``.
-#
-#     limiting_contrast_rm_cosmics
-#         Parameter for the cosmic ray removal: Minimum contrast between
-#         Laplacian image and the fine structure image.
-#         Default is ``5``.
-#
-#     read_noise
-#         The read noise (e-) of the camera chip.
-#         Default is ``8`` e-.
-#
-#     sigma_clipping_value
-#         Parameter for the cosmic ray removal: Fractional detection limit
-#         for neighboring pixels.
-#         Default is ``4.5``.
-#
-#     saturation_level
-#         Saturation limit of the camera chip.
-#         Default is ``65535``.
-#
-#     plots_for_all_images
-#         If True star map plots for all stars are created
-#         Default is ``False``.
-#
-#     plot_for_reference_image_only
-#         If True a star map plots only for the reference image [reference_image_id] is
-#         created
-#         Default is ``True``.
-#     """
-#     #   Check output directories
-#     checks.check_output_directories(
-#         output_dir,
-#         os.path.join(output_dir, 'tables'),
-#     )
-#
-#     ###
-#     #   Loop over all filter
-#     #
-#     for filter_ in filter_list:
-#         terminal_output.print_to_terminal(
-#             f"Analyzing {filter_} images",
-#             style_name='HEADER',
-#         )
-#
-#         #   Check input paths
-#         checks.check_file(image_paths[filter_])
-#
-#         #   Initialize image series object
-#         observation.image_series_dict[filter_] = current_image_series = ImageSeries(
-#             filter_,
-#             image_paths[filter_],
-#             output_dir,
-#         )
-#
-#         ###
-#         #   Find the WCS solution for the image
-#         #
-#         try:
-#             utilities.find_wcs(
-#                 current_image_series,
-#                 reference_image_id=0,
-#                 method=wcs_method,
-#                 force_wcs_determ=force_wcs_determ,
-#                 indent=3,
-#             )
-#         #   TODO: Check if the exception cam be more specific
-#         except Exception as e:
-#             #   Get the WCS from one of the other filters, if they have one
-#             for wcs_filter in filter_list:
-#                 reference_wcs = getattr(
-#                     observation.image_series_dict[wcs_filter],
-#                     'wcs',
-#                     None,
-#                 )
-#                 if reference_wcs is not None:
-#                     current_image_series.set_wcs(reference_wcs)
-#                     terminal_output.print_to_terminal(
-#                         f"WCS could not be determined for filter {filter_}"
-#                         f"The WCS of filter {wcs_filter} will be used instead."
-#                         f"This could lead to problems...",
-#                         indent=1,
-#                         style_name='WARNING',
-#                     )
-#                     break
-#             else:
-#                 raise RuntimeError(e)
-#
-#         ###
-#         #   Main extraction
-#         #
-#         main_extract(
-#             current_image_series.image_list[reference_image_id],
-#             sigma_object_psf[filter_],
-#             sigma_value_background_clipping=sigma_value_background_clipping,
-#             multiplier_background_rms=multiplier_background_rms,
-#             size_epsf_region=size_epsf_region,
-#             fraction_epsf_stars=fraction_epsf_stars,
-#             oversampling_factor_epsf=oversampling_factor_epsf,
-#             max_n_iterations_epsf=max_n_iterations_epsf,
-#             use_initial_positions_epsf=use_initial_positions_epsf,
-#             object_finder_method=object_finder_method,
-#             multiplier_background_rms_epsf=multiplier_background_rms_epsf,
-#             multiplier_dao_grouper_epsf=multiplier_dao_grouper_epsf,
-#             strict_cleaning_epsf_results=strict_cleaning_epsf_results,
-#             minimum_n_eps_stars=minimum_n_eps_stars,
-#             strict_epsf_checks=strict_epsf_checks,
-#             photometry_extraction_method=photometry_extraction_method,
-#             radius_aperture=radius_aperture,
-#             inner_annulus_radius=inner_annulus_radius,
-#             outer_annulus_radius=outer_annulus_radius,
-#             radii_unit=radii_unit,
-#             cosmic_ray_removal=cosmic_ray_removal,
-#             limiting_contrast_rm_cosmics=limiting_contrast_rm_cosmics,
-#             read_noise=read_noise,
-#             sigma_clipping_value=sigma_clipping_value,
-#             saturation_level=saturation_level,
-#             plots_for_all_images=plots_for_all_images,
-#             plot_for_reference_image_only=plot_for_reference_image_only,
-#         )
-#
-#     if photometry_extraction_method == 'PSF':
-#         ###
-#         #   Plot the ePSFs
-#         #
-#         p = mp.Process(
-#             target=plots.plot_epsf,
-#             args=(output_dir, observation.get_reference_epsf(),),
-#         )
-#         p.start()
-#
-#         ###
-#         #   Plot original and residual image
-#         #
-#         p = mp.Process(
-#             target=plots.plot_residual,
-#             args=(
-#                 observation.get_reference_image(),
-#                 observation.get_reference_image_residual(),
-#                 output_dir,
-#             ),
-#             kwargs={
-#                 # 'name_object': 'reference image'
-#             }
-#         )
-#         p.start()
-#
-#
-# def extract_flux_multi(
-#         observation: Observation, filter_list: list[str],
-#         image_paths: dict[str, str], output_dir: str,
-#         sigma_object_psf: dict[str, float],
-#         n_cores_multiprocessing: int = 6, wcs_method: str = 'astrometry',
-#         force_wcs_determ: bool = False,
-#         sigma_value_background_clipping: float = 5.,
-#         multiplier_background_rms: float = 5., size_epsf_region: int = 25,
-#         fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
-#         max_n_iterations_epsf: int = 7, object_finder_method: str = 'IRAF',
-#         multiplier_background_rms_epsf: float = 5.0,
-#         multiplier_dao_grouper_epsf: float = 2.0,
-#         strict_cleaning_epsf_results: bool = True,
-#         minimum_n_eps_stars: int = 25, strict_epsf_checks: bool = True,
-#         photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
-#         inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
-#         radii_unit: str = 'arcsec', max_pixel_between_objects: int = 3,
-#         own_correlation_option: int = 1, cross_identification_limit: int = 1,
-#         reference_image_id: int = 0, n_allowed_non_detections_object: int = 1,
-#         expected_bad_image_fraction: float = 1.0,
-#         protect_reference_obj: bool = True,
-#         correlation_method: str = 'astropy',
-#         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
-#         verbose: bool = False, identify_objects_on_image: bool = True,
-#         plots_for_all_images: bool = False,
-#         plot_for_reference_image_only: bool = True) -> None:
-#     """
-#     Extract flux from multiple images per filter and add results to
-#     the observation container
-#
-#     Parameters
-#     ----------
-#     observation
-#         Container object with image series objects for each filter
-#
-#     filter_list
-#         Filter list
-#
-#     image_paths
-#         Paths to images: key - filter name; value - path
-#
-#     output_dir
-#         Path, where the output should be stored.
-#
-#     sigma_object_psf
-#         Sigma of the objects PSF, assuming it is a Gaussian
-#
-#     n_cores_multiprocessing
-#         Number of cores to use for multicore processing
-#         Default is ``6``.
-#
-#     wcs_method
-#         Method that should be used to determine the WCS.
-#         Default is ``'astrometry'``.
-#
-#     force_wcs_determ
-#         If ``True`` a new WCS determination will be calculated even if
-#         a WCS is already present in the FITS Header.
-#         Default is ``False``.
-#
-#     sigma_value_background_clipping
-#         Sigma used for the sigma clipping of the background
-#         Default is ``5.``.
-#
-#     multiplier_background_rms
-#         Multiplier for the background RMS, used to calculate the
-#         threshold to identify stars
-#         Default is ``7``.
-#
-#     size_epsf_region
-#         Size of the extraction region in pixel
-#         Default is `25``.
-#
-#     fraction_epsf_stars
-#         Fraction of all stars that should be used to calculate the ePSF
-#         Default is ``0.2``.
-#
-#     oversampling_factor_epsf
-#         ePSF oversampling factor
-#         Default is ``2``.
-#
-#     max_n_iterations_epsf
-#         Number of ePSF iterations
-#         Default is ``7``.
-#
-#     object_finder_method
-#         Finder method DAO or IRAF
-#         Default is ``IRAF``.
-#
-#     multiplier_background_rms_epsf
-#         Multiplier for the background RMS, used to calculate the
-#         threshold to identify stars
-#         Default is ``5.0``.
-#
-#     multiplier_dao_grouper_epsf
-#         Multiplier for the DAO grouper
-#         Default is ``5.0``.
-#
-#     strict_cleaning_epsf_results
-#         If True objects with negative flux uncertainties will be removed
-#         Default is ``True``.
-#
-#     minimum_n_eps_stars
-#         Minimal number of required ePSF stars
-#         Default is ``25``.
-#
-#     photometry_extraction_method
-#         Switch between aperture and ePSF photometry.
-#         Possibilities: 'PSF' & 'APER'
-#         Default is ``PSF``.
-#
-#     radius_aperture
-#         Radius of the stellar aperture
-#         Default is ``5``.
-#
-#     inner_annulus_radius
-#         Inner radius of the background annulus
-#         Default is ``7``.
-#
-#     outer_annulus_radius
-#         Outer radius of the background annulus
-#         Default is ``10``.
-#
-#     radii_unit
-#         Unit of the radii above. Permitted values are
-#         ``pixel`` and ``arcsec``.
-#         Default is ``pixel``.
-#
-#     strict_epsf_checks
-#         If True a stringent test of the ePSF conditions is applied.
-#         Default is ``True``.
-#
-#     max_pixel_between_objects
-#         Maximal distance between two objects in Pixel
-#         Default is ``3``.
-#
-#     own_correlation_option
-#         Option for the srcor correlation function
-#         Default is ``1``.
-#
-#     cross_identification_limit
-#         Cross-identification limit between multiple objects in the current
-#         image and one object in the reference image. The current image is
-#         rejected when this limit is reached.
-#         Default is ``1``.
-#
-#     reference_image_id
-#         ID of the reference image
-#         Default is ``0``.
-#
-#     n_allowed_non_detections_object
-#         Maximum number of times an object may not be detected in an image.
-#         When this limit is reached, the object will be removed.
-#         Default is ``i`.
-#
-#     expected_bad_image_fraction
-#         Fraction of low quality images, i.e. those images for which a
-#         reduced number of objects with valid source positions are expected.
-#         Default is ``1.0``.
-#
-#     protect_reference_obj
-#         If ``False`` also reference objects will be rejected, if they do
-#         not fulfill all criteria.
-#         Default is ``True``.
-#
-#     correlation_method
-#         Correlation method to be used to find the common objects on
-#         the images.
-#         Possibilities: ``astropy``, ``own``
-#         Default is ``astropy``.
-#
-#     separation_limit
-#         Allowed separation between objects.
-#         Default is ``2.*u.arcsec``.
-#
-#     verbose
-#         If True additional output will be printed to the command line.
-#         Default is ``False``.
-#
-#     identify_objects_on_image
-#         If `True` the objects on the image will be identified. If `False`
-#         it is assumed that object identification was performed in advance.
-#         Default is ``True``.
-#
-#     plots_for_all_images
-#         If True star map plots for all stars are created
-#         Default is ``False``.
-#
-#     plot_for_reference_image_only
-#         If True a star map plot only for the reference image is created
-#         Default is ``True``.
-#     """
-#     ###
-#     #   Check output directories
-#     #
-#     checks.check_output_directories(output_dir, os.path.join(output_dir, 'tables'))
-#
-#     ###
-#     #   Check image directories
-#     #
-#     checks.check_dir(image_paths)
-#
-#     #   Outer loop over all filter
-#     for filter_ in filter_list:
-#         terminal_output.print_to_terminal(
-#             f"Analyzing {filter_} images",
-#             style_name='HEADER',
-#         )
-#
-#         #   Initialize image series object
-#         observation.image_series_dict[filter_] = ImageSeries(
-#             filter_,
-#             image_paths[filter_],
-#             output_dir,
-#             reference_image_id=reference_image_id,
-#         )
-#
-#         ###
-#         #   Find the WCS solution for the image
-#         #
-#         utilities.find_wcs(
-#             observation.image_series_dict[filter_],
-#             reference_image_id=reference_image_id,
-#             method=wcs_method,
-#             force_wcs_determ=force_wcs_determ,
-#             indent=3,
-#         )
-#
-#         ###
-#         #   Main extraction of object positions and object fluxes
-#         #   using multiprocessing
-#         #
-#         extract_multiprocessing(
-#             observation.image_series_dict[filter_],
-#             n_cores_multiprocessing,
-#             sigma_object_psf,
-#             sigma_value_background_clipping=sigma_value_background_clipping,
-#             multiplier_background_rms=multiplier_background_rms,
-#             size_epsf_region=size_epsf_region,
-#             fraction_epsf_stars=fraction_epsf_stars,
-#             oversampling_factor_epsf=oversampling_factor_epsf,
-#             max_n_iterations_epsf=max_n_iterations_epsf,
-#             object_finder_method=object_finder_method,
-#             multiplier_background_rms_epsf=multiplier_background_rms_epsf,
-#             multiplier_dao_grouper_epsf=multiplier_dao_grouper_epsf,
-#             strict_cleaning_epsf_results=strict_cleaning_epsf_results,
-#             minimum_n_eps_stars=minimum_n_eps_stars,
-#             strict_epsf_checks=strict_epsf_checks,
-#             photometry_extraction_method=photometry_extraction_method,
-#             radius_aperture=radius_aperture,
-#             inner_annulus_radius=inner_annulus_radius,
-#             outer_annulus_radius=outer_annulus_radius,
-#             radii_unit=radii_unit,
-#             identify_objects_on_image=identify_objects_on_image,
-#             plots_for_all_images=plots_for_all_images,
-#             plot_for_reference_image_only=plot_for_reference_image_only,
-#         )
-#
-#         ###
-#         #   Correlate results from all images, while preserving
-#         #   the variable star
-#         #
-#         correlate.correlate_preserve_variable(
-#             observation,
-#             filter_,
-#             max_pixel_between_objects=max_pixel_between_objects,
-#             own_correlation_option=own_correlation_option,
-#             cross_identification_limit=cross_identification_limit,
-#             reference_image_id=reference_image_id,
-#             n_allowed_non_detections_object=n_allowed_non_detections_object,
-#             expected_bad_image_fraction=expected_bad_image_fraction,
-#             protect_reference_obj=protect_reference_obj,
-#             verbose=verbose,
-#             plot_reference_only=plot_for_reference_image_only,
-#             correlation_method=correlation_method,
-#             separation_limit=separation_limit,
-#         )
-
-
-def correlate_calibrate(
-        observation: Observation, filter_list: list[str],
-        max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
-        reference_image_id: int = 0, calibration_method: str = 'APASS',
-        vizier_dict: dict[str, str] | None = None,
-        path_calibration_file: str | None = None, object_id: int = None,
-        magnitude_range: tuple[float, float] = (0., 18.5),
-        transformation_coefficients_dict: dict[str, (float | str)] | None = None,
-        derive_transformation_coefficients: bool = False,
-        plot_sigma: bool = False, photometry_extraction_method: str = '',
-        extract_only_circular_region: bool = False, region_radius: float = 600.,
-        identify_data_cluster: bool = False, clean_objs_using_pm: bool = False,
-        max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
-        correlation_method: str = 'astropy',
-        separation_limit: u.quantity.Quantity = 2. * u.arcsec,
-        aperture_radius: float = 4., radii_unit: str = 'arcsec',
-        convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
-        region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
-        calculate_zero_point_statistic: bool = True,
-        distribution_samples: int = 1000) -> None:
-    """
-    Correlate photometric extraction results from 2 images and calibrate
-    the magnitudes.
-
-    Parameters
-    ----------
-    observation
-        Container object with image series objects for each filter
-
-    filter_list
-        List with filter names
-
-    max_pixel_between_objects
-        Maximal distance between two objects in Pixel
-        Default is ``3``.
-
-    own_correlation_option
-        Option for the srcor correlation function
-        Default is ``1``.
-
-    reference_image_id
-        Reference image ID
-        Default is ``0``.
-
-    calibration_method
-        Calibration method
-        Default is ``APASS``.
-
-    vizier_dict
-        Dictionary with identifiers of the Vizier catalogs with valid
-        calibration data
-        Default is ``None``.
-
-    path_calibration_file
-        Path to the calibration file
-        Default is ``None``.
-
-    object_id
-        ID of the object
-        Default is ``None``.
-
-    magnitude_range
-        Magnitude range
-        Default is ``(0.,18.5)``.
-
-    transformation_coefficients_dict
-        Calibration coefficients for the magnitude transformation
-        Default is ``None``.
-
-    derive_transformation_coefficients
-        If True the magnitude transformation coefficients will be
-        calculated from the current data even if calibration coefficients
-        are available in the database.
-        Default is ``False``
-
-    plot_sigma
-        If True sigma clipped magnitudes will be plotted.
-        Default is ``False``.
-
-    photometry_extraction_method
-        Applied extraction method. Possibilities: ePSF or APER`
-        Default is ``''``.
-
-    extract_only_circular_region
-        If True the extracted objects will be filtered such that only
-        objects with ``radius`` will be returned.
-        Default is ``False``.
-
-    region_radius
-        Radius around the object in arcsec.
-        Default is ``600``.
-
-    identify_data_cluster
-        If True cluster in the Gaia distance and proper motion data
-        will be identified.
-        Default is ``False``.
-
-    clean_objs_using_pm
-        If True only the object list will be clean based on their
-        proper motion.
-        Default is ``False``.
-
-    max_distance_cluster
-        Expected maximal distance of the cluster in kpc. Used to
-        restrict the parameter space to facilitate an easy
-        identification of the star cluster.
-        Default is ``6``.
-
-    find_cluster_para_set
-        Parameter set used to identify the star cluster in proper
-        motion and distance data.
-
-    correlation_method
-        Correlation method to be used to find the common objects on
-        the images.
-        Possibilities: ``astropy``, ``own``
-        Default is ``astropy``.
-
-    separation_limit
-        Allowed separation between objects.
-        Default is ``2.*u.arcsec``.
-
-    aperture_radius
-        Radius of the aperture used to derive the limiting magnitude
-        Default is ``4``.
-
-    radii_unit
-        Unit of the radii above. Permitted values are
-        ``pixel`` and ``arcsec``.
-        Default is ``arcsec``.
-
-    convert_magnitudes
-        If True the magnitudes will be converted to another
-        filter systems specified in `target_filter_system`.
-        Default is ``False``.
-
-    target_filter_system
-        Photometric system the magnitudes should be converted to
-        Default is ``SDSS``.
-
-    region_to_select_calibration_stars
-        Region in which to select calibration stars. This is a useful
-        feature in instances where not the entire field of view can be
-        utilized for calibration purposes.
-        Default is ``None``.
-
-    calculate_zero_point_statistic
-        If `True` a statistic on the zero points will be calculated.
-        Default is ``True``.
-
-    distribution_samples
-        Number of samples used for distributions
-        Default is `1000`.
-    """
-    ###
-    #   Correlate the stellar positions from the different filter
-    #
-    correlate.correlate_image_series(
-        observation,
-        filter_list,
-        max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
-        correlation_method=correlation_method,
-        separation_limit=separation_limit,
-    )
-
-    ###
-    #   Plot image with the final positions overlaid (final version)
-    #
-    if len(filter_list) > 1:
-        utilities.prepare_and_plot_starmap_from_observation(
-            observation,
-            filter_list,
-        )
-
-    ###
-    #   Calibrate the magnitudes
-    #
-    #   Load calibration information
-    calibration_data.derive_calibration(
-        observation,
-        filter_list,
-        calibration_method=calibration_method,
-        max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
-        vizier_dict=vizier_dict,
-        path_calibration_file=path_calibration_file,
-        magnitude_range=magnitude_range,
-        region_to_select_calibration_stars=region_to_select_calibration_stars,
-    )
-    calibration_filters = observation.calib_parameters.column_names
-
-    #   Find filter combinations for which magnitude transformation is possible
-    _, usable_filter_combinations = utilities.find_filter_for_magnitude_transformation(
-        filter_list,
-        calibration_filters,
-    )
-
-    for filter_combination in usable_filter_combinations:
-        #   Apply calibration and perform magnitude transformation
-        calibration.apply_calibration(
-            observation,
-            filter_combination,
-            transformation_coefficients_dict=transformation_coefficients_dict,
-            derive_transformation_coefficients=derive_transformation_coefficients,
-            plot_sigma=plot_sigma,
-            photometry_extraction_method=photometry_extraction_method,
-            calculate_zero_point_statistic=calculate_zero_point_statistic,
-            distribution_samples=distribution_samples,
-        )
-
-        ###
-        #   Restrict results to specific areas of the image and filter by means
-        #   of proper motion and distance using Gaia
-        #
-        utilities.post_process_results(
-            observation,
-            filter_combination,
-            id_object=object_id,
-            extraction_method=photometry_extraction_method,
-            extract_only_circular_region=extract_only_circular_region,
-            region_radius=region_radius,
-            data_cluster=identify_data_cluster,
-            clean_objects_using_proper_motion=clean_objs_using_pm,
-            max_distance_cluster=max_distance_cluster,
-            find_cluster_para_set=find_cluster_para_set,
-            convert_magnitudes=convert_magnitudes,
-            target_filter_system=target_filter_system,
-            distribution_samples=distribution_samples,
-        )
-
-        ###
-        #   Determine limiting magnitudes
-        #
-        utilities.derive_limiting_magnitude(
-            observation,
-            filter_combination,
-            reference_image_id,
-            aperture_radius=aperture_radius,
-            radii_unit=radii_unit,
-        )
-
-
-def calibrate_data_mk_light_curve(
-        observation: Observation, filter_list: list[str], output_dir: str,
-        valid_filter_combinations: list[list[str]] | None = None,
-        binning_factor: float | None = None,
-        transformation_coefficients_dict: dict[str, (float | str)] | None = None,
-        derive_transformation_coefficients: bool = False,
-        reference_image_id: int = 0, calibration_method: str = 'APASS',
-        vizier_dict: dict[str, str] | None = None,
-        path_calibration_file: str | None = None,
-        magnitude_range: tuple[float, float] = (0., 18.5),
-        max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
-        cross_identification_limit: int = 1,
-        n_allowed_non_detections_object: int = 1,
-        expected_bad_image_fraction: float = 1.0,
-        protect_reference_obj: bool = True,
-        photometry_extraction_method: str = '',
-        correlation_method: str = 'astropy',
-        separation_limit: u.quantity.Quantity = 2. * u.arcsec,
-        verbose: bool = False, plot_sigma: bool = False,
-        region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
-        calculate_zero_point_statistic: bool = True,
-        distribution_samples: int = 1000) -> None:
-    """
-    Calculate magnitudes, calibrate, and plot light curves
-
-    Parameters
-    ----------
-    observation
-        Container object with image series objects for each filter
-
-    filter_list
-        List with filter names
-
-    output_dir
-        Path, where the output should be stored.
-
-    valid_filter_combinations
-        Valid filter combinations to calculate magnitude transformation
-        Default is ``None``.
-
-    binning_factor
-        Binning factor for the light curve.
-        Default is ``None```.
-
-    transformation_coefficients_dict
-        Calibration coefficients for the magnitude transformation
-        Default is ``None``.
-
-    derive_transformation_coefficients
-        If True the magnitude transformation coefficients will be
-        calculated from the current data even if calibration coefficients
-        are available in the database.
-        Default is ``False``
-
-    reference_image_id
-        ID of the reference image
-        Default is ``0``.
-
-    calibration_method
-        Calibration method
-        Default is ``APASS``.
-
-    vizier_dict
-        Dictionary with identifiers of the Vizier catalogs with valid
-        calibration data
-        Default is ``None``.
-
-    path_calibration_file
-        Path to the calibration file
-        Default is ``None``.
-
-    magnitude_range
-        Magnitude range
-        Default is ``(0.,18.5)``.
-
-    max_pixel_between_objects
-        Maximal distance between two objects in Pixel
-        Default is ``3``.
-
-    own_correlation_option
-        Option for the srcor correlation function
-        Default is ``1``.
-
-    cross_identification_limit
-        Cross-identification limit between multiple objects in the current
-        image and one object in the reference image. The current image is
-        rejected when this limit is reached.
-        Default is ``1``.
-
-    n_allowed_non_detections_object
-        Maximum number of times an object may not be detected in an image.
-        When this limit is reached, the object will be removed.
-        Default is ``1`.
-
-    expected_bad_image_fraction
-        Fraction of low quality images, i.e. those images for which a
-        reduced number of objects with valid source positions are expected.
-        Default is ``1.0``.
-
-    protect_reference_obj
-        If ``False`` also reference objects will be rejected, if they do
-        not fulfill all criteria.
-        Default is ``True``.
-
-    photometry_extraction_method
-        Applied extraction method. Possibilities: ePSF or APER`
-        Default is ``''``.
-
-    correlation_method
-        Correlation method to be used to find the common objects on
-        the images.
-        Possibilities: ``astropy``, ``own``
-        Default is ``astropy``.
-
-    separation_limit
-        Allowed separation between objects.
-        Default is ``2.*u.arcsec``.
-
-    verbose
-        If True additional output will be printed to the command line.
-        Default is ``False``.
-
-    plot_sigma
-        If True sigma clipped magnitudes will be plotted.
-        Default is ``False``.
-
-    region_to_select_calibration_stars
-        Region in which to select calibration stars. This is a useful
-        feature in instances where not the entire field of view can be
-        utilized for calibration purposes.
-        Default is ``None``.
-
-    calculate_zero_point_statistic
-        If `True` a statistic on the zero points will be calculated.
-        Default is ``True``.
-
-    distribution_samples
-        Number of samples used for distributions
-        Default is `1000`.
-    """
-    #   Check if correlation with observed objects can be applied directly
-    #   after loading the calibration data. If only one filter and thus one
-    #   image series is available, correlation will be applied immediately.
-    if len(filter_list) == 1:
-        correlate_with_observed_objects = True
-    else:
-        correlate_with_observed_objects = False
-
-    #   Make coordinates object for variable star
-    coordinates_objects_of_interest = observation.objects_of_interest_coordinates
-    if coordinates_objects_of_interest is None:
-        raise RuntimeError(
-            f"SkyCoord object for objects of interest does not exit."
-        )
-    # coordinates_objects_of_interest = SkyCoord(
-    #     ra_object,
-    #     dec_object,
-    #     unit=(ra_unit, dec_unit),
-    #     frame="icrs",
-    # )
-
-    #   Load calibration information
-    calibration_data.derive_calibration(
-        observation,
-        filter_list,
-        calibration_method=calibration_method,
-        max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
-        vizier_dict=vizier_dict,
-        path_calibration_file=path_calibration_file,
-        magnitude_range=magnitude_range,
-        correlation_method=correlation_method,
-        separation_limit=separation_limit,
-        region_to_select_calibration_stars=region_to_select_calibration_stars,
-        correlate_with_observed_objects=correlate_with_observed_objects,
-        reference_image_id=reference_image_id,
-        coordinates_obj_to_rm=coordinates_objects_of_interest,
-    )
-    calibration_filters = observation.calib_parameters.column_names
-    terminal_output.print_to_terminal('')
-
-    #   Determine usable filter combinations -> Filters must be in a valid
-    #   filter combination for the magnitude transformation and calibration
-    #   data must be available for the filter.
-    valid_filter, usable_filter_combinations = utilities.find_filter_for_magnitude_transformation(
-        filter_list,
-        calibration_filters,
-        valid_filter_combinations=valid_filter_combinations,
-    )
-
-    #   Correlate star positions from the different filter
-    if valid_filter:
-        correlate.correlate_image_series(
-            observation,
-            valid_filter,
-            max_pixel_between_objects=max_pixel_between_objects,
-            own_correlation_option=own_correlation_option,
-            cross_identification_limit=cross_identification_limit,
-            n_allowed_non_detections_object=n_allowed_non_detections_object,
-            expected_bad_image_fraction=expected_bad_image_fraction,
-            protect_reference_obj=protect_reference_obj,
-            correlation_method=correlation_method,
-            separation_limit=separation_limit,
-            verbose=verbose,
-            reference_image_id=reference_image_id,
-        )
-
-    ###
-    #   Calibrate magnitudes
-    #
-    #   Perform magnitude transformation
-    #   TODO: Convert this to matrix calculation over all filter simultaneously
-    processed_filter = []
-    for filter_set in usable_filter_combinations:
-        #   Apply calibration and perform magnitude transformation
-        calibration.apply_calibration(
-            observation,
-            filter_set,
-            transformation_coefficients_dict=transformation_coefficients_dict,
-            derive_transformation_coefficients=derive_transformation_coefficients,
-            photometry_extraction_method=photometry_extraction_method,
-            plot_sigma=plot_sigma,
-            calculate_zero_point_statistic=calculate_zero_point_statistic,
-            distribution_samples=distribution_samples,
-        )
-        #   TODO: Replace with table_mags_transformed
-        calibrated_magnitudes = getattr(
-            observation,
-            # 'array_mags_not_transformed',
-            'array_mags_transformed',
-            None,
-        )
-
-        for filter_ in filter_set:
-            terminal_output.print_to_terminal(
-                f"Working on filter: {filter_}",
-                style_name='OKBLUE',
-            )
-            
-            ###
-            #   Plot light curve
-            #
-            #   Create a Time object for the observation times
-            observation_times = Time(
-                observation.image_series_dict[filter_].get_observation_time(),
-                format='jd',
-            )
-
-            for object_ in observation.objects_of_interest:
-                object_name = object_.name
-                id_object = object_.id_in_image_series[filter_]
-                transit_time = object_.transit_time
-                period = object_.period
-
-                #   Create a time series object
-                time_series = utilities.mk_time_series(
-                    observation_times,
-                    calibrated_magnitudes,
-                    filter_,
-                    id_object,
-                )
-
-                #   Write time series
-                time_series.write(
-                    f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-                    f'_{filter_set[0]}-{filter_set[1]}.dat',
-                    format='ascii',
-                    overwrite=True,
-                )
-                time_series.write(
-                    f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-                    f'_{filter_set[0]}-{filter_set[1]}.csv',
-                    format='ascii.csv',
-                    overwrite=True,
-                )
-
-                #   Plot light curve over JD
-                plots.light_curve_jd(
-                    time_series,
-                    filter_,
-                    f'{filter_}_err',
-                    output_dir,
-                    name_object=object_name,
-                    file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
-                )
-
-                #   Plot the light curve folded on the period
-                if transit_time != '?' and period > 0.:
-                    plots.light_curve_fold(
-                        time_series,
-                        filter_,
-                        f'{filter_}_err',
-                        output_dir,
-                        transit_time,
-                        period,
-                        binning_factor=binning_factor,
-                        name_object=object_name,
-                        file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
-                    )
-
-                processed_filter.append(filter_)
-
-    #   Process those filters for which magnitude transformation is not possible
-    for filter_ in filter_list:
-        #   Check if filter is not yet processed
-        if filter_ not in processed_filter:
-            terminal_output.print_to_terminal(
-                f"Working on filter: {filter_}",
-                style_name='OKBLUE',
-            )
-
-            #   Check if calibration data is available
-            if f'mag{filter_}' not in calibration_filters:
-                terminal_output.print_to_terminal(
-                    "Magnitude calibration not possible because no "
-                    f"calibration data is available for filter {filter_}. "
-                    "Use normalized flux for light curve.",
-                    indent=2,
-                    style_name='WARNING',
-                )
-
-                #   Get image_series
-                image_series = observation.image_series_dict[filter_]
-
-                #   Quasi calibration of the flux data
-                quasi_calibrated_flux = calibration.quasi_flux_calibration_image_series(
-                    image_series,
-                    distribution_samples=distribution_samples,
-                )
-
-                #   Normalize data if no calibration magnitudes are available
-                quasi_calibrated_normalized_flux = calibration.flux_normalization_image_series(
-                    image_series,
-                    quasi_calibrated_flux=quasi_calibrated_flux,
-                    distribution_samples=distribution_samples
-                )
-
-                plot_quantity = quasi_calibrated_normalized_flux
-            else:
-                #   Apply calibration
-                calibration.apply_calibration(
-                    observation,
-                    [filter_],
-                    photometry_extraction_method=photometry_extraction_method,
-                    calculate_zero_point_statistic=calculate_zero_point_statistic,
-                    distribution_samples=distribution_samples,
-                )
-                #   TODO: Replace with table_mags_not_transformed and table_mags_transformed
-                plot_quantity = getattr(
-                    observation,
-                    'array_mags_not_transformed',
-                    None,
-                )
-
-            #   TODO: Make lightcurve plots for all object + highlight calibration stars
-            ###
-            #   Plot light curve
-            #
-            #   Create a Time object for the observation times
-            observation_times = Time(
-                observation.image_series_dict[filter_].get_observation_time(),
-                format='jd',
-            )
-
-            for object_ in observation.objects_of_interest:
-                object_name = object_.name
-                id_object = object_.id_in_image_series[filter_]
-                transit_time = object_.transit_time
-                period = object_.period
-
-                #   Create a time series object
-                time_series = utilities.mk_time_series(
-                    observation_times,
-                    plot_quantity,
-                    filter_,
-                    id_object,
-                )
-
-                #   Write time series
-                time_series.write(
-                    f'{output_dir}/tables/light_curve_{object_name}_{filter_}.dat',
-                    format='ascii',
-                    overwrite=True,
-                )
-                time_series.write(
-                    f'{output_dir}/tables/light_curve_{object_name}_{filter_}.csv',
-                    format='ascii.csv',
-                    overwrite=True,
-                )
-
-                #   Plot light curve over JD
-                plots.light_curve_jd(
-                    time_series,
-                    filter_,
-                    f'{filter_}_err',
-                    output_dir,
-                    name_object=object_name,
-                )
-
-                #   Plot the light curve folded on the period
-                if transit_time != '?' and period > 0.:
-                    plots.light_curve_fold(
-                        time_series,
-                        filter_,
-                        f'{filter_}_err',
-                        output_dir,
-                        transit_time,
-                        period,
-                        binning_factor=binning_factor,
-                        name_object=object_name,
-                    )
 
 
 def subtract_archive_img_from_img(

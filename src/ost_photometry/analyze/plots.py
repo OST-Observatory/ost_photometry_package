@@ -1959,7 +1959,7 @@ class MakeCMDs:
             #   Calculate relative extinction
             relative_extinction = a_filter_1 - a_filter_2
 
-        #   TODO: Add error propagation
+        #   TODO: Add error propagation. What is the error of rv and e_b_v?
         #   Apply extinction correction (and distance) to magnitudes and color
         magnitude_filter_2 = self.magnitude_filter_2 - a_filter_2 - m_m
         magnitude_color = self.magnitude_color - relative_extinction
@@ -3256,8 +3256,9 @@ def filled_iso_contours(
     if object_property in object_table.colnames:
         z = object_table[object_property].value[nearst_neighbour_indexes]
     else:
-        #   TODO: Replace with terminal output
-        print(f'{object_property} is not available. Try roundness instead.')
+        terminal_output.print_to_terminal(
+            f'{object_property} is not available. Try roundness instead.',
+        )
         if 'roundness' in object_table.colnames:
             z = object_table['roundness'].value[nearst_neighbour_indexes]
             object_property = 'roundness'
