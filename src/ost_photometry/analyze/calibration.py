@@ -23,7 +23,6 @@ if typing.TYPE_CHECKING:
     from .. import utilities
 
 from .. import style, calibration_parameters, terminal_output
-# from .. import utilities as base_utilities
 
 
 ############################################################################
@@ -699,7 +698,7 @@ def apply_magnitude_transformation(
     #   Quality control plots
     color_literature = (magnitudes_calibration_first_filter -
                         magnitudes_calibration_second_filter)
-    plots.calibration_check_plots(
+    utilities.prepare_calibration_check_plots(
         filter_list[filter_id],
         image.out_path.name,
         image.pd,
@@ -1058,7 +1057,7 @@ def calibrate_magnitudes_zero_point_core(
     )
 
     #   Quality control plots
-    plots.calibration_check_plots(
+    utilities.prepare_calibration_check_plots(
         current_image.filter_,
         current_image.out_path.name,
         current_image.pd,
