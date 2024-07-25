@@ -316,7 +316,7 @@ def get_instrument_info(image_file_collection, temperature_tolerance,
 
             #   Kstars treats the readout mode by numbers. Assuming 0 is 'Extend Fullwell 2CMS' which is probably worng.
             #   TODO: Check this!
-            if readout_mode == 0.:
+            if readout_mode == 0:
                 readout_mode = 'Extend Fullwell 2CMS'
         elif ignore_readout_mode_mismatch:
             terminal_output.print_to_terminal(

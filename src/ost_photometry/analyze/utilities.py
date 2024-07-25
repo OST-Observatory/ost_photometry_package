@@ -421,24 +421,30 @@ def prepare_time_series_data(
                 else:
                     magnitude_column_names.append(col_name)
 
-        print(
-            'type(data[magnitude_column_names][object_id].as_void())',
-            type(data[magnitude_column_names][object_id].as_void())
-        )
-        print(dir(data[magnitude_column_names][object_id].as_void()))
+        # print(
+        #     'type(data[magnitude_column_names][object_id].as_void())',
+        #     type(data[magnitude_column_names][object_id].as_void())
+        # )
+        # print(dir(data[magnitude_column_names][object_id].as_void()))
         #   Convert magnitudes to numpy.ndarray
         magnitudes = np.array(
-            data[magnitude_column_names][object_id].as_void()
+            data[magnitude_column_names][object_id].as_void().tolist()
         )
-        magnitudes = magnitudes.view(
-            (magnitudes.dtype[0], len(magnitudes.dtype.names))
-        )
+        # magnitudes = np.array(
+        #     data[magnitude_column_names][object_id].as_void()
+        # )
+        # magnitudes = magnitudes.view(
+        #     (magnitudes.dtype[0], len(magnitudes.dtype.names))
+        # )
         magnitude_errors = np.array(
-            data[err_column_names][object_id].as_void()
+            data[err_column_names][object_id].as_void().tolist()
         )
-        magnitude_errors = magnitude_errors.view(
-            (magnitude_errors.dtype[0], len(magnitude_errors.dtype.names))
-        )
+        # magnitude_errors = np.array(
+        #     data[err_column_names][object_id].as_void()
+        # )
+        # magnitude_errors = magnitude_errors.view(
+        #     (magnitude_errors.dtype[0], len(magnitude_errors.dtype.names))
+        # )
         return magnitudes, magnitude_errors
 
     if isinstance(data, unc.core.NdarrayDistribution):
@@ -920,10 +926,12 @@ class Executor:
             Uses apply_async's callback to set up a separate Queue
             for each process
         """
-        #   Catch all results
-        self.res.append(result)
+        #   Update progress bar
         if self.progress_bar:
             self.progress_bar.update(1)
+
+        #   Catch all results
+        self.res.append(result)
 
     def callback_error(self, e):
         """
@@ -2674,7 +2682,7 @@ def prepare_calibration_check_plots(
                 f'{filter_}_measured [mag]',
                 [literature_magnitudes],
                 f'{filter_}_literature [mag]',
-                f'mags_sigma_{filter_}_img_{image_id}_{plot_type}',
+                f'mags_{filter_}_img_{image_id}_{plot_type}',
                 out_dir,
             ),
             kwargs={
@@ -2686,10 +2694,10 @@ def prepare_calibration_check_plots(
                 'y_errors': [
                     literature_magnitudes_err
                 ],
-                'dataset_label': [
-                    'without sigma clipping',
-                    'with sigma clipping',
-                ],
+                # 'dataset_label': [
+                #     'without sigma clipping',
+                #     'with sigma clipping',
+                # ],
             }
         )
         p.start()
@@ -2699,16 +2707,16 @@ def prepare_calibration_check_plots(
             f'{filter_}_measured [mag]',
             [literature_magnitudes],
             f'{filter_}_literature [mag]',
-            f'mags_sigma_{filter_}_img_{image_id}_{plot_type}',
+            f'mags_{filter_}_img_{image_id}_{plot_type}',
             out_dir,
             # 'name_object': name_object,
             fits=[None, fit],
             x_errors=uncalibrated_magnitudes_err[ids_calibration_stars],
             y_errors=[literature_magnitudes_err],
-            dataset_label=[
-                'without sigma clipping',
-                'with sigma clipping',
-            ],
+            # dataset_label=[
+            #     'without sigma clipping',
+            #     'with sigma clipping',
+            # ],
         )
 
     #   Comparison observed vs. literature color
@@ -2729,17 +2737,17 @@ def prepare_calibration_check_plots(
                     f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
                     [color_observed],
                     f'{filter_list[0]}-{filter_list[1]}_measured [mag]',
-                    f'color_sigma_{filter_}_img_{image_id}_{plot_type}',
+                    f'color_{filter_}_img_{image_id}_{plot_type}',
                     out_dir,
                 ),
                 kwargs={
                     # 'name_object': name_object,
                     'x_errors': [color_literature_err],
                     'y_errors': [color_observed_err],
-                    'dataset_label': [
-                        'without sigma clipping',
-                        'with sigma clipping',
-                    ],
+                    # 'dataset_label': [
+                    #     'without sigma clipping',
+                    #     'with sigma clipping',
+                    # ],
                     'fits': [fit, fit],
                 }
             )
@@ -2750,15 +2758,15 @@ def prepare_calibration_check_plots(
                 f'{filter_list[0]}-{filter_list[1]}_literature [mag]',
                 [color_observed],
                 f'{filter_list[0]}-{filter_list[1]}_measured [mag]',
-                f'color_sigma_{filter_}_img_{image_id}_{plot_type}',
+                f'color_{filter_}_img_{image_id}_{plot_type}',
                 out_dir,
                 # 'name_object': name_object,
                 x_errors=[color_literature_err],
                 y_errors=[color_observed_err],
-                dataset_label=[
-                    'without sigma clipping',
-                    'with sigma clipping',
-                ],
+                # dataset_label=[
+                #     'without sigma clipping',
+                #     'with sigma clipping',
+                # ],
                 fits=[fit, fit],
             )
 
@@ -2773,7 +2781,7 @@ def prepare_calibration_check_plots(
                     magnitudes[ids_calibration_stars] - literature_magnitudes,
                 ],
                 f'{filter_}_observed - {filter_}_literature [mag]',
-                f'magnitudes_literature-vs-observed_{image_id}_{plot_type}',
+                f'magnitudes_literature-vs-observed_{image_id}_{filter_}_{plot_type}',
                 out_dir,
             ),
             kwargs={
@@ -2781,10 +2789,10 @@ def prepare_calibration_check_plots(
                 'y_errors': [
                     err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
                 ],
-                'dataset_label': [
-                    'without sigma clipping',
-                    'with sigma clipping',
-                ],
+                # 'dataset_label': [
+                #     'without sigma clipping',
+                #     'with sigma clipping',
+                # ],
             },
         )
         p.start()
@@ -2794,14 +2802,14 @@ def prepare_calibration_check_plots(
             f'{filter_}_literature [mag]',
             [magnitudes[ids_calibration_stars] - literature_magnitudes],
             f'{filter_}_observed - {filter_}_literature [mag]',
-            f'magnitudes_literature-vs-observed_{image_id}_{plot_type}',
+            f'magnitudes_literature-vs-observed_{image_id}_{filter_}_{plot_type}',
             out_dir,
             x_errors=[literature_magnitudes_err],
             y_errors=[
                 err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
             ],
-            dataset_label=[
-                'without sigma clipping',
-                'with sigma clipping',
-            ],
+            # dataset_label=[
+            #     'without sigma clipping',
+            #     'with sigma clipping',
+            # ],
         )

@@ -280,11 +280,15 @@ def derive_transformation_onthefly(
     #   Perform sigma clipping on the difference between observed color
     #   and literature color values to remove outliers
     #   TODO: Add here a sigma clipping on the color difference?
+    zp_sum = (magnitudes_observed_filter_2 - magnitudes_literature_filter_2 +
+              magnitudes_observed_filter_1 - magnitudes_literature_filter_1
+              )
     sigma_clip_mask = sigma_clip(
         # (color_literature - color_observed).pdf_median(),
-        (magnitudes_observed_filter_2 - magnitudes_literature_filter_2 +
-         magnitudes_observed_filter_1 - magnitudes_literature_filter_1
-         ).pdf_median(),
+        # (magnitudes_observed_filter_2 - magnitudes_literature_filter_2 +
+        #  magnitudes_observed_filter_1 - magnitudes_literature_filter_1
+        #  ).pdf_median(),
+        zp_sum.pdf_median(),
         sigma=1.5,
         # maxiters=max_n_iterations_sigma_clipping,
     ).mask
@@ -310,6 +314,22 @@ def derive_transformation_onthefly(
     diff_mag_plot_2 = diff_mag_2[sigma_clip_mask]
     diff_mag_plot_1 = diff_mag_plot_1.pdf_median()
     diff_mag_plot_2 = diff_mag_plot_2.pdf_median()
+
+    #   Plot illustrating the sigma clipping
+    plots.scatter(
+        [color_literature.pdf_median(), color_literature_plot],
+        f'color literature [mag]',
+        [zp_sum.pdf_median(), zp_sum.pdf_median()[sigma_clip_mask]],
+        f'Zero point sum - {filter_list} [mag]',
+        f'zero_point_sum_sigma_clipped',
+        image.out_path.name,
+        x_errors=[color_literature.pdf_std(), color_literature_err_plot],
+        y_errors=[zp_sum.pdf_std(), zp_sum.pdf_std()[sigma_clip_mask]],
+        dataset_label=[
+            'without sigma clipping',
+            'with sigma clipping',
+        ],
+    )
 
     #   Set
     sigma: np.ndarray = np.array(color_literature_err_plot)
