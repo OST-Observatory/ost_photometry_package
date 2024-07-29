@@ -1414,7 +1414,7 @@ def calculate_image_shifts(image_file_collection, id_reference_image, comment,
             # file_name,
             # ),
             # kwargs={
-            # 'method':method,
+            # 'correlation_method':correlation_method,
             # }
             # )
 

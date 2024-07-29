@@ -307,21 +307,26 @@ def derive_transformation_onthefly(
     # print(color_literature_plot)
     # diff_mag_plot_1 = diff_mag_1.pdf_median()
     # diff_mag_plot_2 = diff_mag_2.pdf_median()
-    color_literature_plot = color_literature[sigma_clip_mask]
-    color_literature_err_plot = color_literature_plot.pdf_std()
-    color_literature_plot = color_literature_plot.pdf_median()
-    diff_mag_plot_1 = diff_mag_1[sigma_clip_mask]
-    diff_mag_plot_2 = diff_mag_2[sigma_clip_mask]
-    diff_mag_plot_1 = diff_mag_plot_1.pdf_median()
-    diff_mag_plot_2 = diff_mag_plot_2.pdf_median()
+    # color_literature_plot = color_literature[sigma_clip_mask]
+    # color_literature_err_plot = color_literature_plot.pdf_std()
+    # color_literature_plot = color_literature_plot.pdf_median()
+    # diff_mag_plot_1 = diff_mag_1[sigma_clip_mask]
+    # diff_mag_plot_2 = diff_mag_2[sigma_clip_mask]
+    # diff_mag_plot_1 = diff_mag_plot_1.pdf_median()
+    # diff_mag_plot_2 = diff_mag_plot_2.pdf_median()
+    color_literature_err_plot = color_literature.pdf_std()[sigma_clip_mask]
+    color_literature_plot = color_literature.pdf_median()[sigma_clip_mask]
+    diff_mag_plot_1 = diff_mag_1.pdf_median()[sigma_clip_mask]
+    diff_mag_plot_2 = diff_mag_2.pdf_median()[sigma_clip_mask]
 
     #   Plot illustrating the sigma clipping
+    filter_str = ', '.join(filter_list)
     plots.scatter(
         [color_literature.pdf_median(), color_literature_plot],
-        f'color literature [mag]',
+        f'Color literature [mag]',
         [zp_sum.pdf_median(), zp_sum.pdf_median()[sigma_clip_mask]],
-        f'Zero point sum - {filter_list} [mag]',
-        f'zero_point_sum_sigma_clipped',
+        f'Zero point sum - {filter_str} [mag]',
+        f'zero_point_sum_sigma_clipped_image_{image.pd}',
         image.out_path.name,
         x_errors=[color_literature.pdf_std(), color_literature_err_plot],
         y_errors=[zp_sum.pdf_std(), zp_sum.pdf_std()[sigma_clip_mask]],
@@ -1568,12 +1573,13 @@ def apply_calibration(
     )
 
 
-#   TODO: Rewrite
-def determine_transformation(
+#   TODO: Test and cleanup
+def determine_transformation_coefficients(
         observation: 'analyze.Observation', current_filter: str,
         filter_list: list[str], tbl_transformation_coefficients: Table,
         fit_function=utilities.lin_func,
-        apply_uncertainty_weights: bool = True, indent: int = 2
+        apply_uncertainty_weights: bool = True,
+        distribution_samples: int = 1000, indent: int = 2
         ) -> None:
     """
     Determine the magnitude transformation factors
@@ -1600,6 +1606,10 @@ def determine_transformation(
         If True the transformation fit will be weighted by the
         uncertainties of the data points.
 
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`.
+
     indent
         Indentation for the console output lines
         Default is ``2``.
@@ -1611,203 +1621,246 @@ def determine_transformation(
     id_filter = filter_list.index(current_filter)
 
     #   Get calibration parameters
-    calib_parameters = observation.calib_parameters
+    parameters_calibration = observation.calib_parameters
 
-    #   Get calibration data
-    literature_magnitudes = calib_parameters.calib_tbl
+    #   Get calibration table
+    # calibration_tbl = parameters_calibration.calib_tbl
 
-    #   Get required type for magnitude array.
-    test_magnitudes_filter_1 = literature_magnitudes['mag'][0][0]
-    test_magnitudes_filter_2 = literature_magnitudes['mag'][1][0]
+    #   Get calibration column names mapping
+    # calib_column_names = parameters_calibration.column_names
 
-    #   Check if magnitudes are not zero
-    if test_magnitudes_filter_1 != 0. and test_magnitudes_filter_2 != 0.:
-        image_1 = image_series_dict[filter_list[0]].image_list[0]
-        image_2 = image_series_dict[filter_list[1]].image_list[0]
-        image_key = image_series_dict[filter_list[id_filter]].image_list[0]
+    #   Get index positions of calibration stars
+    index_calibration_stars = observation.calib_parameters.ids_calibration_objects
 
-        #   Extract values from a structured Numpy array
-        #   TODO: The following does not work anymore: Check!
-        # calibration_data.get_observed_magnitudes_of_calibration_stars(image_1, observation)
-        # calibration_data.get_observed_magnitudes_of_calibration_stars(image_2, observation)
-        # calibration_data.get_observed_magnitudes_of_calibration_stars(image_key, observation)
+    literature_magnitudes = calibration_data.distribution_from_calibration_table(
+        parameters_calibration,
+        filter_list,
+        distribution_samples=distribution_samples,
+    )
+    #   Convert literature magnitudes to distributions
+    #   -> This is necessary since astropy QuantityDistribution cannot be
+    #      prickled/serialized. Therefore, literature_magnitudes is only the
+    #      underlying numpy array
+    #   TODO: Check if this workaround is still necessary
+    tmp_list = []
+    for magnitudes in literature_magnitudes:
+        tmp_list.append(unc.Distribution(magnitudes))
+    literature_magnitudes = tmp_list
 
-        #   TODO: This needs to be checked as well, since the mags_fit might not be a parameter of image_1 or image_2
-        magnitudes_observed_filter_1 = image_1.mags_fit['mag']
-        magnitudes_observed_filter_2 = image_2.mags_fit['mag']
-        magnitudes_observed_filter_key = image_key.mags_fit['mag']
-        magnitudes_observed_filter_1_err = image_1.mags_fit['err']
-        magnitudes_observed_filter_2_err = image_2.mags_fit['err']
-        magnitudes_observed_filter_key_err = image_key.mags_fit['err']
+    #
+    # calibration_magnitudes_filter_0 = calibration_tbl[
+    #     calib_column_names[f'mag{filter_list[0]}']
+    # ][0]
+    # calibration_magnitudes_filter_1 = calibration_tbl[
+    #     calib_column_names[f'mag{filter_list[1]}']
+    # ][0]
 
-        literature_magnitudes_errs = literature_magnitudes['err']
-        literature_magnitudes = literature_magnitudes['mag']
+    #   Check if literature magnitudes are not zero
+    # if calibration_magnitudes_filter_0 != 0. and calibration_magnitudes_filter_1 != 0.:
+    image_0 = image_series_dict[filter_list[0]].image_list[0]
+    image_1 = image_series_dict[filter_list[1]].image_list[0]
+    image_key = image_series_dict[current_filter].image_list[0]
 
-        color_literature_err = utilities.err_prop(
-            literature_magnitudes_errs[0],
-            literature_magnitudes_errs[1],
-        )
-        color_observed_err = utilities.err_prop(
-            magnitudes_observed_filter_1_err,
-            magnitudes_observed_filter_2_err,
-        )
-        zero_err = utilities.err_prop(
-            literature_magnitudes_errs[id_filter],
-            magnitudes_observed_filter_key_err,
-        )
+    #   Get magnitude array images
+    magnitudes_image_0 = utilities.distribution_from_table(
+        image_0,
+        distribution_samples=distribution_samples,
+    )
+    magnitudes_image_1 = utilities.distribution_from_table(
+        image_1,
+        distribution_samples=distribution_samples,
+    )
+    magnitudes_image_key = utilities.distribution_from_table(
+        image_key,
+        distribution_samples=distribution_samples,
+    )
 
-        color_literature = literature_magnitudes[0] - literature_magnitudes[1]
-        color_observed = (magnitudes_observed_filter_1 -
-                          magnitudes_observed_filter_2)
-        zero_point = (literature_magnitudes[id_filter] -
-                      magnitudes_observed_filter_key)
+    magnitudes_calibration_image_0 = calibration_data.observed_magnitude_of_calibration_stars(
+        magnitudes_image_0,
+        index_calibration_stars,
+    )
+    magnitudes_calibration_image_1 = calibration_data.observed_magnitude_of_calibration_stars(
+        magnitudes_image_1,
+        index_calibration_stars,
+    )
+    magnitudes_calibration_image_key = calibration_data.observed_magnitude_of_calibration_stars(
+        magnitudes_image_key,
+        index_calibration_stars,
+    )
 
-        #   Initial guess for the parameters
-        # x0    = np.array([0.0, 0.0])
-        x0 = np.array([1.0, 1.0])
+    # magnitudes_observed_filter_2 = image_1.mags_fit['mag']
+    # magnitudes_observed_filter_key = image_key.mags_fit['mag']
+    # magnitudes_observed_filter_1_err = image_0.mags_fit['err']
+    # magnitudes_observed_filter_2_err = image_1.mags_fit['err']
+    # magnitudes_observed_filter_key_err = image_key.mags_fit['err']
 
-        ###
-        #   Determine transformation coefficients
-        #
+    # literature_magnitudes_errs = calibration_tbl['err']
+    # calibration_tbl = calibration_tbl['mag']
 
-        #   Plot variables
-        color_literature_plot = color_literature
-        color_literature_err_plot = color_literature_err
-        color_observed_plot = color_observed
-        color_observed_err_plot = color_observed_err
-        zero_point_plot = zero_point
-        zero_point_err_plot = zero_err
+    # color_literature_err = utilities.err_prop(
+    #     literature_magnitudes_errs[0],
+    #     literature_magnitudes_errs[1],
+    # )
+    # color_observed_err = utilities.err_prop(
+    #     magnitudes_observed_filter_1_err,
+    #     magnitudes_observed_filter_2_err,
+    # )
+    # zero_err = utilities.err_prop(
+    #     literature_magnitudes_errs[id_filter],
+    #     magnitudes_observed_filter_key_err,
+    # )
 
-        #   Color transform - Fit the data with fit_func
-        #   Set sigma, using errors calculate above
-        if apply_uncertainty_weights:
-            sigma = np.array(color_observed_err_plot)
-        else:
-            sigma = 0.
+    color_literature = literature_magnitudes[0] - literature_magnitudes[1]
+    color_observed = (magnitudes_calibration_image_0 -
+                      magnitudes_calibration_image_1)
+    zero_point = (literature_magnitudes[id_filter] -
+                  magnitudes_calibration_image_key)
 
-        #   Fit
-        a, _, b, tcolor_err = utilities.fit_curve(
-            fit_function,
-            color_literature_plot,
-            color_observed_plot,
-            x0,
-            sigma,
-        )
+    #   Initial guess for the parameters
+    # x0    = np.array([0.0, 0.0])
+    x0 = np.array([1.0, 1.0])
 
-        tcolor = 1. / b
+    ###
+    #   Determine transformation coefficients
+    #
 
-        #   Plot color transform
-        terminal_output.print_to_terminal(
-            f"Plot color transformation ({current_filter})",
-            indent=indent,
-        )
-        plots.plot_transform(
-            image_series_dict[filter_list[0]].out_path.name,
-            filter_list[0],
-            filter_list[1],
-            current_filter,
-            current_filter,
-            color_literature_plot,
-            color_observed_plot,
-            a,
-            b,
-            tcolor_err,
-            fit_function,
-            image_series_dict[filter_list[0]].get_air_mass()[0],
-            color_literature_err=color_literature_err_plot,
-            fit_variable_err=color_observed_err_plot,
-            # name_object=image_series_dict[filter_list[0]].object_name,
-        )
+    #   Plot variables
+    color_literature_plot = color_literature.pdf_median()
+    color_literature_err_plot = color_literature.pdf_std()
+    color_observed_plot = color_observed.pdf_median()
+    color_observed_err_plot = color_observed.pdf_std()
+    zero_point_plot = zero_point.pdf_median()
+    zero_point_err_plot = zero_point.pdf_std()
 
-        #  Mag transform - Fit the data with fit_func
-        #   Set sigma, using errors calculate above
-        if apply_uncertainty_weights:
-            sigma = zero_point_err_plot
-        else:
-            sigma = 0.
+    #   Color transform - Fit the data with fit_func
+    #   Set sigma, using errors calculate above
+    if apply_uncertainty_weights:
+        sigma = np.array(color_observed_err_plot)
+    else:
+        sigma = 0.
 
-        #   Fit
-        z_dash, z_dash_err, t_mag, t_mag_err = utilities.fit_curve(
-            fit_function,
-            color_literature_plot,
-            zero_point_plot,
-            x0,
-            sigma,
-        )
+    #   Fit
+    a, _, b, tcolor_err = utilities.fit_curve(
+        fit_function,
+        color_literature_plot,
+        color_observed_plot,
+        x0,
+        sigma,
+    )
 
-        #   Plot mag transformation
-        terminal_output.print_to_terminal(
-            f"Plot magnitude transformation ({current_filter})",
-            indent=indent,
-        )
+    tcolor = 1. / b
 
-        plots.plot_transform(
-            image_series_dict[filter_list[0]].out_path.name,
-            filter_list[0],
-            filter_list[1],
-            current_filter,
-            current_filter,
-            color_literature_plot,
-            zero_point_plot,
-            z_dash,
-            t_mag,
-            t_mag_err,
-            fit_function,
-            image_series_dict[filter_list[0]].get_air_mass()[0],
-            color_literature_err=color_literature_err_plot,
-            fit_variable_err=zero_point_err_plot,
-            # name_object=image_series_dict[filter_list[0]].object_name,
-        )
+    #   Plot color transform
+    terminal_output.print_to_terminal(
+        f"Plot color transformation ({current_filter})",
+        indent=indent,
+    )
+    plots.plot_transform(
+        image_series_dict[filter_list[0]].out_path.name,
+        filter_list[0],
+        filter_list[1],
+        current_filter,
+        current_filter,
+        color_literature_plot,
+        color_observed_plot,
+        a,
+        b,
+        tcolor_err,
+        fit_function,
+        image_series_dict[filter_list[0]].get_air_mass()[0],
+        color_literature_err=color_literature_err_plot,
+        fit_variable_err=color_observed_err_plot,
+        # name_object=image_series_dict[filter_list[0]].object_name,
+    )
 
-        #   Redefine variables -> shorter variables
-        key_filter_l = current_filter.lower()
-        f_0_l = filter_list[0].lower()
-        f_1_l = filter_list[1].lower()
-        f_0 = filter_list[0]
-        f_1 = filter_list[1]
+    #  Mag transform - Fit the data with fit_func
+    #   Set sigma, using errors calculate above
+    if apply_uncertainty_weights:
+        sigma = zero_point_err_plot
+    else:
+        sigma = 0.
 
-        #   Fill calibration table
-        tbl_transformation_coefficients[f'C{key_filter_l}{f_0_l}{f_1_l}'] = [t_mag]
-        tbl_transformation_coefficients[f'C{key_filter_l}{f_0_l}{f_1_l}_err'] = [t_mag_err]
-        tbl_transformation_coefficients[f'z_dash{key_filter_l}{f_0_l}{f_1_l}'] = [z_dash]
-        tbl_transformation_coefficients[f'z_dash{key_filter_l}{f_0_l}{f_1_l}_err'] = [z_dash_err]
-        tbl_transformation_coefficients[f'T{f_0_l}{f_1_l}'] = [tcolor]
-        tbl_transformation_coefficients[f'T{f_0_l}{f_1_l}_err'] = [tcolor_err]
+    #   Fit
+    z_dash, z_dash_err, t_mag, t_mag_err = utilities.fit_curve(
+        fit_function,
+        color_literature_plot,
+        zero_point_plot,
+        x0,
+        sigma,
+    )
 
-        #   Print results
-        terminal_output.print_to_terminal(
-            f"Plot magnitude transformation ({current_filter})",
-            indent=indent,
-        )
-        terminal_output.print_to_terminal(
-            "###############################################",
-            indent=indent,
-        )
-        terminal_output.print_to_terminal(
-            f"Colortransform ({f_0_l}-{f_1_l} vs. {f_0}-{f_1}):",
-            indent=indent,
-        )
-        terminal_output.print_to_terminal(
-            f"T{f_0_l}{f_1_l} = {tcolor:.5f} +/- {tcolor_err:.5f}",
-            indent=indent + 1,
-        )
-        terminal_output.print_to_terminal(
-            f"{current_filter}-mag transform ({current_filter}-"
-            f"{key_filter_l} vs. {f_0}-{f_1}):",
-            indent=indent,
-        )
-        terminal_output.print_to_terminal(
-            f"T{key_filter_l}_{f_0_l}{f_1_l} = {t_mag:.5f} "
-            f"+/- {t_mag_err:.5f}",
-            indent=indent + 1,
-        )
-        terminal_output.print_to_terminal(
-            "###############################################",
-            indent=indent,
-        )
+    #   Plot mag transformation
+    terminal_output.print_to_terminal(
+        f"Plot magnitude transformation ({current_filter})",
+        indent=indent,
+    )
+
+    plots.plot_transform(
+        image_series_dict[filter_list[0]].out_path.name,
+        filter_list[0],
+        filter_list[1],
+        current_filter,
+        current_filter,
+        color_literature_plot,
+        zero_point_plot,
+        z_dash,
+        t_mag,
+        t_mag_err,
+        fit_function,
+        image_series_dict[filter_list[0]].get_air_mass()[0],
+        color_literature_err=color_literature_err_plot,
+        fit_variable_err=zero_point_err_plot,
+        # name_object=image_series_dict[filter_list[0]].object_name,
+    )
+
+    #   Redefine variables -> shorter variables
+    key_filter_l = current_filter.lower()
+    f_0_l = filter_list[0].lower()
+    f_1_l = filter_list[1].lower()
+    f_0 = filter_list[0]
+    f_1 = filter_list[1]
+
+    #   Fill calibration table
+    tbl_transformation_coefficients[f'C{key_filter_l}{f_0_l}{f_1_l}'] = [t_mag]
+    tbl_transformation_coefficients[f'C{key_filter_l}{f_0_l}{f_1_l}_err'] = [t_mag_err]
+    tbl_transformation_coefficients[f'z_dash{key_filter_l}{f_0_l}{f_1_l}'] = [z_dash]
+    tbl_transformation_coefficients[f'z_dash{key_filter_l}{f_0_l}{f_1_l}_err'] = [z_dash_err]
+    tbl_transformation_coefficients[f'T{f_0_l}{f_1_l}'] = [tcolor]
+    tbl_transformation_coefficients[f'T{f_0_l}{f_1_l}_err'] = [tcolor_err]
+
+    #   Print results
+    terminal_output.print_to_terminal(
+        f"Plot magnitude transformation ({current_filter})",
+        indent=indent,
+    )
+    terminal_output.print_to_terminal(
+        "###############################################",
+        indent=indent,
+    )
+    terminal_output.print_to_terminal(
+        f"Colortransform ({f_0_l}-{f_1_l} vs. {f_0}-{f_1}):",
+        indent=indent,
+    )
+    terminal_output.print_to_terminal(
+        f"T{f_0_l}{f_1_l} = {tcolor:.5f} +/- {tcolor_err:.5f}",
+        indent=indent + 1,
+    )
+    terminal_output.print_to_terminal(
+        f"{current_filter}-mag transform ({current_filter}-"
+        f"{key_filter_l} vs. {f_0}-{f_1}):",
+        indent=indent,
+    )
+    terminal_output.print_to_terminal(
+        f"T{key_filter_l}_{f_0_l}{f_1_l} = {t_mag:.5f} "
+        f"+/- {t_mag_err:.5f}",
+        indent=indent + 1,
+    )
+    terminal_output.print_to_terminal(
+        "###############################################",
+        indent=indent,
+    )
 
 
-#   TODO: Rewrite
 def calculate_trans(
         observation: 'analyze.Observation', key_filter: str,
         filter_list: list[str],
@@ -1818,7 +1871,8 @@ def calculate_trans(
         vizier_dict: dict[str, str] | None = None,
         calibration_file: str | None = None,
         magnitude_range: tuple[float, float] = (0., 18.5),
-        region_to_select_calibration_stars: RectanglePixelRegion | None = None
+        region_to_select_calibration_stars: RectanglePixelRegion | None = None,
+        distribution_samples: int = 1000
         ) -> None:
     """
     Calculate the transformation coefficients
@@ -1871,14 +1925,16 @@ def calculate_trans(
         feature in instances where not the entire field of view can be
         utilized for calibration purposes.
         Default is ``None``.
+
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`.
     """
     #   Sanitize dictionary with Vizier catalog information
     if vizier_dict is None:
         vizier_dict = {'APASS': 'II/336/apass9'}
 
-    ###
     #   Correlate the results from the different filter
-    #
     correlate.correlate_image_series(
         observation,
         filter_list,
@@ -1886,18 +1942,14 @@ def calculate_trans(
         own_correlation_option=own_correlation_option,
     )
 
-    ###
     #   Plot image with the final positions overlaid
     #   (final version)
-    #
     utilities.prepare_and_plot_starmap_from_observation(
         observation,
         filter_list,
     )
 
-    ###
     #   Calibrate transformation coefficients
-    #
     calibration_data.derive_calibration(
         observation,
         filter_list,
@@ -1911,15 +1963,13 @@ def calculate_trans(
     )
     terminal_output.print_to_terminal('')
 
-    ###
-    #   Determine transformation coefficients
-    #   & Plot calibration plots
-    #
-    determine_transformation(
+    #   Determine transformation coefficients & plot calibration plots
+    determine_transformation_coefficients(
         observation,
         key_filter,
         filter_list,
         tbl_transformation_coefficients,
         apply_uncertainty_weights=apply_uncertainty_weights,
+        distribution_samples=distribution_samples,
     )
     terminal_output.print_to_terminal('')
