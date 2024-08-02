@@ -1297,7 +1297,7 @@ def correlate_image_series(
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         force_correlation_calibration_objects: bool = False,
         reference_image_id: int = 0, verbose: bool = False, indent: int = 1
-) -> None:
+        ) -> None:
     """
     Correlate star lists from the stacked images of all filters to find
     those stars that are visible on all images

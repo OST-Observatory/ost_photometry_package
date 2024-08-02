@@ -23,13 +23,21 @@ from photutils import (
 )
 from photutils.psf import (
     extract_stars,
-    DAOGroup,
-    IterativelySubtractedPSFPhotometry,
+    SourceGrouper,
+    IterativePSFPhotometry,
 )
 from photutils.detection import IRAFStarFinder
 from photutils.background import (
     MMMBackground,
     MADStdBackgroundRMS,
+    Background2D,
+    MedianBackground,
+    LocalBackground,
+)
+from photutils.aperture import (
+    aperture_photometry,
+    CircularAperture,
+    CircularAnnulus,
 )
 
 import ccdproc as ccdp
@@ -54,13 +62,6 @@ from regions import RectanglePixelRegion
 from astroquery.hips2fits import hips2fitsClass
 
 import regions
-
-from photutils.aperture import (
-    aperture_photometry,
-    CircularAperture,
-    CircularAnnulus,
-)
-from photutils.background import Background2D, MedianBackground
 
 import multiprocessing as mp
 
@@ -333,7 +334,7 @@ class ImageSeries:
             flux_list.append(
                 unc.normal(
                     tbl['flux_fit'] * u.mag,
-                    std=tbl['flux_unc'] * u.mag,
+                    std=tbl['flux_err'] * u.mag,
                     n_samples=distribution_samples,
                 )
             )
@@ -349,13 +350,13 @@ class ImageSeries:
         n_objects = len(tbl_s[0])
 
         flux = np.zeros((n_images, n_objects))
-        flux_unc = np.zeros((n_images, n_objects))
+        flux_err = np.zeros((n_images, n_objects))
 
         for i, tbl in enumerate(tbl_s):
             flux[i] = tbl['flux_fit']
-            flux_unc[i] = tbl['flux_unc']
+            flux_err[i] = tbl['flux_err']
 
-        return flux, flux_unc
+        return flux, flux_err
 
 
 class Observation:
@@ -593,7 +594,7 @@ class Observation:
             max_n_iterations_epsf: int = 7, use_initial_positions_epsf: bool = True,
             object_finder_method: str = 'IRAF',
             multiplier_background_rms_epsf: float = 5.0,
-            multiplier_dao_grouper_epsf: float = 2.0,
+            multiplier_grouper_epsf: float = 2.0,
             strict_cleaning_epsf_results: bool = True,
             minimum_n_eps_stars: int = 25,
             reference_image_id: int = 0, strict_epsf_checks: bool = True,
@@ -670,7 +671,7 @@ class Observation:
             threshold to identify stars
             Default is ``5.0``.
 
-        multiplier_dao_grouper_epsf
+        multiplier_grouper_epsf
             Multiplier for the DAO grouper
             Default is ``5.0``.
 
@@ -778,7 +779,7 @@ class Observation:
                     force_wcs_determination=force_wcs_determ,
                     indent=3,
                 )
-            #   TODO: Check if the exception cam be more specific
+            #   TODO: Check if the exception can be more specific
             except Exception as e:
                 #   Get the WCS from one of the other filters, if they have one
                 for wcs_filter in filter_list:
@@ -815,7 +816,7 @@ class Observation:
                 use_initial_positions_epsf=use_initial_positions_epsf,
                 object_finder_method=object_finder_method,
                 multiplier_background_rms_epsf=multiplier_background_rms_epsf,
-                multiplier_dao_grouper_epsf=multiplier_dao_grouper_epsf,
+                multiplier_grouper_epsf=multiplier_grouper_epsf,
                 strict_cleaning_epsf_results=strict_cleaning_epsf_results,
                 minimum_n_eps_stars=minimum_n_eps_stars,
                 strict_epsf_checks=strict_epsf_checks,
@@ -869,7 +870,7 @@ class Observation:
             fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
             max_n_iterations_epsf: int = 7, object_finder_method: str = 'IRAF',
             multiplier_background_rms_epsf: float = 5.0,
-            multiplier_dao_grouper_epsf: float = 2.0,
+            multiplier_grouper_epsf: float = 2.0,
             strict_cleaning_epsf_results: bool = True,
             minimum_n_eps_stars: int = 25, strict_epsf_checks: bool = True,
             photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
@@ -949,7 +950,7 @@ class Observation:
             threshold to identify stars
             Default is ``5.0``.
 
-        multiplier_dao_grouper_epsf
+        multiplier_grouper_epsf
             Multiplier for the DAO grouper
             Default is ``5.0``.
 
@@ -1099,7 +1100,7 @@ class Observation:
                 max_n_iterations_epsf=max_n_iterations_epsf,
                 object_finder_method=object_finder_method,
                 multiplier_background_rms_epsf=multiplier_background_rms_epsf,
-                multiplier_dao_grouper_epsf=multiplier_dao_grouper_epsf,
+                multiplier_grouper_epsf=multiplier_grouper_epsf,
                 strict_cleaning_epsf_results=strict_cleaning_epsf_results,
                 minimum_n_eps_stars=minimum_n_eps_stars,
                 strict_epsf_checks=strict_epsf_checks,
@@ -1284,9 +1285,7 @@ class Observation:
             Number of samples used for distributions
             Default is `1000`.
         """
-        ###
         #   Correlate the stellar positions from the different filter
-        #
         correlate.correlate_image_series(
             self,
             filter_list,
@@ -1296,18 +1295,14 @@ class Observation:
             separation_limit=separation_limit,
         )
 
-        ###
         #   Plot image with the final positions overlaid (final version)
-        #
         if len(filter_list) > 1:
             utilities.prepare_and_plot_starmap_from_observation(
                 self,
                 filter_list,
             )
 
-        ###
         #   Calibrate the magnitudes
-        #
         #   Load calibration information
         calibration_data.derive_calibration(
             self,
@@ -1341,10 +1336,8 @@ class Observation:
                 distribution_samples=distribution_samples,
             )
 
-            ###
             #   Restrict results to specific areas of the image and filter by means
             #   of proper motion and distance using Gaia
-            #
             utilities.post_process_results(
                 self,
                 filter_combination,
@@ -1361,9 +1354,7 @@ class Observation:
                 distribution_samples=distribution_samples,
             )
 
-            ###
             #   Determine limiting magnitudes
-            #
             utilities.derive_limiting_magnitude(
                 self,
                 filter_combination,
@@ -1600,13 +1591,6 @@ class Observation:
                 n_cores_multiprocessing=n_cores_multiprocessing_calibration,
                 distribution_samples=distribution_samples,
             )
-            #   TODO: Replace with table_mags_transformed
-            # calibrated_magnitudes = getattr(
-            #     self,
-            #     # 'array_mags_not_transformed',
-            #     'array_mags_transformed',
-            #     None,
-            # )
 
             for filter_ in filter_set:
                 terminal_output.print_to_terminal(
@@ -2428,7 +2412,7 @@ def extraction_epsf(
         sigma_background: float = 5., use_initial_positions: bool = True,
         finder_method: str = 'IRAF', size_epsf_region: float = 25.,
         multiplier_background_rms: float = 5.0,
-        multiplier_dao_grouper: float = 2.0,
+        multiplier_grouper: float = 2.0,
         strict_cleaning_results: bool = True,
         terminal_logger: terminal_output.TerminalLog | None = None,
         rm_background: bool = False, indent: int = 2) -> None:
@@ -2469,7 +2453,7 @@ def extraction_epsf(
         threshold to identify stars
         Default is ``5.0``.
 
-    multiplier_dao_grouper
+    multiplier_grouper
         Multiplier for the DAO grouper
         Default is ``2.0``.
 
@@ -2502,6 +2486,12 @@ def extraction_epsf(
 
     #   Get image data
     data = image.get_data()
+
+    #   Get image uncertainty information
+    error = image.get_error()
+
+    #   Get image mask
+    image_mask = image.get_mask()
 
     #   Get filter
     filter_ = image.filter_
@@ -2579,89 +2569,95 @@ def extraction_epsf(
     if rm_background:
         sigma_clip = SigmaClip(sigma=sigma_background)
         mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
+        localbkg_estimator = LocalBackground(5, 10, mmm_bkg)
     else:
-        mmm_bkg = None
+        localbkg_estimator = None
 
-    try:
-        #   DAO grouper
-        dao_group = DAOGroup(
-            multiplier_dao_grouper * sigma_object_psf * gaussian_sigma_to_fwhm
+    # try:
+    #   Group sources into clusters based on a minimum separation distance
+    source_grouper = SourceGrouper(
+        min_separation=multiplier_grouper * sigma_object_psf * gaussian_sigma_to_fwhm
+    )
+
+    #  Set up the overall class to extract the data
+    photometry = IterativePSFPhotometry(
+        psf_model=epsf,
+        fit_shape=(size_extraction_region, size_extraction_region),
+        finder=finder,
+        grouper=source_grouper,
+        fitter=fitter,
+        maxiters=n_iterations,
+        localbkg_estimator=localbkg_estimator,
+        aperture_radius=(size_extraction_region - 1) / 2
+    )
+
+    #   Extract the photometry and make a table
+    if use_initial_positions:
+        result_tbl = photometry(
+            data=data,
+            error=error,
+            mask=image_mask,
+            init_params=initial_positions,
         )
+    else:
+        result_tbl = photometry(data=data, error=error, mask=image_mask)
+    # except RuntimeError as e:
+    #     if multiplier_grouper != 1.:
+    #         terminal_output.print_to_terminal(
+    #             "IterativelySubtractedPSFPhotometry failed. "
+    #             "Will try again with 'multi_grouper' set to 1...",
+    #             indent=indent,
+    #             style_name='WARNING',
+    #         )
+    #         multiplier_grouper = 1.
+    #         #   DAO grouper
+    #         dao_group = DAOGroup(
+    #             multiplier_grouper * sigma_object_psf * gaussian_sigma_to_fwhm
+    #         )
+    #
+    #         #  Set up the overall class to extract the data
+    #         photometry = IterativelySubtractedPSFPhotometry(
+    #             finder=finder,
+    #             group_maker=dao_group,
+    #             bkg_estimator=mmm_bkg,
+    #             psf_model=epsf,
+    #             fitter=fitter,
+    #             niters=n_iterations,
+    #             fitshape=(size_extraction_region, size_extraction_region),
+    #             aperture_radius=(size_extraction_region - 1) / 2
+    #         )
+    #
+    #         #   Extract the photometry and make a table
+    #         if use_initial_positions:
+    #             result_tbl = photometry(
+    #                 image=data,
+    #                 init_guesses=initial_positions,
+    #             )
+    #         else:
+    #             result_tbl = photometry(image=data)
+    #     else:
+    #         terminal_output.print_to_terminal(
+    #             "IterativelySubtractedPSFPhotometry failed. "
+    #             "No recovery possible.",
+    #             indent=0,
+    #             style_name='ERROR'
+    #         )
+    #         raise e
 
-        #  Set up the overall class to extract the data
-        photometry = IterativelySubtractedPSFPhotometry(
-            finder=finder,
-            group_maker=dao_group,
-            bkg_estimator=mmm_bkg,
-            psf_model=epsf,
-            fitter=fitter,
-            niters=n_iterations,
-            fitshape=(size_extraction_region, size_extraction_region),
-            aperture_radius=(size_extraction_region - 1) / 2
-        )
-
-        #   Extract the photometry and make a table
-        if use_initial_positions:
-            result_tbl = photometry(image=data, init_guesses=initial_positions)
-        else:
-            result_tbl = photometry(image=data)
-    except RuntimeError as e:
-        if multiplier_dao_grouper != 1.:
-            terminal_output.print_to_terminal(
-                "IterativelySubtractedPSFPhotometry failed. "
-                "Will try again with 'multi_grouper' set to 1...",
-                indent=indent,
-                style_name='WARNING',
-            )
-            multiplier_dao_grouper = 1.
-            #   DAO grouper
-            dao_group = DAOGroup(
-                multiplier_dao_grouper * sigma_object_psf * gaussian_sigma_to_fwhm
-            )
-
-            #  Set up the overall class to extract the data
-            photometry = IterativelySubtractedPSFPhotometry(
-                finder=finder,
-                group_maker=dao_group,
-                bkg_estimator=mmm_bkg,
-                psf_model=epsf,
-                fitter=fitter,
-                niters=n_iterations,
-                fitshape=(size_extraction_region, size_extraction_region),
-                aperture_radius=(size_extraction_region - 1) / 2
-            )
-
-            #   Extract the photometry and make a table
-            if use_initial_positions:
-                result_tbl = photometry(
-                    image=data,
-                    init_guesses=initial_positions,
-                )
-            else:
-                result_tbl = photometry(image=data)
-        else:
-            terminal_output.print_to_terminal(
-                "IterativelySubtractedPSFPhotometry failed. "
-                "No recovery possible.",
-                indent=0,
-                style_name='ERROR'
-            )
-            raise e
-
-    #   Check if result table contains a 'flux_unc' column
+    #   Check if result table contains a 'flux_err' column
     #   For some reason, it's missing for some extractions....
-    if 'flux_unc' not in result_tbl.colnames:
+    if 'flux_err' not in result_tbl.colnames:
         #   Calculate a very, very rough approximation of the uncertainty
         #   by means of the actual extraction result 'flux_fit' and the
         #   early estimate 'flux_0'
         estimated_uncertainty = np.absolute(
-            result_tbl['flux_fit'] - result_tbl['flux_0']
+            result_tbl['flux_fit'] - result_tbl['flux_init']
         )
-        result_tbl.add_column(estimated_uncertainty, name='flux_unc')
+        result_tbl.add_column(estimated_uncertainty, name='flux_err')
 
     #   Clean output for objects with NANs in uncertainties
     try:
-        uncertainty_mask = np.invert(np.isnan(result_tbl['flux_unc'].value))
+        uncertainty_mask = np.invert(np.isnan(result_tbl['flux_err'].value))
         result_tbl = result_tbl[uncertainty_mask]
     except KeyError:
         raise RuntimeError(
@@ -2675,7 +2671,7 @@ def extraction_epsf(
         result_tbl.remove_rows(bad_results)
         n_bad_objects = np.size(bad_results)
         if strict_cleaning_results:
-            bad_results = np.where(result_tbl['flux_unc'].data < 0.)
+            bad_results = np.where(result_tbl['flux_err'].data < 0.)
             n_bad_objects += len(bad_results)
             result_tbl.remove_rows(bad_results)
     except KeyError:
@@ -2710,7 +2706,7 @@ def extraction_epsf(
     except KeyError:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nTable produced by "
-            "IterativelySubtractedPSFPhotometry is empty after cleaning up "
+            "IterativePSFPhotometry is empty after cleaning up "
             "of objects with negative pixel coordinates and negative "
             f"uncertainties {style.Bcolors.ENDC}"
         )
@@ -3060,7 +3056,7 @@ def extraction_aperture(
     else:
         err_column = photometry_tbl['flux_fit'] ** 0.5
 
-    photometry_tbl['flux_unc'] = compute_aperture_photometry_uncertainties(
+    photometry_tbl['flux_err'] = compute_aperture_photometry_uncertainties(
         err_column,
         aperture.area,
         annulus_aperture.area,
@@ -3141,7 +3137,7 @@ def extract_multiprocessing(
         use_initial_positions_epsf: bool = True,
         object_finder_method: str = 'IRAF',
         multiplier_background_rms_epsf: float = 5.0,
-        multiplier_dao_grouper_epsf: float = 2.0,
+        multiplier_grouper_epsf: float = 2.0,
         strict_cleaning_epsf_results: bool = True,
         minimum_n_eps_stars: int = 25,
         photometry_extraction_method: str = 'PSF',
@@ -3207,7 +3203,7 @@ def extract_multiprocessing(
         threshold to identify stars
         Default is ``5.0``.
 
-    multiplier_dao_grouper_epsf
+    multiplier_grouper_epsf
         Multiplier for the DAO grouper
         Default is ``5.0``.
 
@@ -3307,7 +3303,7 @@ def extract_multiprocessing(
                 'use_initial_positions_epsf': use_initial_positions_epsf,
                 'object_finder_method': object_finder_method,
                 'multiplier_background_rms_epsf': multiplier_background_rms_epsf,
-                'multiplier_dao_grouper_epsf': multiplier_dao_grouper_epsf,
+                'multiplier_grouper_epsf': multiplier_grouper_epsf,
                 'strict_cleaning_epsf_results': strict_cleaning_epsf_results,
                 'minimum_n_eps_stars': minimum_n_eps_stars,
                 'strict_epsf_checks': strict_epsf_checks,
@@ -3361,7 +3357,7 @@ def main_extract(
         use_initial_positions_epsf: bool = True,
         object_finder_method: str = 'IRAF',
         multiplier_background_rms_epsf: float = 5.0,
-        multiplier_dao_grouper_epsf: float = 2.0,
+        multiplier_grouper_epsf: float = 2.0,
         strict_cleaning_epsf_results: bool = True,
         minimum_n_eps_stars: int = 25,
         id_reference_image: int = 0, photometry_extraction_method: str = 'PSF',
@@ -3429,7 +3425,7 @@ def main_extract(
         threshold to identify stars
         Default is ``5.0``.
 
-    multiplier_dao_grouper_epsf
+    multiplier_grouper_epsf
         Multiplier for the DAO grouper
         Default is ``5.0``.
 
@@ -3629,7 +3625,7 @@ def main_extract(
             finder_method=object_finder_method,
             size_epsf_region=size_epsf_region,
             multiplier_background_rms=multiplier_background_rms_epsf,
-            multiplier_dao_grouper=multiplier_dao_grouper_epsf,
+            multiplier_grouper=multiplier_grouper_epsf,
             strict_cleaning_results=strict_cleaning_epsf_results,
             terminal_logger=terminal_logger,
         )
@@ -3677,7 +3673,7 @@ def main_extract(
     #   TODO: Move this to the calibration stage, where it makes more sense
     magnitudes, magnitudes_error = utilities.flux_to_magnitudes(
         image.photometry['flux_fit'],
-        image.photometry['flux_unc'],
+        image.photometry['flux_err'],
     )
 
     image.photometry['mags_fit'] = magnitudes

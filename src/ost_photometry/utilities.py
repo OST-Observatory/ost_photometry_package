@@ -138,6 +138,14 @@ class Image:
     def get_data(self) -> np.ndarray:
         return CCDData.read(self.path).data
 
+    #   Get uncertainty
+    def get_error(self) -> np.ndarray:
+        return CCDData.read(self.path).uncertainty
+
+    # Get mask
+    def get_mask(self) -> np.ndarray:
+        return CCDData.read(self.path).mask
+
     #   Get shape
     def get_shape(self) -> tuple[int, int]:
         return CCDData.read(self.path).data.shape
@@ -687,11 +695,11 @@ def find_wcs_astrometry(image, cosmic_rays_removed=False,
     # +' --radius 1.0 --dir '+str(wcs_dir)+' --resort '+str(wcsFILE).replace(' ', '\ ')
     # +' --fits-image'
     # )
-    command = (
+    command: str = (
         f'solve-field --overwrite --scale-units arcsecperpix --scale-low '
         f'{image.pixel_scale - 0.1} --scale-high {image.pixel_scale + 0.1} --ra {ra} '
         f'--dec {dec} --radius 1.0 --dir {wcs_working_dir} --resort '
-        '{} --fits-image'.format(str(wcs_file).replace(" ", "\ "))
+        '{} --fits-image -z 2'.format(str(wcs_file).replace(" ", "\ "))
     )
 
     #   Running the command

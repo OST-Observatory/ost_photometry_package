@@ -31,22 +31,22 @@ from .. import style, calibration_parameters, terminal_output
 
 
 #   TODO: Remove
-def progress_bar(count_value, total, suffix=''):
-    """
-    A progress bar. The code is from: https://www.geeksforgeeks.org/progress-bars-in-python/
-
-    Parameters
-    ----------
-    count_value
-    total
-    suffix
-    """
-    bar_length = 100
-    filled_up_length = int(round(bar_length * count_value / float(total)))
-    percentage = round(100.0 * count_value / float(total), 1)
-    bar = '=' * filled_up_length + '-' * (bar_length - filled_up_length)
-    sys.stdout.write('[%s] %s%s ...%s\r' % (bar, percentage, '%', suffix))
-    sys.stdout.flush()
+# def progress_bar(count_value, total, suffix=''):
+#     """
+#     A progress bar. The code is from: https://www.geeksforgeeks.org/progress-bars-in-python/
+#
+#     Parameters
+#     ----------
+#     count_value
+#     total
+#     suffix
+#     """
+#     bar_length = 100
+#     filled_up_length = int(round(bar_length * count_value / float(total)))
+#     percentage = round(100.0 * count_value / float(total), 1)
+#     bar = '=' * filled_up_length + '-' * (bar_length - filled_up_length)
+#     sys.stdout.write('[%s] %s%s ...%s\r' % (bar, percentage, '%', suffix))
+#     sys.stdout.flush()
 
 
 def find_best_comparison_image_second_filter(
@@ -279,7 +279,6 @@ def derive_transformation_onthefly(
 
     #   Perform sigma clipping on the difference between observed color
     #   and literature color values to remove outliers
-    #   TODO: Add here a sigma clipping on the color difference?
     zp_sum = (magnitudes_observed_filter_2 - magnitudes_literature_filter_2 +
               magnitudes_observed_filter_1 - magnitudes_literature_filter_1
               )
@@ -787,17 +786,9 @@ def calibrate_simple(
         axis=(1, 2),
     )
 
-    #   TODO: Rewrite & test this
-    #   If ZP is 0, calibrate with the median of all magnitudes
-    # if np.all(zp == 0.):
-    # if zp == 0.:
-    #     calibrated_magnitudes = not_calibrated_magnitudes - np.median(not_calibrated_magnitudes)
-
     #   Add calibrated photometry to table of Image object
     photometry_table['mag_cali_no-trans'] = median
     photometry_table['mag_cali_no-trans_unc'] = stddev
-
-    # return calibrated_magnitudes
 
 
 def quasi_flux_calibration_image_series(
@@ -840,14 +831,13 @@ def quasi_flux_calibration_image_series(
         std=flux_error,
         n_samples=distribution_samples,
     )
-    #   TODO: Check if a distribution would make sense here
+    #   TODO: Add distribution with median and percentile errors?
     normalization_factor = median[:, np.newaxis]
     flux_calibrated = flux_distribution / normalization_factor
 
     return flux_calibrated
 
 
-#   TODO: Check if this can be improved based on distributions
 def flux_normalization_image_series(
         image_series: 'analyze.ImageSeries',
         quasi_calibrated_flux: unc.core.NdarrayDistribution | None = None,
@@ -893,7 +883,8 @@ def flux_normalization_image_series(
         mask_value=0.0,
     )
 
-    #   Prepare distributions 
+    #   Prepare distributions
+    #   TODO: Improve error: std
     normalization_factor = unc.normal(
         median,
         std=stddev,
@@ -909,7 +900,7 @@ def prepare_zero_point(
         literature_magnitude_list: list[unc.core.NdarrayDistribution],
         magnitudes_calibration_stars: unc.core.NdarrayDistribution,
         calculate_zero_point_statistic: bool = True,
-        distribution_samples: int = 1000) -> unc.core.NdarrayDistribution:
+        sub_samples_zp_statistic: int = 1000) -> unc.core.NdarrayDistribution:
     """
         Calculate zero point values based on calibration stars and
         sigma clip these values before calculating median
@@ -933,8 +924,9 @@ def prepare_zero_point(
             If `True` a statistic on the zero points will be calculated.
             Default is ``True``.
 
-        distribution_samples
-            Number of samples used for distributions
+        sub_samples_zp_statistic
+            Number of randomly selected sub-samples used for calculating zero
+            point statistic
             Default is `1000`.
 
     """
@@ -954,30 +946,28 @@ def prepare_zero_point(
         # name_object=image.object_name,
     )
 
-    #   TODO: Replace with distribution properties?
-    #   TODO: Add random selection of calibration stars -> calculate variance
+    #   Calculate zero point statistic
     n_calibration_objects = zp.shape[0]
     if n_calibration_objects > 20 and calculate_zero_point_statistic:
-        #   Create samples using numpy's random number generator to generate
+        #   Create samples using numpy random number generator to generate
         #   an index array
         n_objects_sample = int(n_calibration_objects * 0.6)
         rng = np.random.default_rng()
         random_index = rng.integers(
             0,
             high=n_calibration_objects,
-            size=(distribution_samples, n_objects_sample),
+            size=(sub_samples_zp_statistic, n_objects_sample),
         )
 
         samples = zp.pdf_median()[random_index]
 
         #   Get statistic
-        # mean_samples = np.mean(sample_values, axis=1)
         median_samples = np.median(samples, axis=1)
         median_over_samples = np.median(median_samples)
         standard_deviation_over_samples = np.std(median_samples)
 
         terminal_output.print_to_terminal(
-            f"Based on {distribution_samples} randomly selected sub-samples, ",
+            f"Based on {sub_samples_zp_statistic} randomly selected sub-samples, ",
             indent=3,
             style_name='UNDERLINE'
         )
@@ -1071,7 +1061,7 @@ def calibrate_magnitudes_zero_point_core(
         literature_magnitudes,
         magnitudes_calibration_current_image,
         calculate_zero_point_statistic=calculate_zero_point_statistic,
-        distribution_samples=distribution_samples,
+        # distribution_samples=distribution_samples,
     )
 
     #   Calibration without transformation
@@ -1170,11 +1160,7 @@ def calibrate_magnitudes_zero_point(
         )
 
         #   Get IDs calibration data
-        index_calibration_stars = getattr(
-            observation.calib_parameters,
-            'ids_calibration_objects',
-            None,
-        )
+        index_calibration_stars = observation.calib_parameters.ids_calibration_objects
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):
@@ -1233,9 +1219,8 @@ def calibrate_magnitudes_zero_point(
     )
 
     #   TODO: This is also messy and needs a cleanup
-    #   Add table and array to observation container
+    #   Add table to observation container
     observation.table_mags_not_transformed = table_not_transformed_magnitudes
-    # observation.array_mags_not_transformed = array_not_transformed_magnitudes
 
     #   Save to file
     utilities.save_magnitudes_ascii(
@@ -1324,12 +1309,7 @@ def calibrate_magnitudes_transformation(
     )
 
     #   Get IDs calibration data
-    #   TODO: Check if these IDs apply to all filter/image series
-    index_calibration_stars = getattr(
-        observation.calib_parameters,
-        'ids_calibration_objects',
-        None,
-    )
+    index_calibration_stars = observation.calib_parameters.ids_calibration_objects
 
     for current_filter_id, filter_ in enumerate(filter_list):
         #   Get image series
@@ -1454,9 +1434,7 @@ def calibrate_magnitudes_transformation(
 
             terminal_output.print_to_terminal('')
 
-    ###
     #   Save results as ASCII files
-    #
     #   TODO: Remove this from apply calibration and move it to a function called save_calibration
     #         -> put it one level up
     #   With transformation
@@ -1469,7 +1447,6 @@ def calibrate_magnitudes_transformation(
         )
 
         #   Add table to observation container
-        #   TODO: Define in observations
         observation.table_mags_transformed = table_transformed_magnitudes
         # observation.array_mags_transformed = array_transformed_magnitudes
 
