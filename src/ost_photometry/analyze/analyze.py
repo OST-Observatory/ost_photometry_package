@@ -152,10 +152,6 @@ class ImageSeries:
         #   Set filter
         self.filter_: str = filter_
 
-        #   Set number of images
-        #   TODO: Make sure that this attribute is always up to date or replace with method
-        # self.nfiles = len(file_list)
-
         #   Set ID of the reference image
         self.reference_image_id: int = reference_image_id
 
@@ -170,7 +166,7 @@ class ImageSeries:
             "Read images and calculate field of view, PIXEL scale, etc. ... ",
             indent=2,
         )
-        #   TODO: Convert image_list to dictionary
+        #   TODO: Convert image_list to dictionary?
         for image_id, file_name in enumerate(file_list):
             self.image_list.append(
                 #   Prepare image class instance
@@ -363,8 +359,6 @@ class Observation:
     """
         Container class for all data taken during an observation session
     """
-    #   TODO: Make this the default class that needs to be instated every time and that gives birth to the
-    #         tine series and all the rest - add all the analysis functions to this class
 
     def __init__(self, **kwargs):
         #   Prepare dictionary for image series
@@ -457,8 +451,9 @@ class Observation:
         self.calib_parameters: calibration_data.CalibParameters | None = None
 
         #   Prepare attribute for calibrated data
-        self.table_mags_transformed: Table | None = None
-        self.table_mags_not_transformed: Table | None = None
+        self.table_magnitudes: Table | None = None
+        # self.table_mags_transformed: Table | None = None
+        # self.table_mags_not_transformed: Table | None = None
 
     #   TODO: Fix type hints
     #   Get ePSF objects of all images
@@ -604,7 +599,8 @@ class Observation:
             limiting_contrast_rm_cosmics: float = 5., read_noise: float = 8.,
             sigma_clipping_value: float = 4.5, saturation_level: float = 65535.,
             plots_for_all_images: bool = False,
-            plot_for_reference_image_only: bool = True) -> None:
+            plot_for_reference_image_only: bool = True,
+            file_type_plots: str = 'pdf') -> None:
         """
         Extract flux and fill the observation container
 
@@ -742,6 +738,10 @@ class Observation:
             If True a star map plots only for the reference image [reference_image_id] is
             created
             Default is ``True``.
+
+        file_type_plots
+            Type of plot file to be created
+            Default is ``pdf``.
         """
         #   Check output directories
         checks.check_output_directories(
@@ -832,6 +832,7 @@ class Observation:
                 saturation_level=saturation_level,
                 plots_for_all_images=plots_for_all_images,
                 plot_for_reference_image_only=plot_for_reference_image_only,
+                file_type_plots=file_type_plots,
             )
 
         if photometry_extraction_method == 'PSF':
@@ -841,6 +842,7 @@ class Observation:
             p = mp.Process(
                 target=plots.plot_epsf,
                 args=(output_dir, self.get_reference_epsf(),),
+                kwargs={'file_type': file_type_plots},
             )
             p.start()
 
@@ -855,6 +857,7 @@ class Observation:
                     output_dir,
                 ),
                 kwargs={
+                    'file_type': file_type_plots,
                     # 'name_object': 'reference image'
                 }
             )
@@ -884,7 +887,8 @@ class Observation:
             separation_limit: u.quantity.Quantity = 2. * u.arcsec,
             verbose: bool = False, identify_objects_on_image: bool = True,
             plots_for_all_images: bool = False,
-            plot_for_reference_image_only: bool = True) -> None:
+            plot_for_reference_image_only: bool = True,
+            file_type_plots: str = 'pdf') -> None:
         """
         Extract flux from multiple images per filter and add results to
         the observation container
@@ -1047,6 +1051,10 @@ class Observation:
         plot_for_reference_image_only
             If True a star map plot only for the reference image is created
             Default is ``True``.
+
+        file_type_plots
+            Type of plot file to be created
+            Default is ``pdf``.
         """
         ###
         #   Check output directories
@@ -1112,6 +1120,7 @@ class Observation:
                 identify_objects_on_image=identify_objects_on_image,
                 plots_for_all_images=plots_for_all_images,
                 plot_for_reference_image_only=plot_for_reference_image_only,
+                file_type_plots=file_type_plots,
             )
 
             ###
@@ -1132,6 +1141,7 @@ class Observation:
                 plot_reference_only=plot_for_reference_image_only,
                 correlation_method=correlation_method,
                 separation_limit=separation_limit,
+                file_type_plots=file_type_plots,
             )
 
     def correlate_calibrate(
@@ -1153,7 +1163,8 @@ class Observation:
             convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
             region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
             calculate_zero_point_statistic: bool = True,
-            distribution_samples: int = 1000) -> None:
+            distribution_samples: int = 1000,
+            file_type_plots: str = 'pdf') -> None:
         """
         Correlate photometric extraction results from 2 images and calibrate
         the magnitudes.
@@ -1284,6 +1295,10 @@ class Observation:
         distribution_samples
             Number of samples used for distributions
             Default is `1000`.
+
+        file_type_plots
+            Type of plot file to be created
+            Default is ``pdf``.
         """
         #   Correlate the stellar positions from the different filter
         correlate.correlate_image_series(
@@ -1293,6 +1308,7 @@ class Observation:
             own_correlation_option=own_correlation_option,
             correlation_method=correlation_method,
             separation_limit=separation_limit,
+            file_type_plots=file_type_plots,
         )
 
         #   Plot image with the final positions overlaid (final version)
@@ -1300,6 +1316,7 @@ class Observation:
             utilities.prepare_and_plot_starmap_from_observation(
                 self,
                 filter_list,
+                file_type_plots=file_type_plots,
             )
 
         #   Calibrate the magnitudes
@@ -1314,6 +1331,7 @@ class Observation:
             path_calibration_file=path_calibration_file,
             magnitude_range=magnitude_range,
             region_to_select_calibration_stars=region_to_select_calibration_stars,
+            file_type_plots=file_type_plots,
         )
         calibration_filters = self.calib_parameters.column_names
 
@@ -1334,6 +1352,7 @@ class Observation:
                 photometry_extraction_method=photometry_extraction_method,
                 calculate_zero_point_statistic=calculate_zero_point_statistic,
                 distribution_samples=distribution_samples,
+                file_type_plots=file_type_plots,
             )
 
             #   Restrict results to specific areas of the image and filter by means
@@ -1352,6 +1371,7 @@ class Observation:
                 convert_magnitudes=convert_magnitudes,
                 target_filter_system=target_filter_system,
                 distribution_samples=distribution_samples,
+                file_type_plots=file_type_plots,
             )
 
             #   Determine limiting magnitudes
@@ -1361,6 +1381,7 @@ class Observation:
                 reference_image_id,
                 aperture_radius=aperture_radius,
                 radii_unit=radii_unit,
+                file_type_plots=file_type_plots,
             )
 
     def calibrate_data_mk_light_curve(
@@ -1385,7 +1406,8 @@ class Observation:
             region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
             calculate_zero_point_statistic: bool = True,
             n_cores_multiprocessing_calibration: int | None = None,
-            distribution_samples: int = 1000) -> None:
+            distribution_samples: int = 1000,
+            file_type_plots: str = 'pdf') -> None:
         """
         Calculate magnitudes, calibrate, and plot light curves
 
@@ -1504,6 +1526,10 @@ class Observation:
         distribution_samples
             Number of samples used for distributions
             Default is ``1000``.
+
+        file_type_plots
+            Type of plot file to be created
+            Default is ``pdf``.
         """
         #   Check if correlation with observed objects can be applied directly
         #   after loading the calibration data. If only one filter and thus one
@@ -1542,6 +1568,7 @@ class Observation:
             correlate_with_observed_objects=correlate_with_observed_objects,
             reference_image_id=reference_image_id,
             coordinates_obj_to_rm=coordinates_objects_of_interest,
+            file_type_plots=file_type_plots,
         )
         calibration_filters = self.calib_parameters.column_names
         terminal_output.print_to_terminal('')
@@ -1570,9 +1597,10 @@ class Observation:
                 separation_limit=separation_limit,
                 verbose=verbose,
                 reference_image_id=reference_image_id,
+                file_type_plots=file_type_plots,
             )
 
-        ###
+        plot_light_curve_all = True
         #   Calibrate magnitudes
         #
         #   Perform magnitude transformation
@@ -1590,6 +1618,7 @@ class Observation:
                 calculate_zero_point_statistic=calculate_zero_point_statistic,
                 n_cores_multiprocessing=n_cores_multiprocessing_calibration,
                 distribution_samples=distribution_samples,
+                file_type_plots=file_type_plots,
             )
 
             for filter_ in filter_set:
@@ -1598,7 +1627,11 @@ class Observation:
                     style_name='OKBLUE',
                 )
 
-                ###
+                #   Get IDs of the object of interests
+                ids_object_of_interest = self.get_ids_object_of_interest(
+                    filter_=filter_
+                )
+
                 #   Plot light curve
                 #
                 #   Create a Time object for the observation times
@@ -1608,67 +1641,92 @@ class Observation:
                 )
 
                 for object_ in self.objects_of_interest:
-                    object_name = object_.name
-                    id_object = object_.id_in_image_series[filter_]
-                    transit_time = object_.transit_time
-                    period = object_.period
-
-                    #   Prepare data for time series
-                    magnitudes, magnitudes_error = utilities.prepare_time_series_data(
-                        self.table_mags_transformed,
-                        filter_,
-                        id_object,
-                    )
-
-                    #   Create a time series object
-                    time_series = utilities.mk_time_series(
+                    utilities.prepare_plot_time_series(
+                        self.table_magnitudes,
+                        # self.table_mags_transformed,
                         observation_times,
-                        magnitudes,
-                        magnitudes_error,
-                        # calibrated_magnitudes,
                         filter_,
-                        # id_object,
-                    )
-
-                    #   Write time series
-                    time_series.write(
-                        f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-                        f'_{filter_set[0]}-{filter_set[1]}.dat',
-                        format='ascii',
-                        overwrite=True,
-                    )
-                    time_series.write(
-                        f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-                        f'_{filter_set[0]}-{filter_set[1]}.csv',
-                        format='ascii.csv',
-                        overwrite=True,
-                    )
-
-                    #   Plot light curve over JD
-                    plots.light_curve_jd(
-                        time_series,
-                        filter_,
-                        f'{filter_}_err',
+                        object_.name,
+                        object_.id_in_image_series[filter_],
                         output_dir,
-                        name_object=object_name,
+                        binning_factor,
+                        transit_time=object_.transit_time,
+                        period=object_.period,
                         file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
+                        file_type_plots=file_type_plots,
                     )
 
-                    #   Plot the light curve folded on the period
-                    if transit_time != '?' and period > 0.:
-                        plots.light_curve_fold(
-                            time_series,
-                            filter_,
-                            f'{filter_}_err',
-                            output_dir,
-                            transit_time,
-                            period,
-                            binning_factor=binning_factor,
-                            name_object=object_name,
-                            file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
-                        )
+                    # #   Prepare data for time series
+                    # magnitudes, magnitudes_error = utilities.prepare_time_series_data(
+                    #     self.table_mags_transformed,
+                    #     filter_,
+                    #     id_object,
+                    #
+                    # )
+                    #
+                    # #   Create a time series object
+                    # time_series = utilities.mk_time_series(
+                    #     observation_times,
+                    #     magnitudes,
+                    #     magnitudes_error,
+                    #     filter_,
+                    # )
+                    #
+                    # #   Write time series
+                    # time_series.write(
+                    #     f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
+                    #     f'_{filter_set[0]}-{filter_set[1]}.dat',
+                    #     format='ascii',
+                    #     overwrite=True,
+                    # )
+                    # time_series.write(
+                    #     f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
+                    #     f'_{filter_set[0]}-{filter_set[1]}.csv',
+                    #     format='ascii.csv',
+                    #     overwrite=True,
+                    # )
+                    #
+                    # #   Plot light curve over JD
+                    # plots.light_curve_jd(
+                    #     time_series,
+                    #     filter_,
+                    #     f'{filter_}_err',
+                    #     output_dir,
+                    #     name_object=object_name,
+                    #     file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
+                    # )
+                    #
+                    # #   Plot the light curve folded on the period
+                    # if transit_time != '?' and period > 0.:
+                    #     plots.light_curve_fold(
+                    #         time_series,
+                    #         filter_,
+                    #         f'{filter_}_err',
+                    #         output_dir,
+                    #         transit_time,
+                    #         period,
+                    #         binning_factor=binning_factor,
+                    #         name_object=object_name,
+                    #         file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
+                    #     )
 
-                    processed_filter.append(filter_)
+                if plot_light_curve_all:
+                    for index in self.table_magnitudes['i']:
+                        if index not in ids_object_of_interest:
+                            utilities.prepare_plot_time_series(
+                                self.table_magnitudes,
+                                observation_times,
+                                filter_,
+                                str(index),
+                                index,
+                                output_dir,
+                                binning_factor,
+                                file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
+                                subdirectory='/by_id',
+                                file_type_plots=file_type_plots,
+                            )
+
+                processed_filter.append(filter_)
 
         #   Process those filters for which magnitude transformation is not possible
         for filter_ in filter_list:
@@ -1677,6 +1735,11 @@ class Observation:
                 terminal_output.print_to_terminal(
                     f"Working on filter: {filter_}",
                     style_name='OKBLUE',
+                )
+
+                #   Get IDs of the object of interests
+                ids_object_of_interest = self.get_ids_object_of_interest(
+                    filter_=filter_
                 )
 
                 #   Check if calibration data is available
@@ -1715,17 +1778,12 @@ class Observation:
                         calculate_zero_point_statistic=calculate_zero_point_statistic,
                         n_cores_multiprocessing=n_cores_multiprocessing_calibration,
                         distribution_samples=distribution_samples,
+                        file_type_plots=file_type_plots,
                     )
-                    #   TODO: Replace with table_mags_not_transformed and table_mags_transformed
-                    # plot_quantity = getattr(
-                    #     self,
-                    #     'array_mags_not_transformed',
-                    #     None,
-                    # )
-                    plot_quantity = self.table_mags_not_transformed
+                    plot_quantity = self.table_magnitudes
 
                 #   TODO: Make lightcurve plots for all object + highlight calibration stars
-                ###
+
                 #   Plot light curve
                 #
                 #   Create a Time object for the observation times
@@ -1735,63 +1793,90 @@ class Observation:
                 )
 
                 for object_ in self.objects_of_interest:
-                    object_name = object_.name
-                    id_object = object_.id_in_image_series[filter_]
-                    transit_time = object_.transit_time
-                    period = object_.period
-
-                    #   Prepare data for time series
-                    magnitudes, magnitudes_error = utilities.prepare_time_series_data(
+                    utilities.prepare_plot_time_series(
                         plot_quantity,
-                        filter_,
-                        id_object,
-                    )
-
-                    #   Create a time series object
-                    #   TODO: Bug - mk_time_series expects dict but gets np.ndarray, if no
-                    #               calibration with literature values is possible
-                    time_series = utilities.mk_time_series(
                         observation_times,
-                        magnitudes,
-                        magnitudes_error,
-                        # plot_quantity,
                         filter_,
-                        # id_object,
-                    )
-
-                    #   Write time series
-                    time_series.write(
-                        f'{output_dir}/tables/light_curve_{object_name}_{filter_}.dat',
-                        format='ascii',
-                        overwrite=True,
-                    )
-                    time_series.write(
-                        f'{output_dir}/tables/light_curve_{object_name}_{filter_}.csv',
-                        format='ascii.csv',
-                        overwrite=True,
-                    )
-
-                    #   Plot light curve over JD
-                    plots.light_curve_jd(
-                        time_series,
-                        filter_,
-                        f'{filter_}_err',
+                        object_.name,
+                        object_.id_in_image_series[filter_],
                         output_dir,
-                        name_object=object_name,
+                        binning_factor,
+                        transit_time=object_.transit_time,
+                        period=object_.period,
+                        file_type_plots=file_type_plots,
+                        calibration_type='simple',
                     )
 
-                    #   Plot the light curve folded on the period
-                    if transit_time != '?' and period > 0.:
-                        plots.light_curve_fold(
-                            time_series,
-                            filter_,
-                            f'{filter_}_err',
-                            output_dir,
-                            transit_time,
-                            period,
-                            binning_factor=binning_factor,
-                            name_object=object_name,
-                        )
+                    # #   Prepare data for time series
+                    # magnitudes, magnitudes_error = utilities.prepare_time_series_data(
+                    #     plot_quantity,
+                    #     filter_,
+                    #     id_object,
+                    # )
+                    #
+                    # #   Create a time series object
+                    # time_series = utilities.mk_time_series(
+                    #     observation_times,
+                    #     magnitudes,
+                    #     magnitudes_error,
+                    #     filter_,
+                    # )
+                    #
+                    # #   Write time series
+                    # time_series.write(
+                    #     f'{output_dir}/tables/light_curve_{object_name}_{filter_}.dat',
+                    #     format='ascii',
+                    #     overwrite=True,
+                    # )
+                    # time_series.write(
+                    #     f'{output_dir}/tables/light_curve_{object_name}_{filter_}.csv',
+                    #     format='ascii.csv',
+                    #     overwrite=True,
+                    # )
+                    #
+                    # #   Plot light curve over JD
+                    # plots.light_curve_jd(
+                    #     time_series,
+                    #     filter_,
+                    #     f'{filter_}_err',
+                    #     output_dir,
+                    #     name_object=object_name,
+                    # )
+                    #
+                    # #   Plot the light curve folded on the period
+                    # if (transit_time is not None and transit_time != '?'
+                    #         and period is not None and period > 0.):
+                    #     plots.light_curve_fold(
+                    #         time_series,
+                    #         filter_,
+                    #         f'{filter_}_err',
+                    #         output_dir,
+                    #         transit_time,
+                    #         period,
+                    #         binning_factor=binning_factor,
+                    #         name_object=object_name,
+                    #     )
+
+                if plot_light_curve_all:
+                    if isinstance(plot_quantity, unc.core.NdarrayDistribution):
+                        shape_array = plot_quantity.shape
+                        index_array = np.arange(shape_array[0])
+                    else:
+                        index_array = plot_quantity['i']
+                    for index in index_array:
+                        if index not in ids_object_of_interest:
+                            utilities.prepare_plot_time_series(
+                                plot_quantity,
+                                observation_times,
+                                filter_,
+                                str(index),
+                                index,
+                                output_dir,
+                                binning_factor,
+                                subdirectory='/by_id',
+                                file_type_plots=file_type_plots,
+                                calibration_type='simple',
+                            )
 
 
 def rm_cosmic_rays(
@@ -2280,7 +2365,7 @@ def determine_epsf(
         oversampling_factor: int = 2, max_n_iterations: int = 7,
         minimum_n_stars: int = 25, multiprocess_plots: bool = True,
         terminal_logger: terminal_output.TerminalLog | None = None,
-        indent: int = 2) -> None:
+        file_type_plots: str = 'pdf', indent: int = 2) -> None:
     """
     Main function to determine the ePSF, using photutils
 
@@ -2316,6 +2401,10 @@ def determine_epsf(
         Logger object. If provided, the terminal output will be directed
         to this object.
         Default is ``None``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     indent
         Indentation for the console output lines
@@ -2382,7 +2471,7 @@ def determine_epsf(
         p = mp.Process(
             target=plots.plot_cutouts,
             args=(output_dir, stars, string),
-            # kwargs={'name_object': name_object, }
+            kwargs={'file_type': file_type_plots, }
         )
         p.start()
     else:
@@ -2392,6 +2481,7 @@ def determine_epsf(
             string,
             # name_object=name_object,
             terminal_logger=terminal_logger,
+            file_type=file_type_plots,
         )
 
     #   Build the ePSF (set oversampling and max. number of iterations)
@@ -2742,7 +2832,11 @@ def extraction_epsf(
     )
 
     #  Make residual image
-    residual_image = photometry.get_residual_image()
+    # residual_image = photometry.get_residual_image()
+    residual_image = photometry.make_residual_image(
+        data,
+        (size_extraction_region, size_extraction_region)
+    )
 
     #   Add photometry and residual image to image class
     image.photometry = result_tbl
@@ -2929,7 +3023,7 @@ def extraction_aperture(
         background_estimate_simple: bool = False,
         plot_aperture_positions: bool = False,
         terminal_logger: terminal_output.TerminalLog | None = None,
-        indent: int = 2) -> None:
+        file_type_plots: str = 'pdf', indent: int = 2) -> None:
     """
     Perform aperture photometry using the photutils aperture package
 
@@ -2968,6 +3062,10 @@ def extraction_aperture(
         Logger object. If provided, the terminal output will be directed
         to this object.
         Default is ``None``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     indent
         Indentation for the console output lines
@@ -3107,6 +3205,7 @@ def extraction_aperture(
             aperture,
             annulus_aperture,
             f'{filter_}_{image.pd}',
+            file_type=file_type_plots,
         )
 
     #   Number of stars
@@ -3146,7 +3245,8 @@ def extract_multiprocessing(
         strict_epsf_checks: bool = True,
         identify_objects_on_image: bool = True,
         plots_for_all_images: bool = False,
-        plot_for_reference_image_only: bool = True):
+        plot_for_reference_image_only: bool = True,
+        file_type_plots: str = 'pdf'):
     """
     Extract flux and object positions using multiprocessing
 
@@ -3252,6 +3352,10 @@ def extract_multiprocessing(
     plot_for_reference_image_only
         If True a star map plots only for the reference image is created
         Default is ``True``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Get filter
     filter_ = image_series.filter_
@@ -3316,6 +3420,7 @@ def extract_multiprocessing(
                 'identify_objects_on_image': identify_objects_on_image,
                 'plots_for_all_images': plots_for_all_images,
                 'plot_for_reference_image_only': plot_for_reference_image_only,
+                'file_type_plots': file_type_plots,
             }
         )
 
@@ -3368,7 +3473,8 @@ def main_extract(
         limiting_contrast_rm_cosmics: float = 5.,
         read_noise: float = 8., sigma_clipping_value: float = 4.5,
         saturation_level: float = 65535., plots_for_all_images: bool = False,
-        plot_for_reference_image_only: bool = True):
+        plot_for_reference_image_only: bool = True,
+        file_type_plots: str = 'pdf'):
     """
     Main function to extract the information from the individual images
 
@@ -3500,6 +3606,10 @@ def main_extract(
     plot_for_reference_image_only
         If True a star map plot only for the reference image is created
         Default is ``True``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     ###
     #   Initialize output class in case of multiprocessing
@@ -3586,6 +3696,7 @@ def main_extract(
                 # name_object=image.object_name,
                 wcs_image=image.wcs,
                 terminal_logger=terminal_logger,
+                file_type=file_type_plots,
             )
 
         ###
@@ -3600,6 +3711,7 @@ def main_extract(
             minimum_n_stars=minimum_n_eps_stars,
             multiprocess_plots=False,
             terminal_logger=terminal_logger,
+            file_type_plots=file_type_plots,
         )
 
         ###
@@ -3609,7 +3721,7 @@ def main_extract(
             image.out_path.name,
             {f'img-{image.pd}-{image.filter_}': image.epsf},
             terminal_logger=terminal_logger,
-            # name_object=image.object_name,
+            file_type=file_type_plots,
             indent=2,
         )
 
@@ -3638,6 +3750,7 @@ def main_extract(
             {f'{image.filter_}, Image ID: {image.pd}': image.residual_image},
             image.out_path.name,
             terminal_logger=terminal_logger,
+            file_type=file_type_plots,
             # name_object=image.object_name,
             indent=2,
         )
@@ -3659,6 +3772,7 @@ def main_extract(
             radii_unit=radii_unit,
             plot_aperture_positions=plot_aperture_positions,
             terminal_logger=terminal_logger,
+            file_type_plots=file_type_plots,
             indent=3,
         )
 
@@ -3670,7 +3784,7 @@ def main_extract(
         )
 
     #   Conversion of flux to magnitudes
-    #   TODO: Move this to the calibration stage, where it makes more sense
+    #   TODO: Move this to the calibration stage, where it makes more sense?
     magnitudes, magnitudes_error = utilities.flux_to_magnitudes(
         image.photometry['flux_fit'],
         image.photometry['flux_err'],
@@ -3679,14 +3793,13 @@ def main_extract(
     image.photometry['mags_fit'] = magnitudes
     image.photometry['mags_unc'] = magnitudes_error
 
-    ###
     #   Plot images with extracted stars overlaid
-    #
     if plots_for_all_images or (plot_for_reference_image_only
                                 and image.pd == id_reference_image):
         utilities.prepare_and_plot_starmap(
             image,
             terminal_logger=terminal_logger,
+            file_type_plots=file_type_plots,
         )
 
     if multiprocessing:
@@ -3701,35 +3814,40 @@ def main_extract(
 def subtract_archive_img_from_img(
         filter_: str, image_path: str, output_dir: str,
         wcs_method: str = 'astrometry', plot_comp: bool = True,
-        hips_source: str = 'CDS/P/DSS2/blue') -> None:
+        hips_source: str = 'CDS/P/DSS2/blue',
+        file_type_plots: str = 'pdf') -> None:
     """
-        Subtraction of a reference/archival image from the input image.
-        The installation of Hotpants is required.
+    Subtraction of a reference/archival image from the input image.
+    The installation of Hotpants is required.
 
-        Parameters
-        ----------
-        filter_
-            Filter identifier
+    Parameters
+    ----------
+    filter_
+        Filter identifier
 
-        image_path
-            Path to images
+    image_path
+        Path to images
 
-        output_dir
-            Path, where the output should be stored.
+    output_dir
+        Path, where the output should be stored.
 
-        wcs_method
-            Method that should be used to determine the WCS.
-            Default is ``'astrometry'``.
+    wcs_method
+        Method that should be used to determine the WCS.
+        Default is ``'astrometry'``.
 
-        plot_comp
-            If `True` a plot with the original and reference image will
-            be created.
-            Default is ``True``.
+    plot_comp
+        If `True` a plot with the original and reference image will
+        be created.
+        Default is ``True``.
 
-        hips_source
-            ID string of the image catalog that will be queried using the
-            hips service.
-            Default is ``CDS/P/DSS2/blue``.
+    hips_source
+        ID string of the image catalog that will be queried using the
+        hips service.
+        Default is ``CDS/P/DSS2/blue``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -3802,6 +3920,7 @@ def subtract_archive_img_from_img(
             output_dir,
             image_series.image_list[0].get_data(),
             hips_hdus[0].data,
+            file_type=file_type_plots,
         )
 
     #   Perform image subtraction
