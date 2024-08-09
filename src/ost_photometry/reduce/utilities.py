@@ -695,39 +695,40 @@ def check_dark_scaling_possible(image_file_collection, image_id, image_type,
         )
 
 
-def check_exposure_times(image_file_collection, image_type, exposure_times,
-                         dark_times, bias_available,
-                         exposure_time_tolerance=0.5):
+def check_exposure_times(
+        image_file_collection: ccdp.ImageFileCollection, image_type: list[str],
+        exposure_times: list[float], dark_times: list[float],
+        bias_available: bool, exposure_time_tolerance: float = 0.5) -> bool:
     """
-        Check if relevant dark exposures are available for the exposure
-        times in the supplied list
+    Check if relevant dark exposures are available for the exposure
+    times in the supplied list
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            File collection with all images
+    Parameters
+    ----------
+    image_file_collection
+        File collection with all images
 
-        image_type              : `list` of `string`
-            String that characterizes the image type, such as 'science' or
-            'flat'. This is used in the exception messages.
+    image_type
+        String that characterizes the image type, such as 'science' or
+        'flat'. This is used in the exception messages.
 
-        exposure_times          : `list` of `float`
-            Exposure times that should be checked
+    exposure_times
+        Exposure times that should be checked
 
-        dark_times              : `list` of `float`
-            Dark exposure times that are available
+    dark_times              `
+        Dark exposure times that are available
 
-        bias_available          : `boolean`
-            True if bias frames are available
+    bias_available
+        True if bias frames are available
 
-        exposure_time_tolerance          : 'float', optional
-            Tolerance between science and dark exposure times in s.
-            Default is ``0.5``s.
+    exposure_time_tolerance
+        Tolerance between science and dark exposure times in s.
+        Default is ``0.5``s.
 
-        Returns
-        -------
-        scale_necessary         : `boolean`
-            True if dark scaling is possible
+    Returns
+    -------
+    scale_necessary
+        True if dark scaling is possible
     """
     #   Loop over exposure times
     for image_id, time in enumerate(exposure_times):

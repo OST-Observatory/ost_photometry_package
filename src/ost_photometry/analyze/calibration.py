@@ -219,49 +219,54 @@ def derive_transformation_onthefly(
         magnitudes_literature_filter_2: unc.core.NdarrayDistribution,
         magnitudes_observed_filter_1: unc.core.NdarrayDistribution,
         magnitudes_observed_filter_2: unc.core.NdarrayDistribution,
+        file_type_plots: str = 'pdf',
         distribution_samples: int = 1000
         ) -> tuple[unc.core.NdarrayDistribution, unc.core.NdarrayDistribution]:
     """
-        Determine the parameters for the color term used in the magnitude
-        calibration. This corresponds to a magnitude transformation without
-        considering the dependence on the air mass.
+    Determine the parameters for the color term used in the magnitude
+    calibration. This corresponds to a magnitude transformation without
+    considering the dependence on the air mass.
 
-        Parameters
-        ----------
-        image
-            Object with all image specific properties
+    Parameters
+    ----------
+    image
+        Object with all image specific properties
 
-        filter_list
-            List of filter
+    filter_list
+        List of filter
 
-        id_current_filter
-            ID of the current filter
+    id_current_filter
+        ID of the current filter
 
-        magnitudes_literature_filter_1
-            Magnitudes of calibration stars from the literature
-            for filter 1.
+    magnitudes_literature_filter_1
+        Magnitudes of calibration stars from the literature
+        for filter 1.
 
-        magnitudes_literature_filter_2
-            Magnitudes of calibration stars from the literature
-            for filter 1.
+    magnitudes_literature_filter_2
+        Magnitudes of calibration stars from the literature
+        for filter 1.
 
-        magnitudes_observed_filter_1
-            Extracted magnitudes of the calibration stars from filter 1
+    magnitudes_observed_filter_1
+        Extracted magnitudes of the calibration stars from filter 1
 
-        magnitudes_observed_filter_2
-            Extracted magnitudes of the calibration stars from filter 2
+    magnitudes_observed_filter_2
+        Extracted magnitudes of the calibration stars from filter 2
 
-        distribution_samples
-            Number of samples used for distributions
-            Default is `1000`
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
-        Returns
-        -------
-        color_correction_filter_1
-            Color correction term for filter 1.
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`
 
-        color_correction_filter_2
-            Color correction term for filter 2.
+    Returns
+    -------
+    color_correction_filter_1
+        Color correction term for filter 1.
+
+    color_correction_filter_2
+        Color correction term for filter 2.
     """
     #   Initial guess for the parameters
     # x0    = np.array([0.0, 0.0])
@@ -333,6 +338,7 @@ def derive_transformation_onthefly(
             'without sigma clipping',
             'with sigma clipping',
         ],
+        file_type=file_type_plots,
     )
 
     #   Set
@@ -377,6 +383,7 @@ def derive_transformation_onthefly(
         image_id=image.pd,
         x_data_original=color_literature.pdf_median(),
         y_data_original=diff_mag_1.pdf_median(),
+        file_type=file_type_plots,
     )
 
     plots.plot_transform(
@@ -398,6 +405,7 @@ def derive_transformation_onthefly(
         image_id=image.pd,
         x_data_original=color_literature.pdf_median(),
         y_data_original=diff_mag_2.pdf_median(),
+        file_type=file_type_plots,
     )
 
     # color_correction_filter_1 = unc.normal(
@@ -427,76 +435,81 @@ def transformation_core(
         tc_color: float, tc_t1: float, tc_k1: float, tc_t2: float,
         tc_k2: float, id_current_filter: int, filter_list: list[str],
         transformation_type: str = 'derive',
-        distribution_samples: int = 1000
+        distribution_samples: int = 1000,
+        file_type_plots: str = 'pdf',
         ) -> unc.core.NdarrayDistribution:
     """
-        Routine that performs the actual magnitude transformation.
+    Routine that performs the actual magnitude transformation.
 
-        Parameters
-        ----------
-        image
-            Object with all image specific properties
+    Parameters
+    ----------
+    image
+        Object with all image specific properties
 
-        magnitudes_current_filter
-            Magnitudes of the filter that should be transformed
+    magnitudes_current_filter
+        Magnitudes of the filter that should be transformed
 
-        magnitudes_literature_filter_1
-            Magnitudes of calibration stars from the literature
-            for filter 1.
+    magnitudes_literature_filter_1
+        Magnitudes of calibration stars from the literature
+        for filter 1.
 
-        magnitudes_literature_filter_2
-            Magnitudes of calibration stars from the literature
-            for filter 1.
+    magnitudes_literature_filter_2
+        Magnitudes of calibration stars from the literature
+        for filter 1.
 
-        calib_magnitudes_observed_filter_1
-            Extracted magnitudes of the calibration stars from filter 1
+    calib_magnitudes_observed_filter_1
+        Extracted magnitudes of the calibration stars from filter 1
 
-        calib_magnitudes_observed_filter_2
-            Extracted magnitudes of the calibration stars from filter 2
+    calib_magnitudes_observed_filter_2
+        Extracted magnitudes of the calibration stars from filter 2
 
-        magnitudes_filter_1
-            Extracted magnitudes of objects from filter 1
+    magnitudes_filter_1
+        Extracted magnitudes of objects from filter 1
 
-        magnitudes_filter_2
-            Extracted magnitudes of objects from filter 2
+    magnitudes_filter_2
+        Extracted magnitudes of objects from filter 2
 
-        tc_c
-            Calibration parameter for the magnitude transformation
+    tc_c
+        Calibration parameter for the magnitude transformation
 
-        tc_color
-            Calibration parameter for the magnitude transformation
+    tc_color
+        Calibration parameter for the magnitude transformation
 
-        tc_t1
-            Calibration parameter for the magnitude transformation
+    tc_t1
+        Calibration parameter for the magnitude transformation
 
-        tc_k1
-            Calibration parameter for the magnitude transformation
+    tc_k1
+        Calibration parameter for the magnitude transformation
 
-        tc_t2
-            Calibration parameter for the magnitude transformation
+    tc_t2
+        Calibration parameter for the magnitude transformation
 
-        tc_k2
-            Calibration parameter for the magnitude transformation
+    tc_k2
+        Calibration parameter for the magnitude transformation
 
-        id_current_filter
-            ID of the current filter
+    id_current_filter
+        ID of the current filter
 
-        filter_list
-            List of filter
+    filter_list
+        List of filter
 
-        transformation_type
-            Type of magnitude transformation.
-            Possibilities: simple, air_mass, or derive
-            Default is ``derive``.
+    transformation_type
+        Type of magnitude transformation.
+        Possibilities: simple, air_mass, or derive
+        Default is ``derive``.
 
-        distribution_samples
-            Number of samples used for distributions
-            Default is `1000`
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`.
 
-        Returns
-        -------
-        color_observed
-            Observed color of the calibration stars
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
+
+    Returns
+    -------
+    color_observed
+        Observed color of the calibration stars
 
     """
     #   Instrument color of the calibration objects
@@ -530,6 +543,7 @@ def transformation_core(
                 calib_magnitudes_observed_filter_1,
                 calib_magnitudes_observed_filter_2,
                 distribution_samples=distribution_samples,
+                file_type_plots=file_type_plots,
             )
         else:
             raise Exception(
@@ -599,8 +613,8 @@ def apply_magnitude_transformation(
         filter_list: list[str],
         transformation_coefficients: dict[str, (float | str)],
         plot_sigma: bool = False, transformation_type: str = 'derive',
-        distribution_samples: int = 1000, multiprocessing: bool = False
-        ) -> tuple[int, Table] | None:
+        distribution_samples: int = 1000, multiprocessing: bool = False,
+        file_type_plots: str = 'pdf') -> tuple[int, Table] | None:
     """
     Apply transformation
 
@@ -653,6 +667,9 @@ def apply_magnitude_transformation(
         Switch to distinguish between single and multicore processing
         Default is ``False``.
 
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Restore magnitudes as distributions
     #   -> This is necessary since astropy QuantityDistribution cannot be
@@ -717,6 +734,7 @@ def apply_magnitude_transformation(
         filter_list,
         transformation_type=transformation_type,
         distribution_samples=distribution_samples,
+        file_type_plots=file_type_plots,
     )
 
     #   Quality control plots
@@ -740,6 +758,7 @@ def apply_magnitude_transformation(
         magnitudes_err=image.photometry['mag_cali_trans_unc'],
         uncalibrated_magnitudes_err=magnitudes_current_image.pdf_std(),
         multiprocessing=not multiprocessing,
+        file_type_plots=file_type_plots,
     )
 
     if multiprocessing:
@@ -900,35 +919,39 @@ def prepare_zero_point(
         literature_magnitude_list: list[unc.core.NdarrayDistribution],
         magnitudes_calibration_stars: unc.core.NdarrayDistribution,
         calculate_zero_point_statistic: bool = True,
-        sub_samples_zp_statistic: int = 1000) -> unc.core.NdarrayDistribution:
+        sub_samples_zp_statistic: int = 1000, file_type_plots: str = 'pdf'
+        ) -> unc.core.NdarrayDistribution:
     """
-        Calculate zero point values based on calibration stars and
-        sigma clip these values before calculating median
+    Calculate zero point values based on calibration stars and
+    sigma clip these values before calculating median
 
-        Parameters
-        ----------
-        image
-            Class with all image specific properties
+    Parameters
+    ----------
+    image
+        Class with all image specific properties
 
-        id_filter
-            ID of the current filter
+    id_filter
+        ID of the current filter
 
-        literature_magnitude_list
-            Literature magnitudes
+    literature_magnitude_list
+        Literature magnitudes
 
-        magnitudes_calibration_stars
-            Observed magnitudes of the objects that were used for the
-            calibration from the image of filter 1
+    magnitudes_calibration_stars
+        Observed magnitudes of the objects that were used for the
+        calibration from the image of filter 1
 
-        calculate_zero_point_statistic
-            If `True` a statistic on the zero points will be calculated.
-            Default is ``True``.
+    calculate_zero_point_statistic
+        If `True` a statistic on the zero points will be calculated.
+        Default is ``True``.
 
-        sub_samples_zp_statistic
-            Number of randomly selected sub-samples used for calculating zero
-            point statistic
-            Default is `1000`.
+    sub_samples_zp_statistic
+        Number of randomly selected sub-samples used for calculating zero
+        point statistic
+        Default is `1000`.
 
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Calculate zero point
     zp = literature_magnitude_list[id_filter] - magnitudes_calibration_stars
@@ -943,6 +966,7 @@ def prepare_zero_point(
         dataset_label=[
             ['All calibration objects'],
         ],
+        file_type=file_type_plots,
         # name_object=image.object_name,
     )
 
@@ -996,7 +1020,8 @@ def calibrate_magnitudes_zero_point_core(
         index_calibration_stars: np.ndarray, current_filter_id: int,
         literature_magnitudes: list[u.quantity.Quantity],
         calculate_zero_point_statistic: bool = True,
-        distribution_samples: int = 1000) -> tuple[int, Table, np.ndarray]:
+        distribution_samples: int = 1000, file_type_plots: str = 'pdf'
+        ) -> tuple[int, Table, np.ndarray]:
     """
     Core module for zero point calibration that allows also for multicore
     processing
@@ -1023,6 +1048,10 @@ def calibrate_magnitudes_zero_point_core(
     distribution_samples
         Number of samples used for distributions
         Default is `1000`.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     Returns
     -------
@@ -1062,6 +1091,7 @@ def calibrate_magnitudes_zero_point_core(
         magnitudes_calibration_current_image,
         calculate_zero_point_statistic=calculate_zero_point_statistic,
         # distribution_samples=distribution_samples,
+        file_type_plots=file_type_plots,
     )
 
     #   Calibration without transformation
@@ -1085,6 +1115,7 @@ def calibrate_magnitudes_zero_point_core(
         magnitudes_err=current_image.photometry['mag_cali_no-trans_unc'],
         uncalibrated_magnitudes_err=magnitudes_current_image.pdf_std(),
         multiprocessing=False,
+        file_type_plots=file_type_plots,
     )
 
     return current_image.pd, current_image.photometry, zp.distribution
@@ -1092,9 +1123,11 @@ def calibrate_magnitudes_zero_point_core(
 
 def calibrate_magnitudes_zero_point(
         observation: 'analyze.Observation', filter_list: (list[str] | set[str]),
-        distribution_samples: int = 1000, calculate_zero_point_statistic: bool = True,
+        distribution_samples: int = 1000,
+        calculate_zero_point_statistic: bool = True,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
-        n_cores_multiprocessing: int | None = None, indent: int = 1) -> None:
+        n_cores_multiprocessing: int | None = None,
+        file_type_plots: str = 'pdf', indent: int = 1) -> None:
     """
     Apply the zero points to the magnitudes
 
@@ -1125,6 +1158,10 @@ def calibrate_magnitudes_zero_point(
     n_cores_multiprocessing
         Number of core used for multicore processing
         Default is ``None``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     indent
         Indentation for the console output lines
@@ -1175,6 +1212,7 @@ def calibrate_magnitudes_zero_point(
                 kwargs={
                     'calculate_zero_point_statistic': calculate_zero_point_statistic,
                     'distribution_samples': distribution_samples,
+                    'file_type_plots': file_type_plots,
                 }
             )
 
@@ -1210,26 +1248,26 @@ def calibrate_magnitudes_zero_point(
         # TODO: Check if this is necessary
         image_series.image_list = tmp_list
 
-    #   Save results as ASCII files
-    #   Make astropy table
-    table_not_transformed_magnitudes, array_not_transformed_magnitudes = utilities.mk_magnitudes_table_and_array(
-        observation,
-        filter_list,
-        'mag_cali_no-trans',
-    )
-
-    #   TODO: This is also messy and needs a cleanup
-    #   Add table to observation container
-    observation.table_mags_not_transformed = table_not_transformed_magnitudes
-
-    #   Save to file
-    utilities.save_magnitudes_ascii(
-        observation,
-        table_not_transformed_magnitudes,
-        magnitude_transformation=False,
-        id_object=id_object,
-        photometry_extraction_method=photometry_extraction_method,
-    )
+    # #   Save results as ASCII files
+    # #   Make astropy table
+    # table_not_transformed_magnitudes = utilities.mk_magnitudes_table(
+    #     observation,
+    #     filter_list,
+    #     'mag_cali_no-trans',
+    # )
+    #
+    # #   TODO: This is also messy and needs a cleanup
+    # #   Add table to observation container
+    # observation.table_mags_not_transformed = table_not_transformed_magnitudes
+    #
+    # #   Save to file
+    # utilities.save_magnitudes_ascii(
+    #     observation,
+    #     table_not_transformed_magnitudes,
+    #     magnitude_transformation=False,
+    #     id_object=id_object,
+    #     photometry_extraction_method=photometry_extraction_method,
+    # )
 
 
 def calibrate_magnitudes_transformation(
@@ -1238,7 +1276,8 @@ def calibrate_magnitudes_transformation(
         derive_transformation_coefficients: bool = False,
         plot_sigma: bool = False, distribution_samples: int = 1000,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
-        n_cores_multiprocessing: int | None = None, indent: int = 1) -> None:
+        n_cores_multiprocessing: int | None = None,
+        file_type_plots: str = 'pdf', indent: int = 1) -> None:
     """
     Apply magnitude transformation
 
@@ -1285,6 +1324,10 @@ def calibrate_magnitudes_transformation(
     n_cores_multiprocessing
         Number of core used for multicore processing
         Default is ``None``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     indent
         Indentation for the console output lines
@@ -1405,6 +1448,7 @@ def calibrate_magnitudes_transformation(
                         'transformation_type': transformation_type,
                         'distribution_samples': distribution_samples,
                         'multiprocessing': True,
+                        'file_type_plots': file_type_plots,
                     }
                 )
 
@@ -1434,37 +1478,52 @@ def calibrate_magnitudes_transformation(
 
             terminal_output.print_to_terminal('')
 
-    #   Save results as ASCII files
-    #   TODO: Remove this from apply calibration and move it to a function called save_calibration
-    #         -> put it one level up
-    #   With transformation
-    if any(transformation_type_list):
-        #   Make astropy table
-        table_transformed_magnitudes, array_transformed_magnitudes = utilities.mk_magnitudes_table_and_array(
-            observation,
-            filter_list,
-            'mag_cali_trans',
-        )
-
-        #   Add table to observation container
-        observation.table_mags_transformed = table_transformed_magnitudes
-        # observation.array_mags_transformed = array_transformed_magnitudes
-
-        #   Save to file
-        utilities.save_magnitudes_ascii(
-            observation,
-            table_transformed_magnitudes,
-            magnitude_transformation=True,
-            id_object=id_object,
-            photometry_extraction_method=photometry_extraction_method,
-            rts=f'_{filter_list[0]}-{filter_list[1]}'
-        )
-    else:
+    if not any(transformation_type_list):
         terminal_output.print_to_terminal(
             "WARNING: No magnitude transformation possible",
             indent=indent,
             style_name='WARNING'
         )
+
+    #   Save results as ASCII files
+    #   TODO: Remove this from apply calibration and move it to a function called save_calibration
+    #         -> put it one level up
+    #   With transformation
+    # if any(transformation_type_list):
+    #     utilities.save_calibration(
+    #         observation,
+    #         filter_list,
+    #         id_object,
+    #         # 'mag_cali_trans',
+    #         photometry_extraction_method=photometry_extraction_method,
+    #         rts=f'_{filter_list[0]}-{filter_list[1]}'
+    #     )
+        # #   Make astropy table
+        # table_transformed_magnitudes, array_transformed_magnitudes = utilities.mk_magnitudes_table_and_array(
+        #     observation,
+        #     filter_list,
+        #     'mag_cali_trans',
+        # )
+        #
+        # #   Add table to observation container
+        # observation.table_mags_transformed = table_transformed_magnitudes
+        # # observation.array_mags_transformed = array_transformed_magnitudes
+        #
+        # #   Save to file
+        # utilities.save_magnitudes_ascii(
+        #     observation,
+        #     table_transformed_magnitudes,
+        #     magnitude_transformation=True,
+        #     id_object=id_object,
+        #     photometry_extraction_method=photometry_extraction_method,
+        #     rts=f'_{filter_list[0]}-{filter_list[1]}'
+        # )
+    # else:
+    #     terminal_output.print_to_terminal(
+    #         "WARNING: No magnitude transformation possible",
+    #         indent=indent,
+    #         style_name='WARNING'
+    #     )
 
 
 def apply_calibration(
@@ -1473,7 +1532,8 @@ def apply_calibration(
         derive_transformation_coefficients: bool = False, plot_sigma: bool = False,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
         calculate_zero_point_statistic: bool = True, distribution_samples: int = 1000,
-        n_cores_multiprocessing: int | None = None, indent: int = 1) -> None:
+        n_cores_multiprocessing: int | None = None,
+        file_type_plots: str = 'pdf', indent: int = 1) -> None:
     """
     Apply the zero points to the magnitudes and perform a magnitude
     transformation if possible
@@ -1520,6 +1580,10 @@ def apply_calibration(
         Number of core used for multicore processing
         Default is ``None``.
 
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
+
     indent
         Indentation for the console output lines
         Default is ``1``.
@@ -1533,6 +1597,7 @@ def apply_calibration(
         id_object=id_object,
         photometry_extraction_method=photometry_extraction_method,
         n_cores_multiprocessing=n_cores_multiprocessing,
+        file_type_plots=file_type_plots,
         indent=indent,
     )
 
@@ -1546,7 +1611,28 @@ def apply_calibration(
         id_object=id_object,
         photometry_extraction_method=photometry_extraction_method,
         n_cores_multiprocessing=n_cores_multiprocessing,
+        file_type_plots=file_type_plots,
         indent=indent,
+    )
+
+    if len(filter_list) == 1:
+        # rts = f'_{filter_list[0]}'
+        rts: str = ''
+    elif len(filter_list) == 2:
+        rts: str = f'_{filter_list[0]}-{filter_list[1]}'
+    else:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \n{len(filter_list)} provided but only 1 or 2 are"
+            f" supported => ABORT {style.Bcolors.ENDC}"
+        )
+
+    utilities.save_calibration(
+        observation,
+        filter_list,
+        id_object,
+        # 'mag_cali_trans',
+        photometry_extraction_method=photometry_extraction_method,
+        rts=rts,
     )
 
 
@@ -1556,8 +1642,8 @@ def determine_transformation_coefficients(
         filter_list: list[str], tbl_transformation_coefficients: Table,
         fit_function=utilities.lin_func,
         apply_uncertainty_weights: bool = True,
-        distribution_samples: int = 1000, indent: int = 2
-        ) -> None:
+        distribution_samples: int = 1000, file_type_plots: str = 'pdf',
+        indent: int = 2) -> None:
     """
     Determine the magnitude transformation factors
 
@@ -1586,6 +1672,10 @@ def determine_transformation_coefficients(
     distribution_samples
         Number of samples used for distributions
         Default is `1000`.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     indent
         Indentation for the console output lines
@@ -1747,7 +1837,7 @@ def determine_transformation_coefficients(
         image_series_dict[filter_list[0]].get_air_mass()[0],
         color_literature_err=color_literature_err_plot,
         fit_variable_err=color_observed_err_plot,
-        # name_object=image_series_dict[filter_list[0]].object_name,
+        file_type=file_type_plots,
     )
 
     #  Mag transform - Fit the data with fit_func
@@ -1787,7 +1877,7 @@ def determine_transformation_coefficients(
         image_series_dict[filter_list[0]].get_air_mass()[0],
         color_literature_err=color_literature_err_plot,
         fit_variable_err=zero_point_err_plot,
-        # name_object=image_series_dict[filter_list[0]].object_name,
+        file_type=file_type_plots,
     )
 
     #   Redefine variables -> shorter variables
@@ -1849,7 +1939,7 @@ def calculate_trans(
         calibration_file: str | None = None,
         magnitude_range: tuple[float, float] = (0., 18.5),
         region_to_select_calibration_stars: RectanglePixelRegion | None = None,
-        distribution_samples: int = 1000
+        distribution_samples: int = 1000, file_type_plots: str = 'pdf'
         ) -> None:
     """
     Calculate the transformation coefficients
@@ -1906,6 +1996,10 @@ def calculate_trans(
     distribution_samples
         Number of samples used for distributions
         Default is `1000`.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Sanitize dictionary with Vizier catalog information
     if vizier_dict is None:
@@ -1917,6 +2011,7 @@ def calculate_trans(
         filter_list,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
+        file_type_plots=file_type_plots,
     )
 
     #   Plot image with the final positions overlaid
@@ -1924,6 +2019,7 @@ def calculate_trans(
     utilities.prepare_and_plot_starmap_from_observation(
         observation,
         filter_list,
+        file_type_plots=file_type_plots
     )
 
     #   Calibrate transformation coefficients
@@ -1937,6 +2033,7 @@ def calculate_trans(
         path_calibration_file=calibration_file,
         magnitude_range=magnitude_range,
         region_to_select_calibration_stars=region_to_select_calibration_stars,
+        file_type_plots=file_type_plots,
     )
     terminal_output.print_to_terminal('')
 
@@ -1948,5 +2045,6 @@ def calculate_trans(
         tbl_transformation_coefficients,
         apply_uncertainty_weights=apply_uncertainty_weights,
         distribution_samples=distribution_samples,
+        file_type_plots=file_type_plots,
     )
     terminal_output.print_to_terminal('')

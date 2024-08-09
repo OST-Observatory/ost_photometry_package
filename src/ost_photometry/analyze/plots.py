@@ -53,20 +53,24 @@ plt.switch_backend('Agg')
 
 def compare_images(
         output_dir: str, original_image: np.ndarray,
-        comparison_image: np.ndarray) -> None:
+        comparison_image: np.ndarray, file_type: str = 'pdf') -> None:
     """
-        Plot two images for comparison
+    Plot two images for comparison
 
-        Parameters
-        ----------
-        output_dir
-            Output directory
+    Parameters
+    ----------
+    output_dir
+        Output directory
 
-        original_image
-            Original image data
+    original_image
+        Original image data
 
-        comparison_image
-            Comparison image data
+    comparison_image
+        Comparison image data
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Prepare plot
     plt.figure(figsize=(12, 7))
@@ -87,9 +91,9 @@ def compare_images(
 
     #   Save the plot
     plt.savefig(
-        f'{output_dir}/img_comparison.pdf',
+        f'{output_dir}/img_comparison.{file_type}',
         bbox_inches='tight',
-        format='pdf',
+        format=file_type,
     )
     plt.close()
 
@@ -101,61 +105,65 @@ def starmap(
         mode: str | None = None, name_object: str | None = None,
         wcs_image: wcs.WCS = None,
         terminal_logger: terminal_output.TerminalLog | None = None,
-        indent: int = 2) -> None:
+        file_type: str = 'pdf', indent: int = 2) -> None:
     """
-        Plot star maps  -> overlays of the determined star positions on FITS
-                        -> supports different versions
+    Plot star maps  -> overlays of the determined star positions on FITS
+                    -> supports different versions
 
-        Parameters
-        ----------
-        output_dir
-            Output directory
+    Parameters
+    ----------
+    output_dir
+        Output directory
 
-        image
-            The image data
+    image
+        The image data
 
-        filter_
-            Filter identifier
+    filter_
+        Filter identifier
 
-        tbl
-            Astropy table with data of the objects
+    tbl
+        Astropy table with data of the objects
 
-        tbl_2
-            Second astropy table with data of special objects
-            Default is ``None``
+    tbl_2
+        Second astropy table with data of special objects
+        Default is ``None``
 
-        label
-            Identifier for the objects in `tbl`
-            Default is ``Identified stars``
+    label
+        Identifier for the objects in `tbl`
+        Default is ``Identified stars``
 
-        label_2
-            Identifier for the objects in `tbl_2`
-            Default is ``Identified stars (set 2)``
+    label_2
+        Identifier for the objects in `tbl_2`
+        Default is ``Identified stars (set 2)``
 
-        rts
-            Expression characterizing the plot
-            Default is ``None``
+    rts
+        Expression characterizing the plot
+        Default is ``None``
 
-        mode
-            String used to switch between different plot modes
-            Default is ``None``
+    mode
+        String used to switch between different plot modes
+        Default is ``None``
 
-        name_object
-            Name of the object
-            Default is ``None``
+    name_object
+        Name of the object
+        Default is ``None``
 
-        wcs_image
-            WCS information
-            Default is ``None``
+    wcs_image
+        WCS information
+        Default is ``None``
 
-        terminal_logger
-            Logger object. If provided, the terminal output will be directed
-            to this object.
-            Default is ``None``.
+    terminal_logger
+        Logger object. If provided, the terminal output will be directed
+        to this object.
+        Default is ``None``.
 
-        indent
-            Indentation for the console output lines
-            Default is ``2``.
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
+
+    indent
+        Indentation for the console output lines
+        Default is ``2``.
     """
     wcs_image = None
     #   Check output directories
@@ -357,9 +365,9 @@ def starmap(
     #   Write the plot to disk
     if rts is None:
         plt.savefig(
-            f'{output_dir}/starmaps/starmap_{filter_}.pdf',
+            f'{output_dir}/starmaps/starmap_{filter_}.{file_type}',
             bbox_inches='tight',
-            format='pdf',
+            format=file_type,
         )
     else:
         replace_dict = {',': '', '.': '', '\\': '', '[': '', '&': '', ' ': '_',
@@ -368,9 +376,9 @@ def starmap(
             rts = rts.replace(key, value)
         rts = rts.lower()
         plt.savefig(
-            f"{output_dir}/starmaps/starmap_{filter_}_{rts}.pdf",
+            f"{output_dir}/starmaps/starmap_{filter_}_{rts}.{file_type}",
             bbox_inches='tight',
-            format='pdf',
+            format=file_type,
         )
     # plt.show()
     plt.close()
@@ -379,7 +387,7 @@ def starmap(
 def plot_apertures(
         output_dir: str, image: base_utilities.Image,
         aperture: CircularAperture, annulus_aperture: CircularAnnulus,
-        filename_string: str) -> None:
+        filename_string: str, file_type: str = 'pdf') -> None:
     """
     Plot the apertures used for extracting the stellar fluxes
            (star map plot for aperture photometry)
@@ -400,6 +408,10 @@ def plot_apertures(
 
     filename_string
         String characterizing the output file
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -456,9 +468,9 @@ def plot_apertures(
 
     #   Save figure
     plt.savefig(
-        f'{output_dir}/aperture/aperture_{filename_string}.pdf',
+        f'{output_dir}/aperture/aperture_{filename_string}.{file_type}',
         bbox_inches='tight',
-        format='pdf',
+        format=file_type,
     )
 
     #   Set labels
@@ -471,7 +483,7 @@ def plot_apertures(
 def plot_cutouts(output_dir: str, stars: EPSFStars, identifier: str,
                  terminal_logger: terminal_output.TerminalLog | None = None,
                  max_plot_stars: int = 25, name_object: str | None = None,
-                 indent: int = 2) -> None:
+                 file_type: str = 'pdf', indent: int = 2) -> None:
     """
     Plot the cutouts of the stars used to estimate the ePSF
 
@@ -498,6 +510,10 @@ def plot_cutouts(output_dir: str, stars: EPSFStars, identifier: str,
     name_object
         Name of the object
         Default is ``None``.
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
 
     indent
         Indentation for the console output lines.
@@ -563,9 +579,9 @@ def plot_cutouts(output_dir: str, stars: EPSFStars, identifier: str,
         ax[i].set_ylabel("Pixel")
         ax[i].imshow(data_image, norm=norm, origin='lower', cmap='viridis')
     plt.savefig(
-        f'{output_dir}/cutouts/cutouts_{identifier}.pdf',
+        f'{output_dir}/cutouts/cutouts_{identifier}.{file_type}',
         bbox_inches='tight',
-        format='pdf',
+        format=file_type,
     )
     # plt.show()
     plt.close()
@@ -575,7 +591,7 @@ def plot_epsf(
         output_dir: str, epsf: dict[str, EPSFModel],
         name_object: str | None = None,
         terminal_logger: terminal_output.TerminalLog | None = None,
-        indent: int = 1) -> None:
+        file_type: str = 'pdf', indent: int = 1) -> None:
     """
 
     Plot the ePSF image of all filters
@@ -596,6 +612,10 @@ def plot_epsf(
         Logger object. If provided, the terminal output will be directed
         to this object.
         Default is ``None``.
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
 
     indent
         Indentation for the console output lines
@@ -667,15 +687,15 @@ def plot_epsf(
 
     if n_plots >= 2:
         plt.savefig(
-            f'{output_dir}/epsfs/epsfs_multiple_filter.pdf',
+            f'{output_dir}/epsfs/epsfs_multiple_filter.{file_type}',
             bbox_inches='tight',
-            format='pdf',
+            format=file_type,
         )
     else:
         plt.savefig(
-            f'{output_dir}/epsfs/epsf.pdf',
+            f'{output_dir}/epsfs/epsf.{file_type}',
             bbox_inches='tight',
-            format='pdf',
+            format=file_type,
         )
     # plt.show()
     plt.close()
@@ -686,7 +706,7 @@ def plot_residual(
         residual_image: dict[str, np.ndarray],
         output_dir: str, name_object: str | None = None,
         terminal_logger: terminal_output.TerminalLog | None = None,
-        indent: int = 1) -> None:
+        file_type: str = 'pdf', indent: int = 1) -> None:
     """
     Plot the original and the residual image
 
@@ -709,6 +729,10 @@ def plot_residual(
         Logger object. If provided, the terminal output will be directed
         to this object.
         Default is ``None``.
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
 
     indent
         Indentation for the console output lines
@@ -835,16 +859,16 @@ def plot_residual(
     #   Write the plot to disk
     if n_plots == 1:
         plt.savefig(
-            f'{output_dir}/residual/residual_images_{filter_}.pdf'.replace(":", "")
+            f'{output_dir}/residual/residual_images_{filter_}.{file_type}'.replace(":", "")
             .replace(",", "").replace(" ", "_"),
             bbox_inches='tight',
-            format='pdf',
+            format=file_type,
         )
     else:
         plt.savefig(
-            f'{output_dir}/residual/residual_images.pdf',
+            f'{output_dir}/residual/residual_images.{file_type}',
             bbox_inches='tight',
-            format='pdf',
+            format=file_type
         )
     # plt.show()
     plt.close()
@@ -853,7 +877,8 @@ def plot_residual(
 def light_curve_jd(
         ts: TimeSeries, data_column: str, err_column: str, output_dir: str,
         error_bars: bool = True, name_object: str | None = None,
-        file_name_suffix: str = '') -> None:
+        file_name_suffix: str = '', subdirectory: str = '',
+        file_type: str = 'pdf') -> None:
     """
     Plot the light curve over Julian Date
 
@@ -882,16 +907,27 @@ def light_curve_jd(
     file_name_suffix
         Suffix to add to the file name
         Default is ``''``
+
+    subdirectory
+        Name of the subdirectory in which to save the plots
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Check output directories
-    checks.check_output_directories(
-        output_dir,
-        os.path.join(output_dir, 'lightcurve'),
-    )
+    if subdirectory != '':
+        checks.check_output_directories(
+            output_dir,
+            os.path.join(output_dir, f'{subdirectory}/lightcurve'),
+        )
+    else:
+        checks.check_output_directories(
+            output_dir,
+            os.path.join(output_dir, 'lightcurve'),
+        )
 
-    ###
     #   Make plot
-    #
     fig = plt.figure(figsize=(20, 9))
 
     #   Plot grid
@@ -959,9 +995,9 @@ def light_curve_jd(
     #   Save plot
     plt.savefig(
         f'{output_dir}/lightcurve/lightcurve_jd_{name_object}'
-        f'_{data_column}{file_name_suffix}.pdf',
+        f'_{data_column}{file_name_suffix}.{file_type}',
         bbox_inches='tight',
-        format='pdf',
+        format=file_type,
     )
     plt.close()
 
@@ -970,7 +1006,8 @@ def light_curve_fold(
         time_series: TimeSeries, data_column: str, err_column: str,
         output_dir: str, transit_time: str, period: float,
         binning_factor: float | None = None, error_bars: bool = True,
-        name_object: str | None = None, file_name_suffix: str = '') -> None:
+        name_object: str | None = None, file_name_suffix: str = '',
+        subdirectory: str = '', file_type: str = 'pdf') -> None:
     """
     Plot a folded light curve
 
@@ -1009,12 +1046,25 @@ def light_curve_fold(
     file_name_suffix
         Suffix to add to the file name
         Default is ``''``
+
+    subdirectory
+        Name of the subdirectory in which to save the plots
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Check output directories
-    checks.check_output_directories(
-        output_dir,
-        os.path.join(output_dir, 'lightcurve'),
-    )
+    if subdirectory != '':
+        checks.check_output_directories(
+            output_dir,
+            os.path.join(output_dir, f'{subdirectory}/lightcurve'),
+        )
+    else:
+        checks.check_output_directories(
+            output_dir,
+            os.path.join(output_dir, 'lightcurve'),
+        )
 
     #   Make a time object for the  transit times
     transit_time = Time(transit_time, format='isot', scale='utc')
@@ -1025,9 +1075,7 @@ def light_curve_fold(
         epoch_time=transit_time,
     )
 
-    ###
     #   Make plot
-    #
     fig = plt.figure(figsize=(20, 9))
 
     #   Plot grid
@@ -1132,9 +1180,9 @@ def light_curve_fold(
     #   Save plot
     plt.savefig(
         f'{output_dir}/lightcurve/lightcurve_folded_{name_object}'
-        f'_{data_column}{file_name_suffix}.pdf',
+        f'_{data_column}{file_name_suffix}.{file_type}',
         bbox_inches='tight',
-        format='pdf',
+        format=file_type,
     )
     plt.close()
 
@@ -1149,7 +1197,8 @@ def plot_transform(
         fit_variable_err: np.ndarray | None = None,
         name_object: list[str] | str | None = None,
         image_id: int | None = None, x_data_original: np.ndarray | None = None,
-        y_data_original: np.ndarray | None = None) -> None:
+        y_data_original: np.ndarray | None = None,
+        file_type: str = 'pdf') -> None:
     """
     Plots illustrating magnitude transformation results
 
@@ -1215,6 +1264,10 @@ def plot_transform(
     y_data_original
         Original ordinate data with out any modification, which might
         have been applied to data
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -1253,7 +1306,7 @@ def plot_transform(
                 f' (X = {air_mass})'
     y_label = f'{current_filter}-{current_filter.lower()} [mag]'
     path = f'{output_dir}/trans_plots/{target_filter}_{current_filter}' \
-           f'{current_filter.lower()}_{filter_1}{filter_2}{id_image_str}.pdf'
+           f'{current_filter.lower()}_{filter_1}{filter_2}{id_image_str}.{file_type}'
     p_label = (f'slope = {b_fit:.5f}, C{current_filter.lower()}_{filter_1.lower()}'
                f'{filter_2.lower()} = {b_fit:.5f} +/- {b_err_fit:.5f}')
     x_label = f'{filter_1}-{filter_2} [mag]'
@@ -1333,7 +1386,7 @@ def plot_transform(
         plt.ylim([y_max + y_lim, y_min - y_lim])
 
     #   Save plot
-    plt.savefig(path, bbox_inches='tight', format='pdf')
+    plt.savefig(path, bbox_inches='tight', format=file_type)
     plt.close()
 
 
@@ -2706,7 +2759,8 @@ def d3_scatter(
         xs: list[np.ndarray], ys: list[np.ndarray], zs: list[np.ndarray],
         output_dir: str, color: list[str] | None = None, name_x: str = '',
         name_y: str = '', name_z: str = '', pm_ra: float | None = None,
-        pm_dec: float | None = None, display: bool = False) -> None:
+        pm_dec: float | None = None, display: bool = False,
+        file_type: str = 'pdf') -> None:
     """
     Make a 3D scatter plot
 
@@ -2754,6 +2808,10 @@ def d3_scatter(
         window. If ``False`` four views of the 3D plot will be saved to
         a file.
         Default is ``False``.
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Switch backend to allow direct display of the plot
     if display:
@@ -2910,9 +2968,9 @@ def d3_scatter(
     else:
         #   Save image if it is not displayed directly
         plt.savefig(
-            f'{output_dir}/compare/pm_vs_distance.pdf',
+            f'{output_dir}/compare/pm_vs_distance.{file_type}',
             bbox_inches='tight',
-            format='pdf',
+            format=file_type,
         )
         plt.close()
 
@@ -2923,7 +2981,8 @@ def scatter(
         x_errors: list[np.ndarray] | None = None,
         y_errors: list[np.ndarray] | None = None,
         dataset_label: list[str] | None = None, name_object: str | None = None,
-        fits: list[fitting] | None = None, one_to_one: bool = False) -> None:
+        fits: list[fitting] | None = None, one_to_one: bool = False,
+        file_type: str = 'pdf') -> None:
     """
     Plot magnitudes
 
@@ -2970,6 +3029,10 @@ def scatter(
     one_to_one
         If True a 1:1 line will be plotted.
         Default is ``False``.
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -3066,16 +3129,16 @@ def scatter(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/scatter/{rts}.pdf',
+        f'{output_dir}/scatter/{rts}.{file_type}',
         bbox_inches='tight',
-        format='pdf',
+        format=file_type,
     )
     plt.close()
 
 
 def plot_limiting_mag_sky_apertures(
         output_dir: str, img_data: np.ndarray, mask: np.ndarray,
-        image_depth: ImageDepth) -> None:
+        image_depth: ImageDepth, file_type: str = 'pdf') -> None:
     """
     Plot the sky apertures that are used to estimate the limiting magnitude
 
@@ -3092,6 +3155,10 @@ def plot_limiting_mag_sky_apertures(
 
     image_depth
         Object used to derive the limiting magnitude
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -3144,9 +3211,9 @@ def plot_limiting_mag_sky_apertures(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/limiting_mag/limiting_mag_sky_regions.pdf',
+        f'{output_dir}/limiting_mag/limiting_mag_sky_regions.{file_type}',
         bbox_inches='tight',
-        format='pdf',
+        format=file_type,
     )
     plt.close()
 
@@ -3199,8 +3266,8 @@ def extinction_curves(rv: float) -> None:
 def filled_iso_contours(
         object_table: Table, shape_image: tuple[int, int], filter_: str,
         output_dir: str = './', fraction_bright_objects_to_use: float = 0.2,
-        spacing_grid_positions: int = 20, object_property: str = 'fwhm'
-        ) -> None:
+        spacing_grid_positions: int = 20, object_property: str = 'fwhm',
+        file_type: str = 'pdf') -> None:
     """
     Filled iso contour surfaces
 
@@ -3230,6 +3297,10 @@ def filled_iso_contours(
     object_property
         Property of the objects used to derive the iso contour levels
         Default is ``fwhm``
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Limit object table to the most
     n_sources = len(object_table)
@@ -3290,9 +3361,9 @@ def filled_iso_contours(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/aberration/aberration_iso_contours_{filter_}.pdf',
+        f'{output_dir}/aberration/aberration_iso_contours_{filter_}.{file_type}',
         bbox_inches='tight',
-        format='pdf',
+        format=file_type,
     )
     plt.close()
     # plt.show()
@@ -3301,8 +3372,8 @@ def filled_iso_contours(
 def histogram_statistic(
         parameter_list_0: list[np.ndarray], name_x: str, name_y: str, rts: str,
         output_dir: str, dataset_label: list[list[str]] | None = None,
-        name_object: str = None, parameter_list_1: list[np.ndarray] = None
-        ) -> None:
+        name_object: str = None, parameter_list_1: list[np.ndarray] = None,
+        file_type: str = 'pdf') -> None:
     """
     Plots histogram statistics on properties such as the zero point
 
@@ -3335,6 +3406,10 @@ def histogram_statistic(
         Second list of arrays with parameters to plot such as sigma
         clipped values of parameter_list_0
         Default is ``None``
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -3410,8 +3485,8 @@ def histogram_statistic(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/calibration/{rts}.pdf',
+        f'{output_dir}/calibration/{rts}.{file_type}',
         bbox_inches='tight',
-        format='pdf',
+        format=file_type,
     )
     plt.close()

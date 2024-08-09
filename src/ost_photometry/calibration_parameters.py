@@ -17,7 +17,7 @@ from . import terminal_output
 ############################################################################
 
 
-def get_image_types():
+def get_image_types() -> dict[str, list[str]]:
     """
         Get image type designator: The terms that are used to identify bias,
         darks, flats, etc. in the image Headers.

@@ -80,10 +80,9 @@ def err_prop(*args) -> float | np.ndarray:
     return sum_error
 
 
-def mk_magnitudes_table_and_array(
-        observation: 'analyze.Observation', filter_list: list[str],
-        photometry_column_keyword: str
-        ) -> tuple[Table, dict[str, dict[str, np.ndarray]]]:
+def mk_magnitudes_table(
+        observation: 'analyze.Observation', filter_list: list[str]
+        ) -> Table:
     """
     Create and export astropy table with object positions and magnitudes
 
@@ -95,22 +94,11 @@ def mk_magnitudes_table_and_array(
     filter_list
         Filter
 
-    photometry_column_keyword
-        String used to identify the magnitude column in the
-        photometry tables
-
     Returns
     -------
     tbl
         Table with CMD data
-
-    stacked_magnitudes
-        Array with magnitudes and magnitude errors of all images in an
-        image series
     """
-    #   Dictionary for stacked magnitudes
-    stacked_magnitudes = {}
-
     #   Get object indices, X & Y pixel positions and wcs
     #   Assumes that the image series are already correlated
     image_wcs = observation.image_series_dict[filter_list[0]].wcs
@@ -141,6 +129,72 @@ def mk_magnitudes_table_and_array(
         image_series = observation.image_series_dict[filter_]
         image_list = image_series.image_list
 
+        for image_id, image in enumerate(image_list):
+            photometry_table = image.photometry
+            for photometry_column_keyword in ['mag_cali_trans', 'mag_cali']:
+                try:
+                    magnitudes = photometry_table[photometry_column_keyword]
+                    magnitude_errors = photometry_table[
+                        f'{photometry_column_keyword}_unc'
+                    ]
+                except KeyError:
+                    magnitudes = np.ones((len(index_objects))) * 999.
+                    magnitude_errors = magnitudes
+
+                if photometry_column_keyword == 'mag_cali':
+                    # column_name = f'{filter_}_simple ({image_id})'
+                    # column_name_err = f'{filter_}_simple_err ({image_id})'
+                    column_name = f'{filter_} (simple, image={image_id})'
+                    column_name_err = f'{filter_}_err (simple, image={image_id})'
+                else:
+                    # column_name = f'{filter_}_trans ({image_id})'
+                    # column_name_err = f'{filter_}_trans_err ({image_id})'
+                    column_name = f'{filter_} (transformed, image={image_id})'
+                    column_name_err = f'{filter_}_err (transformed, image={image_id})'
+
+                #   Add to table
+                tbl.add_columns(
+                    [magnitudes, magnitude_errors],
+                    names=[column_name, column_name_err]
+                )
+
+    return tbl
+
+
+def mk_magnitudes_array(
+        observation: 'analyze.Observation', filter_list: list[str],
+        photometry_column_keyword: str
+        ) -> dict[str, dict[str, np.ndarray]]:
+    """
+    Create and export astropy table with object positions and magnitudes
+
+    Parameters
+    ----------
+    observation
+        Container object with image series objects for each filter
+
+    filter_list
+        Filter
+
+    photometry_column_keyword
+        String used to identify the magnitude column in the
+        photometry tables
+
+    Returns
+    -------
+    stacked_magnitudes
+        Array with magnitudes and magnitude errors of all images in an
+        image series
+    """
+    #   Dictionary for stacked magnitudes
+    stacked_magnitudes = {}
+
+    #   Add magnitude columns to table
+    for filter_ in filter_list:
+        #   Get image list
+        image_series = observation.image_series_dict[filter_]
+        image_list = image_series.image_list
+
         #   Lists for magnitudes and errors
         magnitude_list = []
         magnitude_error_list = []
@@ -149,18 +203,6 @@ def mk_magnitudes_table_and_array(
             photometry_table = image.photometry
             magnitudes = photometry_table[photometry_column_keyword]
             magnitude_errors = photometry_table[f'{photometry_column_keyword}_unc']
-
-            #   Add to table
-            tbl.add_columns(
-                [
-                    magnitudes,
-                    magnitude_errors,
-                ],
-                names=[
-                    f'{filter_} ({image_id})',
-                    f'{filter_}_err ({image_id})',
-                ]
-            )
 
             #   Add magnitudes and error to corresponding lists
             magnitude_list.append(magnitudes)
@@ -173,24 +215,7 @@ def mk_magnitudes_table_and_array(
             'errors': np.stack(magnitude_error_list)
         }
 
-    # for ids in filter_image_ids:
-    #     tbl.add_columns(
-    #         [
-    #             magnitudes[filter_list[ids[0]]][ids[1]].pdf_median(),
-    #             magnitudes[filter_list[ids[0]]][ids[1]].pdf_std(),
-    #         ],
-    #         names=[
-    #             f'{filter_list[ids[0]]} ({ids[1]})',
-    #             f'{filter_list[ids[0]]}_err ({ids[1]})',
-    #         ]
-    #     )
-
-    #   Sort table
-    # tbl = tbl.group_by(
-    #     f'{filter_list[0]} (0)'
-    # )
-
-    return tbl, stacked_magnitudes
+    return stacked_magnitudes
 
 
 def find_wcs(
@@ -382,7 +407,7 @@ def extract_wcs(
 
 def prepare_time_series_data(
         data: unc.core.NdarrayDistribution | Table,
-        filter_: str, object_id: int
+        filter_: str, object_id: int, calibration_type: str = 'transformed'
         ) -> tuple[np.ndarray, np.ndarray]:
     """
     This function prepares the data for the creation of time series objects.
@@ -402,6 +427,11 @@ def prepare_time_series_data(
     object_id
         Index of the object of interest
 
+    calibration_type
+        Type of calibrated data to use for the time series. Available options are
+        ``simple`` and ''transformed``.
+        The default is ``transformed``.
+
     Returns
     -------
     magnitudes
@@ -415,51 +445,45 @@ def prepare_time_series_data(
         err_column_names = []
         magnitude_column_names = []
         for col_name in column_names:
-            if filter_ in col_name:
-                if 'err' in col_name:
-                    err_column_names.append(col_name)
-                else:
-                    magnitude_column_names.append(col_name)
+            if f'{filter_}' in col_name:
+                if 'transformed' in col_name and calibration_type == 'transformed':
+                    if 'err' in col_name:
+                        err_column_names.append(col_name)
+                    else:
+                        magnitude_column_names.append(col_name)
+                elif 'simple' in col_name and calibration_type == 'simple':
+                    if 'err' in col_name:
+                        err_column_names.append(col_name)
+                    else:
+                        magnitude_column_names.append(col_name)
+            else:
+                terminal_output.print_to_terminal(
+                    f"Warning: No magnitude column found for filter {filter_}"
+                    f"in the provided Table, while preparing time series data.",
+                    style_name='WARNING',
+                )
 
-        # print(
-        #     'type(data[magnitude_column_names][object_id].as_void())',
-        #     type(data[magnitude_column_names][object_id].as_void())
-        # )
-        # print(dir(data[magnitude_column_names][object_id].as_void()))
-        #   Convert magnitudes to numpy.ndarray
         magnitudes = np.array(
             data[magnitude_column_names][object_id].as_void().tolist()
         )
-        # magnitudes = np.array(
-        #     data[magnitude_column_names][object_id].as_void()
-        # )
-        # magnitudes = magnitudes.view(
-        #     (magnitudes.dtype[0], len(magnitudes.dtype.names))
-        # )
         magnitude_errors = np.array(
             data[err_column_names][object_id].as_void().tolist()
         )
-        # magnitude_errors = np.array(
-        #     data[err_column_names][object_id].as_void()
-        # )
-        # magnitude_errors = magnitude_errors.view(
-        #     (magnitude_errors.dtype[0], len(magnitude_errors.dtype.names))
-        # )
         return magnitudes, magnitude_errors
 
     if isinstance(data, unc.core.NdarrayDistribution):
         return data.pdf_median()[object_id], data.pdf_std()[object_id]
     else:
-        print('Add error message')
+        raise Exception(
+            f"{style.Bcolors.FAIL} \nThis should never happen. Data object is "
+            f"neither an numpy.ndarray nor a astropy.Table. The data type was"
+            f"{type(data)}.{style.Bcolors.ENDC}"
+        )
 
 
 def mk_time_series(
-        observation_times: Time,
-        # magnitudes: dict[str, dict[str, np.ndarray]],
-        magnitudes: np.ndarray, magnitude_errors: np.ndarray,
-        filter_: str,
-        # object_id: int
-        ) -> TimeSeries:
+        observation_times: Time, magnitudes: np.ndarray,
+        magnitude_errors: np.ndarray, filter_: str) -> TimeSeries:
     """
     Make a time series object
 
@@ -467,9 +491,6 @@ def mk_time_series(
     ----------
     observation_times
         Observation times
-
-    # magnitudes
-    #     Object magnitudes and uncertainties
 
     magnitudes
         Object magnitudes
@@ -488,21 +509,144 @@ def mk_time_series(
     -------
     ts
     """
-    #   Get magnitude and error
-    # mags_obj = magnitudes[filter_]['values'][:, object_id]
-    # errs_obj = magnitudes[filter_]['errors'][:, object_id]
-
     #   Make time series and use reshape to get a justified array
     ts = TimeSeries(
         time=observation_times,
         data={
-            # filter_: mags_obj.reshape(mags_obj.size, ) * u.mag,
-            # filter_ + '_err': errs_obj.reshape(errs_obj.size, ) * u.mag,
             filter_: magnitudes * u.mag,
             filter_ + '_err': magnitude_errors * u.mag,
         }
     )
     return ts
+
+
+def prepare_plot_time_series(
+        data: unc.core.NdarrayDistribution | Table, observation_times: Time,
+        filter_: str, object_name: str, object_id: int, output_dir: str,
+        binning_factor: float, transit_time: str | None = None,
+        period: float | None = None, file_name_suffix: str = '',
+        light_curve_save_format: str = 'csv', subdirectory: str = '',
+        file_type_plots: str = 'pdf', calibration_type: str = 'transformed'
+        ) -> None:
+    """
+    Prepares, plot, and saves a time series for the object with the
+    object ID: ``object_id``
+
+    Parameters
+    ----------
+    data
+        Object with magnitudes and magnitude uncertainties
+
+    observation_times
+        Time object with the observation times of the extracted
+        magnitudes above
+
+    filter_
+        Filter in which the magnitudes are taken
+
+    object_name
+        Object name
+
+    object_id
+        ID of the object in the list of extracted objects
+
+    output_dir
+        Path to the directory where the light curves will be saved
+
+    binning_factor
+        Factor by which the data should be binned
+
+    transit_time
+        Reference transit time: Used to phase fold the data
+
+    period
+        The period of the recurring property, such as the orbital period
+
+    file_name_suffix
+        Suffix used in the file names of the saved light curves
+
+    light_curve_save_format
+        Format used to save the ASCII data of the light curve
+
+    subdirectory
+        Name of the subdirectory where the plots will be saved
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
+
+    calibration_type
+        Type of calibrated data to use for the time series. Available options are
+        ``simple`` and ''transformed``.
+        The default is ``transformed``.
+    """
+    #   Prepare data for time series
+    magnitudes, magnitudes_error = prepare_time_series_data(
+        data,
+        filter_,
+        object_id,
+        calibration_type=calibration_type,
+    )
+
+    #   Create a time series object
+    time_series = mk_time_series(
+        observation_times,
+        magnitudes,
+        magnitudes_error,
+        filter_,
+    )
+
+    #   Write time series
+    if light_curve_save_format not in ['dat', 'csv']:
+        terminal_output.print_to_terminal(
+            f"Format to save the light curve not known. Assume csv. "
+            f"The provided format was: {light_curve_save_format}",
+            style_name='WARNING',
+        )
+
+    if light_curve_save_format == 'dat':
+        time_series.write(
+            f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
+            f'{file_name_suffix}',
+            format='ascii',
+            overwrite=True,
+        )
+    else:
+        time_series.write(
+            f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
+            f'{file_name_suffix}',
+            format='ascii.csv',
+            overwrite=True,
+        )
+
+    #   Plot light curve over JD
+    plots.light_curve_jd(
+        time_series,
+        filter_,
+        f'{filter_}_err',
+        output_dir,
+        name_object=object_name,
+        file_name_suffix=file_name_suffix,
+        subdirectory=subdirectory,
+        file_type=file_type_plots,
+    )
+
+    #   Plot the light curve folded on the period
+    if (transit_time is not None and transit_time != '?'
+            and period is not None and period > 0.):
+        plots.light_curve_fold(
+            time_series,
+            filter_,
+            f'{filter_}_err',
+            output_dir,
+            transit_time,
+            period,
+            binning_factor=binning_factor,
+            name_object=object_name,
+            file_name_suffix=file_name_suffix,
+            subdirectory=subdirectory,
+            file_type=file_type_plots,
+        )
 
 
 def lin_func(x, a, b):
@@ -1025,7 +1169,7 @@ def prepare_and_plot_starmap(
         tbl: Table = None, x_name: str = 'x_fit', y_name: str = 'y_fit',
         rts_pre: str = 'image',
         label: str = 'Stars with photometric extractions',
-        add_image_id: bool = True) -> None:
+        add_image_id: bool = True, file_type_plots: str = 'pdf') -> None:
     """
     Creates a star map using information from an Image object
 
@@ -1061,6 +1205,10 @@ def prepare_and_plot_starmap(
     add_image_id
         If ``True`` the image ID will be added to the file name.
         Default is ``True``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Get table, data, filter, & object name
     if tbl is None:
@@ -1091,21 +1239,27 @@ def prepare_and_plot_starmap(
         # name_object=name,
         wcs_image=image.wcs,
         terminal_logger=terminal_logger,
+        file_type=file_type_plots,
     )
 
 
 def prepare_and_plot_starmap_from_observation(
-        observation: 'analyze.Observation', filter_list: list[str]) -> None:
+        observation: 'analyze.Observation', filter_list: list[str],
+        file_type_plots: str = 'pdf') -> None:
     """
-        Creates a star map using information from an observation container
+    Creates a star map using information from an observation container
 
-        Parameters
-        ----------
-        observation     
-            Container object with image series objects for each filter
+    Parameters
+    ----------
+    observation
+        Container object with image series objects for each filter
 
-        filter_list
-            List with filter names
+    filter_list
+        List with filter names
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     terminal_output.print_to_terminal(
         "Plot star maps with positions from the final correlation",
@@ -1137,6 +1291,7 @@ def prepare_and_plot_starmap_from_observation(
                          f'{filter_list[1]} filter',
                 # 'name_object': image.object_name,
                 'wcs_image': image.wcs,
+                'file_type': file_type_plots,
             }
         )
         p.start()
@@ -1146,7 +1301,8 @@ def prepare_and_plot_starmap_from_observation(
 def prepare_and_plot_starmap_from_image_series(
         image_series: 'analyze.ImageSeries',
         calib_xs: np.ndarray | list[float], calib_ys: np.ndarray | list[float],
-        plot_reference_only: bool = True) -> None:
+        plot_reference_only: bool = True,
+        file_type_plots: str = 'pdf') -> None:
     """
     Creates a star map using information from an image series
 
@@ -1167,6 +1323,10 @@ def prepare_and_plot_starmap_from_image_series(
         If True only the starmap for the reference image will
         be created.
         Default is ``True``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     terminal_output.print_to_terminal(
         "Plot star map with the objects identified on all images",
@@ -1202,6 +1362,7 @@ def prepare_and_plot_starmap_from_image_series(
                 'label_2': 'Variable object',
                 # 'name_object': image_series.object_name,
                 'wcs_image': image_series.wcs,
+                'file_type': file_type_plots,
             }
         )
         p.start()
@@ -1211,7 +1372,8 @@ def prepare_and_plot_starmap_from_image_series(
 def derive_limiting_magnitude(
         observation: 'analyze.Observation', filter_list: list[str],
         reference_image_id: int, aperture_radius: float = 4.,
-        radii_unit: str = 'arcsec', indent: int = 1) -> None:
+        radii_unit: str = 'arcsec', file_type_plots: str = 'pdf',
+        indent: int = 1) -> None:
     """
     Determine limiting magnitude
 
@@ -1234,6 +1396,10 @@ def derive_limiting_magnitude(
     radii_unit
         Unit of the radii above. Permitted are ``pixel`` and ``arcsec``.
         Default is ``arcsec``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     indent
         Indentation for the console output lines
@@ -1283,6 +1449,7 @@ def derive_limiting_magnitude(
                 'mode': 'mags',
                 # 'name_object': image.object_name,
                 'wcs_image': image.wcs,
+                'file_type': file_type_plots,
             }
         )
         p.start()
@@ -1341,6 +1508,7 @@ def derive_limiting_magnitude(
         p = mp.Process(
             target=plots.plot_limiting_mag_sky_apertures,
             args=(image.out_path.name, image.get_data(), mask, depth),
+            kwargs={'file_type': file_type_plots},
         )
         p.start()
 
@@ -1412,7 +1580,8 @@ def proper_motion_selection(
         image_series: 'analyze.ImageSeries', tbl: Table,
         catalog: str = "I/355/gaiadr3", g_mag_limit: int = 20,
         separation_limit: float = 1., sigma: float = 3.,
-        max_n_iterations_sigma_clipping: int = 3) -> Column:
+        max_n_iterations_sigma_clipping: int = 3,
+        file_type_plots: str = 'pdf') -> Column:
     """
     Select a subset of objects based on their proper motion
 
@@ -1445,6 +1614,10 @@ def proper_motion_selection(
     max_n_iterations_sigma_clipping
         Maximal number of iteration of the sigma clipping.
         Default is ``3``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Get wcs
     w = image_series.wcs
@@ -1564,6 +1737,7 @@ def proper_motion_selection(
         tbl=Table(names=['x_fit', 'y_fit'], data=[x_obj, y_obj]),
         rts_pre='proper motion [Gaia]',
         label='Objects selected based on proper motion',
+        file_type_plots=file_type_plots,
     )
 
     #   2D and 3D plot of the proper motion and the distance
@@ -1574,6 +1748,7 @@ def proper_motion_selection(
         'pm_DEC (mas/yr)',
         'compare_pm_',
         image.out_path.name,
+        file_type=file_type_plots,
     )
     plots.d3_scatter(
         [pm_ra],
@@ -1583,6 +1758,7 @@ def proper_motion_selection(
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
+        file_type=file_type_plots,
     )
 
     #   Apply mask
@@ -1592,7 +1768,8 @@ def proper_motion_selection(
 def region_selection(
         image_series: 'analyze.ImageSeries',
         coordinates_target: SkyCoord | list[SkyCoord], tbl: Table,
-        radius: float = 600.) -> tuple[Table, np.ndarray]:
+        radius: float = 600., file_type_plots: str = 'pdf'
+        ) -> tuple[Table, np.ndarray]:
     """
     Select a subset of objects based on a target coordinate and a radius
 
@@ -1611,6 +1788,10 @@ def region_selection(
     radius
         Selection radius around the object in arcsec
         Default is ``600``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     Returns
     -------
@@ -1658,6 +1839,7 @@ def region_selection(
         tbl=Table(names=['x_fit', 'y_fit'], data=[tbl['x'], tbl['y']]),
         rts_pre='radius selection, image',
         label=f"Objects selected within {radius}'' of the target",
+        file_type_plots=file_type_plots,
     )
 
     return tbl, mask
@@ -1667,7 +1849,8 @@ def find_cluster(
         image_series: 'analyze.ImageSeries', tbl: Table, object_names: list[str],
         catalog: str = "I/355/gaiadr3", g_mag_limit: float = 20.,
         separation_limit: float = 1., max_distance: float = 6.,
-        parameter_set: int = 1) -> tuple[Table, int, np.ndarray, np.ndarray]:
+        parameter_set: int = 1, file_type_plots: str = 'pdf'
+        ) -> tuple[Table, int, np.ndarray, np.ndarray]:
     """
     Identify cluster in data
 
@@ -1704,6 +1887,10 @@ def find_cluster(
         Predefined parameter sets can be used.
         Possibilities: ``1``, ``2``, ``3``
         Default is ``1``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     Returns
     -------
@@ -1900,6 +2087,7 @@ def find_cluster(
         # string='_3D_cluster_',
         pm_ra=pm_ra_object,
         pm_dec=pm_de_object,
+        file_type=file_type_plots,
     )
     plots.d3_scatter(
         pm_ra_group,
@@ -1914,6 +2102,7 @@ def find_cluster(
         pm_ra=pm_ra_object,
         pm_dec=pm_de_object,
         display=True,
+        file_type=file_type_plots,
     )
 
     # plots.D3_scatter(
@@ -1957,6 +2146,7 @@ def find_cluster(
         rts_pre='selected cluster members',
         label='Cluster members based on proper motion and distance evaluation',
         add_image_id=False,
+        file_type_plots=file_type_plots,
     )
 
     #   Return table
@@ -1965,9 +2155,8 @@ def find_cluster(
 
 def save_magnitudes_ascii(
         observation: 'analyze.Observation', tbl: Table,
-        magnitude_transformation: bool = False, id_object: int | None = None,
-        rts: str = '', photometry_extraction_method: str = '',
-        add_file_path_to_observation_object: bool = True) -> None:
+        id_object: int | None = None,
+        rts: str = '', photometry_extraction_method: str = '') -> None:
     """
     Save magnitudes as ASCII files
 
@@ -1979,10 +2168,6 @@ def save_magnitudes_ascii(
 
     tbl
         Table with magnitudes
-
-    magnitude_transformation
-        If True a magnitude transformation was performed
-        Default is ``False``.
 
     id_object
         ID of the object
@@ -1996,10 +2181,6 @@ def save_magnitudes_ascii(
     photometry_extraction_method
         Applied extraction method. Possibilities: ePSF or APER`
         Default is ``''``.
-
-    add_file_path_to_observation_object      : `boolean`, optional
-        If True the file path will be added to the observation object.
-        Default is ``True``.
     """
     #   Check output directories
     output_dir = list(observation.image_series_dict.values())[0].out_path
@@ -2018,24 +2199,26 @@ def save_magnitudes_ascii(
 
     #   Check if observation object contains already entries
     #   for file names/paths. If not add dictionary.
-    photo_filepath = getattr(observation, 'photo_filepath', None)
-    if photo_filepath is None or not isinstance(photo_filepath, dict):
-        observation.photo_filepath = {}
+    # photo_filepath = getattr(observation, 'photo_filepath', None)
+    # if photo_filepath is None or not isinstance(photo_filepath, dict):
+    #     observation.photo_filepath = {}
 
     #   Set file name
-    if magnitude_transformation:
-        #   Set file name for file with magnitude transformation
-        filename = f'mags_TRANS_calibrated{photometry_extraction_method}{id_object}{rts}.dat'
-    else:
-        #   File name for file without magnitude transformation
-        filename = f'mags_calibrated{photometry_extraction_method}{id_object}{rts}.dat'
+    # if magnitude_transformation:
+    #     #   Set file name for file with magnitude transformation
+    #     filename = f'mags_TRANS_calibrated{photometry_extraction_method}{id_object}{rts}.dat'
+    # else:
+    #     #   File name for file without magnitude transformation
+    #     filename = f'mags_calibrated{photometry_extraction_method}{id_object}{rts}.dat'
+
+    filename = f'calibrated_magnitudes{photometry_extraction_method}{id_object}{rts}.dat'
 
     #   Combine to a path
     out_path = output_dir / 'tables' / filename
 
     #   Add to object
-    if add_file_path_to_observation_object:
-        observation.photo_filepath[out_path] = magnitude_transformation
+    # if add_file_path_to_observation_object:
+    #     observation.photo_filepath[out_path] = magnitude_transformation
 
     ###
     #   Define output formats for the table columns
@@ -2072,8 +2255,8 @@ def post_process_results(
         clean_objects_using_proper_motion: bool = False,
         max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
         convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
-        tbl_list: list[Table] | None = None, distribution_samples: int = 1000
-        ) -> None:
+        tbl_list: list[Table] | None = None, distribution_samples: int = 1000,
+        file_type_plots: str = 'pdf') -> None:
     """
     Restrict results to specific areas of the image and filter by means
     of proper motion and distance using Gaia
@@ -2141,6 +2324,10 @@ def post_process_results(
     distribution_samples
         Number of samples used for distributions
         Default is `1000`.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Do nothing if no post process method were defined
     if (not extract_only_circular_region and not clean_objects_using_proper_motion
@@ -2151,11 +2338,13 @@ def post_process_results(
     image_series_dict = observation.image_series_dict
 
     #   Get astropy tables with positions and magnitudes
-    if tbl_list is None or not tbl_list:
-        tbl_list = [
-            (getattr(observation, 'table_mags_transformed', None), True),
-            (getattr(observation, 'table_mags_not_transformed', None), False),
-        ]
+    #   TODO: Fix this - Cleanup after testing
+    # if tbl_list is None or not tbl_list:
+    #     tbl_list = [
+    #         (getattr(observation, 'table_mags_transformed', None), True),
+    #         (getattr(observation, 'table_mags_not_transformed', None), False),
+    #     ]
+    tbl = observation.table_magnitudes
 
     #   Loop over all Tables
     mask_region = None
@@ -2164,79 +2353,93 @@ def post_process_results(
     mask_objects = None
     img_id_pm = None
     mask_pm = None
-    for (tbl, trans) in tbl_list:
-        ###
-        #   Post process data
-        #
+    # for (tbl, trans) in tbl_list:
+    ###
+    #   Post process data
+    #
 
-        #   Extract circular region around a certain object
-        #   such as a star cluster
-        if extract_only_circular_region:
-            if mask_region is None:
-                tbl, mask_region = region_selection(
-                    image_series_dict[filter_list[0]],
-                    observation.objects_of_interest_coordinates,
-                    tbl,
-                    radius=region_radius
-                )
-            else:
-                tbl = tbl[mask_region]
-
-        #   Find a cluster in the Gaia data that could be the star cluster
-        if data_cluster:
-            if any(x is None for x in [img_id_cluster, mask_cluster, mask_objects]):
-                tbl, img_id_cluster, mask_cluster, mask_objects = find_cluster(
-                    image_series_dict[filter_list[0]],
-                    tbl,
-                    observation.get_object_of_interest_names(),
-                    max_distance=max_distance_cluster,
-                    parameter_set=find_cluster_para_set,
-                )
-            else:
-                tbl = tbl[img_id_cluster][mask_cluster][mask_objects]
-
-        #   Clean objects according to proper motion (Gaia)
-        #   TODO: Check if this is still a useful option
-        if clean_objects_using_proper_motion:
-            if any(x is None for x in [img_id_pm, mask_pm]):
-                tbl, img_id_pm, mask_pm = proper_motion_selection(
-                    image_series_dict[filter_list[0]],
-                    tbl,
-                )
-            else:
-                tbl = tbl[img_id_pm][mask_pm]
-
-        #   Convert magnitudes to a different filter system
-        if convert_magnitudes:
-            tbl = convert_magnitudes_to_other_system(
+    #   Extract circular region around a certain object
+    #   such as a star cluster
+    if extract_only_circular_region:
+        #   TODO: Save
+        if mask_region is None:
+            tbl, mask_region = region_selection(
+                image_series_dict[filter_list[0]],
+                observation.objects_of_interest_coordinates,
                 tbl,
-                target_filter_system,
-                distribution_samples=distribution_samples,
+                radius=region_radius,
+                file_type_plots=file_type_plots,
             )
-
-        ###
-        #   Save results as ASCII files
-        #
-        #   TODO: Fix this dirty hack to fix the file names, if magnitude
-        #         transformation is applied
-        if trans:
-            rts = f'_{filter_list[0]}-{filter_list[1]}_post_processed'
         else:
-            rts = '_post_processed'
-        save_magnitudes_ascii(
-            observation,
+            tbl = tbl[mask_region]
+
+    #   Find a cluster in the Gaia data that could be the star cluster
+    if data_cluster:
+        #   TODO: Save
+        if any(x is None for x in [img_id_cluster, mask_cluster, mask_objects]):
+            tbl, img_id_cluster, mask_cluster, mask_objects = find_cluster(
+                image_series_dict[filter_list[0]],
+                tbl,
+                observation.get_object_of_interest_names(),
+                max_distance=max_distance_cluster,
+                parameter_set=find_cluster_para_set,
+                file_type_plots=file_type_plots,
+            )
+        else:
+            tbl = tbl[img_id_cluster][mask_cluster][mask_objects]
+
+    #   Clean objects according to proper motion (Gaia)
+    #   TODO: Check if this is still a useful option
+    if clean_objects_using_proper_motion:
+        if any(x is None for x in [img_id_pm, mask_pm]):
+            #   TODO: Save
+            tbl, img_id_pm, mask_pm = proper_motion_selection(
+                image_series_dict[filter_list[0]],
+                tbl,
+                file_type_plots=file_type_plots,
+            )
+        else:
+            tbl = tbl[img_id_pm][mask_pm]
+
+    #   Convert magnitudes to a different filter system
+    if convert_magnitudes:
+        tbl = convert_magnitudes_to_other_system(
             tbl,
-            magnitude_transformation=trans,
-            id_object=id_object,
-            rts=rts,
-            photometry_extraction_method=extraction_method,
-            add_file_path_to_observation_object=False,
+            target_filter_system,
+            distribution_samples=distribution_samples,
         )
+
+    ###
+    #   Save results as ASCII files
+    #
+    #   TODO: Fix this dirty hack to fix the file names, if magnitude
+    #         transformation is applied
+    # if trans:
+    if len(filter_list) == 2:
+        rts = f'_{filter_list[0]}-{filter_list[1]}_post_processed'
+    elif len(filter_list) == 1:
+        rts = '_post_processed'
+    else:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \nThis should never happen: Number of "
+            f"{len(filter_list)} were provided, but only 1 or 2 are supported."
+            f"{style.Bcolors.ENDC}"
+        )
+
+    save_magnitudes_ascii(
+        observation,
+        tbl,
+        # magnitude_transformation=trans,
+        id_object=id_object,
+        rts=rts,
+        photometry_extraction_method=extraction_method,
+        # add_file_path_to_observation_object=False,
+    )
 
 
 def add_column_to_table(
         tbl: Table, column_name: str, data: unc.core.NdarrayDistribution,
-        column_id: int) -> Table:
+        additional_column_name: str) -> Table:
     """
     Adds data from a distribution to an astropy Table
 
@@ -2251,28 +2454,27 @@ def add_column_to_table(
     data
         The data that should be added to the table
 
-    column_id
-        Additional ID that identifies the column. If the
-        ID is not -1, it will be added to the column header.
+    additional_column_name
+        Additional string that characterizes the column
 
     Returns
     -------
     tbl
         Table with the added column
     """
-    if column_id == -1:
-        tbl.add_columns(
-            [data.pdf_median(), data.pdf_std()],
-            names=[column_name, f'{column_name}_err']
-        )
-    else:
-        tbl.add_columns(
-            [data.pdf_median(), data.pdf_std()],
-            names=[
-                f'{column_name} ({column_id})',
-                f'{column_name}_err ({column_id})',
-            ]
-        )
+    # if column_id == -1:
+    #     tbl.add_columns(
+    #         [data.pdf_median(), data.pdf_std()],
+    #         names=[column_name, f'{column_name}_err']
+    #     )
+    # else:
+    tbl.add_columns(
+        [data.pdf_median(), data.pdf_std()],
+        names=[
+            f'{column_name} {additional_column_name}',
+            f'{column_name}_err {additional_column_name}',
+        ]
+    )
 
     return tbl
 
@@ -2338,158 +2540,189 @@ def convert_magnitudes_to_other_system(
         )
 
     #   Select magnitudes and errors and corresponding filter
-    available_image_ids = []
-    available_filter_image_error = []
+    available_image_ids: list[str] = []
+    available_filter_image_error: dict[str, dict[str, list[tuple]]] = {
+        'simple': {},
+        'transformed': {},
+    }
 
     #   Loop over column names
     for column_name in column_names:
         #   Detect color: 'continue in this case, since colors are not yet
-        #   supported'
+        #   supported' -> look for '-' at position '1', since colors are
+        #   usually given as stings such as B-V
         if len(column_name) > 1 and column_name[1] == '-':
             continue
 
         #   Get filter
         column_filter = column_name[0]
+
+        #   Skip index and position columns
         if column_filter in ['i', 'x', 'y']:
             continue
 
-        #   Get the image ID
-        image_id = column_name.split('(')[1].split(')')[0]
+        #   Get the image ID and magnitude type
+        bracket_string = column_name.split('(')[1].split(')')[0].split(', image=')
+        magnitude_type = bracket_string[0]
+        image_id = bracket_string[1]
+
+        #   Setup list for filter/error information tuples, if it does not
+        #   already exist.
+        if image_id not in available_filter_image_error[magnitude_type]:
+            available_filter_image_error[magnitude_type][image_id] =[]
 
         #   Is an image ID available?
-        if image_id != '':
-            #   Check for error column
-            error = any(x == f'{column_filter}_err ({image_id})' for x in column_names)
+        #   An image ID should now be always available -> TODO: Remove when tested
+        # if image_id != '':
+        #   Check for error column
+        error = any(x == f'{column_filter}_err ({magnitude_type}, image={image_id})' for x in column_names)
 
-            #   Combine derived info -> (ID of the image, Filter,
-            #                            boolean: error available?)
-            info = (image_id, column_filter, error)
-        else:
-            #   Set dummy image ID
-            image_id = -1
+        #   Combine derived info -> (ID of the image, Filter, magnitude type,
+        #                            boolean: error available?)
+        # info = (image_id, column_filter, magnitude_type, error)
+        #   Combine derived info -> (Filter, boolean: error available?)
+        info = (column_filter, error)
 
-            #   Check for error column
-            error = any(x == f'{column_filter}_err' for x in column_names)
-
-            #   Combine derived info -> (ID of the image, Filter,
-            #                            boolean: error available?)
-            info = (-1, column_filter, error)
+        # else:
+        #     #   Set dummy image ID
+        #     image_id = -1
+        #
+        #     #   Check for error column
+        #     error = any(x == f'{column_filter}_err' for x in column_names)
+        #
+        #     #   Combine derived info -> (ID of the image, Filter,
+        #     #                            boolean: error available?)
+        #     info = (-1, column_filter, error)
 
         #   Check if image and filter combination is already known.
         #   If yes continue.
-        if info in available_filter_image_error:
+        if info in available_filter_image_error[magnitude_type][image_id]:
             continue
 
         #   Save image, filter, & error info
-        available_filter_image_error.append(info)
+        available_filter_image_error[magnitude_type][image_id].append(info)
 
         if image_id not in available_image_ids:
             available_image_ids.append(image_id)
 
+    #   TODO: Reduce the number of loops and convert to matrix calculation
     #   Make conversion for each image ID individually
     for image_id in available_image_ids:
-        #   Reset dictionary with data
-        data_dict = {}
+        for type_magnitude in ['simple', 'transformed']:
+            #   Reset dictionary with data
+            data_dict = {}
 
-        #   Get image ID, filter and error combination
-        for (current_image_id, column_filter, error) in available_filter_image_error:
-            #   Restrict to current image ID
-            if current_image_id != image_id:
-                continue
-
-            #   Fill data dictionary, branch according to error and image
-            #   ID availability
-            if image_id == -1:
+            #   Get image ID, filter and error combination
+            # for (current_image_id, column_filter, magnitude_type, error) in available_filter_image_error:
+            for (column_filter, error) in available_filter_image_error[type_magnitude][image_id]:
+                #   Fill data dictionary, branch according to error and image
+                #   ID availability
+                # if image_id == -1:
+                #     if error:
+                #         data_dict[column_filter] = unc.normal(
+                #             tbl[f'{column_filter}'].value * u.mag,
+                #             std=tbl[f'{column_filter}_err'].value * u.mag,
+                #             n_samples=distribution_samples,
+                #         )
+                #     else:
+                #         data_dict[column_filter] = unc.normal(
+                #             tbl[f'{column_filter}'].value * u.mag,
+                #             n_samples=distribution_samples,
+                #         )
+                # else:
                 if error:
                     data_dict[column_filter] = unc.normal(
-                        tbl[f'{column_filter}'].value * u.mag,
-                        std=tbl[f'{column_filter}_err'].value * u.mag,
-                        n_samples=distribution_samples,
-                    )
-                    # unumpy.uarray(
-                    #     tbl[f'{column_filter}'].value,
-                    #     tbl[f'{column_filter}_err'].value
-                    # )
-                else:
-                    # data_dict[column_filter] = tbl[f'{column_filter}'].value
-                    data_dict[column_filter] = unc.normal(
-                        tbl[f'{column_filter}'].value * u.mag,
-                        n_samples=distribution_samples,
-                    )
-            else:
-                if error:
-                    # data_dict[column_filter] = unumpy.uarray(
-                    #     tbl[f'{column_filter} ({image_id})'].value,
-                    #     tbl[f'{column_filter}_err ({image_id})'].value
-                    # )
-                    data_dict[column_filter] = unc.normal(
-                        tbl[f'{column_filter} ({image_id})'].value * u.mag,
-                        std=tbl[f'{column_filter}_err ({image_id})'].value * u.mag,
+                        tbl[f'{column_filter} ({type_magnitude}, image={image_id})'].value * u.mag,
+                        std=tbl[f'{column_filter}_err ({type_magnitude}, image={image_id})'].value * u.mag,
                         n_samples=distribution_samples,
                     )
                 else:
-                    # data_dict[column_filter] = tbl[f'{column_filter} ({image_id})'].value
                     data_dict[column_filter] = unc.normal(
-                        tbl[f'{column_filter} ({image_id})'].value * u.mag,
+                        tbl[f'{column_filter} ({type_magnitude}, image={image_id})'].value * u.mag,
                         n_samples=distribution_samples,
                     )
 
-        if target_filter_system == 'AB':
-            #   TODO: Fix this
-            print('Will be available soon...')
+            if target_filter_system == 'AB':
+                #   TODO: Fix this
+                print('Will be available soon...')
 
-        elif target_filter_system == 'SDSS':
-            #   Get conversion function - only Jordi et a. (2005) currently
-            #   available:
-            calib_functions = calibration_parameters \
-                .filter_system_conversions['SDSS']['Jordi_et_al_2005']
+            elif target_filter_system == 'SDSS':
+                #   Get conversion function - only Jordi et a. (2005) currently
+                #   available:
+                calib_functions = calibration_parameters \
+                    .filter_system_conversions['SDSS']['Jordi_et_al_2005']
 
-            #   Convert magnitudes and add those to data dictionary and the Table
-            g = calib_functions['g'](
-                **data_dict,
-                distribution_samples=distribution_samples,
-            )
-            if g is not None:
-                data_dict['g'] = g
-                tbl = add_column_to_table(tbl, 'g', g, image_id)
+                #   Convert magnitudes and add those to data dictionary and the Table
+                g = calib_functions['g'](
+                    **data_dict,
+                    distribution_samples=distribution_samples,
+                )
+                if g is not None:
+                    data_dict['g'] = g
+                    tbl = add_column_to_table(
+                        tbl,
+                        'g',
+                        g,
+                        additional_column_name=f'({type_magnitude}, image={image_id})',
+                    )
 
-            u_mag = calib_functions['u'](
-                **data_dict,
-                distribution_samples=distribution_samples,
-            )
-            if u_mag is not None:
-                data_dict['u'] = u_mag
-                tbl = add_column_to_table(tbl, 'u', u_mag, image_id)
+                u_mag = calib_functions['u'](
+                    **data_dict,
+                    distribution_samples=distribution_samples,
+                )
+                if u_mag is not None:
+                    data_dict['u'] = u_mag
+                    tbl = add_column_to_table(
+                        tbl,
+                        'u',
+                        u_mag,
+                        additional_column_name=f'({type_magnitude}, image={image_id})',
+                    )
 
-            r = calib_functions['r'](
-                **data_dict,
-                distribution_samples=distribution_samples,
-            )
-            if r is not None:
-                data_dict['r'] = r
-                tbl = add_column_to_table(tbl, 'r', r, image_id)
+                r = calib_functions['r'](
+                    **data_dict,
+                    distribution_samples=distribution_samples,
+                )
+                if r is not None:
+                    data_dict['r'] = r
+                    tbl = add_column_to_table(
+                        tbl,
+                        'r',
+                        r,
+                        additional_column_name=f'({type_magnitude}, image={image_id})',
+                    )
 
-            i = calib_functions['i'](
-                **data_dict,
-                distribution_samples=distribution_samples,
-            )
-            if i is not None:
-                data_dict['i'] = i
-                tbl = add_column_to_table(tbl, 'i', i, image_id)
+                i = calib_functions['i'](
+                    **data_dict,
+                    distribution_samples=distribution_samples,
+                )
+                if i is not None:
+                    data_dict['i'] = i
+                    tbl = add_column_to_table(
+                        tbl,
+                        'i',
+                        i,
+                        additional_column_name=f'({type_magnitude}, image={image_id})',
+                    )
 
-            z = calib_functions['z'](
-                **data_dict,
-                distribution_samples=distribution_samples,
-            )
-            if z is not None:
-                data_dict['z'] = z
-                tbl = add_column_to_table(tbl, 'z', z, image_id)
+                z = calib_functions['z'](
+                    **data_dict,
+                    distribution_samples=distribution_samples,
+                )
+                if z is not None:
+                    data_dict['z'] = z
+                    tbl = add_column_to_table(
+                        tbl,
+                        'z',
+                        z,
+                        additional_column_name=f'({type_magnitude}, image={image_id})',
+                    )
 
-        elif target_filter_system == 'BESSELL':
-            #   TODO: Fix this
-            print('Will be available soon...')
+            elif target_filter_system == 'BESSELL':
+                #   TODO: Fix this
+                print('Will be available soon...')
 
-        return tbl
+    return tbl
 
 
 def find_filter_for_magnitude_transformation(
@@ -2566,7 +2799,7 @@ def prepare_calibration_check_plots(
         color_literature_err=None, literature_magnitudes_err=None,
         magnitudes_err: np.ndarray | None = None,
         uncalibrated_magnitudes_err: np.ndarray | None = None,
-        multiprocessing: bool = True) -> None:
+        multiprocessing: bool = True, file_type_plots: str = 'pdf') -> None:
     """
     Useful plots to check the quality of the calibration process.
 
@@ -2633,6 +2866,10 @@ def prepare_calibration_check_plots(
     multiprocessing
         If ``True'', multicore processing is allowed, otherwise not.
         Default is ``True``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Comparison calibrated vs. uncalibrated magnitudes
     if multiprocessing:
@@ -2650,6 +2887,7 @@ def prepare_calibration_check_plots(
                 # 'name_object': name_object,
                 'x_errors': [magnitudes_err],
                 'y_errors': [uncalibrated_magnitudes_err],
+                'file_type': file_type_plots,
             }
         )
         p.start()
@@ -2664,6 +2902,7 @@ def prepare_calibration_check_plots(
             # name_object=name_object,
             x_errors=[magnitudes_err],
             y_errors=[uncalibrated_magnitudes_err],
+            file_type=file_type_plots,
         )
 
     #   Comparison observed vs. literature magnitudes
@@ -2694,6 +2933,7 @@ def prepare_calibration_check_plots(
                 'y_errors': [
                     literature_magnitudes_err
                 ],
+                'file_type': file_type_plots,
                 # 'dataset_label': [
                 #     'without sigma clipping',
                 #     'with sigma clipping',
@@ -2713,6 +2953,7 @@ def prepare_calibration_check_plots(
             fits=[None, fit],
             x_errors=uncalibrated_magnitudes_err[ids_calibration_stars],
             y_errors=[literature_magnitudes_err],
+            file_type=file_type_plots,
             # dataset_label=[
             #     'without sigma clipping',
             #     'with sigma clipping',
@@ -2749,6 +2990,7 @@ def prepare_calibration_check_plots(
                     #     'with sigma clipping',
                     # ],
                     'fits': [fit, fit],
+                    'file_type': file_type_plots,
                 }
             )
             p.start()
@@ -2768,6 +3010,7 @@ def prepare_calibration_check_plots(
                 #     'with sigma clipping',
                 # ],
                 fits=[fit, fit],
+                file_type=file_type_plots,
             )
 
     #   Difference between literature values and calibration results
@@ -2789,6 +3032,7 @@ def prepare_calibration_check_plots(
                 'y_errors': [
                     err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
                 ],
+                'file_type': file_type_plots,
                 # 'dataset_label': [
                 #     'without sigma clipping',
                 #     'with sigma clipping',
@@ -2808,8 +3052,57 @@ def prepare_calibration_check_plots(
             y_errors=[
                 err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
             ],
+            file_type=file_type_plots,
             # dataset_label=[
             #     'without sigma clipping',
             #     'with sigma clipping',
             # ],
         )
+
+
+def save_calibration(
+        observation: 'analyze.Observation', filter_list: list[str],
+        id_object: int, photometry_extraction_method: str = '', rts: str = ''
+        ) -> None:
+    """
+    #   Save results of the calibration as ASCII files
+
+    Parameters
+    ----------
+    observation
+        Container object with image series objects for each filter
+
+    filter_list
+        Filter
+
+    id_object
+        ID of the object in the list of detected objects
+
+    photometry_extraction_method
+        Applied extraction method. Possibilities: ePSF or APER`
+        Default is ``''``.
+
+    rts
+        Additional string characterizing that should be included in the
+        file name.
+        Default is ``''``.
+    """
+    #   Make astropy table
+    table_magnitudes = mk_magnitudes_table(
+        observation,
+        filter_list,
+    )
+
+    #   Add table to observation container
+    observation.table_magnitudes = table_magnitudes
+    # observation.table_mags_transformed = table_magnitudes
+
+    #   Save to file
+    save_magnitudes_ascii(
+        observation,
+        table_magnitudes,
+        # magnitude_transformation=True,
+        id_object=id_object,
+        photometry_extraction_method=photometry_extraction_method,
+        rts=rts,
+    )

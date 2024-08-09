@@ -1296,8 +1296,8 @@ def correlate_image_series(
         correlation_method: str = 'astropy',
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         force_correlation_calibration_objects: bool = False,
-        reference_image_id: int = 0, verbose: bool = False, indent: int = 1
-        ) -> None:
+        reference_image_id: int = 0, verbose: bool = False,
+        file_type_plots: str = 'pdf', indent: int = 1) -> None:
     """
     Correlate star lists from the stacked images of all filters to find
     those stars that are visible on all images
@@ -1365,6 +1365,10 @@ def correlate_image_series(
     verbose
         If True additional output will be printed to the command line.
         Default is ``False``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     indent
         Indentation for the console output lines
@@ -1504,6 +1508,7 @@ def correlate_image_series(
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             reference_image_id=reference_image_id,
+            file_type_plots=file_type_plots,
             indent=indent,
         )
 
@@ -1520,7 +1525,8 @@ def correlate_preserve_variable(
         protect_reference_obj: bool = True,
         correlation_method: str = 'astropy',
         separation_limit: u.Quantity = 2. * u.arcsec, verbose: bool = False,
-        plot_reference_only: bool = True) -> None:
+        plot_reference_only: bool = True,
+        file_type_plots: str = 'pdf') -> None:
     """
     Correlate results from all images, while preserving the variable
     star
@@ -1584,6 +1590,10 @@ def correlate_preserve_variable(
         If True only the starmap for the reference image will
         be created.
         Default is ``True``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Get image series
     image_series = observation.image_series_dict[filter_]
@@ -1682,6 +1692,7 @@ def correlate_preserve_variable(
         x_position_object,
         y_position_object,
         plot_reference_only=plot_reference_only,
+        file_type_plots=file_type_plots,
     )
 
 
@@ -1798,7 +1809,8 @@ def correlate_preserve_calibration_objects(
         protect_reference_obj: bool = True,
         plot_only_reference_starmap: bool = True,
         correlation_method: str = 'astropy',
-        separation_limit: u.quantity.Quantity = 2. * u.arcsec) -> None:
+        separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+        file_type_plots: str = 'pdf') -> None:
     """
     Correlate results from all images, while preserving the calibration
     stars
@@ -1878,6 +1890,10 @@ def correlate_preserve_calibration_objects(
     separation_limit
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
     """
     #   Load calibration data
     calib_tbl, column_names, ra_unit = calibration_data.load_calibration_data_table(
@@ -1954,6 +1970,7 @@ def correlate_preserve_calibration_objects(
         calib_x_pixel_positions,
         calib_y_pixel_positions,
         plot_reference_only=plot_only_reference_starmap,
+        file_type_plots=file_type_plots,
     )
 
 
@@ -1965,7 +1982,8 @@ def correlate_with_calibration_objects(
         separation_limit: u.Quantity = 2. * u.arcsec,
         max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
         id_object: int | None = None, reference_image_id: int = 0,
-        indent: int = 1) -> tuple[Table, np.ndarray]:
+        indent: int = 1, file_type_plots: str = 'pdf'
+        ) -> tuple[Table, np.ndarray]:
     """
     Correlate observed objects with calibration stars
 
@@ -2016,6 +2034,10 @@ def correlate_with_calibration_objects(
     indent
         Indentation for the console output lines
         Default is ``1``.
+
+    file_type_plots
+        Type of plot file to be created
+        Default is ``pdf``.
 
     Returns
     -------
@@ -2134,6 +2156,7 @@ def correlate_with_calibration_objects(
                     'rts': rts,
                     # 'name_object': image_series.object_name,
                     'wcs_image': image_series.wcs,
+                    'file_type': file_type_plots,
                 }
             )
             p.start()

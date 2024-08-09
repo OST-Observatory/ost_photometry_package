@@ -134,13 +134,20 @@ class Image:
     def get_header(self) -> dict[str, str]:
         return CCDData.read(self.path).meta
 
+    #   TODO: Add unit check for error and data
     #   Get data
+    # def get_data(self, check_unit: bool = False) -> np.ndarray:
+    #     data = CCDData.read(self.path).data
+    #     #   If no unit is available, use electron / s
+    #     if check_unit and 'unit' not in dir(data):
+    #         data = data * u.electron / u.s
+    #     return data
     def get_data(self) -> np.ndarray:
         return CCDData.read(self.path).data
 
     #   Get uncertainty
     def get_error(self) -> np.ndarray:
-        return CCDData.read(self.path).uncertainty
+        return CCDData.read(self.path).uncertainty.array
 
     # Get mask
     def get_mask(self) -> np.ndarray:
