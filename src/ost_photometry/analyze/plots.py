@@ -919,7 +919,7 @@ def light_curve_jd(
     if subdirectory != '':
         checks.check_output_directories(
             output_dir,
-            os.path.join(output_dir, f'{subdirectory}/lightcurve'),
+            f'{output_dir}/lightcurve{subdirectory}',
         )
     else:
         checks.check_output_directories(
@@ -994,7 +994,7 @@ def light_curve_jd(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/lightcurve/lightcurve_jd_{name_object}'
+        f'{output_dir}/lightcurve{subdirectory}/lightcurve_jd_{name_object}'
         f'_{data_column}{file_name_suffix}.{file_type}',
         bbox_inches='tight',
         format=file_type,
@@ -1058,7 +1058,7 @@ def light_curve_fold(
     if subdirectory != '':
         checks.check_output_directories(
             output_dir,
-            os.path.join(output_dir, f'{subdirectory}/lightcurve'),
+            f'{output_dir}/lightcurve{subdirectory}',
         )
     else:
         checks.check_output_directories(
@@ -1179,7 +1179,7 @@ def light_curve_fold(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/lightcurve/lightcurve_folded_{name_object}'
+        f'{output_dir}/lightcurve{subdirectory}/lightcurve_folded_{name_object}'
         f'_{data_column}{file_name_suffix}.{file_type}',
         bbox_inches='tight',
         format=file_type,

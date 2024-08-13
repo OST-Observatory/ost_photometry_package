@@ -520,7 +520,8 @@ class Observation:
     #   Get the IDs of the objects of interest within the detected objects on
     #   the images
     def get_ids_object_of_interest(
-            self, filter_: str | None = None,
+            self,
+            filter_: str | None = None,
             reference_image_series_id: int | None = None
             ) -> list[int]:
         if filter_ is None and reference_image_series_id is None:
@@ -927,7 +928,7 @@ class Observation:
         multiplier_background_rms
             Multiplier for the background RMS, used to calculate the
             threshold to identify stars
-            Default is ``7``.
+            Default is ``5``.
 
         size_epsf_region
             Size of the extraction region in pixel
@@ -1390,7 +1391,7 @@ class Observation:
             binning_factor: float | None = None,
             transformation_coefficients_dict: dict[str, (float | str)] | None = None,
             derive_transformation_coefficients: bool = False,
-            reference_image_id: int = 0, calibration_method: str = 'APASS',
+            calibration_method: str = 'APASS',
             vizier_dict: dict[str, str] | None = None,
             path_calibration_file: str | None = None,
             magnitude_range: tuple[float, float] = (0., 18.5),
@@ -1436,10 +1437,6 @@ class Observation:
             calculated from the current data even if calibration coefficients
             are available in the database.
             Default is ``False``
-
-        reference_image_id
-            ID of the reference image
-            Default is ``0``.
 
         calibration_method
             Calibration method
@@ -1566,7 +1563,6 @@ class Observation:
             separation_limit=separation_limit,
             region_to_select_calibration_stars=region_to_select_calibration_stars,
             correlate_with_observed_objects=correlate_with_observed_objects,
-            reference_image_id=reference_image_id,
             coordinates_obj_to_rm=coordinates_objects_of_interest,
             file_type_plots=file_type_plots,
         )
@@ -1596,7 +1592,6 @@ class Observation:
                 correlation_method=correlation_method,
                 separation_limit=separation_limit,
                 verbose=verbose,
-                reference_image_id=reference_image_id,
                 file_type_plots=file_type_plots,
             )
 
@@ -1711,7 +1706,7 @@ class Observation:
                     #     )
 
                 if plot_light_curve_all:
-                    for index in self.table_magnitudes['i']:
+                    for index in np.arange(len(self.table_magnitudes)):
                         if index not in ids_object_of_interest:
                             utilities.prepare_plot_time_series(
                                 self.table_magnitudes,
@@ -1860,9 +1855,9 @@ class Observation:
                 if plot_light_curve_all:
                     if isinstance(plot_quantity, unc.core.NdarrayDistribution):
                         shape_array = plot_quantity.shape
-                        index_array = np.arange(shape_array[0])
+                        index_array = np.arange(shape_array[1])
                     else:
-                        index_array = plot_quantity['i']
+                        index_array = np.arange(len(plot_quantity))
                     for index in index_array:
                         if index not in ids_object_of_interest:
                             utilities.prepare_plot_time_series(
@@ -3434,7 +3429,6 @@ def extract_multiprocessing(
     #   Close multiprocessing pool and wait until it finishes
     executor.wait()
 
-    ###
     #   Sort multiprocessing results
     #
     #   Extract results

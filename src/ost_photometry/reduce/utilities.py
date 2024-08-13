@@ -464,7 +464,7 @@ def get_imaging_software(image_file_collection):
     return imaging_software
 
 
-def get_exposure_times(image_file_collection, image_type):
+def get_exposure_times(image_file_collection, image_type) -> list[float]:
     """
         Extract the exposure time of a specific image type from an image
         collections.
@@ -479,7 +479,7 @@ def get_exposure_times(image_file_collection, image_type):
 
         Returns
         -------
-        exposure_times          : `list`
+        exposure_times
             List of exposure times
     """
     #   Calculate mask to restrict images to the provided image type
@@ -495,7 +495,7 @@ def get_exposure_times(image_file_collection, image_type):
         )
 
     #   Exposure exposure_times
-    exposure_times = set(image_file_collection.summary['exptime'][mask])
+    exposure_times = list(set(image_file_collection.summary['exptime'][mask]))
 
     return exposure_times
 
@@ -1400,12 +1400,6 @@ def calculate_image_shifts(image_file_collection, id_reference_image, comment,
                 file_name,
                 correlation_method=correlation_method,
             )
-            # calculate_image_shifts_core(
-            # current_ccd_object,
-            # reference_ccd_object,
-            # img_id,
-            # method='skimage',
-            # )
             # executor.schedule(
             # calculate_image_shifts_core,
             # args=(

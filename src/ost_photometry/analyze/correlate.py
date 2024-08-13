@@ -288,7 +288,7 @@ def correlate_datasets(
         expected_bad_image_fraction: float = 1.0,
         own_correlation_option: int = 1, cross_identification_limit: int = 1,
         correlation_method: str = 'astropy'
-) -> tuple[np.ndarray, int, np.ndarray, int]:
+        ) -> tuple[np.ndarray, int, np.ndarray, int]:
     """
     Correlate the pixel positions from different dataset such as
     images or image series.
@@ -390,7 +390,7 @@ def correlate_datasets(
             y_pixel_positions,
             current_wcs,
             reference_dataset_id=reference_dataset_id,
-            reference_obj_ids=reference_obj_ids,
+            reference_object_ids=reference_obj_ids,
             expected_bad_image_fraction=n_allowed_non_detections_object,
             protect_reference_obj=protect_reference_obj,
             separation_limit=separation_limit,
@@ -484,7 +484,7 @@ def correlation_astropy(
         x_pixel_positions: list[np.ndarray],
         y_pixel_positions: list[np.ndarray], current_wcs: wcs.WCS,
         reference_dataset_id: int = 0,
-        reference_obj_ids: list[int] | None = None,
+        reference_object_ids: list[int] | None = None,
         expected_bad_image_fraction: int = 1,
         protect_reference_obj: bool = True,
         separation_limit: u.Quantity = 2. * u.arcsec,
@@ -507,7 +507,7 @@ def correlation_astropy(
         ID of the reference dataset
         Default is ``0``.
 
-    reference_obj_ids
+    reference_object_ids
         IDs of the reference objects. The reference objects will not be
         removed from the list of objects.
         Default is ``None``.
@@ -541,8 +541,8 @@ def correlation_astropy(
         IDs of the images that were rejected because of insufficient quality
     """
     #   Sanitize reference object
-    if reference_obj_ids is None:
-        reference_obj_ids = []
+    if reference_object_ids is None:
+        reference_object_ids = []
 
     #   Number of datasets/images
     n_datasets = len(x_pixel_positions)
@@ -619,11 +619,11 @@ def correlation_astropy(
         rejected_object_ids = objects_to_rm[ids_rejected_objects].flatten()
 
         #   Check if reference objects are within the "bad" objects
-        ref_is_in = np.isin(rejected_object_ids, reference_obj_ids)
+        ref_is_in = np.isin(rejected_object_ids, reference_object_ids)
 
         #   If YES remove reference objects from the "bad" objects
         if protect_reference_obj and np.any(ref_is_in):
-            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - reference_obj_ids
+            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - reference_object_ids
             id_reference_obj_in_rejected_objects = np.argwhere(
                 id_difference == 0.
             )[:, 0]
@@ -636,12 +636,12 @@ def correlation_astropy(
         index_array = np.delete(index_array, rejected_object_ids, 1)
 
         #   Calculate new reference object position
-        if not isinstance(reference_obj_ids, np.ndarray):
-            reference_obj_ids = np.array(reference_obj_ids)
-        for index, reference_obj_id in np.ndenumerate(reference_obj_ids):
+        if not isinstance(reference_object_ids, np.ndarray):
+            reference_object_ids = np.array(reference_object_ids)
+        for index, reference_obj_id in np.ndenumerate(reference_object_ids):
             object_shift = np.argwhere(rejected_object_ids < reference_obj_id)
             n_shift = len(object_shift)
-            reference_obj_ids[index] = reference_obj_id - n_shift
+            reference_object_ids[index] = reference_obj_id - n_shift
 
         #   2. Remove bad images
 
@@ -673,7 +673,7 @@ def correlation_astropy(
 
     if protect_reference_obj:
         #   Check if reference objects are within the "bad" objects
-        ref_is_in = np.isin(rows_to_rm[1], reference_obj_ids)
+        ref_is_in = np.isin(rows_to_rm[1], reference_object_ids)
 
         #   If YES remove reference objects from "bad" objects and remove
         #   the datasets on which they were not detected instead.
@@ -686,7 +686,7 @@ def correlation_astropy(
                 )
             rejected_object_ids = rows_to_rm[1]
             rejected_object_ids = np.unique(rejected_object_ids)
-            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - reference_obj_ids
+            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - reference_object_ids
             id_reference_obj_in_rejected_objects = np.argwhere(
                 id_difference == 0.
             )[:, 0]
@@ -1296,8 +1296,8 @@ def correlate_image_series(
         correlation_method: str = 'astropy',
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         force_correlation_calibration_objects: bool = False,
-        reference_image_id: int = 0, verbose: bool = False,
-        file_type_plots: str = 'pdf', indent: int = 1) -> None:
+        verbose: bool = False, file_type_plots: str = 'pdf',
+        indent: int = 1) -> None:
     """
     Correlate star lists from the stacked images of all filters to find
     those stars that are visible on all images
@@ -1358,10 +1358,6 @@ def correlate_image_series(
         series and the calibration data will be enforced.
         Default is ``False``
 
-    reference_image_id
-        ID of the reference image
-        Default is ``0``.
-
     verbose
         If True additional output will be printed to the command line.
         Default is ``False``.
@@ -1398,6 +1394,7 @@ def correlate_image_series(
     for id_series, series in enumerate(image_series_dict.values()):
         wcs_list_image_series.append(series.wcs)
 
+        reference_image_id = series.reference_image_id
         _x = series.image_list[reference_image_id].photometry['x_fit']
         x_pixel_positions_all_images.append(_x)
         y_pixel_positions_all_images.append(
@@ -1454,6 +1451,7 @@ def correlate_image_series(
         )
 
         series = image_series_dict[reference_filter]
+        reference_image_id = series.reference_image_id
         identify_object_of_interest_in_dataset(
             series.image_list[reference_image_id].photometry['x_fit'],
             series.image_list[reference_image_id].photometry['y_fit'],
@@ -1507,7 +1505,6 @@ def correlate_image_series(
             separation_limit=separation_limit,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
-            reference_image_id=reference_image_id,
             file_type_plots=file_type_plots,
             indent=indent,
         )
@@ -1607,7 +1604,6 @@ def correlate_preserve_variable(
         indent=1,
     )
 
-    # object_of_interest_ids, n_detections, _, _ =
     identify_object_of_interest_in_dataset(
         image_series.image_list[reference_image_id].photometry['x_fit'],
         image_series.image_list[reference_image_id].photometry['y_fit'],
@@ -1654,8 +1650,8 @@ def correlate_preserve_variable(
 
     # object_of_interest_ids, n_detections =
     identify_object_of_interest_in_dataset(
-        image_series.image_list[reference_image_id].photometry['x_fit'],
-        image_series.image_list[reference_image_id].photometry['y_fit'],
+        image_series.image_list[image_series.reference_image_id].photometry['x_fit'],
+        image_series.image_list[image_series.reference_image_id].photometry['y_fit'],
         objects_of_interest,
         filter_,
         image_series.wcs,
@@ -1981,7 +1977,7 @@ def correlate_with_calibration_objects(
         column_names: dict[str, str], correlation_method: str = 'astropy',
         separation_limit: u.Quantity = 2. * u.arcsec,
         max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
-        id_object: int | None = None, reference_image_id: int = 0,
+        id_object: int | None = None,
         indent: int = 1, file_type_plots: str = 'pdf'
         ) -> tuple[Table, np.ndarray]:
     """
@@ -2027,10 +2023,6 @@ def correlate_with_calibration_objects(
         ID of the object
         Default is ``None``.
 
-    reference_image_id
-        ID of the reference image
-        Default is ``0``.
-
     indent
         Indentation for the console output lines
         Default is ``1``.
@@ -2048,6 +2040,7 @@ def correlate_with_calibration_objects(
         Index of the observed stars that correspond to the calibration stars
     """
     #   Pixel positions of the observed object
+    reference_image_id = image_series.reference_image_id
     pixel_position_obj_x = image_series.image_list[reference_image_id].photometry['x_fit']
     pixel_position_obj_y = image_series.image_list[reference_image_id].photometry['y_fit']
 

@@ -456,12 +456,12 @@ def prepare_time_series_data(
                         err_column_names.append(col_name)
                     else:
                         magnitude_column_names.append(col_name)
-            else:
-                terminal_output.print_to_terminal(
-                    f"Warning: No magnitude column found for filter {filter_}"
-                    f"in the provided Table, while preparing time series data.",
-                    style_name='WARNING',
-                )
+            # else:
+            #     terminal_output.print_to_terminal(
+            #         f"Warning: No magnitude column found for filter {filter_} "
+            #         f"in the provided Table, while preparing time series data.",
+            #         style_name='WARNING',
+            #     )
 
         magnitudes = np.array(
             data[magnitude_column_names][object_id].as_void().tolist()
@@ -472,7 +472,7 @@ def prepare_time_series_data(
         return magnitudes, magnitude_errors
 
     if isinstance(data, unc.core.NdarrayDistribution):
-        return data.pdf_median()[object_id], data.pdf_std()[object_id]
+        return data.pdf_median()[:,object_id], data.pdf_std()[:,object_id]
     else:
         raise Exception(
             f"{style.Bcolors.FAIL} \nThis should never happen. Data object is "

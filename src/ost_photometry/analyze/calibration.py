@@ -883,7 +883,7 @@ def flux_normalization_image_series(
         normalized_flux
             Normalized flux
     """
-    if quasi_calibrated_flux:
+    if quasi_calibrated_flux is not None:
         flux_distribution = quasi_calibrated_flux
         flux = flux_distribution.pdf_median()
     else:

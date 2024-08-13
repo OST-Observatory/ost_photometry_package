@@ -674,8 +674,13 @@ def master_bias(
         return
 
     #   Get bias frames
+    bias_image_type = utilities.get_image_type(
+        image_file_collection,
+        image_type,
+        image_class='bias',
+    )
     bias_frames = image_file_collection.files_filtered(
-        imagetyp=image_type['bias'],
+        imagetyp=bias_image_type,
         include_path=True,
     )
 
@@ -1865,6 +1870,11 @@ def shift_image_core(image_file_collection, output_path,
                 indent=2,
                 style_name='WARNING',
             )
+
+            #   Remove outliers from determined shift
+            # image_shifts = np.delete(image_shifts, outlier_ids, axis=1)
+            #   Set outlier image shifts to 0
+            image_shifts[:, outlier_ids] = 0.
     else:
         outlier_ids = []
 

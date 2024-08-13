@@ -704,7 +704,7 @@ def derive_calibration(
         reference_filter: str | None = None,
         region_to_select_calibration_stars: RectanglePixelRegion | None = None,
         correlate_with_observed_objects: bool = True,
-        reference_image_id: int = 0, file_type_plots: str = 'pdf',
+        file_type_plots: str = 'pdf',
         indent: int = 1) -> None:
     """
     Find suitable calibration stars
@@ -774,10 +774,6 @@ def derive_calibration(
     correlate_with_observed_objects
         If ``True`` the downloaded calibration objects will be correlated
         with the observed objects to get a valid set of calibration objects
-
-    reference_image_id
-        ID of the reference image
-        Default is ``0``.
 
     file_type_plots
         Type of plot file to be created
@@ -883,7 +879,6 @@ def derive_calibration(
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             id_object=id_object,
-            reference_image_id=reference_image_id,
             indent=indent,
             file_type_plots=file_type_plots,
         )
