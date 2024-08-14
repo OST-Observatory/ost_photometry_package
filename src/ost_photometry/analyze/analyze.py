@@ -1399,7 +1399,8 @@ class Observation:
             cross_identification_limit: int = 1,
             n_allowed_non_detections_object: int = 1,
             expected_bad_image_fraction: float = 1.0,
-            protect_reference_obj: bool = True,
+            protect_reference_objects: bool = True,
+            protect_calibration_objects: bool = True,
             photometry_extraction_method: str = '',
             correlation_method: str = 'astropy',
             separation_limit: u.quantity.Quantity = 2. * u.arcsec,
@@ -1407,7 +1408,8 @@ class Observation:
             region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
             calculate_zero_point_statistic: bool = True,
             n_cores_multiprocessing_calibration: int | None = None,
-            distribution_samples: int = 1000,
+            distribution_samples: int = 1000, plot_light_curve_all: bool = False,
+            plot_light_curve_calibration_objects: bool = True,
             file_type_plots: str = 'pdf') -> None:
         """
         Calculate magnitudes, calibrate, and plot light curves
@@ -1479,10 +1481,15 @@ class Observation:
             reduced number of objects with valid source positions are expected.
             Default is ``1.0``.
 
-        protect_reference_obj
+        protect_reference_objects
             If ``False`` also reference objects will be rejected, if they do
             not fulfill all criteria.
             Default is ``True``.
+
+        protect_calibration_objects
+            If ``False`` calibration objects will be rejected, if they do
+            not fulfill all criteria.
+            Default is ``False``.
 
         photometry_extraction_method
             Applied extraction method. Possibilities: ePSF or APER`
@@ -1524,6 +1531,15 @@ class Observation:
             Number of samples used for distributions
             Default is ``1000``.
 
+        plot_light_curve_calibration_objects
+            It ``True`` the light curves of all calibration objects
+            will be plotted.
+            Default is ``True``.
+
+        plot_light_curve_all
+            It ``True`` the light curves of all objects will be plotted.
+            Default is ``False``.
+
         file_type_plots
             Type of plot file to be created
             Default is ``pdf``.
@@ -1536,18 +1552,12 @@ class Observation:
         else:
             correlate_with_observed_objects = False
 
-        #   Make coordinates object for variable star
+        #   Get coordinates for objects of interest
         coordinates_objects_of_interest = self.objects_of_interest_coordinates
         if coordinates_objects_of_interest is None:
             raise RuntimeError(
                 f"SkyCoord object for objects of interest does not exit."
             )
-        # coordinates_objects_of_interest = SkyCoord(
-        #     ra_object,
-        #     dec_object,
-        #     unit=(ra_unit, dec_unit),
-        #     frame="icrs",
-        # )
 
         #   Load calibration information
         calibration_data.derive_calibration(
@@ -1588,16 +1598,19 @@ class Observation:
                 cross_identification_limit=cross_identification_limit,
                 n_allowed_non_detections_object=n_allowed_non_detections_object,
                 expected_bad_image_fraction=expected_bad_image_fraction,
-                protect_reference_obj=protect_reference_obj,
+                protect_reference_obj=protect_reference_objects,
+                protect_calibration_objects=protect_calibration_objects,
                 correlation_method=correlation_method,
                 separation_limit=separation_limit,
                 verbose=verbose,
                 file_type_plots=file_type_plots,
             )
 
-        plot_light_curve_all = True
         #   Calibrate magnitudes
         #
+        #   Get IDs of calibration stars
+        ids_calibration_objects = self.calib_parameters.ids_calibration_objects
+
         #   Perform magnitude transformation
         #   TODO: Convert this to matrix calculation over all filter simultaneously
         processed_filter = []
@@ -1651,63 +1664,10 @@ class Observation:
                         file_type_plots=file_type_plots,
                     )
 
-                    # #   Prepare data for time series
-                    # magnitudes, magnitudes_error = utilities.prepare_time_series_data(
-                    #     self.table_mags_transformed,
-                    #     filter_,
-                    #     id_object,
-                    #
-                    # )
-                    #
-                    # #   Create a time series object
-                    # time_series = utilities.mk_time_series(
-                    #     observation_times,
-                    #     magnitudes,
-                    #     magnitudes_error,
-                    #     filter_,
-                    # )
-                    #
-                    # #   Write time series
-                    # time_series.write(
-                    #     f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-                    #     f'_{filter_set[0]}-{filter_set[1]}.dat',
-                    #     format='ascii',
-                    #     overwrite=True,
-                    # )
-                    # time_series.write(
-                    #     f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-                    #     f'_{filter_set[0]}-{filter_set[1]}.csv',
-                    #     format='ascii.csv',
-                    #     overwrite=True,
-                    # )
-                    #
-                    # #   Plot light curve over JD
-                    # plots.light_curve_jd(
-                    #     time_series,
-                    #     filter_,
-                    #     f'{filter_}_err',
-                    #     output_dir,
-                    #     name_object=object_name,
-                    #     file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
-                    # )
-                    #
-                    # #   Plot the light curve folded on the period
-                    # if transit_time != '?' and period > 0.:
-                    #     plots.light_curve_fold(
-                    #         time_series,
-                    #         filter_,
-                    #         f'{filter_}_err',
-                    #         output_dir,
-                    #         transit_time,
-                    #         period,
-                    #         binning_factor=binning_factor,
-                    #         name_object=object_name,
-                    #         file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
-                    #     )
-
                 if plot_light_curve_all:
                     for index in np.arange(len(self.table_magnitudes)):
-                        if index not in ids_object_of_interest:
+                        if (index not in ids_object_of_interest
+                                and index not in ids_calibration_objects):
                             utilities.prepare_plot_time_series(
                                 self.table_magnitudes,
                                 observation_times,
@@ -1720,6 +1680,21 @@ class Observation:
                                 subdirectory='/by_id',
                                 file_type_plots=file_type_plots,
                             )
+
+                if plot_light_curve_calibration_objects:
+                    for index in ids_calibration_objects:
+                        utilities.prepare_plot_time_series(
+                            self.table_magnitudes,
+                            observation_times,
+                            filter_,
+                            str(index),
+                            index,
+                            output_dir,
+                            binning_factor,
+                            file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
+                            subdirectory='/calibration',
+                            file_type_plots=file_type_plots,
+                        )
 
                 processed_filter.append(filter_)
 
@@ -1802,56 +1777,6 @@ class Observation:
                         calibration_type='simple',
                     )
 
-                    # #   Prepare data for time series
-                    # magnitudes, magnitudes_error = utilities.prepare_time_series_data(
-                    #     plot_quantity,
-                    #     filter_,
-                    #     id_object,
-                    # )
-                    #
-                    # #   Create a time series object
-                    # time_series = utilities.mk_time_series(
-                    #     observation_times,
-                    #     magnitudes,
-                    #     magnitudes_error,
-                    #     filter_,
-                    # )
-                    #
-                    # #   Write time series
-                    # time_series.write(
-                    #     f'{output_dir}/tables/light_curve_{object_name}_{filter_}.dat',
-                    #     format='ascii',
-                    #     overwrite=True,
-                    # )
-                    # time_series.write(
-                    #     f'{output_dir}/tables/light_curve_{object_name}_{filter_}.csv',
-                    #     format='ascii.csv',
-                    #     overwrite=True,
-                    # )
-                    #
-                    # #   Plot light curve over JD
-                    # plots.light_curve_jd(
-                    #     time_series,
-                    #     filter_,
-                    #     f'{filter_}_err',
-                    #     output_dir,
-                    #     name_object=object_name,
-                    # )
-                    #
-                    # #   Plot the light curve folded on the period
-                    # if (transit_time is not None and transit_time != '?'
-                    #         and period is not None and period > 0.):
-                    #     plots.light_curve_fold(
-                    #         time_series,
-                    #         filter_,
-                    #         f'{filter_}_err',
-                    #         output_dir,
-                    #         transit_time,
-                    #         period,
-                    #         binning_factor=binning_factor,
-                    #         name_object=object_name,
-                    #     )
-
                 if plot_light_curve_all:
                     if isinstance(plot_quantity, unc.core.NdarrayDistribution):
                         shape_array = plot_quantity.shape
@@ -1859,7 +1784,8 @@ class Observation:
                     else:
                         index_array = np.arange(len(plot_quantity))
                     for index in index_array:
-                        if index not in ids_object_of_interest:
+                        if (index not in ids_object_of_interest
+                                and index not in ids_calibration_objects):
                             utilities.prepare_plot_time_series(
                                 plot_quantity,
                                 observation_times,
@@ -1869,6 +1795,21 @@ class Observation:
                                 output_dir,
                                 binning_factor,
                                 subdirectory='/by_id',
+                                file_type_plots=file_type_plots,
+                                calibration_type='simple',
+                            )
+
+                if plot_light_curve_calibration_objects:
+                    for index in ids_calibration_objects:
+                            utilities.prepare_plot_time_series(
+                                plot_quantity,
+                                observation_times,
+                                filter_,
+                                str(index),
+                                index,
+                                output_dir,
+                                binning_factor,
+                                subdirectory='/calibration',
                                 file_type_plots=file_type_plots,
                                 calibration_type='simple',
                             )

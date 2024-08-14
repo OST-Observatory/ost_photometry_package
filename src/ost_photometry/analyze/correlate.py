@@ -30,7 +30,7 @@ def find_objects_of_interest_astropy(
         y_pixel_position_dataset: np.ndarray,
         objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
         current_wcs: wcs.WCS, separation_limit: u.Quantity = 2. * u.arcsec
-) -> None:
+        ) -> None:
     """
     Find the image coordinates of a star based on the stellar
     coordinates and the WCS of the image, using astropy matching
@@ -160,7 +160,7 @@ def find_objects_of_interest_srcor(
         pixel_position_all_x[0, 0] = obj_pixel_position_x
         pixel_position_all_y[0, 0] = obj_pixel_position_y
 
-        #   Correlate calibration stars with stars on the image
+        #   Correlate object of interest with stars on the image
         index_obj, reject, count, reject_obj = correlation_own(
             pixel_position_all_x,
             pixel_position_all_y,
@@ -279,8 +279,10 @@ def correlate_datasets(
         y_pixel_positions: list[np.ndarray],
         current_wcs: wcs.WCS, n_objects: int, n_images: int,
         dataset_type: str = 'image', reference_dataset_id: int = 0,
-        reference_obj_ids: list[int] | None = None,
-        protect_reference_obj: bool = True,
+        reference_object_ids: list[int] | None = None,
+        protect_reference_objects: bool = True,
+        calibration_object_ids: list[int] | None = None,
+        protect_calibration_objects: bool = False,
         n_allowed_non_detections_object: int = 1,
         separation_limit: u.Quantity = 2. * u.arcsec,
         advanced_cleanup: bool = True,
@@ -318,15 +320,23 @@ def correlate_datasets(
         ID of the reference dataset
         Default is ``0``.
 
-    reference_obj_ids
-        IDs of the reference objects. The reference objects will not be
-        removed from the list of objects.
+    reference_object_ids
+        IDs of the reference objects.
         Default is ``None``.
 
-    protect_reference_obj
-        If ``False`` also reference objects will be rejected, if they do
+    protect_reference_objects
+        If ``False`` reference objects will be rejected, if they do
         not fulfill all criteria.
         Default is ``True``.
+
+    calibration_object_ids
+        IDs of the calibration objects.
+        Default is ``None``.
+
+    protect_calibration_objects
+        If ``False`` calibration objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``False``.
 
     n_allowed_non_detections_object
         Maximum number of times an object may not be detected in an image.
@@ -383,6 +393,15 @@ def correlate_datasets(
     n_common_objects
         Number of objects found on all datasets
     """
+    #   Prepare variables necessary to protect calibration objects and
+    #   objects of interest
+    protect_special_objects = protect_reference_objects | protect_calibration_objects
+    special_object_ids = []
+    if protect_reference_objects and reference_dataset_id is not None:
+        special_object_ids += reference_object_ids
+    if protect_calibration_objects and calibration_object_ids is not None:
+        special_object_ids += calibration_object_ids
+
     if correlation_method == 'astropy':
         #   Astropy version: 2x faster than own
         correlation_index, rejected_images = correlation_astropy(
@@ -390,9 +409,9 @@ def correlate_datasets(
             y_pixel_positions,
             current_wcs,
             reference_dataset_id=reference_dataset_id,
-            reference_object_ids=reference_obj_ids,
+            special_object_ids=special_object_ids,
             expected_bad_image_fraction=n_allowed_non_detections_object,
-            protect_reference_obj=protect_reference_obj,
+            protect_special_objects=protect_special_objects,
             separation_limit=separation_limit,
             advanced_cleanup=advanced_cleanup,
         )
@@ -416,9 +435,9 @@ def correlate_datasets(
             option=own_correlation_option,
             cross_identification_limit=cross_identification_limit,
             reference_dataset_id=reference_dataset_id,
-            reference_obj_id=reference_obj_ids,
+            special_object_ids=special_object_ids,
             n_allowed_non_detections_object=n_allowed_non_detections_object,
-            protect_reference_obj=protect_reference_obj,
+            protect_special_objects=protect_special_objects,
         )
     else:
         raise ValueError(
@@ -484,9 +503,9 @@ def correlation_astropy(
         x_pixel_positions: list[np.ndarray],
         y_pixel_positions: list[np.ndarray], current_wcs: wcs.WCS,
         reference_dataset_id: int = 0,
-        reference_object_ids: list[int] | None = None,
+        special_object_ids: list[int] | None = None,
         expected_bad_image_fraction: int = 1,
-        protect_reference_obj: bool = True,
+        protect_special_objects: bool = True,
         separation_limit: u.Quantity = 2. * u.arcsec,
         advanced_cleanup: bool = True) -> tuple[np.ndarray, np.ndarray]:
     """
@@ -507,8 +526,8 @@ def correlation_astropy(
         ID of the reference dataset
         Default is ``0``.
 
-    reference_object_ids
-        IDs of the reference objects. The reference objects will not be
+    special_object_ids
+        IDs of the special objects. The special objects will not be
         removed from the list of objects.
         Default is ``None``.
 
@@ -517,8 +536,8 @@ def correlation_astropy(
         When this limit is reached, the object will be removed.
         Default is ``1``.
 
-    protect_reference_obj
-        If ``False`` also reference objects will be rejected, if they do
+    protect_special_objects
+        If ``False`` also special objects will be rejected, if they do
         not fulfill all criteria.
         Default is ``True``.
 
@@ -540,9 +559,9 @@ def correlation_astropy(
     rejected_images
         IDs of the images that were rejected because of insufficient quality
     """
-    #   Sanitize reference object
-    if reference_object_ids is None:
-        reference_object_ids = []
+    #   Sanitize special object
+    if special_object_ids is None:
+        special_object_ids = []
 
     #   Number of datasets/images
     n_datasets = len(x_pixel_positions)
@@ -566,7 +585,7 @@ def correlation_astropy(
 
     #   Loop over datasets
     for i in range(0, n_datasets):
-        #   Do nothing for the reference object
+        #   Do nothing for the reference dataset
         if i != reference_dataset_id:
             #   Dirty fix: In case of identical positions between the
             #              reference and the current data set,
@@ -618,30 +637,30 @@ def correlation_astropy(
         )
         rejected_object_ids = objects_to_rm[ids_rejected_objects].flatten()
 
-        #   Check if reference objects are within the "bad" objects
-        ref_is_in = np.isin(rejected_object_ids, reference_object_ids)
+        #   Check if special objects are within the "bad" objects
+        ref_is_in = np.isin(rejected_object_ids, special_object_ids)
 
-        #   If YES remove reference objects from the "bad" objects
-        if protect_reference_obj and np.any(ref_is_in):
-            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - reference_object_ids
-            id_reference_obj_in_rejected_objects = np.argwhere(
+        #   If YES remove special objects from the "bad" objects
+        if protect_special_objects and np.any(ref_is_in):
+            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - special_object_ids
+            id_special_objects_in_rejected_objects = np.argwhere(
                 id_difference == 0.
             )[:, 0]
             rejected_object_ids = np.delete(
                 rejected_object_ids,
-                id_reference_obj_in_rejected_objects
+                id_special_objects_in_rejected_objects
             )
 
         #   Remove "bad" objects
         index_array = np.delete(index_array, rejected_object_ids, 1)
 
-        #   Calculate new reference object position
-        if not isinstance(reference_object_ids, np.ndarray):
-            reference_object_ids = np.array(reference_object_ids)
-        for index, reference_obj_id in np.ndenumerate(reference_object_ids):
-            object_shift = np.argwhere(rejected_object_ids < reference_obj_id)
+        #   Calculate new special object position
+        if not isinstance(special_object_ids, np.ndarray):
+            special_object_ids = np.array(special_object_ids)
+        for index, special_object_id in np.ndenumerate(special_object_ids):
+            object_shift = np.argwhere(rejected_object_ids < special_object_id)
             n_shift = len(object_shift)
-            reference_object_ids[index] = reference_obj_id - n_shift
+            special_object_ids[index] = special_object_id - n_shift
 
         #   2. Remove bad images
 
@@ -655,7 +674,7 @@ def correlation_astropy(
         )
 
         #   Create mask -> Identify all datasets as bad that contain less
-        #                  than 90% of all objects from the reference image.
+        #                  than 90% of all objects from the reference dataset.
         mask = n_times_to_rm > 0.02 * len(x_pixel_positions[reference_dataset_id])
         rejected_images = images_to_rm[mask]
 
@@ -671,11 +690,11 @@ def correlation_astropy(
     #   Identify objects that were not identified in all datasets
     rows_to_rm = np.where(index_array == -1)
 
-    if protect_reference_obj:
-        #   Check if reference objects are within the "bad" objects
-        ref_is_in = np.isin(rows_to_rm[1], reference_object_ids)
+    if protect_special_objects:
+        #   Check if special objects are within the "bad" objects
+        ref_is_in = np.isin(rows_to_rm[1], special_object_ids)
 
-        #   If YES remove reference objects from "bad" objects and remove
+        #   If YES remove special objects from "bad" objects and remove
         #   the datasets on which they were not detected instead.
         if np.any(ref_is_in):
             if n_datasets <= 2:
@@ -686,13 +705,13 @@ def correlation_astropy(
                 )
             rejected_object_ids = rows_to_rm[1]
             rejected_object_ids = np.unique(rejected_object_ids)
-            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - reference_object_ids
-            id_reference_obj_in_rejected_objects = np.argwhere(
+            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - special_object_ids
+            id_special_objects_in_rejected_objects = np.argwhere(
                 id_difference == 0.
             )[:, 0]
             rejected_object_ids = np.delete(
                 rejected_object_ids,
-                id_reference_obj_in_rejected_objects
+                id_special_objects_in_rejected_objects
             )
 
             #   Remove remaining bad objects
@@ -727,11 +746,11 @@ def correlation_own(
         max_pixel_between_objects: float = 3.,
         expected_bad_image_fraction: float = 1.0,
         cross_identification_limit: int = 1, reference_dataset_id: int = 0,
-        reference_obj_id: list[int] | None = None,
+        special_object_ids: list[int] | None = None,
         n_allowed_non_detections_object: int = 1, indent: int = 1,
         option: int | None = None, magnitudes: np.ndarray | None = None,
-        silent: bool = False, protect_reference_obj: bool = True
-) -> tuple[np.ndarray, np.ndarray | int, int, np.ndarray]:
+        silent: bool = False, protect_special_objects: bool = True
+        ) -> tuple[np.ndarray, np.ndarray | int, int, np.ndarray]:
     """
     Correlate source positions from several images (e.g., different images)
 
@@ -774,8 +793,8 @@ def correlation_own(
         ID of the reference dataset (e.g., an image).
         Default is ``0``.
 
-    reference_obj_id
-        Ids of the reference objects. The reference objects will not be
+    special_object_ids
+        Ids of the special objects. The special objects will not be
         removed from the list of objects.
         Default is ``None``.
 
@@ -828,8 +847,8 @@ def correlation_own(
         Suppresses output if True.
         Default is ``False``.
 
-    protect_reference_obj
-        Also reference objects will be rejected if Falls.
+    protect_special_objects
+        Also special objects will be rejected if Falls.
         Default is ``True``.
 
     Returns
@@ -847,9 +866,9 @@ def correlation_own(
     rejected_objects
         Vector with indexes of all objects which should be removed
     """
-    #   Sanitize reference object
-    if reference_obj_id is None:
-        reference_obj_id = []
+    #   Sanitize special object
+    if special_object_ids is None:
+        special_object_ids = []
 
     ###
     #   Keywords.
@@ -890,7 +909,7 @@ def correlation_own(
         )
 
     ###
-    #   The main loop.  Step through each object of the reference image,
+    #   The main loop.  Step through each object of the reference dataset,
     #                   look for matches in all the other images.
     #
 
@@ -914,7 +933,7 @@ def correlation_own(
 
         #   Loop over the number of objects
         for i in range(0, n_objects):
-            #   Check that objects exists in the reference image
+            #   Check that objects exists in the reference dataset
             if x_pixel_positions[i, reference_dataset_id] != 0.:
                 #   Prepare dummy arrays and counter for bad images
                 _correlation_index = np.zeros(n_images, dtype=int) - 1
@@ -925,7 +944,7 @@ def correlation_own(
 
                 #   Loop over all images
                 for j in range(0, n_images):
-                    #   Exclude reference image
+                    #   Exclude reference dataset
                     if j != reference_dataset_id:
                         comparison_x_pixel_positions = np.copy(
                             x_pixel_positions[:, j]
@@ -972,14 +991,14 @@ def correlation_own(
                                 _img_rejected[j] = 1
 
                                 #   Check that object is not a reference
-                                if i not in reference_obj_id or not protect_reference_obj:
+                                if i not in special_object_ids or not protect_special_objects:
                                     #   Mark object as problematic
                                     #   -> counts up
                                     _obj_rejected[i] += 1
 
                 if option != 3:
                     if (_n_bad_images > (1 - expected_bad_image_fraction) * n_images
-                            and (i not in reference_obj_id or not protect_reference_obj)):
+                            and (i not in special_object_ids or not protect_special_objects)):
                         rejected_obj += _obj_rejected
                         continue
                     else:
@@ -1009,7 +1028,7 @@ def correlation_own(
                 indent=indent,
             )
 
-        #   Discard objects that are on not enough images
+        #   Discard objects that are on not enough datasets
         x_pixel_positions[rej_obj_tup, reference_dataset_id] = 0.
         y_pixel_positions[rej_obj_tup, reference_dataset_id] = 0.
 
@@ -1176,9 +1195,11 @@ def correlate_image_series_images(
         own_correlation_option: int = 1,
         cross_identification_limit: int = 1,
         reference_obj_ids: list[int] | None = None,
+        protect_reference_obj: bool = True,
+        calibration_object_ids: list[int] | None = None,
+        protect_calibration_objects: bool = True,
         n_allowed_non_detections_object: int = 1,
         expected_bad_image_fraction: float = 1.0,
-        protect_reference_obj: bool = True,
         correlation_method: str = 'astropy',
         separation_limit: u.Quantity = 2. * u.arcsec) -> None:
     """
@@ -1209,6 +1230,20 @@ def correlate_image_series_images(
         removed from the list of objects.
         Default is ``None``.
 
+    protect_reference_obj
+        If ``False`` also reference objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``True``.
+
+    calibration_object_ids
+        IDs of the calibration objects.
+        Default is ``None``.
+
+    protect_calibration_objects
+        If ``False`` calibration objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``False``.
+
     n_allowed_non_detections_object
         Maximum number of times an object may not be detected in an image.
         When this limit is reached, the object will be removed.
@@ -1218,11 +1253,6 @@ def correlate_image_series_images(
         Fraction of low quality images, i.e. those images for which a
         reduced number of objects with valid source positions are expected.
         Default is ``1.0``.
-
-    protect_reference_obj
-        If ``False`` also reference objects will be rejected, if they do
-        not fulfill all criteria.
-        Default is ``True``.
 
     correlation_method
         Correlation method to be used to find the common objects on
@@ -1260,9 +1290,11 @@ def correlate_image_series_images(
         n_objects,
         n_images,
         reference_dataset_id=image_series.reference_image_id,
-        reference_obj_ids=reference_obj_ids,
+        reference_object_ids=reference_obj_ids,
+        protect_reference_objects=protect_reference_obj,
+        calibration_object_ids=calibration_object_ids,
+        protect_calibration_objects=protect_calibration_objects,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
-        protect_reference_obj=protect_reference_obj,
         separation_limit=separation_limit,
         max_pixel_between_objects=max_pixel_between_objects,
         expected_bad_image_fraction=expected_bad_image_fraction,
@@ -1293,6 +1325,7 @@ def correlate_image_series(
         n_allowed_non_detections_object: int = 1,
         expected_bad_image_fraction: float = 1.0,
         protect_reference_obj: bool = True,
+        protect_calibration_objects: bool = False,
         correlation_method: str = 'astropy',
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         force_correlation_calibration_objects: bool = False,
@@ -1342,6 +1375,11 @@ def correlate_image_series(
         If ``False`` also reference objects will be rejected, if they do
         not fulfill all criteria.
         Default is ``True``.
+
+    protect_calibration_objects
+        If ``False`` calibration objects will be rejected, if they do
+        not fulfill all criteria.
+        Default is ``False``.
 
     correlation_method
         Correlation method to be used to find the common objects on
@@ -1412,6 +1450,10 @@ def correlate_image_series(
     #   Number of image series
     n_series = len(x_pixel_positions_all_images)
 
+    #   Get calibration star IDs as a list such that it can be later
+    #   easily combined with the object of interest IDs
+    calibration_object_ids = observation.calib_parameters.ids_calibration_objects.tolist()
+
     #   Correlate the object positions from the images
     #   -> find common objects
     correlation_index, _, rejected_series, _ = correlate_datasets(
@@ -1422,9 +1464,11 @@ def correlate_image_series(
         n_series,
         dataset_type='series',
         reference_dataset_id=reference_image_series_id,
-        reference_obj_ids=reference_obj_ids,
+        reference_object_ids=reference_obj_ids,
+        protect_reference_objects=protect_reference_obj,
+        calibration_object_ids=calibration_object_ids,
+        protect_calibration_objects=protect_calibration_objects,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
-        protect_reference_obj=protect_reference_obj,
         separation_limit=separation_limit,
         advanced_cleanup=False,
         max_pixel_between_objects=max_pixel_between_objects,
@@ -1462,6 +1506,7 @@ def correlate_image_series(
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             verbose=verbose,
+            correlation_method=correlation_method,
         )
 
         #   Replicate IDs for the objects of interest
@@ -1475,7 +1520,7 @@ def correlate_image_series(
                     object_.id_in_image_series[filter_] = id_object
 
     #   Check if correlation with calibration data is necessary
-    calibration_parameters = getattr(observation, 'calib_parameters', None)
+    calibration_parameters = observation.calib_parameters
 
     if calibration_parameters is not None and (calibration_parameters.ids_calibration_objects is None
                                                or force_correlation_calibration_objects):
@@ -1698,7 +1743,7 @@ def determine_object_position(
         own_correlation_option: int = 1,
         ra_unit: u.quantity.Quantity = u.hourangle,
         dec_unit: u.quantity.Quantity = u.deg, verbose: bool = False
-) -> tuple[np.ndarray, int, np.ndarray, np.ndarray]:
+        ) -> tuple[np.ndarray, int, np.ndarray, np.ndarray]:
     """
     Find the image coordinates of a star based on the stellar
     coordinates and the WCS of the image
@@ -1781,7 +1826,7 @@ def determine_object_position(
     y_position_all[0, 0] = y_position_object
     y_position_all[0:count, 1] = tbl['y_fit']
 
-    #   Correlate calibration stars with stars on the image
+    #   Correlate object with stars on the image
     indexes, reject, count, reject_obj = correlation_own(
         x_position_all,
         y_position_all,
@@ -1802,7 +1847,7 @@ def correlate_preserve_calibration_objects(
         verbose: bool = False, cross_identification_limit: int = 1,
         reference_image_id: int = 0, n_allowed_non_detections_object: int = 1,
         expected_bad_image_fraction: float = 1.0,
-        protect_reference_obj: bool = True,
+        protect_calibration_objects: bool = True,
         plot_only_reference_starmap: bool = True,
         correlation_method: str = 'astropy',
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
@@ -1868,10 +1913,10 @@ def correlate_preserve_calibration_objects(
         reduced number of objects with valid source positions are expected.
         Default is ``1.0``.
 
-    protect_reference_obj
-        If ``False`` also reference objects will be rejected, if they do
+    protect_calibration_objects
+        If ``False`` calibration objects will be rejected, if they do
         not fulfill all criteria.
-        Default is ``True``.
+        Default is ``False``.
 
     plot_only_reference_starmap
         If True only the starmap for the reference image will be created.
@@ -1919,6 +1964,8 @@ def correlate_preserve_calibration_objects(
     calib_y_pixel_positions = []
 
     #   Loop over all calibration stars
+    #   TODO: The determination of the calibration star IDs should not be
+    #         needed anymore
     for k in range(0, n_calib_stars):
         #   Find the calibration star
         id_calib_star, ref_count, x_calib_star, y_calib_star = determine_object_position(
@@ -1952,10 +1999,10 @@ def correlate_preserve_calibration_objects(
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         cross_identification_limit=cross_identification_limit,
-        reference_obj_ids=calib_stars_ids,
+        calibration_object_ids=calib_stars_ids,
+        protect_calibration_objects=protect_calibration_objects,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         expected_bad_image_fraction=expected_bad_image_fraction,
-        protect_reference_obj=protect_reference_obj,
         correlation_method=correlation_method,
         separation_limit=separation_limit,
     )

@@ -2005,6 +2005,8 @@ def calculate_trans(
     if vizier_dict is None:
         vizier_dict = {'APASS': 'II/336/apass9'}
 
+    #   TODO: Add download of calibration data?
+
     #   Correlate the results from the different filter
     correlate.correlate_image_series(
         observation,
