@@ -1689,18 +1689,35 @@ class Observation:
 
                 if plot_light_curve_calibration_objects:
                     for index in ids_calibration_objects:
-                        utilities.prepare_plot_time_series(
-                            self.table_magnitudes,
-                            observation_times,
-                            filter_,
-                            str(index),
-                            index,
-                            output_dir,
-                            binning_factor,
-                            file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
-                            subdirectory='/calibration',
-                            file_type_plots=file_type_plots,
+                        p = mp.Process(
+                            target=utilities.prepare_plot_time_series,
+                            args=(
+                                observation_times,
+                                filter_,
+                                str(index),
+                                index,
+                                output_dir,
+                                binning_factor,
+                            ),
+                            kwargs={
+                                'file_name_suffix': f'_{filter_set[0]}-{filter_set[1]}',
+                                'subdirectory': '/calibration',
+                                'file_type_plots': file_type_plots,
+                            }
                         )
+                        p.start()
+                        # utilities.prepare_plot_time_series(
+                        #     self.table_magnitudes,
+                        #     observation_times,
+                        #     filter_,
+                        #     str(index),
+                        #     index,
+                        #     output_dir,
+                        #     binning_factor,
+                        #     file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
+                        #     subdirectory='/calibration',
+                        #     file_type_plots=file_type_plots,
+                        # )
 
                 processed_filter.append(filter_)
 
@@ -1805,18 +1822,35 @@ class Observation:
 
                 if plot_light_curve_calibration_objects:
                     for index in ids_calibration_objects:
-                            utilities.prepare_plot_time_series(
+                        p = mp.Process(
+                            target=utilities.prepare_plot_time_series,
+                            args=(
                                 plot_quantity,
-                                observation_times,
                                 filter_,
                                 str(index),
                                 index,
                                 output_dir,
                                 binning_factor,
-                                subdirectory='/calibration',
-                                file_type_plots=file_type_plots,
-                                calibration_type='simple',
-                            )
+                            ),
+                            kwargs={
+                                'calibration_type': 'simple',
+                                'subdirectory': '/calibration',
+                                'file_type_plots': file_type_plots,
+                            }
+                        )
+                        p.start()
+                        # utilities.prepare_plot_time_series(
+                        #     plot_quantity,
+                        #     observation_times,
+                        #     filter_,
+                        #     str(index),
+                        #     index,
+                        #     output_dir,
+                        #     binning_factor,
+                        #     subdirectory='/calibration',
+                        #     file_type_plots=file_type_plots,
+                        #     calibration_type='simple',
+                        # )
 
 
 def rm_cosmic_rays(

@@ -865,13 +865,30 @@ def derive_calibration(
     calibration_tbl = calibration_tbl[~np.isnan(pixel_position_cali_y)]
 
     #   TODO: Add a filter for known variable objects and non stellar objects
-    variable_stars_tbl, _, _ = get_vizier_catalog(
+    print('len(calibration_tbl) 1:', len(calibration_tbl))
+    variable_stars_tbl, column_dict_variable, ra_unit_variable = get_vizier_catalog(
         [],
         image_series.coordinates_image_center,
         image_series.field_of_view_x,
         'B/vsx/vsx',
+        cleanup_magnitudes=False,
     )
-    print('variable_stars_tbl: ', variable_stars_tbl)
+    variable_stars_coordinates = SkyCoord(
+        variable_stars_tbl[column_dict_variable['ra']].data,
+        variable_stars_tbl[column_dict_variable['dec']].data,
+        unit=(ra_unit_variable, u.deg),
+        frame="icrs"
+    )
+
+    mask = np.ones(len(variable_stars_coordinates), dtype=bool)
+    for coordinate_object in variable_stars_coordinates:
+        separation = calibration_object_coordinates.separation(coordinate_object)
+
+        #   Calculate mask of all object closer than ``radius``
+        mask = mask & np.invert(separation < 1 * u.arcsec)
+
+    calibration_object_coordinates = calibration_object_coordinates[mask]
+    calibration_tbl = calibration_tbl[mask]
 
     terminal_output.print_to_terminal(
         f"{len(calibration_tbl)} calibration stars remain after the cleanup.",
