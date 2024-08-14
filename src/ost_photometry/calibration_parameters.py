@@ -618,6 +618,12 @@ default_ra_unit = u.deg
 
 #   Catalog properties
 catalog_properties_dict = {
+    'B/vsx/vsx': {
+        'ra_unit': default_ra_unit,
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
+        'columns': [],
+        'err_columns': [],
+    },
     'I/329': default_columns | {'ra_unit': default_ra_unit},
     'I/322A': default_columns | {'ra_unit': default_ra_unit},
     'II/336/apass9': {

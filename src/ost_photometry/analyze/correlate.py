@@ -1452,7 +1452,11 @@ def correlate_image_series(
 
     #   Get calibration star IDs as a list such that it can be later
     #   easily combined with the object of interest IDs
-    calibration_object_ids = observation.calib_parameters.ids_calibration_objects.tolist()
+    if (observation.calib_parameters is not None and
+            observation.calib_parameters.ids_calibration_objects is not None):
+        calibration_object_ids = observation.calib_parameters.ids_calibration_objects.tolist()
+    else:
+        calibration_object_ids = None
 
     #   Correlate the object positions from the images
     #   -> find common objects

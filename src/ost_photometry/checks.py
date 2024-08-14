@@ -95,25 +95,25 @@ def check_dir(path_dict):
 
 
 #   TODO: Remove
-def check_unumpy_array(arr):
-    """
-        Check if an array is an unumpy array. Since those arrays are also
-        numpy arrays, the for dtype. The dtype of unumpy arrays is always
-        ``object``.
-
-        Parameters
-        ----------
-        arr         : `numpy.ndarray`
-
-        Returns
-        -------
-                    : `boolean`
-            ``True`` if unumpy array, ``False`` otherwise.
-    """
-    if arr.dtype == "object":
-        return True
-
-    return False
+# def check_unumpy_array(arr):
+#     """
+#         Check if an array is an unumpy array. Since those arrays are also
+#         numpy arrays, the for dtype. The dtype of unumpy arrays is always
+#         ``object``.
+#
+#         Parameters
+#         ----------
+#         arr         : `numpy.ndarray`
+#
+#         Returns
+#         -------
+#                     : `boolean`
+#             ``True`` if unumpy array, ``False`` otherwise.
+#     """
+#     if arr.dtype == "object":
+#         return True
+#
+#     return False
 
 
 def check_pathlib_path(path):
@@ -159,18 +159,17 @@ def check_output_directories(*args):
             )
 
 
-def clear_directory(path):
+def clear_directory(path: Path) -> None:
     """
-        Check if path is a directory and if it is empty. If the path not
-        exists, create it. If the directory is not empty, remove all files in
-        this directory.
+    Check if path is a directory and if it is empty. If the path does not
+    exist, create it. If the directory is not empty, remove all files in
+    this directory.
 
-        Parameters
-        ----------
-        path            : `pathlib.Path`
-            Path to the directory.
+    Parameters
+    ----------
+    path
+        Directory path
     """
-
     if path.is_dir():
         file_list = [x for x in path.iterdir()]
         for fil in file_list:

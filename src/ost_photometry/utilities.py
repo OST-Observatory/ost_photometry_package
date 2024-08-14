@@ -535,33 +535,33 @@ def execution_time(function):
 
 
 #   TODO: Remove unused functions?
-def start_progress(title):
-    """
-        Start progress bar
-    """
-    global progress_x
-    sys.stdout.write(title + ": [" + "-" * 40 + "]" + chr(8) * 41)
-    sys.stdout.flush()
-    progress_x = 0
-
-
-def progress(x):
-    """
-        Update progress bar
-    """
-    global progress_x
-    x = int(x * 40 // 100)
-    sys.stdout.write("#" * (x - progress_x))
-    sys.stdout.flush()
-    progress_x = x
-
-
-def end_progress():
-    """
-        End progress bar
-    """
-    sys.stdout.write("#" * (40 - progress_x) + "]\n")
-    sys.stdout.flush()
+# def start_progress(title):
+#     """
+#         Start progress bar
+#     """
+#     global progress_x
+#     sys.stdout.write(title + ": [" + "-" * 40 + "]" + chr(8) * 41)
+#     sys.stdout.flush()
+#     progress_x = 0
+#
+#
+# def progress(x):
+#     """
+#         Update progress bar
+#     """
+#     global progress_x
+#     x = int(x * 40 // 100)
+#     sys.stdout.write("#" * (x - progress_x))
+#     sys.stdout.flush()
+#     progress_x = x
+#
+#
+# def end_progress():
+#     """
+#         End progress bar
+#     """
+#     sys.stdout.write("#" * (40 - progress_x) + "]\n")
+#     sys.stdout.flush()
 
 
 def indices_to_slices(index_list):

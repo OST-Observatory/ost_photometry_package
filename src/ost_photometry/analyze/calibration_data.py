@@ -308,6 +308,7 @@ def get_vizier_catalog(
         filter_list: list[str], coordinates_image_center: SkyCoord,
         field_of_view: float, catalog_identifier: str,
         magnitude_range: tuple[float, float] = (0., 18.5),
+        cleanup_magnitudes: bool = True,
         indent: int = 2) -> tuple[Table, dict[str, str], str]:
     """
     Download catalog with calibration info from Vizier
@@ -329,6 +330,10 @@ def get_vizier_catalog(
     magnitude_range
         Magnitude range
         Default is ``(0.,18.5)``.
+
+    cleanup_magnitudes
+        If ``True`` a first magnitude cleanup: restrict magnitude range, rename
+        columns, etc. will be performed
 
     indent
         Indentation for the console output
@@ -382,64 +387,65 @@ def get_vizier_catalog(
 
     result = table_list[0]
 
-    #   Rename columns to default names
-    if 'column_rename' in catalog_properties_dict:
-        for element in catalog_properties_dict['column_rename']:
-            result.rename_column(element[0], element[1])
-
-    #   Calculate B, U, etc. if only B-V, U-B, etc are given
-    if 'magnitude_arithmetic' in catalog_properties_dict:
-        for element in catalog_properties_dict['magnitude_arithmetic']:
-            result[element[0]] = result[element[1]] + result[element[2]]
-
-    #   Restrict magnitudes to requested range
-    if 'Vmag' in result.keys():
-        preferred_filer = 'Vmag'
-    elif 'Rmag' in result.keys():
-        preferred_filer = 'Rmag'
-    elif 'Bmag' in result.keys():
-        preferred_filer = 'Bmag'
-    elif 'Imag' in result.keys():
-        preferred_filer = 'Imag'
-    elif 'Umag' in result.keys():
-        preferred_filer = 'Umag'
-    else:
-        #   This should never happen
-        terminal_output.print_to_terminal(
-            "Calibration issue: Threshold magnitude not recognized",
-            indent=indent + 1,
-            style_name='ERROR',
-        )
-        raise RuntimeError
-
-    mask = (result[preferred_filer] <= magnitude_range[1]) & (result[preferred_filer] >= magnitude_range[0])
-    result = result[mask]
-
-    terminal_output.print_to_terminal(
-        f"{len(result)} calibration objects remaining after magnitude "
-        "filtering",
-        indent=indent,
-    )
-
     #   Define dict with column names
     column_dict = {
         'ra': catalog_properties_dict['ra_dec_columns'][0],
         'dec': catalog_properties_dict['ra_dec_columns'][1]
     }
-    
-    for filter_ in filter_list:
-        if f'{filter_}mag' in result.colnames:
-            column_dict[f'mag{filter_}'] = f'{filter_}mag'
 
-            #   Check if catalog contains magnitude errors
-            if f'e_{filter_}mag' in result.colnames:
-                column_dict[f'err{filter_}'] = f'e_{filter_}mag'
+    if cleanup_magnitudes:
+        #   Rename columns to default names
+        if 'column_rename' in catalog_properties_dict:
+            for element in catalog_properties_dict['column_rename']:
+                result.rename_column(element[0], element[1])
+
+        #   Calculate B, U, etc. if only B-V, U-B, etc are given
+        if 'magnitude_arithmetic' in catalog_properties_dict:
+            for element in catalog_properties_dict['magnitude_arithmetic']:
+                result[element[0]] = result[element[1]] + result[element[2]]
+
+        #   Restrict magnitudes to requested range
+        if 'Vmag' in result.keys():
+            preferred_filer = 'Vmag'
+        elif 'Rmag' in result.keys():
+            preferred_filer = 'Rmag'
+        elif 'Bmag' in result.keys():
+            preferred_filer = 'Bmag'
+        elif 'Imag' in result.keys():
+            preferred_filer = 'Imag'
+        elif 'Umag' in result.keys():
+            preferred_filer = 'Umag'
         else:
+            #   This should never happen
             terminal_output.print_to_terminal(
-                f"No calibration data for {filter_} band",
+                "Calibration issue: Threshold magnitude not recognized",
                 indent=indent + 1,
-                style_name='WARNING',
+                style_name='ERROR',
             )
+            raise RuntimeError
+
+        mask = (result[preferred_filer] <= magnitude_range[1]) & (result[preferred_filer] >= magnitude_range[0])
+        result = result[mask]
+
+        terminal_output.print_to_terminal(
+            f"{len(result)} calibration objects remaining after magnitude "
+            "filtering",
+            indent=indent,
+        )
+
+        for filter_ in filter_list:
+            if f'{filter_}mag' in result.colnames:
+                column_dict[f'mag{filter_}'] = f'{filter_}mag'
+
+                #   Check if catalog contains magnitude errors
+                if f'e_{filter_}mag' in result.colnames:
+                    column_dict[f'err{filter_}'] = f'e_{filter_}mag'
+            else:
+                terminal_output.print_to_terminal(
+                    f"No calibration data for {filter_} band",
+                    indent=indent + 1,
+                    style_name='WARNING',
+                )
 
     return result, column_dict, catalog_properties_dict['ra_unit']
 
@@ -797,7 +803,6 @@ def derive_calibration(
     wcs = image_series.wcs
 
     #   Load calibration data
-    #   TODO: Check this routine - It gets and returns ra_unit
     calibration_tbl, column_names, ra_unit_calibration = load_calibration_data_table(
         image_series,
         filter_list,
@@ -860,6 +865,13 @@ def derive_calibration(
     calibration_tbl = calibration_tbl[~np.isnan(pixel_position_cali_y)]
 
     #   TODO: Add a filter for known variable objects and non stellar objects
+    variable_stars_tbl, _, _ = get_vizier_catalog(
+        [],
+        image_series.coordinates_image_center,
+        image_series.field_of_view_x,
+        'B/vsx/vsx',
+    )
+    print('variable_stars_tbl: ', variable_stars_tbl)
 
     terminal_output.print_to_terminal(
         f"{len(calibration_tbl)} calibration stars remain after the cleanup.",

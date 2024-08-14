@@ -1544,6 +1544,12 @@ class Observation:
             Type of plot file to be created
             Default is ``pdf``.
         """
+        #   Clear lightcurve directories
+        if plot_light_curve_calibration_objects:
+            checks.clear_directory(Path(f'{output_dir}/lightcurve/by_id'))
+        if plot_light_curve_all:
+            checks.clear_directory(Path(f'{output_dir}/lightcurve/calibration'))
+
         #   Check if correlation with observed objects can be applied directly
         #   after loading the calibration data. If only one filter and thus one
         #   image series is available, correlation will be applied immediately.
@@ -1751,8 +1757,6 @@ class Observation:
                         file_type_plots=file_type_plots,
                     )
                     plot_quantity = self.table_magnitudes
-
-                #   TODO: Make lightcurve plots for all object + highlight calibration stars
 
                 #   Plot light curve
                 #
