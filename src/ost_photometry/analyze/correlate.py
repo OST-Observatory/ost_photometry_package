@@ -2113,6 +2113,15 @@ def correlate_with_calibration_objects(
             separation_limit,
         )
 
+        #   Remove calibration stars with multiple identifications
+        duplicate_indexes = utilities.find_duplicates_nparray(index_obj_instrument)
+        index_obj_instrument = np.delete(index_obj_instrument, duplicate_indexes)
+        index_obj_literature = np.delete(index_obj_literature, duplicate_indexes)
+
+        duplicate_indexes = utilities.find_duplicates_nparray(index_obj_literature)
+        index_obj_instrument = np.delete(index_obj_instrument, duplicate_indexes)
+        index_obj_literature = np.delete(index_obj_literature, duplicate_indexes)
+
         n_identified_literature_objs = len(index_obj_literature)
 
     elif correlation_method == 'own':
@@ -2158,7 +2167,13 @@ def correlate_with_calibration_objects(
     #   Limit calibration table to common objects
     calibration_tbl_sort = calibration_tbl[index_obj_literature]
 
-    ###
+    #   TODO: Limit number of calibration stars to ~100
+    # Add calibration star indexes to the calibration table
+    calibration_tbl_sort['index_literature'] = index_obj_literature
+    calibration_tbl_sort['index_instrument'] = index_obj_instrument
+
+    # calibration_tbl_sort.sort()
+
     #   Plots
     #
     #   Make new arrays based on the correlation results

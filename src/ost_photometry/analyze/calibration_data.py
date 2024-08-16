@@ -864,8 +864,7 @@ def derive_calibration(
     pixel_position_cali_y = pixel_position_cali_y[~np.isnan(pixel_position_cali_y)]
     calibration_tbl = calibration_tbl[~np.isnan(pixel_position_cali_y)]
 
-    #   TODO: Add a filter for known variable objects and non stellar objects
-    print('len(calibration_tbl) 1:', len(calibration_tbl))
+    #   Filter for known variable objects
     variable_stars_tbl, column_dict_variable, ra_unit_variable = get_vizier_catalog(
         [],
         image_series.coordinates_image_center,
@@ -880,7 +879,7 @@ def derive_calibration(
         frame="icrs"
     )
 
-    mask = np.ones(len(variable_stars_coordinates), dtype=bool)
+    mask = np.ones(len(calibration_object_coordinates), dtype=bool)
     for coordinate_object in variable_stars_coordinates:
         separation = calibration_object_coordinates.separation(coordinate_object)
 
@@ -891,7 +890,7 @@ def derive_calibration(
     calibration_tbl = calibration_tbl[mask]
 
     terminal_output.print_to_terminal(
-        f"{len(calibration_tbl)} calibration stars remain after the cleanup.",
+        f"{len(calibration_tbl)} calibration stars remain after cleanup",
         indent=indent + 2,
         style_name='OKBLUE',
     )

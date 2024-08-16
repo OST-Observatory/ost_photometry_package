@@ -1052,8 +1052,16 @@ class Executor:
         if not process_num:
             process_num: int = int(mp.cpu_count()/2)
 
+        #   Get max_tasks_per_child parameter
+        max_tasks_per_child = kwargs.get('maxtasksperchild', None)
+        if max_tasks_per_child is None:
+            max_tasks_per_child = 6
+
         #   Init multiprocessing pool
-        self.pool: mp.Pool = mp.Pool(process_num, maxtasksperchild=6)
+        self.pool: mp.Pool = mp.Pool(
+            process_num,
+            maxtasksperchild=max_tasks_per_child,
+        )
         #   Init variables
         self.res: list[any] = []
         self.err: any = None
@@ -3106,3 +3114,29 @@ def save_calibration(
         photometry_extraction_method=photometry_extraction_method,
         rts=rts,
     )
+
+
+def find_duplicates_nparray(array: np.ndarray) -> np.ndarray:
+    """
+
+    Parameters
+    ----------
+    array
+        Numpy array with the data
+
+    Returns
+    -------
+    duplicate_indexes
+        Index positions of the duplicates
+
+
+    """
+    reshaped_array = array.reshape(
+        array.size,
+        1,
+    )
+    diff_index = array - reshaped_array
+    np.fill_diagonal(diff_index, 1)
+    duplicate_indexes = np.where(diff_index == 0)[0]
+
+    return duplicate_indexes

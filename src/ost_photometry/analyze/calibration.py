@@ -945,7 +945,7 @@ def prepare_zero_point(
         Default is ``True``.
 
     sub_samples_zp_statistic
-        Number of randomly selected sub-samples used for calculating zero
+        Number of randomly selected subsamples used for calculating zero
         point statistic
         Default is `1000`.
 

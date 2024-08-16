@@ -141,6 +141,9 @@ class ImageSeries:
                 f' nor a directory -> EXIT {style.Bcolors.ENDC}'
             )
 
+        #   Sort file list
+        file_list.sort()
+
         #   Check if the id of the reference image is valid
         if reference_image_id > len(file_list):
             raise ValueError(
@@ -1545,6 +1548,7 @@ class Observation:
             Default is ``pdf``.
         """
         #   Clear lightcurve directories
+        checks.check_output_directories(f'{output_dir}/lightcurve')
         if plot_light_curve_calibration_objects:
             checks.clear_directory(Path(f'{output_dir}/lightcurve/by_id'))
         if plot_light_curve_all:
@@ -1692,6 +1696,7 @@ class Observation:
                         p = mp.Process(
                             target=utilities.prepare_plot_time_series,
                             args=(
+                                self.table_magnitudes,
                                 observation_times,
                                 filter_,
                                 str(index),
