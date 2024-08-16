@@ -397,7 +397,7 @@ def correlate_datasets(
     #   objects of interest
     protect_special_objects = protect_reference_objects | protect_calibration_objects
     special_object_ids = []
-    if protect_reference_objects and reference_dataset_id is not None:
+    if protect_reference_objects and reference_object_ids is not None:
         special_object_ids += reference_object_ids
     if protect_calibration_objects and calibration_object_ids is not None:
         special_object_ids += calibration_object_ids
@@ -560,7 +560,7 @@ def correlation_astropy(
         IDs of the images that were rejected because of insufficient quality
     """
     #   Sanitize special object
-    if special_object_ids is None:
+    if special_object_ids is None or special_object_ids is [None]:
         special_object_ids = []
 
     #   Number of datasets/images
@@ -2167,19 +2167,45 @@ def correlate_with_calibration_objects(
     #   Limit calibration table to common objects
     calibration_tbl_sort = calibration_tbl[index_obj_literature]
 
-    #   TODO: Limit number of calibration stars to ~100
+    terminal_output.print_to_terminal(
+        f"{len(calibration_tbl_sort)} calibration stars have been matched to"
+        f" observed stars",
+        indent=indent + 2,
+        style_name='OKBLUE',
+    )
+
     # Add calibration star indexes to the calibration table
-    calibration_tbl_sort['index_literature'] = index_obj_literature
+    # calibration_tbl_sort['index_literature'] = index_obj_literature
     calibration_tbl_sort['index_instrument'] = index_obj_instrument
 
-    # calibration_tbl_sort.sort()
+    #   Limit number of calibration stars to the 100 brightest
+    if len(calibration_tbl_sort) > 100:
+        #   Sort calibration table
+        magnitude_name = None
+        for column_name in column_names:
+            if 'mag' in column_name:
+                magnitude_name = column_name
+                break
+
+        calibration_tbl_sort.sort(column_names[magnitude_name])
+
+        #   Limit to brightest 100 objects
+        calibration_tbl_sort = calibration_tbl_sort[0:100]
+        index_obj_instrument = calibration_tbl_sort['index_instrument']
+
+        terminal_output.print_to_terminal(
+            f"Number of calibration stars limited to 100 brightest objects"
+            f" in filter {magnitude_name[3:]}",
+            indent=indent + 2,
+            style_name='OKBLUE',
+        )
 
     #   Plots
     #
     #   Make new arrays based on the correlation results
     pixel_position_common_objs_x = pixel_position_obj_x[list(index_obj_instrument)]
     pixel_position_common_objs_y = pixel_position_obj_y[list(index_obj_instrument)]
-    index_common_new = np.arange(n_identified_literature_objs)
+    index_common_new = np.arange(len(calibration_tbl_sort))
 
     #   Add pixel positions and object ids to the calibration table
     calibration_tbl_sort.add_columns(
@@ -2219,12 +2245,5 @@ def correlate_with_calibration_objects(
                 }
             )
             p.start()
-
-    terminal_output.print_to_terminal(
-        f"{len(calibration_tbl_sort)} calibration stars have been matched to"
-        f" observed stars",
-        indent=indent + 2,
-        style_name='OKBLUE',
-    )
 
     return calibration_tbl_sort, index_obj_instrument

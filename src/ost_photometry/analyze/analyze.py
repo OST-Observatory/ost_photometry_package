@@ -1678,18 +1678,24 @@ class Observation:
                     for index in np.arange(len(self.table_magnitudes)):
                         if (index not in ids_object_of_interest
                                 and index not in ids_calibration_objects):
-                            utilities.prepare_plot_time_series(
-                                self.table_magnitudes,
-                                observation_times,
-                                filter_,
-                                str(index),
-                                index,
-                                output_dir,
-                                binning_factor,
-                                file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
-                                subdirectory='/by_id',
-                                file_type_plots=file_type_plots,
+                            p = mp.Process(
+                                target=utilities.prepare_plot_time_series,
+                                args=(
+                                    self.table_magnitudes,
+                                    observation_times,
+                                    filter_,
+                                    str(index),
+                                    index,
+                                    output_dir,
+                                    binning_factor,
+                                ),
+                                kwargs={
+                                    'file_name_suffix': f'_{filter_set[0]}-{filter_set[1]}',
+                                    'subdirectory': '/by_id',
+                                    'file_type_plots': file_type_plots,
+                                }
                             )
+                            p.start()
 
                 if plot_light_curve_calibration_objects:
                     for index in ids_calibration_objects:
@@ -1711,18 +1717,6 @@ class Observation:
                             }
                         )
                         p.start()
-                        # utilities.prepare_plot_time_series(
-                        #     self.table_magnitudes,
-                        #     observation_times,
-                        #     filter_,
-                        #     str(index),
-                        #     index,
-                        #     output_dir,
-                        #     binning_factor,
-                        #     file_name_suffix=f'_{filter_set[0]}-{filter_set[1]}',
-                        #     subdirectory='/calibration',
-                        #     file_type_plots=file_type_plots,
-                        # )
 
                 processed_filter.append(filter_)
 
@@ -1812,18 +1806,24 @@ class Observation:
                     for index in index_array:
                         if (index not in ids_object_of_interest
                                 and index not in ids_calibration_objects):
-                            utilities.prepare_plot_time_series(
-                                plot_quantity,
-                                observation_times,
-                                filter_,
-                                str(index),
-                                index,
-                                output_dir,
-                                binning_factor,
-                                subdirectory='/by_id',
-                                file_type_plots=file_type_plots,
-                                calibration_type='simple',
+                            p = mp.Process(
+                                target=utilities.prepare_plot_time_series,
+                                args=(
+                                    plot_quantity,
+                                    observation_times,
+                                    filter_,
+                                    str(index),
+                                    index,
+                                    output_dir,
+                                    binning_factor,
+                                ),
+                                kwargs={
+                                    'calibration_type': 'simple',
+                                    'subdirectory': '/by_id',
+                                    'file_type_plots': file_type_plots,
+                                }
                             )
+                            p.start()
 
                 if plot_light_curve_calibration_objects:
                     for index in ids_calibration_objects:
@@ -1831,6 +1831,7 @@ class Observation:
                             target=utilities.prepare_plot_time_series,
                             args=(
                                 plot_quantity,
+                                observation_times,
                                 filter_,
                                 str(index),
                                 index,
@@ -1844,18 +1845,6 @@ class Observation:
                             }
                         )
                         p.start()
-                        # utilities.prepare_plot_time_series(
-                        #     plot_quantity,
-                        #     observation_times,
-                        #     filter_,
-                        #     str(index),
-                        #     index,
-                        #     output_dir,
-                        #     binning_factor,
-                        #     subdirectory='/calibration',
-                        #     file_type_plots=file_type_plots,
-                        #     calibration_type='simple',
-                        # )
 
 
 def rm_cosmic_rays(
