@@ -1125,9 +1125,8 @@ def calibrate_magnitudes_zero_point(
         observation: 'analyze.Observation', filter_list: (list[str] | set[str]),
         distribution_samples: int = 1000,
         calculate_zero_point_statistic: bool = True,
-        id_object: (int | None) = None, photometry_extraction_method: str = '',
         n_cores_multiprocessing: int | None = None,
-        file_type_plots: str = 'pdf', indent: int = 1) -> None:
+        file_type_plots: str = 'pdf', add_progress_bar: bool = True, indent: int = 1) -> None:
     """
     Apply the zero points to the magnitudes
 
@@ -1147,14 +1146,6 @@ def calibrate_magnitudes_zero_point(
         If `True` a statistic on the zero points will be calculated.
         Default is ``True``.
 
-    id_object
-        ID of the object
-        Default is ``None``.
-
-    photometry_extraction_method
-        Applied extraction method. Possibilities: ePSF or APER`
-        Default is ``''``.
-
     n_cores_multiprocessing
         Number of core used for multicore processing
         Default is ``None``.
@@ -1162,6 +1153,11 @@ def calibrate_magnitudes_zero_point(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
+
+    add_progress_bar
+        If ``True`` a progress bar will be shown illustrating the progress in
+        the calibration based on the zero point.
+        Default is ``True``.
 
     indent
         Indentation for the console output lines
@@ -1192,7 +1188,7 @@ def calibrate_magnitudes_zero_point(
         #   Initialize multiprocessing object
         executor = utilities.Executor(
             n_cores_multiprocessing,
-            add_progress_bar=True,
+            add_progress_bar=add_progress_bar,
             n_tasks=len(image_series.image_list),
         )
 
@@ -1229,7 +1225,6 @@ def calibrate_magnitudes_zero_point(
         #   Extract results
         res = executor.res
 
-        # save_data_tmp = True
         #   Sort multiprocessing results
         tmp_list = []
         for image_ in image_series.image_list:
@@ -1239,35 +1234,8 @@ def calibrate_magnitudes_zero_point(
                     image_.photometry = tbl
                     tmp_list.append(image_)
 
-                    # if save_data_tmp:
-                    #     magnitudes = np.load(magnitudes, allow_pickle=True)
-                    #     os.remove(magnitudes)
-
-                    # image_.magnitudes_with_zp = magnitudes
-
         # TODO: Check if this is necessary
         image_series.image_list = tmp_list
-
-    # #   Save results as ASCII files
-    # #   Make astropy table
-    # table_not_transformed_magnitudes = utilities.mk_magnitudes_table(
-    #     observation,
-    #     filter_list,
-    #     'mag_cali_no-trans',
-    # )
-    #
-    # #   TODO: This is also messy and needs a cleanup
-    # #   Add table to observation container
-    # observation.table_mags_not_transformed = table_not_transformed_magnitudes
-    #
-    # #   Save to file
-    # utilities.save_magnitudes_ascii(
-    #     observation,
-    #     table_not_transformed_magnitudes,
-    #     magnitude_transformation=False,
-    #     id_object=id_object,
-    #     photometry_extraction_method=photometry_extraction_method,
-    # )
 
 
 def calibrate_magnitudes_transformation(
@@ -1275,9 +1243,9 @@ def calibrate_magnitudes_transformation(
         transformation_coefficients: dict[str, (float | str)] | None = None,
         derive_transformation_coefficients: bool = False,
         plot_sigma: bool = False, distribution_samples: int = 1000,
-        id_object: (int | None) = None, photometry_extraction_method: str = '',
         n_cores_multiprocessing: int | None = None,
-        file_type_plots: str = 'pdf', indent: int = 1) -> None:
+        file_type_plots: str = 'pdf', add_progress_bar: bool = True,
+        indent: int = 1) -> None:
     """
     Apply magnitude transformation
 
@@ -1309,14 +1277,6 @@ def calibrate_magnitudes_transformation(
         If True sigma clipped magnitudes will be plotted.
         Default is ``False``.
 
-    id_object
-        ID of the object
-        Default is ``None``.
-
-    photometry_extraction_method
-        Applied extraction method. Possibilities: ePSF or APER`
-        Default is ``''``.
-
     distribution_samples
         Number of samples used for distributions
         Default is ``1000``.
@@ -1328,6 +1288,11 @@ def calibrate_magnitudes_transformation(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
+
+    add_progress_bar
+        If ``True`` a progress bar will be shown illustrating the progress of
+        the magnitude transformation.
+        Default is ``True``
 
     indent
         Indentation for the console output lines
@@ -1376,7 +1341,7 @@ def calibrate_magnitudes_transformation(
             #   Initialize multiprocessing object
             executor = utilities.Executor(
                 n_cores_multiprocessing,
-                add_progress_bar=True,
+                add_progress_bar=add_progress_bar,
                 n_tasks=len(image_list),
             )
 
@@ -1485,46 +1450,6 @@ def calibrate_magnitudes_transformation(
             style_name='WARNING'
         )
 
-    #   Save results as ASCII files
-    #   TODO: Remove this from apply calibration and move it to a function called save_calibration
-    #         -> put it one level up
-    #   With transformation
-    # if any(transformation_type_list):
-    #     utilities.save_calibration(
-    #         observation,
-    #         filter_list,
-    #         id_object,
-    #         # 'mag_cali_trans',
-    #         photometry_extraction_method=photometry_extraction_method,
-    #         rts=f'_{filter_list[0]}-{filter_list[1]}'
-    #     )
-        # #   Make astropy table
-        # table_transformed_magnitudes, array_transformed_magnitudes = utilities.mk_magnitudes_table_and_array(
-        #     observation,
-        #     filter_list,
-        #     'mag_cali_trans',
-        # )
-        #
-        # #   Add table to observation container
-        # observation.table_mags_transformed = table_transformed_magnitudes
-        # # observation.array_mags_transformed = array_transformed_magnitudes
-        #
-        # #   Save to file
-        # utilities.save_magnitudes_ascii(
-        #     observation,
-        #     table_transformed_magnitudes,
-        #     magnitude_transformation=True,
-        #     id_object=id_object,
-        #     photometry_extraction_method=photometry_extraction_method,
-        #     rts=f'_{filter_list[0]}-{filter_list[1]}'
-        # )
-    # else:
-    #     terminal_output.print_to_terminal(
-    #         "WARNING: No magnitude transformation possible",
-    #         indent=indent,
-    #         style_name='WARNING'
-    #     )
-
 
 def apply_calibration(
         observation: 'analyze.Observation', filter_list: (list[str] | set[str]),
@@ -1533,7 +1458,8 @@ def apply_calibration(
         id_object: (int | None) = None, photometry_extraction_method: str = '',
         calculate_zero_point_statistic: bool = True, distribution_samples: int = 1000,
         n_cores_multiprocessing: int | None = None,
-        file_type_plots: str = 'pdf', indent: int = 1) -> None:
+        file_type_plots: str = 'pdf', add_progress_bar: bool = True,
+        indent: int = 1) -> None:
     """
     Apply the zero points to the magnitudes and perform a magnitude
     transformation if possible
@@ -1584,6 +1510,11 @@ def apply_calibration(
         Type of plot file to be created
         Default is ``pdf``.
 
+    add_progress_bar
+        If ``True`` a progress bar will be shown illustrating the progress in
+        the calibration.
+        Default is ``True``.
+
     indent
         Indentation for the console output lines
         Default is ``1``.
@@ -1594,10 +1525,9 @@ def apply_calibration(
         filter_list,
         distribution_samples=distribution_samples,
         calculate_zero_point_statistic=calculate_zero_point_statistic,
-        id_object=id_object,
-        photometry_extraction_method=photometry_extraction_method,
         n_cores_multiprocessing=n_cores_multiprocessing,
         file_type_plots=file_type_plots,
+        add_progress_bar=add_progress_bar,
         indent=indent,
     )
 
@@ -1608,8 +1538,6 @@ def apply_calibration(
         transformation_coefficients=transformation_coefficients_dict,
         derive_transformation_coefficients=derive_transformation_coefficients,
         distribution_samples=distribution_samples,
-        id_object=id_object,
-        photometry_extraction_method=photometry_extraction_method,
         n_cores_multiprocessing=n_cores_multiprocessing,
         file_type_plots=file_type_plots,
         indent=indent,
@@ -1630,7 +1558,6 @@ def apply_calibration(
         observation,
         filter_list,
         id_object,
-        # 'mag_cali_trans',
         photometry_extraction_method=photometry_extraction_method,
         rts=rts,
     )

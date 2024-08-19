@@ -589,7 +589,7 @@ def plot_cutouts(output_dir: str, stars: EPSFStars, identifier: str,
 
 def plot_epsf(
         output_dir: str, epsf: dict[str, EPSFModel],
-        name_object: str | None = None,
+        name_object: str | None = None, id_image: str = '',
         terminal_logger: terminal_output.TerminalLog | None = None,
         file_type: str = 'pdf', indent: int = 1) -> None:
     """
@@ -608,6 +608,10 @@ def plot_epsf(
         Name of the object
         Default is ``None``.
 
+    id_image
+        ID of the image that should be added to the file name.
+        Default is ````.
+
     terminal_logger
         Logger object. If provided, the terminal output will be directed
         to this object.
@@ -616,6 +620,7 @@ def plot_epsf(
     file_type
         Type of plot file to be created
         Default is ``pdf``.
+
 
     indent
         Indentation for the console output lines
@@ -687,13 +692,13 @@ def plot_epsf(
 
     if n_plots >= 2:
         plt.savefig(
-            f'{output_dir}/epsfs/epsfs_multiple_filter.{file_type}',
+            f'{output_dir}/epsfs/epsfs_multiple_filter{id_image}.{file_type}',
             bbox_inches='tight',
             format=file_type,
         )
     else:
         plt.savefig(
-            f'{output_dir}/epsfs/epsf.{file_type}',
+            f'{output_dir}/epsfs/epsf{id_image}.{file_type}',
             bbox_inches='tight',
             format=file_type,
         )

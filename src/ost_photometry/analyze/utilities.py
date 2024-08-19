@@ -1,6 +1,7 @@
 ############################################################################
 #                               Libraries                                  #
 ############################################################################
+import sys
 
 import numpy as np
 
@@ -924,125 +925,133 @@ def find_transformation_coefficients(
 #     return filename, filetype
 
 
-#   TODO: remove
-# def check_variable_apparent_cmd(filename, filetype):
-#     """
-#     Check variables and set defaults for CMDs and isochrone plots
-#
-#     Parameters
-#     ----------
-#     filename                : `string`
-#         Specified file name - can also be empty -> set default
-#
-#     filetype                : `string`
-#         Specified file type - can also be empty -> set default
-#     """
-#     #   Set figure type
-#     if filename == "?" or filename == "":
-#         terminal_output.print_to_terminal(
-#             '[Warning] No filename given, us default (cmd)',
-#             indent=1,
-#             style_name='WARNING',
-#         )
-#         filename = 'cmd'
-#
-#     if filetype == '?' or filetype == '':
-#         terminal_output.print_to_terminal(
-#             '[Warning] No filetype given, use default (pdf)',
-#             indent=1,
-#             style_name='WARNING',
-#         )
-#         filetype = 'pdf'
-#
-#     #   Check if file type is valid and set default
-#     filetype_list = ['pdf', 'png', 'eps', 'ps', 'svg']
-#     if filetype not in filetype_list:
-#         terminal_output.print_to_terminal(
-#             '[Warning] Unknown filetype given, use default instead (pdf)',
-#             indent=1,
-#             style_name='WARNING',
-#         )
-#         filetype = 'pdf'
-#
-#     # #   Check if calibration parameter is consistent with the number of
-#     # #   filter
-#     # if zero_points_dict:
-#     #     if len(filter_list) != len(zero_points_dict):
-#     #         if len(filter_list) > len(zero_points_dict):
-#     #             terminal_output.print_to_terminal(
-#     #                 "[Error] More filter ('filter') specified than zero"
-#     #                 " points ('zero_points_dict')",
-#     #                 indent=1,
-#     #                 style_name='ERROR',
-#     #             )
-#     #             sys.exit()
-#     #         else:
-#     #             terminal_output.print_to_terminal(
-#     #                 "[Error] More zero points ('zero_points_dict') "
-#     #                 "specified than filter ('filter')",
-#     #                 indent=1,
-#     #                 style_name='ERROR',
-#     #             )
-#     #             sys.exit()
-#
-#     # #   Valid filter combinations
-#     # valid_filter_combination = {
-#     #     'U': 'B',
-#     #     'B': 'V',
-#     #     'V': 'R',
-#     #     'R': 'I',
-#     #     'H': 'J',
-#     #     'J': 'K',
-#     # }
-#     # if filter_1 in valid_filter_combination.keys():
-#     #     second_filter = valid_filter_combination[filter_1]
-#     #     if second_filter in filter_list:
-#     #         return filename, filetype, second_filter
-#     #     else:
-#     #         index_filter_1 = filter_list.index(filter_1)
-#     #         if index_filter_1 + 1 < len(filter_list):
-#     #             return filename, filetype, filter_list[index_filter_1 + 1]
-#     #
-#     # return filename, filetype, False
-#     return filename, filetype
+def check_variable_apparent_cmd(
+        filename: str, filetype: str) -> tuple[str, str]:
+    """
+    Check variables and set defaults for CMDs and isochrone plots
+
+    Parameters
+    ----------
+    filename
+        Specified file name - can also be empty -> set default
+
+    filetype
+        Specified file type - can also be empty -> set default
+
+    Returns
+    -------
+    filename
+        See above
+
+    filetype
+        See above
+    """
+    #   Set figure type
+    if filename == "?" or filename == "":
+        terminal_output.print_to_terminal(
+            '[Warning] No filename given, us default (cmd)',
+            indent=1,
+            style_name='WARNING',
+        )
+        filename = 'cmd'
+
+    if filetype == '?' or filetype == '':
+        terminal_output.print_to_terminal(
+            '[Warning] No filetype given, use default (pdf)',
+            indent=1,
+            style_name='WARNING',
+        )
+        filetype = 'pdf'
+
+    #   Check if file type is valid and set default
+    filetype_list = ['pdf', 'png', 'eps', 'ps', 'svg']
+    if filetype not in filetype_list:
+        terminal_output.print_to_terminal(
+            '[Warning] Unknown filetype given, use default instead (pdf)',
+            indent=1,
+            style_name='WARNING',
+        )
+        filetype = 'pdf'
+
+    # #   Check if calibration parameter is consistent with the number of
+    # #   filter
+    # if zero_points_dict:
+    #     if len(filter_list) != len(zero_points_dict):
+    #         if len(filter_list) > len(zero_points_dict):
+    #             terminal_output.print_to_terminal(
+    #                 "[Error] More filter ('filter') specified than zero"
+    #                 " points ('zero_points_dict')",
+    #                 indent=1,
+    #                 style_name='ERROR',
+    #             )
+    #             sys.exit()
+    #         else:
+    #             terminal_output.print_to_terminal(
+    #                 "[Error] More zero points ('zero_points_dict') "
+    #                 "specified than filter ('filter')",
+    #                 indent=1,
+    #                 style_name='ERROR',
+    #             )
+    #             sys.exit()
+
+    # #   Valid filter combinations
+    # valid_filter_combination = {
+    #     'U': 'B',
+    #     'B': 'V',
+    #     'V': 'R',
+    #     'R': 'I',
+    #     'H': 'J',
+    #     'J': 'K',
+    # }
+    # if filter_1 in valid_filter_combination.keys():
+    #     second_filter = valid_filter_combination[filter_1]
+    #     if second_filter in filter_list:
+    #         return filename, filetype, second_filter
+    #     else:
+    #         index_filter_1 = filter_list.index(filter_1)
+    #         if index_filter_1 + 1 < len(filter_list):
+    #             return filename, filetype, filter_list[index_filter_1 + 1]
+    #
+    # return filename, filetype, False
+    return filename, filetype
 
 
-#   TODO: Remove
-# def check_variable_absolute_cmd(filter_list, iso_column_type,
-#                                 iso_column):
-#     """
-#     Check variables and set defaults for CMDs and isochrone plots
-#
-#     Parameters
-#     ----------
-#     filter_list           : `list` of `string`
-#         Filter list
-#
-#     iso_column_type       : `dictionary`
-#         Keys = filter - Values = type
-#
-#     iso_column            : `dictionary`
-#         Keys = filter - Values = column
-#     """
-#     #   Check if the column declaration for the isochrones fits to the
-#     #   specified filter
-#     for filter_ in filter_list:
-#         if filter_ not in iso_column_type.keys():
-#             terminal_output.print_to_terminal(
-#                 f"[Error] No entry for filter {filter_} specified in "
-#                 f"'ISOcolumntype'",
-#                 indent=1,
-#                 style_name='FAIL',
-#             )
-#             sys.exit()
-#         if filter_ not in iso_column.keys():
-#             terminal_output.print_to_terminal(
-#                 f"[Error] No entry for filter {filter_} specified in"
-#                 " 'ISOcolumn'",
-#                 indent=1,
-#                 style_name='FAIL',
-#             )
-#             sys.exit()
+def check_variable_absolute_cmd(
+        filter_list: list[str], iso_column_type: dict[str, str],
+        iso_column: dict[str, str]) -> None:
+    """
+    Check variables and set defaults for CMDs and isochrone plots
+
+    Parameters
+    ----------
+    filter_list
+        Filter list
+
+    iso_column_type
+        Keys = filter - Values = type
+
+    iso_column
+        Keys = filter - Values = column
+    """
+    #   Check if the column declaration for the isochrones fits to the
+    #   specified filter
+    for filter_ in filter_list:
+        if filter_ not in iso_column_type.keys():
+            terminal_output.print_to_terminal(
+                f"[Error] No entry for filter {filter_} specified in "
+                f"'ISOcolumntype'",
+                indent=1,
+                style_name='FAIL',
+            )
+            sys.exit()
+        if filter_ not in iso_column.keys():
+            terminal_output.print_to_terminal(
+                f"[Error] No entry for filter {filter_} specified in"
+                " 'ISOcolumn'",
+                indent=1,
+                style_name='FAIL',
+            )
+            sys.exit()
 
 
 class Executor:
@@ -1513,7 +1522,7 @@ def derive_limiting_magnitude(
             niters=2,
             overlap=False,
             # seed=123,
-            zeropoint=np.median(image.zp),
+            zeropoint=np.median(image.zp).value,
             progress_bar=False,
         )
 
@@ -1536,8 +1545,8 @@ def derive_limiting_magnitude(
         #   Remark: the error is only based on the zero point error
         terminal_output.print_to_terminal(
             f"500 apertures, 5 sigma, 2 iterations: "
-            f"{mag_limit.pdf_median():6.2f} +/- "
-            f"{mag_limit.pdf_std():6.2f} mag",
+            f"{mag_limit:6.2f} +/- "
+            f"{mag_limit():6.2f} mag",
             indent=indent * 3,
         )
 

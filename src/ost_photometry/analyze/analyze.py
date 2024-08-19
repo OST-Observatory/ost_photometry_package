@@ -1368,6 +1368,7 @@ class Observation:
                 calculate_zero_point_statistic=calculate_zero_point_statistic,
                 distribution_samples=distribution_samples,
                 file_type_plots=file_type_plots,
+                add_progress_bar=False,
             )
 
             #   Restrict results to specific areas of the image and filter by means
@@ -3704,6 +3705,7 @@ def main_extract(
             {f'img-{image.pd}-{image.filter_}': image.epsf},
             terminal_logger=terminal_logger,
             file_type=file_type_plots,
+            id_image=f'_{image.pd}',
             indent=2,
         )
 
