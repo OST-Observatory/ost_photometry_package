@@ -886,7 +886,9 @@ class Observation:
             sigma_value_background_clipping: float = 5.,
             multiplier_background_rms: float = 5., size_epsf_region: int = 25,
             fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
-            max_n_iterations_epsf: int = 7, object_finder_method: str = 'IRAF',
+            max_n_iterations_epsf: int = 7,
+            use_initial_positions_epsf: bool = True,
+            object_finder_method: str = 'IRAF',
             multiplier_background_rms_epsf: float = 5.0,
             multiplier_grouper_epsf: float = 2.0,
             strict_cleaning_epsf_results: bool = True,
@@ -959,6 +961,13 @@ class Observation:
         max_n_iterations_epsf
             Number of ePSF iterations
             Default is ``7``.
+
+        use_initial_positions_epsf
+            If True the initial positions from a previous object
+            identification procedure will be used. If False the objects
+            will be identified by means of the ``method_finder`` method.
+            Default is ``True``.
+
 
         object_finder_method
             Finder method DAO or IRAF
@@ -1136,6 +1145,7 @@ class Observation:
                 plots_for_all_images=plots_for_all_images,
                 plot_for_reference_image_only=plot_for_reference_image_only,
                 file_type_plots=file_type_plots,
+                use_initial_positions_epsf=use_initial_positions_epsf,
             )
 
             ###
