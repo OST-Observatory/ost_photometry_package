@@ -702,7 +702,7 @@ def derive_calibration(
         calibration_method: str = 'APASS', max_pixel_between_objects: int = 3,
         own_correlation_option: int = 1,
         vizier_dict: dict[str, str] | None = None,
-        path_calibration_file: str | None = None, id_object: int | None = None,
+        path_calibration_file: str | None = None,
         magnitude_range: tuple[float, float] = (0., 18.5),
         coordinates_obj_to_rm: SkyCoord | None = None,
         correlation_method: str = 'astropy',
@@ -742,10 +742,6 @@ def derive_calibration(
 
     path_calibration_file
         Path to the calibration file
-        Default is ``None``.
-
-    id_object
-        ID of the object
         Default is ``None``.
 
     magnitude_range
@@ -895,7 +891,7 @@ def derive_calibration(
         style_name='OKBLUE',
     )
 
-    if correlate_with_observed_objects:
+    if correlate_with_observed_objects and len(column_names) > 2:
         calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
             image_series,
             calibration_object_coordinates,
@@ -906,7 +902,6 @@ def derive_calibration(
             separation_limit=separation_limit,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
-            id_object=id_object,
             indent=indent,
             file_type_plots=file_type_plots,
         )

@@ -437,18 +437,29 @@ class Observation:
                     self.objects_of_interest[i].transit_time = transit_times[i]
 
         #   Sky coordinates for all objects of interest
-        if object_names:
-            n_objects = len(object_names)
-            coordinates_properties = [ra_objects, dec_objects]
-            if all(len(x) == n_objects for x in coordinates_properties) and all(coordinates_properties):
-                self.objects_of_interest_coordinates = SkyCoord(
-                    ra_objects,
-                    dec_objects,
-                    unit=(ra_unit, dec_unit),
-                    frame="icrs",
-                )
-            else:
-                self.objects_of_interest_coordinates = None
+        ra_list = []
+        dec_list = []
+        for object_ in self.objects_of_interest:
+            ra_list.append(object_.ra)
+            dec_list.append(object_.dec)
+            self.objects_of_interest_coordinates = SkyCoord(
+                ra_list,
+                dec_list,
+                unit=(u.degree, u.degree),
+                frame="icrs",
+            )
+        # if object_names:
+        #     n_objects = len(object_names)
+        #     coordinates_properties = [ra_objects, dec_objects]
+        #     if all(coordinates_properties) and all(len(x) == n_objects for x in coordinates_properties):
+        #         self.objects_of_interest_coordinates = SkyCoord(
+        #             ra_objects,
+        #             dec_objects,
+        #             unit=(ra_unit, dec_unit),
+        #             frame="icrs",
+        #         )
+        #     else:
+        #         self.objects_of_interest_coordinates = None
 
         #   Prepare attribute for calibration data
         self.calib_parameters: calibration_data.CalibParameters | None = None
@@ -1549,9 +1560,9 @@ class Observation:
         """
         #   Clear lightcurve directories
         checks.check_output_directories(f'{output_dir}/lightcurve')
-        if plot_light_curve_calibration_objects:
-            checks.clear_directory(Path(f'{output_dir}/lightcurve/by_id'))
         if plot_light_curve_all:
+            checks.clear_directory(Path(f'{output_dir}/lightcurve/by_id'))
+        if plot_light_curve_calibration_objects:
             checks.clear_directory(Path(f'{output_dir}/lightcurve/calibration'))
 
         #   Check if correlation with observed objects can be applied directly
@@ -1620,6 +1631,8 @@ class Observation:
         #
         #   Get IDs of calibration stars
         ids_calibration_objects = self.calib_parameters.ids_calibration_objects
+        if ids_calibration_objects == None:
+            ids_calibration_objects = [ids_calibration_objects]
 
         #   Perform magnitude transformation
         #   TODO: Convert this to matrix calculation over all filter simultaneously
@@ -1697,7 +1710,8 @@ class Observation:
                             )
                             p.start()
 
-                if plot_light_curve_calibration_objects:
+                if (plot_light_curve_calibration_objects
+                        and ids_calibration_objects != [None]):
                     for index in ids_calibration_objects:
                         p = mp.Process(
                             target=utilities.prepare_plot_time_series,
@@ -1825,7 +1839,8 @@ class Observation:
                             )
                             p.start()
 
-                if plot_light_curve_calibration_objects:
+                if (plot_light_curve_calibration_objects
+                        and ids_calibration_objects != [None]):
                     for index in ids_calibration_objects:
                         p = mp.Process(
                             target=utilities.prepare_plot_time_series,

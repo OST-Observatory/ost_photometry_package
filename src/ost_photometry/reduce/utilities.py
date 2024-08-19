@@ -2559,7 +2559,6 @@ def determine_wcs_all_images(input_dir, output_dir, force_wcs_determination=Fals
         image_object = base_utilities.Image(
             i,
             'filter',
-            'target',
             file_path / file_name,
             output_dir,
         )

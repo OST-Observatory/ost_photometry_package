@@ -83,6 +83,7 @@ def find_objects_of_interest_astropy(
             object_id = np.argmin(separation)
 
         elif not object_id:
+            #   TODO: Check if this can be healed downstream
             terminal_output.print_to_terminal(
                 f"No object detected within the separation limit to "
                 f"{object_.name}. Set object ID to None",
@@ -397,7 +398,8 @@ def correlate_datasets(
     #   objects of interest
     protect_special_objects = protect_reference_objects | protect_calibration_objects
     special_object_ids = []
-    if protect_reference_objects and reference_object_ids is not None:
+    if (protect_reference_objects and reference_object_ids is not None
+            or reference_object_ids != [None]):
         special_object_ids += reference_object_ids
     if protect_calibration_objects and calibration_object_ids is not None:
         special_object_ids += calibration_object_ids
@@ -1427,9 +1429,8 @@ def correlate_image_series(
     y_pixel_positions_all_images = []
     wcs_list_image_series = []
 
-    #   Number of objects in each table/image
-    reference_obj_ids = []
     for id_series, series in enumerate(image_series_dict.values()):
+        #   Get number of objects in each table/image
         wcs_list_image_series.append(series.wcs)
 
         reference_image_id = series.reference_image_id
@@ -1439,10 +1440,6 @@ def correlate_image_series(
             series.image_list[reference_image_id].photometry['y_fit']
         )
         n_object_all_images_list.append(len(_x))
-
-        #   Check if reference object is set
-        if id_series == reference_image_series_id:
-            reference_obj_ids = getattr(series, 'variable_id', [])
 
     #   Max. number of objects
     n_objects_max = np.max(n_object_all_images_list)
@@ -1457,6 +1454,10 @@ def correlate_image_series(
         calibration_object_ids = observation.calib_parameters.ids_calibration_objects.tolist()
     else:
         calibration_object_ids = None
+
+    reference_obj_ids = observation.get_ids_object_of_interest(
+        filter_=reference_filter,
+    )
 
     #   Correlate the object positions from the images
     #   -> find common objects
@@ -2028,7 +2029,6 @@ def correlate_with_calibration_objects(
         column_names: dict[str, str], correlation_method: str = 'astropy',
         separation_limit: u.Quantity = 2. * u.arcsec,
         max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
-        id_object: int | None = None,
         indent: int = 1, file_type_plots: str = 'pdf'
         ) -> tuple[Table, np.ndarray]:
     """
@@ -2069,10 +2069,6 @@ def correlate_with_calibration_objects(
     own_correlation_option
         Option for the srcor correlation function
         Default is ``1``.
-
-    id_object
-        ID of the object
-        Default is ``None``.
 
     indent
         Indentation for the console output lines
@@ -2219,10 +2215,6 @@ def correlate_with_calibration_objects(
     )
 
     #   Plot star map with calibration stars
-    if id_object is not None:
-        rts = f'calibration - object: {id_object}'
-    else:
-        rts = 'calibration'
     for filter_ in filter_list:
         if 'mag' + filter_ in column_names:
             p = mp.Process(
@@ -2238,7 +2230,7 @@ def correlate_with_calibration_objects(
                     'tbl_2': calibration_tbl_sort,
                     'label': 'downloaded calibration stars',
                     'label_2': 'matched calibration stars',
-                    'rts': rts,
+                    'rts': 'calibration',
                     # 'name_object': image_series.object_name,
                     'wcs_image': image_series.wcs,
                     'file_type': file_type_plots,

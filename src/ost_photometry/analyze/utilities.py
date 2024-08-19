@@ -580,6 +580,14 @@ def prepare_plot_time_series(
         ``simple`` and ''transformed``.
         The default is ``transformed``.
     """
+    if object_id is None:
+        terminal_output.print_to_terminal(
+            f"ID of object {object_name} is None. Failed to create "
+            f"light curve.",
+            style_name='WARNING',
+        )
+        return
+
     #   Prepare data for time series
     magnitudes, magnitudes_error = prepare_time_series_data(
         data,
