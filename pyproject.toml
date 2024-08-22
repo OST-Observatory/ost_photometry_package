@@ -18,15 +18,15 @@ classifiers = [
 ]
 dependencies = [
     "Path>=16.0",
-    "numpy>=1.18",
-    "astropy>=5.0",
+    "numpy>=2.0.1",
+    "astropy>=6.1",
     "pytimedinput>=2.0",
     "pathlib>=1.0",
     "ccdproc>=2.3",
     "astroalign>=2.4",
     "scipy",
     "matplotlib>=3.5",
-    "photutils>=1.8",
+    "photutils>=1.13",
     "scikit-image",
     "uncertainties>=3.1",
     "astroquery>=0.4",

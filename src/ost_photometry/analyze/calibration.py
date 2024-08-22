@@ -836,7 +836,7 @@ def quasi_flux_calibration_image_series(
     flux, flux_error = image_series.get_flux_array()
 
     #   Derive median of flux in individual images
-    _, median, _ = sigma_clipped_stats(
+    _, median, stddev = sigma_clipped_stats(
         flux,
         axis=1,
         sigma=1.5,
@@ -850,8 +850,13 @@ def quasi_flux_calibration_image_series(
         std=flux_error,
         n_samples=distribution_samples,
     )
-    #   TODO: Add distribution with median and percentile errors?
-    normalization_factor = median[:, np.newaxis]
+    #   TODO: Add distribution with median and percentile errors? Test!
+    # normalization_factor = median[:, np.newaxis]
+    normalization_factor = unc.normal(
+        median[:, np.newaxis],
+        std=stddev[:, np.newaxis],
+        n_samples=distribution_samples,
+    )
     flux_calibrated = flux_distribution / normalization_factor
 
     return flux_calibrated

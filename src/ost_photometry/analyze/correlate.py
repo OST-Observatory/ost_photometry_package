@@ -2,6 +2,7 @@
 #                               Libraries                                  #
 ############################################################################
 import multiprocessing as mp
+from multiprocessing.reduction import duplicate
 
 import numpy as np
 
@@ -611,6 +612,12 @@ def correlation_astropy(
                     current_coordinates,
                     separation_limit,
                 )
+
+                #   TODO: Add a check for duplicates here?!!!!!!!!!!!!!
+                duplicate_index = utilities.find_duplicates_nparray(index_reference)
+                print('duplicate index_reference: ', duplicate_index)
+                index_current = utilities.find_duplicates_nparray(index_current)
+                print('duplicate index_current: ', duplicate_index)
 
                 #   Fill ID array
                 index_array[i, index_reference] = index_current
@@ -1650,7 +1657,7 @@ def correlate_preserve_variable(
 
     #   Find position of the variable star I
     terminal_output.print_to_terminal(
-        "Identify the variable star",
+        "Identify the variable objects",
         indent=1,
     )
 
@@ -1698,7 +1705,6 @@ def correlate_preserve_variable(
         indent=1,
     )
 
-    # object_of_interest_ids, n_detections =
     identify_object_of_interest_in_dataset(
         image_series.image_list[image_series.reference_image_id].photometry['x_fit'],
         image_series.image_list[image_series.reference_image_id].photometry['y_fit'],
@@ -1971,6 +1977,7 @@ def correlate_preserve_calibration_objects(
     #   Loop over all calibration stars
     #   TODO: The determination of the calibration star IDs should not be
     #         needed anymore
+    #   TODO: Rewrite this with correlate.correlate_with_calibration_objects
     for k in range(0, n_calib_stars):
         #   Find the calibration star
         id_calib_star, ref_count, x_calib_star, y_calib_star = determine_object_position(

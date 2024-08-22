@@ -97,7 +97,7 @@ def compare_images(
     )
     plt.close()
 
-
+#   TODO: Fix WCS version
 def starmap(
         output_dir: str, image: np.ndarray, filter_: str, tbl: Table,
         tbl_2: Table = None, label: str = 'Identified stars',
@@ -533,12 +533,12 @@ def plot_cutouts(output_dir: str, stars: EPSFStars, identifier: str,
 
     if terminal_logger is not None:
         terminal_logger.add_to_cache(
-            "Plot ePSF cutouts ({string})",
+            f"Plot ePSF cutouts ({identifier})",
             indent=indent,
         )
     else:
         terminal_output.print_to_terminal(
-            "Plot ePSF cutouts ({string})",
+            f"Plot ePSF cutouts ({identifier})",
             indent=indent,
         )
 

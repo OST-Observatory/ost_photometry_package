@@ -48,7 +48,7 @@ from astropy.table import Table, Column
 from astropy.time import Time
 from astropy.nddata import NDData
 from astropy.stats import (gaussian_sigma_to_fwhm, sigma_clipped_stats)
-from astropy.modeling.fitting import LevMarLSQFitter
+from astropy.modeling.fitting import LevMarLSQFitter, LMLSQFitter, TRFLSQFitter
 from astropy.coordinates import SkyCoord, name_resolve
 import astropy.units as u
 from astropy.nddata import CCDData
@@ -499,6 +499,7 @@ class Observation:
         return epsf_dict
 
     #   Get reference image
+    #   TODO: Check - This should not be need anymore - Remove if possible
     def get_reference_image(self) -> dict[str, np.ndarray]:
         img_dict: dict[str, np.ndarray] = {}
         for key, image_series in self.image_series_dict.items():
@@ -1149,8 +1150,8 @@ class Observation:
             )
 
             ###
-            #   Correlate results from all images, while preserving
-            #   the variable star
+            #   Correlate results from all images within the current image
+            #   series, while preserving the variable objects
             #
             correlate.correlate_preserve_variable(
                 self,
@@ -1642,7 +1643,7 @@ class Observation:
         #
         #   Get IDs of calibration stars
         ids_calibration_objects = self.calib_parameters.ids_calibration_objects
-        if ids_calibration_objects == None:
+        if ids_calibration_objects is None:
             ids_calibration_objects = [ids_calibration_objects]
 
         #   Perform magnitude transformation
@@ -2317,7 +2318,6 @@ def check_epsf_stars(
     y_all[0:len(y1), 0] = y1
     y_all[0:len(y2), 1] = y2
 
-    #   TODO: Check if a bug hides here
     id_percentile_99 = correlate.correlation_own(
         x_all,
         y_all,
@@ -2638,7 +2638,9 @@ def extraction_epsf(
             f"not valid: use either IRAF or DAO {style.Bcolors.ENDC}"
         )
     #   Fitter used
-    fitter = LevMarLSQFitter()
+    # fitter = LevMarLSQFitter()
+    fitter = LMLSQFitter()
+    # fitter = TRFLSQFitter()
 
     #   Make sure the size of the extraction region is uneven
     if size_epsf_region % 2 == 0:
@@ -2647,15 +2649,15 @@ def extraction_epsf(
         size_extraction_region = size_epsf_region
 
     #   Number of iterations
-    n_iterations = 1
+    n_iterations = 3
 
     #   Set up sigma clipping
     if rm_background:
         sigma_clip = SigmaClip(sigma=sigma_background)
         mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
-        localbkg_estimator = LocalBackground(5, 10, mmm_bkg)
+        local_bkg_estimator = LocalBackground(5, 10, mmm_bkg)
     else:
-        localbkg_estimator = None
+        local_bkg_estimator = None
 
     # try:
     #   Group sources into clusters based on a minimum separation distance
@@ -2666,16 +2668,19 @@ def extraction_epsf(
     #  Set up the overall class to extract the data
     photometry = IterativePSFPhotometry(
         psf_model=epsf,
-        fit_shape=(size_extraction_region, size_extraction_region),
+        # fit_shape=(size_extraction_region, size_extraction_region),
+        fit_shape=(11, 11),
         finder=finder,
-        grouper=source_grouper,
+        # grouper=source_grouper,
         fitter=fitter,
         maxiters=n_iterations,
-        localbkg_estimator=localbkg_estimator,
-        aperture_radius=(size_extraction_region - 1) / 2
+        localbkg_estimator=local_bkg_estimator,
+        mode='all',
+        # aperture_radius=(size_extraction_region - 1) / 2
+        aperture_radius=(11 - 1) / 2
     )
 
-    #   Extract the photometry and make a table
+    #   Extract the photometry and make a t\\able
     if use_initial_positions:
         result_tbl = photometry(
             data=data,
@@ -2728,8 +2733,11 @@ def extraction_epsf(
     #         )
     #         raise e
 
+    print('before error: ', len(result_tbl))
+
     #   Check if result table contains a 'flux_err' column
     #   For some reason, it's missing for some extractions....
+    #   The following has be deactivated for test purposes (20.08.2024)
     if 'flux_err' not in result_tbl.colnames:
         #   Calculate a very, very rough approximation of the uncertainty
         #   by means of the actual extraction result 'flux_fit' and the
@@ -2738,6 +2746,8 @@ def extraction_epsf(
             result_tbl['flux_fit'] - result_tbl['flux_init']
         )
         result_tbl.add_column(estimated_uncertainty, name='flux_err')
+
+    print('before uncertainty: ', len(result_tbl))
 
     #   Clean output for objects with NANs in uncertainties
     try:
@@ -2748,6 +2758,8 @@ def extraction_epsf(
             f"{style.Bcolors.FAIL} \nProblem with cleanup of NANs in "
             f"uncertainties... {style.Bcolors.ENDC}"
         )
+
+    print('after uncertainty: ', len(result_tbl))
 
     #   Clean output for objects with negative uncertainties
     try:
@@ -3604,9 +3616,7 @@ def main_extract(
         Type of plot file to be created
         Default is ``pdf``.
     """
-    ###
     #   Initialize output class in case of multiprocessing
-    #
     if multiprocessing:
         terminal_logger = terminal_output.TerminalLog()
         terminal_logger.add_to_cache(
@@ -3621,9 +3631,7 @@ def main_extract(
         )
         terminal_logger = None
 
-    ###
     #   Remove cosmics (optional)
-    #
     if cosmic_ray_removal:
         rm_cosmic_rays(
             image,
@@ -3633,17 +3641,13 @@ def main_extract(
             saturation_level=saturation_level,
         )
 
-    ###
     #   Estimate and remove background
-    #
     _, rms_background = determine_background(
         image,
         sigma_background=sigma_value_background_clipping,
     )
 
-    ###
     #   Find the stars (via DAO or IRAF StarFinder)
-    #
     if identify_objects_on_image:
         find_stars(
             image,
@@ -3659,10 +3663,8 @@ def main_extract(
         if size_epsf_region % 2 == 0:
             size_epsf_region = size_epsf_region + 1
 
-        ###
         #   Check if enough stars have been detected to allow ePSF
         #   calculations
-        #
         epsf_stars = check_epsf_stars(
             image,
             size_epsf_region=size_epsf_region,
@@ -3672,9 +3674,7 @@ def main_extract(
             strict_epsf_checks=strict_epsf_checks,
         )
 
-        ###
         #   Plot images with the identified stars overlaid
-        #
         if plots_for_all_images or (plot_for_reference_image_only
                                     and image.pd == id_reference_image):
             plots.starmap(
@@ -3692,9 +3692,7 @@ def main_extract(
                 file_type=file_type_plots,
             )
 
-        ###
         #   Calculate the ePSF
-        #
         determine_epsf(
             image,
             epsf_stars,
@@ -3707,9 +3705,7 @@ def main_extract(
             file_type_plots=file_type_plots,
         )
 
-        ###
         #   Plot the ePSFs
-        #
         plots.plot_epsf(
             image.out_path.name,
             {f'img-{image.pd}-{image.filter_}': image.epsf},
@@ -3719,9 +3715,7 @@ def main_extract(
             indent=2,
         )
 
-        ###
         #   Performing the PSF photometry
-        #
         extraction_epsf(
             image,
             sigma_object_psf,
@@ -3736,9 +3730,7 @@ def main_extract(
             terminal_logger=terminal_logger,
         )
 
-        ###
         #   Plot original and residual image
-        #
         plots.plot_residual(
             {f'{image.filter_}, Image ID: {image.pd}': image.get_data()},
             {f'{image.filter_}, Image ID: {image.pd}': image.residual_image},
