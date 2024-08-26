@@ -143,13 +143,9 @@ def mk_magnitudes_table(
                     magnitude_errors = magnitudes
 
                 if photometry_column_keyword == 'mag_cali':
-                    # column_name = f'{filter_}_simple ({image_id})'
-                    # column_name_err = f'{filter_}_simple_err ({image_id})'
                     column_name = f'{filter_} (simple, image={image_id})'
                     column_name_err = f'{filter_}_err (simple, image={image_id})'
                 else:
-                    # column_name = f'{filter_}_trans ({image_id})'
-                    # column_name_err = f'{filter_}_trans_err ({image_id})'
                     column_name = f'{filter_} (transformed, image={image_id})'
                     column_name_err = f'{filter_}_err (transformed, image={image_id})'
 
@@ -502,10 +498,6 @@ def mk_time_series(
     filter_
         Filter
 
-    # object_id
-    #     ID/Number of the object for with the time series should be
-    #     created
-
     Returns
     -------
     ts
@@ -784,13 +776,6 @@ def flux_to_magnitudes(
     magnitudes_error
         Object uncertainties
     """
-    #   TODO: Check if the following is necessary
-    #   Sanitize input parameters
-    # if np.ma.isMaskedArray(flux):
-    #     flux = flux.filled()
-    # if np.ma.isMaskedArray(flux_error):
-    #     flux_error = flux_error.filled()
-
     #   Calculate magnitudes
     magnitudes = -2.5 * np.log10(flux)
     magnitudes_error = -2.5 * flux_error / flux
@@ -880,51 +865,6 @@ def find_transformation_coefficients(
     return None
 
 
-#   TODO: Remove
-# def check_variable(
-#         filename: str, filetype: str, filter_1: str, filter_2: str, iso_column_type,
-#         iso_column):
-#     """
-#     Check variables and set defaults for CMDs and isochrone plots
-#
-#     This function exists for backwards compatibility.
-#
-#     Parameters
-#     ----------
-#     filename            : `string`
-#         Specified file name - can also be empty -> set default
-#
-#
-#     filetype            : `string`
-#         Specified file type - can also be empty -> set default
-#
-#     filter_1            : `string`
-#         First filter
-#
-#     filter_2            : `string`
-#         Second filter
-#
-#     iso_column_type     : `dictionary`
-#         Keys = filter - Values = type
-#
-#     iso_column          : `dictionary`
-#         Keys = filter - Values = column
-#     """
-#
-#     filename, filetype = check_variable_apparent_cmd(
-#         filename,
-#         filetype,
-#     )
-#
-#     check_variable_absolute_cmd(
-#         [filter_1, filter_2],
-#         iso_column_type,
-#         iso_column,
-#     )
-#
-#     return filename, filetype
-
-
 def check_variable_apparent_cmd(
         filename: str, filetype: str) -> tuple[str, str]:
     """
@@ -972,6 +912,8 @@ def check_variable_apparent_cmd(
             style_name='WARNING',
         )
         filetype = 'pdf'
+
+    #   TODO: Check if the following can be removed
 
     # #   Check if calibration parameter is consistent with the number of
     # #   filter
@@ -1085,7 +1027,7 @@ class Executor:
 
         #   Add progress bar if requested
         self.progress_bar: tqdm | None = None
-        self.add_progress_bar: bool | None = kwargs.get('add_progress_bar', None)
+        self.add_progress_bar: bool = kwargs.get('add_progress_bar', False)
         n_tasks: int | None = kwargs.get('n_tasks', None)
         if self.add_progress_bar and n_tasks:
             self.progress_bar = tqdm(total=n_tasks)
@@ -1139,6 +1081,7 @@ class Executor:
         self.pool.close()
         self.pool.join()
         if self.progress_bar:
+            self.progress_bar.close()
             print('')
 
 
@@ -1292,10 +1235,6 @@ def prepare_and_plot_starmap_from_observation(
     )
 
     for filter_ in filter_list:
-        # if filter_ == filter_list[0]:
-        #     rts = f'{filter_list[1]} [final version]'
-        # else:
-        #     rts = f'{filter_list[0]} [final version]'
         rts = 'final version'
 
         #   Get reference image
@@ -1354,7 +1293,7 @@ def prepare_and_plot_starmap_from_image_series(
         Default is ``pdf``.
     """
     terminal_output.print_to_terminal(
-        "Plot star map with the objects identified on all images",
+        "Plot star map with objects identified on all images",
         indent=1,
     )
 
@@ -1481,7 +1420,7 @@ def derive_limiting_magnitude(
 
         #   Print result
         terminal_output.print_to_terminal(
-            f"Determine limiting magnitude for filter: {filter_}",
+            f"\nDetermine limiting magnitude for filter: {filter_}",
             indent=indent,
         )
         terminal_output.print_to_terminal(
@@ -1493,12 +1432,14 @@ def derive_limiting_magnitude(
             f"Median of the 10 faintest objects: "
             f"{median_faintest_objects:.1f} mag",
             indent=indent * 3,
+            style_name='OKBLUE',
         )
         mean_faintest_objects = np.mean(tbl_mag[magnitude_type][-10:])
         terminal_output.print_to_terminal(
             f"Mean of the 10 faintest objects: "
             f"{mean_faintest_objects:.1f} mag",
             indent=indent * 3,
+            style_name='OKBLUE',
         )
 
         #   Convert object positions to pixel index values
@@ -1548,6 +1489,7 @@ def derive_limiting_magnitude(
             f"{mag_limit:6.2f} +/- "
             f"{mag_limit():6.2f} mag",
             indent=indent * 3,
+            style_name='OKBLUE',
         )
 
 
@@ -1658,7 +1600,6 @@ def proper_motion_selection(
         frame="icrs"
     )
 
-    ###
     #   Get Gaia data from Vizier
     #
     #   Columns to download
@@ -1698,7 +1639,6 @@ def proper_motion_selection(
         frame="icrs"
     )
 
-    ###
     #   Correlate own objects with Gaia objects
     #
     #   Set maximal separation between objects
@@ -1711,10 +1651,20 @@ def proper_motion_selection(
         separation_limit,
     )
 
-    ###
+    #   Identify and remove duplicate indexes
+    id_img, d2ds, id_calib = clear_duplicates(
+        id_img,
+        d2ds,
+        id_calib,
+    )
+    id_calib, d2ds, id_img = clear_duplicates(
+        id_calib,
+        d2ds,
+        id_img,
+    )
+
     #   Sigma clipping of the proper motion values
     #
-
     #   Proper motion of the common objects
     pm_de = result[0]['pmDE'][id_calib]
     pm_ra = result[0]['pmRA'][id_calib]
@@ -1740,7 +1690,6 @@ def proper_motion_selection(
     #   Create mask from sigma clipping
     mask = sigma_clip_ra.mask | sigma_clip_de.mask
 
-    ###
     #   Make plots
     #
     #   Restrict Gaia table to the common objects
@@ -1948,7 +1897,6 @@ def find_cluster(
     #   Get reference image
     image = image_series.reference_image
 
-    ###
     #   Get Gaia data from Vizier
     #
     #   Columns to download
@@ -2008,7 +1956,6 @@ def find_cluster(
         frame="icrs"
     )
 
-    ###
     #   Correlate own objects with Gaia objects
     #
     #   Set maximal separation between objects
@@ -2021,7 +1968,18 @@ def find_cluster(
         separation_limit,
     )
 
-    ###
+    #   Identify and remove duplicate indexes
+    id_img, d2ds, id_calib = clear_duplicates(
+        id_img,
+        d2ds,
+        id_calib,
+    )
+    id_calib, d2ds, id_img = clear_duplicates(
+        id_calib,
+        d2ds,
+        id_img,
+    )
+
     #   Find cluster in proper motion and distance data
     #
 
@@ -2145,7 +2103,7 @@ def find_cluster(
     #   Get user input
     cluster_id, timed_out = timedInput(
         style.Bcolors.OKBLUE +
-        "   Which one is the correct cluster (id)? "
+        "\n   Which one is the correct cluster (id)? \n"
         + style.Bcolors.ENDC,
         timeout=300,
     )
@@ -2160,7 +2118,6 @@ def find_cluster(
     #   Apply correlation results and masks to the input table
     tbl = tbl[id_img][mask][cluster_mask.values]
 
-    ###
     #   Make star map
     #
     prepare_and_plot_starmap(
@@ -2222,30 +2179,12 @@ def save_magnitudes_ascii(
     if photometry_extraction_method != '':
         photometry_extraction_method = f'_{photometry_extraction_method}'
 
-    #   Check if observation object contains already entries
-    #   for file names/paths. If not add dictionary.
-    # photo_filepath = getattr(observation, 'photo_filepath', None)
-    # if photo_filepath is None or not isinstance(photo_filepath, dict):
-    #     observation.photo_filepath = {}
-
     #   Set file name
-    # if magnitude_transformation:
-    #     #   Set file name for file with magnitude transformation
-    #     filename = f'mags_TRANS_calibrated{photometry_extraction_method}{id_object}{rts}.dat'
-    # else:
-    #     #   File name for file without magnitude transformation
-    #     filename = f'mags_calibrated{photometry_extraction_method}{id_object}{rts}.dat'
-
     filename = f'calibrated_magnitudes{photometry_extraction_method}{id_object}{rts}.dat'
 
     #   Combine to a path
     out_path = output_dir / 'tables' / filename
 
-    #   Add to object
-    # if add_file_path_to_observation_object:
-    #     observation.photo_filepath[out_path] = magnitude_transformation
-
-    ###
     #   Define output formats for the table columns
     #
     #   Get column names
@@ -2363,12 +2302,6 @@ def post_process_results(
     image_series_dict = observation.image_series_dict
 
     #   Get astropy tables with positions and magnitudes
-    #   TODO: Fix this - Cleanup after testing
-    # if tbl_list is None or not tbl_list:
-    #     tbl_list = [
-    #         (getattr(observation, 'table_mags_transformed', None), True),
-    #         (getattr(observation, 'table_mags_not_transformed', None), False),
-    #     ]
     tbl = observation.table_magnitudes
 
     #   Loop over all Tables
@@ -2378,15 +2311,12 @@ def post_process_results(
     mask_objects = None
     img_id_pm = None
     mask_pm = None
-    # for (tbl, trans) in tbl_list:
-    ###
+
     #   Post process data
     #
-
     #   Extract circular region around a certain object
     #   such as a star cluster
     if extract_only_circular_region:
-        #   TODO: Save
         if mask_region is None:
             tbl, mask_region = region_selection(
                 image_series_dict[filter_list[0]],
@@ -2400,7 +2330,6 @@ def post_process_results(
 
     #   Find a cluster in the Gaia data that could be the star cluster
     if data_cluster:
-        #   TODO: Save
         if any(x is None for x in [img_id_cluster, mask_cluster, mask_objects]):
             tbl, img_id_cluster, mask_cluster, mask_objects = find_cluster(
                 image_series_dict[filter_list[0]],
@@ -2417,7 +2346,6 @@ def post_process_results(
     #   TODO: Check if this is still a useful option
     if clean_objects_using_proper_motion:
         if any(x is None for x in [img_id_pm, mask_pm]):
-            #   TODO: Save
             tbl, img_id_pm, mask_pm = proper_motion_selection(
                 image_series_dict[filter_list[0]],
                 tbl,
@@ -2434,12 +2362,7 @@ def post_process_results(
             distribution_samples=distribution_samples,
         )
 
-    ###
     #   Save results as ASCII files
-    #
-    #   TODO: Fix this dirty hack to fix the file names, if magnitude
-    #         transformation is applied
-    # if trans:
     if len(filter_list) == 2:
         rts = f'_{filter_list[0]}-{filter_list[1]}_post_processed'
     elif len(filter_list) == 1:
@@ -2454,11 +2377,9 @@ def post_process_results(
     save_magnitudes_ascii(
         observation,
         tbl,
-        # magnitude_transformation=trans,
         id_object=id_object,
         rts=rts,
         photometry_extraction_method=extraction_method,
-        # add_file_path_to_observation_object=False,
     )
 
 
@@ -2487,12 +2408,6 @@ def add_column_to_table(
     tbl
         Table with the added column
     """
-    # if column_id == -1:
-    #     tbl.add_columns(
-    #         [data.pdf_median(), data.pdf_std()],
-    #         names=[column_name, f'{column_name}_err']
-    #     )
-    # else:
     tbl.add_columns(
         [data.pdf_median(), data.pdf_std()],
         names=[
@@ -2950,7 +2865,6 @@ def prepare_calibration_check_plots(
                 out_dir,
             ),
             kwargs={
-                # 'name_object': name_object,
                 'fits': [None, fit],
                 'x_errors': [
                     uncalibrated_magnitudes_err[ids_calibration_stars]
@@ -2959,10 +2873,6 @@ def prepare_calibration_check_plots(
                     literature_magnitudes_err
                 ],
                 'file_type': file_type_plots,
-                # 'dataset_label': [
-                #     'without sigma clipping',
-                #     'with sigma clipping',
-                # ],
             }
         )
         p.start()
@@ -2974,15 +2884,10 @@ def prepare_calibration_check_plots(
             f'{filter_}_literature [mag]',
             f'mags_{filter_}_img_{image_id}_{plot_type}',
             out_dir,
-            # 'name_object': name_object,
             fits=[None, fit],
             x_errors=uncalibrated_magnitudes_err[ids_calibration_stars],
             y_errors=[literature_magnitudes_err],
             file_type=file_type_plots,
-            # dataset_label=[
-            #     'without sigma clipping',
-            #     'with sigma clipping',
-            # ],
         )
 
     #   Comparison observed vs. literature color
@@ -3007,13 +2912,8 @@ def prepare_calibration_check_plots(
                     out_dir,
                 ),
                 kwargs={
-                    # 'name_object': name_object,
                     'x_errors': [color_literature_err],
                     'y_errors': [color_observed_err],
-                    # 'dataset_label': [
-                    #     'without sigma clipping',
-                    #     'with sigma clipping',
-                    # ],
                     'fits': [fit, fit],
                     'file_type': file_type_plots,
                 }
@@ -3027,13 +2927,8 @@ def prepare_calibration_check_plots(
                 f'{filter_list[0]}-{filter_list[1]}_measured [mag]',
                 f'color_{filter_}_img_{image_id}_{plot_type}',
                 out_dir,
-                # 'name_object': name_object,
                 x_errors=[color_literature_err],
                 y_errors=[color_observed_err],
-                # dataset_label=[
-                #     'without sigma clipping',
-                #     'with sigma clipping',
-                # ],
                 fits=[fit, fit],
                 file_type=file_type_plots,
             )
@@ -3058,10 +2953,6 @@ def prepare_calibration_check_plots(
                     err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
                 ],
                 'file_type': file_type_plots,
-                # 'dataset_label': [
-                #     'without sigma clipping',
-                #     'with sigma clipping',
-                # ],
             },
         )
         p.start()
@@ -3078,10 +2969,6 @@ def prepare_calibration_check_plots(
                 err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
             ],
             file_type=file_type_plots,
-            # dataset_label=[
-            #     'without sigma clipping',
-            #     'with sigma clipping',
-            # ],
         )
 
 
@@ -3120,21 +3007,21 @@ def save_calibration(
 
     #   Add table to observation container
     observation.table_magnitudes = table_magnitudes
-    # observation.table_mags_transformed = table_magnitudes
 
     #   Save to file
     save_magnitudes_ascii(
         observation,
         table_magnitudes,
-        # magnitude_transformation=True,
         id_object=id_object,
         photometry_extraction_method=photometry_extraction_method,
         rts=rts,
     )
 
 
-def find_duplicates_nparray(array: np.ndarray) -> np.ndarray:
+def find_duplicates_nparray(
+        array: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
+    Finds the duplicates in a numpy array. Returns the indexes of the duplicates.
 
     Parameters
     ----------
@@ -3154,6 +3041,55 @@ def find_duplicates_nparray(array: np.ndarray) -> np.ndarray:
     )
     diff_index = array - reshaped_array
     np.fill_diagonal(diff_index, 1)
-    duplicate_indexes = np.where(diff_index == 0)[0]
+    duplicate_indexes = np.where(diff_index == 0)
 
-    return duplicate_indexes
+    return duplicate_indexes[0], duplicate_indexes[0]
+
+
+def clear_duplicates(
+        data_array: np.ndarray, selection_quantity: np.ndarray,
+        additional_array: np.ndarray
+        ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+
+    Parameters
+    ----------
+    data_array
+        Array from which the duplicates should be removed
+
+    selection_quantity
+        Array with the quantities on which bases the best duplicate
+        will be selected. The duplicate with the lowest value will be kept
+        the remaining ones will be removed.
+
+    additional_array
+        Additional arrays that will be cleared in the same way as the
+        data_array.
+
+    Returns
+    -------
+        data_array
+            Cleared for duplicates
+
+        selection_quantity
+            Cleared for duplicates
+
+        additional_array
+            Cleared for duplicates
+    """
+    #   Find duplicates
+    duplicate_index = find_duplicates_nparray(data_array)
+
+    #   Calculate most likely duplicate and remove those from the
+    #   duplicates list
+    distance_0 = selection_quantity[duplicate_index[0]]
+    distance_1 = selection_quantity[duplicate_index[1]]
+    mask = distance_0 > distance_1
+    rm_index = duplicate_index[mask]
+
+    #   Clear data arrays
+    data_array = np.delete(data_array, rm_index)
+    selection_quantity = np.delete(selection_quantity, rm_index)
+    additional_array = np.delete(additional_array, rm_index)
+
+    return data_array, selection_quantity, additional_array

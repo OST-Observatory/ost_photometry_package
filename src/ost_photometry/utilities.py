@@ -972,7 +972,7 @@ def check_wcs_exists(image, wcs_dir=None, indent=2):
 
             if wcs_astronomy_net_type == 'celestial':
                 terminal_output.print_to_terminal(
-                    "Image in the wcs_dir with a valid WCS found.",
+                    "Image found in wcs_dir with a valid WCS.",
                     indent=indent,
                     style_name='OKGREEN',
                 )

@@ -166,7 +166,7 @@ class ImageSeries:
 
         #   Fill image list
         terminal_output.print_to_terminal(
-            "Read images and calculate field of view, PIXEL scale, etc. ... ",
+            "Read images and calculate field of view, pixel scale, etc. ... ",
             indent=2,
         )
         #   TODO: Convert image_list to dictionary?
@@ -176,12 +176,6 @@ class ImageSeries:
                 Image(image_id, filter_, f'{path}/{file_name}', output_dir)
             )
 
-            # #   Calculate field of view and additional quantities and add
-            # #   them to the image class instance
-            # base_utilities.calculate_field_of_view(
-            #     self.image_list[image_id],
-            #     verbose=False,
-            # )
 
         #   Set start time for image series
         self.start_jd = self.image_list[0].jd
@@ -448,18 +442,6 @@ class Observation:
                 unit=(u.degree, u.degree),
                 frame="icrs",
             )
-        # if object_names:
-        #     n_objects = len(object_names)
-        #     coordinates_properties = [ra_objects, dec_objects]
-        #     if all(coordinates_properties) and all(len(x) == n_objects for x in coordinates_properties):
-        #         self.objects_of_interest_coordinates = SkyCoord(
-        #             ra_objects,
-        #             dec_objects,
-        #             unit=(ra_unit, dec_unit),
-        #             frame="icrs",
-        #         )
-        #     else:
-        #         self.objects_of_interest_coordinates = None
 
         #   Prepare attribute for calibration data
         self.calib_parameters: calibration_data.CalibParameters | None = None
@@ -601,19 +583,26 @@ class Observation:
             wcs_method: str = 'astrometry', force_wcs_determ: bool = False,
             sigma_value_background_clipping: float = 5.,
             multiplier_background_rms: float = 5., size_epsf_region: int = 25,
-            fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
-            max_n_iterations_epsf: int = 7, use_initial_positions_epsf: bool = True,
+            size_extraction_region_epsf: float = 11.,
+            epsf_fitter: str = 'LMLSQFitter',
+            n_iterations_eps_extraction: int = 2,
+            fraction_epsf_stars: float = 0.2,
+            oversampling_factor_epsf: int = 2,
+            max_n_iterations_epsf_determination: int = 7,
+            use_initial_positions_epsf: bool = True,
             object_finder_method: str = 'IRAF',
             multiplier_background_rms_epsf: float = 5.0,
             multiplier_grouper_epsf: float = 2.0,
             strict_cleaning_epsf_results: bool = True,
             minimum_n_eps_stars: int = 25,
             reference_image_id: int = 0, strict_epsf_checks: bool = True,
-            photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
-            inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
-            radii_unit: str = 'arcsec', cosmic_ray_removal: bool = False,
+            photometry_extraction_method: str = 'PSF',
+            radius_aperture: float = 5., inner_annulus_radius: float = 7.,
+            outer_annulus_radius: float = 10., radii_unit: str = 'arcsec',
+            cosmic_ray_removal: bool = False,
             limiting_contrast_rm_cosmics: float = 5., read_noise: float = 8.,
-            sigma_clipping_value: float = 4.5, saturation_level: float = 65535.,
+            sigma_clipping_value: float = 4.5,
+            saturation_level: float = 65535.,
             plots_for_all_images: bool = False,
             plot_for_reference_image_only: bool = True,
             file_type_plots: str = 'pdf') -> None:
@@ -656,6 +645,22 @@ class Observation:
             Size of the extraction region in pixel
             Default is `25``.
 
+        size_extraction_region_epsf
+            Size of the extraction region in pixel
+            Default is ``11``.
+
+        epsf_fitter
+            Fitter function used during ePSF fitting to the data.
+            Options are: ``LevMarLSQFitter``, ``LMLSQFitter`` and ``TRFLSQFitter``
+            Default is ``LMLSQFitter``.
+
+        n_iterations_eps_extraction
+            Number of extraction iterations in the ePSF fit to the data. In certain
+            cases, such as very crowded fields, numbers greater than 1 can lead to
+            very large CPU loads and recursions within astropy that may exceed the
+            defined limits.
+            Default is ``2``.
+
         fraction_epsf_stars
             Fraction of all stars that should be used to calculate the ePSF
             Default is ``0.2``.
@@ -664,7 +669,7 @@ class Observation:
             ePSF oversampling factor
             Default is ``2``.
 
-        max_n_iterations_epsf
+        max_n_iterations_epsf_determination
             Number of ePSF iterations
             Default is ``7``.
 
@@ -765,9 +770,7 @@ class Observation:
             os.path.join(output_dir, 'tables'),
         )
 
-        ###
         #   Loop over all filter
-        #
         for filter_ in filter_list:
             terminal_output.print_to_terminal(
                 f"Analyzing {filter_} images",
@@ -784,9 +787,7 @@ class Observation:
                 output_dir,
             )
 
-            ###
             #   Find the WCS solution for the image
-            #
             try:
                 utilities.find_wcs(
                     current_image_series,
@@ -817,18 +818,19 @@ class Observation:
                 else:
                     raise RuntimeError(e)
 
-            ###
             #   Main extraction
-            #
             main_extract(
                 current_image_series.image_list[reference_image_id],
                 sigma_object_psf[filter_],
                 sigma_value_background_clipping=sigma_value_background_clipping,
                 multiplier_background_rms=multiplier_background_rms,
                 size_epsf_region=size_epsf_region,
+                size_extraction_region_epsf=size_extraction_region_epsf,
+                epsf_fitter=epsf_fitter,
+                n_iterations_eps_extraction=n_iterations_eps_extraction,
                 fraction_epsf_stars=fraction_epsf_stars,
                 oversampling_factor_epsf=oversampling_factor_epsf,
-                max_n_iterations_epsf=max_n_iterations_epsf,
+                max_n_iterations_epsf_determination=max_n_iterations_epsf_determination,
                 use_initial_positions_epsf=use_initial_positions_epsf,
                 object_finder_method=object_finder_method,
                 multiplier_background_rms_epsf=multiplier_background_rms_epsf,
@@ -852,9 +854,7 @@ class Observation:
             )
 
         if photometry_extraction_method == 'PSF':
-            ###
             #   Plot the ePSFs
-            #
             p = mp.Process(
                 target=plots.plot_epsf,
                 args=(output_dir, self.get_reference_epsf(),),
@@ -862,9 +862,7 @@ class Observation:
             )
             p.start()
 
-            ###
             #   Plot original and residual image
-            #
             p = mp.Process(
                 target=plots.plot_residual,
                 args=(
@@ -874,7 +872,6 @@ class Observation:
                 ),
                 kwargs={
                     'file_type': file_type_plots,
-                    # 'name_object': 'reference image'
                 }
             )
             p.start()
@@ -887,7 +884,7 @@ class Observation:
             sigma_value_background_clipping: float = 5.,
             multiplier_background_rms: float = 5., size_epsf_region: int = 25,
             fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
-            max_n_iterations_epsf: int = 7,
+            max_n_iterations_epsf_determination: int = 7,
             use_initial_positions_epsf: bool = True,
             object_finder_method: str = 'IRAF',
             multiplier_background_rms_epsf: float = 5.0,
@@ -904,6 +901,7 @@ class Observation:
             correlation_method: str = 'astropy',
             separation_limit: u.quantity.Quantity = 2. * u.arcsec,
             verbose: bool = False, identify_objects_on_image: bool = True,
+            duplicate_handling_object_identification: dict[str, str] | None = None,
             plots_for_all_images: bool = False,
             plot_for_reference_image_only: bool = True,
             file_type_plots: str = 'pdf') -> None:
@@ -959,7 +957,7 @@ class Observation:
             ePSF oversampling factor
             Default is ``2``.
 
-        max_n_iterations_epsf
+        max_n_iterations_epsf_determination
             Number of ePSF iterations
             Default is ``7``.
 
@@ -1069,6 +1067,19 @@ class Observation:
             it is assumed that object identification was performed in advance.
             Default is ``True``.
 
+        duplicate_handling_object_identification
+            Specifies how to handle multiple object identification filtering.
+            There are two options for each 'correlation_method':
+                'own':     'first_in_list' and 'flux'.  The 'first_in_list'
+                            filtering just takes the first obtained result.
+                'astropy': 'distance' and 'flux'. The 'distance' filtering is
+                            based on the distance between the correlated objects.
+                            In this case, the one with the smallest distance is
+                            used.
+            The second option for both correlation method is based on the measure
+            flux values. In this case the largest one is used.
+            Default is ``None``.
+
         plots_for_all_images
             If True star map plots for all stars are created
             Default is ``False``.
@@ -1081,14 +1092,10 @@ class Observation:
             Type of plot file to be created
             Default is ``pdf``.
         """
-        ###
         #   Check output directories
-        #
         checks.check_output_directories(output_dir, os.path.join(output_dir, 'tables'))
 
-        ###
         #   Check image directories
-        #
         checks.check_dir(image_paths)
 
         #   Outer loop over all filter
@@ -1106,9 +1113,7 @@ class Observation:
                 reference_image_id=reference_image_id,
             )
 
-            ###
             #   Find the WCS solution for the image
-            #
             utilities.find_wcs(
                 self.image_series_dict[filter_],
                 reference_image_id=reference_image_id,
@@ -1117,10 +1122,8 @@ class Observation:
                 indent=3,
             )
 
-            ###
             #   Main extraction of object positions and object fluxes
             #   using multiprocessing
-            #
             extract_multiprocessing(
                 self.image_series_dict[filter_],
                 n_cores_multiprocessing,
@@ -1130,7 +1133,7 @@ class Observation:
                 size_epsf_region=size_epsf_region,
                 fraction_epsf_stars=fraction_epsf_stars,
                 oversampling_factor_epsf=oversampling_factor_epsf,
-                max_n_iterations_epsf=max_n_iterations_epsf,
+                max_n_iterations_epsf_determination=max_n_iterations_epsf_determination,
                 object_finder_method=object_finder_method,
                 multiplier_background_rms_epsf=multiplier_background_rms_epsf,
                 multiplier_grouper_epsf=multiplier_grouper_epsf,
@@ -1149,10 +1152,8 @@ class Observation:
                 use_initial_positions_epsf=use_initial_positions_epsf,
             )
 
-            ###
             #   Correlate results from all images within the current image
             #   series, while preserving the variable objects
-            #
             correlate.correlate_preserve_variable(
                 self,
                 filter_,
@@ -1164,6 +1165,7 @@ class Observation:
                 expected_bad_image_fraction=expected_bad_image_fraction,
                 protect_reference_obj=protect_reference_obj,
                 verbose=verbose,
+                duplicate_handling_object_identification=duplicate_handling_object_identification,
                 plot_reference_only=plot_for_reference_image_only,
                 correlation_method=correlation_method,
                 separation_limit=separation_limit,
@@ -1190,6 +1192,7 @@ class Observation:
             region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
             calculate_zero_point_statistic: bool = True,
             distribution_samples: int = 1000,
+            duplicate_handling_object_identification: dict[str, str] | None = None,
             file_type_plots: str = 'pdf') -> None:
         """
         Correlate photometric extraction results from 2 images and calibrate
@@ -1322,6 +1325,20 @@ class Observation:
             Number of samples used for distributions
             Default is `1000`.
 
+        duplicate_handling_object_identification
+            Specifies how to handle multiple object identification filtering during
+            object identification.
+            There are two options for each 'correlation_method':
+                'own':     'first_in_list' and 'flux'.  The 'first_in_list'
+                            filtering just takes the first obtained result.
+                'astropy': 'distance' and 'flux'. The 'distance' filtering is
+                            based on the distance between the correlated objects.
+                            In this case, the one with the smallest distance is
+                            used.
+            The second option for both correlation method is based on the measure
+            flux values. In this case the largest one is used.
+            Default is ``None``.
+
         file_type_plots
             Type of plot file to be created
             Default is ``pdf``.
@@ -1335,6 +1352,7 @@ class Observation:
             correlation_method=correlation_method,
             separation_limit=separation_limit,
             file_type_plots=file_type_plots,
+            duplicate_handling_object_identification=duplicate_handling_object_identification,
         )
 
         #   Plot image with the final positions overlaid (final version)
@@ -1436,7 +1454,8 @@ class Observation:
             n_cores_multiprocessing_calibration: int | None = None,
             distribution_samples: int = 1000, plot_light_curve_all: bool = False,
             plot_light_curve_calibration_objects: bool = True,
-            file_type_plots: str = 'pdf') -> None:
+            file_type_plots: str = 'pdf',
+            duplicate_handling_object_identification: dict[str, str] = None) -> None:
         """
         Calculate magnitudes, calibrate, and plot light curves
 
@@ -1569,6 +1588,20 @@ class Observation:
         file_type_plots
             Type of plot file to be created
             Default is ``pdf``.
+
+        duplicate_handling_object_identification
+            Specifies how to handle multiple object identification filtering during
+            object identification.
+            There are two options for each 'correlation_method':
+                'own':     'first_in_list' and 'flux'.  The 'first_in_list'
+                            filtering just takes the first obtained result.
+                'astropy': 'distance' and 'flux'. The 'distance' filtering is
+                            based on the distance between the correlated objects.
+                            In this case, the one with the smallest distance is
+                            used.
+            The second option for both correlation method is based on the measure
+            flux values. In this case the largest one is used.
+            Default is ``None``.
         """
         #   Clear lightcurve directories
         checks.check_output_directories(f'{output_dir}/lightcurve')
@@ -1637,6 +1670,7 @@ class Observation:
                 separation_limit=separation_limit,
                 verbose=verbose,
                 file_type_plots=file_type_plots,
+                duplicate_handling_object_identification=duplicate_handling_object_identification,
             )
 
         #   Calibrate magnitudes
@@ -1666,7 +1700,7 @@ class Observation:
 
             for filter_ in filter_set:
                 terminal_output.print_to_terminal(
-                    f"Working on filter: {filter_}",
+                    f"Create light curves in filter: {filter_}",
                     style_name='OKBLUE',
                 )
 
@@ -1686,7 +1720,6 @@ class Observation:
                 for object_ in self.objects_of_interest:
                     utilities.prepare_plot_time_series(
                         self.table_magnitudes,
-                        # self.table_mags_transformed,
                         observation_times,
                         filter_,
                         object_.name,
@@ -1723,7 +1756,7 @@ class Observation:
                             p.start()
 
                 if (plot_light_curve_calibration_objects
-                        and ids_calibration_objects != [None]):
+                        and ids_calibration_objects.any()):
                     for index in ids_calibration_objects:
                         p = mp.Process(
                             target=utilities.prepare_plot_time_series,
@@ -2473,7 +2506,6 @@ def determine_epsf(
             output_dir,
             stars,
             string,
-            # name_object=name_object,
             terminal_logger=terminal_logger,
             file_type=file_type_plots,
         )
@@ -2488,13 +2520,13 @@ def determine_epsf(
 
     #   Add ePSF and fitted stars to image class
     image.epsf = epsf
-    # image.fitted_stars: psf.EPSFStars | None = fitted_stars
 
 
 def extraction_epsf(
         image: Image, sigma_object_psf: float, background_rms: float,
         sigma_background: float = 5., use_initial_positions: bool = True,
-        finder_method: str = 'IRAF', size_epsf_region: float = 25.,
+        finder_method: str = 'IRAF', size_extraction_region: float = 11.,
+        epsf_fitter: str = 'LMLSQFitter', n_iterations_eps_extraction: int = 2,
         multiplier_background_rms: float = 5.0,
         multiplier_grouper: float = 2.0,
         strict_cleaning_results: bool = True,
@@ -2528,9 +2560,21 @@ def extraction_epsf(
         Finder method DAO or IRAF
         Default is ``IRAF``.
 
-    size_epsf_region
+    size_extraction_region
         Size of the extraction region in pixel
-        Default is ``25``.
+        Default is ``11``.
+
+    epsf_fitter
+        Fitter function used during ePSF fitting to the data.
+        Options are: ``LevMarLSQFitter``, ``LMLSQFitter`` and ``TRFLSQFitter``
+        Default is ``LMLSQFitter``.
+
+    n_iterations_eps_extraction
+        Number of extraction iterations in the ePSF fit to the data. In certain
+        cases, such as very crowded fields, numbers greater than 1 can lead to
+        very large CPU loads and recursions within astropy that may exceed the
+        defined limits.
+        Default is ``2``.
 
     multiplier_background_rms
         Multiplier for the background RMS, used to calculate the
@@ -2638,28 +2682,33 @@ def extraction_epsf(
             f"not valid: use either IRAF or DAO {style.Bcolors.ENDC}"
         )
     #   Fitter used
-    # fitter = LevMarLSQFitter()
-    fitter = LMLSQFitter()
-    # fitter = TRFLSQFitter()
+    if epsf_fitter == 'LevMarLSQFitter':
+        fitter = LevMarLSQFitter()
+    elif epsf_fitter == 'LMLSQFitter':
+        fitter = LMLSQFitter()
+    elif epsf_fitter == 'TRFLSQFitter':
+        fitter = TRFLSQFitter()
+    else:
+        terminal_output.print_to_terminal(
+            f"WARNING: Fitter method ({epsf_fitter}) for ePSF "
+            f"extraction not known: Switching to LMLSQFitter.",
+            style_name='WARNING',
+            indent=indent,
+        )
+        fitter = LMLSQFitter()
 
     #   Make sure the size of the extraction region is uneven
-    if size_epsf_region % 2 == 0:
-        size_extraction_region = size_epsf_region + 1
-    else:
-        size_extraction_region = size_epsf_region
-
-    #   Number of iterations
-    n_iterations = 3
+    if size_extraction_region % 2 == 0:
+        size_extraction_region = size_extraction_region + 1
 
     #   Set up sigma clipping
     if rm_background:
         sigma_clip = SigmaClip(sigma=sigma_background)
         mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
-        local_bkg_estimator = LocalBackground(5, 10, mmm_bkg)
+        local_bkg_estimator = LocalBackground(7, 10, mmm_bkg)
     else:
         local_bkg_estimator = None
 
-    # try:
     #   Group sources into clusters based on a minimum separation distance
     source_grouper = SourceGrouper(
         min_separation=multiplier_grouper * sigma_object_psf * gaussian_sigma_to_fwhm
@@ -2668,16 +2717,16 @@ def extraction_epsf(
     #  Set up the overall class to extract the data
     photometry = IterativePSFPhotometry(
         psf_model=epsf,
-        # fit_shape=(size_extraction_region, size_extraction_region),
-        fit_shape=(11, 11),
+        fit_shape=(size_extraction_region, size_extraction_region),
+        # fit_shape=(11, 11),
         finder=finder,
-        # grouper=source_grouper,
+        grouper=source_grouper,
         fitter=fitter,
-        maxiters=n_iterations,
+        maxiters=n_iterations_eps_extraction,
         localbkg_estimator=local_bkg_estimator,
         mode='all',
-        # aperture_radius=(size_extraction_region - 1) / 2
-        aperture_radius=(11 - 1) / 2
+        aperture_radius=(size_extraction_region - 1) / 2
+        # aperture_radius=(11 - 1) / 2
     )
 
     #   Extract the photometry and make a t\\able
@@ -2690,50 +2739,6 @@ def extraction_epsf(
         )
     else:
         result_tbl = photometry(data=data, error=error, mask=image_mask)
-    # except RuntimeError as e:
-    #     if multiplier_grouper != 1.:
-    #         terminal_output.print_to_terminal(
-    #             "IterativelySubtractedPSFPhotometry failed. "
-    #             "Will try again with 'multi_grouper' set to 1...",
-    #             indent=indent,
-    #             style_name='WARNING',
-    #         )
-    #         multiplier_grouper = 1.
-    #         #   DAO grouper
-    #         dao_group = DAOGroup(
-    #             multiplier_grouper * sigma_object_psf * gaussian_sigma_to_fwhm
-    #         )
-    #
-    #         #  Set up the overall class to extract the data
-    #         photometry = IterativelySubtractedPSFPhotometry(
-    #             finder=finder,
-    #             group_maker=dao_group,
-    #             bkg_estimator=mmm_bkg,
-    #             psf_model=epsf,
-    #             fitter=fitter,
-    #             niters=n_iterations,
-    #             fitshape=(size_extraction_region, size_extraction_region),
-    #             aperture_radius=(size_extraction_region - 1) / 2
-    #         )
-    #
-    #         #   Extract the photometry and make a table
-    #         if use_initial_positions:
-    #             result_tbl = photometry(
-    #                 image=data,
-    #                 init_guesses=initial_positions,
-    #             )
-    #         else:
-    #             result_tbl = photometry(image=data)
-    #     else:
-    #         terminal_output.print_to_terminal(
-    #             "IterativelySubtractedPSFPhotometry failed. "
-    #             "No recovery possible.",
-    #             indent=0,
-    #             style_name='ERROR'
-    #         )
-    #         raise e
-
-    print('before error: ', len(result_tbl))
 
     #   Check if result table contains a 'flux_err' column
     #   For some reason, it's missing for some extractions....
@@ -2747,8 +2752,6 @@ def extraction_epsf(
         )
         result_tbl.add_column(estimated_uncertainty, name='flux_err')
 
-    print('before uncertainty: ', len(result_tbl))
-
     #   Clean output for objects with NANs in uncertainties
     try:
         uncertainty_mask = np.invert(np.isnan(result_tbl['flux_err'].value))
@@ -2758,8 +2761,6 @@ def extraction_epsf(
             f"{style.Bcolors.FAIL} \nProblem with cleanup of NANs in "
             f"uncertainties... {style.Bcolors.ENDC}"
         )
-
-    print('after uncertainty: ', len(result_tbl))
 
     #   Clean output for objects with negative uncertainties
     try:
@@ -3096,9 +3097,7 @@ def extraction_aperture(
             indent=indent,
         )
 
-    ###
     #   Define apertures
-    #
     aperture, annulus_aperture = define_apertures(
         image,
         radius_aperture,
@@ -3107,7 +3106,6 @@ def extraction_aperture(
         radii_unit,
     )
 
-    ###
     #   Extract photometry
     #
     #   Extract aperture
@@ -3201,9 +3199,7 @@ def extraction_aperture(
     #   Add photometry to image class
     image.photometry = photometry_tbl
 
-    ###
     #   Plot star map with aperture overlay
-    #
     if plot_aperture_positions:
         plots.plot_apertures(
             image.out_path.name,
@@ -3237,8 +3233,12 @@ def extract_multiprocessing(
         sigma_object_psf: dict[str, float],
         sigma_value_background_clipping: float = 5.,
         multiplier_background_rms: float = 5., size_epsf_region: int = 25,
+        size_extraction_region_epsf: float = 11.,
+        epsf_fitter: str = 'LMLSQFitter',
+        n_iterations_eps_extraction: int = 2,
         fraction_epsf_stars: float = 0.2,
-        oversampling_factor_epsf: int = 2, max_n_iterations_epsf: int = 7,
+        oversampling_factor_epsf: int = 2,
+        max_n_iterations_epsf_determination: int = 7,
         use_initial_positions_epsf: bool = True,
         object_finder_method: str = 'IRAF',
         multiplier_background_rms_epsf: float = 5.0,
@@ -3281,6 +3281,22 @@ def extract_multiprocessing(
         Size of the extraction region in pixel
         Default is `25``.
 
+    size_extraction_region_epsf
+        Size of the extraction region in pixel
+        Default is ``11``.
+
+    epsf_fitter
+        Fitter function used during ePSF fitting to the data.
+        Options are: ``LevMarLSQFitter``, ``LMLSQFitter`` and ``TRFLSQFitter``
+        Default is ``LMLSQFitter``.
+
+    n_iterations_eps_extraction
+        Number of extraction iterations in the ePSF fit to the data. In certain
+        cases, such as very crowded fields, numbers greater than 1 can lead to
+        very large CPU loads and recursions within astropy that may exceed the
+        defined limits.
+        Default is ``2``.
+
     fraction_epsf_stars
         Fraction of all stars that should be used to calculate the ePSF
         Default is ``0.2``.
@@ -3289,7 +3305,7 @@ def extract_multiprocessing(
         ePSF oversampling factor
         Default is ``2``.
 
-    max_n_iterations_epsf
+    max_n_iterations_epsf_determination
         Number of ePSF iterations
         Default is ``7``.
         Default is ``7``.
@@ -3407,9 +3423,12 @@ def extract_multiprocessing(
                 'sigma_value_background_clipping': sigma_value_background_clipping,
                 'multiplier_background_rms': multiplier_background_rms,
                 'size_epsf_region': size_epsf_region,
+                'size_extraction_region_epsf': size_extraction_region_epsf,
+                'epsf_fitter': epsf_fitter,
+                'n_iterations_eps_extraction': n_iterations_eps_extraction,
                 'fraction_epsf_stars': fraction_epsf_stars,
                 'oversampling_factor_epsf': oversampling_factor_epsf,
-                'max_n_iterations_epsf': max_n_iterations_epsf,
+                'max_n_iterations_epsf_determination': max_n_iterations_epsf_determination,
                 'use_initial_positions_epsf': use_initial_positions_epsf,
                 'object_finder_method': object_finder_method,
                 'multiplier_background_rms_epsf': multiplier_background_rms_epsf,
@@ -3462,8 +3481,10 @@ def main_extract(
         multiprocessing: bool = False,
         sigma_value_background_clipping: float = 5.,
         multiplier_background_rms: float = 5., size_epsf_region: int = 25,
+        size_extraction_region_epsf: float = 11., epsf_fitter: str = 'LMLSQFitter',
+        n_iterations_eps_extraction: int = 2,
         fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
-        max_n_iterations_epsf: int = 7,
+        max_n_iterations_epsf_determination: int = 7,
         use_initial_positions_epsf: bool = True,
         object_finder_method: str = 'IRAF',
         multiplier_background_rms_epsf: float = 5.0,
@@ -3507,7 +3528,23 @@ def main_extract(
 
     size_epsf_region
         Size of the extraction region in pixel
-        Default is `25``.
+        Default is ``25``.
+
+    size_extraction_region_epsf
+        Size of the extraction region in pixel
+        Default is ``11``.
+
+    epsf_fitter
+        Fitter function used during ePSF fitting to the data.
+        Options are: ``LevMarLSQFitter``, ``LMLSQFitter`` and ``TRFLSQFitter``
+        Default is ``LMLSQFitter``.
+
+    n_iterations_eps_extraction
+        Number of extraction iterations in the ePSF fit to the data. In certain
+        cases, such as very crowded fields, numbers greater than 1 can lead to
+        very large CPU loads and recursions within astropy that may exceed the
+        defined limits.
+        Default is ``2``.
 
     fraction_epsf_stars
         Fraction of all stars that should be used to calculate the ePSF
@@ -3517,7 +3554,7 @@ def main_extract(
         ePSF oversampling factor
         Default is ``2``.
 
-    max_n_iterations_epsf
+    max_n_iterations_epsf_determination
         Number of ePSF iterations
         Default is ``7``.
 
@@ -3698,7 +3735,7 @@ def main_extract(
             epsf_stars,
             size_epsf_region=size_epsf_region,
             oversampling_factor=oversampling_factor_epsf,
-            max_n_iterations=max_n_iterations_epsf,
+            max_n_iterations=max_n_iterations_epsf_determination,
             minimum_n_stars=minimum_n_eps_stars,
             multiprocess_plots=False,
             terminal_logger=terminal_logger,
@@ -3723,7 +3760,9 @@ def main_extract(
             sigma_background=sigma_value_background_clipping,
             use_initial_positions=use_initial_positions_epsf,
             finder_method=object_finder_method,
-            size_epsf_region=size_epsf_region,
+            size_extraction_region=size_extraction_region_epsf,
+            epsf_fitter=epsf_fitter,
+            n_iterations_eps_extraction=n_iterations_eps_extraction,
             multiplier_background_rms=multiplier_background_rms_epsf,
             multiplier_grouper=multiplier_grouper_epsf,
             strict_cleaning_results=strict_cleaning_epsf_results,
@@ -3742,9 +3781,7 @@ def main_extract(
         )
 
     elif photometry_extraction_method == 'APER':
-        ###
         #   Perform aperture photometry
-        #
         if image.pd == id_reference_image:
             plot_aperture_positions = True
         else:

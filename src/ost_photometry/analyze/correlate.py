@@ -2,7 +2,6 @@
 #                               Libraries                                  #
 ############################################################################
 import multiprocessing as mp
-from multiprocessing.reduction import duplicate
 
 import numpy as np
 
@@ -28,10 +27,11 @@ from astropy import wcs
 
 def find_objects_of_interest_astropy(
         x_pixel_position_dataset: np.ndarray,
-        y_pixel_position_dataset: np.ndarray,
+        y_pixel_position_dataset: np.ndarray, flux: np.ndarray,
         objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
-        current_wcs: wcs.WCS, separation_limit: u.Quantity = 2. * u.arcsec
-        ) -> None:
+        current_wcs: wcs.WCS, duplicate_handling: str = 'distance',
+        separation_limit: u.Quantity = 2. * u.arcsec,
+        indent: int = 1) -> None:
     """
     Find the image coordinates of a star based on the stellar
     coordinates and the WCS of the image, using astropy matching
@@ -45,6 +45,9 @@ def find_objects_of_interest_astropy(
     y_pixel_position_dataset
         Positions of the objects in Pixel in Y direction
 
+    flux
+        Object flux
+
     objects_of_interest
         Object with 'object of interest' properties
 
@@ -54,10 +57,21 @@ def find_objects_of_interest_astropy(
     current_wcs
         WCS info
 
+    duplicate_handling
+        Specifies how to handle multiple object identification filtering.
+        There are two options: 'distance' and 'flux'. The 'distance' filtering
+        is based on the distance between the correlated objects. In this case,
+        the one with the smallest distance is used. The second option is
+        based on the measure flux values. In this case the highest one is used.
+        Default is ``distance``.
 
     separation_limit
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
+
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
     """
     #   Create SkyCoord object for dataset
     coordinates_dataset = SkyCoord.from_pixel(
@@ -75,13 +89,44 @@ def find_objects_of_interest_astropy(
         object_id = np.argwhere(mask).ravel()
 
         if len(object_id) > 1:
-            #   message would be feasible
             terminal_output.print_to_terminal(
                 f"More than one object detected within the separation limit to "
-                f"{object_.name}. Use the object that is the closest.",
+                f"{object_.name}.",
                 style_name='WARNING',
+                indent=indent,
             )
-            object_id = np.argmin(separation)
+
+            if duplicate_handling not in ['distance', 'flux']:
+                terminal_output.print_to_terminal(
+                    f"Option ({duplicate_handling}) for filtering multiple "
+                    f"object identifications are not recognized. Available "
+                    f"options are 'distance' and 'flux'. Use the "
+                    f"'first_in_list' option.",
+                    style_name='WARNING',
+                    indent=indent,
+                )
+                duplicate_handling = 'distance'
+
+            if duplicate_handling == 'distance':
+                object_id = np.argmin(separation)
+                terminal_output.print_to_terminal(
+                    f"Use the object that is the closest.",
+                    style_name='WARNING',
+                    indent=indent,
+                )
+
+            elif duplicate_handling == 'flux':
+                #   Calculate nd filter object ids based on observed flux.
+                #   Use the one with the highes flux.
+                print('pre flux filtering: ', object_id)
+                print(flux[object_id])
+                object_id = object_id[np.argmax(flux[object_id])]
+                print('after flux filtering: ', object_id)
+                terminal_output.print_to_terminal(
+                    f"Use the object that is the brightest.",
+                    style_name='WARNING',
+                    indent=indent,
+                )
 
         elif not object_id:
             #   TODO: Check if this can be healed downstream
@@ -89,6 +134,7 @@ def find_objects_of_interest_astropy(
                 f"No object detected within the separation limit to "
                 f"{object_.name}. Set object ID to None",
                 style_name='WARNING',
+                indent=indent,
             )
             object_id = None
 
@@ -101,10 +147,11 @@ def find_objects_of_interest_astropy(
 
 def find_objects_of_interest_srcor(
         x_pixel_position_dataset: np.ndarray,
-        y_pixel_position_dataset: np.ndarray,
+        y_pixel_position_dataset: np.ndarray, flux: np.ndarray,
         objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
         current_wcs: wcs.WCS, max_pixel_between_objects: int = 3,
-        own_correlation_option: int = 1, verbose: bool = False) -> None:
+        own_correlation_option: int = 1, duplicate_handling: str = 'first_in_list',
+        verbose: bool = False, indent: int = 1) -> None:
     """
     Find the image coordinates of a star based on the stellar
     coordinates and the WCS of the image
@@ -116,6 +163,9 @@ def find_objects_of_interest_srcor(
 
     y_pixel_position_dataset
         Positions of the objects in Pixel in Y direction
+
+    flux
+        Object flux
 
     objects_of_interest
         Object with 'object of interest' properties
@@ -134,9 +184,22 @@ def find_objects_of_interest_srcor(
         Option for the srcor correlation function
         Default is ``1``.
 
+    duplicate_handling
+        Specifies how to handle multiple object identification filtering.
+        There are two options: 'first_in_list' and 'flux'. The 'distance'
+        filtering is based on the distance between the correlated objects.
+        In this case, the one with the smallest distance is used. The
+        second option is based on the measure flux values. In this case
+        the highest one is used.
+        Default is ``first_in_list``.
+
     verbose
         If True additional output will be printed to the command line.
         Default is ``False``.
+
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
     """
     #   Number of objects
     n_obj_dataset = len(x_pixel_position_dataset)
@@ -175,19 +238,45 @@ def find_objects_of_interest_srcor(
         object_id = index_obj[1]
 
         if len(object_id) > 1:
-            #   message would be feasible
-            terminal_output.print_to_terminal(
-                f"More than one object detected within the separation limit to "
-                f"{object_.name}. Take the first one in the list.",
-                style_name='WARNING',
-            )
-            object_id = object_id[0]
+            if duplicate_handling not in ['first_in_list', 'flux']:
+                terminal_output.print_to_terminal(
+                    f"Option ({duplicate_handling}) for filtering multiple "
+                    f"object identifications are not recognized. Available "
+                    f"options are 'first_in_list' and 'flux'. Use the "
+                    f"'first_in_list' option.",
+                    style_name='WARNING',
+                    indent=indent,
+                )
+                duplicate_handling = 'first_in_list'
+
+            if duplicate_handling == 'first_in_list':
+                #   message would be feasible
+                terminal_output.print_to_terminal(
+                    f"Take the first one in the list.",
+                    style_name='WARNING',
+                    indent=indent,
+                )
+                object_id = object_id[0]
+
+            elif duplicate_handling == 'flux':
+                #   Calculate nd filter object ids based on observed flux.
+                #   Use the one with the highes flux.
+                print('pre flux filtering: ', object_id)
+                print(flux[object_id])
+                object_id = object_id[np.argmax(flux[object_id])]
+                print('after flux filtering: ', object_id)
+                terminal_output.print_to_terminal(
+                    f"Use the object that is the brightest.",
+                    style_name='WARNING',
+                    indent=indent,
+                )
 
         elif not object_id:
             terminal_output.print_to_terminal(
                 f"No object detected within the separation limit to "
                 f"{object_.name}. Set object ID to None",
                 style_name='WARNING',
+                indent=indent,
             )
             object_id = None
 
@@ -200,10 +289,13 @@ def find_objects_of_interest_srcor(
 
 def identify_object_of_interest_in_dataset(
         x_pixel_positions: np.ndarray, y_pixel_positions: np.ndarray,
+        flux: np.ndarray,
         objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
         current_wcs: wcs.WCS, separation_limit: u.Quantity = 2. * u.arcsec,
         max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
-        verbose: bool = False, correlation_method: str = 'astropy') -> None:
+        verbose: bool = False, correlation_method: str = 'astropy',
+        duplicate_handling: dict[str, str] | None = None,
+        indent: int = 1) -> None:
     """
     Identify a specific star based on its right ascension and declination
     in a dataset of pixel coordinates. Requires a valid WCS.
@@ -215,6 +307,9 @@ def identify_object_of_interest_in_dataset(
 
     y_pixel_positions
         Object positions in pixel coordinates. Y direction.
+
+    flux
+        Object flux
 
     objects_of_interest
         Object with 'object of interest' properties
@@ -246,27 +341,53 @@ def identify_object_of_interest_in_dataset(
         the images.
         Possibilities: ``astropy``, ``own``
         Default is ``astropy``.
+
+    duplicate_handling
+        Specifies how to handle multiple object identification filtering.
+        There are two options for each 'correlation_method':
+            'own':     'first_in_list' and 'flux'.  The 'first_in_list'
+                        filtering just takes the first obtained result.
+            'astropy': 'distance' and 'flux'. The 'distance' filtering is
+                        based on the distance between the correlated objects.
+                        In this case, the one with the smallest distance is
+                        used.
+        The second option for both correlation method is based on the measure
+        flux values. In this case the largest one is used.
+        Default is ``None``.
+
+    indent
+        Indentation for the console output lines
+        Default is ``1``.
     """
+    if duplicate_handling is None:
+        duplicate_handling = {'own': 'first_in_list', 'astropy': 'distance'}
+
     if correlation_method == 'astropy':
         find_objects_of_interest_astropy(
             x_pixel_positions,
             y_pixel_positions,
+            flux,
             objects_of_interest,
             filter_,
             current_wcs,
             separation_limit=separation_limit,
+            duplicate_handling=duplicate_handling['astropy'],
+            indent=indent,
         )
 
     elif correlation_method == 'own':
         find_objects_of_interest_srcor(
             x_pixel_positions,
             y_pixel_positions,
+            flux,
             objects_of_interest,
             filter_,
             current_wcs,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
+            duplicate_handling=duplicate_handling['own'],
             verbose=verbose,
+            indent=indent,
         )
 
     else:
@@ -385,12 +506,12 @@ def correlate_datasets(
     correlation_index
         IDs of the correlated objects
 
-    new_reference_image_id
-        New ID of the reference image
+    new_reference_dataset_id
+        New ID of the reference dataset
         Default is ``0``.
 
-    rejected_images
-        IDs of the images that were rejected because of insufficient quality
+    rejected_datasets
+        IDs of the datasets that were rejected because of insufficient quality
 
     n_common_objects
         Number of objects found on all datasets
@@ -407,7 +528,7 @@ def correlate_datasets(
 
     if correlation_method == 'astropy':
         #   Astropy version: 2x faster than own
-        correlation_index, rejected_images = correlation_astropy(
+        correlation_index, rejected_datasets = correlation_astropy(
             x_pixel_positions,
             y_pixel_positions,
             current_wcs,
@@ -430,7 +551,7 @@ def correlate_datasets(
             y_pixel_positions_all[0:len(y_pixel_positions[i]), i] = y_pixel_positions[i]
 
         #   Own version based on srcor from the IDL Astro Library
-        correlation_index, rejected_images, n_common_objects, _ = correlation_own(
+        correlation_index, rejected_datasets, n_common_objects, _ = correlation_own(
             x_pixel_positions_all,
             y_pixel_positions_all,
             max_pixel_between_objects=max_pixel_between_objects,
@@ -448,10 +569,8 @@ def correlate_datasets(
             f'"own" or astropy, but got "{correlation_method}"{style.Bcolors.ENDC}'
         )
 
-    ###
     #   Print correlation result or raise error if not enough common
     #   objects were detected
-    #
     if n_common_objects == 1:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nOnly one common object "
@@ -465,10 +584,11 @@ def correlate_datasets(
     else:
         terminal_output.print_to_terminal(
             f"{n_common_objects} objects identified on all {dataset_type}s",
+            style_name='OKBLUE',
             indent=2,
         )
 
-    n_bad_images = len(rejected_images)
+    n_bad_images = len(rejected_datasets)
     if n_bad_images > 0:
         terminal_output.print_to_terminal(
             f"{n_bad_images} images do not meet the criteria -> removed",
@@ -476,30 +596,28 @@ def correlate_datasets(
         )
     if n_bad_images > 1:
         terminal_output.print_to_terminal(
-            f"Rejected {dataset_type} IDs: {rejected_images}",
+            f"Rejected {dataset_type} IDs: {rejected_datasets}",
             indent=2,
         )
     elif n_bad_images == 1:
         terminal_output.print_to_terminal(
-            f"ID of the rejected {dataset_type}: {rejected_images}",
+            f"ID of the rejected {dataset_type}: {rejected_datasets}",
             indent=2,
         )
     terminal_output.print_to_terminal('')
 
-    ###
     #   Post process correlation results
     #
     #   Remove "bad" images from index array
     #   (only necessary for 'own' method)
     if correlation_method == 'own':
-        correlation_index = np.delete(correlation_index, rejected_images, 0)
+        correlation_index = np.delete(correlation_index, rejected_datasets, 0)
 
     #   Calculate new index of the reference dataset
-    #   TODO: Check if a bug hides here
-    shift_id = np.argwhere(rejected_images < reference_dataset_id)
-    new_reference_image_id = reference_dataset_id - len(shift_id)
+    shift_id = np.argwhere(rejected_datasets < reference_dataset_id)
+    new_reference_dataset_id = reference_dataset_id - len(shift_id)
 
-    return correlation_index, new_reference_image_id, rejected_images, n_common_objects
+    return correlation_index, new_reference_dataset_id, rejected_datasets, n_common_objects
 
 
 def correlation_astropy(
@@ -607,25 +725,29 @@ def correlation_astropy(
                 )
 
                 #   Find matches between the datasets
-                index_reference, index_current, _, _ = matching.search_around_sky(
+                index_reference, index_current, distance, _ = matching.search_around_sky(
                     reference_coordinates,
                     current_coordinates,
                     separation_limit,
                 )
 
-                #   TODO: Add a check for duplicates here?!!!!!!!!!!!!!
-                duplicate_index = utilities.find_duplicates_nparray(index_reference)
-                print('duplicate index_reference: ', duplicate_index)
-                index_current = utilities.find_duplicates_nparray(index_current)
-                print('duplicate index_current: ', duplicate_index)
+                #   Identify and remove duplicate indexes
+                index_reference, distance, index_current = utilities.clear_duplicates(
+                    index_reference,
+                    distance,
+                    index_current,
+                )
+                index_current, _, index_reference = utilities.clear_duplicates(
+                    index_current,
+                    distance,
+                    index_reference,
+                )
 
                 #   Fill ID array
                 index_array[i, index_reference] = index_current
 
-    ###
     #   Cleanup: Remove "bad" objects and datasets
     #
-
     #   1. Remove bad objects (pre burner) -> Useful to remove bad objects
     #                                         that may spoil the correct
     #                                        identification of bad datasets.
@@ -695,7 +817,7 @@ def correlation_astropy(
 
     #   3. Remove remaining objects that are not on all datasets
     #      (afterburner)
-
+    #
     #   Identify objects that were not identified in all datasets
     rows_to_rm = np.where(index_array == -1)
 
@@ -879,9 +1001,7 @@ def correlation_own(
     if special_object_ids is None:
         special_object_ids = []
 
-    ###
     #   Keywords.
-    #
     if option is None:
         option = 0
     if magnitudes is not None:
@@ -892,7 +1012,6 @@ def correlation_own(
             indent=indent,
         )
 
-    ###
     #   Set up some variables.
     #
     #   Number of images
@@ -917,18 +1036,16 @@ def correlation_own(
             indent=indent,
         )
 
-    ###
     #   The main loop.  Step through each object of the reference dataset,
     #                   look for matches in all the other images.
     #
-
     #   Outer loop to allow for a pre burner to rejected_images objects that
     #   are not detected on enough images
     #
     #   Initialize counter of mutual sources and rejected objects
     count = 0
     rejected_objects = 0
-    #
+
     index_array: np.ndarray | None = None
     rejected_img = np.zeros(n_images, dtype=int)
     for z in range(0, 2):
@@ -1060,7 +1177,6 @@ def correlation_own(
     if option == 3:
         return index_array
 
-    ###
     #   Modify the matches depending on input options.
     #
     if not silent:
@@ -1280,7 +1396,7 @@ def correlate_image_series_images(
     image_ids_arr = np.arange(n_images)
 
     terminal_output.print_to_terminal(
-        f"Correlate results from the images ({image_ids_arr})",
+        f"Correlate results from images: {image_ids_arr}",
         indent=1,
     )
 
@@ -1317,8 +1433,6 @@ def correlate_image_series_images(
 
     #   Remove images that are rejected (bad images) during the correlation process.
     image_series.image_list = [image_series.image_list[i] for i in image_ids_arr]
-    # image_series.image_list = np.delete(img_list, reject)
-    # image_series.nfiles = len(image_ids_arr)
     image_series.reference_image_id = new_reference_image_id
 
     #   Limit the photometry tables to common objects.
@@ -1339,6 +1453,7 @@ def correlate_image_series(
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         force_correlation_calibration_objects: bool = False,
         verbose: bool = False, file_type_plots: str = 'pdf',
+        duplicate_handling_object_identification: dict[str, str] | None = None,
         indent: int = 1) -> None:
     """
     Correlate star lists from the stacked images of all filters to find
@@ -1413,13 +1528,27 @@ def correlate_image_series(
         Type of plot file to be created
         Default is ``pdf``.
 
+    duplicate_handling_object_identification
+        Specifies how to handle multiple object identification filtering during
+        object identification.
+        There are two options for each 'correlation_method':
+            'own':     'first_in_list' and 'flux'.  The 'first_in_list'
+                        filtering just takes the first obtained result.
+            'astropy': 'distance' and 'flux'. The 'distance' filtering is
+                        based on the distance between the correlated objects.
+                        In this case, the one with the smallest distance is
+                        used.
+        The second option for both correlation method is based on the measure
+        flux values. In this case the largest one is used.
+        Default is ``None``.
+
     indent
         Indentation for the console output lines
         Default is ``1``.
     """
     terminal_output.print_to_terminal(
         "Correlate image series",
-        indent=1,
+        indent=indent,
     )
 
     #   Get image series
@@ -1504,6 +1633,7 @@ def correlate_image_series(
     if objects_of_interest:
         terminal_output.print_to_terminal(
             "Identify objects of interest",
+            indent=indent + 1,
         )
 
         series = image_series_dict[reference_filter]
@@ -1511,6 +1641,7 @@ def correlate_image_series(
         identify_object_of_interest_in_dataset(
             series.image_list[reference_image_id].photometry['x_fit'],
             series.image_list[reference_image_id].photometry['y_fit'],
+            series.image_list[reference_image_id].photometry['flux_fit'],
             objects_of_interest,
             reference_filter,
             series.wcs,
@@ -1519,6 +1650,8 @@ def correlate_image_series(
             own_correlation_option=own_correlation_option,
             verbose=verbose,
             correlation_method=correlation_method,
+            duplicate_handling=duplicate_handling_object_identification,
+            indent=indent + 1,
         )
 
         #   Replicate IDs for the objects of interest
@@ -1530,6 +1663,8 @@ def correlate_image_series(
             for filter_ in filter_list:
                 if filter_ != list(filter_list)[reference_image_series_id]:
                     object_.id_in_image_series[filter_] = id_object
+
+    terminal_output.print_to_terminal('')
 
     #   Check if correlation with calibration data is necessary
     calibration_parameters = observation.calib_parameters
@@ -1563,7 +1698,7 @@ def correlate_image_series(
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
             file_type_plots=file_type_plots,
-            indent=indent,
+            indent=indent+1,
         )
 
         observation.calib_parameters.calib_tbl = calibration_tbl
@@ -1579,6 +1714,7 @@ def correlate_preserve_variable(
         protect_reference_obj: bool = True,
         correlation_method: str = 'astropy',
         separation_limit: u.Quantity = 2. * u.arcsec, verbose: bool = False,
+        duplicate_handling_object_identification: dict[str, str] | None = None,
         plot_reference_only: bool = True,
         file_type_plots: str = 'pdf') -> None:
     """
@@ -1636,6 +1772,19 @@ def correlate_preserve_variable(
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
 
+    duplicate_handling_object_identification
+        Specifies how to handle multiple object identification filtering.
+        There are two options for each 'correlation_method':
+            'own':     'first_in_list' and 'flux'.  The 'first_in_list'
+                        filtering just takes the first obtained result.
+            'astropy': 'distance' and 'flux'. The 'distance' filtering is
+                        based on the distance between the correlated objects.
+                        In this case, the one with the smallest distance is
+                        used.
+        The second option for both correlation method is based on the measure
+        flux values. In this case the largest one is used.
+        Default is ``None``.
+
     verbose
         If True additional output will be printed to the command line.
         Default is ``False``.
@@ -1664,12 +1813,14 @@ def correlate_preserve_variable(
     identify_object_of_interest_in_dataset(
         image_series.image_list[reference_image_id].photometry['x_fit'],
         image_series.image_list[reference_image_id].photometry['y_fit'],
+        image_series.image_list[reference_image_id].photometry['flux_fit'],
         objects_of_interest,
         filter_,
         image_series.wcs,
         separation_limit=separation_limit,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
+        duplicate_handling=duplicate_handling_object_identification,
         verbose=verbose,
     )
 
@@ -1708,12 +1859,14 @@ def correlate_preserve_variable(
     identify_object_of_interest_in_dataset(
         image_series.image_list[image_series.reference_image_id].photometry['x_fit'],
         image_series.image_list[image_series.reference_image_id].photometry['y_fit'],
+        image_series.image_list[image_series.reference_image_id].photometry['fit_fit'],
         objects_of_interest,
         filter_,
         image_series.wcs,
         separation_limit=separation_limit,
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
+        duplicate_handling=duplicate_handling_object_identification,
         verbose=verbose,
     )
 
@@ -1734,13 +1887,9 @@ def correlate_preserve_variable(
     #         f"in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
     #     )
 
-    ###
     #   Plot image with the final positions overlaid (final version)
-    #
     utilities.prepare_and_plot_starmap_from_image_series(
         image_series,
-        # [x_position_object],
-        # [y_position_object],
         x_position_object,
         y_position_object,
         plot_reference_only=plot_reference_only,
@@ -2093,6 +2242,11 @@ def correlate_with_calibration_objects(
     index_obj_instrument
         Index of the observed stars that correspond to the calibration stars
     """
+    terminal_output.print_to_terminal(
+        "Correlate observed objects with calibration stars\n",
+        indent=indent,
+    )
+
     #   Pixel positions of the observed object
     reference_image_id = image_series.reference_image_id
     pixel_position_obj_x = image_series.image_list[reference_image_id].photometry['x_fit']
@@ -2117,11 +2271,15 @@ def correlate_with_calibration_objects(
         )
 
         #   Remove calibration stars with multiple identifications
-        duplicate_indexes = utilities.find_duplicates_nparray(index_obj_instrument)
+        duplicate_indexes = utilities.find_duplicates_nparray(
+            index_obj_instrument
+        )[0]
         index_obj_instrument = np.delete(index_obj_instrument, duplicate_indexes)
         index_obj_literature = np.delete(index_obj_literature, duplicate_indexes)
 
-        duplicate_indexes = utilities.find_duplicates_nparray(index_obj_literature)
+        duplicate_indexes = utilities.find_duplicates_nparray(
+            index_obj_literature
+        )[0]
         index_obj_instrument = np.delete(index_obj_instrument, duplicate_indexes)
         index_obj_literature = np.delete(index_obj_literature, duplicate_indexes)
 
@@ -2173,7 +2331,7 @@ def correlate_with_calibration_objects(
     terminal_output.print_to_terminal(
         f"{len(calibration_tbl_sort)} calibration stars have been matched to"
         f" observed stars",
-        indent=indent + 2,
+        indent=indent,
         style_name='OKBLUE',
     )
 
@@ -2199,7 +2357,7 @@ def correlate_with_calibration_objects(
         terminal_output.print_to_terminal(
             f"Number of calibration stars limited to 100 brightest objects"
             f" in filter {magnitude_name[3:]}",
-            indent=indent + 2,
+            indent=indent,
             style_name='OKBLUE',
         )
 
@@ -2228,7 +2386,7 @@ def correlate_with_calibration_objects(
                 target=plots.starmap,
                 args=(
                     image_series.out_path.name,
-                    #   Replace with reference image in the future
+                    #   TODO: Replace with reference image
                     image_series.image_list[0].get_data(),
                     filter_,
                     calibration_tbl,
@@ -2244,5 +2402,7 @@ def correlate_with_calibration_objects(
                 }
             )
             p.start()
+
+    terminal_output.print_to_terminal('')
 
     return calibration_tbl_sort, index_obj_instrument

@@ -308,7 +308,7 @@ def get_vizier_catalog(
         filter_list: list[str], coordinates_image_center: SkyCoord,
         field_of_view: float, catalog_identifier: str,
         magnitude_range: tuple[float, float] = (0., 18.5),
-        cleanup_magnitudes: bool = True,
+        cleanup_magnitudes: bool = True, print_infos: bool = True,
         indent: int = 2) -> tuple[Table, dict[str, str], str]:
     """
     Download catalog with calibration info from Vizier
@@ -334,6 +334,11 @@ def get_vizier_catalog(
     cleanup_magnitudes
         If ``True`` a first magnitude cleanup: restrict magnitude range, rename
         columns, etc. will be performed
+        Default is ``True``.
+
+    print_infos
+        If ``True'', status information is printed to the terminal.
+        Default is ``True``.
 
     indent
         Indentation for the console output
@@ -349,10 +354,11 @@ def get_vizier_catalog(
 
     ra_unit
     """
-    terminal_output.print_to_terminal(
-        f"Downloading calibration data from Vizier: {catalog_identifier}",
-        indent=indent,
-    )
+    if print_infos:
+        terminal_output.print_to_terminal(
+            f"Downloading calibration data from Vizier: {catalog_identifier}",
+            indent=indent,
+        )
 
     #   Get catalog specific columns
     catalog_properties_dict = calibration_parameters.catalog_properties_dict[catalog_identifier]
@@ -378,11 +384,12 @@ def get_vizier_catalog(
 
     #   Chose first table
     if not table_list:
-        terminal_output.print_to_terminal(
-            "No calibration data available",
-            indent=indent + 1,
-            style_name='WARNING',
-        )
+        if print_infos:
+            terminal_output.print_to_terminal(
+                "No calibration data available",
+                indent=indent + 1,
+                style_name='WARNING',
+            )
         return Table(), {}, ''
 
     result = table_list[0]
@@ -417,21 +424,23 @@ def get_vizier_catalog(
             preferred_filer = 'Umag'
         else:
             #   This should never happen
-            terminal_output.print_to_terminal(
-                "Calibration issue: Threshold magnitude not recognized",
-                indent=indent + 1,
-                style_name='ERROR',
-            )
+            if print_infos:
+                terminal_output.print_to_terminal(
+                    "Calibration issue: Threshold magnitude not recognized",
+                    indent=indent + 1,
+                    style_name='ERROR',
+                )
             raise RuntimeError
 
         mask = (result[preferred_filer] <= magnitude_range[1]) & (result[preferred_filer] >= magnitude_range[0])
         result = result[mask]
 
-        terminal_output.print_to_terminal(
-            f"{len(result)} calibration objects remaining after magnitude "
-            "filtering",
-            indent=indent,
-        )
+        if print_infos:
+            terminal_output.print_to_terminal(
+                f"{len(result)} calibration objects remaining after magnitude "
+                "filtering",
+                indent=indent,
+            )
 
         for filter_ in filter_list:
             if f'{filter_}mag' in result.colnames:
@@ -441,11 +450,12 @@ def get_vizier_catalog(
                 if f'e_{filter_}mag' in result.colnames:
                     column_dict[f'err{filter_}'] = f'e_{filter_}mag'
             else:
-                terminal_output.print_to_terminal(
-                    f"No calibration data for {filter_} band",
-                    indent=indent + 1,
-                    style_name='WARNING',
-                )
+                if print_infos:
+                    terminal_output.print_to_terminal(
+                        f"No calibration data for {filter_} band",
+                        indent=indent + 1,
+                        style_name='WARNING',
+                    )
 
     return result, column_dict, catalog_properties_dict['ra_unit']
 
@@ -786,7 +796,7 @@ def derive_calibration(
         Default is ``1``.
     """
     terminal_output.print_to_terminal(
-        f"Get calibration star magnitudes (filter: {tuple(filter_list)})",
+        f"Get calibration star magnitudes - Filter: {tuple(filter_list)}",
         indent=indent,
     )
 
@@ -867,6 +877,7 @@ def derive_calibration(
         image_series.field_of_view_x,
         'B/vsx/vsx',
         cleanup_magnitudes=False,
+        print_infos=False,
     )
     variable_stars_coordinates = SkyCoord(
         variable_stars_tbl[column_dict_variable['ra']].data,
@@ -902,7 +913,7 @@ def derive_calibration(
             separation_limit=separation_limit,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
-            indent=indent,
+            indent=indent + 1,
             file_type_plots=file_type_plots,
         )
     else:

@@ -239,17 +239,13 @@ def starmap(
     if rts is None and name_object is None:
         sub_title = f'Star map ({filter_} filter)'
     elif rts is None:
-        # sub_title = f'Star map ({filter_} filter) - {name_obj}'
         sub_title = f'{name_object} - {filter_} filter'
     elif name_object is None:
         sub_title = f'{filter_} filter, {rts}'
-        # sub_title = f'Star map ({filter_} filter, {rts})'
     else:
         sub_title = f'{name_object} - {filter_} filter, {rts}'
-        # sub_title = f'Star map ({filter_} filter, {rts}) - {name_obj}'
 
     fig.suptitle(sub_title, fontsize=17)
-    # ax.set_title(sub_title, fontsize=17)
 
     #   Set up normalization for the image
     norm = ImageNormalize(image, interval=ZScaleInterval(contrast=0.15, ))
@@ -285,8 +281,6 @@ def starmap(
         )
 
     #   Set plot limits
-    # plt.xlim(0, image.shape[1] - 1)
-    # plt.ylim(0, image.shape[0] - 1)
     ax.set_xlim(0, image.shape[1] - 1)
     ax.set_ylim(0, image.shape[0] - 1)
 
@@ -343,19 +337,12 @@ def starmap(
     if wcs_image is not None:
         ax.set_xlabel("Right ascension", fontsize=16)
         ax.set_ylabel("Declination", fontsize=16)
-        # ax.coords[0].set_axislabel("Right ascension", fontsize=16)
-        # ax.coords[1].set_axislabel("Deklination", fontsize=16)
-        # plt.xlabel("Right ascension", fontsize=16)
-        # plt.ylabel("Deklination", fontsize=16)
     else:
         ax.set_xlabel("[pixel]", fontsize=16)
         ax.set_ylabel("[pixel]", fontsize=16)
-        # plt.xlabel("[pixel]", fontsize=16)
-        # plt.ylabel("[pixel]", fontsize=16)
 
     #   Enable grid for WCS
     # if wcs is not None:
-    # ax.grid(True, color='lightgray', linestyle='--')
     ax.grid(True, color='white', linestyle='--')
 
     #   Plot legend
@@ -419,9 +406,7 @@ def plot_apertures(
         os.path.join(output_dir, 'aperture'),
     )
 
-    ###
     #   Make plot
-    #
     plt.figure(figsize=(20, 9))
 
     #   Normalize the image
@@ -713,7 +698,7 @@ def plot_residual(
         terminal_logger: terminal_output.TerminalLog | None = None,
         file_type: str = 'pdf', indent: int = 1) -> None:
     """
-    Plot the original and the residual image
+    Plot the original and the residual ePSF image
 
     Parameters
     ----------
@@ -768,7 +753,8 @@ def plot_residual(
     if n_plots == 1:
         fig = plt.figure(figsize=(20, 5))
     elif n_plots == 2:
-        fig = plt.figure(figsize=(20, 10))
+        # fig = plt.figure(figsize=(20, 10))
+        fig = plt.figure(figsize=(10, 20))
     else:
         fig = plt.figure(figsize=(20, 20))
 
@@ -801,7 +787,7 @@ def plot_residual(
         if n_plots == 1:
             ax = fig.add_subplot(1, 2, i)
         elif n_plots == 2:
-            ax = fig.add_subplot(2, 2, i)
+            ax = fig.add_subplot(2, 1, i)
         else:
             ax = fig.add_subplot(n_plots, 2, i)
 
@@ -835,7 +821,7 @@ def plot_residual(
         if n_plots == 1:
             ax = fig.add_subplot(1, 2, i)
         elif n_plots == 2:
-            ax = fig.add_subplot(2, 2, i)
+            ax = fig.add_subplot(2, 1, i)
         else:
             ax = fig.add_subplot(n_plots, 2, i)
 
@@ -968,7 +954,6 @@ def light_curve_jd(
     median_data = np.median(ts[data_column].value)
     min_data = np.min(ts[data_column].value)
     max_data = np.max(ts[data_column].value)
-    # print(median_data)
 
     #   Invert y-axis
     if median_data > 1.5 or median_data < 0.5:
@@ -1375,7 +1360,6 @@ def plot_transform(
 
     #   Add grid
     plt.grid(True, color='lightgray', linestyle='--', alpha=0.3)
-    # plt.grid(color='0.95')
 
     #   Get median of the data
     y_min = np.min(fit_variable)
@@ -2136,10 +2120,8 @@ class MakeCMDs:
             magnitude_filter_2_binned = None
             magnitude_color_binned = None
 
-        ###
         #   Plot isochrones
         #
-
         #   Check if isochrones are specified
         if isochrones != '' and isochrones != '?':
             #   Decode relationships between isochrone magnitudes such as color
@@ -2545,7 +2527,6 @@ class MakeCMDs:
             terminal_output.print_to_terminal(
                 f'Best fitting isochrone: {age_list[min_chi_square_id]:.1f} '
                 f'{age_unit} with chi^2 = {chi_square_list[min_chi_square_id]:.3f}',
-                # indent=2,
                 style_name="GOOD",
             )
 

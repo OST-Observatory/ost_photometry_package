@@ -1,11 +1,6 @@
 ############################################################################
 #                               Libraries                                  #
 ############################################################################
-import sys
-# import os
-
-import copy
-
 import numpy as np
 
 import astropy.units as u
@@ -28,25 +23,6 @@ from .. import style, calibration_parameters, terminal_output
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
-
-
-#   TODO: Remove
-# def progress_bar(count_value, total, suffix=''):
-#     """
-#     A progress bar. The code is from: https://www.geeksforgeeks.org/progress-bars-in-python/
-#
-#     Parameters
-#     ----------
-#     count_value
-#     total
-#     suffix
-#     """
-#     bar_length = 100
-#     filled_up_length = int(round(bar_length * count_value / float(total)))
-#     percentage = round(100.0 * count_value / float(total), 1)
-#     bar = '=' * filled_up_length + '-' * (bar_length - filled_up_length)
-#     sys.stdout.write('[%s] %s%s ...%s\r' % (bar, percentage, '%', suffix))
-#     sys.stdout.flush()
 
 
 def find_best_comparison_image_second_filter(
@@ -201,11 +177,6 @@ def check_transformation_requirements(
         string = f"Magnitude transformation is not possible because some " \
                  f"prerequisites, such as a second filter, are not met."
         message_type = 'WARNING'
-        # raise RuntimeError(
-        #     f"{style.Bcolors.FAIL} \nNo valid transformation type. Got "
-        #     f"{type_transformation}, but allowed are only: simple, "
-        #     f"air_mass, and derive  {style.Bcolors.ENDC}"
-        # )
 
     terminal_output.print_to_terminal(string, indent=3, style_name=message_type)
 
@@ -279,22 +250,14 @@ def derive_transformation_onthefly(
     color_literature = (magnitudes_literature_filter_1 -
                         magnitudes_literature_filter_2)
 
-    #   Color of the observed calibration stars
-    # color_observed = magnitudes_observed_filter_1 - magnitudes_observed_filter_2
-
     #   Perform sigma clipping on the difference between observed color
     #   and literature color values to remove outliers
     zp_sum = (magnitudes_observed_filter_2 - magnitudes_literature_filter_2 +
               magnitudes_observed_filter_1 - magnitudes_literature_filter_1
               )
     sigma_clip_mask = sigma_clip(
-        # (color_literature - color_observed).pdf_median(),
-        # (magnitudes_observed_filter_2 - magnitudes_literature_filter_2 +
-        #  magnitudes_observed_filter_1 - magnitudes_literature_filter_1
-        #  ).pdf_median(),
         zp_sum.pdf_median(),
         sigma=1.5,
-        # maxiters=max_n_iterations_sigma_clipping,
     ).mask
     sigma_clip_mask = np.invert(sigma_clip_mask)
 
@@ -306,18 +269,6 @@ def derive_transformation_onthefly(
     #   -> apply sigma clipping mask
     #   -> calculate pdf_median() for now before fitting
     #   TODO: Test with distributions
-    # color_literature_err_plot = color_literature.pdf_std()
-    # color_literature_plot = color_literature.pdf_median()
-    # print(color_literature_plot)
-    # diff_mag_plot_1 = diff_mag_1.pdf_median()
-    # diff_mag_plot_2 = diff_mag_2.pdf_median()
-    # color_literature_plot = color_literature[sigma_clip_mask]
-    # color_literature_err_plot = color_literature_plot.pdf_std()
-    # color_literature_plot = color_literature_plot.pdf_median()
-    # diff_mag_plot_1 = diff_mag_1[sigma_clip_mask]
-    # diff_mag_plot_2 = diff_mag_2[sigma_clip_mask]
-    # diff_mag_plot_1 = diff_mag_plot_1.pdf_median()
-    # diff_mag_plot_2 = diff_mag_plot_2.pdf_median()
     color_literature_err_plot = color_literature.pdf_std()[sigma_clip_mask]
     color_literature_plot = color_literature.pdf_median()[sigma_clip_mask]
     diff_mag_plot_1 = diff_mag_1.pdf_median()[sigma_clip_mask]
@@ -401,25 +352,12 @@ def derive_transformation_onthefly(
         image.air_mass,
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_2_err,
-        # name_object=image.object_name,
         image_id=image.pd,
         x_data_original=color_literature.pdf_median(),
         y_data_original=diff_mag_2.pdf_median(),
         file_type=file_type_plots,
     )
 
-    # color_correction_filter_1 = unc.normal(
-    #     color_correction_filter_1 * u.mag,
-    #     std=color_correction_filter_1_err * u.mag,
-    #     n_samples=distribution_samples,
-    # )
-    # color_correction_filter_2 = unc.normal(
-    #     color_correction_filter_2 * u.mag,
-    #     std=color_correction_filter_2_err * u.mag,
-    #     n_samples=distribution_samples,
-    # )
-
-    # return color_correction_filter_1, color_correction_filter_2
     return color_correction_filter_1 * u.mag, color_correction_filter_2 * u.mag
 
 
@@ -762,7 +700,6 @@ def apply_magnitude_transformation(
     )
 
     if multiprocessing:
-        # return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
         return image.pd, image.photometry
 
 
@@ -851,7 +788,6 @@ def quasi_flux_calibration_image_series(
         n_samples=distribution_samples,
     )
     #   TODO: Add distribution with median and percentile errors? Test!
-    # normalization_factor = median[:, np.newaxis]
     normalization_factor = unc.normal(
         median[:, np.newaxis],
         std=stddev[:, np.newaxis],
@@ -978,6 +914,10 @@ def prepare_zero_point(
     #   Calculate zero point statistic
     n_calibration_objects = zp.shape[0]
     if n_calibration_objects > 20 and calculate_zero_point_statistic:
+        terminal_output.print_to_terminal(
+            f"Zero point statistic:",
+            indent=2,
+        )
         #   Create samples using numpy random number generator to generate
         #   an index array
         n_objects_sample = int(n_calibration_objects * 0.6)
@@ -1095,7 +1035,6 @@ def calibrate_magnitudes_zero_point_core(
         literature_magnitudes,
         magnitudes_calibration_current_image,
         calculate_zero_point_statistic=calculate_zero_point_statistic,
-        # distribution_samples=distribution_samples,
         file_type_plots=file_type_plots,
     )
 
@@ -1545,11 +1484,11 @@ def apply_calibration(
         distribution_samples=distribution_samples,
         n_cores_multiprocessing=n_cores_multiprocessing,
         file_type_plots=file_type_plots,
+        add_progress_bar=add_progress_bar,
         indent=indent,
     )
 
     if len(filter_list) == 1:
-        # rts = f'_{filter_list[0]}'
         rts: str = ''
     elif len(filter_list) == 2:
         rts: str = f'_{filter_list[0]}-{filter_list[1]}'
@@ -1622,12 +1561,6 @@ def determine_transformation_coefficients(
     #   Get calibration parameters
     parameters_calibration = observation.calib_parameters
 
-    #   Get calibration table
-    # calibration_tbl = parameters_calibration.calib_tbl
-
-    #   Get calibration column names mapping
-    # calib_column_names = parameters_calibration.column_names
-
     #   Get index positions of calibration stars
     index_calibration_stars = observation.calib_parameters.ids_calibration_objects
 
@@ -1646,16 +1579,7 @@ def determine_transformation_coefficients(
         tmp_list.append(unc.Distribution(magnitudes))
     literature_magnitudes = tmp_list
 
-    #
-    # calibration_magnitudes_filter_0 = calibration_tbl[
-    #     calib_column_names[f'mag{filter_list[0]}']
-    # ][0]
-    # calibration_magnitudes_filter_1 = calibration_tbl[
-    #     calib_column_names[f'mag{filter_list[1]}']
-    # ][0]
-
     #   Check if literature magnitudes are not zero
-    # if calibration_magnitudes_filter_0 != 0. and calibration_magnitudes_filter_1 != 0.:
     image_0 = image_series_dict[filter_list[0]].image_list[0]
     image_1 = image_series_dict[filter_list[1]].image_list[0]
     image_key = image_series_dict[current_filter].image_list[0]
@@ -1687,28 +1611,6 @@ def determine_transformation_coefficients(
         index_calibration_stars,
     )
 
-    # magnitudes_observed_filter_2 = image_1.mags_fit['mag']
-    # magnitudes_observed_filter_key = image_key.mags_fit['mag']
-    # magnitudes_observed_filter_1_err = image_0.mags_fit['err']
-    # magnitudes_observed_filter_2_err = image_1.mags_fit['err']
-    # magnitudes_observed_filter_key_err = image_key.mags_fit['err']
-
-    # literature_magnitudes_errs = calibration_tbl['err']
-    # calibration_tbl = calibration_tbl['mag']
-
-    # color_literature_err = utilities.err_prop(
-    #     literature_magnitudes_errs[0],
-    #     literature_magnitudes_errs[1],
-    # )
-    # color_observed_err = utilities.err_prop(
-    #     magnitudes_observed_filter_1_err,
-    #     magnitudes_observed_filter_2_err,
-    # )
-    # zero_err = utilities.err_prop(
-    #     literature_magnitudes_errs[id_filter],
-    #     magnitudes_observed_filter_key_err,
-    # )
-
     color_literature = literature_magnitudes[0] - literature_magnitudes[1]
     color_observed = (magnitudes_calibration_image_0 -
                       magnitudes_calibration_image_1)
@@ -1719,10 +1621,8 @@ def determine_transformation_coefficients(
     # x0    = np.array([0.0, 0.0])
     x0 = np.array([1.0, 1.0])
 
-    ###
     #   Determine transformation coefficients
     #
-
     #   Plot variables
     color_literature_plot = color_literature.pdf_median()
     color_literature_err_plot = color_literature.pdf_std()
@@ -1871,7 +1771,9 @@ def calculate_trans(
         calibration_file: str | None = None,
         magnitude_range: tuple[float, float] = (0., 18.5),
         region_to_select_calibration_stars: RectanglePixelRegion | None = None,
-        distribution_samples: int = 1000, file_type_plots: str = 'pdf'
+        distribution_samples: int = 1000,
+        duplicate_handling_object_identification: dict[str, str] | None = None,
+        file_type_plots: str = 'pdf'
         ) -> None:
     """
     Calculate the transformation coefficients
@@ -1929,6 +1831,20 @@ def calculate_trans(
         Number of samples used for distributions
         Default is `1000`.
 
+    duplicate_handling_object_identification
+        Specifies how to handle multiple object identification filtering during
+        object identification.
+        There are two options for each 'correlation_method':
+            'own':     'first_in_list' and 'flux'.  The 'first_in_list'
+                        filtering just takes the first obtained result.
+            'astropy': 'distance' and 'flux'. The 'distance' filtering is
+                        based on the distance between the correlated objects.
+                        In this case, the one with the smallest distance is
+                        used.
+        The second option for both correlation method is based on the measure
+        flux values. In this case the largest one is used.
+        Default is ``None``.
+
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
@@ -1946,6 +1862,7 @@ def calculate_trans(
         max_pixel_between_objects=max_pixel_between_objects,
         own_correlation_option=own_correlation_option,
         file_type_plots=file_type_plots,
+        duplicate_handling_object_identification=duplicate_handling_object_identification,
     )
 
     #   Plot image with the final positions overlaid
