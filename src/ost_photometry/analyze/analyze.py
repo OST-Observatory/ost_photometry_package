@@ -883,7 +883,11 @@ class Observation:
             force_wcs_determ: bool = False,
             sigma_value_background_clipping: float = 5.,
             multiplier_background_rms: float = 5., size_epsf_region: int = 25,
-            fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
+            size_extraction_region_epsf: float = 11.,
+            epsf_fitter: str = 'LMLSQFitter',
+            n_iterations_eps_extraction: int = 2,
+            fraction_epsf_stars: float = 0.2,
+            oversampling_factor_epsf: int = 2,
             max_n_iterations_epsf_determination: int = 7,
             use_initial_positions_epsf: bool = True,
             object_finder_method: str = 'IRAF',
@@ -891,11 +895,13 @@ class Observation:
             multiplier_grouper_epsf: float = 2.0,
             strict_cleaning_epsf_results: bool = True,
             minimum_n_eps_stars: int = 25, strict_epsf_checks: bool = True,
-            photometry_extraction_method: str = 'PSF', radius_aperture: float = 5.,
-            inner_annulus_radius: float = 7., outer_annulus_radius: float = 10.,
-            radii_unit: str = 'arcsec', max_pixel_between_objects: int = 3,
-            own_correlation_option: int = 1, cross_identification_limit: int = 1,
-            reference_image_id: int = 0, n_allowed_non_detections_object: int = 1,
+            photometry_extraction_method: str = 'PSF',
+            radius_aperture: float = 5., inner_annulus_radius: float = 7.,
+            outer_annulus_radius: float = 10., radii_unit: str = 'arcsec',
+            max_pixel_between_objects: int = 3,
+            own_correlation_option: int = 1,
+            cross_identification_limit: int = 1, reference_image_id: int = 0,
+            n_allowed_non_detections_object: int = 1,
             expected_bad_image_fraction: float = 1.0,
             protect_reference_obj: bool = True,
             correlation_method: str = 'astropy',
@@ -948,6 +954,22 @@ class Observation:
         size_epsf_region
             Size of the extraction region in pixel
             Default is `25``.
+
+        size_extraction_region_epsf
+            Size of the extraction region in pixel
+            Default is ``11``.
+
+        epsf_fitter
+            Fitter function used during ePSF fitting to the data.
+            Options are: ``LevMarLSQFitter``, ``LMLSQFitter`` and ``TRFLSQFitter``
+            Default is ``LMLSQFitter``.
+
+        n_iterations_eps_extraction
+            Number of extraction iterations in the ePSF fit to the data. In certain
+            cases, such as very crowded fields, numbers greater than 1 can lead to
+            very large CPU loads and recursions within astropy that may exceed the
+            defined limits.
+            Default is ``2``.
 
         fraction_epsf_stars
             Fraction of all stars that should be used to calculate the ePSF
@@ -1131,6 +1153,9 @@ class Observation:
                 sigma_value_background_clipping=sigma_value_background_clipping,
                 multiplier_background_rms=multiplier_background_rms,
                 size_epsf_region=size_epsf_region,
+                size_extraction_region_epsf=size_extraction_region_epsf,
+                epsf_fitter=epsf_fitter,
+                n_iterations_eps_extraction=n_iterations_eps_extraction,
                 fraction_epsf_stars=fraction_epsf_stars,
                 oversampling_factor_epsf=oversampling_factor_epsf,
                 max_n_iterations_epsf_determination=max_n_iterations_epsf_determination,
