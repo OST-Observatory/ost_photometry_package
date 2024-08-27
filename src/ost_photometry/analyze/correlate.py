@@ -129,7 +129,6 @@ def find_objects_of_interest_astropy(
                 )
 
         elif not object_id:
-            #   TODO: Check if this can be healed downstream
             terminal_output.print_to_terminal(
                 f"No object detected within the separation limit to "
                 f"{object_.name}. Set object ID to None",
@@ -1556,7 +1555,6 @@ def correlate_image_series(
     image_series_keys = list(image_series_dict.keys())
 
     #   Get Reference filter
-    #   TODO: Check: Is there a better solution?
     reference_filter = list(filter_list)[reference_image_series_id]
 
     #   Define variables
@@ -1657,11 +1655,10 @@ def correlate_image_series(
         #   Replicate IDs for the objects of interest
         #   -> This is required, since the identification above is only for the
         #      reference filter / image series
-        #   TODO: Is there a better solution?
         for object_ in objects_of_interest:
             id_object = object_.id_in_image_series[reference_filter]
             for filter_ in filter_list:
-                if filter_ != list(filter_list)[reference_image_series_id]:
+                if filter_ != reference_filter:
                     object_.id_in_image_series[filter_] = id_object
 
     terminal_output.print_to_terminal('')
@@ -1859,7 +1856,7 @@ def correlate_preserve_variable(
     identify_object_of_interest_in_dataset(
         image_series.image_list[image_series.reference_image_id].photometry['x_fit'],
         image_series.image_list[image_series.reference_image_id].photometry['y_fit'],
-        image_series.image_list[image_series.reference_image_id].photometry['fit_fit'],
+        image_series.image_list[image_series.reference_image_id].photometry['flux_fit'],
         objects_of_interest,
         filter_,
         image_series.wcs,
@@ -2387,7 +2384,8 @@ def correlate_with_calibration_objects(
                 args=(
                     image_series.out_path.name,
                     #   TODO: Replace with reference image
-                    image_series.image_list[0].get_data(),
+                    # image_series.image_list[0].get_data(),
+                    image_series.image_list[image_series.reference_image_id].get_data(),
                     filter_,
                     calibration_tbl,
                 ),

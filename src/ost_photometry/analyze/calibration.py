@@ -1158,6 +1158,10 @@ def calibrate_magnitudes_zero_point(
 
         #   Exit multiprocessing, if exceptions will occur
         if executor.err is not None:
+            #   TODO: Add some code that on requests tries to heal errors,
+            #       such that crashed extractions on specific images will be
+            #       ignored. -> Those images need to be removed from the
+            #       image list at a later point.
             raise RuntimeError(
                 f'\n{style.Bcolors.FAIL}Zero point calibration using '
                 f' multiprocessing failed for {filter_} :({style.Bcolors.ENDC}'
@@ -1178,7 +1182,6 @@ def calibrate_magnitudes_zero_point(
                     image_.photometry = tbl
                     tmp_list.append(image_)
 
-        # TODO: Check if this is necessary
         image_series.image_list = tmp_list
 
 
@@ -1382,7 +1385,6 @@ def calibrate_magnitudes_transformation(
                         image_.photometry = tbl
                         tmp_list.append(image_)
 
-            # TODO: Check if this is necessary
             current_image_series.image_list = tmp_list
 
             terminal_output.print_to_terminal('')

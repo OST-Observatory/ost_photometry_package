@@ -381,7 +381,8 @@ def extract_wcs(
     """
     #   Open the image with the WCS solution
     if image_wcs is not None:
-        #   TODO: Check whether it is better to remove the following
+        #   This branch is no longer in use, but will remain for
+        #   the time being.
         if rm_cosmics:
             if filters is None:
                 raise Exception(
@@ -913,48 +914,6 @@ def check_variable_apparent_cmd(
         )
         filetype = 'pdf'
 
-    #   TODO: Check if the following can be removed
-
-    # #   Check if calibration parameter is consistent with the number of
-    # #   filter
-    # if zero_points_dict:
-    #     if len(filter_list) != len(zero_points_dict):
-    #         if len(filter_list) > len(zero_points_dict):
-    #             terminal_output.print_to_terminal(
-    #                 "[Error] More filter ('filter') specified than zero"
-    #                 " points ('zero_points_dict')",
-    #                 indent=1,
-    #                 style_name='ERROR',
-    #             )
-    #             sys.exit()
-    #         else:
-    #             terminal_output.print_to_terminal(
-    #                 "[Error] More zero points ('zero_points_dict') "
-    #                 "specified than filter ('filter')",
-    #                 indent=1,
-    #                 style_name='ERROR',
-    #             )
-    #             sys.exit()
-
-    # #   Valid filter combinations
-    # valid_filter_combination = {
-    #     'U': 'B',
-    #     'B': 'V',
-    #     'V': 'R',
-    #     'R': 'I',
-    #     'H': 'J',
-    #     'J': 'K',
-    # }
-    # if filter_1 in valid_filter_combination.keys():
-    #     second_filter = valid_filter_combination[filter_1]
-    #     if second_filter in filter_list:
-    #         return filename, filetype, second_filter
-    #     else:
-    #         index_filter_1 = filter_list.index(filter_1)
-    #         if index_filter_1 + 1 < len(filter_list):
-    #             return filename, filetype, filter_list[index_filter_1 + 1]
-    #
-    # return filename, filetype, False
     return filename, filetype
 
 
@@ -1486,8 +1445,9 @@ def derive_limiting_magnitude(
         #   Remark: the error is only based on the zero point error
         terminal_output.print_to_terminal(
             f"500 apertures, 5 sigma, 2 iterations: "
-            f"{mag_limit:6.2f} +/- "
-            f"{mag_limit():6.2f} mag",
+            # f"{mag_limit:6.2f} +/- "
+            # f"{mag_limit():6.2f} mag",
+            f"{mag_limit:6.2f} mag",
             indent=indent * 3,
             style_name='OKBLUE',
         )
@@ -3043,7 +3003,7 @@ def find_duplicates_nparray(
     np.fill_diagonal(diff_index, 1)
     duplicate_indexes = np.where(diff_index == 0)
 
-    return duplicate_indexes[0], duplicate_indexes[0]
+    return duplicate_indexes[0], duplicate_indexes[1]
 
 
 def clear_duplicates(
@@ -3085,7 +3045,7 @@ def clear_duplicates(
     distance_0 = selection_quantity[duplicate_index[0]]
     distance_1 = selection_quantity[duplicate_index[1]]
     mask = distance_0 > distance_1
-    rm_index = duplicate_index[mask]
+    rm_index = duplicate_index[0][mask]
 
     #   Clear data arrays
     data_array = np.delete(data_array, rm_index)
