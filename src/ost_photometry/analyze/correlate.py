@@ -118,10 +118,7 @@ def find_objects_of_interest_astropy(
             elif duplicate_handling == 'flux':
                 #   Calculate nd filter object ids based on observed flux.
                 #   Use the one with the highes flux.
-                print('pre flux filtering: ', object_id)
-                print(flux[object_id])
                 object_id = object_id[np.argmax(flux[object_id])]
-                print('after flux filtering: ', object_id)
                 terminal_output.print_to_terminal(
                     f"Use the object that is the brightest.",
                     style_name='WARNING',
@@ -603,7 +600,7 @@ def correlate_datasets(
             f"ID of the rejected {dataset_type}: {rejected_datasets}",
             indent=2,
         )
-    terminal_output.print_to_terminal('')
+    # terminal_output.print_to_terminal('')
 
     #   Post process correlation results
     #
@@ -2240,7 +2237,7 @@ def correlate_with_calibration_objects(
         Index of the observed stars that correspond to the calibration stars
     """
     terminal_output.print_to_terminal(
-        "Correlate observed objects with calibration stars\n",
+        "Correlate observed objects with calibration stars",
         indent=indent,
     )
 

@@ -751,10 +751,9 @@ def plot_residual(
     #   Set up plot
     n_plots = len(image_orig)
     if n_plots == 1:
-        fig = plt.figure(figsize=(20, 5))
+        fig = plt.figure(figsize=(10, 10))
     elif n_plots == 2:
-        # fig = plt.figure(figsize=(20, 10))
-        fig = plt.figure(figsize=(10, 20))
+        fig = plt.figure(figsize=(20, 10))
     else:
         fig = plt.figure(figsize=(20, 20))
 
@@ -785,9 +784,9 @@ def plot_residual(
         norm = ImageNormalize(image, interval=ZScaleInterval())
 
         if n_plots == 1:
-            ax = fig.add_subplot(1, 2, i)
-        elif n_plots == 2:
             ax = fig.add_subplot(2, 1, i)
+        elif n_plots == 2:
+            ax = fig.add_subplot(2, 2, i)
         else:
             ax = fig.add_subplot(n_plots, 2, i)
 
@@ -819,9 +818,9 @@ def plot_residual(
                               interval=ZScaleInterval())
 
         if n_plots == 1:
-            ax = fig.add_subplot(1, 2, i)
-        elif n_plots == 2:
             ax = fig.add_subplot(2, 1, i)
+        elif n_plots == 2:
+            ax = fig.add_subplot(2, 2, i)
         else:
             ax = fig.add_subplot(n_plots, 2, i)
 

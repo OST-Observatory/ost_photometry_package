@@ -1041,7 +1041,6 @@ class Executor:
         self.pool.join()
         if self.progress_bar:
             self.progress_bar.close()
-            print('')
 
 
 def mk_ds9_region(
@@ -1282,7 +1281,7 @@ def prepare_and_plot_starmap_from_image_series(
                 'rts': f'image: {image_id}, final version',
                 'label': 'Stars identified in all images',
                 # 'label_2': 'Calibration stars',
-                'label_2': 'Variable object',
+                'label_2': 'Objects of interest',
                 # 'name_object': image_series.object_name,
                 'wcs_image': image_series.wcs,
                 'file_type': file_type_plots,

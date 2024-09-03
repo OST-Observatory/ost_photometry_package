@@ -467,10 +467,11 @@ class Observation:
 
     #   TODO: Fix type hints
     #   Get ePSF object of the reference image
+    # def get_reference_epsf(self):
+    #     epsf_dict = {}
     # def get_reference_epsf(self) -> dict[str, psf.EPSFModel | None]:
-    #     epsf_dict: dict[str, psf.EPSFModel | None] = {}
-    def get_reference_epsf(self):
-        epsf_dict = {}
+    def get_reference_epsf(self) -> dict[str, psf.EPSFModel]:
+        epsf_dict: dict[str, psf.EPSFModel | None] = {}
         for key, image_series in self.image_series_dict.items():
             reference_image_id = image_series.reference_image_id
 
@@ -3848,6 +3849,7 @@ def main_extract(
             image,
             terminal_logger=terminal_logger,
             file_type_plots=file_type_plots,
+            label=f'Stars with photometric extractions ({photometry_extraction_method})',
         )
 
     if multiprocessing:
