@@ -451,12 +451,11 @@ class Observation:
         # self.table_mags_transformed: Table | None = None
         # self.table_mags_not_transformed: Table | None = None
 
-    #   TODO: Fix type hints
     #   Get ePSF objects of all images
-    # def get_epsf(self) -> dict[str, list[psf.EPSFModel | None]]:
-    #     epsf_dict: dict[str, list[psf.EPSFModel | None]] = {}
-    def get_epsf(self):
-        epsf_dict = {}
+    # def get_epsf(self):
+    #     epsf_dict = {}
+    def get_epsf(self) -> dict[str, list[psf.EPSFModel]]:
+        epsf_dict: dict[str, list[psf.EPSFModel | None]] = {}
         for key, image_series in self.image_series_dict.items():
             epsf_list: list[psf.EPSFModel | None] = []
             for img in image_series.image_list:
@@ -465,11 +464,9 @@ class Observation:
 
         return epsf_dict
 
-    #   TODO: Fix type hints
     #   Get ePSF object of the reference image
     # def get_reference_epsf(self):
     #     epsf_dict = {}
-    # def get_reference_epsf(self) -> dict[str, psf.EPSFModel | None]:
     def get_reference_epsf(self) -> dict[str, psf.EPSFModel]:
         epsf_dict: dict[str, psf.EPSFModel | None] = {}
         for key, image_series in self.image_series_dict.items():
@@ -586,9 +583,9 @@ class Observation:
             multiplier_background_rms: float = 5., size_epsf_region: int = 25,
             size_extraction_region_epsf: int = 11,
             epsf_fitter: str = 'LMLSQFitter',
-            n_iterations_eps_extraction: int = 2,
+            n_iterations_eps_extraction: int = 1,
             fraction_epsf_stars: float = 0.2,
-            oversampling_factor_epsf: int = 2,
+            oversampling_factor_epsf: int = 1,
             max_n_iterations_epsf_determination: int = 7,
             use_initial_positions_epsf: bool = True,
             object_finder_method: str = 'IRAF',
@@ -660,7 +657,7 @@ class Observation:
             cases, such as very crowded fields, numbers greater than 1 can lead to
             very large CPU loads and recursions within astropy that may exceed the
             defined limits.
-            Default is ``2``.
+            Default is ``1``.
 
         fraction_epsf_stars
             Fraction of all stars that should be used to calculate the ePSF
@@ -668,7 +665,7 @@ class Observation:
 
         oversampling_factor_epsf
             ePSF oversampling factor
-            Default is ``2``.
+            Default is ``1``.
 
         max_n_iterations_epsf_determination
             Number of ePSF iterations
@@ -886,9 +883,9 @@ class Observation:
             multiplier_background_rms: float = 5., size_epsf_region: int = 25,
             size_extraction_region_epsf: int = 11,
             epsf_fitter: str = 'LMLSQFitter',
-            n_iterations_eps_extraction: int = 2,
+            n_iterations_eps_extraction: int = 1,
             fraction_epsf_stars: float = 0.2,
-            oversampling_factor_epsf: int = 2,
+            oversampling_factor_epsf: int = 1,
             max_n_iterations_epsf_determination: int = 7,
             use_initial_positions_epsf: bool = True,
             object_finder_method: str = 'IRAF',
@@ -970,7 +967,7 @@ class Observation:
             cases, such as very crowded fields, numbers greater than 1 can lead to
             very large CPU loads and recursions within astropy that may exceed the
             defined limits.
-            Default is ``2``.
+            Default is ``1``.
 
         fraction_epsf_stars
             Fraction of all stars that should be used to calculate the ePSF
@@ -978,7 +975,7 @@ class Observation:
 
         oversampling_factor_epsf
             ePSF oversampling factor
-            Default is ``2``.
+            Default is ``1``.
 
         max_n_iterations_epsf_determination
             Number of ePSF iterations
@@ -2552,7 +2549,7 @@ def extraction_epsf(
         image: Image, sigma_object_psf: float, background_rms: float,
         sigma_background: float = 5., use_initial_positions: bool = True,
         finder_method: str = 'IRAF', size_extraction_region: int = 11,
-        epsf_fitter: str = 'LMLSQFitter', n_iterations_eps_extraction: int = 2,
+        epsf_fitter: str = 'LMLSQFitter', n_iterations_eps_extraction: int = 1,
         multiplier_background_rms: float = 5.0,
         multiplier_grouper: float = 2.0,
         strict_cleaning_results: bool = True,
@@ -2600,7 +2597,7 @@ def extraction_epsf(
         cases, such as very crowded fields, numbers greater than 1 can lead to
         very large CPU loads and recursions within astropy that may exceed the
         defined limits.
-        Default is ``2``.
+        Default is ``1``.
 
     multiplier_background_rms
         Multiplier for the background RMS, used to calculate the
@@ -3261,9 +3258,9 @@ def extract_multiprocessing(
         multiplier_background_rms: float = 5., size_epsf_region: int = 25,
         size_extraction_region_epsf: int = 11,
         epsf_fitter: str = 'LMLSQFitter',
-        n_iterations_eps_extraction: int = 2,
+        n_iterations_eps_extraction: int = 1,
         fraction_epsf_stars: float = 0.2,
-        oversampling_factor_epsf: int = 2,
+        oversampling_factor_epsf: int = 1,
         max_n_iterations_epsf_determination: int = 7,
         use_initial_positions_epsf: bool = True,
         object_finder_method: str = 'IRAF',
@@ -3321,7 +3318,7 @@ def extract_multiprocessing(
         cases, such as very crowded fields, numbers greater than 1 can lead to
         very large CPU loads and recursions within astropy that may exceed the
         defined limits.
-        Default is ``2``.
+        Default is ``1``.
 
     fraction_epsf_stars
         Fraction of all stars that should be used to calculate the ePSF
@@ -3329,7 +3326,7 @@ def extract_multiprocessing(
 
     oversampling_factor_epsf
         ePSF oversampling factor
-        Default is ``2``.
+        Default is ``1``.
 
     max_n_iterations_epsf_determination
         Number of ePSF iterations
@@ -3508,8 +3505,8 @@ def main_extract(
         sigma_value_background_clipping: float = 5.,
         multiplier_background_rms: float = 5., size_epsf_region: int = 25,
         size_extraction_region_epsf: int = 11, epsf_fitter: str = 'LMLSQFitter',
-        n_iterations_eps_extraction: int = 2,
-        fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 2,
+        n_iterations_eps_extraction: int = 1,
+        fraction_epsf_stars: float = 0.2, oversampling_factor_epsf: int = 1,
         max_n_iterations_epsf_determination: int = 7,
         use_initial_positions_epsf: bool = True,
         object_finder_method: str = 'IRAF',
@@ -3570,7 +3567,7 @@ def main_extract(
         cases, such as very crowded fields, numbers greater than 1 can lead to
         very large CPU loads and recursions within astropy that may exceed the
         defined limits.
-        Default is ``2``.
+        Default is ``1``.
 
     fraction_epsf_stars
         Fraction of all stars that should be used to calculate the ePSF
@@ -3578,7 +3575,7 @@ def main_extract(
 
     oversampling_factor_epsf
         ePSF oversampling factor
-        Default is ``2``.
+        Default is ``1``.
 
     max_n_iterations_epsf_determination
         Number of ePSF iterations

@@ -6,8 +6,6 @@ from astropy.time import Time
 import astropy.units as u
 from astropy import uncertainty as unc
 
-# from uncertainties import ufloat
-
 import scipy.interpolate as interpolate
 
 from . import terminal_output
@@ -28,7 +26,7 @@ def get_image_types() -> dict[str, list[str]]:
             Dictionary with the image type.
     """
     #   Define default image types
-    default_img_type = {
+    default_img_type: dict[str, list[str]] = {
         'bias': ['Bias Frame', 'Bias', 'BIAS'],
         'dark': ['Dark Frame', 'Dark', 'DARK'],
         'flat': ['Flat Field', 'Flat', 'FLAT', 'Flat Frame'],
@@ -38,20 +36,20 @@ def get_image_types() -> dict[str, list[str]]:
     return default_img_type
 
 
-def chip_dimensions(camera):
+def chip_dimensions(camera: str) -> tuple[float, float]:
     """
-        Parameters
-        ----------
-        camera          : `string`
-            Camera or camera type used to obtain the data
+    Parameters
+    ----------
+    camera
+        The camera or camera type used to obtain the data
 
-        Returns
-        -------
-        d               : `integer`
-            Width in pixel
+    Returns
+    -------
+    d
+        Width in pixel
 
-        h               : `integer`
-            Height in pixel
+    h
+        Height in pixel
     """
     #   STF8300
     if camera in ['SBIG STF-8300 CCD Camera']:
@@ -73,43 +71,46 @@ def chip_dimensions(camera):
     return d, h
 
 
-def camera_info(camera, readout_mode, temperature, gain_setting=None):
+def camera_info(
+        camera: str, readout_mode: str, temperature: float,
+        gain_setting: int | None = None
+    ) -> tuple[float, float, float, int, int]:
     """
-        Camera specific parameters
+    Camera specific parameters
 
-        Parameters
-        ----------
-        camera          : `string`
-            Camera or camera type used to obtain the data
+    Parameters
+    ----------
+    camera
+        The camera or camera type used to obtain the data
 
-        readout_mode    : `string`
-            Mode used to read out the data from the camera chip.
+    readout_mode
+        Mode used to read out the data from the camera chip.
 
-        temperature     : `float`
-            Temperature of the camera chip
+    temperature
+        The temperature of the camera chip
 
-        gain_setting    : `integer` or `None`, optional
-            Gain used in the camera setting for cameras such as the QHYs.
-            This is not the system gain, but it can be calculated from this
-            value. See below.
-            Default is ``None``.
+    gain_setting
+        Gain used in the camera setting for cameras such as the QHYs.
+        This is not the system gain, but it can be calculated from this
+        value. See below.
+        Default is ``None``.
 
-        Returns
-        -------
-        read_noise      : `float`
-            Read noise
+    Returns
+    -------
+    read_noise
+        Read noise
 
-        gain            : `float`
-            Gain factor
+    gain
+        The gain factor
 
-        dark_rate       : `float`
-            Dark current
+    dark_rate
+        Dark current
 
-        d               : `integer`
-            Width in pixel
+    d
+        Width in pixel
 
-        h               : `integer`
-            Height in pixel
+    h
+        Height in pixel
     """
     #   STF8300
     if camera in ['SBIG STF-8300 CCD Camera']:
@@ -207,22 +208,22 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
     return read_noise, gain, dark_rate, d, h
 
 
-def get_chip_dimensions(instrument):
+def get_chip_dimensions(instrument: str) -> tuple[float, float]:
     """
-        Return camera chip dimensions in mm
+    Return camera chip dimensions in mm
 
-        Parameters
-        ----------
-        instrument          : `string`
-            Camera type or came driver name
+    Parameters
+    ----------
+    instrument
+        Camera type or came driver name
 
-        Returns
-        -------
-            d               : `float`
-                Length of the camera chip
+    Returns
+    -------
+        d
+            Length of the camera chip
 
-            h               : `float`
-                Height of the camera chip
+        h
+            Height of the camera chip
     """
     info_camera = chip_dimensions(instrument)
     return info_camera[3], info_camera[4]
@@ -778,19 +779,19 @@ filter_effective_wavelength = {
 }
 
 
-def fitzpatrick_extinction_curve(r):
+def fitzpatrick_extinction_curve(r: float) -> interpolate.CubicSpline:
     """
-        Fitzpatrick's extinction curve - A(lambda)/E(B-V) vs. 1/lambda [1/mym]
-        This version is not valid for wavelengths below 2600AA.
+    Fitzpatrick's extinction curve - A(lambda)/E(B-V) vs. 1/lambda [1/mym]
+    This version is not valid for wavelengths below 2600AA.
 
-        Parameters
-        ----------
-        r               : `float`
+    Parameters
+    ----------
+    r
         Ration between absolute and relative extinction in the V band.
 
-        Returns
-        -------
-        cubic_spline    : `scipy.interpolate.CubicSpline`
+    Returns
+    -------
+    cubic_spline
         Cubic spline to the Fitzpatrick anchor points
 
     """
@@ -833,7 +834,7 @@ def fitzpatrick_extinction_curve(r):
 #     return None
 
 
-def jordi_u(**kwargs):
+def jordi_u(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
     if all(filter_ in kwargs for filter_ in ['U', 'B', 'V', 'g']):
@@ -888,7 +889,7 @@ def jordi_u(**kwargs):
 #
 #     return None
 
-def jordi_g(**kwargs):
+def jordi_g(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
     if all(filter_ in kwargs for filter_ in ['B', 'V']):
@@ -991,7 +992,7 @@ def jordi_g(**kwargs):
 #     return None
 
 
-def jordi_r(**kwargs):
+def jordi_r(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
     if all(filter_ in kwargs for filter_ in ['V', 'R']):
@@ -1104,7 +1105,7 @@ def jordi_r(**kwargs):
 #     return None
 
 
-def jordi_i(**kwargs):
+def jordi_i(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
     if all(filter_ in kwargs for filter_ in ['R', 'I']):
@@ -1184,7 +1185,7 @@ def jordi_i(**kwargs):
 #     return None
 
 
-def jordi_z(**kwargs):
+def jordi_z(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
     if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
@@ -1319,17 +1320,17 @@ def get_transformation_calibration_values(
         observation_jd: float
         ) -> dict[str, dict[str, dict[str, float | str | list[str]]]] | None:
     """
-        Get the Magnitude transformation calibration values for the provided JD
+    Get the Magnitude transformation calibration values for the provided JD
 
-        Parameters
-        ----------
-        observation_jd
-            JD of the observation
+    Parameters
+    ----------
+    observation_jd
+        JD of the observation
 
-        Returns
-        -------
-        Tcs
-            Magnitude transformation calibration factors
+    Returns
+    -------
+    Tcs
+        Magnitude transformation calibration factors
     """
     if observation_jd is not None:
         for key in Tcs.keys():

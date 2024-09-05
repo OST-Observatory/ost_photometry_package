@@ -44,7 +44,8 @@ def reduce_main(
         scale_image_with_exposure_time: bool = True,
         reference_image_id: int = 0, enforce_bias: bool = False,
         verbose: bool = False, add_hot_bad_pixel_mask: bool = True,
-        shift_method: str = 'skimage', stack_images: bool = True,
+        shift_method: str = 'skimage',
+        n_cores_multiprocessing: int | None = None, stack_images: bool = True,
         estimate_fwhm: bool = False, shift_all: bool = False,
         exposure_time_tolerance: float = 0.5, stack_method: str = 'average',
         dtype_image_stacking: str | np.dtype | None = None,
@@ -147,6 +148,10 @@ def reduce_main(
                                    the images
                        'skimage' = phase correlation with skimage
         Default is ``skimage``.
+
+    n_cores_multiprocessing
+        Number of cores to use during calculation of the image shifts.
+        Default is ``None``.
 
     stack_images
         If True the individual images of each filter will be stacked and
@@ -485,6 +490,7 @@ def reduce_main(
             image_type_dir['light'],
             reference_image_id=reference_image_id,
             shift_method=shift_method,
+            n_cores_multiprocessing=n_cores_multiprocessing,
             rm_outliers=rm_outliers_image_shifts,
             filter_window=filter_window_image_shifts,
             threshold=threshold_image_shifts,
@@ -499,6 +505,7 @@ def reduce_main(
             image_type_dir['light'],
             reference_image_id=reference_image_id,
             shift_method=shift_method,
+            n_cores_multiprocessing=n_cores_multiprocessing,
             rm_outliers=rm_outliers_image_shifts,
             filter_window=filter_window_image_shifts,
             threshold=threshold_image_shifts,
@@ -598,6 +605,7 @@ def reduce_main(
                     output_path,
                     image_type_dir['light'],
                     shift_method=shift_method,
+                    n_cores_multiprocessing=n_cores_multiprocessing,
                     rm_outliers=rm_outliers_image_shifts,
                     filter_window=filter_window_image_shifts,
                     threshold=threshold_image_shifts,
@@ -807,7 +815,7 @@ def reduce_dark(
 def master_dark(
         image_path: str | Path, output_dir: str | Path,
         image_type: dict[str, list[str]], gain: float | None = None,
-        read_noise: float = 8., dark_rate: dict[float, float] | None = None,
+        read_noise: float = 8., dark_rate: float | None = None,
         mk_hot_pixel_mask: bool = True, plot_plots: bool = False,
         verbose: bool = False, debug: bool = False, **kwargs) -> None:
     """
@@ -838,7 +846,6 @@ def master_dark(
 
     dark_rate
         Temperature dependent dark rate in e-/pix/s:
-        key = temperature, value = dark rate
         Default is ``None``.
 
     mk_hot_pixel_mask
@@ -866,16 +873,17 @@ def master_dark(
     #   Sanitize dark rate
     if dark_rate is None:
         terminal_output.print_to_terminal(
-            f"Dark current not specified. Assume 0.1 e/s.",
+            f"Dark current not specified. Assume 0.1 e-/pix/s.",
             indent=1,
             style_name='WARNING',
         )
-        dark_rate = {0: 0.1}
+        # dark_rate = {0: 0.1}
+        dark_rate = 0.1
 
     #   Create image collection
     try:
         image_file_collection = ccdp.ImageFileCollection(out_path / 'dark')
-    except:
+    except ValueError:
         image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Return if image collection is empty
@@ -1071,6 +1079,7 @@ def reduce_flat(
     }
 
     #   Get master bias
+    combined_bias = None
     if rm_bias:
         bias_image_type = utilities.get_image_type(
             image_file_collection_reduced,
@@ -1433,6 +1442,7 @@ def reduce_light(
     }
 
     #   Get master bias
+    combined_bias = None
     if rm_bias:
         bias_image_type = utilities.get_image_type(
             image_file_collection_reduced,
@@ -1767,7 +1777,7 @@ def detect_outlier(
 
     Returns
     -------
-    array
+
         Index of the elements along axis 0 that are below the threshold
     """
     #   Calculate running median
@@ -1782,7 +1792,9 @@ def detect_outlier(
 
 def shift_image_core(
         image_file_collection: ccdp.ImageFileCollection, output_path: Path,
-        shift_method: str = 'skimage', reference_image_id: int = 0,
+        shift_method: str = 'skimage',
+        n_cores_multiprocessing: int | None = None,
+        reference_image_id: int = 0,
         shift_terminal_comment: str = '\tImage displacement:',
         rm_enlarged_keyword: bool = False, modify_file_name: bool = False,
         rm_outliers: bool = True, filter_window: int = 8,
@@ -1815,6 +1827,10 @@ def shift_image_core(
                                    implementation by skimage
         Default is ``skimage``.
 
+    n_cores_multiprocessing
+        Number of cores to use during calculation of the image shifts.
+        Default is ``None``.
+
     reference_image_id
         ID of the image that should be used as a reference
         Default is ``0``.
@@ -1846,7 +1862,7 @@ def shift_image_core(
         Default is ``10.``.
 
     instrument
-        Instrument used
+        The instrument used
         Default is ``None``.
 
     verbose
@@ -1860,6 +1876,7 @@ def shift_image_core(
             reference_image_id,
             shift_terminal_comment,
             correlation_method=shift_method,
+            n_cores_multiprocessing=n_cores_multiprocessing,
         )
         reference_image_ccd = None
     elif shift_method in ['aa_true', 'flow']:
@@ -1930,6 +1947,7 @@ def shift_image_core(
 def shift_image(
         path: str | Path, output_dir: str | Path, image_type_list: list[str],
         reference_image_id: int = 0, shift_method: str = 'skimage',
+        n_cores_multiprocessing: int | None = None,
         rm_outliers: bool = True, filter_window: int = 8,
         threshold: int | float = 10., instrument: str | None = None,
         verbose: bool = False, debug: bool = False) -> None:
@@ -1940,7 +1958,7 @@ def shift_image(
     Parameters
     ----------
     path
-        Path to the images
+        The path to the images
 
     output_dir
         Path to the directory where the master files should be saved to
@@ -1965,6 +1983,10 @@ def shift_image(
                        'skimage' = phase correlation with skimage
         Default is ``skimage``.
 
+    n_cores_multiprocessing
+        Number of cores to use during calculation of the image shifts.
+        Default is ``None``.
+
     rm_outliers
         If True outliers in the image shifts will be detected and removed.
         Default is ``True``.
@@ -1979,7 +2001,7 @@ def shift_image(
         Default is ``10.``.
 
     instrument
-        Instrument used
+        The instrument used
         Default is ``None``.
 
     verbose
@@ -2029,6 +2051,7 @@ def shift_image(
             ifc_filter,
             trim_path,
             shift_method=shift_method,
+            n_cores_multiprocessing=n_cores_multiprocessing,
             reference_image_id=reference_image_id,
             shift_terminal_comment=f'\tDisplacement for images in filter: {filter_}',
             rm_outliers=rm_outliers,
@@ -2046,10 +2069,11 @@ def shift_image(
 def shift_all_images(
         image_path: str | Path, output_dir: str | Path,
         image_type_list: list[str], reference_image_id: int = 0,
-        shift_method: str = 'skimage', rm_outliers: bool = True,
-        filter_window: int = 8, threshold: int | float = 10.,
-        instrument: str | None = None, verbose: bool = False,
-        debug: bool = False) -> None:
+        shift_method: str = 'skimage',
+        n_cores_multiprocessing: int | None = None,
+        rm_outliers: bool = True, filter_window: int = 8,
+        threshold: int | float = 10., instrument: str | None = None,
+        verbose: bool = False, debug: bool = False) -> None:
     """
     Calculate shift between images and trim those to the save field of
     view
@@ -2081,6 +2105,10 @@ def shift_all_images(
                                    the images
                        'skimage' = phase correlation with skimage
         Default is ``skimage``.
+
+    n_cores_multiprocessing
+        Number of cores to use during calculation of the image shifts.
+        Default is ``None``.
 
     rm_outliers
         If True outliers in the image shifts will be detected and removed.
@@ -2141,6 +2169,7 @@ def shift_all_images(
         ifc_filtered,
         trim_path,
         shift_method=shift_method,
+        n_cores_multiprocessing=n_cores_multiprocessing,
         reference_image_id=reference_image_id,
         rm_outliers=rm_outliers,
         filter_window=filter_window,
@@ -2181,6 +2210,7 @@ def shift_stack_astroalign(
     )
 
     for current_image_id, (current_image_ccd, file_name) in enumerate(ifc_filtered.ccds(return_fname=True)):
+        reference_image_ccd: ccdp.CCDData | None = None
         if current_image_id == 0:
             reference_image_ccd = current_image_ccd
             image_out = reference_image_ccd
@@ -2210,7 +2240,7 @@ def shift_stack_astroalign(
                 current_image_ccd,
                 reference_image_ccd,
                 max_control_points=100,
-                detection_sigma=3.0,
+                detection_sigma=3,
             )
 
             #   Transform image data
@@ -2352,7 +2382,7 @@ def stack_image(
 
 
 def make_big_images(
-        image_path: str | None, output_dir: str | None,
+        image_path: str | Path | None, output_dir: str | Path | None,
         image_type_list: list[str], combined_only: bool = True) -> None:
     """
     Image size unification:
@@ -2450,6 +2480,7 @@ def trim_image(
         image_path: str | Path, output_dir: str | Path,
         image_type_list: list[str], reference_image_id: int = 0,
         enlarged_only: bool = True, shift_method: str = 'skimage',
+        n_cores_multiprocessing: int | None = None,
         rm_outliers: bool = True, filter_window: int = 8,
         threshold: int | float =10., verbose: bool = False) -> None:
     """
@@ -2487,6 +2518,10 @@ def trim_image(
                                    the images
                        'skimage' = phase correlation with skimage
         Default is ``skimage``.
+
+    n_cores_multiprocessing
+        Number of cores to use during calculation of the image shifts.
+        Default is ``None``.
 
     rm_outliers
         If True outliers in the image shifts will be detected and removed.
@@ -2528,6 +2563,7 @@ def trim_image(
         ifc_filtered,
         out_path,
         shift_method=shift_method,
+        n_cores_multiprocessing=n_cores_multiprocessing,
         reference_image_id=reference_image_id,
         shift_terminal_comment='\tDisplacement between the images of the different filters',
         rm_enlarged_keyword=enlarged_only,

@@ -5,8 +5,6 @@ import sys
 
 import numpy as np
 
-# from uncertainties import unumpy
-
 from pytimedinput import timedInput
 
 from tqdm import tqdm
@@ -963,9 +961,7 @@ class Executor:
     #   TODO: Fix error propagation
 
     def __init__(self, process_num: int | None, **kwargs):
-        # print('mp star method: ', mp.get_start_method())
         mp.set_start_method('spawn', force=True)
-        # print('mp star method: ', mp.get_start_method())
 
         if not process_num:
             process_num: int = int(mp.cpu_count()/2)
@@ -2178,7 +2174,7 @@ def post_process_results(
         clean_objects_using_proper_motion: bool = False,
         max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
         convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
-        tbl_list: list[Table] | None = None, distribution_samples: int = 1000,
+        input_table: Table | None = None, distribution_samples: int = 1000,
         file_type_plots: str = 'pdf') -> None:
     """
     Restrict results to specific areas of the image and filter by means
@@ -2239,9 +2235,9 @@ def post_process_results(
         Photometric system the magnitudes should be converted to
         Default is ``SDSS``.
 
-    tbl_list
-        List with Tables containing magnitudes etc. If None are provided,
-        the tables will be read from the observation container.
+    input_table
+        Table containing magnitudes etc. If None are provided,
+        the table will be read from the observation container.
         Default is ``None``.
 
     distribution_samples
@@ -2261,7 +2257,10 @@ def post_process_results(
     image_series_dict = observation.image_series_dict
 
     #   Get astropy tables with positions and magnitudes
-    tbl = observation.table_magnitudes
+    if input_table is None:
+        tbl = observation.table_magnitudes
+    else:
+        tbl = input_table
 
     #   Loop over all Tables
     mask_region = None

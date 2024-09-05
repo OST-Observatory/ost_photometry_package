@@ -191,7 +191,6 @@ def derive_transformation_onthefly(
         magnitudes_observed_filter_1: unc.core.NdarrayDistribution,
         magnitudes_observed_filter_2: unc.core.NdarrayDistribution,
         file_type_plots: str = 'pdf',
-        distribution_samples: int = 1000
         ) -> tuple[unc.core.NdarrayDistribution, unc.core.NdarrayDistribution]:
     """
     Determine the parameters for the color term used in the magnitude
@@ -226,10 +225,6 @@ def derive_transformation_onthefly(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
-
-    distribution_samples
-        Number of samples used for distributions
-        Default is `1000`
 
     Returns
     -------
@@ -373,7 +368,6 @@ def transformation_core(
         tc_color: float, tc_t1: float, tc_k1: float, tc_t2: float,
         tc_k2: float, id_current_filter: int, filter_list: list[str],
         transformation_type: str = 'derive',
-        distribution_samples: int = 1000,
         file_type_plots: str = 'pdf',
         ) -> unc.core.NdarrayDistribution:
     """
@@ -436,10 +430,6 @@ def transformation_core(
         Possibilities: simple, air_mass, or derive
         Default is ``derive``.
 
-    distribution_samples
-        Number of samples used for distributions
-        Default is `1000`.
-
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
@@ -480,7 +470,6 @@ def transformation_core(
                 magnitudes_literature_filter_2,
                 calib_magnitudes_observed_filter_1,
                 calib_magnitudes_observed_filter_2,
-                distribution_samples=distribution_samples,
                 file_type_plots=file_type_plots,
             )
         else:
@@ -514,7 +503,6 @@ def transformation_core(
         magnitudes_current_filter.size,
         1,
     )
-    #   TODO: Check type of reshaped_magnitudes
 
     #   Apply zero point to magnitudes
     magnitudes_with_zp = magnitudes_current_filter + unc.Distribution(image.zp)
@@ -534,7 +522,7 @@ def transformation_core(
 
     #   Add calibrated photometry to table of Image object
     #   TODO: Add the photometry with filter_list information such that it is
-    #         clear how the magnitudes are derived
+    #         clear how the magnitudes are derived?
     image.photometry['mag_cali_trans'] = median
     image.photometry['mag_cali_trans_unc'] = stddev
 
@@ -551,7 +539,7 @@ def apply_magnitude_transformation(
         filter_list: list[str],
         transformation_coefficients: dict[str, (float | str)],
         plot_sigma: bool = False, transformation_type: str = 'derive',
-        distribution_samples: int = 1000, multiprocessing: bool = False,
+        multiprocessing: bool = False,
         file_type_plots: str = 'pdf') -> tuple[int, Table] | None:
     """
     Apply transformation
@@ -596,10 +584,6 @@ def apply_magnitude_transformation(
         Type of magnitude transformation.
         Possibilities: simple, air_mass, or derive
         Default is ``derive``.
-
-    distribution_samples
-        Number of samples used for distributions
-        Default is `1000`.
 
     multiprocessing
         Switch to distinguish between single and multicore processing
@@ -671,7 +655,6 @@ def apply_magnitude_transformation(
         filter_id,
         filter_list,
         transformation_type=transformation_type,
-        distribution_samples=distribution_samples,
         file_type_plots=file_type_plots,
     )
 
@@ -730,7 +713,6 @@ def calibrate_simple(
         not_calibrated_magnitudes.size,
         1,
     )
-    #   TODO: Check type of reshaped_magnitudes
 
     #   Calculate calibrated magnitudes
     calibrated_magnitudes = reshaped_magnitudes + zp
@@ -787,13 +769,7 @@ def quasi_flux_calibration_image_series(
         std=flux_error,
         n_samples=distribution_samples,
     )
-    #   TODO: Add distribution with median and percentile errors? Test!
-    normalization_factor = unc.normal(
-        median[:, np.newaxis],
-        std=stddev[:, np.newaxis],
-        n_samples=distribution_samples,
-    )
-    flux_calibrated = flux_distribution / normalization_factor
+    flux_calibrated = flux_distribution / median[:, np.newaxis]
 
     return flux_calibrated
 
@@ -844,13 +820,12 @@ def flux_normalization_image_series(
     )
 
     #   Prepare distributions
-    #   TODO: Improve error: std
-    normalization_factor = unc.normal(
-        median,
-        std=stddev,
-        n_samples=distribution_samples,
-    )
-    normalized_flux = flux_distribution / normalization_factor
+    # normalization_factor = unc.normal(
+    #     median,
+    #     std=stddev,
+    #     n_samples=distribution_samples,
+    # )
+    normalized_flux = flux_distribution / median
 
     return normalized_flux
 
@@ -1358,7 +1333,6 @@ def calibrate_magnitudes_transformation(
                     kwargs={
                         'plot_sigma': plot_sigma,
                         'transformation_type': transformation_type,
-                        'distribution_samples': distribution_samples,
                         'multiprocessing': True,
                         'file_type_plots': file_type_plots,
                     }

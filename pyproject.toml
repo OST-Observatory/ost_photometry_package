@@ -35,6 +35,7 @@ dependencies = [
     "twirl>=0.1",
     "pandas",
     "bottleneck",
+    "tqdm",
 ]
 
 [project.urls]

@@ -134,16 +134,13 @@ def plot_dark_with_distributions(
     plt.figure(figsize=(20, 9))
 
     #   Get
-    h = plt.hist(
+    plt.hist(
         image_data.flatten(),
         bins=20,
         align='mid',
         density=True,
         label="Dark frame",
     )
-
-    #   TODO: Check plot - bins and histogram not used
-    bins = h[1]
 
     #   Expected mean of the dark
     expected_mean_dark = dark_current * exposure_time / gain

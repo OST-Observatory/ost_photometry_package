@@ -1818,15 +1818,8 @@ def correlate_preserve_variable(
         verbose=verbose,
     )
 
-    ###
     #   Check if variable star was detected I
     #
-    # if n_detections == 0:
-    #     raise RuntimeError(
-    #         f"{style.Bcolors.FAIL} \tERROR: The variable object was not "
-    #         f"detected in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
-    #     )
-
     #   Get object of interests ID list
     object_of_interest_ids = observation.get_ids_object_of_interest(filter_=filter_)
 

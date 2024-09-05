@@ -868,7 +868,8 @@ def light_curve_jd(
         ts: TimeSeries, data_column: str, err_column: str, output_dir: str,
         error_bars: bool = True, name_object: str | None = None,
         file_name_suffix: str = '', subdirectory: str = '',
-        file_type: str = 'pdf') -> None:
+        file_type: str = 'pdf', own_scaling: bool = True,
+        invert_axis: bool = True) -> None:
     """
     Plot the light curve over Julian Date
 
@@ -904,6 +905,15 @@ def light_curve_jd(
     file_type
         Type of plot file to be created
         Default is ``pdf``.
+
+    own_scaling
+        If ``True``, the Y-axis is subject to the normal mathplotlib
+        autoscaling.
+        Default is ``True``.
+
+    invert_axis
+        If ``True``, the Y-axis will be inverted.
+        Default is ``True``.
     """
     #   Check output directories
     if subdirectory != '':
@@ -955,7 +965,7 @@ def light_curve_jd(
     max_data = np.max(ts[data_column].value)
 
     #   Invert y-axis
-    if median_data > 1.5 or median_data < 0.5:
+    if invert_axis & (median_data > 1.5 or median_data < 0.5):
         plt.gca().invert_yaxis()
 
     #   Set plot limits
@@ -966,13 +976,15 @@ def light_curve_jd(
     if median_data > 1.1 or median_data < 0.9:
         y_lim = np.max([max_err * 1.5, 0.1])
         # y_lim = np.max([max_err*2.0, 0.1])
-        plt.ylim([median_data + y_lim, median_data - y_lim])
+        if own_scaling:
+            plt.ylim([median_data + y_lim, median_data - y_lim])
         # plt.y_lim([max_data+y_lim, min_data-y_lim])
         y_label_text = ' [mag] (Vega)'
     else:
         y_lim = max_err * 1.2
         # plt.y_lim([median_data+y_lim,median_data-y_lim])
-        plt.ylim([min_data - y_lim, max_data + y_lim])
+        if own_scaling:
+            plt.ylim([min_data - y_lim, max_data + y_lim])
         # plt.ylim([0, 2])
         y_label_text = ' [flux] (normalized)'
     # plt.ylim(11.7, 11.4)

@@ -41,6 +41,7 @@ import astroalign as aa
 
 from .. import style, checks, calibration_parameters, terminal_output
 from .. import utilities as base_utilities
+from ..analyze import utilities as analysis_utilities
 
 from . import plots
 
@@ -292,9 +293,9 @@ def get_instrument_info(
         )
 
     #   Determine readout modes in the data
-    readout_modes = set(
+    readout_modes = list(set(
         image_file_collection.summary[readout_mode_keyword][np.invert(readout_mode_mask)]
-    )
+    ))
 
     if len(readout_modes) > 1:
         if ignore_readout_mode_mismatch:
@@ -322,7 +323,8 @@ def get_instrument_info(
             if readout_mode in ['Fast', 'Slow', 'Normal']:
                 readout_mode = 'Extend Fullwell 2CMS'
 
-            #   Kstars treats the readout mode by numbers. Assuming 0 is 'Extend Fullwell 2CMS' which is probably worng.
+            #   Kstars treats the readout mode by numbers. Assuming 0 is
+            #   'Extend Fullwell 2CMS' which is probably wrong.
             #   TODO: Check this!
             if readout_mode == 0:
                 readout_mode = 'Extend Fullwell 2CMS'
@@ -513,7 +515,7 @@ def get_exposure_times(
 
 def find_nearest_exposure_time(
         reference_exposure_time: float, exposure_times: list[float],
-        time_tolerance: float | None = 0.5) -> tuple[bool, float]:
+        time_tolerance: float | None = 0.5) -> tuple[bool, np.ndarray]:
     """
     Find the nearest match between a test exposure time and a list of
     exposure times, raising an error if the difference in exposure time
@@ -599,8 +601,8 @@ def find_nearest_exposure_time_to_reference_image(
 
 def get_image_type(
         image_file_collection: ccdp.ImageFileCollection,
-        image_type_dict: dict[str, str] | list[str],
-        image_class: str | None = None) -> str | list[str]:
+        image_type_dict: dict[str, list[str]] | list[str],
+        image_class: str | None = None) -> str | list[str] | None:
     """
     From an image file collection get the existing image type from a
     list of possible images
@@ -915,7 +917,7 @@ def get_pixel_mask(
             )
             #   Raise RuntimeError to trigger except.
             raise RuntimeError('')
-    except:
+    except RuntimeError:
         #   If no precalculated mask are available, try to load masks
         #   calculated by 'master_dark' and 'master_flat'
 
@@ -946,7 +948,7 @@ def get_pixel_mask(
             #   Combine mask
             mask = mask_hot_pixel | mask_bad_pixel
             success = True
-        except:
+        except ValueError:
             terminal_output.print_to_terminal(
                 "No bad pixel mask available. Skip adding bad pixel mask.",
                 indent=1,
@@ -959,7 +961,7 @@ def get_pixel_mask(
 
 
 def make_hot_pixel_mask(
-        dark_image: CCDData, gain: float | None, output_dir: str,
+        dark_image: CCDData, gain: float | None, output_dir: str | Path,
         verbose: bool = False) -> None:
     """
     Make a hot pixel mask from a dark frame
@@ -1000,16 +1002,19 @@ def make_hot_pixel_mask(
     #   Calculate the hot pixel mask. Increase the threshold if the number of
     #   hot pixels is unrealistically high
     threshold_hot_pixel = 2
+    hot_pixel_sum = 0
+    hot_pixels = np.zeros(dark_image.shape)
     for i in range(0, 100):
         hot_pixels = (dark_image.data > threshold_hot_pixel)
+        hot_pixel_sum = hot_pixels.sum()
         #   Check if number of hot pixel is realistic
-        if hot_pixels.sum() / n_pixel <= 0.03:
+        if hot_pixel_sum / n_pixel <= 0.03:
             break
         threshold_hot_pixel += 1
 
     if verbose:
         sys.stdout.write(
-            '\r\tNumber of hot pixels: {}\n'.format(hot_pixels.sum())
+            '\r\tNumber of hot pixels: {}\n'.format(hot_pixel_sum)
         )
         sys.stdout.write(
             '\r\tLimit (e-/s/pix) used: {}\n'.format(threshold_hot_pixel)
@@ -1027,7 +1032,7 @@ def make_hot_pixel_mask(
 
 
 def make_bad_pixel_mask(
-        bad_pixel_mask_list: list[CCDData], output_dir: str,
+        bad_pixel_mask_list: list[np.ndarray], output_dir: str | Path,
         verbose: bool = False) -> None:
     """
     Calculate a bad pixel mask from a list of bad pixel masks
@@ -1053,16 +1058,15 @@ def make_bad_pixel_mask(
         mask_shape_list.append(bad_pixel_mask.shape)
     mask_shape_set = set(mask_shape_list)
 
-    #   Loop over all image dimensions/binning
+    #   Loop over all image shapes (binning options)
     for shape in mask_shape_set:
         #   Calculate overall bad pixel mask
-        for i, bad_pixel_mask in enumerate(bad_pixel_mask_list):
+        combined_mask = np.zeros(shape)
+        for bad_pixel_mask in bad_pixel_mask_list:
             if bad_pixel_mask.shape == shape:
-                if i == 0:
-                    combined_mask = bad_pixel_mask
-                else:
-                    #   TODO: Check which makes more sense: & or |
-                    combined_mask = combined_mask & bad_pixel_mask
+                #   TODO: Check which makes more sense: & or |
+                #         20240904: set to |
+                combined_mask = combined_mask | bad_pixel_mask
 
         if verbose:
             terminal_output.print_to_terminal(
@@ -1082,7 +1086,7 @@ def make_bad_pixel_mask(
 
 def cross_correlate_images(
         image_1: np.ndarray, image_2: np.ndarray, maximum_shift_x: int,
-        maximum_shift_y: int, debug: bool) -> tuple[np.ndarray, np.ndarray]:
+        maximum_shift_y: int, debug: bool) -> tuple[int, int]:
     """
     Cross correlation:
 
@@ -1366,7 +1370,9 @@ def calculate_image_shifts_core(
 def calculate_image_shifts(
         image_file_collection: ccdp.ImageFileCollection,
         id_reference_image: int, comment: str,
-        correlation_method: str = 'skimage') -> tuple[np.ndarray, np.ndarray]:
+        correlation_method: str = 'skimage',
+        n_cores_multiprocessing: int | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
     """
     Calculate image shifts
 
@@ -1390,6 +1396,10 @@ def calculate_image_shifts(
                        'skimage' = phase correlation with skimage'
                        'aa'      = astroalign module
         Default is 'skimage'.
+
+    n_cores_multiprocessing
+        Number of cores to use during multiprocessing.
+        Default is ``None``.
 
     Returns
     -------
@@ -1422,61 +1432,49 @@ def calculate_image_shifts(
         indent=0,
     )
 
-    #   TODO: Activate multiprocessing
-    # from ..analyze import aux as aux_ana
-    # #   Initialize multiprocessing object
-    # n_cores_multiprocessing=6
-    # n_cores_multiprocessing=3
-    # n_cores_multiprocessing=2
-    # executor = aux_ana.Executor(n_cores_multiprocessing)
+    #   Initialize multiprocessing object
+    executor = analysis_utilities.Executor(n_cores_multiprocessing)
 
     #   Calculate image shifts
     for i, (current_ccd_object, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
         if i != id_reference_image:
             _, image_shift[:, i], flip_necessary[i] = calculate_image_shifts_core(
-                # _, _, flip_necessary[i] = calculate_image_shifts_core(
                 current_ccd_object,
                 reference_ccd_object,
                 i,
                 file_name,
                 correlation_method=correlation_method,
             )
-            # executor.schedule(
-            # calculate_image_shifts_core,
-            # args=(
-            # current_ccd_object,
-            # reference_ccd_object,
-            # i,
-            # file_name,
-            # ),
-            # kwargs={
-            # 'correlation_method':correlation_method,
-            # }
-            # )
+            executor.schedule(
+                calculate_image_shifts_core,
+                args=(
+                    current_ccd_object,
+                    reference_ccd_object,
+                    i,
+                    file_name,
+                ),
+                kwargs={
+                'correlation_method':correlation_method,
+                }
+            )
 
-    # #   Close multiprocessing pool and wait until it finishes
-    # executor.wait()
+    #   Exit if exceptions occurred
+    if executor.err is not None:
+        raise RuntimeError(
+            f'\n{style.Bcolors.FAIL}Image offset determination failed '
+            f':({style.Bcolors.ENDC}'
+        )
 
-    # #   Exit if exceptions occurred
-    # if executor.err is not None:
-    # raise RuntimeError(
-    # f'\n{style.Bcolors.FAIL}Image offset determination failed '
-    # f':({style.Bcolors.ENDC}'
-    # )
+    #   Close multiprocessing pool and wait until it finishes
+    executor.wait()
 
-    ####
-    # #   Sort multiprocessing results
-    # #
-    # #   Extract results
-    # res = executor.res
+    #   Extract results
+    res = executor.res
 
-    # #   Sort observation times and images & build dictionary for the
-    # #   tables with the extraction results
-    # #for j in range(0, n_files):
-    # for ref_id, shift_i, flip_i in res:
-    # print(ref_id, shift_i, flip_i)
-    # image_shift[:,ref_id] = shift_i
-    # flip_necessary[ref_id] = flip_i
+    #   Sort multiprocessing results
+    for ref_id, shift_i, flip_i in res:
+        image_shift[:,ref_id] = shift_i
+        flip_necessary[ref_id] = flip_i
 
     terminal_output.print_to_terminal('')
 
@@ -1522,7 +1520,7 @@ def image_shift_astroalign_method(
     transformation_coefficiants, (_, _) = aa.find_transform(
         current_ccd_object,
         reference_ccd_object,
-        detection_sigma=3.0,
+        detection_sigma=3,
     )
 
     #   Transform image data
@@ -1764,10 +1762,9 @@ def trim_image(
 
 
 def prepare_reduction(
-        output_dir: list[str], bias_path: list[str], darks_path: list[str],
-        flats_path: list[str], images_path: list[str], raw_files_path: str,
-        temp_dir: TemporaryDirectory, image_type: dict[str, str] | None = None
-        ) -> str:
+        output_dir: str, bias_path: str, darks_path: str, flats_path: str,
+        images_path: str, raw_files_path: str, temp_dir: TemporaryDirectory,
+        image_type: dict[str, str] | None = None) -> str:
     """
     Prepare directories and files for the reduction procedure
 
@@ -2135,7 +2132,7 @@ def estimate_fwhm(
 
                     fwhm_x_list.append(fwhm_x)
                     fwhm_y_list.append(fwhm_y)
-                except:
+                except ValueError:
                     pass
 
             #   Get median of the FWHMs
@@ -2155,7 +2152,7 @@ def estimate_fwhm(
 
 
 def check_master_files_on_disk(
-        image_path: str | Path, image_type_dict: dict[str, str],
+        image_path: str | Path, image_type_dict: dict[str, list[str]],
         dark_exposure_times: list[float], filter_list: list[str] | set[str],
         check_bias: bool) -> bool:
     """
@@ -2507,15 +2504,12 @@ def determine_wcs(
 
         ifc_filtered = image_file_collection.filter(filter=reference_filter)
 
-    ###
     #   Get reference image
-    #
     reference_image_path = ifc_filtered.files[reference_image_id]
 
     reference_image = base_utilities.Image(
         reference_image_id,
         reference_filter,
-        'target',
         reference_image_path,
         output_dir,
     )
@@ -2525,9 +2519,7 @@ def determine_wcs(
     #   Test if the image contains already a WCS
     wcs_available = base_utilities.check_wcs_exists(reference_image)
 
-    ###
     #   Determine WCS
-    #
     if not wcs_available or force_wcs_determination:
         wcs = determine_wcs_core(
             reference_image,
@@ -2537,9 +2529,7 @@ def determine_wcs(
             indent=indent,
         )
 
-        ###
         #   Add WCS to images
-        #
         if wcs is not None:
             for image, file_name in image_file_collection.ccds(return_fname=True):
                 image.wcs = wcs
@@ -2549,7 +2539,7 @@ def determine_wcs(
 
 
 def determine_wcs_all_images(
-        input_dir: str | Path, output_dir: str | None,
+        input_dir: str | Path, output_dir: Path,
         force_wcs_determination: bool = False, wcs_method: str = 'astrometry',
         x_pixel_coordinates: np.ndarray | None = None,
         y_pixel_coordinates: np.ndarray | None =None,
@@ -2698,7 +2688,7 @@ def determine_wcs_core(
                 wcs_working_dir='/tmp/',
                 indent=indent,
             )
-        except:
+        except RuntimeError:
             terminal_output.print_to_terminal(
                 "No WCS solution found :(\n",
                 indent=indent,
@@ -2714,7 +2704,7 @@ def determine_wcs_core(
                 indent=indent,
             )
             terminal_output.print_to_terminal('')
-        except:
+        except RuntimeError:
             terminal_output.print_to_terminal(
                 "No WCS solution found :(\n",
                 indent=indent,
@@ -2736,7 +2726,7 @@ def determine_wcs_core(
                 y_pixel_coordinates,
                 indent=indent,
             )
-        except:
+        except RuntimeError:
             terminal_output.print_to_terminal(
                 "No WCS solution found :(\n",
                 indent=indent,
