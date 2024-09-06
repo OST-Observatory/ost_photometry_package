@@ -721,6 +721,7 @@ def derive_calibration(
         region_to_select_calibration_stars: RectanglePixelRegion | None = None,
         correlate_with_observed_objects: bool = True,
         file_type_plots: str = 'pdf',
+        use_wcs_projection_for_star_maps: bool = True,
         indent: int = 1) -> None:
     """
     Find suitable calibration stars
@@ -791,6 +792,11 @@ def derive_calibration(
         Type of plot file to be created
         Default is ``pdf``.
 
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
+
     indent
         Indentation for the console output lines
         Default is ``1``.
@@ -847,10 +853,13 @@ def derive_calibration(
     #   Remove a specific star from the loaded calibration stars
     #   TODO: Rewrite such that multiple objects can be removed
     if coordinates_obj_to_rm is not None:
-        # mask = calibration_object_coordinates.separation(coordinates_obj_to_rm) < 1 * u.arcsec
-        # mask = np.invert(mask)
-        # calibration_object_coordinates = calibration_object_coordinates[mask]
-        # calibration_tbl = calibration_tbl[mask]
+        # from astropy.coordinates import matching
+        # _, index_obj_to_rm, _, _ = matching.search_around_sky(
+        #     coordinates_obj_to_rm,
+        #     calibration_object_coordinates,
+        #     separation_limit,
+        # )
+        # calibration_tbl.remove_rows(index_obj_to_rm)
 
         mask = np.ones(len(calibration_object_coordinates), dtype=bool)
         for coordinate_object in coordinates_obj_to_rm:
@@ -915,6 +924,7 @@ def derive_calibration(
             own_correlation_option=own_correlation_option,
             indent=indent + 1,
             file_type_plots=file_type_plots,
+            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         )
     else:
         index_obj_instrument = None

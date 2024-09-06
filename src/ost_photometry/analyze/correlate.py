@@ -1710,6 +1710,7 @@ def correlate_preserve_variable(
         separation_limit: u.Quantity = 2. * u.arcsec, verbose: bool = False,
         duplicate_handling_object_identification: dict[str, str] | None = None,
         plot_reference_only: bool = True,
+        use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf') -> None:
     """
     Correlate results from all images, while preserving the variable
@@ -1786,6 +1787,11 @@ def correlate_preserve_variable(
     plot_reference_only
         If True only the starmap for the reference image will
         be created.
+        Default is ``True``.
+
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
         Default is ``True``.
 
     file_type_plots
@@ -1880,6 +1886,7 @@ def correlate_preserve_variable(
         x_position_object,
         y_position_object,
         plot_reference_only=plot_reference_only,
+        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )
 
@@ -1998,6 +2005,7 @@ def correlate_preserve_calibration_objects(
         plot_only_reference_starmap: bool = True,
         correlation_method: str = 'astropy',
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+        use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf') -> None:
     """
     Correlate results from all images, while preserving the calibration
@@ -2078,6 +2086,11 @@ def correlate_preserve_calibration_objects(
     separation_limit
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
+
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
 
     file_type_plots
         Type of plot file to be created
@@ -2161,6 +2174,7 @@ def correlate_preserve_calibration_objects(
         calib_x_pixel_positions,
         calib_y_pixel_positions,
         plot_reference_only=plot_only_reference_starmap,
+        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )
 
@@ -2172,7 +2186,8 @@ def correlate_with_calibration_objects(
         column_names: dict[str, str], correlation_method: str = 'astropy',
         separation_limit: u.Quantity = 2. * u.arcsec,
         max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
-        indent: int = 1, file_type_plots: str = 'pdf'
+        indent: int = 1, file_type_plots: str = 'pdf',
+        use_wcs_projection_for_star_maps: bool = True,
         ) -> tuple[Table, np.ndarray]:
     """
     Correlate observed objects with calibration stars
@@ -2220,6 +2235,11 @@ def correlate_with_calibration_objects(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
+
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
 
     Returns
     -------
@@ -2386,6 +2406,7 @@ def correlate_with_calibration_objects(
                     'rts': 'calibration',
                     # 'name_object': image_series.object_name,
                     'wcs_image': image_series.wcs,
+                    'use_wcs_projection': use_wcs_projection_for_star_maps,
                     'file_type': file_type_plots,
                 }
             )

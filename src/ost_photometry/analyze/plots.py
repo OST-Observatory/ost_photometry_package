@@ -97,13 +97,12 @@ def compare_images(
     )
     plt.close()
 
-#   TODO: Fix WCS version
 def starmap(
         output_dir: str, image: np.ndarray, filter_: str, tbl: Table,
         tbl_2: Table = None, label: str = 'Identified stars',
         label_2: str = 'Identified stars (set 2)', rts: str | None = None,
         mode: str | None = None, name_object: str | None = None,
-        wcs_image: wcs.WCS = None,
+        wcs_image: wcs.WCS = None, use_wcs_projection: bool = True,
         terminal_logger: terminal_output.TerminalLog | None = None,
         file_type: str = 'pdf', indent: int = 2) -> None:
     """
@@ -152,6 +151,11 @@ def starmap(
         WCS information
         Default is ``None``
 
+    use_wcs_projection
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
+
     terminal_logger
         Logger object. If provided, the terminal output will be directed
         to this object.
@@ -165,7 +169,6 @@ def starmap(
         Indentation for the console output lines
         Default is ``2``.
     """
-    wcs_image = None
     #   Check output directories
     checks.check_output_directories(
         output_dir,
@@ -222,12 +225,20 @@ def starmap(
     #   Set layout
     fig = plt.figure(figsize=(20, 9))
 
-    if wcs_image is not None:
-        # ax = fig.add_subplot(projection=wcs)
-        ax = plt.subplot(projection=wcs_image)
-        # ax = plt.subplot(projection=wcs)
-    else:
+    if not use_wcs_projection:
         ax = fig.add_subplot()
+    else:
+        if wcs_image is not None:
+            ax = plt.subplot(projection=wcs_image)
+        else:
+            terminal_output.print_to_terminal(
+                f"Sky projection for master plot not possible, since to WCS "
+                f"was provided. Use Pixel coordinates instead.",
+                style_name='WARNING',
+                indent=indent,
+            )
+            ax = fig.add_subplot()
+
 
     #   Limit the space for the object names in case several are given
     if isinstance(name_object, list):

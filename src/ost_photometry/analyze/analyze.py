@@ -603,6 +603,7 @@ class Observation:
             saturation_level: float = 65535.,
             plots_for_all_images: bool = False,
             plot_for_reference_image_only: bool = True,
+            use_wcs_projection_for_star_maps: bool = True,
             file_type_plots: str = 'pdf') -> None:
         """
         Extract flux and fill the observation container
@@ -758,6 +759,11 @@ class Observation:
             created
             Default is ``True``.
 
+        use_wcs_projection_for_star_maps
+            If ``True`` the starmap will be plotted with sky coordinates instead
+            of pixel coordinates
+            Default is ``True``.
+
         file_type_plots
             Type of plot file to be created
             Default is ``pdf``.
@@ -794,8 +800,7 @@ class Observation:
                     force_wcs_determination=force_wcs_determ,
                     indent=3,
                 )
-            #   TODO: Check if the exception can be more specific
-            except Exception as e:
+            except RuntimeError as e:
                 #   Get the WCS from one of the other filters, if they have one
                 for wcs_filter in filter_list:
                     reference_wcs = getattr(
@@ -849,6 +854,7 @@ class Observation:
                 plots_for_all_images=plots_for_all_images,
                 plot_for_reference_image_only=plot_for_reference_image_only,
                 file_type_plots=file_type_plots,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
             )
 
         if photometry_extraction_method == 'PSF':
@@ -908,6 +914,7 @@ class Observation:
             duplicate_handling_object_identification: dict[str, str] | None = None,
             plots_for_all_images: bool = False,
             plot_for_reference_image_only: bool = True,
+            use_wcs_projection_for_star_maps: bool = True,
             file_type_plots: str = 'pdf') -> None:
         """
         Extract flux from multiple images per filter and add results to
@@ -1108,6 +1115,11 @@ class Observation:
             If True a star map plot only for the reference image is created
             Default is ``True``.
 
+        use_wcs_projection_for_star_maps
+            If ``True`` the starmap will be plotted with sky coordinates instead
+            of pixel coordinates
+            Default is ``True``.
+
         file_type_plots
             Type of plot file to be created
             Default is ``pdf``.
@@ -1173,6 +1185,7 @@ class Observation:
                 plot_for_reference_image_only=plot_for_reference_image_only,
                 file_type_plots=file_type_plots,
                 use_initial_positions_epsf=use_initial_positions_epsf,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
             )
 
             #   Correlate results from all images within the current image
@@ -1192,6 +1205,7 @@ class Observation:
                 plot_reference_only=plot_for_reference_image_only,
                 correlation_method=correlation_method,
                 separation_limit=separation_limit,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
                 file_type_plots=file_type_plots,
             )
 
@@ -1216,7 +1230,8 @@ class Observation:
             calculate_zero_point_statistic: bool = True,
             distribution_samples: int = 1000,
             duplicate_handling_object_identification: dict[str, str] | None = None,
-            file_type_plots: str = 'pdf') -> None:
+            file_type_plots: str = 'pdf',
+            use_wcs_projection_for_star_maps: bool = True) -> None:
         """
         Correlate photometric extraction results from 2 images and calibrate
         the magnitudes.
@@ -1365,6 +1380,11 @@ class Observation:
         file_type_plots
             Type of plot file to be created
             Default is ``pdf``.
+
+        use_wcs_projection_for_star_maps
+            If ``True`` the starmap will be plotted with sky coordinates instead
+            of pixel coordinates
+            Default is ``True``.
         """
         #   Correlate the stellar positions from the different filter
         correlate.correlate_image_series(
@@ -1383,6 +1403,7 @@ class Observation:
             utilities.prepare_and_plot_starmap_from_observation(
                 self,
                 filter_list,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
                 file_type_plots=file_type_plots,
             )
 
@@ -1399,6 +1420,7 @@ class Observation:
             magnitude_range=magnitude_range,
             region_to_select_calibration_stars=region_to_select_calibration_stars,
             file_type_plots=file_type_plots,
+            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         )
         calibration_filters = self.calib_parameters.column_names
 
@@ -1439,6 +1461,7 @@ class Observation:
                 convert_magnitudes=convert_magnitudes,
                 target_filter_system=target_filter_system,
                 distribution_samples=distribution_samples,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
                 file_type_plots=file_type_plots,
             )
 
@@ -1450,6 +1473,7 @@ class Observation:
                 aperture_radius=aperture_radius,
                 radii_unit=radii_unit,
                 file_type_plots=file_type_plots,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
             )
 
     def calibrate_data_mk_light_curve(
@@ -1478,7 +1502,8 @@ class Observation:
             distribution_samples: int = 1000, plot_light_curve_all: bool = False,
             plot_light_curve_calibration_objects: bool = True,
             file_type_plots: str = 'pdf',
-            duplicate_handling_object_identification: dict[str, str] = None) -> None:
+            duplicate_handling_object_identification: dict[str, str] = None,
+            use_wcs_projection_for_star_maps: bool = True) -> None:
         """
         Calculate magnitudes, calibrate, and plot light curves
 
@@ -1625,6 +1650,11 @@ class Observation:
             The second option for both correlation method is based on the measure
             flux values. In this case the largest one is used.
             Default is ``None``.
+
+        use_wcs_projection_for_star_maps
+            If ``True`` the starmap will be plotted with sky coordinates instead
+            of pixel coordinates
+            Default is ``True``.
         """
         #   Clear lightcurve directories
         checks.check_output_directories(f'{output_dir}/lightcurve')
@@ -1664,6 +1694,7 @@ class Observation:
             correlate_with_observed_objects=correlate_with_observed_objects,
             coordinates_obj_to_rm=coordinates_objects_of_interest,
             file_type_plots=file_type_plots,
+            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         )
         calibration_filters = self.calib_parameters.column_names
         terminal_output.print_to_terminal('')
@@ -3275,6 +3306,7 @@ def extract_multiprocessing(
         identify_objects_on_image: bool = True,
         plots_for_all_images: bool = False,
         plot_for_reference_image_only: bool = True,
+        use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf'):
     """
     Extract flux and object positions using multiprocessing
@@ -3398,6 +3430,11 @@ def extract_multiprocessing(
         If True a star map plots only for the reference image is created
         Default is ``True``.
 
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
+
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
@@ -3469,6 +3506,7 @@ def extract_multiprocessing(
                 'plots_for_all_images': plots_for_all_images,
                 'plot_for_reference_image_only': plot_for_reference_image_only,
                 'file_type_plots': file_type_plots,
+                'use_wcs_projection_for_star_maps': use_wcs_projection_for_star_maps,
             }
         )
 
@@ -3523,7 +3561,8 @@ def main_extract(
         read_noise: float = 8., sigma_clipping_value: float = 4.5,
         saturation_level: float = 65535., plots_for_all_images: bool = False,
         plot_for_reference_image_only: bool = True,
-        file_type_plots: str = 'pdf'):
+        file_type_plots: str = 'pdf',
+        use_wcs_projection_for_star_maps: bool = True) -> None | tuple[int, Table]:
     """
     Main function to extract the information from the individual images
 
@@ -3675,6 +3714,11 @@ def main_extract(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
+
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
     """
     #   Initialize output class in case of multiprocessing
     if multiprocessing:
@@ -3746,8 +3790,8 @@ def main_extract(
                 label='identified stars',
                 label_2='stars used to determine the ePSF',
                 rts=f'Initial object identification [Image: {image.pd}]',
-                # name_object=image.object_name,
                 wcs_image=image.wcs,
+                use_wcs_projection=use_wcs_projection_for_star_maps,
                 terminal_logger=terminal_logger,
                 file_type=file_type_plots,
             )
@@ -3847,6 +3891,7 @@ def main_extract(
             terminal_logger=terminal_logger,
             file_type_plots=file_type_plots,
             label=f'Stars with photometric extractions ({photometry_extraction_method})',
+            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         )
 
     if multiprocessing:
@@ -3854,6 +3899,7 @@ def main_extract(
     else:
         terminal_output.print_to_terminal('')
 
+    #   TODO: Check if copy can be removed
     if multiprocessing:
         return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
 

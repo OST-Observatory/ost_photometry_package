@@ -607,14 +607,14 @@ def prepare_plot_time_series(
     if light_curve_save_format == 'dat':
         time_series.write(
             f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-            f'{file_name_suffix}',
+            f'{file_name_suffix}.dat',
             format='ascii',
             overwrite=True,
         )
     else:
         time_series.write(
             f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-            f'{file_name_suffix}',
+            f'{file_name_suffix}.csv',
             format='ascii.csv',
             overwrite=True,
         )
@@ -1091,7 +1091,9 @@ def prepare_and_plot_starmap(
         tbl: Table = None, x_name: str = 'x_fit', y_name: str = 'y_fit',
         rts_pre: str = 'image',
         label: str = 'Stars with photometric extractions',
-        add_image_id: bool = True, file_type_plots: str = 'pdf') -> None:
+        add_image_id: bool = True,
+        use_wcs_projection_for_star_maps: bool = True,
+        file_type_plots: str = 'pdf') -> None:
     """
     Creates a star map using information from an Image object
 
@@ -1128,6 +1130,11 @@ def prepare_and_plot_starmap(
         If ``True`` the image ID will be added to the file name.
         Default is ``True``.
 
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
+
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
@@ -1158,8 +1165,8 @@ def prepare_and_plot_starmap(
         tbl_xy,
         label=label,
         rts=rts_pre,
-        # name_object=name,
         wcs_image=image.wcs,
+        use_wcs_projection=use_wcs_projection_for_star_maps,
         terminal_logger=terminal_logger,
         file_type=file_type_plots,
     )
@@ -1167,6 +1174,7 @@ def prepare_and_plot_starmap(
 
 def prepare_and_plot_starmap_from_observation(
         observation: 'analyze.Observation', filter_list: list[str],
+        use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf') -> None:
     """
     Creates a star map using information from an observation container
@@ -1178,6 +1186,11 @@ def prepare_and_plot_starmap_from_observation(
 
     filter_list
         List with filter names
+
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
 
     file_type_plots
         Type of plot file to be created
@@ -1209,6 +1222,7 @@ def prepare_and_plot_starmap_from_observation(
                          f'{filter_list[1]} filter',
                 # 'name_object': image.object_name,
                 'wcs_image': image.wcs,
+                'use_wcs_projection': use_wcs_projection_for_star_maps,
                 'file_type': file_type_plots,
             }
         )
@@ -1220,6 +1234,7 @@ def prepare_and_plot_starmap_from_image_series(
         image_series: 'analyze.ImageSeries',
         calib_xs: np.ndarray | list[float], calib_ys: np.ndarray | list[float],
         plot_reference_only: bool = True,
+        use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf') -> None:
     """
     Creates a star map using information from an image series
@@ -1240,6 +1255,11 @@ def prepare_and_plot_starmap_from_image_series(
     plot_reference_only
         If True only the starmap for the reference image will
         be created.
+        Default is ``True``.
+
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
         Default is ``True``.
 
     file_type_plots
@@ -1278,8 +1298,8 @@ def prepare_and_plot_starmap_from_image_series(
                 'label': 'Stars identified in all images',
                 # 'label_2': 'Calibration stars',
                 'label_2': 'Objects of interest',
-                # 'name_object': image_series.object_name,
                 'wcs_image': image_series.wcs,
+                'use_wcs_projection': use_wcs_projection_for_star_maps,
                 'file_type': file_type_plots,
             }
         )
@@ -1291,6 +1311,7 @@ def derive_limiting_magnitude(
         observation: 'analyze.Observation', filter_list: list[str],
         reference_image_id: int, aperture_radius: float = 4.,
         radii_unit: str = 'arcsec', file_type_plots: str = 'pdf',
+        use_wcs_projection_for_star_maps: bool = True,
         indent: int = 1) -> None:
     """
     Determine limiting magnitude
@@ -1318,6 +1339,11 @@ def derive_limiting_magnitude(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
+
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
 
     indent
         Indentation for the console output lines
@@ -1367,6 +1393,7 @@ def derive_limiting_magnitude(
                 'mode': 'mags',
                 # 'name_object': image.object_name,
                 'wcs_image': image.wcs,
+                'use_wcs_projection': use_wcs_projection_for_star_maps,
                 'file_type': file_type_plots,
             }
         )
@@ -1503,6 +1530,7 @@ def proper_motion_selection(
         catalog: str = "I/355/gaiadr3", g_mag_limit: int = 20,
         separation_limit: float = 1., sigma: float = 3.,
         max_n_iterations_sigma_clipping: int = 3,
+        use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf') -> Column:
     """
     Select a subset of objects based on their proper motion
@@ -1536,6 +1564,11 @@ def proper_motion_selection(
     max_n_iterations_sigma_clipping
         Maximal number of iteration of the sigma clipping.
         Default is ``3``.
+
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
 
     file_type_plots
         Type of plot file to be created
@@ -1666,6 +1699,7 @@ def proper_motion_selection(
         tbl=Table(names=['x_fit', 'y_fit'], data=[x_obj, y_obj]),
         rts_pre='proper motion [Gaia]',
         label='Objects selected based on proper motion',
+        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )
 
@@ -1697,8 +1731,9 @@ def proper_motion_selection(
 def region_selection(
         image_series: 'analyze.ImageSeries',
         coordinates_target: SkyCoord | list[SkyCoord], tbl: Table,
-        radius: float = 600., file_type_plots: str = 'pdf'
-        ) -> tuple[Table, np.ndarray]:
+        radius: float = 600., file_type_plots: str = 'pdf',
+        use_wcs_projection_for_star_maps: bool = True,
+    ) -> tuple[Table, np.ndarray]:
     """
     Select a subset of objects based on a target coordinate and a radius
 
@@ -1721,6 +1756,11 @@ def region_selection(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
+
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
 
     Returns
     -------
@@ -1768,6 +1808,7 @@ def region_selection(
         tbl=Table(names=['x_fit', 'y_fit'], data=[tbl['x'], tbl['y']]),
         rts_pre='radius selection, image',
         label=f"Objects selected within {radius}'' of the target",
+        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )
 
@@ -1778,8 +1819,9 @@ def find_cluster(
         image_series: 'analyze.ImageSeries', tbl: Table, object_names: list[str],
         catalog: str = "I/355/gaiadr3", g_mag_limit: float = 20.,
         separation_limit: float = 1., max_distance: float = 6.,
-        parameter_set: int = 1, file_type_plots: str = 'pdf'
-        ) -> tuple[Table, int, np.ndarray, np.ndarray]:
+        parameter_set: int = 1, file_type_plots: str = 'pdf',
+        use_wcs_projection_for_star_maps: bool = True,
+    ) -> tuple[Table, int, np.ndarray, np.ndarray]:
     """
     Identify cluster in data
 
@@ -1820,6 +1862,11 @@ def find_cluster(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
+
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
 
     Returns
     -------
@@ -2083,6 +2130,7 @@ def find_cluster(
         rts_pre='selected cluster members',
         label='Cluster members based on proper motion and distance evaluation',
         add_image_id=False,
+        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )
 
@@ -2175,6 +2223,7 @@ def post_process_results(
         max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
         convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
         input_table: Table | None = None, distribution_samples: int = 1000,
+        use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf') -> None:
     """
     Restrict results to specific areas of the image and filter by means
@@ -2244,6 +2293,11 @@ def post_process_results(
         Number of samples used for distributions
         Default is `1000`.
 
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
+
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
@@ -2282,6 +2336,7 @@ def post_process_results(
                 tbl,
                 radius=region_radius,
                 file_type_plots=file_type_plots,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
             )
         else:
             tbl = tbl[mask_region]
@@ -2296,6 +2351,7 @@ def post_process_results(
                 max_distance=max_distance_cluster,
                 parameter_set=find_cluster_para_set,
                 file_type_plots=file_type_plots,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
             )
         else:
             tbl = tbl[img_id_cluster][mask_cluster][mask_objects]
@@ -2307,6 +2363,7 @@ def post_process_results(
             tbl, img_id_pm, mask_pm = proper_motion_selection(
                 image_series_dict[filter_list[0]],
                 tbl,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
                 file_type_plots=file_type_plots,
             )
         else:

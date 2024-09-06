@@ -1749,6 +1749,7 @@ def calculate_trans(
         region_to_select_calibration_stars: RectanglePixelRegion | None = None,
         distribution_samples: int = 1000,
         duplicate_handling_object_identification: dict[str, str] | None = None,
+        use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf'
         ) -> None:
     """
@@ -1821,6 +1822,11 @@ def calculate_trans(
         flux values. In this case the largest one is used.
         Default is ``None``.
 
+    use_wcs_projection_for_star_maps
+        If ``True`` the starmap will be plotted with sky coordinates instead
+        of pixel coordinates
+        Default is ``True``.
+
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
@@ -1846,6 +1852,7 @@ def calculate_trans(
     utilities.prepare_and_plot_starmap_from_observation(
         observation,
         filter_list,
+        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots
     )
 
@@ -1861,6 +1868,7 @@ def calculate_trans(
         magnitude_range=magnitude_range,
         region_to_select_calibration_stars=region_to_select_calibration_stars,
         file_type_plots=file_type_plots,
+        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
     )
     terminal_output.print_to_terminal('')
 
