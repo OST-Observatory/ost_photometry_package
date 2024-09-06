@@ -3901,7 +3901,8 @@ def main_extract(
 
     #   TODO: Check if copy can be removed
     if multiprocessing:
-        return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
+        # return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
+        return image.pd, image.photometry
 
 
 def subtract_archive_img_from_img(
