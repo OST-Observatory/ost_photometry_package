@@ -43,8 +43,7 @@ def reduce_main(
         sigma_clipping_value_rm_cosmic_rays: float = 4.0,
         scale_image_with_exposure_time: bool = True,
         reference_image_id: int = 0, enforce_bias: bool = False,
-        verbose: bool = False, add_hot_bad_pixel_mask: bool = True,
-        shift_method: str = 'skimage',
+        add_hot_bad_pixel_mask: bool = True, shift_method: str = 'skimage',
         n_cores_multiprocessing: int | None = None, stack_images: bool = True,
         estimate_fwhm: bool = False, shift_all: bool = False,
         exposure_time_tolerance: float = 0.5, stack_method: str = 'average',
@@ -125,11 +124,6 @@ def reduce_main(
     enforce_bias
         If True the usage of bias frames during the reduction is
         enforced if possible.
-        Default is ``False``.
-
-    # TODO: Combine with debug option
-    verbose
-        If True additional output will be printed to the command line.
         Default is ``False``.
 
     add_hot_bad_pixel_mask
@@ -421,7 +415,6 @@ def reduce_main(
             read_noise=read_noise,
             dark_rate=dark_rate,
             plot_plots=plot_dark_statistic_plots,
-            verbose=verbose,
             debug=debug,
         )
 
@@ -448,7 +441,7 @@ def reduce_main(
             output_path,
             image_type_dir,
             plot_plots=plot_flat_statistic_plots,
-            verbose=verbose,
+            debug=debug,
         )
 
     ###
@@ -468,7 +461,7 @@ def reduce_main(
         sigma_clipping_value_rm_cosmic_rays=sigma_clipping_value_rm_cosmic_rays,
         saturation_level=saturation_level,
         rm_bias=rm_bias,
-        verbose=verbose,
+        verbose=debug,
         add_hot_bad_pixel_mask=add_hot_bad_pixel_mask,
         exposure_time_tolerance=exposure_time_tolerance,
         target_name=target_name,
@@ -495,7 +488,6 @@ def reduce_main(
             filter_window=filter_window_image_shifts,
             threshold=threshold_image_shifts,
             instrument=instrument,
-            verbose=verbose,
             debug=debug,
         )
     else:
@@ -510,7 +502,6 @@ def reduce_main(
             filter_window=filter_window_image_shifts,
             threshold=threshold_image_shifts,
             instrument=instrument,
-            verbose=verbose,
             debug=debug,
         )
 
@@ -609,7 +600,7 @@ def reduce_main(
                     rm_outliers=rm_outliers_image_shifts,
                     filter_window=filter_window_image_shifts,
                     threshold=threshold_image_shifts,
-                    verbose=verbose,
+                    verbose=debug,
                 )
 
             else:
@@ -817,7 +808,7 @@ def master_dark(
         image_type: dict[str, list[str]], gain: float | None = None,
         read_noise: float = 8., dark_rate: float | None = None,
         mk_hot_pixel_mask: bool = True, plot_plots: bool = False,
-        verbose: bool = False, debug: bool = False, **kwargs) -> None:
+        debug: bool = False, **kwargs) -> None:
     """
     This function calculates master darks from individual dark images
     located in one directory. The dark images are group according to
@@ -857,10 +848,6 @@ def master_dark(
         created.
         Default is ``False``.
 
-    verbose
-        If True additional output will be printed to the command line.
-        Default is ``False``.
-
     debug
         If `True` the intermediate files of the data reduction will not
         be removed.
@@ -883,7 +870,7 @@ def master_dark(
     #   Create image collection
     try:
         image_file_collection = ccdp.ImageFileCollection(out_path / 'dark')
-    except ValueError:
+    except FileNotFoundError:
         image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Return if image collection is empty
@@ -992,7 +979,7 @@ def master_dark(
                 combined_dark,
                 gain,
                 out_path,
-                verbose=verbose,
+                verbose=debug,
             )
 
     #   Remove reduced dark files if they exist
@@ -1158,8 +1145,7 @@ def reduce_flat(
 def master_flat(
         image_path: str | Path, output_dir: str | Path,
         image_type: dict[str, list[str]], mk_bad_pixel_mask: bool = True,
-        plot_plots: bool = False, verbose: bool = False,
-        debug: bool = False, **kwargs) -> None:
+        plot_plots: bool = False, debug: bool = False, **kwargs) -> None:
     """
     This function calculates master flats from individual flat field
     images located in one directory. The flat field images are group
@@ -1184,10 +1170,6 @@ def master_flat(
     plot_plots
         If True some plots showing some statistic on the flat fields are
         created.
-        Default is ``False``.
-
-    verbose
-        If True additional output will be printed to the command line.
         Default is ``False``.
 
     debug
@@ -1266,7 +1248,7 @@ def master_flat(
         utilities.make_bad_pixel_mask(
             bad_pixel_mask_list,
             out_path,
-            verbose=verbose,
+            verbose=debug,
         )
 
     #   Remove reduced dark files if they exist
@@ -1616,9 +1598,9 @@ def reduce_light(
 
             #   Put metadata back on the image, because it is lost while
             #   dividing
-            #   TODO: Set exposure time to 1 in header?
             reduced.meta = reduced_meta
             reduced.meta['HIERARCH'] = 'Image scaled by exposure time:'
+            reduced.meta['HIERARCH'] = 'Unit: e-/s/pixel'
 
             #   Set data units to electron / s
             reduced.unit = u.electron / u.s
@@ -1934,8 +1916,7 @@ def shift_image_core(
                     instrument=instrument,
                     verbose=verbose,
                 )
-                # TODO: Check if RuntimeError is applicable.
-            except RuntimeError as e:
+            except (RuntimeError, ValueError, TypeError) as e:
                 terminal_output.print_to_terminal(
                     f"WARNING: Failed to calculate image offset for image"
                     f" {file_name} with ERROR code: \n\n {e} \n Skip file.",
@@ -1950,7 +1931,7 @@ def shift_image(
         n_cores_multiprocessing: int | None = None,
         rm_outliers: bool = True, filter_window: int = 8,
         threshold: int | float = 10., instrument: str | None = None,
-        verbose: bool = False, debug: bool = False) -> None:
+        debug: bool = False) -> None:
     """
     Calculate shift between images taken in the same filter
     and trim those to the save field of view
@@ -2004,10 +1985,6 @@ def shift_image(
         The instrument used
         Default is ``None``.
 
-    verbose
-        If True additional output will be printed to the console
-        Default is ``False``.
-
     debug
         If `True` the intermediate files of the data reduction will not
         be removed.
@@ -2058,7 +2035,7 @@ def shift_image(
             filter_window=filter_window,
             instrument=instrument,
             threshold=threshold,
-            verbose=verbose,
+            verbose=debug,
         )
 
     #   Remove reduced dark files if they exist
@@ -2073,7 +2050,7 @@ def shift_all_images(
         n_cores_multiprocessing: int | None = None,
         rm_outliers: bool = True, filter_window: int = 8,
         threshold: int | float = 10., instrument: str | None = None,
-        verbose: bool = False, debug: bool = False) -> None:
+        debug: bool = False) -> None:
     """
     Calculate shift between images and trim those to the save field of
     view
@@ -2127,10 +2104,6 @@ def shift_all_images(
         The instrument used
         Default is ``None``.
 
-    verbose
-        If True additional output will be printed to the console
-        Default is ``False``.
-
     debug
         If `True` the intermediate files of the data reduction will not
         be removed.
@@ -2175,7 +2148,7 @@ def shift_all_images(
         filter_window=filter_window,
         instrument=instrument,
         threshold=threshold,
-        verbose=verbose,
+        verbose=debug,
     )
 
     #   Remove reduced files if they exist

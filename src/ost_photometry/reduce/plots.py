@@ -154,7 +154,6 @@ def plot_dark_with_distributions(
         x_axis_poisson = np.arange(0, 300, 1)
 
         #   Prepare normalization
-        #   TODO: Check if this is correct
         new_area = np.sum(
             1 / n_images * poisson_distribution.pmf(x_axis_poisson)
         )
@@ -169,7 +168,6 @@ def plot_dark_with_distributions(
     #   Plot Gaussian
     if show_gaussian_distribution:
         #   The expected width of the Gaussian depends on the number of images
-        #   TODO: Check if this is correct
         expected_scale = read_noise / gain * np.sqrt(n_images)
 
         #   Mean value is same as for the Poisson distribution (account for

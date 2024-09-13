@@ -14,7 +14,7 @@ from astropy.stats import sigma_clip
 from astropy.io import fits
 from astropy.coordinates import SkyCoord, matching
 from astropy.timeseries import TimeSeries
-from astropy.modeling import models, fitting
+from astropy.modeling import models, fitting, polynomial
 from astropy import uncertainty as unc
 import astropy.units as u
 from astropy import wcs
@@ -713,7 +713,8 @@ def fit_curve(
     return a, a_err, b, b_err
 
 
-def fit_data_one_d(x: np.ndarray, y: np.ndarray, order: int):
+def fit_data_one_d(
+        x: np.ndarray, y: np.ndarray, order: int) -> polynomial.Polynomial1D:
     """
     Fit polynomial to the provided data.
 
@@ -749,7 +750,6 @@ def fit_data_one_d(x: np.ndarray, y: np.ndarray, order: int):
             y,
         )
 
-    #   TODO: Check type of 'fit_poly'
     return fit_poly
 
 
@@ -958,7 +958,6 @@ class Executor:
         Class that handles the multiprocessing, using apply_async.
         -> allows for easy catch of exceptions
     """
-    #   TODO: Fix error propagation
 
     def __init__(self, process_num: int | None, **kwargs):
         mp.set_start_method('spawn', force=True)
@@ -1220,7 +1219,6 @@ def prepare_and_plot_starmap_from_observation(
                 'rts': rts,
                 'label': f'Stars identified in {filter_list[0]} and '
                          f'{filter_list[1]} filter',
-                # 'name_object': image.object_name,
                 'wcs_image': image.wcs,
                 'use_wcs_projection': use_wcs_projection_for_star_maps,
                 'file_type': file_type_plots,

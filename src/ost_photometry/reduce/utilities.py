@@ -314,8 +314,11 @@ def get_instrument_info(
     #   Readout mode: Fix for QHY models:
     if instrument in ['QHY600M', 'QHY268M']:
         if not readout_modes:
+            #   Guess that the readout mode is 'Extend Fullwell 2CMS' if none
+            #   was specified in the Header
             readout_mode = 'Extend Fullwell 2CMS'
         elif len(readout_modes) == 1:
+            #   Use the first detected readout mode if multiple are specified
             readout_mode = list(readout_modes)[0]
 
             #   This is a dirty fix for the inadequacy of Maxim-DL to write
@@ -323,11 +326,16 @@ def get_instrument_info(
             if readout_mode in ['Fast', 'Slow', 'Normal']:
                 readout_mode = 'Extend Fullwell 2CMS'
 
-            #   Kstars treats the readout mode by numbers. Assuming 0 is
-            #   'Extend Fullwell 2CMS' which is probably wrong.
-            #   TODO: Check this!
+            #   Kstars treats the readout mode by numbers.
             if readout_mode == 0:
+                readout_mode = 'PhotoGraphic DSO'
+            elif readout_mode == 1:
+                readout_mode = 'High Gain Mode'
+            elif readout_mode == 2:
+                readout_mode = 'Extend Fullwell'
+            elif readout_mode == 3:
                 readout_mode = 'Extend Fullwell 2CMS'
+
         elif ignore_readout_mode_mismatch:
             terminal_output.print_to_terminal(
                 "WARNING: Multiple readout modes detected. "
@@ -775,7 +783,7 @@ def check_filter_keywords(
         ) -> Path | str | None:
     """
     Consistency check - Check if the image type of the images in 'path'
-                        fit to one supplied with 'image_type'.
+                        fit to the one supplied with 'image_type'.
     Parameters
     ----------
     path
@@ -827,16 +835,15 @@ def check_filter_keywords(
     #   Find all images that have the correct image type
     image_with_correct_image_type = []
     for type_img in image_type:
-        image_with_correct_image_type.append(
-            list(image_file_collection.files_filtered(imagetyp=type_img))
+        image_with_correct_image_type += list(
+            image_file_collection.files_filtered(imagetyp=type_img)
         )
 
     #   Find those images with a wrong image type
     #   -> Compare image file collection with 'image_with_correct_image_type'
     list_1 = list(image_file_collection.files)
     list_2 = image_with_correct_image_type
-    # TODO: Check if there is a bug here when image_with_correct_image_type is a list of lists
-    result = [x for x in list_1 + list_2 if x not in list_1 or x not in list_2]
+    result = [x for x in list_1 if x not in list_2]
 
     if result:
         sanitize_image_types(file_path, temp_dir, image_type)
@@ -1700,8 +1707,9 @@ def trim_image(
     """
     if verbose:
         #   Write status to console
-        #   TODO: Move to terminal output
-        print(f"\r\tApply shift to image {image_id + 1}/{n_files}\n")
+        terminal_output.print_to_terminal(
+            f"\r\tApply shift to image {image_id + 1}/{n_files}\n",
+        )
 
     if correlation_method in ['own', 'skimage']:
         #   Ensure full pixel shifts

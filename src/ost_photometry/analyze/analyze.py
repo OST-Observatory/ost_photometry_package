@@ -479,7 +479,6 @@ class Observation:
         return epsf_dict
 
     #   Get reference image
-    #   TODO: Check - This should not be need anymore - Remove if possible
     def get_reference_image(self) -> dict[str, np.ndarray]:
         img_dict: dict[str, np.ndarray] = {}
         for key, image_series in self.image_series_dict.items():
@@ -3899,7 +3898,6 @@ def main_extract(
     else:
         terminal_output.print_to_terminal('')
 
-    #   TODO: Check if copy can be removed
     if multiprocessing:
         # return copy.deepcopy(image.pd), copy.deepcopy(image.photometry)
         return image.pd, image.photometry

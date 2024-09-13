@@ -2393,8 +2393,6 @@ def correlate_with_calibration_objects(
                 target=plots.starmap,
                 args=(
                     image_series.out_path.name,
-                    #   TODO: Replace with reference image
-                    # image_series.image_list[0].get_data(),
                     image_series.image_list[image_series.reference_image_id].get_data(),
                     filter_,
                     calibration_tbl,
