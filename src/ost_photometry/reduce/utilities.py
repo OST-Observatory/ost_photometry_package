@@ -924,7 +924,7 @@ def get_pixel_mask(
             )
             #   Raise RuntimeError to trigger except.
             raise RuntimeError('')
-    except RuntimeError:
+    except (FileNotFoundError, RuntimeError):
         #   If no precalculated mask are available, try to load masks
         #   calculated by 'master_dark' and 'master_flat'
 
@@ -953,7 +953,8 @@ def get_pixel_mask(
                     mask_bad_pixel = mask_data.astype('bool')
 
             #   Combine mask
-            mask = mask_hot_pixel | mask_bad_pixel
+            # mask = mask_hot_pixel | mask_bad_pixel
+            mask = np.logical_or(mask_hot_pixel, mask_bad_pixel)
             success = True
         except ValueError:
             terminal_output.print_to_terminal(
@@ -1071,9 +1072,7 @@ def make_bad_pixel_mask(
         combined_mask = np.zeros(shape)
         for bad_pixel_mask in bad_pixel_mask_list:
             if bad_pixel_mask.shape == shape:
-                #   TODO: Check which makes more sense: & or |
-                #         20240904: set to |
-                combined_mask = combined_mask | bad_pixel_mask
+                combined_mask = np.logical_or(combined_mask, bad_pixel_mask)
 
         if verbose:
             terminal_output.print_to_terminal(
@@ -1271,7 +1270,6 @@ def calculate_image_shifts_core(
     #   Get reference image, reference mask, and corresponding file name
     reference_data = reference_ccd_object.data
     reference_mask = np.invert(reference_ccd_object.mask)
-    reference_pier = reference_ccd_object.meta.get('PIERSIDE', 'EAST')
 
     #   Image and mask to compare with
     current_ccd = image_ccd_object
@@ -1279,6 +1277,7 @@ def calculate_image_shifts_core(
     current_mask = np.invert(image_ccd_object.mask)
 
     #   Image pier side
+    reference_pier = reference_ccd_object.meta.get('PIERSIDE', 'EAST')
     current_pier = image_ccd_object.meta.get('PIERSIDE', 'EAST')
 
     #   Flip if pier side changed
@@ -1445,13 +1444,6 @@ def calculate_image_shifts(
     #   Calculate image shifts
     for i, (current_ccd_object, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
         if i != id_reference_image:
-            _, image_shift[:, i], flip_necessary[i] = calculate_image_shifts_core(
-                current_ccd_object,
-                reference_ccd_object,
-                i,
-                file_name,
-                correlation_method=correlation_method,
-            )
             executor.schedule(
                 calculate_image_shifts_core,
                 args=(

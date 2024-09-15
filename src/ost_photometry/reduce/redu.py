@@ -1405,18 +1405,19 @@ def reduce_light(
         image_type,
         image_class='dark',
     )
-    combined_darks = {
+    combined_darks: dict[str, CCDData] = {
         ccd.header['exptime']: ccd for ccd in image_file_collection_reduced.ccds(
             imagetyp=dark_image_type,
             combined=True,
         )
     }
+    print(combined_darks.keys())
     flat_image_type = utilities.get_image_type(
         image_file_collection_reduced,
         image_type,
         image_class='flat',
     )
-    combined_flats = {
+    combined_flats: dict[str, CCDData] = {
         ccd.header['filter']: ccd for ccd in image_file_collection_reduced.ccds(
             imagetyp=flat_image_type,
             combined=True,
@@ -1424,7 +1425,7 @@ def reduce_light(
     }
 
     #   Get master bias
-    combined_bias = None
+    combined_bias: CCDData | None = None
     if rm_bias:
         bias_image_type = utilities.get_image_type(
             image_file_collection_reduced,
@@ -1448,7 +1449,7 @@ def reduce_light(
     if not dir_empty:
         user_input, timed_out = timedInput(
             f"{style.Bcolors.OKBLUE}   Reduced images from a previous run "
-            f"found. Should these be used? {style.Bcolors.ENDC}",
+            f"found. Should these be used? [yes/no]{style.Bcolors.ENDC}",
             timeout=30,
         )
         if timed_out:
@@ -1469,144 +1470,399 @@ def reduce_light(
             imagetyp=light_image_type,
             return_fname=True,
             ccd_kwargs=dict(unit='adu'),
-    ):
-        #   Set gain _> get it from Header if not provided
-        if gain is None:
-            try:
-                gain = light.header['EGAIN']
-            except KeyError:
-                gain = 1.
-                terminal_output.print_to_terminal(
-                    "WARNING: Gain could not de derived from the "
-                    "image header. Use 1.0 instead",
-                    style_name='WARNING',
-                    indent=2,
-                )
-
-        #   Calculated uncertainty
-        light = ccdp.create_deviation(
+        ):
+        reduce_light_image(
             light,
-            gain=gain * u.electron / u.adu,
-            readnoise=read_noise * u.electron,
-            disregard_nan=True,
+            combined_bias,
+            combined_darks,
+            combined_flats,
+            file_name,
+            out_path,
+            light_path,
+            gain= gain,
+            read_noise=read_noise,
+            rm_bias=rm_bias,
+            exposure_time_tolerance=exposure_time_tolerance,
+            add_hot_bad_pixel_mask=add_hot_bad_pixel_mask,
+            rm_cosmic_rays=rm_cosmic_rays,
+            limiting_contrast_rm_cosmic_rays=limiting_contrast_rm_cosmic_rays,
+            sigma_clipping_value_rm_cosmic_rays=sigma_clipping_value_rm_cosmic_rays,
+            saturation_level=saturation_level,
+            mask_cosmics=mask_cosmics,
+            scale_image_with_exposure_time=scale_image_with_exposure_time,
+            verbose=verbose,
         )
+        #   TODO: Use multiprocessing
+        # #   Set gain -> get it from Header if not provided
+        # if gain is None:
+        #     try:
+        #         gain = light.header['EGAIN']
+        #     except KeyError:
+        #         gain = 1.
+        #         terminal_output.print_to_terminal(
+        #             "WARNING: Gain could not de derived from the "
+        #             "image header. Use 1.0 instead",
+        #             style_name='WARNING',
+        #             indent=2,
+        #         )
+        #
+        # #   Calculated uncertainty
+        # light = ccdp.create_deviation(
+        #     light,
+        #     gain=gain * u.electron / u.adu,
+        #     readnoise=read_noise * u.electron,
+        #     disregard_nan=True,
+        # )
+        #
+        # #   Subtract bias
+        # if rm_bias:
+        #     light = ccdp.subtract_bias(light, combined_bias)
+        #
+        # #   Find the correct dark exposure
+        # valid_dark_available, closest_dark_exposure_time = utilities.find_nearest_exposure_time_to_reference_image(
+        #     light,
+        #     list(combined_darks.keys()),
+        #     time_tolerance=exposure_time_tolerance,
+        # )
+        #
+        # #   Exit if no dark with a similar exposure time have been found
+        # if not valid_dark_available and not rm_bias:
+        #     raise RuntimeError(
+        #         f"{style.Bcolors.FAIL}Closest dark exposure time is "
+        #         f"{closest_dark_exposure_time} for science image of exposure "
+        #         f"time {light.header['exptime']}. {style.Bcolors.ENDC}"
+        #     )
+        #
+        # #   Subtract dark
+        # reduced = ccdp.subtract_dark(
+        #     light,
+        #     combined_darks[closest_dark_exposure_time],
+        #     exposure_time='exptime',
+        #     exposure_unit=u.second,
+        #     scale=rm_bias,
+        # )
+        #
+        # #   Mask negative pixel
+        # mask = reduced.data < 0.
+        # reduced.mask = reduced.mask | mask
+        #
+        # #   Check if the "FILTER" keyword is set in Header
+        # #   TODO: Added ability to skip if filter not found. Add warning about which file will be skipped.
+        # #   TODO: Check if this works...
+        # if 'filter' not in reduced.header:
+        #     terminal_output.print_to_terminal(
+        #         f"WARNING: FILTER keyword not found in HEADER. \n Skip file: {file_name}.",
+        #         style_name='WARNING',
+        #         indent=2,
+        #     )
+        #     continue
+        #
+        # #   Get master flat field
+        # flat_master = combined_flats[reduced.header['filter']]
+        #
+        # #   Divided science by the master flat
+        # reduced = ccdp.flat_correct(reduced, flat_master)
+        #
+        # if add_hot_bad_pixel_mask:
+        #     #   Get mask of bad and hot pixel
+        #     mask_available, bad_hot_pixel_mask = utilities.get_pixel_mask(
+        #         out_path,
+        #         reduced.shape,
+        #     )
+        #
+        #     #   Add bad pixel mask: If there was already a mask, keep it
+        #     if mask_available:
+        #         if reduced.mask is not None:
+        #             reduced.mask = reduced.mask | bad_hot_pixel_mask
+        #         else:
+        #             reduced.mask = bad_hot_pixel_mask
+        #
+        # #   Gain correct data
+        # reduced = ccdp.gain_correct(reduced, gain * u.electron / u.adu)
+        #
+        # #   Remove cosmic rays
+        # if rm_cosmic_rays:
+        #     if verbose:
+        #         print(f'Remove cosmic rays from image {file_name}')
+        #     reduced_without_cosmics = ccdp.cosmicray_lacosmic(
+        #         reduced,
+        #         objlim=limiting_contrast_rm_cosmic_rays,
+        #         readnoise=read_noise,
+        #         sigclip=sigma_clipping_value_rm_cosmic_rays,
+        #         satlevel=saturation_level,
+        #         verbose=verbose,
+        #     )
+        #
+        #     if mask_cosmics:
+        #         if add_hot_bad_pixel_mask:
+        #             reduced.mask = reduced.mask | reduced_without_cosmics.mask
+        #
+        #             #   Add Header keyword to mark the file as combined
+        #             reduced.meta['cosmic_mas'] = True
+        #     else:
+        #         reduced = reduced_without_cosmics
+        #         if not add_hot_bad_pixel_mask:
+        #             reduced.mask = np.zeros(reduced.shape, dtype=bool)
+        #
+        #         #   Add Header keyword to mark the file as combined
+        #         reduced.meta['cosmics_rm'] = True
+        #
+        #     if verbose:
+        #         terminal_output.print_to_terminal('')
+        #
+        # #   Scale image with exposure time
+        # if scale_image_with_exposure_time:
+        #     #   Get exposure time and all meta data
+        #     exposure_time = reduced.header['exptime']
+        #     reduced_meta = reduced.meta
+        #
+        #     #   Scale image
+        #     reduced = reduced.divide(exposure_time * u.second)
+        #
+        #     #   Put metadata back on the image, because it is lost while
+        #     #   dividing
+        #     reduced.meta = reduced_meta
+        #     reduced.meta['HIERARCH'] = 'Image scaled by exposure time:'
+        #     reduced.meta['HIERARCH'] = 'Unit: e-/s/pixel'
+        #
+        #     #   Set data units to electron / s
+        #     reduced.unit = u.electron / u.s
+        #
+        # #   Write reduced science image to disk
+        # reduced.write(light_path / file_name, overwrite=True)
 
-        #   Subtract bias
-        if rm_bias:
-            light = ccdp.subtract_bias(light, combined_bias)
 
-        #   Find the correct dark exposure
-        valid_dark_available, closest_dark_exposure_time = utilities.find_nearest_exposure_time_to_reference_image(
-            light,
-            list(combined_darks.keys()),
-            time_tolerance=exposure_time_tolerance,
-        )
+def reduce_light_image(
+        light: CCDData, combined_bias: CCDData | None,
+        combined_darks: dict[str, CCDData], combined_flats: dict[str, CCDData],
+        file_name: str, out_path: Path, light_path: Path,
+        gain: float | None = None, read_noise: float = 8.,
+        rm_bias: bool = False, exposure_time_tolerance: float = 0.5,
+        add_hot_bad_pixel_mask: bool = True, rm_cosmic_rays: bool = True,
+        limiting_contrast_rm_cosmic_rays: float = 5.,
+        sigma_clipping_value_rm_cosmic_rays: float = 4.5,
+        saturation_level: float = 65535., mask_cosmics: bool = False,
+        scale_image_with_exposure_time: bool = True, verbose: bool = False
+    ) -> None:
+    """
+    Reduce an individual image
 
-        #   Exit if no dark with a similar exposure time have been found
-        if not valid_dark_available and not rm_bias:
-            raise RuntimeError(
-                f"{style.Bcolors.FAIL}Closest dark exposure time is "
-                f"{closest_dark_exposure_time} for science image of exposure "
-                f"time {light.header['exptime']}. {style.Bcolors.ENDC}"
-            )
+    Parameters
+    ----------
+    light
+        The CCDData object that should be reduced.
 
-        #   Subtract dark
-        reduced = ccdp.subtract_dark(
-            light,
-            combined_darks[closest_dark_exposure_time],
-            exposure_time='exptime',
-            exposure_unit=u.second,
-            scale=rm_bias,
-        )
+    combined_bias
+        Reduced and stacked Bias CCDData object
 
-        #   Mask negative pixel
-        mask = reduced.data < 0.
-        reduced.mask = reduced.mask | mask
+    combined_darks
+        Combined darks in a dictionary with exposure times as keys and
+        CCDData object as values.
 
-        #   Check if the "FILTER" keyword is set in Header
-        #   TODO: Added ability to skip if filter not found. Add warning about which file will be skipped.
-        #   TODO: Check if this works...
-        if 'filter' not in reduced.header:
+    combined_flats
+        Combined flats in a dictionary with exposure times as keys and
+        CCDData object as values.
+
+    file_name
+        Name of the image file
+
+    out_path
+        Path to the general output directory
+
+    light_path
+        Path where the reduced images should be saved
+
+    gain
+        The gain (e-/adu) of the camera chip. If set to `None` the gain
+        will be extracted from the FITS header.
+        Default is ``None``.
+
+    read_noise
+        The read noise (e-) of the camera chip.
+        Default is ``8`` e-.
+
+    rm_bias
+        If True the master bias image will be subtracted from the flats
+        Default is ``False``.
+
+    exposure_time_tolerance
+        Tolerance between science and dark exposure times in s.
+        Default is ``0.5``s.
+
+    add_hot_bad_pixel_mask
+        If True add hot and bad pixel mask to the reduced science
+        images.
+        Default is ``True``.
+
+    rm_cosmic_rays
+        If True cosmic rays will be removed.
+        Default is ``True``.
+
+    limiting_contrast_rm_cosmic_rays
+        Parameter for the cosmic ray removal: Minimum contrast between
+        Laplacian image and the fine structure image.
+        Default is ``5``.
+
+    sigma_clipping_value_rm_cosmic_rays
+        Parameter for the cosmic ray removal: Fractional detection limit
+        for neighboring pixels.
+        Default is ``4.5``.
+
+    saturation_level
+        Saturation limit of the camera chip.
+        Default is ``65535``.
+
+    mask_cosmics
+        If True cosmics will ''only'' be masked. If False the
+        cosmics will be removed from the input image and the mask will
+        be added.
+        Default is ``False``.
+
+    scale_image_with_exposure_time
+        If True the image will be scaled with the exposure time.
+        Default is ``True``.
+
+    verbose
+        If True additional output will be printed to the command line.
+        Default is ``False``.
+    """
+#   Set gain -> get it from Header if not provided
+    if gain is None:
+        try:
+            gain = light.header['EGAIN']
+        except KeyError:
+            gain = 1.
             terminal_output.print_to_terminal(
-                f"WARNING: FILTER keyword not found in HEADER. \n Skip file: {file_name}.",
+                "WARNING: Gain could not de derived from the "
+                "image header. Use 1.0 instead",
                 style_name='WARNING',
                 indent=2,
             )
-            continue
 
-        #   Get master flat field
-        flat_master = combined_flats[reduced.header['filter']]
+    #   Calculated uncertainty
+    light = ccdp.create_deviation(
+        light,
+        gain=gain * u.electron / u.adu,
+        readnoise=read_noise * u.electron,
+        disregard_nan=True,
+    )
 
-        #   Divided science by the master flat
-        reduced = ccdp.flat_correct(reduced, flat_master)
+    #   Subtract bias
+    if rm_bias:
+        light = ccdp.subtract_bias(light, combined_bias)
 
-        if add_hot_bad_pixel_mask:
-            #   Get mask of bad and hot pixel
-            mask_available, bad_hot_pixel_mask = utilities.get_pixel_mask(
-                out_path,
-                reduced.shape,
-            )
+    #   Find the correct dark exposure
+    valid_dark_available, closest_dark_exposure_time = utilities.find_nearest_exposure_time_to_reference_image(
+        light,
+        list(combined_darks.keys()),
+        time_tolerance=exposure_time_tolerance,
+    )
 
-            #   Add bad pixel mask: If there was already a mask, keep it
-            if mask_available:
-                if reduced.mask is not None:
-                    reduced.mask = reduced.mask | bad_hot_pixel_mask
-                else:
-                    reduced.mask = bad_hot_pixel_mask
+    #   Exit if no dark with a similar exposure time have been found
+    if not valid_dark_available and not rm_bias:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Closest dark exposure time is "
+            f"{closest_dark_exposure_time} for science image of exposure "
+            f"time {light.header['exptime']}. {style.Bcolors.ENDC}"
+        )
 
-        #   Gain correct data
-        reduced = ccdp.gain_correct(reduced, gain * u.electron / u.adu)
+    #   Subtract dark
+    reduced = ccdp.subtract_dark(
+        light,
+        combined_darks[closest_dark_exposure_time],
+        exposure_time='exptime',
+        exposure_unit=u.second,
+        scale=rm_bias,
+    )
 
-        #   Remove cosmic rays
-        if rm_cosmic_rays:
-            if verbose:
-                print(f'Remove cosmic rays from image {file_name}')
-            reduced_without_cosmics = ccdp.cosmicray_lacosmic(
-                reduced,
-                objlim=limiting_contrast_rm_cosmic_rays,
-                readnoise=read_noise,
-                sigclip=sigma_clipping_value_rm_cosmic_rays,
-                satlevel=saturation_level,
-                verbose=verbose,
-            )
+    #   Mask negative pixel
+    mask = reduced.data < 0.
+    reduced.mask = reduced.mask | mask
 
-            if mask_cosmics:
-                if add_hot_bad_pixel_mask:
-                    reduced.mask = reduced.mask | reduced_without_cosmics.mask
+    #   Check if the "FILTER" keyword is set in Header
+    #   TODO: Added ability to skip if filter not found. Add warning about which file will be skipped.
+    #   TODO: Check if this works...
+    if 'filter' not in reduced.header:
+        terminal_output.print_to_terminal(
+            f"WARNING: FILTER keyword not found in HEADER. \n Skip file: {file_name}.",
+            style_name='WARNING',
+            indent=2,
+        )
+        return
 
-                    #   Add Header keyword to mark the file as combined
-                    reduced.meta['cosmic_mas'] = True
+    #   Get master flat field
+    flat_master = combined_flats[reduced.header['filter']]
+
+    #   Divided science by the master flat
+    reduced = ccdp.flat_correct(reduced, flat_master)
+
+    if add_hot_bad_pixel_mask:
+        #   Get mask of bad and hot pixel
+        mask_available, bad_hot_pixel_mask = utilities.get_pixel_mask(
+            out_path,
+            reduced.shape,
+        )
+
+        #   Add bad pixel mask: If there was already a mask, keep it
+        if mask_available:
+            if reduced.mask is not None:
+                reduced.mask = reduced.mask | bad_hot_pixel_mask
             else:
-                reduced = reduced_without_cosmics
-                if not add_hot_bad_pixel_mask:
-                    reduced.mask = np.zeros(reduced.shape, dtype=bool)
+                reduced.mask = bad_hot_pixel_mask
+
+    #   Gain correct data
+    reduced = ccdp.gain_correct(reduced, gain * u.electron / u.adu)
+
+    #   Remove cosmic rays
+    if rm_cosmic_rays:
+        if verbose:
+            print(f'Remove cosmic rays from image {file_name}')
+        reduced_without_cosmics = ccdp.cosmicray_lacosmic(
+            reduced,
+            objlim=limiting_contrast_rm_cosmic_rays,
+            readnoise=read_noise,
+            sigclip=sigma_clipping_value_rm_cosmic_rays,
+            satlevel=saturation_level,
+            verbose=verbose,
+        )
+
+        if mask_cosmics:
+            if add_hot_bad_pixel_mask:
+                reduced.mask = reduced.mask | reduced_without_cosmics.mask
 
                 #   Add Header keyword to mark the file as combined
-                reduced.meta['cosmics_rm'] = True
+                reduced.meta['cosmic_mas'] = True
+        else:
+            reduced = reduced_without_cosmics
+            if not add_hot_bad_pixel_mask:
+                reduced.mask = np.zeros(reduced.shape, dtype=bool)
 
-            if verbose:
-                terminal_output.print_to_terminal('')
+            #   Add Header keyword to mark the file as combined
+            reduced.meta['cosmics_rm'] = True
 
-        #   Scale image with exposure time
-        if scale_image_with_exposure_time:
-            #   Get exposure time and all meta data
-            exposure_time = reduced.header['exptime']
-            reduced_meta = reduced.meta
+        if verbose:
+            terminal_output.print_to_terminal('')
 
-            #   Scale image
-            reduced = reduced.divide(exposure_time * u.second)
+    #   Scale image with exposure time
+    if scale_image_with_exposure_time:
+        #   Get exposure time and all meta data
+        exposure_time = reduced.header['exptime']
+        reduced_meta = reduced.meta
 
-            #   Put metadata back on the image, because it is lost while
-            #   dividing
-            reduced.meta = reduced_meta
-            reduced.meta['HIERARCH'] = 'Image scaled by exposure time:'
-            reduced.meta['HIERARCH'] = 'Unit: e-/s/pixel'
+        #   Scale image
+        reduced = reduced.divide(exposure_time * u.second)
 
-            #   Set data units to electron / s
-            reduced.unit = u.electron / u.s
+        #   Put metadata back on the image, because it is lost while
+        #   dividing
+        reduced.meta = reduced_meta
+        reduced.meta['HIERARCH'] = 'Image scaled by exposure time:'
+        reduced.meta['HIERARCH'] = 'Unit: e-/s/pixel'
 
-        #   Write reduced science image to disk
-        reduced.write(light_path / file_name, overwrite=True)
+        #   Set data units to electron / s
+        reduced.unit = u.electron / u.s
+
+    #   Write reduced science image to disk
+    reduced.write(light_path / file_name, overwrite=True)
 
 
 def shift_img_apply(
@@ -1897,7 +2153,7 @@ def shift_image_core(
     else:
         outlier_ids = []
 
-    #   Loop over and trim all images
+    #   Trim all images
     for current_image_id, (current_image_ccd, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
         if current_image_id not in outlier_ids:
             try:
