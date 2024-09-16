@@ -953,6 +953,7 @@ def check_variable_absolute_cmd(
             sys.exit()
 
 
+#   TODO: Move to general utilities
 class Executor:
     """
         Class that handles the multiprocessing, using apply_async.
