@@ -2217,7 +2217,7 @@ def post_process_results(
         observation: 'analyze.Observation', filter_list: list[str],
         id_object: int | None = None, extraction_method: str = '',
         extract_only_circular_region: bool = False, region_radius: float = 600,
-        data_cluster: bool = False,
+        identify_cluster_gaia_data: bool = False,
         clean_objects_using_proper_motion: bool = False,
         max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
         convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
@@ -2254,7 +2254,7 @@ def post_process_results(
         Radius around the object in arcsec.
         Default is ``600``.
 
-    data_cluster
+    identify_cluster_gaia_data
         If True cluster in the Gaia distance and proper motion data
         will be identified.
         Default is ``False``.
@@ -2303,7 +2303,7 @@ def post_process_results(
     """
     #   Do nothing if no post process method were defined
     if (not extract_only_circular_region and not clean_objects_using_proper_motion
-            and not data_cluster and not convert_magnitudes):
+            and not identify_cluster_gaia_data and not convert_magnitudes):
         return
 
     #   Get image series
@@ -2341,7 +2341,7 @@ def post_process_results(
             tbl = tbl[mask_region]
 
     #   Find a cluster in the Gaia data that could be the star cluster
-    if data_cluster:
+    if identify_cluster_gaia_data:
         if any(x is None for x in [img_id_cluster, mask_cluster, mask_objects]):
             tbl, img_id_cluster, mask_cluster, mask_objects = find_cluster(
                 image_series_dict[filter_list[0]],

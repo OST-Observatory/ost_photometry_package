@@ -1218,13 +1218,16 @@ class Observation:
             transformation_coefficients_dict: dict[str, (float | str)] | None = None,
             derive_transformation_coefficients: bool = False,
             plot_sigma: bool = False, photometry_extraction_method: str = '',
-            extract_only_circular_region: bool = False, region_radius: float = 600.,
-            identify_data_cluster: bool = False, clean_objs_using_pm: bool = False,
+            extract_only_circular_region: bool = False,
+            region_radius: float = 600.,
+            identify_cluster_gaia_data: bool = False,
+            clean_objs_using_pm: bool = False,
             max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
             correlation_method: str = 'astropy',
             separation_limit: u.quantity.Quantity = 2. * u.arcsec,
             aperture_radius: float = 4., radii_unit: str = 'arcsec',
-            convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
+            convert_magnitudes: bool = False,
+            target_filter_system: str = 'SDSS',
             region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
             calculate_zero_point_statistic: bool = True,
             distribution_samples: int = 1000,
@@ -1300,7 +1303,7 @@ class Observation:
             Radius around the object in arcsec.
             Default is ``600``.
 
-        identify_data_cluster
+        identify_cluster_gaia_data
             If True cluster in the Gaia distance and proper motion data
             will be identified.
             Default is ``False``.
@@ -1453,7 +1456,7 @@ class Observation:
                 extraction_method=photometry_extraction_method,
                 extract_only_circular_region=extract_only_circular_region,
                 region_radius=region_radius,
-                data_cluster=identify_data_cluster,
+                identify_cluster_gaia_data=identify_cluster_gaia_data,
                 clean_objects_using_proper_motion=clean_objs_using_pm,
                 max_distance_cluster=max_distance_cluster,
                 find_cluster_para_set=find_cluster_para_set,
