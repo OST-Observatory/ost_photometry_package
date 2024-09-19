@@ -8,6 +8,8 @@ import sys
 
 from pathlib import Path
 
+from tempfile import TemporaryDirectory
+
 import numpy as np
 
 import math
@@ -19,6 +21,7 @@ import astropy.units as u
 from astropy.stats import sigma_clip, sigma_clipped_stats
 from astropy.table import Table
 from astropy.time import Time
+from astropy.wcs import WCS
 
 from photutils.detection import DAOStarFinder
 from photutils.psf import extract_stars
@@ -36,27 +39,29 @@ from skimage.transform import warp
 
 import astroalign as aa
 
-from .. import style, checks, calibration_data, terminal_output
-from .. import utilities as base_aux
+from .. import style, checks, calibration_parameters, terminal_output
+from .. import utilities as base_utilities
+from ..analyze import utilities as analysis_utilities
 
-from . import plot
+from . import plots
 
 
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
 
-def make_symbolic_links(path_list, temp_dir):
+def make_symbolic_links(
+        path_list: list[str], temp_dir: TemporaryDirectory) -> None:
     """
-        Make symbolic links
+    Make symbolic links
 
-        Parameters
-        ----------
-        path_list           : `list` of `string`s
-            List with paths to files
+    Parameters
+    ----------
+    path_list
+        List with paths to files
 
-        temp_dir            : `tempfile.TemporaryDirectory`
-            Temporary directory to store the symbolic links
+    temp_dir
+        Temporary directory to store the symbolic links
     """
     #   Set current working directory
     working_dir = os.getcwd()
@@ -71,7 +76,7 @@ def make_symbolic_links(path_list, temp_dir):
                 #   Check if a file of the same name already exist in the
                 #   temp directory
                 if os.path.isfile(os.path.join(temp_dir.name, file_)):
-                    random_string = base_aux.random_string_generator(7)
+                    random_string = base_utilities.random_string_generator(7)
                     new_filename = f'{random_string}_{file_}'
                 else:
                     new_filename = file_
@@ -83,36 +88,37 @@ def make_symbolic_links(path_list, temp_dir):
                 )
 
 
-def inverse_median(data):
+def inverse_median(data: np.ndarray) -> float:
     """
+    Inverse median
+
+    Parameters
+    ----------
+    data
+        Data
+
+    Returns
+    -------
+    float
         Inverse median
-
-        Parameters
-        ----------
-        data            : `numpy.ndarray`
-            Data
-
-        Returns
-        -------
-                        : `float`
-            Inverse median
     """
     return 1 / np.median(data)
 
 
-def get_instruments(image_file_collection):
+def get_instruments(
+        image_file_collection: ccdp.ImageFileCollection) -> set[str]:
     """
-        Extract instrument information.
+    Extract instrument information.
 
-        Parameters
-        ----------
-        image_file_collection : `ccdproc.ImageFileCollection`
-            Image file collection with all images
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection with all images
 
-        Returns
-        -------
-        instruments           : `set`
-            List of instruments
+    Returns
+    -------
+    instruments
+        List of instruments
     """
     #   Except if no files are found
     if not image_file_collection.files:
@@ -127,41 +133,50 @@ def get_instruments(image_file_collection):
     return instruments
 
 
-def get_instrument_info(image_file_collection, temperature_tolerance):
+def get_instrument_info(
+        image_file_collection: ccdp.ImageFileCollection,
+        temperature_tolerance: float,
+        ignore_readout_mode_mismatch: bool = False
+        ) -> tuple[str, str, int | None, int, float]:
     """
-        Extract information regarding the instruments and readout mode.
-        Currently the instrument and readout mode need to be unique. An
-        exception will be raised in case multiple readout modes or
-        instruments are detected.
-        -> TODO: make vector with instruments and readout modes
+    Extract information regarding the instruments and readout mode.
+    Currently the instrument and readout mode need to be unique. An
+    exception will be raised in case multiple readout modes or
+    instruments are detected.
+    -> TODO: make vector with instruments and readout modes
 
-        Parameters
-        ----------
-        image_file_collection      : `ccdproc.ImageFileCollection`
-            Image file collection with all images
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection with all images
 
-        temperature_tolerance      : `float`, optional
-            The images are required to have the temperature. This value
-            specifies the temperature difference that is acceptable.
+    temperature_tolerance
+        The images are required to have the temperature. This value
+        specifies the temperature difference that is acceptable.
 
-        Returns
-        -------
-        instrument                  : `string`
-            List of instruments
+    ignore_readout_mode_mismatch
+        If set to `True` a mismatch of the detected readout modes will
+        be ignored.
+        Default is ``False``.
 
-        readout_mode                : `string`
-            Mode used to readout the data from the camera chip.
+    Returns
+    -------
+    instrument
+        List of instruments
 
-        gain_setting                : `integer` or `None`
-            Gain used in the camera setting for cameras such as the QHYs.
-            This is not the system gain, but it can be calculated from this
-            value. See below.
+    readout_mode
+        Mode used to readout the data from the camera chip.
 
-        pixel_bit_value             : `integer`
-            Bit value of each pixel
+    gain_setting
+        Gain used in the camera setting for cameras such as the QHYs.
+        This is not the system gain, but it can be calculated from this
+        value. See below.
 
-        temperature                 : `float`
-            Temperature of the images
+    pixel_bit_value
+        Bit value of each pixel
+
+    temperature
+        Temperature of the images
     """
     #   Except if no files are found
     if not image_file_collection.files:
@@ -193,6 +208,13 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
             f'This is currently not supported -> EXIT \n{style.Bcolors.ENDC}'
         )
     instrument = list(instruments)[0]
+
+    #   Sanitize camera strings from Kstars
+    #   TODO: Replace this with an alias list for the cameras
+    if 'QHY268M' in instrument:
+        instrument = 'QHY268M'
+    if 'QHY600M' in instrument:
+        instrument = 'QHY600M'
 
     #   Get the instrument in case of QHY cameras
     if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
@@ -243,8 +265,22 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         else:
             instrument = ''
 
-    #   Get readout mode
-    readout_mode_mask = image_file_collection.summary['readoutm'].mask
+    #   Set default readout mode
+    readout_mode = 'default'
+
+    #   Determine readout mode keyword
+    if 'readoutm' in image_file_collection.summary.colnames:
+        readout_mode_keyword = 'readoutm'
+    elif 'readmode' in image_file_collection.summary.colnames:
+        readout_mode_keyword = 'readmode'
+    else:
+        raise KeyError(
+            f"{style.Bcolors.FAIL} \nReadout mode keyword for FITS Header could not"
+            f" be determined -> ABORT {style.Bcolors.ENDC}"
+        )
+
+    #   Readout mode: Restricting files to once with a set read mode
+    readout_mode_mask = image_file_collection.summary[readout_mode_keyword].mask
     files_without_readout_mode = np.array(
         image_file_collection.files
     )[readout_mode_mask]
@@ -256,24 +292,58 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
             indent=2,
         )
 
-    readout_modes = set(
-        image_file_collection.summary['readoutm'][np.invert(readout_mode_mask)]
-    )
+    #   Determine readout modes in the data
+    readout_modes = list(set(
+        image_file_collection.summary[readout_mode_keyword][np.invert(readout_mode_mask)]
+    ))
 
-    if not readout_modes:
-        readout_mode = 'Extend Fullwell 2CMS'
-    elif len(readout_modes) == 1:
-        readout_mode = list(readout_modes)[0]
+    if len(readout_modes) > 1:
+        if ignore_readout_mode_mismatch:
+            readout_mode = readout_modes[0]
+            terminal_output.print_to_terminal(
+                f"Multiple readout modes detected. Use first one "
+                f"detected: {readout_mode}",
+                style_name='WARNING',
+            )
+        else:
+            raise RuntimeError(
+                f'{style.Bcolors.FAIL}Multiple readout modes detected.\n'
+                f'This is currently not supported -> EXIT \n{style.Bcolors.ENDC}'
+            )
 
-        #   This is a dirty fix for the inadequacy of Maxim-DL to write
-        #   the correct readout mode in the Header.
-        if readout_mode in ['Fast', 'Slow']:
+    #   Readout mode: Fix for QHY models:
+    if instrument in ['QHY600M', 'QHY268M']:
+        if not readout_modes:
+            #   Guess that the readout mode is 'Extend Fullwell 2CMS' if none
+            #   was specified in the Header
             readout_mode = 'Extend Fullwell 2CMS'
-    else:
-        raise RuntimeError(
-            f'{style.Bcolors.FAIL}Multiple readout modes detected.\n'
-            f'This is currently not supported -> EXIT \n{style.Bcolors.ENDC}'
-        )
+        elif len(readout_modes) == 1:
+            #   Use the first detected readout mode if multiple are specified
+            readout_mode = list(readout_modes)[0]
+
+            #   This is a dirty fix for the inadequacy of Maxim-DL to write
+            #   the correct readout mode in the Header.
+            if readout_mode in ['Fast', 'Slow', 'Normal']:
+                readout_mode = 'Extend Fullwell 2CMS'
+
+            #   Kstars treats the readout mode by numbers.
+            if readout_mode == 0:
+                readout_mode = 'PhotoGraphic DSO'
+            elif readout_mode == 1:
+                readout_mode = 'High Gain Mode'
+            elif readout_mode == 2:
+                readout_mode = 'Extend Fullwell'
+            elif readout_mode == 3:
+                readout_mode = 'Extend Fullwell 2CMS'
+
+        elif ignore_readout_mode_mismatch:
+            terminal_output.print_to_terminal(
+                "WARNING: Multiple readout modes detected. "
+                "Assume Extend Fullwell 2CMS",
+                style_name='WARNING',
+                indent=2,
+            )
+            readout_mode = 'Extend Fullwell 2CMS'
 
     #   Get gain setting
     gain_mask = image_file_collection.summary['gain'].mask
@@ -359,7 +429,7 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
 
     files_with_ccd_temperature = np.array(image_file_collection.files)[np.invert(mask)]
     temperatures = image_file_collection.summary['ccd-temp'][np.invert(mask)]
-    
+
     #   Fix for weird crash due to dtype error in 'sigma_clip' 
     if temperatures.fill_value == '?':
         temperatures.fill_value = 999.
@@ -367,9 +437,10 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
         temperatures = temperatures.astype(float)
 
     median_temperature = np.median(temperatures)
-    clipped_temperatures_mask = sigma_clip(temperatures).mask
+    std_temperature = np.std(temperatures)
 
-    if np.any(clipped_temperatures_mask):
+    if std_temperature > temperature_tolerance:
+        clipped_temperatures_mask = sigma_clip(temperatures).mask
         clipped_temperatures = temperatures[clipped_temperatures_mask]
         clipped_images = files_with_ccd_temperature[clipped_temperatures_mask]
 
@@ -384,19 +455,20 @@ def get_instrument_info(image_file_collection, temperature_tolerance):
 
 
 #   TODO: Check if the following function can be removed
-def get_imaging_software(image_file_collection):
+def get_imaging_software(
+        image_file_collection: ccdp.ImageFileCollection) -> set[str]:
     """
-        Extract imaging software version.
+    Extract imaging software version.
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            Image file collection with all images
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection with all images
 
-        Returns
-        -------
-        imaging_software        : `set`
-            List of instruments
+    Returns
+    -------
+    imaging_software
+        List of used imaging software
     """
     #   Except if no files are found
     if not image_file_collection.files:
@@ -411,23 +483,25 @@ def get_imaging_software(image_file_collection):
     return imaging_software
 
 
-def get_exposure_times(image_file_collection, image_type):
+def get_exposure_times(
+        image_file_collection: ccdp.ImageFileCollection,
+        image_type: list[str]) -> list[float]:
     """
-        Extract the exposure time of a specific image type from an image
-        collections.
+    Extract the exposure time of a specific image type from an image
+    collections.
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            Image file collection with all images
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection with all images
 
-        image_type              : `list` of `string`
-            Image type to select. Possibilities: bias, dark, flat, light
+    image_type
+        Image type to select. Possibilities: bias, dark, flat, light
 
-        Returns
-        -------
-        exposure_times          : `list`
-            List of exposure times
+    Returns
+    -------
+    exposure_times
+        List of exposure times
     """
     #   Calculate mask to restrict images to the provided image type
     mask = [True if file in image_type else False
@@ -442,40 +516,41 @@ def get_exposure_times(image_file_collection, image_type):
         )
 
     #   Exposure exposure_times
-    exposure_times = set(image_file_collection.summary['exptime'][mask])
+    exposure_times = list(set(image_file_collection.summary['exptime'][mask]))
 
     return exposure_times
 
 
-def find_nearest_exposure_time(reference_exposure_time, exposure_times,
-                               time_tolerance=0.5):
+def find_nearest_exposure_time(
+        reference_exposure_time: float, exposure_times: list[float],
+        time_tolerance: float | None = 0.5) -> tuple[bool, np.ndarray]:
     """
-        Find the nearest match between a test exposure time and a list of
-        exposure times, raising an error if the difference in exposure time
-        is more than the tolerance.
+    Find the nearest match between a test exposure time and a list of
+    exposure times, raising an error if the difference in exposure time
+    is more than the tolerance.
 
-        Parameters
-        ----------
-        reference_exposure_time : `float`
-            Exposure time for which a match from a list of exposure times
-            should be found.
+    Parameters
+    ----------
+    reference_exposure_time
+        Exposure time for which a match from a list of exposure times
+        should be found.
 
-        exposure_times          : `list of floats`
-            Exposure times for which there are images
+    exposure_times
+        Exposure times for which there are images
 
-        time_tolerance          : `float` or `None`, optional
-            Maximum difference, in seconds, between the image and the
-            closest entry from the exposure time list. Set to ``None`` to
-            skip the tolerance test.
-            Default is ``0.5``.
+    time_tolerance
+        Maximum difference, in seconds, between the image and the
+        closest entry from the exposure time list. Set to ``None`` to
+        skip the tolerance test.
+        Default is ``0.5``.
 
-        Returns
-        -------
-        _                       : `boolean`
-            `True` if an exposure was detected within the tolerance time
+    Returns
+    -------
+    _
+        `True` if an exposure was detected within the tolerance time
 
-        nearest_exposure_time   : `float`
-            Nearest exposure time
+    nearest_exposure_time
+        Nearest exposure time
     """
     #   Find closest exposure time
     exposure_times_array = np.array(list(exposure_times))
@@ -492,35 +567,35 @@ def find_nearest_exposure_time(reference_exposure_time, exposure_times,
     return True, nearest_exposure_time
 
 
-def find_nearest_exposure_time_to_reference_image(image,
-                                                  exposure_times_other_images,
-                                                  time_tolerance=0.5):
+def find_nearest_exposure_time_to_reference_image(
+        image: CCDData, exposure_times_other_images: list[float],
+        time_tolerance: float | None = 0.5) -> tuple[bool, float]:
     """
-        Find the nearest exposure time of a list of exposure times to that
-        of an image, raising an error if the difference in exposure time is
-        more than the tolerance.
+    Find the nearest exposure time of a list of exposure times to that
+    of an image, raising an error if the difference in exposure time is
+    more than the tolerance.
 
-        Parameters
-        ----------
-        image                       : `astropy.nddata.CCDData`
-            Image for which a matching exposure time is needed
+    Parameters
+    ----------
+    image
+        The image for which a matching exposure time is needed
 
-        exposure_times_other_images : `list`
-            Exposure times for which there are images
+    exposure_times_other_images
+        Exposure times for which there are images
 
-        time_tolerance              : `float` or `None`, optional
-            Maximum difference, in seconds, between the image and the
-            closest entry from the exposure time list. Set to ``None`` to
-            skip the tolerance test.
-            Default is ``0.5``.
+    time_tolerance
+        Maximum difference, in seconds, between the image and the
+        closest entry from the exposure time list. Set to ``None`` to
+        skip the tolerance test.
+        Default is ``0.5``.
 
-        Returns
-        -------
-        _                           : `boolean`
-            `True` if an exposure was detected within the tolerance time
+    Returns
+    -------
+    _
+        `True` if an exposure was detected within the tolerance time
 
-        _                           : `float`
-            Nearest exposure time
+    _
+        Nearest exposure time
     """
     #   Get exposure time from the image
     exposure_time_reference_image = image.header['exptime']
@@ -532,28 +607,31 @@ def find_nearest_exposure_time_to_reference_image(image,
     )
 
 
-def get_image_type(image_file_collection, image_type_dict, image_class=None):
+def get_image_type(
+        image_file_collection: ccdp.ImageFileCollection,
+        image_type_dict: dict[str, list[str]] | list[str],
+        image_class: str | None = None) -> str | list[str] | None:
     """
-        From an image file collection get the existing image type from a
-        list of possible images
+    From an image file collection get the existing image type from a
+    list of possible images
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            Image file collection
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection
 
-        image_type_dict         : `dictionary` or `list`
-            Image types of the images.
-            Possibilities: bias, dark, flat, light
+    image_type_dict
+        Image types of the images.
+        Possibilities: bias, dark, flat, light
 
-        image_class             : `string`, optional
-            Image file type class to look for.
-            Default is ``None``.
+    image_class
+        Image file type class to look for.
+        Default is ``None``.
 
-        Returns
-        -------
-                                : `string` or `list`
-            Image types or list of image types
+    Returns
+    -------
+    image_types
+        Image types or list of image types
     """
     #   Create mask
     if not image_class:
@@ -579,38 +657,39 @@ def get_image_type(image_file_collection, image_type_dict, image_class=None):
         return image_type_dict[image_class][id_image_type]
 
 
-def check_dark_scaling_possible(image_file_collection, image_id, image_type,
-                                exposure_time, maximum_dark_time,
-                                bias_available):
+def check_dark_scaling_possible(
+        image_file_collection: ccdp.ImageFileCollection, image_id: int,
+        image_type: list[str], exposure_time: float, maximum_dark_time: float,
+        bias_available: bool) -> bool:
     """
-        Check if scaling of dark frames to the given exposure time 'time' is
-        possible and handles exceptions
+    Check if scaling of dark frames to the given exposure time 'time' is
+    possible and handles exceptions
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            File collection with all images
+    Parameters
+    ----------
+    image_file_collection
+        File collection with all images
 
-        image_id                : `integer`
-            ID of the image
+    image_id
+        ID of the image
 
-        image_type              : `list` of `string`
-            String that characterizes the image type, such as 'science' or
-            'flat'. This is used in the exception messages.
+    image_type
+        String that characterizes the image type, such as 'science' or
+        'flat'. This is used in the exception messages.
 
-        exposure_time           : `float`
-            Exposure time that should be checked
+    exposure_time
+        Exposure time that should be checked
 
-        maximum_dark_time       : `float`
-            Longest dark time that is available
+    maximum_dark_time
+        Longest dark time that is available
 
-        bias_available          : `boolean`
-            True if bias frames are available
+    bias_available
+        True if bias frames are available
 
-        Returns
-        -------
-                                : `boolean`
-            True if dark scaling is possible
+    Returns
+    -------
+    bool
+        True if dark scaling is possible
     """
     #   Calculate mask to restrict images to the provided image type
     mask = [True if type_ in image_type else False
@@ -642,39 +721,40 @@ def check_dark_scaling_possible(image_file_collection, image_id, image_type,
         )
 
 
-def check_exposure_times(image_file_collection, image_type, exposure_times,
-                         dark_times, bias_available,
-                         exposure_time_tolerance=0.5):
+def check_exposure_times(
+        image_file_collection: ccdp.ImageFileCollection, image_type: list[str],
+        exposure_times: list[float], dark_times: list[float],
+        bias_available: bool, exposure_time_tolerance: float = 0.5) -> bool:
     """
-        Check if relevant dark exposures are available for the exposure
-        times in the supplied list
+    Check if relevant dark exposures are available for the exposure
+    times in the supplied list
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            File collection with all images
+    Parameters
+    ----------
+    image_file_collection
+        File collection with all images
 
-        image_type              : `list` of `string`
-            String that characterizes the image type, such as 'science' or
-            'flat'. This is used in the exception messages.
+    image_type
+        String that characterizes the image type, such as 'science' or
+        'flat'. This is used in the exception messages.
 
-        exposure_times          : `list` of `float`
-            Exposure times that should be checked
+    exposure_times
+        Exposure times that should be checked
 
-        dark_times              : `list` of `float`
-            Dark exposure times that are available
+    dark_times
+        Dark exposure times that are available
 
-        bias_available          : `boolean`
-            True if bias frames are available
+    bias_available
+        True if bias frames are available
 
-        exposure_time_tolerance          : 'float', optional
-            Tolerance between science and dark exposure times in s.
-            Default is ``0.5``s.
+    exposure_time_tolerance
+        Tolerance between science and dark exposure times in s.
+        Default is ``0.5``s.
 
-        Returns
-        -------
-        scale_necessary         : `boolean`
-            True if dark scaling is possible
+    Returns
+    -------
+    scale_necessary
+        True if dark scaling is possible
     """
     #   Loop over exposure times
     for image_id, time in enumerate(exposure_times):
@@ -698,20 +778,27 @@ def check_exposure_times(image_file_collection, image_type, exposure_times,
         return False
 
 
-def check_filter_keywords(path, temp_dir, image_type):
+def check_filter_keywords(
+        path: str, temp_dir: TemporaryDirectory, image_type: str
+        ) -> Path | str | None:
     """
-        Consistency check - Check if the image type of the images in 'path'
-                            fit to one supplied with 'image_type'.
-        Parameters
-        ----------
-        path            : `string`
-            File path to check
+    Consistency check - Check if the image type of the images in 'path'
+                        fit to the one supplied with 'image_type'.
+    Parameters
+    ----------
+    path
+        File path to check
 
-        temp_dir        : `tempfile.TemporaryDirectory`
-            Temporary directory to store the symbolic links to the images
+    temp_dir
+        Temporary directory to store the symbolic links to the images
 
-        image_type      : `string`
-            Internal image type of the images in 'path' should have
+    image_type
+        Internal image type of the images in 'path' should have
+
+    Returns
+    -------
+    return_path
+
     """
     #   Sanitize the provided path
     file_path = Path(path)
@@ -742,7 +829,7 @@ def check_filter_keywords(path, temp_dir, image_type):
     # )
 
     #   Get image types
-    image_type_dict = calibration_data.get_image_types()
+    image_type_dict = calibration_parameters.get_image_types()
     image_type = image_type_dict[image_type]
 
     #   Find all images that have the correct image type
@@ -758,26 +845,28 @@ def check_filter_keywords(path, temp_dir, image_type):
     list_2 = image_with_correct_image_type
     result = [x for x in list_1 if x not in list_2]
 
-    if result: 
+    if result:
         sanitize_image_types(file_path, temp_dir, image_type)
         return None
 
     return str(file_path)
 
 
-def sanitize_image_types(file_path, temp_dir, image_type):
+def sanitize_image_types(
+        file_path: Path, temp_dir: TemporaryDirectory,
+        image_type: str | list[str]) -> None:
     """
-        Sanitize image types according to prerequisites
+    Sanitize image types according to prerequisites
 
-        Parameters
-        ----------
-        file_path           : `pathlib.Path`
+    Parameters
+    ----------
+    file_path
 
-        temp_dir            : `tempfile.TemporaryDirectory`
-            Temporary directory to store the symbolic links to the images
+    temp_dir
+        Temporary directory to store the symbolic links to the images
 
-        image_type          : `string` or `list`
-            Expected image type
+    image_type
+        Expected image type
     """
     #   Sanitize
     image_file_collection = ccdp.ImageFileCollection(file_path)
@@ -791,33 +880,34 @@ def sanitize_image_types(file_path, temp_dir, image_type):
         image_ccd.write(temp_dir.name + '/' + file_name)
 
 
-def get_pixel_mask(out_path, shape):
+def get_pixel_mask(
+        out_path: Path, shape: np.ndarray) -> tuple[bool, CCDData]:
     """
-        Calculates or loads a pixel mask highlighting bad and hot pixel.
+    Calculates or loads a pixel mask highlighting bad and hot pixel.
 
-        Tries to load a precalculated bad pixel mask. If that fails tries to
-        load pixel masks calculated by the 'master_dark' and 'master_flat'
-        routine and combine those. Assumes default names for the individual
-        masks.
+    Tries to load a precalculated bad pixel mask. If that fails tries to
+    load pixel masks calculated by the 'master_dark' and 'master_flat'
+    routine and combine those. Assumes default names for the individual
+    masks.
 
-        Parameters
-        ----------
-        out_path        : `pathlib.Path`
-            Path pointing to the main storage location
+    Parameters
+    ----------
+    out_path
+        Path pointing to the main storage location
 
-        shape           : `numpy.ndarray`
-            2D array with image dimensions. Is used to check if a
-            precalculate mask fits to the image.
+    shape
+        2D array with image dimensions. Is used to check if a
+        precalculate mask fits to the image.
 
-        Returns
-        -------
-        success         : `boolean`
-            True if either a precalculate bad pixel mask has been found or
-            if masks calculated by the 'master_dark' and 'master_flat' have
-            been found.
+    Returns
+    -------
+    success
+        True if either a precalculate bad pixel mask has been found or
+        if masks calculated by the 'master_dark' and 'master_flat' have
+        been found.
 
-        mask            : `astropy.nddata.CCDData`
-            Precalculated or combined pixel mask
+    mask
+        Precalculated or combined pixel mask
     """
     #   Load pixel mask
     try:
@@ -834,7 +924,7 @@ def get_pixel_mask(out_path, shape):
             )
             #   Raise RuntimeError to trigger except.
             raise RuntimeError('')
-    except:
+    except (FileNotFoundError, RuntimeError):
         #   If no precalculated mask are available, try to load masks
         #   calculated by 'master_dark' and 'master_flat'
 
@@ -863,9 +953,10 @@ def get_pixel_mask(out_path, shape):
                     mask_bad_pixel = mask_data.astype('bool')
 
             #   Combine mask
-            mask = mask_hot_pixel | mask_bad_pixel
+            # mask = mask_hot_pixel | mask_bad_pixel
+            mask = np.logical_or(mask_hot_pixel, mask_bad_pixel)
             success = True
-        except:
+        except ValueError:
             terminal_output.print_to_terminal(
                 "No bad pixel mask available. Skip adding bad pixel mask.",
                 indent=1,
@@ -877,26 +968,27 @@ def get_pixel_mask(out_path, shape):
     return success, mask
 
 
-def make_hot_pixel_mask(dark_image, gain, output_dir, verbose=False):
+def make_hot_pixel_mask(
+        dark_image: CCDData, gain: float | None, output_dir: str | Path,
+        verbose: bool = False) -> None:
     """
-        Make a hot pixel mask from a dark frame
+    Make a hot pixel mask from a dark frame
 
-        Parameters
-        ----------
-        dark_image          : `astropy.nddata.CCDData`
-            Dark image
+    Parameters
+    ----------
+    dark_image
+        Dark image
 
-        output_dir          : `string`
-            Path to the directory where the master files should be saved to
+    gain
+        The gain (e-/adu) of the camera chip. If set to `None` the gain
+        will be extracted from the FITS header.
 
-        gain                : `float` or `None`, optional
-            The gain (e-/adu) of the camera chip. If set to `None` the gain
-            will be extracted from the FITS header.
-            Default is ``None``.
+    output_dir
+        Path to the directory where the master files should be saved to
 
-        verbose             : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
+    verbose
+        If True additional output will be printed to the command line.
+        Default is ``False``.
     """
     #   Sanitize the provided paths
     out_path = checks.check_pathlib_path(output_dir)
@@ -918,16 +1010,19 @@ def make_hot_pixel_mask(dark_image, gain, output_dir, verbose=False):
     #   Calculate the hot pixel mask. Increase the threshold if the number of
     #   hot pixels is unrealistically high
     threshold_hot_pixel = 2
+    hot_pixel_sum = 0
+    hot_pixels = np.zeros(dark_image.shape)
     for i in range(0, 100):
         hot_pixels = (dark_image.data > threshold_hot_pixel)
+        hot_pixel_sum = hot_pixels.sum()
         #   Check if number of hot pixel is realistic
-        if hot_pixels.sum() / n_pixel <= 0.03:
+        if hot_pixel_sum / n_pixel <= 0.03:
             break
         threshold_hot_pixel += 1
 
     if verbose:
         sys.stdout.write(
-            '\r\tNumber of hot pixels: {}\n'.format(hot_pixels.sum())
+            '\r\tNumber of hot pixels: {}\n'.format(hot_pixel_sum)
         )
         sys.stdout.write(
             '\r\tLimit (e-/s/pix) used: {}\n'.format(threshold_hot_pixel)
@@ -944,21 +1039,23 @@ def make_hot_pixel_mask(dark_image, gain, output_dir, verbose=False):
     mask_as_ccd_data_object.write(out_path / file_name, overwrite=True)
 
 
-def make_bad_pixel_mask(bad_pixel_mask_list, output_dir, verbose=False):
+def make_bad_pixel_mask(
+        bad_pixel_mask_list: list[np.ndarray], output_dir: str | Path,
+        verbose: bool = False) -> None:
     """
-        Calculate a bad pixel mask from a list of bad pixel masks
+    Calculate a bad pixel mask from a list of bad pixel masks
 
-        Parameters
-        ----------
-        bad_pixel_mask_list : `list` of `astropy.nddata.CCDData` objects
-            List with bad pixel masks
+    Parameters
+    ----------
+    bad_pixel_mask_list
+        List with bad pixel masks
 
-        output_dir          : `string`
-            Path to the directory where the master files should be saved to
+    output_dir
+        Path to the directory where the master files should be saved to
 
-        verbose             : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
+    verbose
+        If True additional output will be printed to the command line.
+        Default is ``False``.
     """
     #   Sanitize the provided paths
     out_path = checks.check_pathlib_path(output_dir)
@@ -969,16 +1066,13 @@ def make_bad_pixel_mask(bad_pixel_mask_list, output_dir, verbose=False):
         mask_shape_list.append(bad_pixel_mask.shape)
     mask_shape_set = set(mask_shape_list)
 
-    #   Loop over all image dimensions/binning
+    #   Loop over all image shapes (binning options)
     for shape in mask_shape_set:
         #   Calculate overall bad pixel mask
-        for i, bad_pixel_mask in enumerate(bad_pixel_mask_list):
+        combined_mask = np.zeros(shape)
+        for bad_pixel_mask in bad_pixel_mask_list:
             if bad_pixel_mask.shape == shape:
-                if i == 0:
-                    combined_mask = bad_pixel_mask
-                else:
-                    #   TODO: Check which makes more sense: & or |
-                    combined_mask = combined_mask & bad_pixel_mask
+                combined_mask = np.logical_or(combined_mask, bad_pixel_mask)
 
         if verbose:
             terminal_output.print_to_terminal(
@@ -996,35 +1090,44 @@ def make_bad_pixel_mask(bad_pixel_mask_list, output_dir, verbose=False):
         mask_as_ccd_data_object.write(out_path / file_name, overwrite=True)
 
 
-def cross_correlate_images(image_1, image_2, maximum_shift_x, maximum_shift_y,
-                           debug):
+def cross_correlate_images(
+        image_1: np.ndarray, image_2: np.ndarray, maximum_shift_x: int,
+        maximum_shift_y: int, debug: bool) -> tuple[int, int]:
     """
-        Cross correlation:
+    Cross correlation:
 
-        Adapted from add_images written by Nadine Giese for use within the
-        astrophysics lab course at Potsdam University.
-        The source code may be modified, reused, and distributed as long as
-        it retains a reference to the original author(s).
+    Adapted from add_images written by Nadine Giese for use within the
+    astrophysics lab course at Potsdam University.
+    The source code may be modified, reused, and distributed as long as
+    it retains a reference to the original author(s).
 
-        Idea and further information:
-        http://en.wikipedia.org/wiki/Phase_correlation
+    Idea and further information:
+    http://en.wikipedia.org/wiki/Phase_correlation
 
-        Parameters
-        ----------
-        image_1                 : `numpy.ndarray`
-            Data of first image
+    Parameters
+    ----------
+    image_1
+        Data of first image
 
-        image_2                 : `numpy.ndarray`
-            Data of second image
+    image_2
+        Data of second image
 
-        maximum_shift_x         : `integer`
-            Maximal allowed shift between the images in Pixel - X axis
+    maximum_shift_x
+        Maximal allowed shift between the images in Pixel - X axis
 
-        maximum_shift_y         : `integer`
-            Maximal allowed shift between the images in Pixel - Y axis
+    maximum_shift_y
+        Maximal allowed shift between the images in Pixel - Y axis
 
-        debug                   : `boolean`
-            If True additional plots will be created
+    debug
+        If True additional plots will be created
+
+    Returns
+    -------
+    index_1
+        Shift of image_1 with respect to image_2 in the Y direction
+
+    index_2
+        Shift of image_1 with respect to image_2 in the X direction
     """
 
     image_dimension_x = image_1.shape[1]
@@ -1050,7 +1153,7 @@ def cross_correlate_images(image_1, image_2, maximum_shift_x, maximum_shift_y,
 
     #   Debug plot showing the cc matrix
     if debug:
-        plot.cross_correlation_matrix(image_2, cc_matrix)
+        plots.cross_correlation_matrix(image_2, cc_matrix)
 
     #   Find the maximum in cc to identify the shift
     index_1, index_2 = np.unravel_index(cc_matrix.argmax(), cc_matrix.shape)
@@ -1075,35 +1178,35 @@ def cross_correlate_images(image_1, image_2, maximum_shift_x, maximum_shift_y,
     return -index_1, -index_2
 
 
-def calculate_min_max_image_shifts(shifts, python_format=False):
+def calculate_min_max_image_shifts(
+        shifts: np.ndarray, python_format: bool = False
+        ) -> tuple[float, float, float, float]:
     """
-        Calculate shifts
+    Calculate shifts
 
-        Parameters
-        ----------
-        shifts              : `numpy.ndarray`
-            2D numpy array with the image shifts in X and Y direction
+    Parameters
+    ----------
+    shifts
+        2D numpy array with the image shifts in X and Y direction
 
-        python_format       : `boolean`
-            If True the python style of image ordering is used. If False the
-            natural/fortran style of image ordering is use.
-            Default is ``False``.
+    python_format
+        If True the python style of image ordering is used. If False the
+        natural/fortran style of image ordering is use.
+        Default is ``False``.
 
-        Returns
-        -------
-        minimum_shift_x     : `float'
-            Minimum shift in X direction
+    Returns
+    -------
+    minimum_shift_x
+        Minimum shift in X direction
 
-        maximum_shift_x     : `float'
-            Maximum shift in X direction
+    maximum_shift_x
+        Maximum shift in X direction
 
-        minimum_shift_y     : `float'
-            Minimum shift in Y direction
+    minimum_shift_y
+        Minimum shift in Y direction
 
-        maximum_shift_y     : `float'
-            Maximum shift in Y direction
-
-
+    maximum_shift_y
+        Maximum shift in Y direction
     """
     #   Distinguish between python format and natural format
     if python_format:
@@ -1123,50 +1226,50 @@ def calculate_min_max_image_shifts(shifts, python_format=False):
     return minimum_shift_x, maximum_shift_x, minimum_shift_y, maximum_shift_y
 
 
-def calculate_image_shifts_core(image_ccd_object, reference_ccd_object,
-                                image_id, file_name_image,
-                                correlation_method='skimage'):
+def calculate_image_shifts_core(
+        image_ccd_object: CCDData, reference_ccd_object: CCDData,
+        image_id: int, file_name_image: str,
+        correlation_method: str = 'skimage') -> tuple[int, tuple[float], bool]:
     """
-        Calculate image shifts using different methods
+    Calculate image shifts using different methods
 
-        Parameters
-        ----------
-        image_ccd_object        : `astropy.nddata.CCDData` object
-            Image data
+    Parameters
+    ----------
+    image_ccd_object
+        Image data
 
-        reference_ccd_object    : `astropy.nddata.CCDData` object
-            Image data of the reference image
+    reference_ccd_object
+        Image data of the reference image
 
-        image_id                : `integer`
-            ID of the image
+    image_id
+        ID of the image
 
-        file_name_image         : `string`
-            Name of the image
+    file_name_image
+        Name of the image
 
-        correlation_method      : `string`, optional
-            Method to use for image alignment.
-            Possibilities: 'own'     = own correlation routine based on
-                                       phase correlation, applying fft to
-                                       the images
-                           'skimage' = phase correlation with skimage'
-                           'aa'      = astroalign module
-            Default is 'skimage'.
+    correlation_method
+        Method to use for image alignment.
+        Possibilities: 'own'     = own correlation routine based on
+                                   phase correlation, applying fft to
+                                   the images
+                       'skimage' = phase correlation with skimage'
+                       'aa'      = astroalign module
+        Default is 'skimage'.
 
-        Returns
-        -------
-        image_id                : `integer`
-            ID of the image
+    Returns
+    -------
+    image_id
+        ID of the image
 
-        image_shift             : `tuple`
-            Shifts of the image in X and Y direction
+    image_shift
+        Shifts of the image in X and Y direction
 
-        flip_necessary          : `boolean`
-            If `True` the image needs to be flipped
+    flip_necessary
+        If `True` the image needs to be flipped
     """
     #   Get reference image, reference mask, and corresponding file name
     reference_data = reference_ccd_object.data
     reference_mask = np.invert(reference_ccd_object.mask)
-    reference_pier = reference_ccd_object.meta.get('PIERSIDE', 'EAST')
 
     #   Image and mask to compare with
     current_ccd = image_ccd_object
@@ -1174,6 +1277,7 @@ def calculate_image_shifts_core(image_ccd_object, reference_ccd_object,
     current_mask = np.invert(image_ccd_object.mask)
 
     #   Image pier side
+    reference_pier = reference_ccd_object.meta.get('PIERSIDE', 'EAST')
     current_pier = image_ccd_object.meta.get('PIERSIDE', 'EAST')
 
     #   Flip if pier side changed
@@ -1197,6 +1301,7 @@ def calculate_image_shifts_core(image_ccd_object, reference_ccd_object,
             reference_mask=reference_mask,
             moving_mask=current_mask,
         )
+        image_shift = image_shift[0]
     elif correlation_method == 'own':
         image_shift = cross_correlate_images(
             reference_data,
@@ -1214,11 +1319,24 @@ def calculate_image_shifts_core(image_ccd_object, reference_ccd_object,
             '|': 'not applicable',
         }
         if endian_map[image_ccd_object.data.dtype.byteorder] != sys.byteorder:
-            image_ccd_object.data = image_ccd_object.data.byteswap().newbyteorder()
-            reference_ccd_object.data = reference_ccd_object.data.byteswap().newbyteorder()
-            u_img = image_ccd_object.uncertainty.array.byteswap().newbyteorder()
+            image_ccd_object.data = image_ccd_object.data.byteswap()
+            image_ccd_object.data = image_ccd_object.data.view(
+                image_ccd_object.data.dtype.newbyteorder()
+            )
+
+            reference_ccd_object.data = reference_ccd_object.data.byteswap()
+            reference_ccd_object.data = reference_ccd_object.data.view(
+                reference_ccd_object.data.dtype.newbyteorder()
+            )
+
+            u_img = image_ccd_object.uncertainty.array.byteswap()
+            u_img = u_img.view(u_img.dtype.newbyteorder())
+
             image_ccd_object.uncertainty = StdDevUncertainty(u_img)
-            u_re = reference_ccd_object.uncertainty.array.byteswap().newbyteorder()
+
+            u_re = reference_ccd_object.uncertainty.array.byteswap()
+            u_re = u_re.view(u_re.dtype.newbyteorder())
+
             reference_ccd_object.uncertainty = StdDevUncertainty(u_re)
 
         #   Determine transformation between the images
@@ -1226,14 +1344,14 @@ def calculate_image_shifts_core(image_ccd_object, reference_ccd_object,
             transformation_coefficiants, (_, _) = aa.find_transform(
                 current_ccd,
                 reference_ccd_object,
-                detection_sigma=3.0,
+                detection_sigma=3,
             )
 
             image_shift = (
                 transformation_coefficiants.translation[1],
                 transformation_coefficiants.translation[0]
             )
-        except:
+        except IndexError:
             image_shift = (0., 0.)
             terminal_output.print_to_terminal(
                 f"WARNING: Offset determination for image {image_id}"
@@ -1255,40 +1373,47 @@ def calculate_image_shifts_core(image_ccd_object, reference_ccd_object,
     return image_id, image_shift, flip_necessary
 
 
-def calculate_image_shifts(image_file_collection, id_reference_image, comment,
-                           correlation_method='skimage'):
+def calculate_image_shifts(
+        image_file_collection: ccdp.ImageFileCollection,
+        id_reference_image: int, comment: str,
+        correlation_method: str = 'skimage',
+        n_cores_multiprocessing: int | None = None
+    ) -> tuple[np.ndarray, np.ndarray]:
     """
-        Calculate image shifts
+    Calculate image shifts
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            Image file collection
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection
 
-        id_reference_image      : `integer`
-            Number of the reference image
+    id_reference_image
+        Number of the reference image
 
-        comment                 : `string`
-            Information regarding for which images the shifts will be
-            calculated
+    comment
+        Information regarding for which images the shifts will be
+        calculated
 
-        correlation_method      : `string`, optional
-            Method to use for image alignment.
-            Possibilities: 'own'     = own correlation routine based on
-                                       phase correlation, applying fft to
-                                       the images
-                           'skimage' = phase correlation with skimage'
-                           'aa'      = astroalign module
-            Default is 'skimage'.
+    correlation_method
+        Method to use for image alignment.
+        Possibilities: 'own'     = own correlation routine based on
+                                   phase correlation, applying fft to
+                                   the images
+                       'skimage' = phase correlation with skimage'
+                       'aa'      = astroalign module
+        Default is 'skimage'.
 
+    n_cores_multiprocessing
+        Number of cores to use during multiprocessing.
+        Default is ``None``.
 
-        Returns
-        -------
-        image_shift             : `numpy.ndarray`
-            Shifts of the images in X and Y direction
+    Returns
+    -------
+    image_shift
+        Shifts of the images in X and Y direction
 
-        flip_necessary          : `numpy.ndarray`
-            Flip necessary to account for pier flips
+    flip_necessary
+        Flip necessary to account for pier flips
     """
     #   Number of images
     n_files = len(image_file_collection.files)
@@ -1313,88 +1438,65 @@ def calculate_image_shifts(image_file_collection, id_reference_image, comment,
         indent=0,
     )
 
-    # from ..analyze import aux as aux_ana
-    # #   Initialize multiprocessing object
-    # n_cores_multiprocessing=6
-    # n_cores_multiprocessing=3
-    # n_cores_multiprocessing=2
-    # executor = aux_ana.Executor(n_cores_multiprocessing)
+    #   Initialize multiprocessing object
+    executor = analysis_utilities.Executor(n_cores_multiprocessing)
 
     #   Calculate image shifts
     for i, (current_ccd_object, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
         if i != id_reference_image:
-            _, image_shift[:, i], flip_necessary[i] = calculate_image_shifts_core(
-                # _, _, flip_necessary[i] = calculate_image_shifts_core(
-                current_ccd_object,
-                reference_ccd_object,
-                i,
-                file_name,
-                correlation_method=correlation_method,
+            executor.schedule(
+                calculate_image_shifts_core,
+                args=(
+                    current_ccd_object,
+                    reference_ccd_object,
+                    i,
+                    file_name,
+                ),
+                kwargs={
+                'correlation_method':correlation_method,
+                }
             )
-            # calculate_image_shifts_core(
-            # current_ccd_object,
-            # reference_ccd_object,
-            # img_id,
-            # method='skimage',
-            # )
-            # executor.schedule(
-            # calculate_image_shifts_core,
-            # args=(
-            # current_ccd_object,
-            # reference_ccd_object,
-            # i,
-            # file_name,
-            # ),
-            # kwargs={
-            # 'method':method,
-            # }
-            # )
 
-    # #   Close multiprocessing pool and wait until it finishes
-    # executor.wait()
+    #   Exit if exceptions occurred
+    if executor.err is not None:
+        raise RuntimeError(
+            f'\n{style.Bcolors.FAIL}Image offset determination failed '
+            f':({style.Bcolors.ENDC}'
+        )
 
-    # #   Exit if exceptions occurred
-    # if executor.err is not None:
-    # raise RuntimeError(
-    # f'\n{style.Bcolors.FAIL}Image offset determination failed '
-    # f':({style.Bcolors.ENDC}'
-    # )
+    #   Close multiprocessing pool and wait until it finishes
+    executor.wait()
 
-    ####
-    # #   Sort multiprocessing results
-    # #
-    # #   Extract results
-    # res = executor.res
+    #   Extract results
+    res = executor.res
 
-    # #   Sort observation times and images & build dictionary for the
-    # #   tables with the extraction results
-    # #for j in range(0, n_files):
-    # for ref_id, shift_i, flip_i in res:
-    # print(ref_id, shift_i, flip_i)
-    # image_shift[:,ref_id] = shift_i
-    # flip_necessary[ref_id] = flip_i
+    #   Sort multiprocessing results
+    for ref_id, shift_i, flip_i in res:
+        image_shift[:,ref_id] = shift_i
+        flip_necessary[ref_id] = flip_i
 
     terminal_output.print_to_terminal('')
 
     return image_shift, flip_necessary
 
 
-def image_shift_astroalign_method(reference_ccd_object, current_ccd_object):
+def image_shift_astroalign_method(
+        reference_ccd_object: CCDData, current_ccd_object:CCDData) -> CCDData:
     """
-        Calculate image shifts using the astroalign method
+    Calculate image shifts using the astroalign method
 
-        Parameters
-        ----------
-        reference_ccd_object        : `astropy.nddata.CCDData` object
-            Reference image
+    Parameters
+    ----------
+    reference_ccd_object
+        Reference image
 
-        current_ccd_object          : `astropy.nddata.CCDData` object
-            Current image
+    current_ccd_object
+        Current image
 
-        Returns
-        -------
-                                    : `astropy.nddata.CCDData` object
-            Aligned image
+    Returns
+    -------
+
+        Aligned image
     """
     #   Map with endianness symbols
     endian_map = {
@@ -1417,7 +1519,7 @@ def image_shift_astroalign_method(reference_ccd_object, current_ccd_object):
     transformation_coefficiants, (_, _) = aa.find_transform(
         current_ccd_object,
         reference_ccd_object,
-        detection_sigma=3.0,
+        detection_sigma=3,
     )
 
     #   Transform image data
@@ -1445,22 +1547,23 @@ def image_shift_astroalign_method(reference_ccd_object, current_ccd_object):
     )
 
 
-def image_shift_optical_flow_method(reference_ccd_object, current_ccd_object):
+def image_shift_optical_flow_method(
+        reference_ccd_object: CCDData, current_ccd_object: CCDData) -> CCDData:
     """
-        Calculate image shifts using the optical flow method
+    Calculate image shifts using the optical flow method
 
-        Parameters
-        ----------
-        reference_ccd_object        : `astropy.nddata.CCDData` object
-            Reference image
+    Parameters
+    ----------
+    reference_ccd_object
+        Reference image
 
-        current_ccd_object          : `astropy.nddata.CCDData` object
-            Current image
+    current_ccd_object
+        Current image
 
-        Returns
-        -------
-                                    : `astropy.nddata.CCDData` object
-            Aligned image
+    Returns
+    -------
+
+        Aligned image
     """
     #   Prepare data, mask, and uncertainty arrays
     current_data = current_ccd_object.data
@@ -1505,22 +1608,24 @@ def image_shift_optical_flow_method(reference_ccd_object, current_ccd_object):
     )
 
 
-def make_index_from_shifts(shifts, id_current_image):
+def make_index_from_shifts(
+        shifts: np.ndarray, id_current_image: int
+        ) -> tuple[float, float, float, float]:
     """
-        Calculate image index positions from image shifts
+    Calculate image index positions from image shifts
 
-        Parameters
-        ----------
-        shifts                          : `numpy.ndarray`
-            Shifts of all images in X and Y direction
+    Parameters
+    ----------
+    shifts
+        The shifts of all images in X and Y direction
 
-        id_current_image                : `integer`
-            ID of the current image
+    id_current_image
+        ID of the current image
 
-        Returns
-        -------
-        x_start, x_end, y_start, y_end  : `float`
-            Start/End pixel index in X and Y direction.
+    Returns
+    -------
+    x_start, x_end, y_start, y_end
+        Start/End pixel index in X and Y direction.
     """
     #   Calculate maximum and minimum shifts
     min_shift_x, max_shift_x, min_shift_y, max_shift_y = (
@@ -1551,44 +1656,52 @@ def make_index_from_shifts(shifts, id_current_image):
     return x_start, x_end, y_start, y_end
 
 
-def trim_image(image, image_id, n_files, image_shift,
-               correlation_method='skimage', verbose=False):
+def trim_image(
+        image: CCDData, image_id: int, n_files: int, image_shift: np.ndarray,
+        correlation_method: str = 'skimage', verbose: bool = False) -> CCDData:
     """
-        Trim image based on a shift compared to a reference image
+    Trim image based on a shift compared to a reference image
 
-        Parameters
-        ----------
-        image                   : `astropy.nddata.CCDData`
-            Image
+    Parameters
+    ----------
+    image
+        The image
 
-        image_id                : `integer`
-            Number of the image in the sequence
+    image_id
+        Number of the image in the sequence
 
-        n_files                 : `integer`
-            Number of all images
+    n_files
+        Number of all images
 
-        image_shift             : `numpy.ndarray`
-            Shift of this specific image in X and Y direction
+    image_shift
+        Shift of this specific image in X and Y direction
 
-        correlation_method      : `string`, optional
-            Method to use for image alignment.
-            Possibilities: 'aa'      = astroalign module only accounting for
-                                       xy shifts
-                           'aa_true' = astroalign module with corresponding
-                                       transformation
-                           'own'     = own correlation routine based on
-                                       phase correlation, applying fft to
-                                       the images
-                           'skimage' = phase correlation with skimage
-            Default is ``skimage``.
+    correlation_method
+        Method to use for image alignment.
+        Possibilities: 'aa'      = astroalign module only accounting for
+                                   xy shifts
+                       'aa_true' = astroalign module with corresponding
+                                   transformation
+                       'own'     = own correlation routine based on
+                                   phase correlation, applying fft to
+                                   the images
+                       'skimage' = phase correlation with skimage
+        Default is ``skimage``.
 
-        verbose                 : `boolean`, optional
-            If True additional output will be printed to the command line.
-            Default is ``False``.
+    verbose
+        If True additional output will be printed to the command line.
+        Default is ``False``.
+
+    Returns
+    -------
+    trimmed_imag
+        The trimmed image
     """
     if verbose:
         #   Write status to console
-        print(f"\r\tApply shift to image {image_id + 1}/{n_files}\n")
+        terminal_output.print_to_terminal(
+            f"\r\tApply shift to image {image_id + 1}/{n_files}\n",
+        )
 
     if correlation_method in ['own', 'skimage']:
         #   Ensure full pixel shifts
@@ -1648,44 +1761,46 @@ def trim_image(image, image_id, n_files, image_shift,
     )
 
 
-def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
-                      images_path, raw_files_path, temp_dir, image_type=None):
+def prepare_reduction(
+        output_dir: str, bias_path: str, darks_path: str, flats_path: str,
+        images_path: str, raw_files_path: str, temp_dir: TemporaryDirectory,
+        image_type: dict[str, str] | None = None) -> str:
     """
-        Prepare directories and files for the reduction procedure
+    Prepare directories and files for the reduction procedure
 
-        Parameters
-        ----------
-        output_dir          : `list` of `string`s
-            Path to the directory where the master files should be saved to
+    Parameters
+    ----------
+    output_dir
+        Path to the directory where the master files should be saved to
 
-        bias_path           : `list` of `string`s
-            Path to the bias or '?'
+    bias_path
+        Path to the bias or '?'
 
-        darks_path          : `list` of `string`s
-            Path to the darks or '?'
+    darks_path
+        Path to the darks or '?'
 
-        flats_path          : `list` of `string`s
-            Path to the flats or '?'
+    flats_path
+        Path to the flats or '?'
 
-        images_path         : `list` of `string`s
-            Path to the science images or '?'
+    images_path
+        Path to the science images or '?'
 
-        raw_files_path      : 'string`
-            Path to all raw images or '?', if bias, darks, flats, and images
-            are provided.
+    raw_files_path
+        Path to all raw images or '?', if bias, darks, flats, and images
+        are provided.
 
-        temp_dir            : `tempfile.TemporaryDirectory`
-            Temporary directory to store the symbolic links to the images
+    temp_dir
+        Temporary directory to store the symbolic links to the images
 
-        image_type          : `dict` of `string`, optional
-            Image type to select. Possibilities: bias, dark, flat, light
-            Default is ``None``.
+    image_type
+        Image type to select. Possibilities: bias, dark, flat, light
+        Default is ``None``.
 
-        Returns
-        -------
-        raw_files_path      : 'string`
-            Points to the path with the raw files. Either the temporary
-            directory or the already provided 'raw_files_path' directory.
+    Returns
+    -------
+    raw_files_path
+        Points to the path with the raw files. Either the temporary
+        directory or the already provided 'raw_files_path' directory.
     """
     ###
     #   Check directories
@@ -1777,7 +1892,7 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
             if isinstance(new_images_path, str):
                 images_path_new.append(new_images_path)
         images_path = images_path_new
-    
+
     ###
     #   Prepare temporary directory, if individual
     #   directories were defined above
@@ -1812,22 +1927,23 @@ def prepare_reduction(output_dir, bias_path, darks_path, flats_path,
     return raw_files_path
 
 
-def get_star_profiles(cutout_data):
+def get_star_profiles(
+        cutout_data: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
-        Get star profiles
+    Get star profiles
 
-        Parameters
-        ----------
-        cutout_data                   : `numpy.ndarray`
-            Image (square) extracted around the star
+    Parameters
+    ----------
+    cutout_data
+        Image (square) extracted around the star
 
-        Returns
-        -------
-        profile_x_direction           : `numpy.ndarray`
-            Profile in X direction
+    Returns
+    -------
+    profile_x_direction
+        Profile in X direction
 
-        profile_y_direction           : `numpy.ndarray`
-            Profile in Y direction
+    profile_y_direction
+        Profile in Y direction
     """
     #   Get image shape
     shape = cutout_data.shape
@@ -1850,21 +1966,21 @@ def get_star_profiles(cutout_data):
     return profile_x_direction, profile_y_direction
 
 
-def interpolate_fwhm(profile):
+def interpolate_fwhm(profile: np.ndarray) -> float:
     """
-        Find FWHM by means of interpolation on a stellar profile
+    Find FWHM by means of interpolation on a stellar profile
 
-        Idea: https://stackoverflow.com/questions/52320873/computing-the-fwhm-of-a-star-profile
+    Idea: https://stackoverflow.com/questions/52320873/computing-the-fwhm-of-a-star-profile
 
-        Parameters
-        ----------
-        profile        : `numpy.ndarray`
-            Stellar profile along a specific axis
+    Parameters
+    ----------
+    profile
+        Stellar profile along a specific axis
 
-        Returns
-        -------
-                        : `float`
-            FWHM of the profile
+    Returns
+    -------
+    full_width_half_maximum
+        FWHM of the profile
     """
     #   Prepare interpolation
     half_maximum = 0.5 * np.max(profile)
@@ -1877,30 +1993,31 @@ def interpolate_fwhm(profile):
     return r2 - r1
 
 
-def estimate_fwhm(image_path, output_dir, image_type, plot_subplots=False,
-                  indent=2):
+def estimate_fwhm(
+        image_path: Path, output_dir: Path, image_type: list[str],
+        plot_subplots: bool = False, indent: int = 2) -> None:
     """
-        Combine images
+    Combine images
 
-        Parameters
-        ----------
-        image_path              : `pathlib.Path`
-            Path to the images
+    Parameters
+    ----------
+    image_path
+        Path to the images
 
-        output_dir              : `pathlib.Path`
-            Path to the directory where the master files should be saved to
+    output_dir
+        Path to the directory where the master files should be saved to
 
-        image_type              : `list`
-            Header keyword characterizing the image type for which the
-            shifts shall be determined
+    image_type
+        Header keyword characterizing the image type for which the
+        shifts shall be determined
 
-        plot_subplots           : `boolean`, optional
-            Plot subplots around the stars used to estimate the FWHM
-            Default is ``False``.
+    plot_subplots
+        Plot subplots around the stars used to estimate the FWHM
+        Default is ``False``.
 
-        indent                  : `integer`
-            Indentation for the console output lines.
-            Default is ``2``.
+    indent
+        Indentation for the console output lines.
+        Default is ``2``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -1981,12 +2098,12 @@ def estimate_fwhm(image_path, output_dir, image_type, plot_subplots=False,
 
             #   Plot subplots
             if plot_subplots:
-                plot.cutouts_fwhm_stars(
+                plots.cutouts_fwhm_stars(
                     out_path,
                     len(objects_tbl_filtered),
                     object_cutouts,
                     filter_,
-                    base_aux.get_basename(file_name),
+                    base_utilities.get_basename(file_name),
                 )
 
             ###
@@ -2005,7 +2122,7 @@ def estimate_fwhm(image_path, output_dir, image_type, plot_subplots=False,
 
                     fwhm_x_list.append(fwhm_x)
                     fwhm_y_list.append(fwhm_y)
-                except:
+                except ValueError:
                     pass
 
             #   Get median of the FWHMs
@@ -2024,33 +2141,35 @@ def estimate_fwhm(image_path, output_dir, image_type, plot_subplots=False,
         )
 
 
-def check_master_files_on_disk(image_path, image_type_dict,
-                               dark_exposure_times, filter_list, check_bias):
+def check_master_files_on_disk(
+        image_path: str | Path, image_type_dict: dict[str, list[str]],
+        dark_exposure_times: list[float], filter_list: list[str] | set[str],
+        check_bias: bool) -> bool:
     """
-        Check if master files are already prepared
+    Check if master files are already prepared
 
-        Parameters
-        ----------
-        image_path              : `string` or `pathlib.Path`
-            Path to the images
+    Parameters
+    ----------
+    image_path
+        Path to the images
 
-        image_type_dict         : `dictionary`
-            Image types of the images.
-            Possibilities: bias, dark, flat, light
+    image_type_dict
+        Image types of the images.
+        Possibilities: bias, dark, flat, light
 
-        dark_exposure_times     : `list`
-            Exposure times of the raw dark images
+    dark_exposure_times
+        Exposure times of the raw dark images
 
-        filter_list             : `list` or `set`
-            Filter that have been used
+    filter_list
+        Filter that have been used
 
-        check_bias              : `boolean`
-            If True bias will be checked as well.
+    check_bias
+        If True bias will be checked as well.
 
-        Returns
-        -------
-        master_available        : `boolean`
-            Is True, if all required master files were detected.
+    Returns
+    -------
+    master_available
+        Is True, if all required master files were detected.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -2141,22 +2260,24 @@ def check_master_files_on_disk(image_path, image_type_dict,
     return master_available
 
 
-def flip_image(image_file_collection, output_path):
+def flip_image(
+        image_file_collection: ccdp.ImageFileCollection, output_path: Path
+        ) -> ccdp.ImageFileCollection:
     """
-        Flip images in X and Y direction
+    Flip images in X and Y direction
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            Image file collection
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection
 
-        output_path             : `pathlib.Path`
-            Path to save the individual images
+    output_path
+        Path to save the individual images
 
-        Returns
-        -------
-                                : `ccdproc.ImageFileCollection`
-            Image file collection pointing to the flipped images
+    Returns
+    -------
+    flipped_images_ifc
+        Image file collection pointing to the flipped images
     """
     terminal_output.print_to_terminal("Flip images", indent=2)
 
@@ -2179,26 +2300,28 @@ def flip_image(image_file_collection, output_path):
     return ccdp.ImageFileCollection(output_path_flipped)
 
 
-def bin_image(image_file_collection, output_path, binning_value):
+def bin_image(
+        image_file_collection: ccdp.ImageFileCollection, output_path: Path,
+        binning_value: int ) -> ccdp.ImageFileCollection:
     """
-        Bin images in X and Y direction
+    Bin images in X and Y direction
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            Image file collection
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection
 
-        output_path             : `pathlib.Path`
-            Path to save the individual images
+    output_path
+        Path to save the individual images
 
-        binning_value           : `integer`
-            Number of pixel that the image should be binned in X and Y
-            direction.
+    binning_value
+        Number of pixel that the image should be binned in X and Y
+        direction.
 
-        Returns
-        -------
-                                : `ccdproc.ImageFileCollection`
-            Image file collection pointing to the binned images
+    Returns
+    -------
+    binned_ifc
+        Image file collection pointing to the binned images
     """
     terminal_output.print_to_terminal("Bin images", indent=2)
 
@@ -2229,40 +2352,42 @@ def bin_image(image_file_collection, output_path, binning_value):
 
 
 #   TODO: Check if this function can be merged with `trim_image` -> Used by N1 script
-def trim_image_simple(image_file_collection, output_path,
-                      redundant_pixel_x_start=100, redundant_pixel_x_end=100,
-                      redundant_pixel_y_start=100, redundant_pixel_y_end=100):
+def trim_image_simple(
+        image_file_collection: ccdp.ImageFileCollection, output_path: Path,
+        redundant_pixel_x_start: int = 100, redundant_pixel_x_end: int = 100,
+        redundant_pixel_y_start: int = 100, redundant_pixel_y_end: int = 100
+        ) -> ccdp.ImageFileCollection:
     """
-        Trim images in X and Y direction
+    Trim images in X and Y direction
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            Image file collection
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection
 
-        output_path             : `pathlib.Path`
-            Path to save the individual images
+    output_path
+        Path to save the individual images
 
-        redundant_pixel_x_start : `integer`
-            Number of Pixel to be removed from the start of the image in
-            X direction.
+    redundant_pixel_x_start
+        Number of Pixel to be removed from the start of the image in
+        X direction.
 
-        redundant_pixel_x_end   : `integer`
-            Number of Pixel to be removed from the end of the image in
-            X direction.
+    redundant_pixel_x_end
+        Number of Pixel to be removed from the end of the image in
+        X direction.
 
-        redundant_pixel_y_start : `integer`
-            Number of Pixel to be removed from the start of the image in
-            Y direction.
+    redundant_pixel_y_start
+        Number of Pixel to be removed from the start of the image in
+        Y direction.
 
-        redundant_pixel_y_end   : `integer`
-            Number of Pixel to be removed from the end of the image in
-            Y direction.
+    redundant_pixel_y_end
+        Number of Pixel to be removed from the end of the image in
+        Y direction.
 
-        Returns
-        -------
-                            : `ccdproc.ImageFileCollection`
-            Image file collection pointing to the trimmed images
+    Returns
+    -------
+    trimmed_images_ifc
+        Image file collection pointing to the trimmed images
     """
     terminal_output.print_to_terminal("Trim images", indent=2)
 
@@ -2288,49 +2413,53 @@ def trim_image_simple(image_file_collection, output_path,
     return ccdp.ImageFileCollection(output_path_trimmed)
 
 
-def find_wcs(input_dir, output_dir, reference_image_id=0,
-             force_wcs_determination=False, wcs_method='astrometry',
-             x_pixel_coordinates=None, y_pixel_coordinates=None, indent=2):
+def determine_wcs(
+        input_dir: str | Path, output_dir: str | Path,
+        reference_image_id: int = 0, force_wcs_determination:bool = False,
+        wcs_method: str = 'astrometry',
+        x_pixel_coordinates: np.ndarray | None = None,
+        y_pixel_coordinates: np.ndarray | None = None, indent: int = 2
+        ) -> None:
     """
-        Determine the WCS of the reference image and add the WCS to all
-        images in the input directory. The latter is to save computing time.
-        It is assumed that the images are already aligned and trimmed to
-        the same filed of view. However, the observation time of these
-        images will be overwritten by this procedure.
+    Determine the WCS of the reference image and add the WCS to all
+    images in the input directory. The latter is to save computing time.
+    It is assumed that the images are already aligned and trimmed to
+    the same filed of view. However, the observation time of these
+    images will be overwritten by this procedure.
 
-        Parameters
-        ----------
-        input_dir               : `pathlib.Path` or string
-            Path to the input directory.
+    Parameters
+    ----------
+    input_dir
+        Path to the input directory.
 
-        output_dir              : `pathlib.Path` or string
-            Path to the output directory.
+    output_dir
+        Path to the output directory.
 
-        reference_image_id      : `integer', optional
-            ID of the reference image.
-            Default is ``0``.
+    reference_image_id
+        ID of the reference image.
+        Default is ``0``.
 
-        force_wcs_determination : `boolean`, optional
-            If ``True`` a new WCS determination will be calculated even if
-            a WCS is already present in the FITS Header.
-            Default is ``False``.
+    force_wcs_determination
+        If ``True`` a new WCS determination will be calculated even if
+        a WCS is already present in the FITS Header.
+        Default is ``False``.
 
-        wcs_method              : `string`, optional
-            Method to use for the WCS determination
-            Options: 'astrometry', 'astap', or 'twirl'
-            Default is ``astrometry``.
+    wcs_method
+        Method to use for the WCS determination
+        Options: 'astrometry', 'astap', or 'twirl'
+        Default is ``astrometry``.
 
-        x_pixel_coordinates     : `numpy.ndarray`, optional
-            Pixel coordinates of the objects
-            Default is ``None``.
+    x_pixel_coordinates
+        Pixel coordinates of the objects
+        Default is ``None``.
 
-        y_pixel_coordinates     : `numpy.ndarray`, optional
-            Pixel coordinates of the objects
-            Default is ``None``.
+    y_pixel_coordinates
+        Pixel coordinates of the objects
+        Default is ``None``.
 
-        indent                  : `integer`, optional
-            Indentation for the console output lines
-            Default is ``2``.
+    indent
+        Indentation for the console output lines
+        Default is ``2``.
     """
     ###
     #   Prepare variables
@@ -2365,29 +2494,24 @@ def find_wcs(input_dir, output_dir, reference_image_id=0,
 
         ifc_filtered = image_file_collection.filter(filter=reference_filter)
 
-    ###
     #   Get reference image
-    #
     reference_image_path = ifc_filtered.files[reference_image_id]
 
-    reference_image = base_aux.Image(
+    reference_image = base_utilities.Image(
         reference_image_id,
         reference_filter,
-        'target',
         reference_image_path,
         output_dir,
     )
 
-    base_aux.calculate_field_of_view(reference_image)
+    # base_utilities.calculate_field_of_view(reference_image)
 
     #   Test if the image contains already a WCS
-    wcs_available = base_aux.check_wcs_exists(reference_image)
+    wcs_available = base_utilities.check_wcs_exists(reference_image)
 
-    ###
     #   Determine WCS
-    #
     if not wcs_available or force_wcs_determination:
-        wcs = find_wcs_core(
+        wcs = determine_wcs_core(
             reference_image,
             wcs_method=wcs_method,
             x_pixel_coordinates=x_pixel_coordinates,
@@ -2395,9 +2519,7 @@ def find_wcs(input_dir, output_dir, reference_image_id=0,
             indent=indent,
         )
 
-        ###
         #   Add WCS to images
-        #
         if wcs is not None:
             for image, file_name in image_file_collection.ccds(return_fname=True):
                 image.wcs = wcs
@@ -2406,51 +2528,54 @@ def find_wcs(input_dir, output_dir, reference_image_id=0,
                 image.write(output_dir / file_name, overwrite=True)
 
 
-def find_wcs_all_images(input_dir, output_dir, force_wcs_determination=False,
-                        wcs_method='astrometry', x_pixel_coordinates=None,
-                        y_pixel_coordinates=None, only_combined_images=False,
-                        image_type=None, indent=2):
+def determine_wcs_all_images(
+        input_dir: str | Path, output_dir: Path,
+        force_wcs_determination: bool = False, wcs_method: str = 'astrometry',
+        x_pixel_coordinates: np.ndarray | None = None,
+        y_pixel_coordinates: np.ndarray | None =None,
+        only_combined_images: bool = False,
+        image_type: list[str] | None = None, indent: int = 2) -> None:
     """
-        Determine the WCS of each image individually. Images can be filtered
-        based on image type and the 'combined' keyword.
+    Determine the WCS of each image individually. Images can be filtered
+    based on image type and the 'combined' keyword.
 
-        Parameters
-        ----------
-        input_dir               : `pathlib.Path` or string
-            Path to the input directory.
+    Parameters
+    ----------
+    input_dir
+        Path to the input directory.
 
-        output_dir              : `pathlib.Path` or string
-            Path to the output directory.
+    output_dir
+        Path to the output directory.
 
-        force_wcs_determination        : `boolean`, optional
-            If ``True`` a new WCS determination will be calculated even if
-            a WCS is already present in the FITS Header.
-            Default is ``False``.
+    force_wcs_determination
+        If ``True`` a new WCS determination will be calculated even if
+        a WCS is already present in the FITS Header.
+        Default is ``False``.
 
-        wcs_method              : `string`, optional
-            Method to use for the WCS determination
-            Options: 'astrometry', 'astap', or 'twirl'
-            Default is ``astrometry``.
+    wcs_method
+        Method to use for the WCS determination
+        Options: 'astrometry', 'astap', or 'twirl'
+        Default is ``astrometry``.
 
-        x_pixel_coordinates     : `numpy.ndarray`, optional
-            Pixel coordinates of the objects
-            Default is ``None``.
+    x_pixel_coordinates
+        Pixel coordinates of the objects
+        Default is ``None``.
 
-        y_pixel_coordinates     : `numpy.ndarray`, optional
-            Pixel coordinates of the objects
-            Default is ``None``.
+    y_pixel_coordinates
+        Pixel coordinates of the objects
+        Default is ``None``.
 
-        only_combined_images    : `boolean`, optional
-            Filter for images that have a 'combined' fits header keyword.
-            Default is ``False``.
+    only_combined_images
+        Filter for images that have a 'combined' fits header keyword.
+        Default is ``False``.
 
-        image_type              : `list` of `string` or `None`, optional
-            Image type to select. Possibilities: bias, dark, flat, light
-            Default is ``None``.
+    image_type
+        Image type to select. Possibilities: bias, dark, flat, light
+        Default is ``None``.
 
-        indent                  : `integer`, optional
-            Indentation for the console output lines
-            Default is ``2``.
+    indent
+        Indentation for the console output lines
+        Default is ``2``.
     """
     ###
     #   Prepare variables
@@ -2482,20 +2607,19 @@ def find_wcs_all_images(input_dir, output_dir, force_wcs_determination=False,
     #
     for i, (current_ccd_image, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
         #   Prepare image object
-        image_object = base_aux.Image(
+        image_object = base_utilities.Image(
             i,
             'filter',
-            'target',
             file_path / file_name,
             output_dir,
         )
-        base_aux.calculate_field_of_view(image_object, verbose=False)
+        # base_utilities.calculate_field_of_view(image_object, verbose=False)
 
         #   Test if the image contains already a WCS
-        wcs_available = base_aux.check_wcs_exists(image_object)
+        wcs_available = base_utilities.check_wcs_exists(image_object)
 
         if not wcs_available or force_wcs_determination:
-            wcs = find_wcs_core(
+            wcs = determine_wcs_core(
                 image_object,
                 wcs_method=wcs_method,
                 x_pixel_coordinates=x_pixel_coordinates,
@@ -2511,47 +2635,50 @@ def find_wcs_all_images(input_dir, output_dir, force_wcs_determination=False,
                 current_ccd_image.write(output_dir / file_name, overwrite=True)
 
 
-def find_wcs_core(image, wcs_method='astrometry', x_pixel_coordinates=None,
-                  y_pixel_coordinates=None, indent=2):
+def determine_wcs_core(
+        image: base_utilities.Image, wcs_method: str = 'astrometry',
+        x_pixel_coordinates: np.ndarray | None = None,
+        y_pixel_coordinates: np.ndarray | None = None, indent: int = 2
+        ) -> WCS:
     """
-        Branch between different WCS methods
+    Branch between different WCS methods
 
-        Parameters
-        ----------
-        image                   : `image.class`
-            Image class with all image specific properties
+    Parameters
+    ----------
+    image
+        The image class with all image specific properties
 
-        wcs_method              : `string`, optional
-            Method to use for the WCS determination
-            Options: 'astrometry', 'astap', or 'twirl'
-            Default is ``astrometry``.
+    wcs_method
+        Method to use for the WCS determination
+        Options: 'astrometry', 'astap', or 'twirl'
+        Default is ``astrometry``.
 
-        x_pixel_coordinates     : `numpy.ndarray`, optional
-            Pixel coordinates of the objects
-            Default is ``None``.
+    x_pixel_coordinates
+        Pixel coordinates of the objects
+        Default is ``None``.
 
-        y_pixel_coordinates     : `numpy.ndarray`, optional
-            Pixel coordinates of the objects
-            Default is ``None``.
+    y_pixel_coordinates
+        Pixel coordinates of the objects
+        Default is ``None``.
 
-        indent                  : `integer`, optional
-            Indentation for the console output lines
-            Default is ``2``.
+    indent
+        Indentation for the console output lines
+        Default is ``2``.
 
-        Returns
-        -------
-        wcs                   : `astropy.wcs.WCS`
-            WCS information
+    Returns
+    -------
+    wcs
+        The WCS information
     """
     #   astrometry.net:
     if wcs_method == 'astrometry':
         try:
-            wcs = base_aux.find_wcs_astrometry(
+            wcs = base_utilities.find_wcs_astrometry(
                 image,
                 wcs_working_dir='/tmp/',
                 indent=indent,
             )
-        except:
+        except RuntimeError:
             terminal_output.print_to_terminal(
                 "No WCS solution found :(\n",
                 indent=indent,
@@ -2562,12 +2689,12 @@ def find_wcs_core(image, wcs_method='astrometry', x_pixel_coordinates=None,
     #   ASTAP program
     elif wcs_method == 'astap':
         try:
-            wcs = base_aux.find_wcs_astap(
+            wcs = base_utilities.find_wcs_astap(
                 image,
                 indent=indent,
             )
             terminal_output.print_to_terminal('')
-        except:
+        except RuntimeError:
             terminal_output.print_to_terminal(
                 "No WCS solution found :(\n",
                 indent=indent,
@@ -2583,13 +2710,13 @@ def find_wcs_core(image, wcs_method='astrometry', x_pixel_coordinates=None,
                     f'{style.Bcolors.FAIL} \nException in find_wcs(): \n'
                     f"'x' or 'y' is None -> Exit {style.Bcolors.ENDC}"
                 )
-            wcs = base_aux.find_wcs_twirl(
+            wcs = base_utilities.find_wcs_twirl(
                 image,
                 x_pixel_coordinates,
                 y_pixel_coordinates,
                 indent=indent,
             )
-        except:
+        except RuntimeError:
             terminal_output.print_to_terminal(
                 "No WCS solution found :(\n",
                 indent=indent,
@@ -2608,24 +2735,26 @@ def find_wcs_core(image, wcs_method='astrometry', x_pixel_coordinates=None,
     return wcs
 
 
-def update_header_information(image, n_image_stacked=1, new_target_name=None):
+def update_header_information(
+        image: CCDData, n_image_stacked: int = 1,
+        new_target_name: str | None = None) -> None:
     """
-        Updates Header information. Adds among other Header keywords required
-        for the GRANDMA project.
+    Updates Header information. Adds among other Header keywords required
+    for the GRANDMA project.
 
-        Parameters
-        ----------
-        image               : `image.class`
-            Image class with all image specific properties
+    Parameters
+    ----------
+    image
+        The image class with all image specific properties
 
-        n_image_stacked     : `integer`, optional
-            Number of stacked images
-            Default is ``1``.
+    n_image_stacked
+        Number of stacked images
+        Default is ``1``.
 
-        new_target_name     : str or None, optional
-            Name of the target. If not None, this target name will be written
-            to the FITS header.
-            Default is ``None``.
+    new_target_name
+        Name of the target. If not None, this target name will be written
+        to the FITS header.
+        Default is ``None``.
     """
     #   Add Header keyword to mark the file as stacked
     if n_image_stacked > 1:
@@ -2688,7 +2817,7 @@ def update_header_information(image, n_image_stacked=1, new_target_name=None):
     #   Add filter system to the Header
     filter_ = image.meta['FILTER']
     try:
-        filter_system = calibration_data.filter_systems[filter_]
+        filter_system = calibration_parameters.filter_systems[filter_]
         image.meta['FILTER-S'] = filter_system
     except Exception as e:
         terminal_output.print_to_terminal(

@@ -2,6 +2,8 @@
 #                               Libraries                                  #
 ############################################################################
 
+from pathlib import Path
+
 import numpy as np
 
 from scipy import stats
@@ -9,6 +11,10 @@ from scipy import stats
 from matplotlib import pyplot as plt
 
 from astropy.visualization import hist, simple_norm
+
+from photutils.psf import EPSFStars
+
+import ccdproc as ccdp
 
 from .. import checks
 
@@ -18,17 +24,18 @@ from .. import checks
 ############################################################################
 
 
-def cross_correlation_matrix(image_data, cross_correlation_data):
+def cross_correlation_matrix(
+        image_data: np.ndarray, cross_correlation_data: np.ndarray) -> None:
     """
-        Debug plot showing the cc matrix, created during image correlation
+    Debug plot showing the cc matrix, created during image correlation
 
-        Parameters
-        ----------
-        image_data              : `numpy.ndarray`
-            Image data array
+    Parameters
+    ----------
+    image_data
+        Image data array
 
-        cross_correlation_data  : `numpy.ndarray`
-            Array with the data of the cc matrix
+    cross_correlation_data
+        Array with the data of the cc matrix
     """
     #   Norm of image
     norm = simple_norm(image_data, 'log', percent=99.)
@@ -61,49 +68,55 @@ def cross_correlation_matrix(image_data, cross_correlation_data):
     plt.show()
 
 
-def plot_dark_with_distributions(image_data, read_noise, dark_current,
-                                 output_dir, n_images=1, exposure_time=1,
-                                 gain=1, show_poisson_distribution=True,
-                                 show_gaussian_distribution=True):
+def plot_dark_with_distributions(
+        image_data: np.ndarray, read_noise: float, dark_current: float,
+        output_dir: Path, n_images: int = 1, exposure_time: float = 1.,
+        gain: float = 1., show_poisson_distribution: bool = True,
+        show_gaussian_distribution: bool = True) -> None:
     """
-        Plot the distribution of dark pixel values, optionally over-plotting
-        the expected Poisson and normal distributions corresponding to dark
-        current only or read noise only.
+    Plot the distribution of dark pixel values, optionally over-plotting
+    the expected Poisson and normal distributions corresponding to dark
+    current only or read noise only.
 
-        Parameters
-        ----------
-        image_data             : `numpy.ndarray`
-            Image data
+    Parameters
+    ----------
+    image_data
+        Image data
 
-        read_noise              : `float`
-            The read noise, in electrons
+    read_noise
+        The read noise, in electrons
 
-        dark_current       : `float`
-            The dark current in electrons/sec/pixel
+    dark_current
+        The dark current in electrons/sec/pixel
 
-        output_dir          : `pathlib.Path`
-            Path pointing to the main storage location
+    output_dir
+        Path pointing to the main storage location
 
-        n_images        : `float`, optional
-            If the image is formed from the average of some number of dark
-            frames then the resulting Poisson distribution depends on the
-            number of images, as does the expected standard deviation of the
-            Gaussian.
+    n_images
+        If the image is formed from the average of some number of dark
+        frames then the resulting Poisson distribution depends on the
+        number of images, as does the expected standard deviation of the
+        Gaussian.
+        Default is ``1``.
 
-        exposure_time        : `float`, optional
-            Exposure time, in seconds
+    exposure_time
+        Exposure time, in seconds
+        Default is ``1.``.
 
-        gain            : `float`, optional
-            Gain of the camera, in electron/ADU
+    gain
+        The gain of the camera, in electron/ADU
+        Default is ``1.``.
 
-        show_poisson_distribution    : `bool`, optional
-            If ``True``, over plot a Poisson distribution with mean equal to
-            the expected dark counts for the number of images
+    show_poisson_distribution
+        If ``True``, over plot a Poisson distribution with mean equal to
+        the expected dark counts for the number of images
+        Default is ``True``.
 
-        show_gaussian_distribution   : `bool`, optional
-            If ``True``, over plot a normal distribution with mean equal to the
-            expected dark counts and standard deviation equal to the read
-            noise, scaled as appropriate for the number of images
+    show_gaussian_distribution
+        If ``True``, over plot a normal distribution with mean equal to the
+        expected dark counts and standard deviation equal to the read
+        noise, scaled as appropriate for the number of images
+        Default is ``True``.
     """
     #   Check output directories
     checks.check_output_directories(
@@ -121,16 +134,13 @@ def plot_dark_with_distributions(image_data, read_noise, dark_current,
     plt.figure(figsize=(20, 9))
 
     #   Get
-    h = plt.hist(
+    plt.hist(
         image_data.flatten(),
         bins=20,
         align='mid',
         density=True,
         label="Dark frame",
     )
-
-    #   TODO: Check plot - bins and histogram not used
-    bins = h[1]
 
     #   Expected mean of the dark
     expected_mean_dark = dark_current * exposure_time / gain
@@ -144,7 +154,6 @@ def plot_dark_with_distributions(image_data, read_noise, dark_current,
         x_axis_poisson = np.arange(0, 300, 1)
 
         #   Prepare normalization
-        #   TODO: Check if this is correct
         new_area = np.sum(
             1 / n_images * poisson_distribution.pmf(x_axis_poisson)
         )
@@ -159,7 +168,6 @@ def plot_dark_with_distributions(image_data, read_noise, dark_current,
     #   Plot Gaussian
     if show_gaussian_distribution:
         #   The expected width of the Gaussian depends on the number of images
-        #   TODO: Check if this is correct
         expected_scale = read_noise / gain * np.sqrt(n_images)
 
         #   Mean value is same as for the Poisson distribution (account for
@@ -200,23 +208,25 @@ def plot_dark_with_distributions(image_data, read_noise, dark_current,
     plt.close()
 
 
-def plot_histogram(image_data, output_dir, gain, exposure_time):
+def plot_histogram(
+        image_data: np.ndarray, output_dir: Path, gain: float,
+        exposure_time: float) -> None:
     """
-        Plot image histogram for dark images
+    Plot image histogram for dark images
 
-        Parameters
-        ----------
-        image_data      : `numpy.ndarray`
-            Dark frame to histogram
+    Parameters
+    ----------
+    image_data
+        Dark frame to histogram
 
-        output_dir      : `pathlib.Path`
-            Path pointing to the main storage location
+    output_dir
+        Path pointing to the main storage location
 
-        gain            : `float`
-            Gain of the camera, in electron/ADU
+    gain
+        The gain of the camera, in electron/ADU
 
-        exposure_time   : `float`
-            Exposure time, in seconds
+    exposure_time
+        Exposure time, in seconds
     """
     #   Check output directories
     checks.check_output_directories(
@@ -261,28 +271,29 @@ def plot_histogram(image_data, output_dir, gain, exposure_time):
     plt.close()
 
 
-def plot_median_of_flat_fields(image_file_collection, image_type, output_dir,
-                               filter_):
+def plot_median_of_flat_fields(
+        image_file_collection: ccdp.ImageFileCollection,
+        image_type: str, output_dir: Path, filter_: str) -> None:
     """
-        Plot median and mean of each flat field in a file collection
+    Plot median and mean of each flat field in a file collection
 
-        Parameters
-        ----------
-        image_file_collection   : `ccdproc.ImageFileCollection`
-            File collection with the flat fields to analyze
+    Parameters
+    ----------
+    image_file_collection
+        File collection with the flat fields to analyze
 
-        image_type              : `string`
-            Header keyword characterizing the flats
+    image_type
+        Header keyword characterizing the flats
 
-        output_dir              : `pathlib.Path`
-            Path pointing to the main storage location
+    output_dir
+        Path pointing to the main storage location
 
-        filter_                 : `string`
-            Filter
+    filter_
+        Filter
 
-        Idea/Reference
-        --------------
-            # https://www.astropy.org/ccd-reduction-and-photometry-guide/v/dev/notebooks/05-04-Combining-flats.html
+    Idea/Reference
+    --------------
+        # https://www.astropy.org/ccd-reduction-and-photometry-guide/v/dev/notebooks/05-04-Combining-flats.html
     """
     #   Check output directories
     checks.check_output_directories(
@@ -324,27 +335,28 @@ def plot_median_of_flat_fields(image_file_collection, image_type, output_dir,
     plt.close()
 
 
-def cutouts_fwhm_stars(output_dir, n_stars, sub_images_fwhm_stars, filter_,
-                       basename):
+def cutouts_fwhm_stars(
+        output_dir: Path, n_stars: int, sub_images_fwhm_stars: EPSFStars,
+        filter_: str, basename: str) -> None:
     """
-        Plots cutouts around the stars used to estimate the FWHM
+    Plots cutouts around the stars used to estimate the FWHM
 
-        Parameters
-        ----------
-        output_dir              : `pathlib.Path`
-            Path to the directory where the master files should be saved to
+    Parameters
+    ----------
+    output_dir
+        Path to the directory where the master files should be saved to
 
-        n_stars                 : `integer`
-            Number of stars
+    n_stars
+        Number of stars
 
-        sub_images_fwhm_stars   : `photutils.psf.EPSFStars object
-            Sub images (squares) extracted around the FWHM stars
+    sub_images_fwhm_stars
+        Sub images (squares) extracted around the FWHM stars
 
-        filter_                 : `string`
-            Filter name
+    filter_
+        Filter name
 
-        basename                : `string`
-            Name of the image file
+    basename
+        Name of the image file
     """
     #   Check output directories
     checks.check_output_directories(
@@ -395,26 +407,28 @@ def cutouts_fwhm_stars(output_dir, n_stars, sub_images_fwhm_stars, filter_,
     plt.close()
 
 
-def aberration_inspector(image_data, output_dir, filter_,
-                         cutout_size_percent=15, border_cutouts_percent=3):
+def aberration_inspector(
+        image_data: np.ndarray, output_dir: Path, filter_: str,
+        cutout_size_percent: float | int = 15,
+        border_cutouts_percent: float | int = 3) -> None:
     """
     Crop and display the edges and center of an image
 
     Parameters
     ----------
-    image_data              : `numpy.ndarray`
+    image_data
         2D image data array
 
-    output_dir              : `pathlib.Path`
+    output_dir
         Path to the directory where the master files should be saved to
 
-    filter_                 : `string`
+    filter_
         Filter name
 
-    cutout_size_percent     : `float` or `integer`
+    cutout_size_percent
         Cutout size as a percentage of the Y dimension of the image
 
-    border_cutouts_percent  : `float` or `integer`
+    border_cutouts_percent
         Size of the borders around the cutouts as a percentage of the
         Y dimension of the image
     """

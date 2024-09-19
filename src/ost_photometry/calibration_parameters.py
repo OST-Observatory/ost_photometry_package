@@ -4,8 +4,7 @@
 
 from astropy.time import Time
 import astropy.units as u
-
-from uncertainties import ufloat
+from astropy import uncertainty as unc
 
 import scipy.interpolate as interpolate
 
@@ -16,7 +15,7 @@ from . import terminal_output
 ############################################################################
 
 
-def get_image_types():
+def get_image_types() -> dict[str, list[str]]:
     """
         Get image type designator: The terms that are used to identify bias,
         darks, flats, etc. in the image Headers.
@@ -27,30 +26,30 @@ def get_image_types():
             Dictionary with the image type.
     """
     #   Define default image types
-    default_img_type = {
+    default_img_type: dict[str, list[str]] = {
         'bias': ['Bias Frame', 'Bias', 'BIAS'],
         'dark': ['Dark Frame', 'Dark', 'DARK'],
-        'flat': ['Flat Field', 'Flat', 'FLAT'],
+        'flat': ['Flat Field', 'Flat', 'FLAT', 'Flat Frame'],
         'light': ['Light Frame', 'Light', 'LIGHT'],
     }
 
     return default_img_type
 
 
-def chip_dimensions(camera):
+def chip_dimensions(camera: str) -> tuple[float, float]:
     """
-        Parameters
-        ----------
-        camera          : `string`
-            Camera or camera type used to obtain the data
+    Parameters
+    ----------
+    camera
+        The camera or camera type used to obtain the data
 
-        Returns
-        -------
-        d               : `integer`
-            Width in pixel
+    Returns
+    -------
+    d
+        Width in pixel
 
-        h               : `integer`
-            Height in pixel
+    h
+        Height in pixel
     """
     #   STF8300
     if camera in ['SBIG STF-8300 CCD Camera']:
@@ -72,43 +71,46 @@ def chip_dimensions(camera):
     return d, h
 
 
-def camera_info(camera, readout_mode, temperature, gain_setting=None):
+def camera_info(
+        camera: str, readout_mode: str, temperature: float,
+        gain_setting: int | None = None
+    ) -> tuple[float, float, float, int, int]:
     """
-        Camera specific parameters
+    Camera specific parameters
 
-        Parameters
-        ----------
-        camera          : `string`
-            Camera or camera type used to obtain the data
+    Parameters
+    ----------
+    camera
+        The camera or camera type used to obtain the data
 
-        readout_mode    : `string`
-            Mode used to read out the data from the camera chip.
+    readout_mode
+        Mode used to read out the data from the camera chip.
 
-        temperature     : `float`
-            Temperature of the camera chip
+    temperature
+        The temperature of the camera chip
 
-        gain_setting    : `integer` or `None`, optional
-            Gain used in the camera setting for cameras such as the QHYs.
-            This is not the system gain, but it can be calculated from this
-            value. See below.
-            Default is ``None``.
+    gain_setting
+        Gain used in the camera setting for cameras such as the QHYs.
+        This is not the system gain, but it can be calculated from this
+        value. See below.
+        Default is ``None``.
 
-        Returns
-        -------
-        read_noise      : `float`
-            Read noise
+    Returns
+    -------
+    read_noise
+        Read noise
 
-        gain            : `float`
-            Gain factor
+    gain
+        The gain factor
 
-        dark_rate       : `float`
-            Dark current
+    dark_rate
+        Dark current
 
-        d               : `integer`
-            Width in pixel
+    d
+        Width in pixel
 
-        h               : `integer`
-            Height in pixel
+    h
+        Height in pixel
     """
     #   STF8300
     if camera in ['SBIG STF-8300 CCD Camera']:
@@ -127,12 +129,13 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
                 extrapolate=False,
             )
             read_noise = spline(gain_setting)
-        except Exception as e:
+        except KeyError as e:
             terminal_output.print_to_terminal(
                 f'Camera: {camera}\n'
                 "   The read noise could not be determined... \n"
                 "   Use default value: 7.904\n"
-                f"  Readout mode was {e}\n",
+                f"   Readout mode was {readout_mode}\n"
+                f"   Error: {e}",
                 indent=1,
                 style_name='WARNING'
             )
@@ -147,12 +150,13 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
                 extrapolate=False,
             )
             gain = spline(gain_setting)
-        except Exception as e:
+        except KeyError as e:
             terminal_output.print_to_terminal(
                 f'Camera: {camera}\n'
                 "   The true gain factor could not be determined... \n"
                 "   Use default value: 1.292\n"
-                f"   Readout mode was {e}\n",
+                f"   Readout mode was {readout_mode}\n"
+                f"   Error: {e}",
                 indent=1,
                 style_name='WARNING'
             )
@@ -161,7 +165,8 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
     else:
         #   Default: modern CMOS camera assumption
         terminal_output.print_to_terminal(
-            "Camera not recognized. Assuming a modern CMOS camera ... ",
+            "Camera not recognized. Assuming a modern CMOS camera: "
+            "read noise = 7. e- and gain = 1.",
             indent=1,
             style_name='WARNING'
         )
@@ -178,7 +183,7 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
             extrapolate=True,
         )
         dark_rate = spline(temperature)
-    except Exception as e:
+    except KeyError as e:
         terminal_output.print_to_terminal(
             f'Camera: {camera}\n'
             "   The dark current could not be determined... \n"
@@ -203,22 +208,22 @@ def camera_info(camera, readout_mode, temperature, gain_setting=None):
     return read_noise, gain, dark_rate, d, h
 
 
-def get_chip_dimensions(instrument):
+def get_chip_dimensions(instrument: str) -> tuple[float, float]:
     """
-        Return camera chip dimensions in mm
+    Return camera chip dimensions in mm
 
-        Parameters
-        ----------
-        instrument          : `string`
-            Camera type or came driver name
+    Parameters
+    ----------
+    instrument
+        Camera type or came driver name
 
-        Returns
-        -------
-            d               : `float`
-                Length of the camera chip
+    Returns
+    -------
+        d
+            Length of the camera chip
 
-            h               : `float`
-                Height of the camera chip
+        h
+            Height of the camera chip
     """
     info_camera = chip_dimensions(instrument)
     return info_camera[3], info_camera[4]
@@ -614,6 +619,12 @@ default_ra_unit = u.deg
 
 #   Catalog properties
 catalog_properties_dict = {
+    'B/vsx/vsx': {
+        'ra_unit': default_ra_unit,
+        'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
+        'columns': [],
+        'err_columns': [],
+    },
     'I/329': default_columns | {'ra_unit': default_ra_unit},
     'I/322A': default_columns | {'ra_unit': default_ra_unit},
     'II/336/apass9': {
@@ -768,19 +779,19 @@ filter_effective_wavelength = {
 }
 
 
-def fitzpatrick_extinction_curve(r):
+def fitzpatrick_extinction_curve(r: float) -> interpolate.CubicSpline:
     """
-        Fitzpatrick's extinction curve - A(lambda)/E(B-V) vs. 1/lambda [1/mym]
-        This version is not valid for wavelengths below 2600AA.
+    Fitzpatrick's extinction curve - A(lambda)/E(B-V) vs. 1/lambda [1/mym]
+    This version is not valid for wavelengths below 2600AA.
 
-        Parameters
-        ----------
-        r               : `float`
+    Parameters
+    ----------
+    r
         Ration between absolute and relative extinction in the V band.
 
-        Returns
-        -------
-        cubic_spline    : `scipy.interpolate.CubicSpline`
+    Returns
+    -------
+    cubic_spline
         Cubic spline to the Fitzpatrick anchor points
 
     """
@@ -811,113 +822,388 @@ def fitzpatrick_extinction_curve(r):
 ###
 #   Filter system conversion functions
 #
-def jordi_u(**kwargs):
+# def jordi_u(**kwargs):
+#     if all(filter_ in kwargs for filter_ in ['U', 'B', 'V', 'g']):
+#         U = kwargs.get("U")
+#         B = kwargs.get("B")
+#         V = kwargs.get("V")
+#         g = kwargs.get("g")
+#
+#         return ufloat(0.750, 0.050) * (U - B) + ufloat(0.770, 0.070) * (B - V) \
+#             + ufloat(0.720, 0.040) + g
+#     return None
+
+
+def jordi_u(**kwargs) -> unc.core.NdarrayDistribution | None:
+    distribution_samples = kwargs.get("distribution_samples")
+
     if all(filter_ in kwargs for filter_ in ['U', 'B', 'V', 'g']):
         U = kwargs.get("U")
         B = kwargs.get("B")
         V = kwargs.get("V")
         g = kwargs.get("g")
 
-        return ufloat(0.750, 0.050) * (U - B) + ufloat(0.770, 0.070) * (B - V) \
-            + ufloat(0.720, 0.040) + g
+        conversation_constant_1 = unc.normal(
+            0.750 * u.mag,
+            std=0.050 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2 = unc.normal(
+            0.770 * u.mag,
+            std=0.070 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_3 = unc.normal(
+            0.720 * u.mag,
+            std=0.040 * u.mag,
+            n_samples=distribution_samples,
+        )
+        return conversation_constant_1 * (U - B) + conversation_constant_2 * (B - V) \
+            + conversation_constant_3 + g
     return None
 
 
-def jordi_g(**kwargs):
+# def jordi_g(**kwargs):
+#     if all(filter_ in kwargs for filter_ in ['B', 'V']):
+#         B = kwargs.get("B")
+#         V = kwargs.get("V")
+#
+#         return ufloat(0.630, 0.002) * (B - V) - ufloat(0.124, 0.002) + V
+#
+#     if all(filter_ in kwargs for filter_ in ['V', 'R', 'r']):
+#         V = kwargs.get("V")
+#         R = kwargs.get("R")
+#         r = kwargs.get("r")
+#
+#         return ufloat(1.646, 0.008) * (V - R) - ufloat(0.139, 0.004) + r
+#
+#     if all(filter_ in kwargs for filter_ in ['V', 'I', 'i']):
+#         V = kwargs.get("V")
+#         I = kwargs.get("I")
+#         i = kwargs.get("i")
+#
+#         if V - I <= 1.8:
+#             return ufloat(1.481, 0.004) * (V - I) - ufloat(0.536, 0.004) + i
+#         else:
+#             return ufloat(0.83, 0.01) * (V - I) + ufloat(0.60, 0.03) + i
+#
+#     return None
+
+def jordi_g(**kwargs) -> unc.core.NdarrayDistribution | None:
+    distribution_samples = kwargs.get("distribution_samples")
+
     if all(filter_ in kwargs for filter_ in ['B', 'V']):
         B = kwargs.get("B")
         V = kwargs.get("V")
 
-        return ufloat(0.630, 0.002) * (B - V) - ufloat(0.124, 0.002) + V
+        conversation_constant_1 = unc.normal(
+            0.630 * u.mag,
+            std=0.002 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2 = unc.normal(
+            0.124 * u.mag,
+            std=0.002 * u.mag,
+            n_samples=distribution_samples,
+        )
+        return conversation_constant_1 * (B - V) - conversation_constant_2 + V
 
     if all(filter_ in kwargs for filter_ in ['V', 'R', 'r']):
         V = kwargs.get("V")
         R = kwargs.get("R")
         r = kwargs.get("r")
 
-        return ufloat(1.646, 0.008) * (V - R) - ufloat(0.139, 0.004) + r
+        conversation_constant_1 = unc.normal(
+            1.646 * u.mag,
+            std=0.008 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2 = unc.normal(
+            0.139 * u.mag,
+            std=0.004 * u.mag,
+            n_samples=distribution_samples,
+        )
+        return conversation_constant_1 * (V - R) - conversation_constant_2 + r
 
     if all(filter_ in kwargs for filter_ in ['V', 'I', 'i']):
         V = kwargs.get("V")
         I = kwargs.get("I")
         i = kwargs.get("i")
 
+        conversation_constant_1_a = unc.normal(
+            1.481 * u.mag,
+            std=0.004 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2_a = unc.normal(
+            0.536 * u.mag,
+            std=0.004 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_1_b = unc.normal(
+            0.83 * u.mag,
+            std=0.01 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2_b = unc.normal(
+            0.6 * u.mag,
+            std=0.03 * u.mag,
+            n_samples=distribution_samples,
+        )
         if V - I <= 1.8:
-            return ufloat(1.481, 0.004) * (V - I) - ufloat(0.536, 0.004) + i
+            return conversation_constant_1_a * (V - I) - conversation_constant_2_a + i
         else:
-            return ufloat(0.83, 0.01) * (V - I) + ufloat(0.60, 0.03) + i
+            return conversation_constant_1_b * (V - I) + conversation_constant_2_b + i
 
     return None
 
 
-def jordi_r(**kwargs):
+# def jordi_r(**kwargs):
+#     if all(filter_ in kwargs for filter_ in ['V', 'R']):
+#         V = kwargs.get("V")
+#         R = kwargs.get("R")
+#
+#         if V - R <= 0.93:
+#             return ufloat(0.267, 0.005) * (V - R) + ufloat(0.088, 0.003) + R
+#         else:
+#             return ufloat(0.77, 0.04) * (V - R) - ufloat(0.37, 0.04)
+#
+#     if all(filter_ in kwargs for filter_ in ['V', 'R', 'g']):
+#         V = kwargs.get("V")
+#         R = kwargs.get("R")
+#         g = kwargs.get("g")
+#
+#         return g - ufloat(1.646, 0.008) * (V - R) + ufloat(0.139, 0.004)
+#
+#     if all(filter_ in kwargs for filter_ in ['I', 'R', 'i']):
+#         I = kwargs.get("I")
+#         R = kwargs.get("R")
+#         i = kwargs.get("i")
+#
+#         return ufloat(1.007, 0.005) * (R - I) - ufloat(0.236, 0.003) + i
+#
+#     if all(filter_ in kwargs for filter_ in ['I', 'R', 'z']):
+#         I = kwargs.get("I")
+#         R = kwargs.get("R")
+#         z = kwargs.get("z")
+#
+#         return ufloat(1.584, 0.008) * (R - I) - ufloat(0.386, 0.005) + z
+#
+#     return None
+
+
+def jordi_r(**kwargs) -> unc.core.NdarrayDistribution | None:
+    distribution_samples = kwargs.get("distribution_samples")
+
     if all(filter_ in kwargs for filter_ in ['V', 'R']):
         V = kwargs.get("V")
         R = kwargs.get("R")
 
+        conversation_constant_1_a = unc.normal(
+            0.267 * u.mag,
+            std=0.005 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2_a = unc.normal(
+            0.088 * u.mag,
+            std=0.003 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_1_b = unc.normal(
+            0.77 * u.mag,
+            std=0.04 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2_b = unc.normal(
+            0.37 * u.mag,
+            std=0.04 * u.mag,
+            n_samples=distribution_samples,
+        )
         if V - R <= 0.93:
-            return ufloat(0.267, 0.005) * (V - R) + ufloat(0.088, 0.003) + R
+            return conversation_constant_1_a * (V - R) + conversation_constant_2_a + R
         else:
-            return ufloat(0.77, 0.04) * (V - R) - ufloat(0.37, 0.04)
+            return conversation_constant_1_b * (V - R) - conversation_constant_2_b
 
     if all(filter_ in kwargs for filter_ in ['V', 'R', 'g']):
         V = kwargs.get("V")
         R = kwargs.get("R")
         g = kwargs.get("g")
 
-        return g - ufloat(1.646, 0.008) * (V - R) + ufloat(0.139, 0.004)
+        conversation_constant_1 = unc.normal(
+            1.646 * u.mag,
+            std=0.008 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2 = unc.normal(
+            0.139 * u.mag,
+            std=0.004 * u.mag,
+            n_samples=distribution_samples,
+        )
+        return g - conversation_constant_1 * (V - R) + conversation_constant_2
 
     if all(filter_ in kwargs for filter_ in ['I', 'R', 'i']):
         I = kwargs.get("I")
         R = kwargs.get("R")
         i = kwargs.get("i")
 
-        return ufloat(1.007, 0.005) * (R - I) - ufloat(0.236, 0.003) + i
+        conversation_constant_1 = unc.normal(
+            1.007 * u.mag,
+            std=0.005 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2 = unc.normal(
+            0.236 * u.mag,
+            std=0.003 * u.mag,
+            n_samples=distribution_samples,
+        )
+        return conversation_constant_1 * (R - I) - conversation_constant_2 + i
 
     if all(filter_ in kwargs for filter_ in ['I', 'R', 'z']):
         I = kwargs.get("I")
         R = kwargs.get("R")
         z = kwargs.get("z")
 
-        return ufloat(1.584, 0.008) * (R - I) - ufloat(0.386, 0.005) + z
+        conversation_constant_1 = unc.normal(
+            1.584 * u.mag,
+            std=0.008 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2 = unc.normal(
+            0.386 * u.mag,
+            std=0.005 * u.mag,
+            n_samples=distribution_samples,
+        )
+        return conversation_constant_1 * (R - I) - conversation_constant_2 + z
 
     return None
 
 
-def jordi_i(**kwargs):
+# def jordi_i(**kwargs):
+#     if all(filter_ in kwargs for filter_ in ['R', 'I']):
+#         R = kwargs.get("R")
+#         I = kwargs.get("I")
+#
+#         return ufloat(0.247, 0.003) * (R - I) + ufloat(0.329, 0.002) + I
+#
+#     if all(filter_ in kwargs for filter_ in ['V', 'I', 'g']):
+#         V = kwargs.get("V")
+#         I = kwargs.get("I")
+#         g = kwargs.get("g")
+#
+#         if V - I <= 1.8:
+#             return g - ufloat(1.481, 0.004) * (V - I) + ufloat(0.536, 0.004)
+#         else:
+#             return g - ufloat(0.83, 0.01) * (V - I) - ufloat(0.60, 0.03)
+#
+#     if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
+#         I = kwargs.get("I")
+#         R = kwargs.get("R")
+#         r = kwargs.get("r")
+#
+#         return r - ufloat(1.007, 0.005) * (R - I) + ufloat(0.236, 0.003)
+#
+#     return None
+
+
+def jordi_i(**kwargs) -> unc.core.NdarrayDistribution | None:
+    distribution_samples = kwargs.get("distribution_samples")
+
     if all(filter_ in kwargs for filter_ in ['R', 'I']):
         R = kwargs.get("R")
         I = kwargs.get("I")
 
-        return ufloat(0.247, 0.003) * (R - I) + ufloat(0.329, 0.002) + I
+        conversation_constant_1 = unc.normal(
+            0.247 * u.mag,
+            std=0.003 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2 = unc.normal(
+            0.329 * u.mag,
+            std=0.002 * u.mag,
+            n_samples=distribution_samples,
+        )
+        return conversation_constant_1 * (R - I) + conversation_constant_2 + I
 
     if all(filter_ in kwargs for filter_ in ['V', 'I', 'g']):
         V = kwargs.get("V")
         I = kwargs.get("I")
         g = kwargs.get("g")
 
+        conversation_constant_1_a = unc.normal(
+            1.481 * u.mag,
+            std=0.004 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2_a = unc.normal(
+            0.536 * u.mag,
+            std=0.004 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_1_b = unc.normal(
+            0.83 * u.mag,
+            std=0.01 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2_b = unc.normal(
+            0.60 * u.mag,
+            std=0.03 * u.mag,
+            n_samples=distribution_samples,
+        )
         if V - I <= 1.8:
-            return g - ufloat(1.481, 0.004) * (V - I) + ufloat(0.536, 0.004)
+            return g - conversation_constant_1_a * (V - I) + conversation_constant_2_a
         else:
-            return g - ufloat(0.83, 0.01) * (V - I) - ufloat(0.60, 0.03)
+            return g - conversation_constant_1_b * (V - I) - conversation_constant_2_b
 
     if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
         I = kwargs.get("I")
         R = kwargs.get("R")
         r = kwargs.get("r")
 
-        return r - ufloat(1.007, 0.005) * (R - I) + ufloat(0.236, 0.003)
+        conversation_constant_1 = unc.normal(
+            1.007 * u.mag,
+            std=0.005 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2 = unc.normal(
+            0.236 * u.mag,
+            std=0.003 * u.mag,
+            n_samples=distribution_samples,
+        )
+        return r - conversation_constant_1 * (R - I) + conversation_constant_2
 
     return None
 
 
-def jordi_z(**kwargs):
+# def jordi_z(**kwargs):
+#     if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
+#         I = kwargs.get("I")
+#         R = kwargs.get("R")
+#         r = kwargs.get("r")
+#
+#         return r - ufloat(1.584, 0.008) * (R - I) + ufloat(0.386, 0.005)
+#
+#     return None
+
+
+def jordi_z(**kwargs) -> unc.core.NdarrayDistribution | None:
+    distribution_samples = kwargs.get("distribution_samples")
+
     if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
         I = kwargs.get("I")
         R = kwargs.get("R")
         r = kwargs.get("r")
 
-        return r - ufloat(1.584, 0.008) * (R - I) + ufloat(0.386, 0.005)
+        conversation_constant_1 = unc.normal(
+            1.584 * u.mag,
+            std=0.008 * u.mag,
+            n_samples=distribution_samples,
+        )
+        conversation_constant_2 = unc.normal(
+            0.386 * u.mag,
+            std=0.005 * u.mag,
+            n_samples=distribution_samples,
+        )
+        return r - conversation_constant_1 * (R - I) + conversation_constant_2
 
     return None
 
@@ -1030,19 +1316,21 @@ Tcs = {
 }
 
 
-def get_transformation_calibration_values(observation_jd):
+def get_transformation_calibration_values(
+        observation_jd: float
+        ) -> dict[str, dict[str, dict[str, float | str | list[str]]]] | None:
     """
-        Get the Tcs calibration values for the provided JD
+    Get the Magnitude transformation calibration values for the provided JD
 
-        Parameters
-        ----------
-        observation_jd   : `float`
-            JD of the observation
+    Parameters
+    ----------
+    observation_jd
+        JD of the observation
 
-        Returns
-        -------
-        Tcs             : `dictionary`
-            Tcs calibration factors
+    Returns
+    -------
+    Tcs
+        Magnitude transformation calibration factors
     """
     if observation_jd is not None:
         for key in Tcs.keys():

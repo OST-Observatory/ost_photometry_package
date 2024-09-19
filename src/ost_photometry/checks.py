@@ -13,14 +13,14 @@ from .style import Bcolors
 #                           Routines & definitions                         #
 ############################################################################
 
-def check_path(path):
+def check_path(path: str) -> None:
     """
-        Check if paths are valid
+    Check if paths are valid
 
-        Parameters
-        ----------
-        path        : `string`
-            Path to check
+    Parameters
+    ----------
+    path
+        The path to check
     """
     if not os.path.isdir(path):
         raise RuntimeError(
@@ -29,14 +29,14 @@ def check_path(path):
         )
 
 
-def check_file(file_path):
+def check_file(file_path: str) -> None:
     """
-        Check if file exists
+    Check if file exists
 
-        Parameters
-        ----------
-        file_path        : `string`
-            File to check
+    Parameters
+    ----------
+    file_path
+        File to check
     """
     if not os.path.isfile(file_path):
         raise RuntimeError(
@@ -45,20 +45,20 @@ def check_file(file_path):
         )
 
 
-def list_subdirectories(path):
+def list_subdirectories(path: str) -> list[str]:
     """
-        List subdirectories
+    List subdirectories
 
-        Parameters
-        ----------
-        path            : `string`
-            Path to directory with subdirectories
+    Parameters
+    ----------
+    path
+        The path to directory with subdirectories
 
 
-        Returns
-        -------
-                        : `list`
-            List with the original path and paths to the subdirectories
+    Returns
+    -------
+
+        List with the original path and paths to the subdirectories
     """
     #   List sub directories
     subdirectories = os.listdir(path)
@@ -72,14 +72,14 @@ def list_subdirectories(path):
     return [path] + result
 
 
-def check_dir(path_dict):
+def check_dir(path_dict: dict[str, str]) -> None:
     """
-        Check whether the directories exist
+    Check whether the directories exist
 
-        Parameters
-        ----------
-        path_dict       : `dictionary`
-            Keys - Path identifier : `string`; values - Path : `string`
+    Parameters
+    ----------
+    path_dict
+        Dictionary with : Keys - Path identifier; values - Path
     """
     missing = ""
     fail = False
@@ -94,40 +94,19 @@ def check_dir(path_dict):
         )
 
 
-def check_unumpy_array(arr):
+def check_pathlib_path(path: str | Path) -> Path:
     """
-        Check if an array is an unumpy array. Since those arrays are also
-        numpy arrays, the for dtype. The dtype of unumpy arrays is always
-        ``object``.
+    Check if the provided path is a pathlib.Path object
 
-        Parameters
-        ----------
-        arr         : `numpy.ndarray`
+    Parameters
+    ----------
+    path
+        The path to the images
 
-        Returns
-        -------
-                    : `boolean`
-            ``True`` if unumpy array, ``False`` otherwise.
-    """
-    if arr.dtype == "object":
-        return True
+    Returns
+    -------
 
-    return False
-
-
-def check_pathlib_path(path):
-    """
-        Check if the provided path is a pathlib.Path object
-
-        Parameters
-        ----------
-        path            : `string` or `pathlib.Path`
-            Path to the images
-
-        Returns
-        -------
-                        : `pathlib.Path`
-            Return `Path`` object.
+        Return `Path`` object.
     """
     if isinstance(path, str):
         return Path(path)
@@ -140,7 +119,7 @@ def check_pathlib_path(path):
         )
 
 
-def check_output_directories(*args):
+def check_output_directories(*args) -> None:
     """
         Check whether the provided paths exist
             -> Create new directories if not
@@ -158,18 +137,17 @@ def check_output_directories(*args):
             )
 
 
-def clear_directory(path):
+def clear_directory(path: Path) -> None:
     """
-        Check if path is a directory and if it is empty. If the path not
-        exists, create it. If the directory is not empty, remove all files in
-        this directory.
+    Check if path is a directory and if it is empty. If the path does not
+    exist, create it. If the directory is not empty, remove all files in
+    this directory.
 
-        Parameters
-        ----------
-        path            : `pathlib.Path`
-            Path to the directory.
+    Parameters
+    ----------
+    path
+        Directory path
     """
-
     if path.is_dir():
         file_list = [x for x in path.iterdir()]
         for fil in file_list:
@@ -178,19 +156,19 @@ def clear_directory(path):
         path.mkdir(exist_ok=True)
 
 
-def check_if_directory_is_empty(path):
+def check_if_directory_is_empty(path: Path) -> bool:
     """
-        Check if path is a directory and if it is empty.
+    Check if path is a directory and if it is empty.
 
-        Parameters
-        ----------
-        path            : `pathlib.Path`
-            Path to the directory.
+    Parameters
+    ----------
+    path
+        The path to the directory.
 
-        Returns
-        -------
-                        : `boolean`
-            `False` if the directory is not empty
+    Returns
+    -------
+
+        `False` if the directory is not empty
     """
 
     if path.is_dir():
