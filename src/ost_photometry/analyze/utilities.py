@@ -2273,6 +2273,7 @@ def post_process_results(
     find_cluster_para_set
         Parameter set used to identify the star cluster in proper
         motion and distance data.
+        Default is ``1``.
 
     convert_magnitudes
         If True the magnitudes will be converted to another

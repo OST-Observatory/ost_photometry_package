@@ -591,7 +591,7 @@ class Observation:
             multiplier_background_rms_epsf: float = 5.0,
             multiplier_grouper_epsf: float = 2.0,
             strict_cleaning_epsf_results: bool = True,
-            minimum_n_eps_stars: int = 25,
+            minimum_n_eps_stars: int = 15,
             reference_image_id: int = 0, strict_epsf_checks: bool = True,
             photometry_extraction_method: str = 'PSF',
             radius_aperture: float = 5., inner_annulus_radius: float = 7.,
@@ -696,7 +696,7 @@ class Observation:
 
         minimum_n_eps_stars
             Minimal number of required ePSF stars
-            Default is ``25``.
+            Default is ``15``.
 
         reference_image_id
             ID of the reference image
@@ -897,7 +897,7 @@ class Observation:
             multiplier_background_rms_epsf: float = 5.0,
             multiplier_grouper_epsf: float = 2.0,
             strict_cleaning_epsf_results: bool = True,
-            minimum_n_eps_stars: int = 25, strict_epsf_checks: bool = True,
+            minimum_n_eps_stars: int = 15, strict_epsf_checks: bool = True,
             photometry_extraction_method: str = 'PSF',
             radius_aperture: float = 5., inner_annulus_radius: float = 7.,
             outer_annulus_radius: float = 10., radii_unit: str = 'arcsec',
@@ -1013,7 +1013,7 @@ class Observation:
 
         minimum_n_eps_stars
             Minimal number of required ePSF stars
-            Default is ``25``.
+            Default is ``15``.
 
         photometry_extraction_method
             Switch between aperture and ePSF photometry.
@@ -1322,6 +1322,7 @@ class Observation:
         find_cluster_para_set
             Parameter set used to identify the star cluster in proper
             motion and distance data.
+            Default is ``1``.
 
         correlation_method
             Correlation method to be used to find the common objects on
@@ -3300,7 +3301,7 @@ def extract_multiprocessing(
         multiplier_background_rms_epsf: float = 5.0,
         multiplier_grouper_epsf: float = 2.0,
         strict_cleaning_epsf_results: bool = True,
-        minimum_n_eps_stars: int = 25,
+        minimum_n_eps_stars: int = 15,
         photometry_extraction_method: str = 'PSF',
         radius_aperture: float = 5., inner_annulus_radius: float = 7.,
         outer_annulus_radius: float = 10., radii_unit: str = 'arcsec',
@@ -3392,7 +3393,7 @@ def extract_multiprocessing(
 
     minimum_n_eps_stars
         Minimal number of required ePSF stars
-        Default is ``25``.
+        Default is ``15``.
 
     photometry_extraction_method
         Switch between aperture and ePSF photometry.
@@ -3553,7 +3554,7 @@ def main_extract(
         multiplier_background_rms_epsf: float = 5.0,
         multiplier_grouper_epsf: float = 2.0,
         strict_cleaning_epsf_results: bool = True,
-        minimum_n_eps_stars: int = 25,
+        minimum_n_eps_stars: int = 15,
         id_reference_image: int = 0, photometry_extraction_method: str = 'PSF',
         radius_aperture: float = 4., inner_annulus_radius: float = 7.,
         outer_annulus_radius: float = 10., radii_unit: str = 'arcsec',
@@ -3647,7 +3648,7 @@ def main_extract(
 
     minimum_n_eps_stars
         Minimal number of required ePSF stars
-        Default is ``25``.
+        Default is ``15``.
 
     id_reference_image
         ID of the reference image

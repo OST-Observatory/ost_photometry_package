@@ -54,7 +54,7 @@ def reduce_main(
         wcs_method: str = 'astrometry', find_wcs_of_all_images: bool = False,
         force_wcs_determination: bool = False,
         rm_outliers_image_shifts: bool = True,
-        filter_window_image_shifts: int = 8,
+        filter_window_image_shifts: int = 25,
         threshold_image_shifts: float = 10., temperature_tolerance: float = 5.,
         plot_dark_statistic_plots: bool = False,
         plot_flat_statistic_plots: bool = False,
@@ -206,7 +206,7 @@ def reduce_main(
 
     filter_window_image_shifts
         Width of the median filter window
-        Default is ``8``.
+        Default is ``25``.
 
     threshold_image_shifts
         Difference above the running median above an element is
@@ -1946,7 +1946,7 @@ def shift_image_core(
         reference_image_id: int = 0,
         shift_terminal_comment: str = '\tImage displacement:',
         rm_enlarged_keyword: bool = False, modify_file_name: bool = False,
-        rm_outliers: bool = True, filter_window: int = 8,
+        rm_outliers: bool = True, filter_window: int = 25,
         threshold: int | float = 10., instrument: str | None = None,
         verbose: bool = False) -> None:
     """
@@ -2003,7 +2003,7 @@ def shift_image_core(
 
     filter_window
         Width of the median filter window
-        Default is ``8``.
+        Default is ``25``.
 
     threshold
         Difference above the running median above an element is
@@ -2096,7 +2096,7 @@ def shift_image(
         path: str | Path, output_dir: str | Path, image_type_list: list[str],
         reference_image_id: int = 0, shift_method: str = 'skimage',
         n_cores_multiprocessing: int | None = None,
-        rm_outliers: bool = True, filter_window: int = 8,
+        rm_outliers: bool = True, filter_window: int = 25,
         threshold: int | float = 10., instrument: str | None = None,
         debug: bool = False) -> None:
     """
@@ -2141,7 +2141,7 @@ def shift_image(
 
     filter_window
         Width of the median filter window
-        Default is ``8``.
+        Default is ``25``.
 
     threshold
         Difference above the running median above an element is
@@ -2215,7 +2215,7 @@ def shift_all_images(
         image_type_list: list[str], reference_image_id: int = 0,
         shift_method: str = 'skimage',
         n_cores_multiprocessing: int | None = None,
-        rm_outliers: bool = True, filter_window: int = 8,
+        rm_outliers: bool = True, filter_window: int = 25,
         threshold: int | float = 10., instrument: str | None = None,
         debug: bool = False) -> None:
     """
@@ -2260,7 +2260,7 @@ def shift_all_images(
 
     filter_window
         Width of the median filter window
-        Default is ``8``.
+        Default is ``25``.
 
     threshold
         Difference above the running median above an element is
@@ -2621,7 +2621,7 @@ def trim_image(
         image_type_list: list[str], reference_image_id: int = 0,
         enlarged_only: bool = True, shift_method: str = 'skimage',
         n_cores_multiprocessing: int | None = None,
-        rm_outliers: bool = True, filter_window: int = 8,
+        rm_outliers: bool = True, filter_window: int = 25,
         threshold: int | float =10., verbose: bool = False) -> None:
     """
     Trim images to the same field of view
@@ -2669,7 +2669,7 @@ def trim_image(
 
     filter_window
         Width of the median filter window
-        Default is ``8``.
+        Default is ``25``.
 
     threshold
         Difference above the running median above an element is
