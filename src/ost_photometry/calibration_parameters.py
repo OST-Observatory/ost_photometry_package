@@ -822,18 +822,6 @@ def fitzpatrick_extinction_curve(r: float) -> interpolate.CubicSpline:
 ###
 #   Filter system conversion functions
 #
-# def jordi_u(**kwargs):
-#     if all(filter_ in kwargs for filter_ in ['U', 'B', 'V', 'g']):
-#         U = kwargs.get("U")
-#         B = kwargs.get("B")
-#         V = kwargs.get("V")
-#         g = kwargs.get("g")
-#
-#         return ufloat(0.750, 0.050) * (U - B) + ufloat(0.770, 0.070) * (B - V) \
-#             + ufloat(0.720, 0.040) + g
-#     return None
-
-
 def jordi_u(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
@@ -844,13 +832,13 @@ def jordi_u(**kwargs) -> unc.core.NdarrayDistribution | None:
         g = kwargs.get("g")
 
         conversation_constant_1 = unc.normal(
-            0.750 * u.mag,
-            std=0.050 * u.mag,
+            0.750,
+            std=0.050,
             n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
-            0.770 * u.mag,
-            std=0.070 * u.mag,
+            0.770,
+            std=0.070,
             n_samples=distribution_samples,
         )
         conversation_constant_3 = unc.normal(
@@ -863,32 +851,6 @@ def jordi_u(**kwargs) -> unc.core.NdarrayDistribution | None:
     return None
 
 
-# def jordi_g(**kwargs):
-#     if all(filter_ in kwargs for filter_ in ['B', 'V']):
-#         B = kwargs.get("B")
-#         V = kwargs.get("V")
-#
-#         return ufloat(0.630, 0.002) * (B - V) - ufloat(0.124, 0.002) + V
-#
-#     if all(filter_ in kwargs for filter_ in ['V', 'R', 'r']):
-#         V = kwargs.get("V")
-#         R = kwargs.get("R")
-#         r = kwargs.get("r")
-#
-#         return ufloat(1.646, 0.008) * (V - R) - ufloat(0.139, 0.004) + r
-#
-#     if all(filter_ in kwargs for filter_ in ['V', 'I', 'i']):
-#         V = kwargs.get("V")
-#         I = kwargs.get("I")
-#         i = kwargs.get("i")
-#
-#         if V - I <= 1.8:
-#             return ufloat(1.481, 0.004) * (V - I) - ufloat(0.536, 0.004) + i
-#         else:
-#             return ufloat(0.83, 0.01) * (V - I) + ufloat(0.60, 0.03) + i
-#
-#     return None
-
 def jordi_g(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
@@ -897,8 +859,8 @@ def jordi_g(**kwargs) -> unc.core.NdarrayDistribution | None:
         V = kwargs.get("V")
 
         conversation_constant_1 = unc.normal(
-            0.630 * u.mag,
-            std=0.002 * u.mag,
+            0.630,
+            std=0.002,
             n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
@@ -914,8 +876,8 @@ def jordi_g(**kwargs) -> unc.core.NdarrayDistribution | None:
         r = kwargs.get("r")
 
         conversation_constant_1 = unc.normal(
-            1.646 * u.mag,
-            std=0.008 * u.mag,
+            1.646,
+            std=0.008,
             n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
@@ -931,8 +893,8 @@ def jordi_g(**kwargs) -> unc.core.NdarrayDistribution | None:
         i = kwargs.get("i")
 
         conversation_constant_1_a = unc.normal(
-            1.481 * u.mag,
-            std=0.004 * u.mag,
+            1.481,
+            std=0.004,
             n_samples=distribution_samples,
         )
         conversation_constant_2_a = unc.normal(
@@ -941,8 +903,8 @@ def jordi_g(**kwargs) -> unc.core.NdarrayDistribution | None:
             n_samples=distribution_samples,
         )
         conversation_constant_1_b = unc.normal(
-            0.83 * u.mag,
-            std=0.01 * u.mag,
+            0.83,
+            std=0.01,
             n_samples=distribution_samples,
         )
         conversation_constant_2_b = unc.normal(
@@ -958,40 +920,6 @@ def jordi_g(**kwargs) -> unc.core.NdarrayDistribution | None:
     return None
 
 
-# def jordi_r(**kwargs):
-#     if all(filter_ in kwargs for filter_ in ['V', 'R']):
-#         V = kwargs.get("V")
-#         R = kwargs.get("R")
-#
-#         if V - R <= 0.93:
-#             return ufloat(0.267, 0.005) * (V - R) + ufloat(0.088, 0.003) + R
-#         else:
-#             return ufloat(0.77, 0.04) * (V - R) - ufloat(0.37, 0.04)
-#
-#     if all(filter_ in kwargs for filter_ in ['V', 'R', 'g']):
-#         V = kwargs.get("V")
-#         R = kwargs.get("R")
-#         g = kwargs.get("g")
-#
-#         return g - ufloat(1.646, 0.008) * (V - R) + ufloat(0.139, 0.004)
-#
-#     if all(filter_ in kwargs for filter_ in ['I', 'R', 'i']):
-#         I = kwargs.get("I")
-#         R = kwargs.get("R")
-#         i = kwargs.get("i")
-#
-#         return ufloat(1.007, 0.005) * (R - I) - ufloat(0.236, 0.003) + i
-#
-#     if all(filter_ in kwargs for filter_ in ['I', 'R', 'z']):
-#         I = kwargs.get("I")
-#         R = kwargs.get("R")
-#         z = kwargs.get("z")
-#
-#         return ufloat(1.584, 0.008) * (R - I) - ufloat(0.386, 0.005) + z
-#
-#     return None
-
-
 def jordi_r(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
@@ -1000,8 +928,8 @@ def jordi_r(**kwargs) -> unc.core.NdarrayDistribution | None:
         R = kwargs.get("R")
 
         conversation_constant_1_a = unc.normal(
-            0.267 * u.mag,
-            std=0.005 * u.mag,
+            0.267,
+            std=0.005,
             n_samples=distribution_samples,
         )
         conversation_constant_2_a = unc.normal(
@@ -1010,8 +938,8 @@ def jordi_r(**kwargs) -> unc.core.NdarrayDistribution | None:
             n_samples=distribution_samples,
         )
         conversation_constant_1_b = unc.normal(
-            0.77 * u.mag,
-            std=0.04 * u.mag,
+            0.77,
+            std=0.04,
             n_samples=distribution_samples,
         )
         conversation_constant_2_b = unc.normal(
@@ -1030,8 +958,8 @@ def jordi_r(**kwargs) -> unc.core.NdarrayDistribution | None:
         g = kwargs.get("g")
 
         conversation_constant_1 = unc.normal(
-            1.646 * u.mag,
-            std=0.008 * u.mag,
+            1.646,
+            std=0.008,
             n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
@@ -1047,8 +975,8 @@ def jordi_r(**kwargs) -> unc.core.NdarrayDistribution | None:
         i = kwargs.get("i")
 
         conversation_constant_1 = unc.normal(
-            1.007 * u.mag,
-            std=0.005 * u.mag,
+            1.007,
+            std=0.005,
             n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
@@ -1064,8 +992,8 @@ def jordi_r(**kwargs) -> unc.core.NdarrayDistribution | None:
         z = kwargs.get("z")
 
         conversation_constant_1 = unc.normal(
-            1.584 * u.mag,
-            std=0.008 * u.mag,
+            1.584,
+            std=0.008,
             n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
@@ -1078,33 +1006,6 @@ def jordi_r(**kwargs) -> unc.core.NdarrayDistribution | None:
     return None
 
 
-# def jordi_i(**kwargs):
-#     if all(filter_ in kwargs for filter_ in ['R', 'I']):
-#         R = kwargs.get("R")
-#         I = kwargs.get("I")
-#
-#         return ufloat(0.247, 0.003) * (R - I) + ufloat(0.329, 0.002) + I
-#
-#     if all(filter_ in kwargs for filter_ in ['V', 'I', 'g']):
-#         V = kwargs.get("V")
-#         I = kwargs.get("I")
-#         g = kwargs.get("g")
-#
-#         if V - I <= 1.8:
-#             return g - ufloat(1.481, 0.004) * (V - I) + ufloat(0.536, 0.004)
-#         else:
-#             return g - ufloat(0.83, 0.01) * (V - I) - ufloat(0.60, 0.03)
-#
-#     if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
-#         I = kwargs.get("I")
-#         R = kwargs.get("R")
-#         r = kwargs.get("r")
-#
-#         return r - ufloat(1.007, 0.005) * (R - I) + ufloat(0.236, 0.003)
-#
-#     return None
-
-
 def jordi_i(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
@@ -1113,8 +1014,8 @@ def jordi_i(**kwargs) -> unc.core.NdarrayDistribution | None:
         I = kwargs.get("I")
 
         conversation_constant_1 = unc.normal(
-            0.247 * u.mag,
-            std=0.003 * u.mag,
+            0.247,
+            std=0.003,
             n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
@@ -1130,8 +1031,8 @@ def jordi_i(**kwargs) -> unc.core.NdarrayDistribution | None:
         g = kwargs.get("g")
 
         conversation_constant_1_a = unc.normal(
-            1.481 * u.mag,
-            std=0.004 * u.mag,
+            1.481,
+            std=0.004,
             n_samples=distribution_samples,
         )
         conversation_constant_2_a = unc.normal(
@@ -1140,8 +1041,8 @@ def jordi_i(**kwargs) -> unc.core.NdarrayDistribution | None:
             n_samples=distribution_samples,
         )
         conversation_constant_1_b = unc.normal(
-            0.83 * u.mag,
-            std=0.01 * u.mag,
+            0.83,
+            std=0.01,
             n_samples=distribution_samples,
         )
         conversation_constant_2_b = unc.normal(
@@ -1160,8 +1061,8 @@ def jordi_i(**kwargs) -> unc.core.NdarrayDistribution | None:
         r = kwargs.get("r")
 
         conversation_constant_1 = unc.normal(
-            1.007 * u.mag,
-            std=0.005 * u.mag,
+            1.007,
+            std=0.005,
             n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(
@@ -1174,17 +1075,6 @@ def jordi_i(**kwargs) -> unc.core.NdarrayDistribution | None:
     return None
 
 
-# def jordi_z(**kwargs):
-#     if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
-#         I = kwargs.get("I")
-#         R = kwargs.get("R")
-#         r = kwargs.get("r")
-#
-#         return r - ufloat(1.584, 0.008) * (R - I) + ufloat(0.386, 0.005)
-#
-#     return None
-
-
 def jordi_z(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
@@ -1194,8 +1084,8 @@ def jordi_z(**kwargs) -> unc.core.NdarrayDistribution | None:
         r = kwargs.get("r")
 
         conversation_constant_1 = unc.normal(
-            1.584 * u.mag,
-            std=0.008 * u.mag,
+            1.584,
+            std=0.008,
             n_samples=distribution_samples,
         )
         conversation_constant_2 = unc.normal(

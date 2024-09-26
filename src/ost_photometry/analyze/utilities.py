@@ -2513,7 +2513,7 @@ def convert_magnitudes_to_other_system(
         column_filter = column_name[0]
 
         #   Skip index and position columns
-        if column_filter in ['i', 'x', 'y']:
+        if column_filter in ['i', 'x', 'y', 'r', 'd']:
             continue
 
         #   Get the image ID and magnitude type
