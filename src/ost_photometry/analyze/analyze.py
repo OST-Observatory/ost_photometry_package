@@ -44,7 +44,7 @@ from astropy.stats import SigmaClip
 from astropy.table import Table, Column
 from astropy.time import Time
 from astropy.nddata import NDData
-from astropy.stats import (gaussian_sigma_to_fwhm, sigma_clipped_stats)
+from astropy.stats import sigma_clipped_stats
 from astropy.modeling.fitting import LevMarLSQFitter, LMLSQFitter, TRFLSQFitter
 from astropy.coordinates import SkyCoord, name_resolve
 import astropy.units as u
@@ -2348,8 +2348,8 @@ def find_stars(
     elif method == 'IRAF':
         #   Set up IRAF finder
         iraf_finder = IRAFStarFinder(
-            threshold=median_fwhm,
-            fwhm=fwhm_object_psf * gaussian_sigma_to_fwhm,
+            threshold=multiplier_background_rms * sigma,
+            fwhm=median_fwhm,
             minsep_fwhm=0.01,
             roundhi=5.0,
             roundlo=-5.0,
