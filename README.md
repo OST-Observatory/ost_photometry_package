@@ -21,7 +21,6 @@ package:
    * [astroquery](https://github.com/astropy/astroquery)
    * [numpy](https://github.com/numpy/numpy)
    * [scipy](https://github.com/scipy/scipy)
-   * [uncertainties](https://github.com/lebigot/uncertainties)
    * [mathplotlib](https://github.com/matplotlib/matplotlib)
 
 For astrometric solutions a local installation of the 

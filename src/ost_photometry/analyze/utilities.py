@@ -130,7 +130,7 @@ def mk_magnitudes_table(
 
         for image_id, image in enumerate(image_list):
             photometry_table = image.photometry
-            for photometry_column_keyword in ['mag_cali_trans', 'mag_cali']:
+            for photometry_column_keyword in ['mag_cali_trans', 'mag_cali_no-trans']:
                 try:
                     magnitudes = photometry_table[photometry_column_keyword]
                     magnitude_errors = photometry_table[
@@ -140,7 +140,7 @@ def mk_magnitudes_table(
                     magnitudes = np.ones((len(index_objects))) * 999.
                     magnitude_errors = magnitudes
 
-                if photometry_column_keyword == 'mag_cali':
+                if photometry_column_keyword == 'mag_cali_no-trans':
                     column_name = f'{filter_} (simple, image={image_id})'
                     column_name_err = f'{filter_}_err (simple, image={image_id})'
                 else:
@@ -472,7 +472,7 @@ def prepare_time_series_data(
     else:
         raise Exception(
             f"{style.Bcolors.FAIL} \nThis should never happen. Data object is "
-            f"neither an numpy.ndarray nor a astropy.Table. The data type was"
+            f"neither an NdarrayDistribution nor a astropy.Table. The data type was"
             f"{type(data)}.{style.Bcolors.ENDC}"
         )
 
@@ -633,7 +633,7 @@ def prepare_plot_time_series(
 
     #   Plot the light curve folded on the period
     if (transit_time is not None and transit_time != '?'
-            and period is not None and period > 0.):
+            and period is not None and period != '?' and period > 0.):
         plots.light_curve_fold(
             time_series,
             filter_,

@@ -97,7 +97,7 @@ def get_comp_stars_aavso(
 
     #   Sanitize filter list
     if filters is None:
-        filters = ['B', 'V']
+        filters: list[str] = ['B', 'V']
 
     #   Prepare url
     ra = coordinates_sky.ra.degree

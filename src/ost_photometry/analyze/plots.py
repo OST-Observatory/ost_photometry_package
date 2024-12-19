@@ -26,7 +26,7 @@ from astropy.timeseries import TimeSeries
 from astropy import wcs
 
 from photutils.aperture import CircularAperture, CircularAnnulus
-from photutils.psf import EPSFStars, EPSFModel
+from photutils.psf import EPSFStars, ImagePSF
 from photutils.utils import ImageDepth
 
 from scipy.spatial import KDTree
@@ -584,7 +584,7 @@ def plot_cutouts(output_dir: str, stars: EPSFStars, identifier: str,
 
 
 def plot_epsf(
-        output_dir: str, epsf: dict[str, EPSFModel],
+        output_dir: str, epsf: dict[str, list[ImagePSF]],
         name_object: str | None = None, id_image: str = '',
         terminal_logger: terminal_output.TerminalLog | None = None,
         file_type: str = 'pdf', indent: int = 1) -> None:
@@ -658,33 +658,35 @@ def plot_epsf(
         fig.suptitle(f'ePSF ({name_object})', fontsize=17)
 
     #   Plot individual subplots
-    for i, (filter_, eps) in enumerate(epsf.items()):
-        #   Remove bad pixels that would spoil the image normalization
-        epsf_clean = np.where(eps.data <= 0, 1E-7, eps.data)
-        #   Set up normalization for the image
-        norm = simple_norm(epsf_clean, 'log', percent=99.)
+    for i, (filter_, eps_s) in enumerate(epsf.items()):
+        for eps in eps_s:
+            if eps is not None:
+                #   Remove bad pixels that would spoil the image normalization
+                epsf_clean = np.where(eps.data <= 0, 1E-7, eps.data)
+                #   Set up normalization for the image
+                norm = simple_norm(epsf_clean, 'log', percent=99.)
 
-        #   Make the subplots
-        if n_plots == 1:
-            ax = fig.add_subplot(1, 1, i + 1)
-        elif n_plots == 2:
-            ax = fig.add_subplot(1, 2, i + 1)
-        else:
-            ax = fig.add_subplot(n_plots, n_plots, i + 1)
+                #   Make the subplots
+                if n_plots == 1:
+                    ax = fig.add_subplot(1, 1, i + 1)
+                elif n_plots == 2:
+                    ax = fig.add_subplot(1, 2, i + 1)
+                else:
+                    ax = fig.add_subplot(n_plots, n_plots, i + 1)
 
-        #   Plot the image
-        im1 = ax.imshow(epsf_clean, norm=norm, origin='lower',
-                        cmap='viridis')
+                #   Plot the image
+                im1 = ax.imshow(epsf_clean, norm=norm, origin='lower',
+                                cmap='viridis')
 
-        #   Set title of subplot
-        ax.set_title(filter_)
+                #   Set title of subplot
+                ax.set_title(filter_)
 
-        #   Set labels
-        ax.set_xlabel("Pixel")
-        ax.set_ylabel("Pixel")
+                #   Set labels
+                ax.set_xlabel("Pixel")
+                ax.set_ylabel("Pixel")
 
-        #   Set color bar
-        fig.colorbar(im1, ax=ax)
+                #   Set color bar
+                fig.colorbar(im1, ax=ax)
 
     if n_plots >= 2:
         plt.savefig(

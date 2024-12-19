@@ -24,7 +24,7 @@ from astropy.time import Time
 from astropy import wcs
 from astropy.table import Table
 
-from photutils import psf
+from photutils.psf import ImagePSF
 
 # import twirl
 
@@ -114,8 +114,11 @@ class Image:
         self.jd: float | None = None
         self.calculate_field_of_view_etc()
 
+        #   Set some defaults
+        self.fwhm: float = 4.
+
         #   Prepare variables for later use
-        self.epsf: psf.EPSFModel | None = None
+        self.epsf: ImagePSF | None = None
         self.residual_image: np.ndarray | None = None
         self.photometry: Table | None = None
         self.positions: Table | None = None

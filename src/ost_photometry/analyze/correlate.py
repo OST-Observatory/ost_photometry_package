@@ -16,7 +16,7 @@ from .. import utilities as base_utilities
 
 from astropy.coordinates import SkyCoord, matching
 import astropy.units as u
-from astropy.table import Table
+from astropy.table import Table, Column
 from astropy import wcs
 
 
@@ -2412,4 +2412,7 @@ def correlate_with_calibration_objects(
 
     terminal_output.print_to_terminal('')
 
-    return calibration_tbl_sort, index_obj_instrument
+    if index_obj_instrument is Column:
+        return calibration_tbl_sort, index_obj_instrument.value
+    else:
+        return calibration_tbl_sort, index_obj_instrument

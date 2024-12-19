@@ -401,6 +401,7 @@ def reduce_main(
                 image_type_dir,
                 gain=gain,
                 read_noise=read_noise,
+                n_cores_multiprocessing=n_cores_multiprocessing,
             )
 
             #   Set dark path
@@ -418,6 +419,7 @@ def reduce_main(
             dark_rate=dark_rate,
             plot_plots=plot_dark_statistic_plots,
             debug=debug,
+            n_cores_multiprocessing=n_cores_multiprocessing,
         )
 
         ###
@@ -435,6 +437,7 @@ def reduce_main(
             rm_bias=rm_bias,
             exposure_time_tolerance=exposure_time_tolerance,
             debug=debug,
+            n_cores_multiprocessing=n_cores_multiprocessing,
         )
 
         #   Create master flat
@@ -444,6 +447,8 @@ def reduce_main(
             image_type_dir,
             plot_plots=plot_flat_statistic_plots,
             debug=debug,
+            # n_cores_multiprocessing=n_cores_multiprocessing,
+            n_cores_multiprocessing=1,
         )
 
     ###
@@ -723,7 +728,8 @@ def master_image_list(*args, **kwargs):
 def reduce_dark(
         image_path: str | Path, output_dir: str | Path,
         image_type: dict[str, list[str]], gain: float | None = None,
-        read_noise: float = 8.) -> None:
+        read_noise: float = 8., n_cores_multiprocessing: int | None = None
+    ) -> None:
     """
     Reduce dark images: This function reduces the raw dark frames
 
@@ -747,6 +753,10 @@ def reduce_dark(
     read_noise          : `float`, optional
         The read noise (e-) of the camera chip.
         Default is ``8`` e-.
+
+    n_cores_multiprocessing
+        Number of cores to use during calculation of the image shifts.
+        Default is ``None``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -776,6 +786,9 @@ def reduce_dark(
     dark_path = Path(out_path / 'dark')
     checks.clear_directory(dark_path)
 
+    #   Initialize multiprocessing object
+    executor = Executor(n_cores_multiprocessing)
+
     #   Loop over darks and reduce darks
     dark_image_type = utilities.get_image_type(
         image_file_collection,
@@ -787,23 +800,68 @@ def reduce_dark(
             ccd_kwargs={'unit': 'adu'},
             return_fname=True,
     ):
-        #   Set gain _> get it from Header if not provided
-        if gain is None:
-            gain = dark.header['EGAIN']
-
-        #   Calculated uncertainty
-        dark = ccdp.create_deviation(
-            dark,
-            gain=gain * u.electron / u.adu,
-            readnoise=read_noise * u.electron,
-            disregard_nan=True,
+        executor.schedule(
+            reduce_flat_image,
+            args=(
+                dark,
+                stacked_bias,
+                dark_path,
+                file_name,
+            ),
+            kwargs={
+                'gain': gain,
+                'read_noise': read_noise,
+            }
         )
 
-        # Subtract bias
-        dark = ccdp.subtract_bias(dark, stacked_bias)
 
-        #   Save the result
-        dark.write(dark_path / file_name, overwrite=True)
+def reduce_dark_image(
+        dark: CCDData, stacked_bias: CCDData, dark_path: Path, file_name: str,
+        gain: float | None = None, read_noise: float = 8.,
+    ) -> None:
+    """
+    This function reduces the individual raw dark frame images
+
+    Parameters
+    ----------
+    dark
+        The CCDData object of the dark image that will be reduced
+
+    stacked_bias
+        Reduced and stacked Bias CCDData object
+
+    dark_path
+        Path where the reduced images should be saved
+
+    file_name
+        Name of the image file
+
+    gain
+        The gain (e-/adu) of the camera chip. If set to `None` the gain
+        will be extracted from the FITS header.
+        Default is ``None``.
+
+    read_noise
+        The read noise (e-) of the camera chip.
+        Default is ``8`` e-.
+    """
+    #   Set gain _> get it from Header if not provided
+    if gain is None:
+        gain = dark.header['EGAIN']
+
+    #   Calculated uncertainty
+    dark = ccdp.create_deviation(
+        dark,
+        gain=gain * u.electron / u.adu,
+        readnoise=read_noise * u.electron,
+        disregard_nan=True,
+    )
+
+    # Subtract bias
+    dark = ccdp.subtract_bias(dark, stacked_bias)
+
+    #   Save the result
+    dark.write(dark_path / file_name, overwrite=True)
 
 
 def master_dark(
@@ -811,7 +869,8 @@ def master_dark(
         image_type: dict[str, list[str]], gain: float | None = None,
         read_noise: float = 8., dark_rate: float | None = None,
         mk_hot_pixel_mask: bool = True, plot_plots: bool = False,
-        debug: bool = False, **kwargs) -> None:
+        debug: bool = False, n_cores_multiprocessing: int | None = None,
+        **kwargs) -> None:
     """
     This function calculates master darks from individual dark images
     located in one directory. The dark images are group according to
@@ -855,6 +914,10 @@ def master_dark(
         If `True` the intermediate files of the data reduction will not
         be removed.
         Default is ``False``.
+
+    n_cores_multiprocessing
+        Number of cores to use during calculation of the image shifts.
+        Default is ``None``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -902,9 +965,9 @@ def master_dark(
     )))
 
     #   Get the maximum exposure time for each shape
-    max_exposure_time_per_shape = []
+    max_exposure_time_per_shape: list = []
     for shape in all_available_image_shapes:
-        exposure_times = []
+        exposure_times: list = []
         for shape_expo_time in all_available_image_shapes_and_exposure_times:
             if shape[0] == shape_expo_time[0] and shape[1] == shape_expo_time[1]:
                 exposure_times.append(shape_expo_time[2])
@@ -915,86 +978,173 @@ def master_dark(
         image_file_collection.summary['exptime'][dark_mask]
     )
 
-    #   Loop over exposure times
+    #   Get dark image type
     dark_image_type = utilities.get_image_type(
         image_file_collection,
         image_type,
         image_class='dark',
     )
+
+    #   Initialize multiprocessing object
+    executor = Executor(n_cores_multiprocessing)
+
+    #   Reduce science images and save to an extra directory
     for exposure_time in sorted(dark_exposure_times):
-        #   Get only the darks with the correct exposure time
-        calibrated_darks = image_file_collection.files_filtered(
-            imagetyp=dark_image_type,
-            exptime=exposure_time,
-            include_path=True,
-        )
-
-        #   Combine darks: Average images + sigma clipping to remove
-        #                  outliers, set memory limit to 15GB, set unit to
-        #                  'adu' since this is not set in our images
-        #                  -> find better solution
-        combined_dark = ccdp.combine(
-            calibrated_darks,
-            method='average',
-            sigma_clip=True,
-            sigma_clip_low_thresh=5,
-            sigma_clip_high_thresh=5,
-            sigma_clip_func=np.ma.median,
-            sigma_clip_dev_func=mad_std,
-            mem_limit=15e9,
-            unit='adu',
-        )
-
-        #   Add Header keyword to mark the file as a Master
-        combined_dark.meta['combined'] = True
-
-        #   Write file to disk
-        dark_file_name = f'combined_dark_{exposure_time:4.2f}.fit'
-        combined_dark.write(out_path / dark_file_name, overwrite=True)
-
-        #   Set gain _> get it from Header if not provided
-        if gain is None:
-            gain = combined_dark.header['EGAIN']
-
-        #   Plot histogram
-        if plot_plots:
-            plots.plot_histogram(
-                combined_dark.data,
-                out_path,
-                gain,
+        executor.schedule(
+            master_dark_stacking,
+            args=(
+                image_file_collection,
                 exposure_time,
-            )
-            plots.plot_dark_with_distributions(
-                combined_dark.data,
-                read_noise,
+                dark_image_type,
+                max_exposure_time_per_shape,
+                out_path,
                 dark_rate,
-                out_path,
-                exposure_time=exposure_time,
-                gain=gain,
-            )
+            ),
+            kwargs={
+                'gain': gain,
+                'read_noise': read_noise,
+                'mk_hot_pixel_mask': mk_hot_pixel_mask,
+                'plot_plots': plot_plots,
+            }
+        )
 
-        #   Create mask with hot pixels
-        current_shape_x = combined_dark.meta['naxis1']
-        current_shape_y = combined_dark.meta['naxis2']
-        if ((current_shape_x, current_shape_y, exposure_time) in
-                max_exposure_time_per_shape and mk_hot_pixel_mask):
-            utilities.make_hot_pixel_mask(
-                combined_dark,
-                gain,
-                out_path,
-                verbose=debug,
-            )
+    #   Exit if exceptions occurred
+    if executor.err is not None:
+        raise RuntimeError(
+            f'\n{style.Bcolors.FAIL}Dark image stacking using multiprocessing'
+            f' failed :({style.Bcolors.ENDC}'
+        )
+
+    #   Close multiprocessing pool and wait until it finishes
+    executor.wait()
 
     #   Remove reduced dark files if they exist
     if not debug:
         shutil.rmtree(out_path / 'dark', ignore_errors=True)
+
+def master_dark_stacking(
+        image_file_collection: ccdp.ImageFileCollection,
+        exposure_time: float, dark_image_type: str | list[str] | None,
+        max_exposure_time_per_shape: list[tuple[int, int, float]],
+        out_path: Path, dark_rate: float, gain: float | None = None,
+        read_noise: float = 8., mk_hot_pixel_mask: bool = True,
+        plot_plots: bool = False, debug: bool = False) -> None:
+    """
+    This function stacks all dark images with the same exposure time.
+
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection for referencing all dark files
+
+    exposure_time
+        Exposure time of the current set of dark images
+
+    dark_image_type
+        Image type designation used for dark files
+
+    out_path
+        Path to the directory where the master files should be saved to
+
+    max_exposure_time_per_shape
+        Maximum exposure time for each available image shape
+
+    dark_rate
+        Temperature dependent dark rate in e-/pix/s:
+
+    gain
+        The gain (e-/adu) of the camera. If set to `None` the gain will
+        be extracted from the FITS header.
+        Default is ``None``.
+
+    read_noise
+        The read noise (e-) of the camera.
+        Default is 8 e-.
+
+    mk_hot_pixel_mask
+        If True a hot pixel mask is created.
+        Default is ``True``.
+
+    plot_plots
+        If True some plots showing some statistic on the dark frames are
+        created.
+        Default is ``False``.
+
+    debug
+        If `True` the intermediate files of the data reduction will not
+        be removed.
+        Default is ``False``.
+    """
+    #   Get only the darks with the correct exposure time
+    calibrated_darks = image_file_collection.files_filtered(
+        imagetyp=dark_image_type,
+        exptime=exposure_time,
+        include_path=True,
+    )
+
+    #   Combine darks: Average images + sigma clipping to remove
+    #                  outliers, set memory limit to 15GB, set unit to
+    #                  'adu' since this is not set in our images
+    #                  -> find better solution
+    combined_dark = ccdp.combine(
+        calibrated_darks,
+        method='average',
+        sigma_clip=True,
+        sigma_clip_low_thresh=5,
+        sigma_clip_high_thresh=5,
+        sigma_clip_func=np.ma.median,
+        sigma_clip_dev_func=mad_std,
+        mem_limit=15e9,
+        unit='adu',
+    )
+
+    #   Add Header keyword to mark the file as a Master
+    combined_dark.meta['combined'] = True
+
+    #   Write file to disk
+    dark_file_name = f'combined_dark_{exposure_time:4.2f}.fit'
+    combined_dark.write(out_path / dark_file_name, overwrite=True)
+
+    #   Set gain _> get it from Header if not provided
+    if gain is None:
+        gain = combined_dark.header['EGAIN']
+
+    #   Plot histogram
+    if plot_plots:
+        plots.plot_histogram(
+            combined_dark.data,
+            out_path,
+            gain,
+            exposure_time,
+        )
+        plots.plot_dark_with_distributions(
+            combined_dark.data,
+            read_noise,
+            dark_rate,
+            out_path,
+            exposure_time=exposure_time,
+            gain=gain,
+        )
+
+    #   Create mask with hot pixels
+    current_shape_x = combined_dark.meta['naxis1']
+    current_shape_y = combined_dark.meta['naxis2']
+    if ((current_shape_x, current_shape_y, exposure_time) in
+            max_exposure_time_per_shape and mk_hot_pixel_mask):
+        utilities.make_hot_pixel_mask(
+            combined_dark,
+            gain,
+            out_path,
+            verbose=debug,
+        )
 
 
 def reduce_flat(
         image_path: str | Path, output_dir: str | Path,
         image_type: dict[str, list[str]], gain: float | None = None,
         read_noise: float = 8., rm_bias: bool = False,
-        exposure_time_tolerance: float = 0.5, **kwargs) -> None:
+        exposure_time_tolerance: float = 0.5,
+        n_cores_multiprocessing: int | None = None, **kwargs) -> None:
     """
     Reduce flat images: This function reduces the raw flat frames,
                         subtracts master dark and if necessary also
@@ -1030,6 +1180,10 @@ def reduce_flat(
         closest entry from the exposure time list. Set to ``None`` to
         skip the tolerance test.
         Default is ``0.5``.
+
+    n_cores_multiprocessing
+        Number of cores to use during calculation of the image shifts.
+        Default is ``None``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -1095,60 +1249,137 @@ def reduce_flat(
         image_type,
         image_class='flat',
     )
+
+    #   Initialize multiprocessing object
+    executor = Executor(n_cores_multiprocessing)
+
+    #   Reduce science images and save to an extra directory
     for flat, file_name in image_file_collection.ccds(
             imagetyp=flat_image_type,
             ccd_kwargs={'unit': 'adu'},
             return_fname=True,
     ):
-
-        #   Set gain _> get it from Header if not provided
-        if gain is None:
-            gain = flat.header['EGAIN']
-
-        #   Calculated uncertainty
-        flat = ccdp.create_deviation(
-            flat,
-            gain=gain * u.electron / u.adu,
-            readnoise=read_noise * u.electron,
-            disregard_nan=True,
+        executor.schedule(
+            reduce_flat_image,
+            args=(
+                flat,
+                combined_bias,
+                combined_darks,
+                file_name,
+                flat_path
+            ),
+            kwargs={
+                'gain': gain,
+                'read_noise': read_noise,
+                'rm_bias': rm_bias,
+                'exposure_time_tolerance': exposure_time_tolerance,
+            }
         )
 
-        # Subtract bias
-        if rm_bias:
-            flat = ccdp.subtract_bias(flat, combined_bias)
-
-        #   Find the correct dark exposure
-        valid_dark_available, closest_dark_exposure_time = utilities.find_nearest_exposure_time_to_reference_image(
-            flat,
-            list(combined_darks.keys()),
-            time_tolerance=exposure_time_tolerance,
+    #   Exit if exceptions occurred
+    if executor.err is not None:
+        raise RuntimeError(
+            f'\n{style.Bcolors.FAIL}Flat image reduction using multiprocessing'
+            f' failed :({style.Bcolors.ENDC}'
         )
 
-        #   Exit if no dark with a similar exposure time have been found
-        if not valid_dark_available and not rm_bias:
-            raise RuntimeError(
-                f"{style.Bcolors.FAIL}Closest dark exposure time is "
-                f"{closest_dark_exposure_time} for flat of exposure time "
-                f"{flat.header['exptime']}. {style.Bcolors.ENDC}"
-            )
+    #   Close multiprocessing pool and wait until it finishes
+    executor.wait()
 
-        #   Subtract the dark current
-        flat = ccdp.subtract_dark(
-            flat,
-            combined_darks[closest_dark_exposure_time],
-            exposure_time='exptime',
-            exposure_unit=u.second,
-            scale=rm_bias,
+
+def reduce_flat_image(
+        flat: CCDData, combined_bias: CCDData | None,
+        combined_darks: dict[float, CCDData],
+        file_name: str, flat_path: Path,
+        gain: float | None = None, read_noise: float = 8.,
+        rm_bias: bool = False, exposure_time_tolerance: float = 0.5,) -> None:
+    """
+    Reduce an individual image
+
+    Parameters
+    ----------
+    flat
+        The CCDData object of the flat that should be reduced.
+
+    combined_bias
+        Reduced and stacked Bias CCDData object
+
+    combined_darks
+        Combined darks in a dictionary with exposure times as keys and
+        CCDData object as values.
+
+    file_name
+        Name of the image file
+
+    flat_path
+        Path where the reduced flats should be saved
+
+    gain
+        The gain (e-/adu) of the camera chip. If set to `None` the gain
+        will be extracted from the FITS header.
+        Default is ``None``.
+
+    read_noise
+        The read noise (e-) of the camera chip.
+        Default is ``8`` e-.
+
+    rm_bias
+        If True the master bias image will be subtracted from the flats
+        Default is ``False``.
+
+    exposure_time_tolerance
+        Tolerance between science and dark exposure times in s.
+        Default is ``0.5``s.
+    """
+    #   Set gain _> get it from Header if not provided
+    if gain is None:
+        gain = flat.header['EGAIN']
+
+    #   Calculated uncertainty
+    flat = ccdp.create_deviation(
+        flat,
+        gain=gain * u.electron / u.adu,
+        readnoise=read_noise * u.electron,
+        disregard_nan=True,
+    )
+
+    # Subtract bias
+    if rm_bias:
+        flat = ccdp.subtract_bias(flat, combined_bias)
+
+    #   Find the correct dark exposure
+    valid_dark_available, closest_dark_exposure_time = utilities.find_nearest_exposure_time_to_reference_image(
+        flat,
+        list(combined_darks.keys()),
+        time_tolerance=exposure_time_tolerance,
+    )
+
+    #   Exit if no dark with a similar exposure time have been found
+    if not valid_dark_available and not rm_bias:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Closest dark exposure time is "
+            f"{closest_dark_exposure_time} for flat of exposure time "
+            f"{flat.header['exptime']}. {style.Bcolors.ENDC}"
         )
 
-        #   Save the result
-        flat.write(flat_path / file_name, overwrite=True)
+    #   Subtract the dark current
+    flat = ccdp.subtract_dark(
+        flat,
+        combined_darks[closest_dark_exposure_time],
+        exposure_time='exptime',
+        exposure_unit=u.second,
+        scale=rm_bias,
+    )
+
+    #   Save the result
+    flat.write(flat_path / file_name, overwrite=True)
 
 
 def master_flat(
         image_path: str | Path, output_dir: str | Path,
         image_type: dict[str, list[str]], mk_bad_pixel_mask: bool = True,
-        plot_plots: bool = False, debug: bool = False, **kwargs) -> None:
+        plot_plots: bool = False, debug: bool = False,
+        n_cores_multiprocessing: int | None = None, **kwargs) -> None:
     """
     This function calculates master flats from individual flat field
     images located in one directory. The flat field images are group
@@ -1179,6 +1410,10 @@ def master_flat(
         If `True` the intermediate files of the data reduction will not
         be removed.
         Default is ``False``.
+
+    n_cores_multiprocessing
+        Number of cores to use during calculation of the image shifts.
+        Default is ``None``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -1197,55 +1432,38 @@ def master_flat(
         h['filter'] for h in image_file_collection.headers(imagetyp=flat_image_type)
     )
 
-    #   List for the bad pixels masks
-    bad_pixel_mask_list = []
+    #   Initialize multiprocessing object
+    executor = Executor(n_cores_multiprocessing)
 
-    #   Combine flats for the individual filters
+    #   Reduce science images and save to an extra directory
     for filter_ in filters:
-        #   Select flats to combine
-        flats_to_combine = image_file_collection.files_filtered(
-            imagetyp=flat_image_type,
-            filter=filter_,
-            include_path=True,
-        )
-
-        #   Combine darks: Average images + sigma clipping to remove
-        #                  outliers, set memory limit to 15GB, scale the
-        #                  frames so that they have the same median value
-        #                  ('inv_median')
-        combined_flat = ccdp.combine(
-            flats_to_combine,
-            method='average',
-            scale=utilities.inverse_median,
-            sigma_clip=True,
-            sigma_clip_low_thresh=5,
-            sigma_clip_high_thresh=5,
-            sigma_clip_func=np.ma.median,
-            signma_clip_dev_func=mad_std,
-            mem_limit=15e9,
-        )
-
-        #   Add Header keyword to mark the file as a Master
-        combined_flat.meta['combined'] = True
-
-        #   Define name and write file to disk
-        flat_file_name = 'combined_flat_filter_{}.fit'.format(
-            filter_.replace("''", "p")
-        )
-        combined_flat.write(out_path / flat_file_name, overwrite=True)
-
-        #   Plot flat medians and means
-        if plot_plots:
-            plots.plot_median_of_flat_fields(
+        executor.schedule(
+            stack_flat_images,
+            args=(
                 image_file_collection,
                 flat_image_type,
-                out_path,
                 filter_,
-            )
+                out_path,
+            ),
+            kwargs={
+                'plot_plots': plot_plots,
+            }
+        )
 
-        #   Calculate bad pixel mask
-        if mk_bad_pixel_mask:
-            bad_pixel_mask_list.append(ccdp.ccdmask(combined_flat.data))
+    #   Exit if exceptions occurred
+    if executor.err is not None:
+        raise RuntimeError(
+            f'\n{style.Bcolors.FAIL}Stacking of flat images using multiprocessing'
+            f' failed :({style.Bcolors.ENDC}'
+        )
+
+    #   Close multiprocessing pool and wait until it finishes
+    executor.wait()
+
+    #   Collect multiprocessing results
+    #
+    #   Get bad pixel masks
+    bad_pixel_mask_list: list[np.ndarray] = executor.res
 
     if mk_bad_pixel_mask:
         utilities.make_bad_pixel_mask(
@@ -1257,6 +1475,80 @@ def master_flat(
     #   Remove reduced dark files if they exist
     if not debug:
         shutil.rmtree(file_path, ignore_errors=True)
+
+
+def stack_flat_images(
+    image_file_collection: ccdp.ImageFileCollection,
+    flat_image_type: str | list[str] | None, filter_: str, out_path: Path,
+    plot_plots: bool = False) -> np.ndarray:
+    """
+    Stack flats for the individual filters
+
+    Parameters
+    ----------
+    image_file_collection
+        Image file collection for referencing all dark files
+
+    flat_image_type
+        Image type designation used for dark files
+
+    filter_
+        Current filter
+
+    out_path
+        Path to the directory where the master files should be saved to
+
+    plot_plots
+        If True some plots showing some statistic on the flat fields are
+        created.
+        Default is ``False``.
+
+    Returns
+    -------
+    bad_pixel_mask_list
+    """
+    #   Select flats to combine
+    flats_to_combine = image_file_collection.files_filtered(
+        imagetyp=flat_image_type,
+        filter=filter_,
+        include_path=True,
+    )
+
+    #   Combine darks: Average images + sigma clipping to remove
+    #                  outliers, set memory limit to 15GB, scale the
+    #                  frames so that they have the same median value
+    #                  ('inv_median')
+    combined_flat = ccdp.combine(
+        flats_to_combine,
+        method='average',
+        scale=utilities.inverse_median,
+        sigma_clip=True,
+        sigma_clip_low_thresh=5,
+        sigma_clip_high_thresh=5,
+        sigma_clip_func=np.ma.median,
+        signma_clip_dev_func=mad_std,
+        mem_limit=15e9,
+    )
+
+    #   Add Header keyword to mark the file as a Master
+    combined_flat.meta['combined'] = True
+
+    #   Define name and write file to disk
+    flat_file_name = 'combined_flat_filter_{}.fit'.format(
+        filter_.replace("''", "p")
+    )
+    combined_flat.write(out_path / flat_file_name, overwrite=True)
+
+    #   Plot flat medians and means
+    if plot_plots:
+        plots.plot_median_of_flat_fields(
+            image_file_collection,
+            flat_image_type,
+            out_path,
+            filter_,
+        )
+
+    return ccdp.ccdmask(combined_flat.data)
 
 
 def reduce_master(paths, *args, **kwargs):
@@ -1483,27 +1775,6 @@ def reduce_light(
             return_fname=True,
             ccd_kwargs=dict(unit='adu'),
         ):
-        # reduce_light_image(
-        #     light,
-        #     combined_bias,
-        #     combined_darks,
-        #     combined_flats,
-        #     file_name,
-        #     out_path,
-        #     light_path,
-        #     gain=gain,
-        #     read_noise=read_noise,
-        #     rm_bias=rm_bias,
-        #     exposure_time_tolerance=exposure_time_tolerance,
-        #     add_hot_bad_pixel_mask=add_hot_bad_pixel_mask,
-        #     rm_cosmic_rays=rm_cosmic_rays,
-        #     limiting_contrast_rm_cosmic_rays=limiting_contrast_rm_cosmic_rays,
-        #     sigma_clipping_value_rm_cosmic_rays=sigma_clipping_value_rm_cosmic_rays,
-        #     saturation_level=saturation_level,
-        #     mask_cosmics=mask_cosmics,
-        #     scale_image_with_exposure_time=scale_image_with_exposure_time,
-        #     verbose=verbose,
-        # )
         executor.schedule(
             reduce_light_image,
             args=(
@@ -1741,14 +2012,15 @@ def reduce_light_image(
             if add_hot_bad_pixel_mask:
                 reduced.mask = reduced.mask | reduced_without_cosmics.mask
 
-                #   Add Header keyword to mark the file as combined
+                #   Add a header keyword to indicate that the cosmics have been
+                #   masked
                 reduced.meta['cosmic_mas'] = True
         else:
             reduced = reduced_without_cosmics
             if not add_hot_bad_pixel_mask:
                 reduced.mask = np.zeros(reduced.shape, dtype=bool)
 
-            #   Add Header keyword to mark the file as combined
+            #   Add header keyword to indicate that cosmics have been removed
             reduced.meta['cosmics_rm'] = True
 
         if verbose:

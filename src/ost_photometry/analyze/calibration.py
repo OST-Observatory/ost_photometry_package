@@ -1373,6 +1373,7 @@ def calibrate_magnitudes_transformation(
 
 def apply_calibration(
         observation: 'analyze.Observation', filter_list: (list[str] | set[str]),
+        apply_transformation: bool = False,
         transformation_coefficients_dict: dict[str, (float | str)] | None = None,
         derive_transformation_coefficients: bool = False, plot_sigma: bool = False,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
@@ -1391,6 +1392,10 @@ def apply_calibration(
 
     filter_list
         Filter names
+
+    apply_transformation
+        If ``True``, magnitude transformation is applied if possible.
+        Default is ``False``.
 
     transformation_coefficients_dict
         Calibration coefficients for the magnitude transformation
@@ -1452,17 +1457,18 @@ def apply_calibration(
     )
 
     #   Apply magnitude transformation
-    calibrate_magnitudes_transformation(
-        observation,
-        filter_list,
-        transformation_coefficients=transformation_coefficients_dict,
-        derive_transformation_coefficients=derive_transformation_coefficients,
-        distribution_samples=distribution_samples,
-        n_cores_multiprocessing=n_cores_multiprocessing,
-        file_type_plots=file_type_plots,
-        add_progress_bar=add_progress_bar,
-        indent=indent,
-    )
+    if apply_transformation:
+        calibrate_magnitudes_transformation(
+            observation,
+            filter_list,
+            transformation_coefficients=transformation_coefficients_dict,
+            derive_transformation_coefficients=derive_transformation_coefficients,
+            distribution_samples=distribution_samples,
+            n_cores_multiprocessing=n_cores_multiprocessing,
+            file_type_plots=file_type_plots,
+            add_progress_bar=add_progress_bar,
+            indent=indent,
+        )
 
     if len(filter_list) == 1:
         rts: str = ''
