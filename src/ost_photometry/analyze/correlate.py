@@ -125,7 +125,7 @@ def find_objects_of_interest_astropy(
                     indent=indent,
                 )
 
-        elif not object_id:
+        elif object_id.size == 0:
             terminal_output.print_to_terminal(
                 f"No object detected within the separation limit to "
                 f"{object_.name}. Set object ID to None",
