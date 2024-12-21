@@ -1245,7 +1245,7 @@ class Observation:
             apply_transformation: bool = True,
             transformation_coefficients_dict: dict[str, (float | str)] | None = None,
             derive_transformation_coefficients: bool = False,
-            plot_sigma: bool = False, photometry_extraction_method: str = '',
+            photometry_extraction_method: str = '',
             extract_only_circular_region: bool = False,
             region_radius: float = 600.,
             identify_cluster_gaia_data: bool = False,
@@ -1317,10 +1317,6 @@ class Observation:
             calculated from the current data even if calibration coefficients
             are available in the database.
             Default is ``False``
-
-        plot_sigma
-            If True sigma clipped magnitudes will be plotted.
-            Default is ``False``.
 
         photometry_extraction_method
             Applied extraction method. Possibilities: ePSF or APER`
@@ -1473,7 +1469,6 @@ class Observation:
                 apply_transformation=apply_transformation,
                 transformation_coefficients_dict=transformation_coefficients_dict,
                 derive_transformation_coefficients=derive_transformation_coefficients,
-                plot_sigma=plot_sigma,
                 photometry_extraction_method=photometry_extraction_method,
                 calculate_zero_point_statistic=calculate_zero_point_statistic,
                 distribution_samples=distribution_samples,
@@ -1532,7 +1527,7 @@ class Observation:
             photometry_extraction_method: str = '',
             correlation_method: str = 'astropy',
             separation_limit: u.quantity.Quantity = 2. * u.arcsec,
-            verbose: bool = False, plot_sigma: bool = False,
+            verbose: bool = False,
             region_to_select_calibration_stars: regions.RectanglePixelRegion | None = None,
             calculate_zero_point_statistic: bool = True,
             n_cores_multiprocessing_calibration: int | None = None,
@@ -1641,10 +1636,6 @@ class Observation:
 
         verbose
             If True additional output will be printed to the command line.
-            Default is ``False``.
-
-        plot_sigma
-            If True sigma clipped magnitudes will be plotted.
             Default is ``False``.
 
         region_to_select_calibration_stars
@@ -1786,7 +1777,6 @@ class Observation:
                     transformation_coefficients_dict=transformation_coefficients_dict,
                     derive_transformation_coefficients=derive_transformation_coefficients,
                     photometry_extraction_method=photometry_extraction_method,
-                    plot_sigma=plot_sigma,
                     calculate_zero_point_statistic=calculate_zero_point_statistic,
                     n_cores_multiprocessing=n_cores_multiprocessing_calibration,
                     distribution_samples=distribution_samples,
@@ -1980,6 +1970,7 @@ class Observation:
                             p.start()
 
                 if (plot_light_curve_calibration_objects
+                        and ids_calibration_objects is not None
                         and ids_calibration_objects.any()
                         and f'mag{filter_}' in calibration_filters):
                     for index in ids_calibration_objects:

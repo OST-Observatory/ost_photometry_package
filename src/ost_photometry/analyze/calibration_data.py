@@ -977,8 +977,10 @@ def distribution_from_calibration_table(
         ]
 
         literature_magnitudes_distribution = unc.normal(
-            calibration_magnitudes.value * u.mag,
-            std=calibration_magnitudes_err.value * u.mag,
+            # calibration_magnitudes.value * u.mag,
+            # std=calibration_magnitudes_err.value * u.mag,
+            calibration_magnitudes.value << u.mag,
+            std=calibration_magnitudes_err.value << u.mag,
             n_samples=distribution_samples,
         )
         #   The '.distribution' below is currently necessary, because astropy

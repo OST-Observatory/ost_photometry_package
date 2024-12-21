@@ -538,8 +538,7 @@ def apply_magnitude_transformation(
         magnitudes_comparison_image: u.quantity.Quantity, filter_id: int,
         filter_list: list[str],
         transformation_coefficients: dict[str, (float | str)],
-        plot_sigma: bool = False, transformation_type: str = 'derive',
-        multiprocessing: bool = False,
+        transformation_type: str = 'derive', multiprocessing: bool = False,
         file_type_plots: str = 'pdf') -> tuple[int, Table] | None:
     """
     Apply transformation
@@ -575,10 +574,6 @@ def apply_magnitude_transformation(
 
     transformation_coefficients
         Calibration coefficients for magnitude transformation
-
-    plot_sigma
-        If True sigma clipped magnitudes will be plotted.
-        Default is ``False``.
 
     transformation_type
         Type of magnitude transformation.
@@ -1164,7 +1159,7 @@ def calibrate_magnitudes_transformation(
         observation: 'analyze.Observation', filter_list: (list[str] | set[str]),
         transformation_coefficients: dict[str, (float | str)] | None = None,
         derive_transformation_coefficients: bool = False,
-        plot_sigma: bool = False, distribution_samples: int = 1000,
+        distribution_samples: int = 1000,
         n_cores_multiprocessing: int | None = None,
         file_type_plots: str = 'pdf', add_progress_bar: bool = True,
         indent: int = 1) -> None:
@@ -1194,10 +1189,6 @@ def calibrate_magnitudes_transformation(
         calculated from the current data even if calibration coefficients
         are available in the database.
         Default is ``False``
-
-    plot_sigma
-        If True sigma clipped magnitudes will be plotted.
-        Default is ``False``.
 
     distribution_samples
         Number of samples used for distributions
@@ -1331,7 +1322,6 @@ def calibrate_magnitudes_transformation(
                         trans_coefficients,
                     ),
                     kwargs={
-                        'plot_sigma': plot_sigma,
                         'transformation_type': transformation_type,
                         'multiprocessing': True,
                         'file_type_plots': file_type_plots,
@@ -1375,7 +1365,7 @@ def apply_calibration(
         observation: 'analyze.Observation', filter_list: (list[str] | set[str]),
         apply_transformation: bool = False,
         transformation_coefficients_dict: dict[str, (float | str)] | None = None,
-        derive_transformation_coefficients: bool = False, plot_sigma: bool = False,
+        derive_transformation_coefficients: bool = False,
         id_object: (int | None) = None, photometry_extraction_method: str = '',
         calculate_zero_point_statistic: bool = True, distribution_samples: int = 1000,
         n_cores_multiprocessing: int | None = None,
@@ -1406,10 +1396,6 @@ def apply_calibration(
         calculated from the current data even if calibration coefficients
         are available in the database.
         Default is ``False``
-
-    plot_sigma
-        If True sigma clipped magnitudes will be plotted.
-        Default is ``False``.
 
     id_object
         ID of the object

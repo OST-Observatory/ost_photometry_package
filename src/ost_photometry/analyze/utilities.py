@@ -452,12 +452,6 @@ def prepare_time_series_data(
                         err_column_names.append(col_name)
                     else:
                         magnitude_column_names.append(col_name)
-            # else:
-            #     terminal_output.print_to_terminal(
-            #         f"Warning: No magnitude column found for filter {filter_} "
-            #         f"in the provided Table, while preparing time series data.",
-            #         style_name='WARNING',
-            #     )
 
         magnitudes = np.array(
             data[magnitude_column_names][object_id].as_void().tolist()
@@ -505,8 +499,10 @@ def mk_time_series(
     ts = TimeSeries(
         time=observation_times,
         data={
-            filter_: magnitudes * u.mag,
-            filter_ + '_err': magnitude_errors * u.mag,
+            filter_: magnitudes << u.mag,
+            filter_ + '_err': magnitude_errors << u.mag,
+            # filter_: magnitudes * u.mag,
+            # filter_ + '_err': magnitude_errors * u.mag,
         }
     )
     return ts
@@ -1451,12 +1447,20 @@ def derive_limiting_magnitude(
         flux_limit, mag_limit = depth(image.get_data(), mask)
 
         #   Plot sky apertures
-        p = mp.Process(
-            target=plots.plot_limiting_mag_sky_apertures,
-            args=(image.out_path.name, image.get_data(), mask, depth),
-            kwargs={'file_type': file_type_plots},
+        #   TODO: See if this can be reactivated. Deactivated on 12/20/2024 due to pickle issues.
+        # p = mp.Process(
+        #     target=plots.plot_limiting_mag_sky_apertures,
+        #     args=(image.out_path.name, image.get_data(), mask, depth),
+        #     kwargs={'file_type': file_type_plots},
+        # )
+        # p.start()
+        plots.plot_limiting_mag_sky_apertures(
+            image.out_path.name,
+            image.get_data(),
+            mask,
+            depth,
+            file_type=file_type_plots,
         )
-        p.start()
 
         #   Print results
         terminal_output.print_to_terminal(
