@@ -801,7 +801,7 @@ def reduce_dark(
             return_fname=True,
     ):
         executor.schedule(
-            reduce_flat_image,
+            reduce_dark_image,
             args=(
                 dark,
                 stacked_bias,
