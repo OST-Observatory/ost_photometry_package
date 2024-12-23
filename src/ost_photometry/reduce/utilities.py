@@ -1997,7 +1997,7 @@ def estimate_fwhm(
         image_path: Path, output_dir: Path, image_type: list[str],
         plot_subplots: bool = False, indent: int = 2) -> None:
     """
-    Combine images
+    Estimates the FWHM of the objects
 
     Parameters
     ----------

@@ -2303,6 +2303,7 @@ def find_stars(
             f"use either IRAF or DAO {style.Bcolors.ENDC}"
         )
 
+    #   TODO: put the FWHM determination in a function and use it also in reduction
     #   Determine FWHM
     #   Sort table first
     tbl_objects.sort('flux')
