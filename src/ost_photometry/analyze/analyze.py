@@ -2323,6 +2323,8 @@ def find_stars(
         ccd.data,
         xypos=xy_pos,
         fit_shape=25,
+        mask=ccd.mask,
+        error=ccd.uncertainty.array,
     )
     #   Get median
     median_fwhm = sigma_clipped_stats(fwhm)[1]
