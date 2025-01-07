@@ -232,7 +232,7 @@ def starmap(
             ax = plt.subplot(projection=wcs_image)
         else:
             terminal_output.print_to_terminal(
-                f"Sky projection for master plot not possible, since to WCS "
+                f"Sky projection for master plot not possible, since no WCS "
                 f"was provided. Use Pixel coordinates instead.",
                 style_name='WARNING',
                 indent=indent,

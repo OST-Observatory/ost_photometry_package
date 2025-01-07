@@ -1227,25 +1227,22 @@ def calculate_min_max_image_shifts(
 
 
 def calculate_image_shifts_core(
-        image_ccd_object: CCDData, reference_ccd_object: CCDData,
-        image_id: int, file_name_image: str,
-        correlation_method: str = 'skimage') -> tuple[int, tuple[float], bool]:
+        current_file_name: str, reference_file_name: str,
+        image_id: int, correlation_method: str = 'skimage'
+    ) -> tuple[int, tuple[float], bool]:
     """
     Calculate image shifts using different methods
 
     Parameters
     ----------
-    image_ccd_object
-        Image data
+    current_file_name
+        File name of the current image
 
-    reference_ccd_object
-        Image data of the reference image
+    reference_file_name
+        File name of the reference image
 
     image_id
         ID of the image
-
-    file_name_image
-        Name of the image
 
     correlation_method
         Method to use for image alignment.
@@ -1267,6 +1264,10 @@ def calculate_image_shifts_core(
     flip_necessary
         If `True` the image needs to be flipped
     """
+    #   Read images
+    image_ccd_object = CCDData.read(current_file_name)
+    reference_ccd_object = CCDData.read(reference_file_name)
+
     #   Get reference image, reference mask, and corresponding file name
     reference_data = reference_ccd_object.data
     reference_mask = np.invert(reference_ccd_object.mask)
@@ -1341,15 +1342,15 @@ def calculate_image_shifts_core(
 
         #   Determine transformation between the images
         try:
-            transformation_coefficiants, (_, _) = aa.find_transform(
+            transformation_coefficients, (_, _) = aa.find_transform(
                 current_ccd,
                 reference_ccd_object,
                 detection_sigma=3,
             )
 
             image_shift = (
-                transformation_coefficiants.translation[1],
-                transformation_coefficiants.translation[0]
+                transformation_coefficients.translation[1],
+                transformation_coefficients.translation[0]
             )
         except IndexError:
             image_shift = (0., 0.)
@@ -1366,7 +1367,7 @@ def calculate_image_shifts_core(
         )
     terminal_output.print_to_terminal(
         f'\t{image_id}\t{image_shift[1]:+.1f}\t{image_shift[0]:+.1f}'
-        f'\t{file_name_image}',
+        f'\t{current_file_name}',
         indent=0,
     )
 
@@ -1418,9 +1419,9 @@ def calculate_image_shifts(
     #   Number of images
     n_files = len(image_file_collection.files)
 
-    #   Get reference image, reference mask, and corresponding file name
+    #   Get reference image file name
     reference_file_name = image_file_collection.files[id_reference_image]
-    reference_ccd_object = CCDData.read(reference_file_name)
+    # reference_ccd_object = CCDData.read(reference_file_name)
 
     #   Prepare an array for the shifts
     image_shift = np.zeros((2, n_files))
@@ -1442,15 +1443,28 @@ def calculate_image_shifts(
     executor = analysis_utilities.Executor(n_cores_multiprocessing)
 
     #   Calculate image shifts
-    for i, (current_ccd_object, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
+    # for i, (current_ccd_object, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
+    #     if i != id_reference_image:
+    #         executor.schedule(
+    #             calculate_image_shifts_core,
+    #             args=(
+    #                 current_ccd_object,
+    #                 reference_ccd_object,
+    #                 i,
+    #                 file_name,
+    #             ),
+    #             kwargs={
+    #             'correlation_method':correlation_method,
+    #             }
+    #         )
+    for i, current_file_name in enumerate(image_file_collection.files):
         if i != id_reference_image:
             executor.schedule(
                 calculate_image_shifts_core,
                 args=(
-                    current_ccd_object,
-                    reference_ccd_object,
+                    current_file_name,
+                    reference_file_name,
                     i,
-                    file_name,
                 ),
                 kwargs={
                 'correlation_method':correlation_method,

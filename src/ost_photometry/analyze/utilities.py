@@ -957,7 +957,9 @@ class Executor:
     """
 
     def __init__(self, process_num: int | None, **kwargs):
-        mp.set_start_method('spawn', force=True)
+        # mp.set_start_method('spawn', force=True)
+        if not mp.get_start_method(allow_none=True):
+            mp.set_start_method('spawn')
 
         if not process_num:
             process_num: int = int(mp.cpu_count()/2)
@@ -1009,14 +1011,19 @@ class Executor:
         )
         #   Terminate pool
         self.pool.terminate()
+        self.pool.join()
+
         #   Raise exceptions
         self.err = e
         raise e
 
-    def schedule(self, function, args, kwargs):
+    def schedule(self, function, args=(), kwargs=None):
         """
             Call to apply_async
         """
+        if kwargs is None:
+            kwargs = {}
+
         self.pool.apply_async(
             function,
             args,
@@ -1029,11 +1036,18 @@ class Executor:
         """
             Close pool and wait for completion
         """
-        self.pool.close()
-        self.pool.join()
-        if self.progress_bar:
-            self.progress_bar.close()
+        try:
+            self.pool.close()
+            self.pool.join()
+        finally:
+            if self.progress_bar:
+                self.progress_bar.close()
+            self.progress_bar = None
 
+    def __del__(self):
+        if self.pool:
+            self.pool.terminate()
+            self.pool.join()
 
 def mk_ds9_region(
         x_pixel_positions: np.ndarray, y_pixel_positions: np.ndarray,
