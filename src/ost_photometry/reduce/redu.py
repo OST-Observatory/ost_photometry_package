@@ -49,7 +49,6 @@ def reduce_main(
         n_cores_multiprocessing: int | None = None, stack_images: bool = True,
         estimate_fwhm: bool = False, shift_all: bool = False,
         exposure_time_tolerance: float = 0.5, stack_method: str = 'average',
-        dtype_image_stacking: str | np.dtype | None = None,
         target_name: str | None = None, find_wcs: bool = True,
         wcs_method: str = 'astrometry', find_wcs_of_all_images: bool = False,
         force_wcs_determination: bool = False,
@@ -58,8 +57,10 @@ def reduce_main(
         threshold_image_shifts: float = 10., temperature_tolerance: float = 5.,
         plot_dark_statistic_plots: bool = False,
         plot_flat_statistic_plots: bool = False,
-        ignore_readout_mode_mismatch: bool = False, debug: bool = False
-        ) -> None:
+        ignore_readout_mode_mismatch: bool = False, trim_x_start: int = 0,
+        trim_x_end: int = 0, trim_y_start: int = 0, trim_y_end: int = 0,
+        dtype: str | np.dtype | None = None, debug: bool = False
+    ) -> None:
     """
     Main reduction routine: Creates master images for bias, darks,
                             flats, reduces the science images and trims
@@ -173,10 +174,6 @@ def reduce_main(
         Possibilities: ``median`` or ``average`` or ``sum``
         Default is ``average`.
 
-    dtype_image_stacking
-        dtype that should be used while combining the images.
-        Default is ''None'' -> None is equivalent to float64
-
     target_name
         Name of the target. Used for file selection.
         Default is ``None``.
@@ -232,6 +229,30 @@ def reduce_main(
         If set to `True` a mismatch of the detected readout modes will
         be ignored.
         Default is ``False``.
+
+    trim_x_start
+        Number of pixels to trim from the start of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_x_end
+        Number of pixels to trim from the end of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_start
+        Number of pixels to trim from the start of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_end
+        Number of pixels to trim from the end of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    dtype
+        The dtype that should be used while combining the images.
+        Default is ''None''. -> None is equivalent to float64
 
     debug
         If `True` the intermediate files of the data reduction will not
@@ -386,7 +407,16 @@ def reduce_main(
                 "Create master bias...",
                 indent=1,
             )
-            master_bias(file_path, output_path, image_type_dir)
+            master_bias(
+                file_path,
+                output_path,
+                image_type_dir,
+                trim_x_start=trim_x_start,
+                trim_x_end=trim_x_end,
+                trim_y_start=trim_y_start,
+                trim_y_end=trim_y_end,
+                dtype=dtype,
+            )
 
         ###
         #   Master dark and master flat darks
@@ -402,6 +432,10 @@ def reduce_main(
                 gain=gain,
                 read_noise=read_noise,
                 n_cores_multiprocessing=n_cores_multiprocessing,
+                trim_x_start=trim_x_start,
+                trim_x_end=trim_x_end,
+                trim_y_start=trim_y_start,
+                trim_y_end=trim_y_end,
             )
 
             #   Set dark path
@@ -420,6 +454,12 @@ def reduce_main(
             plot_plots=plot_dark_statistic_plots,
             debug=debug,
             n_cores_multiprocessing=n_cores_multiprocessing,
+            rm_bias=rm_bias,
+            trim_x_start=trim_x_start,
+            trim_x_end=trim_x_end,
+            trim_y_start=trim_y_start,
+            trim_y_end=trim_y_end,
+            dtype=dtype,
         )
 
         ###
@@ -438,6 +478,10 @@ def reduce_main(
             exposure_time_tolerance=exposure_time_tolerance,
             debug=debug,
             n_cores_multiprocessing=n_cores_multiprocessing,
+            trim_x_start=trim_x_start,
+            trim_x_end=trim_x_end,
+            trim_y_start=trim_y_start,
+            trim_y_end=trim_y_end,
         )
 
         #   Create master flat
@@ -449,6 +493,7 @@ def reduce_main(
             debug=debug,
             # n_cores_multiprocessing=n_cores_multiprocessing,
             n_cores_multiprocessing=1,
+            dtype=dtype,
         )
 
     ###
@@ -474,6 +519,10 @@ def reduce_main(
         target_name=target_name,
         scale_image_with_exposure_time=scale_image_with_exposure_time,
         n_cores_multiprocessing=n_cores_multiprocessing,
+        trim_x_start=trim_x_start,
+        trim_x_end=trim_x_end,
+        trim_y_start=trim_y_start,
+        trim_y_end=trim_y_end,
     )
 
     ###
@@ -652,7 +701,10 @@ def reduce_main(
 
 def master_bias(
         bias_path: str | Path, output_dir: str | Path,
-        image_type: dict[str, list[str]]) -> None:
+        image_type: dict[str, list[str]], trim_x_start: int = 0,
+        trim_x_end: int = 0, trim_y_start: int = 0,
+        trim_y_end: int = 0, dtype: str | np.dtype | None = None
+    ) -> None:
     """
     This function calculates master biases from individual bias images
     located in one directory.
@@ -668,6 +720,30 @@ def master_bias(
     image_type           : `dictionary`
         Image types of the images. Possibilities: bias, dark, flat,
         light
+
+    trim_x_start
+        Number of pixels to trim from the start of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_x_end
+        Number of pixels to trim from the end of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_start
+        Number of pixels to trim from the start of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_end
+        Number of pixels to trim from the end of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    dtype
+        Data type used in the ccdproc calculations
+        Default is ''None''. -> None is equivalent to float64
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(bias_path)
@@ -705,9 +781,17 @@ def master_bias(
         signma_clip_dev_func=mad_std,
         mem_limit=15e9,
         unit='adu',
+        dtype=dtype,
     )
 
-    #   Add Header keyword to mark the file as a Master
+    #   Trimming the image, for example to remove an overscan region
+    image_shape = combined_bias.data.shape
+    combined_bias = combined_bias[
+                        trim_y_start:image_shape[0]-trim_y_end,
+                        trim_x_start:image_shape[1]-trim_x_end
+                    ]
+
+    #   Add header keyword to mark the file as a Master
     combined_bias.meta['combined'] = True
 
     #   Write file to disk
@@ -728,7 +812,9 @@ def master_image_list(*args, **kwargs):
 def reduce_dark(
         image_path: str | Path, output_dir: str | Path,
         image_type: dict[str, list[str]], gain: float | None = None,
-        read_noise: float = 8., n_cores_multiprocessing: int | None = None
+        read_noise: float = 8., n_cores_multiprocessing: int | None = None,
+        trim_x_start: int = 0, trim_x_end: int = 0, trim_y_start: int = 0,
+        trim_y_end: int = 0
     ) -> None:
     """
     Reduce dark images: This function reduces the raw dark frames
@@ -757,7 +843,29 @@ def reduce_dark(
     n_cores_multiprocessing
         Number of cores to use during calculation of the image shifts.
         Default is ``None``.
+
+    trim_x_start
+        Number of pixels to trim from the start of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_x_end
+        Number of pixels to trim from the end of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_start
+        Number of pixels to trim from the start of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_end
+        Number of pixels to trim from the end of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
     """
+    terminal_output.print_to_terminal("Reduce darks...", indent=2)
+
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
     out_path = checks.check_pathlib_path(output_dir)
@@ -786,55 +894,61 @@ def reduce_dark(
     dark_path = Path(out_path / 'dark')
     checks.clear_directory(dark_path)
 
-    #   Initialize multiprocessing object
-    executor = Executor(n_cores_multiprocessing)
-
-    #   Loop over darks and reduce darks
+    #   Determine possible image types
     dark_image_type = utilities.get_image_type(
         image_file_collection,
         image_type,
         image_class='dark',
     )
-    for dark, file_name in image_file_collection.ccds(
+
+    #   Initialize multiprocessing object
+    executor = Executor(
+        n_cores_multiprocessing,
+        n_tasks=len(image_file_collection.files_filtered(imagetyp=dark_image_type)),
+        add_progress_bar=True,
+    )
+
+    #   Loop over darks and reduce darks
+    for file_name in image_file_collection.files(
             imagetyp=dark_image_type,
             ccd_kwargs={'unit': 'adu'},
-            return_fname=True,
     ):
         executor.schedule(
             reduce_dark_image,
             args=(
-                dark,
+                file_name,
                 stacked_bias,
                 dark_path,
-                file_name,
             ),
             kwargs={
                 'gain': gain,
                 'read_noise': read_noise,
+                'trim_x_start': trim_x_start,
+                'trim_x_end': trim_x_end,
+                'trim_y_start': trim_y_start,
+                'trim_y_end': trim_y_end,
             }
         )
 
 
 def reduce_dark_image(
-        dark: CCDData, stacked_bias: CCDData, dark_path: Path, file_name: str,
-        gain: float | None = None, read_noise: float = 8.,
+        dark_file_name: str, stacked_bias: CCDData, dark_path: Path,
+        gain: float | None = None, read_noise: float = 8., trim_x_start: int = 0,
+        trim_x_end: int = 0, trim_y_start: int = 0, trim_y_end: int = 0
     ) -> None:
     """
     This function reduces the individual raw dark frame images
 
     Parameters
     ----------
-    dark
-        The CCDData object of the dark image that will be reduced
+    dark_file_name
+        The file name of the dark image that will be reduced
 
     stacked_bias
         Reduced and stacked Bias CCDData object
 
     dark_path
         Path where the reduced images should be saved
-
-    file_name
-        Name of the image file
 
     gain
         The gain (e-/adu) of the camera chip. If set to `None` the gain
@@ -844,10 +958,40 @@ def reduce_dark_image(
     read_noise
         The read noise (e-) of the camera chip.
         Default is ``8`` e-.
+
+    trim_x_start
+        Number of pixels to trim from the start of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_x_end
+        Number of pixels to trim from the end of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_start
+        Number of pixels to trim from the start of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_end
+        Number of pixels to trim from the end of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
     """
+    #   Read image file
+    dark = CCDData.read(dark_file_name, unit='adu')
+
     #   Set gain _> get it from Header if not provided
     if gain is None:
         gain = dark.header['EGAIN']
+
+    #   Trimming the image, for example to remove an overscan region
+    image_shape = dark.data.shape
+    dark = dark[
+                trim_y_start:image_shape[0]-trim_y_end,
+                trim_x_start:image_shape[1]-trim_x_end
+            ]
 
     #   Calculated uncertainty
     dark = ccdp.create_deviation(
@@ -861,6 +1005,7 @@ def reduce_dark_image(
     dark = ccdp.subtract_bias(dark, stacked_bias)
 
     #   Save the result
+    file_name = dark_file_name.split('/')[-1]
     dark.write(dark_path / file_name, overwrite=True)
 
 
@@ -870,7 +1015,10 @@ def master_dark(
         read_noise: float = 8., dark_rate: float | None = None,
         mk_hot_pixel_mask: bool = True, plot_plots: bool = False,
         debug: bool = False, n_cores_multiprocessing: int | None = None,
-        **kwargs) -> None:
+        rm_bias: bool = False, trim_x_start: int = 0, trim_x_end: int = 0,
+        trim_y_start: int = 0, trim_y_end: int = 0,
+        dtype: str | np.dtype | None = None, **kwargs
+    ) -> None:
     """
     This function calculates master darks from individual dark images
     located in one directory. The dark images are group according to
@@ -918,7 +1066,37 @@ def master_dark(
     n_cores_multiprocessing
         Number of cores to use during calculation of the image shifts.
         Default is ``None``.
+
+    rm_bias
+        If True the master bias image will be subtracted from the flats
+        Default is ``False``.
+
+    trim_x_start
+        Number of pixels to trim from the start of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_x_end
+        Number of pixels to trim from the end of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_start
+        Number of pixels to trim from the start of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_end
+        Number of pixels to trim from the end of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    dtype
+        Data type used in the ccdproc calculations
+        Default is ''None''. -> None is equivalent to float64
     """
+    terminal_output.print_to_terminal("Stack darks...", indent=2)
+
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
     out_path = checks.check_pathlib_path(output_dir)
@@ -986,7 +1164,12 @@ def master_dark(
     )
 
     #   Initialize multiprocessing object
-    executor = Executor(n_cores_multiprocessing)
+    executor = Executor(
+        n_cores_multiprocessing,
+        n_tasks=len(sorted(dark_exposure_times)),
+        add_progress_bar=True,
+    )
+    # executor = Executor(n_cores_multiprocessing)
 
     #   Reduce science images and save to an extra directory
     for exposure_time in sorted(dark_exposure_times):
@@ -1005,6 +1188,12 @@ def master_dark(
                 'read_noise': read_noise,
                 'mk_hot_pixel_mask': mk_hot_pixel_mask,
                 'plot_plots': plot_plots,
+                'rm_bias': rm_bias,
+                'trim_x_start': trim_x_start,
+                'trim_x_end': trim_x_end,
+                'trim_y_start': trim_y_start,
+                'trim_y_end': trim_y_end,
+                'dtype': dtype,
             }
         )
 
@@ -1028,7 +1217,10 @@ def master_dark_stacking(
         max_exposure_time_per_shape: list[tuple[int, int, float]],
         out_path: Path, dark_rate: float, gain: float | None = None,
         read_noise: float = 8., mk_hot_pixel_mask: bool = True,
-        plot_plots: bool = False, debug: bool = False) -> None:
+        plot_plots: bool = False, debug: bool = False, rm_bias: bool = False,
+        trim_x_start: int = 0, trim_x_end: int = 0, trim_y_start: int = 0,
+        trim_y_end: int = 0, dtype: str | np.dtype | None = None
+    ) -> None:
     """
     This function stacks all dark images with the same exposure time.
 
@@ -1074,6 +1266,34 @@ def master_dark_stacking(
         If `True` the intermediate files of the data reduction will not
         be removed.
         Default is ``False``.
+
+    rm_bias
+        If True the master bias image will be subtracted from the flats
+        Default is ``False``.
+
+    trim_x_start
+        Number of pixels to trim from the start of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_x_end
+        Number of pixels to trim from the end of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_start
+        Number of pixels to trim from the start of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_end
+        Number of pixels to trim from the end of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    dtype
+        Data type used in the ccdproc calculations
+        Default is ''None''. -> None is equivalent to float64
     """
     #   Get only the darks with the correct exposure time
     calibrated_darks = image_file_collection.files_filtered(
@@ -1096,7 +1316,16 @@ def master_dark_stacking(
         sigma_clip_dev_func=mad_std,
         mem_limit=15e9,
         unit='adu',
+        dtype=dtype,
     )
+
+    #   Trimming the image, for example to remove an overscan region
+    if not rm_bias:
+        image_shape = combined_dark.data.shape
+        combined_dark = combined_dark[
+                            trim_y_start:image_shape[0]-trim_y_end,
+                            trim_x_start:image_shape[1]-trim_x_end
+                        ]
 
     #   Add Header keyword to mark the file as a Master
     combined_dark.meta['combined'] = True
@@ -1144,7 +1373,9 @@ def reduce_flat(
         image_type: dict[str, list[str]], gain: float | None = None,
         read_noise: float = 8., rm_bias: bool = False,
         exposure_time_tolerance: float = 0.5,
-        n_cores_multiprocessing: int | None = None, **kwargs) -> None:
+        n_cores_multiprocessing: int | None = None, trim_x_start: int = 0,
+        trim_x_end: int = 0, trim_y_start: int = 0, trim_y_end: int = 0,
+        **kwargs) -> None:
     """
     Reduce flat images: This function reduces the raw flat frames,
                         subtracts master dark and if necessary also
@@ -1184,7 +1415,29 @@ def reduce_flat(
     n_cores_multiprocessing
         Number of cores to use during calculation of the image shifts.
         Default is ``None``.
+
+    trim_x_start
+        Number of pixels to trim from the start of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_x_end
+        Number of pixels to trim from the end of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_start
+        Number of pixels to trim from the start of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_end
+        Number of pixels to trim from the end of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
     """
+    terminal_output.print_to_terminal("Reduce flats...", indent=2)
+
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
     out_path = checks.check_pathlib_path(output_dir)
@@ -1197,6 +1450,7 @@ def reduce_flat(
         return
 
     #   Find flats
+    #   TODO: Rewrite with image_file_collection from the loop below
     flats = [
         True if file in image_type['flat'] else False for file in
         image_file_collection.summary['imagetyp']
@@ -1243,7 +1497,7 @@ def reduce_flat(
     flat_path = Path(out_path / 'flat')
     checks.clear_directory(flat_path)
 
-    #   Loop over flats and reduce flats
+    #   Get flat image types
     flat_image_type = utilities.get_image_type(
         image_file_collection,
         image_type,
@@ -1251,21 +1505,25 @@ def reduce_flat(
     )
 
     #   Initialize multiprocessing object
-    executor = Executor(n_cores_multiprocessing)
+    #   TODO: Replace with flats below if rewrite above has happened
+    executor = Executor(
+        n_cores_multiprocessing,
+        # n_tasks=len(flats),
+        n_tasks=len(image_file_collection.files_filtered(imagetyp=flat_image_type)),
+        add_progress_bar=True,
+    )
 
     #   Reduce science images and save to an extra directory
-    for flat, file_name in image_file_collection.ccds(
+    for file_name in image_file_collection.files_filtered(
+            include_path=True,
             imagetyp=flat_image_type,
-            ccd_kwargs={'unit': 'adu'},
-            return_fname=True,
     ):
         executor.schedule(
             reduce_flat_image,
             args=(
-                flat,
+                file_name,
                 combined_bias,
                 combined_darks,
-                file_name,
                 flat_path
             ),
             kwargs={
@@ -1273,6 +1531,10 @@ def reduce_flat(
                 'read_noise': read_noise,
                 'rm_bias': rm_bias,
                 'exposure_time_tolerance': exposure_time_tolerance,
+                'trim_x_start': trim_x_start,
+                'trim_x_end': trim_x_end,
+                'trim_y_start': trim_y_start,
+                'trim_y_end': trim_y_end,
             }
         )
 
@@ -1288,17 +1550,19 @@ def reduce_flat(
 
 
 def reduce_flat_image(
-        flat: CCDData, combined_bias: CCDData | None,
+        flat_file_name: str, combined_bias: CCDData | None,
         combined_darks: dict[float, CCDData],
-        file_name: str, flat_path: Path,
-        gain: float | None = None, read_noise: float = 8.,
-        rm_bias: bool = False, exposure_time_tolerance: float = 0.5,) -> None:
+        flat_path: Path, gain: float | None = None, read_noise: float = 8.,
+        rm_bias: bool = False, exposure_time_tolerance: float = 0.5,
+        trim_x_start: int = 0, trim_x_end: int = 0, trim_y_start: int = 0,
+        trim_y_end: int = 0
+    ) -> None:
     """
     Reduce an individual image
 
     Parameters
     ----------
-    flat
+    flat_file_name
         The CCDData object of the flat that should be reduced.
 
     combined_bias
@@ -1307,9 +1571,6 @@ def reduce_flat_image(
     combined_darks
         Combined darks in a dictionary with exposure times as keys and
         CCDData object as values.
-
-    file_name
-        Name of the image file
 
     flat_path
         Path where the reduced flats should be saved
@@ -1330,7 +1591,37 @@ def reduce_flat_image(
     exposure_time_tolerance
         Tolerance between science and dark exposure times in s.
         Default is ``0.5``s.
+
+    trim_x_start
+        Number of pixels to trim from the start of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_x_end
+        Number of pixels to trim from the end of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_start
+        Number of pixels to trim from the start of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_end
+        Number of pixels to trim from the end of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
     """
+    #   Read fla image
+    flat = CCDData.read(flat_file_name, unit='adu')
+
+    #   Trimming the image, for example to remove an overscan region
+    image_shape = flat.data.shape
+    flat = flat[
+                trim_y_start:image_shape[0]-trim_y_end,
+                trim_x_start:image_shape[1]-trim_x_end
+            ]
+
     #   Set gain _> get it from Header if not provided
     if gain is None:
         gain = flat.header['EGAIN']
@@ -1372,6 +1663,7 @@ def reduce_flat_image(
     )
 
     #   Save the result
+    file_name = flat_file_name.split('/')[-1]
     flat.write(flat_path / file_name, overwrite=True)
 
 
@@ -1379,7 +1671,9 @@ def master_flat(
         image_path: str | Path, output_dir: str | Path,
         image_type: dict[str, list[str]], mk_bad_pixel_mask: bool = True,
         plot_plots: bool = False, debug: bool = False,
-        n_cores_multiprocessing: int | None = None, **kwargs) -> None:
+        n_cores_multiprocessing: int | None = None,
+        dtype: str | np.dtype | None = None, **kwargs
+    ) -> None:
     """
     This function calculates master flats from individual flat field
     images located in one directory. The flat field images are group
@@ -1414,7 +1708,13 @@ def master_flat(
     n_cores_multiprocessing
         Number of cores to use during calculation of the image shifts.
         Default is ``None``.
+
+    dtype
+        Data type used in the ccdproc calculations
+        Default is ''None''. -> None is equivalent to float64
     """
+    terminal_output.print_to_terminal("Stack flats...", indent=2)
+
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
     out_path = checks.check_pathlib_path(output_dir)
@@ -1433,7 +1733,11 @@ def master_flat(
     )
 
     #   Initialize multiprocessing object
-    executor = Executor(n_cores_multiprocessing)
+    executor = Executor(
+        n_cores_multiprocessing,
+        n_tasks=len(filters),
+        add_progress_bar=True,
+    )
 
     #   Reduce science images and save to an extra directory
     for filter_ in filters:
@@ -1447,6 +1751,7 @@ def master_flat(
             ),
             kwargs={
                 'plot_plots': plot_plots,
+                'dtype': dtype,
             }
         )
 
@@ -1478,9 +1783,10 @@ def master_flat(
 
 
 def stack_flat_images(
-    image_file_collection: ccdp.ImageFileCollection,
-    flat_image_type: str | list[str] | None, filter_: str, out_path: Path,
-    plot_plots: bool = False) -> np.ndarray:
+        image_file_collection: ccdp.ImageFileCollection,
+        flat_image_type: str | list[str] | None, filter_: str, out_path: Path,
+        plot_plots: bool = False, dtype: str | np.dtype | None = None
+    ) -> np.ndarray:
     """
     Stack flats for the individual filters
 
@@ -1502,6 +1808,10 @@ def stack_flat_images(
         If True some plots showing some statistic on the flat fields are
         created.
         Default is ``False``.
+
+    dtype
+        Data type used in the ccdproc calculations
+        Default is ''None''. -> None is equivalent to float64
 
     Returns
     -------
@@ -1528,6 +1838,7 @@ def stack_flat_images(
         sigma_clip_func=np.ma.median,
         signma_clip_dev_func=mad_std,
         mem_limit=15e9,
+        dtype=dtype,
     )
 
     #   Add Header keyword to mark the file as a Master
@@ -1583,7 +1894,9 @@ def reduce_light(
         verbose: bool = False, add_hot_bad_pixel_mask: bool = True,
         exposure_time_tolerance: float = 0.5,
         target_name: str | None = None,
-        n_cores_multiprocessing: int | None = None) -> None:
+        n_cores_multiprocessing: int | None = None, trim_x_start: int = 0,
+        trim_x_end: int = 0, trim_y_start: int = 0, trim_y_end: int = 0
+    ) -> None:
     """
     Reduce the science images
 
@@ -1660,7 +1973,29 @@ def reduce_light(
     n_cores_multiprocessing
         Number of cores to use during calculation of the image shifts.
         Default is ``None``.
+
+    trim_x_start
+        Number of pixels to trim from the start of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_x_end
+        Number of pixels to trim from the end of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_start
+        Number of pixels to trim from the start of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_end
+        Number of pixels to trim from the end of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
     """
+    terminal_output.print_to_terminal("Reduce light images...", indent=2)
+
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
     out_path = checks.check_pathlib_path(output_dir)
@@ -1767,22 +2102,25 @@ def reduce_light(
     )
 
     #   Initialize multiprocessing object
-    executor = Executor(n_cores_multiprocessing)
+    executor = Executor(
+        n_cores_multiprocessing,
+        n_tasks=len(image_file_collection.files_filtered(imagetyp=light_image_type)),
+        add_progress_bar=True,
+    )
 
     #   Reduce science images and save to an extra directory
-    for light, file_name in image_file_collection.ccds(
+    for file_name in image_file_collection.files_filtered(
+            include_path=True,
             imagetyp=light_image_type,
-            return_fname=True,
-            ccd_kwargs=dict(unit='adu'),
+            # ccd_kwargs=dict(unit='adu'),
         ):
         executor.schedule(
             reduce_light_image,
             args=(
-                light,
+                file_name,
                 combined_bias,
                 combined_darks,
                 combined_flats,
-                file_name,
                 out_path,
                 light_path
             ),
@@ -1799,6 +2137,10 @@ def reduce_light(
                 'mask_cosmics': mask_cosmics,
                 'scale_image_with_exposure_time': scale_image_with_exposure_time,
                 'verbose': verbose,
+                'trim_x_start': trim_x_start,
+                'trim_x_end': trim_x_end,
+                'trim_y_start': trim_y_start,
+                'trim_y_end': trim_y_end,
             }
         )
 
@@ -1814,9 +2156,9 @@ def reduce_light(
 
 
 def reduce_light_image(
-        light: CCDData, combined_bias: CCDData | None,
+        light_file_name: str, combined_bias: CCDData | None,
         combined_darks: dict[float, CCDData],
-        combined_flats: dict[str, CCDData], file_name: str,
+        combined_flats: dict[str, CCDData],
         out_path: Path, light_path: Path,
         gain: float | None = None, read_noise: float = 8.,
         rm_bias: bool = False, exposure_time_tolerance: float = 0.5,
@@ -1824,14 +2166,16 @@ def reduce_light_image(
         limiting_contrast_rm_cosmic_rays: float = 5.,
         sigma_clipping_value_rm_cosmic_rays: float = 4.5,
         saturation_level: float = 65535., mask_cosmics: bool = False,
-        scale_image_with_exposure_time: bool = True, verbose: bool = False
+        scale_image_with_exposure_time: bool = True, verbose: bool = False,
+        trim_x_start: int = 0, trim_x_end: int = 0, trim_y_start: int = 0,
+        trim_y_end: int = 0
     ) -> None:
     """
     Reduce an individual image
 
     Parameters
     ----------
-    light
+    light_file_name
         The CCDData object that should be reduced.
 
     combined_bias
@@ -1844,9 +2188,6 @@ def reduce_light_image(
     combined_flats
         Combined flats in a dictionary with exposure times as keys and
         CCDData object as values.
-
-    file_name
-        Name of the image file
 
     out_path
         Path to the general output directory
@@ -1907,8 +2248,41 @@ def reduce_light_image(
     verbose
         If True additional output will be printed to the command line.
         Default is ``False``.
+
+    trim_x_start
+        Number of pixels to trim from the start of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_x_end
+        Number of pixels to trim from the end of the X direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_start
+        Number of pixels to trim from the start of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
+
+    trim_y_end
+        Number of pixels to trim from the end of the Y direction,
+        e.g. to remove an overscan region.
+        Default is ``0``.
     """
-#   Set gain -> get it from Header if not provided
+    #   Read light image
+    light = CCDData.read(light_file_name, unit='adu')
+
+    #   Trimming the image, for example to remove an overscan region
+    image_shape = light.data.shape
+    light = light[
+                trim_y_start:image_shape[0]-trim_y_end,
+                trim_x_start:image_shape[1]-trim_x_end
+            ]
+
+    #   Get base file name
+    file_name = light_file_name.split('/')[-1]
+
+    #   Set gain -> get it from Header if not provided
     if gain is None:
         try:
             gain = light.header['EGAIN']
@@ -2048,10 +2422,9 @@ def reduce_light_image(
     reduced.write(light_path / file_name, overwrite=True)
 
 
-def shift_img_apply(
-        current_image_ccd: CCDData, reference_image_ccd: CCDData,
-        n_images: int, image_shifts: np.ndarray, image_flips: np.ndarray,
-        image_id: int, output_path: Path, image_name: str,
+def shift_image_evaluate_apply(
+        current_image_name: str, image_shifts: np.ndarray,
+        image_flips: np.ndarray, image_id: int, output_path: Path,
         shift_method: str = 'skimage', modify_file_name: bool = False,
         rm_enlarged_keyword: bool = False, instrument: bool = None,
         verbose: bool = False) -> None:
@@ -2060,14 +2433,8 @@ def shift_img_apply(
 
     Parameters
     ----------
-    current_image_ccd
-        Image data
-
-    reference_image_ccd
-        Data of the reference image
-
-    n_images
-        Number of images
+    current_image_name
+        Path to the current image
 
     image_shifts
         Shifts of the images in X and Y direction
@@ -2081,22 +2448,15 @@ def shift_img_apply(
     output_path
         Path to the output directory
 
-    image_name
-        Name of the image
-
     shift_method
         Method to use for image alignment.
         Possibilities: 'aa'      = astroalign module only accounting for
                                    xy shifts
-                       'aa_true' = astroalign module with corresponding
-                                   transformation
                        'own'     = own correlation routine based on
                                    phase correlation, applying fft to
                                    the images
                        'skimage' = phase correlation implemented by
                                    skimage
-                       'flow'    = image registration using optical flow
-                                   implementation by skimage
         Default is ``skimage``.
 
     modify_file_name
@@ -2116,6 +2476,9 @@ def shift_img_apply(
         If True additional output will be printed to the console
         Default is ``False``.
     """
+    #   Get image data
+    current_image_ccd = CCDData.read(current_image_name)
+
     #   Trim images
     if shift_method in ['own', 'skimage', 'aa']:
         #   Flip image if pier side changed
@@ -2129,24 +2492,10 @@ def shift_img_apply(
         output_image = utilities.trim_image(
             current_image_ccd,
             image_id,
-            n_images,
             image_shifts,
             correlation_method=shift_method,
             verbose=verbose,
         )
-    elif shift_method == 'flow':
-        output_image = utilities.image_shift_optical_flow_method(
-            reference_image_ccd,
-            current_image_ccd,
-        )
-
-    #   Using astroalign to align the images
-    elif shift_method == 'aa_true':
-        output_image = utilities.image_shift_astroalign_method(
-            reference_image_ccd,
-            current_image_ccd,
-        )
-
     else:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nThe provided method to determine the "
@@ -2173,7 +2522,118 @@ def shift_img_apply(
         )
 
     #   Write trimmed image to disk
-    output_image.write(output_path / image_name, overwrite=True)
+    file_name = current_image_name.split('/')[-1]
+    output_image.write(output_path / file_name, overwrite=True)
+
+
+def shift_image_apply(
+        current_image_name: str, reference_image_name: str,
+        output_path: Path, shift_method: str = 'aa_true',
+        modify_file_name: bool = False, rm_enlarged_keyword: bool = False,
+        instrument: bool = None,
+    ) -> None:
+    """
+    Apply shift to an individual image
+
+    Parameters
+    ----------
+    current_image_name
+        Path to the current image
+
+    reference_image_name
+        Path to the reference image
+
+    output_path
+        Path to the output directory
+
+    shift_method
+        Method to use for image alignment.
+        Possibilities: 'aa_true' = astroalign module with corresponding
+                                   transformation
+                       'flow'    = image registration using optical flow
+                                   implementation by skimage
+        Default is ``skimage``.
+
+    modify_file_name
+        It true the trimmed image will be saved, using a modified file
+        name.
+        Default is ``False``.
+
+    rm_enlarged_keyword
+        It true the header keyword 'enlarged' will be removed.
+        Default is ``False``.
+
+    instrument
+        The instrument used
+        Default is ``None``.
+    """
+    #   Get image data
+    current_image_ccd = CCDData.read(current_image_name)
+
+    #   Trim images
+    if shift_method == 'flow':
+        reference_image_ccd = CCDData.read(reference_image_name)
+        try:
+            output_image = utilities.image_shift_optical_flow_method(
+                reference_image_ccd,
+                current_image_ccd,
+            )
+        except ValueError as e:
+            terminal_output.print_to_terminal(
+                f"WARNING: Failed to calculate image offset for image"
+                f" {current_image_name} with ERROR code: \n\n {e} \n Skip file.",
+                style_name='WARNING',
+                indent=2,
+            )
+            return
+
+    #   Using astroalign to align the images
+    elif shift_method == 'aa_true':
+        reference_image_ccd = CCDData.read(reference_image_name)
+        try:
+            output_image = utilities.image_shift_astroalign_method(
+                reference_image_ccd,
+                current_image_ccd,
+            )
+        except (TypeError, ValueError) as e:
+            terminal_output.print_to_terminal(
+                f"WARNING: Failed to calculate image offset for image"
+                f" {current_image_name} with ERROR code: \n\n {e} \n Skip file.",
+                style_name='WARNING',
+                indent=2,
+            )
+            return
+
+    else:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \nThe provided method to determine the "
+            f"shifts is not known. Got {shift_method}. Allowed: own, "
+            f"skimage, aa, flow, aa_true {style.Bcolors.ENDC}"
+        )
+
+    #   Reset the device as it may have been updated
+    if instrument is not None and instrument != '':
+        output_image.meta['INSTRUME'] = instrument
+
+    #   Add Header keyword to mark the file as trimmed
+    output_image.meta['trimmed'] = True
+    if rm_enlarged_keyword:
+        output_image.meta.remove('enlarged')
+
+    #   Get file name
+    file_name = current_image_name.split('/')[-1]
+
+    if modify_file_name:
+        #   Get filter
+        filter_ = output_image.meta['filter']
+
+        #   Define name and write trimmed image to disk
+        file_name = 'combined_trimmed_filter_{}.fit'.format(
+            filter_.replace("''", "p")
+        )
+
+    #   Write trimmed image to disk
+    output_image.write(output_path / file_name, overwrite=True)
 
 
 def detect_outlier(
@@ -2299,69 +2759,121 @@ def shift_image_core(
             correlation_method=shift_method,
             n_cores_multiprocessing=n_cores_multiprocessing,
         )
-        reference_image_ccd = None
+
+        #   Find IDs of potential outlier
+        if rm_outliers:
+            outlier_ids = detect_outlier(
+                image_shifts,
+                filter_window=filter_window,
+                threshold=threshold,
+            )
+            if outlier_ids.size:
+                terminal_output.print_to_terminal(
+                    "The images with the following IDs will be removed "
+                    f"because of not reliable shifts:\n {outlier_ids.ravel()}.",
+                    indent=2,
+                    style_name='WARNING',
+                )
+
+                #   Set outlier image shifts to NANs
+                image_shifts[:, outlier_ids] = np.nan
+
+        terminal_output.print_to_terminal(
+            'Apply image shifts and crop images accordingly',
+            indent=2
+        )
+
+        #   Initialize multiprocessing object
+        executor = Executor(
+            n_cores_multiprocessing,
+            n_tasks=np.invert(np.isnan(image_shifts[1, :])).sum(),
+            add_progress_bar=True,
+        )
+
+        #   Trim all images
+        for current_image_id, current_image_name in enumerate(image_file_collection.files):
+            #   Check for outliers and those images where the shift determination failed
+            if not np.isnan(image_shifts[1, current_image_id]):
+                executor.schedule(
+                    shift_image_evaluate_apply,
+                    args=(
+                        current_image_name,
+                        image_shifts,
+                        image_flips,
+                        current_image_id,
+                        output_path,
+                    ),
+                    kwargs={
+                        'shift_method': shift_method,
+                        'modify_file_name': modify_file_name,
+                        'rm_enlarged_keyword': rm_enlarged_keyword,
+                        'instrument': instrument,
+                        'verbose': verbose,
+                    }
+                )
+
+        #   Exit if exceptions occurred
+        if executor.err is not None:
+            raise RuntimeError(
+                f'\n{style.Bcolors.FAIL}Image offset could not be applied.'
+                f'It was not possible to recover from this error.'
+                f':({style.Bcolors.ENDC}'
+            )
+
+        #   Close multiprocessing pool and wait until it finishes
+        executor.wait()
+
+
     elif shift_method in ['aa_true', 'flow']:
         reference_file_name = image_file_collection.files[reference_image_id]
-        reference_image_ccd = CCDData.read(reference_file_name)
-        image_shifts = None
-        image_flips = None
+
+        #   Initialize multiprocessing object
+        executor = Executor(
+            n_cores_multiprocessing,
+            n_tasks=len(image_file_collection.files),
+            add_progress_bar=True,
+        )
+
+        #   Trim all images
+        for current_image_id, current_image_name in enumerate(image_file_collection.files):
+            # try:
+            executor.schedule(
+                shift_image_apply,
+                args=(
+                    current_image_name,
+                    reference_file_name,
+                    output_path,
+                ),
+                kwargs={
+                    'shift_method': shift_method,
+                    'modify_file_name': modify_file_name,
+                    'rm_enlarged_keyword': rm_enlarged_keyword,
+                    'instrument': instrument,
+                }
+            )
+            # except (RuntimeError, ValueError, TypeError) as e:
+            #     terminal_output.print_to_terminal(
+            #         f"WARNING: Failed to calculate image offset for image"
+            #         f" {current_image_name} with ERROR code: \n\n {e} \n Skip file.",
+            #         style_name='WARNING',
+            #         indent=2,
+            #     )
+
+        #   Exit if exceptions occurred
+        if executor.err is not None:
+            raise RuntimeError(
+                f'\n{style.Bcolors.FAIL}Image offset could not be determined or applied.'
+                f'It was not possible to recover from this error.'
+                f':({style.Bcolors.ENDC}'
+            )
+
+        #   Close multiprocessing pool and wait until it finishes
+        executor.wait()
     else:
         raise RuntimeError(
             f'{style.Bcolors.FAIL}Method {shift_method} not known '
             f'-> EXIT {style.Bcolors.ENDC}'
         )
-
-    #   Number of images
-    n_images = len(image_file_collection.files)
-
-    #   Find IDs of potential outlier
-    if rm_outliers and image_shifts is not None:
-        outlier_ids = detect_outlier(
-            image_shifts,
-            filter_window=filter_window,
-            threshold=threshold,
-        )
-        if outlier_ids.size:
-            terminal_output.print_to_terminal(
-                "The images with the following IDs will be removed "
-                f"because of not reliable shifts:\n {outlier_ids.ravel()}.",
-                indent=2,
-                style_name='WARNING',
-            )
-
-            #   Remove outliers from determined shift
-            # image_shifts = np.delete(image_shifts, outlier_ids, axis=1)
-            #   Set outlier image shifts to 0
-            image_shifts[:, outlier_ids] = 0.
-    else:
-        outlier_ids = []
-
-    #   Trim all images
-    for current_image_id, (current_image_ccd, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
-        if current_image_id not in outlier_ids:
-            try:
-                shift_img_apply(
-                    current_image_ccd,
-                    reference_image_ccd,
-                    n_images,
-                    image_shifts,
-                    image_flips,
-                    current_image_id,
-                    output_path,
-                    file_name,
-                    shift_method=shift_method,
-                    modify_file_name=modify_file_name,
-                    rm_enlarged_keyword=rm_enlarged_keyword,
-                    instrument=instrument,
-                    verbose=verbose,
-                )
-            except (RuntimeError, ValueError, TypeError) as e:
-                terminal_output.print_to_terminal(
-                    f"WARNING: Failed to calculate image offset for image"
-                    f" {file_name} with ERROR code: \n\n {e} \n Skip file.",
-                    style_name='WARNING',
-                    indent=2,
-                )
 
 
 def shift_image(
@@ -2435,6 +2947,9 @@ def shift_image(
 
     #   New image collection for the images
     image_file_collection = ccdp.ImageFileCollection(file_path)
+
+    #   Sort by time
+    image_file_collection.sort('jd')
 
     #   Check if image_file_collection is not empty
     if not image_file_collection.files:
@@ -2554,6 +3069,9 @@ def shift_all_images(
 
     #   New image collection for the images
     image_file_collection = ccdp.ImageFileCollection(file_path)
+
+    #   Sort by time
+    image_file_collection.sort('jd')
 
     #   Check if image_file_collection is not empty
     if not image_file_collection.files:
@@ -2696,7 +3214,8 @@ def shift_stack_astroalign(
 def stack_image(
         image_path: Path, output_dir: Path, image_type_list: list[str],
         stacking_method: str = 'average', dtype: str | np.dtype | None = None,
-        new_target_name: str | None = None, debug: bool = False) -> None:
+        new_target_name: str | None = None, debug: bool = False
+    ) -> None:
     """
     Combine images
 
@@ -2719,7 +3238,7 @@ def stack_image(
 
     dtype
         The dtype that should be used while combining the images.
-        Default is ''None'' -> None is equivalent to float64
+        Default is ''None''. -> None is equivalent to float64
 
     new_target_name
         Name of the target. If not None, this target name will be written
@@ -2731,6 +3250,8 @@ def stack_image(
         be removed.
         Default is ``False``.
     """
+    terminal_output.print_to_terminal("Stack light images...", indent=2)
+
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
     out_path = checks.check_pathlib_path(output_dir)
@@ -2753,6 +3274,7 @@ def stack_image(
     filters = set(h['filter'] for h in image_file_collection.headers(imagetyp=image_type))
 
     #   Combine images for the individual filters
+    #   TODO: Add multiprocessing
     for filter_ in filters:
         #   Select images to combine
         images_to_combine = image_file_collection.files_filtered(

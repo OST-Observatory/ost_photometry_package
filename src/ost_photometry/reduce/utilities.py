@@ -44,6 +44,7 @@ from .. import utilities as base_utilities
 from ..analyze import utilities as analysis_utilities
 
 from . import plots
+from ..terminal_output import print_to_terminal
 
 
 ############################################################################
@@ -1217,11 +1218,11 @@ def calculate_min_max_image_shifts(
         id_y = 1
 
     #   Maximum and minimum shifts
-    minimum_shift_x = np.min(shifts[id_x, :])
-    maximum_shift_x = np.max(shifts[id_x, :])
+    minimum_shift_x = np.nanmin(shifts[id_x, :])
+    maximum_shift_x = np.nanmax(shifts[id_x, :])
 
-    minimum_shift_y = np.min(shifts[id_y, :])
-    maximum_shift_y = np.max(shifts[id_y, :])
+    minimum_shift_y = np.nanmin(shifts[id_y, :])
+    maximum_shift_y = np.nanmax(shifts[id_y, :])
 
     return minimum_shift_x, maximum_shift_x, minimum_shift_y, maximum_shift_y
 
@@ -1272,46 +1273,82 @@ def calculate_image_shifts_core(
     reference_data = reference_ccd_object.data
     reference_mask = np.invert(reference_ccd_object.mask)
 
-    #   Image and mask to compare with
-    current_ccd = image_ccd_object
-    current_data = image_ccd_object.data
-    current_mask = np.invert(image_ccd_object.mask)
-
     #   Image pier side
     reference_pier = reference_ccd_object.meta.get('PIERSIDE', 'EAST')
     current_pier = image_ccd_object.meta.get('PIERSIDE', 'EAST')
 
     #   Flip if pier side changed
     if current_pier != reference_pier:
-        current_ccd = ccdp.transform_image(
+        image_ccd_object = ccdp.transform_image(
             image_ccd_object,
             np.flip,
             axis=(0, 1),
         )
-        current_data = np.flip(current_data, axis=(0, 1))
-        current_mask = np.flip(current_mask, axis=(0, 1))
+        # current_data = np.flip(current_data, axis=(0, 1))
+        # current_mask = np.flip(current_mask, axis=(0, 1))
         flip_necessary = True
     else:
         flip_necessary = False
 
+    #   Image and mask to compare with
+    current_data = image_ccd_object.data
+    current_mask = np.invert(image_ccd_object.mask)
+
     #   Calculate shifts
     if correlation_method == 'skimage':
-        image_shift = phase_cross_correlation(
-            reference_data,
-            current_data,
-            reference_mask=reference_mask,
-            moving_mask=current_mask,
-        )
-        image_shift = image_shift[0]
+        try:
+            image_shift = phase_cross_correlation(
+                reference_data,
+                current_data,
+                reference_mask=reference_mask,
+                moving_mask=current_mask,
+            )
+            image_shift = image_shift[0]
+        except ValueError as e:
+            image_shift = (np.nan, np.nan)
+            terminal_output.print_to_terminal(
+                f"Image offset determination failed for image: {current_file_name}",
+                indent=2,
+                style_name='WARNING',
+            )
+            terminal_output.print_to_terminal(
+                f'The exception is: {e}',
+                indent=2,
+                style_name='WARNING',
+            )
+
     elif correlation_method == 'own':
-        image_shift = cross_correlate_images(
-            reference_data,
-            current_data,
-            1000,
-            1000,
-            False,
-        )
+        try:
+            image_shift = cross_correlate_images(
+                reference_data,
+                current_data,
+                1000,
+                1000,
+                False,
+            )
+        except (IndexError, RuntimeError) as e:
+            image_shift = (np.nan, np.nan)
+            terminal_output.print_to_terminal(
+                f"Image offset determination failed for image: {current_file_name}",
+                indent=2,
+                style_name='WARNING',
+            )
+            terminal_output.print_to_terminal(
+                f'The exception is: {e}',
+                indent=2,
+                style_name='WARNING',
+            )
+
     elif correlation_method == 'aa':
+        if flip_necessary:
+            print_to_terminal(
+                'The current "aa" correlation method, combined with the '
+                'meridian flips that occurred in this observation, usually '
+                'gives rather poor results. It is better to use the "aa_true" '
+                'correlation method in this case.',
+                indent=2,
+                style_name='WARNING',
+            )
         #   Map with endianness symbols
         endian_map = {
             '>': 'big',
@@ -1343,7 +1380,7 @@ def calculate_image_shifts_core(
         #   Determine transformation between the images
         try:
             transformation_coefficients, (_, _) = aa.find_transform(
-                current_ccd,
+                image_ccd_object,
                 reference_ccd_object,
                 detection_sigma=3,
             )
@@ -1352,11 +1389,22 @@ def calculate_image_shifts_core(
                 transformation_coefficients.translation[1],
                 transformation_coefficients.translation[0]
             )
-        except IndexError:
-            image_shift = (0., 0.)
+        except (IndexError, TypeError, ValueError) as e:
+            # image_shift = (0., 0.)
+            # terminal_output.print_to_terminal(
+            #     f"WARNING: Offset determination for image {image_id}"
+            #     " failed. Assume offset is 0.",
+            #     style_name='WARNING',
+            # )
+            image_shift = (np.nan, np.nan)
             terminal_output.print_to_terminal(
-                f"WARNING: Offset determination for image {image_id}"
-                " failed. Assume offset is 0.",
+                f"Image offset determination failed for image: {current_file_name}",
+                indent=2,
+                style_name='WARNING',
+            )
+            terminal_output.print_to_terminal(
+                f'The exception is: {e}',
+                indent=2,
                 style_name='WARNING',
             )
     else:
@@ -1365,9 +1413,10 @@ def calculate_image_shifts_core(
             f'{style.Bcolors.FAIL}Image correlation method '
             f'{correlation_method} not known\n {style.Bcolors.ENDC}'
         )
+    file_name = current_file_name.split('/')[-1]
     terminal_output.print_to_terminal(
         f'\t{image_id}\t{image_shift[1]:+.1f}\t{image_shift[0]:+.1f}'
-        f'\t{current_file_name}',
+        f'\t{file_name}',
         indent=0,
     )
 
@@ -1421,7 +1470,6 @@ def calculate_image_shifts(
 
     #   Get reference image file name
     reference_file_name = image_file_collection.files[id_reference_image]
-    # reference_ccd_object = CCDData.read(reference_file_name)
 
     #   Prepare an array for the shifts
     image_shift = np.zeros((2, n_files))
@@ -1443,20 +1491,6 @@ def calculate_image_shifts(
     executor = analysis_utilities.Executor(n_cores_multiprocessing)
 
     #   Calculate image shifts
-    # for i, (current_ccd_object, file_name) in enumerate(image_file_collection.ccds(return_fname=True)):
-    #     if i != id_reference_image:
-    #         executor.schedule(
-    #             calculate_image_shifts_core,
-    #             args=(
-    #                 current_ccd_object,
-    #                 reference_ccd_object,
-    #                 i,
-    #                 file_name,
-    #             ),
-    #             kwargs={
-    #             'correlation_method':correlation_method,
-    #             }
-    #         )
     for i, current_file_name in enumerate(image_file_collection.files):
         if i != id_reference_image:
             executor.schedule(
@@ -1474,7 +1508,8 @@ def calculate_image_shifts(
     #   Exit if exceptions occurred
     if executor.err is not None:
         raise RuntimeError(
-            f'\n{style.Bcolors.FAIL}Image offset determination failed '
+            f'\n{style.Bcolors.FAIL}Image offset could not be determined. '
+            f'It was not possible to recover from this error.'
             f':({style.Bcolors.ENDC}'
         )
 
@@ -1520,17 +1555,29 @@ def image_shift_astroalign_method(
         '|': 'not applicable',
     }
     if endian_map[current_ccd_object.data.dtype.byteorder] != sys.byteorder:
-        current_ccd_object.data = current_ccd_object.data.byteswap().newbyteorder()
-        reference_ccd_object.data = reference_ccd_object.data.byteswap().newbyteorder()
-        current_ccd_object.uncertainty = StdDevUncertainty(
-            current_ccd_object.uncertainty.array.byteswap().newbyteorder()
-        )
-        reference_ccd_object.uncertainty = StdDevUncertainty(
-            reference_ccd_object.uncertainty.array.byteswap().newbyteorder()
+        current_ccd_object.data = current_ccd_object.data.byteswap()
+        current_ccd_object.data = current_ccd_object.data.view(
+            current_ccd_object.data.dtype.newbyteorder()
         )
 
+        reference_ccd_object.data = reference_ccd_object.data.byteswap()
+        reference_ccd_object.data = reference_ccd_object.data.view(
+            reference_ccd_object.data.dtype.newbyteorder()
+        )
+
+        u_img = current_ccd_object.uncertainty.array.byteswap()
+        u_img = u_img.view(u_img.dtype.newbyteorder())
+
+        current_ccd_object.uncertainty = StdDevUncertainty(u_img)
+
+        u_re = reference_ccd_object.uncertainty.array.byteswap()
+        u_re = u_re.view(u_re.dtype.newbyteorder())
+
+        reference_ccd_object.uncertainty = StdDevUncertainty(u_re)
+
+
     #   Determine transformation between the images
-    transformation_coefficiants, (_, _) = aa.find_transform(
+    transformation_coefficients, (_, _) = aa.find_transform(
         current_ccd_object,
         reference_ccd_object,
         detection_sigma=3,
@@ -1538,7 +1585,7 @@ def image_shift_astroalign_method(
 
     #   Transform image data
     image_data, footprint_mask = aa.apply_transform(
-        transformation_coefficiants,
+        transformation_coefficients,
         current_ccd_object,
         reference_ccd_object,
         propagate_mask=True,
@@ -1546,7 +1593,7 @@ def image_shift_astroalign_method(
 
     #   Transform uncertainty array
     image_uncertainty, _ = aa.apply_transform(
-        transformation_coefficiants,
+        transformation_coefficients,
         current_ccd_object.uncertainty.array,
         reference_ccd_object.uncertainty.array,
     )
@@ -1667,11 +1714,14 @@ def make_index_from_shifts(
         y_start = max_shift_y - shifts[0, id_current_image]
         y_end = min_shift_y - shifts[0, id_current_image]
 
-    return x_start, x_end, y_start, y_end
+    return (int(np.around(x_start, decimals=0)),
+            int(np.around(x_end, decimals=0)),
+            int(np.around(y_start, decimals=0)),
+            int(np.around(y_end, decimals=0)))
 
 
 def trim_image(
-        image: CCDData, image_id: int, n_files: int, image_shift: np.ndarray,
+        image: CCDData, image_id: int, image_shift: np.ndarray,
         correlation_method: str = 'skimage', verbose: bool = False) -> CCDData:
     """
     Trim image based on a shift compared to a reference image
@@ -1683,9 +1733,6 @@ def trim_image(
 
     image_id
         Number of the image in the sequence
-
-    n_files
-        Number of all images
 
     image_shift
         Shift of this specific image in X and Y direction
@@ -1708,19 +1755,20 @@ def trim_image(
 
     Returns
     -------
-    trimmed_imag
+    trimmed_image
         The trimmed image
     """
     if verbose:
         #   Write status to console
         terminal_output.print_to_terminal(
-            f"\r\tApply shift to image {image_id + 1}/{n_files}\n",
+            f"\r\tApply shift to image {image_id}",
         )
 
     if correlation_method in ['own', 'skimage']:
         #   Ensure full pixel shifts
-        if not issubclass(type(image_shift[0, 0]), np.integer):
-            image_shift = image_shift.astype('int')
+        # if not issubclass(type(image_shift[0, 0]), np.integer):
+        #     image_shift = image_shift.astype('int')
+        #     print(image_shift)
 
         #   Calculate indexes from image shifts
         x_start, x_end, y_start, y_end = make_index_from_shifts(
@@ -1728,18 +1776,20 @@ def trim_image(
             image_id,
         )
     elif correlation_method == 'aa':
-        #   Calculate maximum and minimum shifts
-        min_shift_x, max_shift_x, min_shift_y, max_shift_y = calculate_min_max_image_shifts(
-            image_shift,
-            python_format=True,
-        )
-
         #   Shift image on sub pixel basis
         image = ccdp.transform_image(
             image,
             shift_scipy,
             shift=image_shift[:, image_id],
             order=1,
+        )
+
+        #   TODO: The following calculations do not need to be repeated for
+        #    every image. Move it out of the loop.
+        #   Calculate maximum and minimum shifts
+        min_shift_x, max_shift_x, min_shift_y, max_shift_y = calculate_min_max_image_shifts(
+            image_shift,
+            python_format=True,
         )
 
         #   Set trim margins
@@ -1762,6 +1812,7 @@ def trim_image(
         else:
             y_start = int(math.ceil(max_shift_y))
             y_end = int(math.ceil(np.abs(min_shift_y))) * -1
+
     else:
         raise ValueError(
             f'{style.Bcolors.FAIL}Shift method not known. Expected: '
