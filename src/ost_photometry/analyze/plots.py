@@ -179,11 +179,13 @@ def starmap(
         if terminal_logger is not None:
             terminal_logger.add_to_cache(
                 f"Plot {filter_} band image with stars overlaid ({rts})",
+                style_name='NORMAL',
                 indent=indent,
             )
         else:
             terminal_output.print_to_terminal(
                 f"Plot {filter_} band image with stars overlaid ({rts})",
+                style_name='NORMAL',
                 indent=indent,
             )
 

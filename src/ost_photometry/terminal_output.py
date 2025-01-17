@@ -69,6 +69,12 @@ def format_string(
     elif style_name == 'UNDERLINE':
         string_out += style.Bcolors.UNDERLINE
 
+    elif style_name == 'ITALIC':
+        string_out += style.Bcolors.ITALIC
+
+    elif style_name == 'NORMAL':
+        string_out += style.Bcolors.NORMAL
+
     else:
         string_out += style.Bcolors.BOLD
 

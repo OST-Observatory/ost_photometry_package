@@ -991,7 +991,7 @@ class Executor:
             for each process
         """
         #   Update progress bar
-        if self.progress_bar:
+        if isinstance(self.progress_bar, tqdm):
             self.progress_bar.update(1)
 
         #   Catch all results
@@ -1011,7 +1011,12 @@ class Executor:
         )
         #   Terminate pool
         self.pool.terminate()
-        self.pool.join()
+        # self.pool.join()
+
+        #   Terminate progress bar
+        if isinstance(self.progress_bar, tqdm):
+            self.progress_bar.close()
+        self.progress_bar = None
 
         #   Raise exceptions
         self.err = e
@@ -1040,7 +1045,8 @@ class Executor:
             self.pool.close()
             self.pool.join()
         finally:
-            if self.progress_bar:
+            #   Terminate progress bar
+            if isinstance(self.progress_bar, tqdm):
                 self.progress_bar.close()
             self.progress_bar = None
 
@@ -1209,6 +1215,7 @@ def prepare_and_plot_starmap_from_observation(
     terminal_output.print_to_terminal(
         "Plot star maps with positions from the final correlation",
         indent=1,
+        style_name='NORMAL',
     )
 
     for filter_ in filter_list:
@@ -1277,7 +1284,8 @@ def prepare_and_plot_starmap_from_image_series(
     """
     terminal_output.print_to_terminal(
         "Plot star map with objects identified on all images",
-        indent=1,
+        style_name='NORMAL',
+        indent=2,
     )
 
     #   Get image IDs, IDs of the objects, and pixel coordinates
@@ -1532,12 +1540,20 @@ def rm_edge_objects(
     mask = ((x > hsize) & (x < (data_array.shape[1] - 1 - hsize)) &
             (y > hsize) & (y < (data_array.shape[0] - 1 - hsize)))
 
-    out_str = f'{np.count_nonzero(np.invert(mask))} objects removed because ' \
-              'they are too close to the image edges'
+    out_str = (f'Removed {np.count_nonzero(np.invert(mask))} objects '
+               f'that were too close to the edges of the image.')
     if terminal_logger is not None:
-        terminal_logger.add_to_cache(out_str, indent=indent)
+        terminal_logger.add_to_cache(
+            out_str,
+            style_name='ITALIC',
+            indent=indent + 1,
+        )
     else:
-        terminal_output.print_to_terminal(out_str, indent=indent)
+        terminal_output.print_to_terminal(
+            out_str,
+            style_name='ITALIC',
+            indent=indent + 1,
+        )
 
     return table[mask]
 

@@ -580,7 +580,7 @@ def correlate_datasets(
     else:
         terminal_output.print_to_terminal(
             f"{n_common_objects} objects identified on all {dataset_type}s",
-            style_name='OKBLUE',
+            style_name='GOOD',
             indent=2,
         )
 
@@ -588,16 +588,19 @@ def correlate_datasets(
     if n_bad_images > 0:
         terminal_output.print_to_terminal(
             f"{n_bad_images} images do not meet the criteria -> removed",
+            style_name='ITALIC',
             indent=2,
         )
     if n_bad_images > 1:
         terminal_output.print_to_terminal(
             f"Rejected {dataset_type} IDs: {rejected_datasets}",
+            style_name='ITALIC',
             indent=2,
         )
     elif n_bad_images == 1:
         terminal_output.print_to_terminal(
             f"ID of the rejected {dataset_type}: {rejected_datasets}",
+            style_name='ITALIC',
             indent=2,
         )
     # terminal_output.print_to_terminal('')

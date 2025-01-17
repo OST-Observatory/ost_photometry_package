@@ -504,6 +504,12 @@ def read_votable_simbad(
     mask = mask * calib_tbl['FLUX_V'] <= magnitude_range[1]
     calib_tbl = calib_tbl[mask]
 
+    terminal_output.print_to_terminal(
+        f"{len(calib_tbl)} calibration objects remaining after magnitude "
+        "filtering",
+        indent=indent,
+    )
+
     #   Define dict with column names
     column_dict = {'ra': 'RA_d', 'dec': 'DEC_d'}
 
@@ -600,7 +606,7 @@ def load_calibration_data_table(
             filters=filter_list,
             field_of_view=1.5 * image_like_object.field_of_view_x,
             magnitude_range=magnitude_range,
-            indent=indent + 1,
+            indent=indent + 2,
         )
         ra_unit = u.hourangle
 
@@ -610,7 +616,7 @@ def load_calibration_data_table(
             path_calibration_file,
             filter_list,
             magnitude_range=magnitude_range,
-            indent=indent + 1,
+            indent=indent + 2,
         )
         ra_unit = u.hourangle
 
@@ -620,7 +626,7 @@ def load_calibration_data_table(
             filters=filter_list,
             field_of_view=1.5 * image_like_object.field_of_view_x,
             magnitude_range=magnitude_range,
-            indent=indent + 1,
+            indent=indent + 2,
         )
         ra_unit = u.hourangle
 
@@ -632,7 +638,7 @@ def load_calibration_data_table(
             image_like_object.field_of_view_x,
             vizier_dict[calibration_method],
             magnitude_range=magnitude_range,
-            indent=indent + 1,
+            indent=indent + 2,
         )
     else:
         raise RuntimeError(
@@ -641,11 +647,11 @@ def load_calibration_data_table(
             f"-> EXIT {style.Bcolors.ENDC}"
         )
 
-    terminal_output.print_to_terminal(
-        f"{len(calib_tbl)} calibration stars downloaded",
-        indent=indent + 2,
-        style_name='OKBLUE',
-    )
+    # terminal_output.print_to_terminal(
+    #     f"{len(calib_tbl)} calibration stars downloaded",
+    #     indent=indent + 2,
+    #     style_name='OKBLUE',
+    # )
 
     #   Remove masked columns from calibration table, since those could cause
     #   problems during calibration
@@ -908,7 +914,7 @@ def derive_calibration(
     terminal_output.print_to_terminal(
         f"{len(calibration_tbl)} calibration stars remain after cleanup",
         indent=indent + 2,
-        style_name='OKBLUE',
+        style_name='GOOD',
     )
 
     if correlate_with_observed_objects and len(column_names) > 2:

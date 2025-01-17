@@ -1417,6 +1417,11 @@ class Observation:
             of pixel coordinates
             Default is ``True``.
         """
+        terminal_output.print_to_terminal(
+            f"Correlate and calibrate image series",
+            style_name='HEADER',
+        )
+
         #   Correlate the stellar positions from the different filter
         correlate.correlate_image_series(
             self,
@@ -2328,6 +2333,11 @@ def find_stars(
     )
     #   Get median
     median_fwhm = sigma_clipped_stats(fwhm)[1]
+
+    #   Check the validity of the FWHM estimate, assuming that FWHM values
+    #   below 2 and above 9 are most likely erroneous.
+    if median_fwhm < 2. or median_fwhm > 9.:
+        median_fwhm = default_fwhm
 
     #   Run finder with new FWHM
     if method == 'DAO':
@@ -3375,13 +3385,13 @@ def extraction_aperture(
         terminal_logger.add_to_cache(
             f"{n_objects} good objects extracted from the image",
             indent=indent + 1,
-            style_name='OK',
+            # style_name='OK',
         )
     else:
         terminal_output.print_to_terminal(
             f"{n_objects} good objects extracted from the image",
             indent=indent + 1,
-            style_name='OK',
+            # style_name='OK',
         )
 
 
