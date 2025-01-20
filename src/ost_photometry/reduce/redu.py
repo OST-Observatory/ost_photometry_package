@@ -598,7 +598,7 @@ def reduce_main(
             output_path,
             image_type_dir['light'],
             stacking_method=stack_method,
-            dtype=dtype_image_stacking,
+            dtype=dtype,
             debug=debug,
         )
 
@@ -909,9 +909,9 @@ def reduce_dark(
     )
 
     #   Loop over darks and reduce darks
-    for file_name in image_file_collection.files(
+    for file_name in image_file_collection.files_filtered(
+            include_path=True,
             imagetyp=dark_image_type,
-            ccd_kwargs={'unit': 'adu'},
     ):
         executor.schedule(
             reduce_dark_image,
@@ -930,6 +930,15 @@ def reduce_dark(
             }
         )
 
+    #   Exit if exceptions occurred
+    if executor.err is not None:
+        raise RuntimeError(
+            f'\n{style.Bcolors.FAIL}Dark image reduction using multiprocessing'
+            f' failed :({style.Bcolors.ENDC}'
+        )
+
+    #   Close multiprocessing pool and wait until it finishes
+    executor.wait()
 
 def reduce_dark_image(
         dark_file_name: str, stacked_bias: CCDData, dark_path: Path,
@@ -2595,7 +2604,7 @@ def shift_image_apply(
                 reference_image_ccd,
                 current_image_ccd,
             )
-        except (TypeError, ValueError) as e:
+        except (aa.MaxIterError, TypeError, ValueError) as e:
             terminal_output.print_to_terminal(
                 f"WARNING: Failed to calculate image offset for image"
                 f" {current_image_name} with ERROR code: \n\n {e} \n Skip file.",
@@ -2949,7 +2958,10 @@ def shift_image(
     image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Sort by time
-    image_file_collection.sort('jd')
+    if 'jd' in image_file_collection.summary.colnames:
+        image_file_collection.sort('jd')
+    elif 'date-obs' in image_file_collection.summary.colnames:
+        image_file_collection.sort('date-obs')
 
     #   Check if image_file_collection is not empty
     if not image_file_collection.files:
@@ -3071,7 +3083,10 @@ def shift_all_images(
     image_file_collection = ccdp.ImageFileCollection(file_path)
 
     #   Sort by time
-    image_file_collection.sort('jd')
+    if 'jd' in image_file_collection.summary.colnames:
+        image_file_collection.sort('jd')
+    elif 'date-obs' in image_file_collection.summary.colnames:
+        image_file_collection.sort('date-obs')
 
     #   Check if image_file_collection is not empty
     if not image_file_collection.files:

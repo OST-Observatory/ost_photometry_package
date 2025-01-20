@@ -1389,7 +1389,7 @@ def calculate_image_shifts_core(
                 transformation_coefficients.translation[1],
                 transformation_coefficients.translation[0]
             )
-        except (IndexError, TypeError, ValueError) as e:
+        except (aa.MaxIterError, IndexError, TypeError, ValueError) as e:
             # image_shift = (0., 0.)
             # terminal_output.print_to_terminal(
             #     f"WARNING: Offset determination for image {image_id}"
