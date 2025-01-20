@@ -611,6 +611,7 @@ vizier_dict = {
     'Stetson_2019': 'J/MNRAS/485/3042/table4',
     'Pancino_2022': 'J/A+A/664/A109/table5',
     'APOP_Qi_2015': 'I/331/apop',
+    'SDSS_Release_16': 'V/147/sdss12',
 }
 
 default_columns = {
@@ -623,6 +624,24 @@ default_ra_unit = u.deg
 
 #   Catalog properties
 catalog_properties_dict = {
+    'V/147/sdss12': {
+        'ra_unit': default_ra_unit,
+        'ra_dec_columns': ['RA_ICRS', 'DE_ICRS'],
+        'columns': ['upmag', 'gpmag', 'rpmag', 'ipmag', 'zpmag'],
+        'err_columns': ['e_upmag', 'e_gpmag', 'e_rpmag', 'e_ipmag', 'e_zpmag'],
+        'column_rename': [
+            ("upmag", "umag"),
+            ("gpmag", "gmag"),
+            ("rpmag", "rmag"),
+            ("ipmag", "imag"),
+            ("zpmag", "zmag"),
+            ("e_upmag", "e_umag"),
+            ("e_gpmag", "e_gmag"),
+            ("e_rpmag", "e_rmag"),
+            ("e_ipmag", "e_imag"),
+            ("e_zpmag", "e_zmag"),
+        ],
+    },
     'B/vsx/vsx': {
         'ra_unit': default_ra_unit,
         'ra_dec_columns': ['RAJ2000', 'DEJ2000'],

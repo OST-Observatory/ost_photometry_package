@@ -411,6 +411,7 @@ def get_vizier_catalog(
             for element in catalog_properties_dict['magnitude_arithmetic']:
                 result[element[0]] = result[element[1]] + result[element[2]]
 
+        #   TODO: Rewrite this to accept a filter provided by the user
         #   Restrict magnitudes to requested range
         if 'Vmag' in result.keys():
             preferred_filer = 'Vmag'
@@ -422,6 +423,16 @@ def get_vizier_catalog(
             preferred_filer = 'Imag'
         elif 'Umag' in result.keys():
             preferred_filer = 'Umag'
+        elif 'gmag' in result.keys():
+            preferred_filer = 'gmag'
+        elif 'rmag' in result.keys():
+            preferred_filer = 'rmag'
+        elif 'imag' in result.keys():
+            preferred_filer = 'imag'
+        elif 'zmag' in result.keys():
+            preferred_filer = 'zmag'
+        elif 'umag' in result.keys():
+            preferred_filer = 'umag'
         else:
             #   This should never happen
             if print_infos:
