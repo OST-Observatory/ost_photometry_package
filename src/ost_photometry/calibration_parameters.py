@@ -65,6 +65,12 @@ def chip_dimensions(camera: str) -> tuple[float, float]:
         h = 15.7
 
     else:
+        terminal_output.print_to_terminal(
+            "Camera not recognized. Assuming a modern CMOS camera: "
+            "chip length = 32.0mm & chip height = 24.0 mm",
+            indent=1,
+            style_name='WARNING'
+        )
         d = 32.00
         h = 24.00
 
@@ -200,6 +206,12 @@ def camera_info(
             dark_rate = 0.02
         #   Default
         else:
+            terminal_output.print_to_terminal(
+                "Camera not recognized. Assuming a modern CMOS camera: "
+                "dark rate = 0.003 e-/s",
+                indent=1,
+                style_name='WARNING'
+            )
             dark_rate = 0.003
 
     #   Chip dimensions
