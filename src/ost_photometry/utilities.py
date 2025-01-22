@@ -217,7 +217,18 @@ class Image:
             pixel_width = header['XPIXSZ']
             chip_length = n_pixel_x * float(pixel_width) / 1000
             chip_height = n_pixel_y * float(pixel_width) / 1000
+        elif 'PIXSIZE1' in header:
+            pixel_width = header['PIXSIZE1']
+            chip_length = n_pixel_x * float(pixel_width) / 1000
+            chip_height = n_pixel_y * float(pixel_width) / 1000
         else:
+            terminal_output.print_to_terminal(
+                "Warning chip dimension could not be determined from Header. "
+                "Use default values, assuming the image has not been cropped. "
+                "This may be completely wrong. ",
+                indent=1,
+                style_name='WARNING'
+            )
             chip_length, chip_height = calibration_parameters.get_chip_dimensions(
                 instrument
             )
@@ -230,7 +241,7 @@ class Image:
         field_of_view_x = field_of_view_x * 360. / 2. / np.pi * 60.
         field_of_view_y = field_of_view_y * 360. / 2. / np.pi * 60.
 
-        #   Calculate pixel scale
+        #   Calculate pixel scale [arcsec/pixel]
         pixel_scale = field_of_view_x * 60 / n_pixel_x
 
         #   Create RectangleSkyRegion that covers the field of view
@@ -681,7 +692,7 @@ def find_wcs_astrometry(
         f'solve-field --overwrite --scale-units arcsecperpix --scale-low ' +
         f'{pixel_scale_low} --scale-high {pixel_scale_up} --ra {ra} ' +
         f'--dec {dec} --radius 1.0 --dir {wcs_working_dir} --resort ' +
-        '{} --fits-image -z 2'.format(str(wcs_file).replace(" ", "\ "))
+        '"{}" --fits-image -z 2'.format(str(wcs_file).replace(" ", "\ "))
     )
 
     #   Running the command
@@ -840,14 +851,14 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
     )
 
     #   Field of view in degrees
-    field_of_view = image.field_of_view_y / 60.
+    field_of_view = image.field_of_view_x / 60.
 
     #   Path to image
     wcs_file = image.path
 
     #   String passed to the shell
     command = (
-        'astap_cli -f {} -r 1 -fov {} -update'.format(wcs_file, field_of_view)
+        'astap_cli -f "{}" -r 3 -fov {} -update'.format(wcs_file, field_of_view)
     )
 
     #   Running the command
