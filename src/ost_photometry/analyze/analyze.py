@@ -2325,7 +2325,7 @@ def find_stars(
         )
 
         #   Find stars - make table
-        tbl_objects = dao_finder(ccd.data)
+        tbl_objects = dao_finder(ccd.data, mask=ccd.mask)
     elif method == 'IRAF':
         #   Set up IRAF finder
         iraf_finder = IRAFStarFinder(
@@ -2339,7 +2339,7 @@ def find_stars(
         )
 
         #   Find stars - make table
-        tbl_objects = iraf_finder(ccd.data)
+        tbl_objects = iraf_finder(ccd.data, mask=ccd.mask)
     else:
         raise ValueError(
             f"{style.Bcolors.FAIL}\nExtraction method ({method}) not valid: "
@@ -2398,7 +2398,7 @@ def find_stars(
         )
 
         #   Find stars - make table
-        tbl_objects = dao_finder(ccd.data)
+        tbl_objects = dao_finder(ccd.data, mask=ccd.mask)
     elif method == 'IRAF':
         #   Set up IRAF finder
         iraf_finder = IRAFStarFinder(
@@ -2412,7 +2412,7 @@ def find_stars(
         )
 
         #   Find stars - make table
-        tbl_objects = iraf_finder(ccd.data)
+        tbl_objects = iraf_finder(ccd.data, mask=ccd.mask)
 
     #   Add positions to image class
     image.positions = tbl_objects['id', 'xcentroid', 'ycentroid', 'flux']

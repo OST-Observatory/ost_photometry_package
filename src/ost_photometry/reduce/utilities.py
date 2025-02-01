@@ -2112,7 +2112,7 @@ def estimate_fwhm(
 
             #   Find stars
             dao_finder = DAOStarFinder(fwhm=3.0, threshold=10. * std)
-            object_tbl = dao_finder(img_ccd.data - median)
+            object_tbl = dao_finder(img_ccd.data - median, mask=img_ccd.mask)
 
             #   Exclude objects close the image edges
             extraction_box = 25
