@@ -1,7 +1,6 @@
 ﻿############################################################################
 #                               Libraries                                  #
 ############################################################################
-
 import numpy as np
 
 import os
@@ -24,6 +23,7 @@ from astropy.timeseries import aggregate_downsample
 import astropy.units as u
 from astropy.timeseries import TimeSeries
 from astropy import wcs
+from astropy.coordinates import SkyCoord
 
 from photutils.aperture import CircularAperture, CircularAnnulus
 from photutils.psf import EPSFStars, ImagePSF
@@ -40,6 +40,8 @@ import matplotlib.colors as mcol
 import matplotlib.cm as cm
 from matplotlib import rcParams, gridspec
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
+# from matplotlib.patches import Circle
 
 plt.switch_backend('Agg')
 
@@ -359,8 +361,13 @@ def starmap(
     ax.grid(True, color='white', linestyle='--')
 
     #   Plot legend
-    ax.legend(bbox_to_anchor=(0., 1.02, 1.0, 0.102), loc=3, ncol=2,
-              mode='expand', borderaxespad=0.)
+    ax.legend(
+        bbox_to_anchor=(0., 1.02, 1.0, 0.102),
+        loc=3,
+        ncol=2,
+        mode='expand',
+        borderaxespad=0.,
+    )
 
     #   Write the plot to disk
     if rts is None:
@@ -3385,7 +3392,8 @@ def histogram_statistic(
         parameter_list_0: list[np.ndarray], name_x: str, name_y: str, rts: str,
         output_dir: str, dataset_label: list[list[str]] | None = None,
         name_object: str = None, parameter_list_1: list[np.ndarray] = None,
-        file_type: str = 'pdf') -> None:
+        file_type: str = 'pdf',
+    ) -> None:
     """
     Plots histogram statistics on properties such as the zero point
 
@@ -3502,3 +3510,279 @@ def histogram_statistic(
         format=file_type,
     )
     plt.close()
+
+
+def plot_annotated_image(
+        image_data: np.ndarray, wcs_image: wcs.WCS, simbad_objects: Table,
+        output_dir: Path, filter_: str, file_type: str = 'pdf',
+        filter_mag: str | None = None, mag_limit: float | None = None,
+    ) -> None :
+    """
+    Visualises the image and marks objects from the Simbad database.
+
+    Parameters
+    ----------
+    image_data
+        2D image data
+
+    wcs_image
+        WCS object
+
+    simbad_objects
+        Table with Simbad objects
+
+    output_dir
+        Output directory
+
+    filter_
+        Filter identifier
+
+    file_type
+        Type of plot file to be created
+        Default is ``pdf``.
+
+    filter_mag
+        Name of the filter (e.g. 'V')
+        Default is ``None``.
+
+    mag_limit
+        Limiting magnitude, only objects brighter as this limit will be shown
+        Default is ``None``.
+    """
+    #   Check output directories
+    checks.check_output_directories(
+        output_dir,
+        os.path.join(output_dir, 'starmaps'),
+    )
+
+    #   Setup figure
+    fig, ax = plt.subplots(figsize=(20, 9), subplot_kw={'projection': wcs_image})
+
+    #   Set up normalization for the image
+    norm = ImageNormalize(image_data, interval=ZScaleInterval(contrast=0.1, ))
+
+    #   Display the actual image
+    ax.imshow(
+        image_data,
+        # cmap='PuBu',
+        cmap='gray',
+        # cmap='viridis',
+        # cmap='RdYlBu',
+        # cmap='PuBu',
+        # cmap='bone',
+        origin='lower',
+        # vmin=np.percentile(image_data, 5),
+        # vmax=np.percentile(image_data, 95),
+        norm=norm,
+        interpolation='nearest',
+    )
+
+    #   Define the ticks
+    ax.tick_params(
+        axis='both',
+        which='both',
+        # top=True,
+        # right=True,
+        direction='in',
+    )
+    ax.minorticks_on()
+
+    #   Set labels
+    ax.set_xlabel("Right ascension", fontsize=16)
+    ax.set_ylabel("Declination", fontsize=16)
+
+    #   Enable grid for WCS
+    # if wcs is not None:
+    ax.grid(True, color='white', linestyle='--')
+
+    #   Setup list for legend
+    legend_elements = []
+
+    for obj in simbad_objects:
+        ra, dec = obj['RA'], obj['DEC']
+        obj_type = obj['OTYPE']
+        name = obj['MAIN_ID']
+
+        #   Check that the magnitude is available and meets the filter
+        #   and magnitude limit conditions
+        if filter_mag and mag_limit is not None:
+            mag_col = f'FLUX_{filter_mag.upper()}'
+            if (mag_col not in obj.colnames or obj[mag_col] is None or
+                    isinstance(obj[mag_col], np.ma.core.MaskedConstant) or obj[mag_col] > mag_limit):
+                continue
+
+        #   Conversion of world coordinates to image coordinates
+        coord = SkyCoord(ra=ra, dec=dec, unit=("hourangle", "deg"))
+        x, y = wcs_image.world_to_pixel(coord)
+
+        #   Check if the objects are actually within the image boundaries
+        if 0 <= x < image_data.shape[1] and 0 <= y < image_data.shape[0]:
+            print(obj_type)
+            #   Select icon and colour based on the object type
+            plot_marker = False
+            if 'Star' in obj_type:
+                # color, marker = 'blue', '*'
+                color, marker = 'lightblue', '*'
+                plot_marker = True
+
+                if not any(e.get_label() == 'Star' for e in legend_elements):
+                    legend_elements.append(
+                        plt.Line2D(
+                            [0],
+                            [0],
+                            color=color,
+                            marker=marker,
+                            markerfacecolor='none',
+                            markersize=8,
+                            linestyle='None',
+                            label='Star',
+                        )
+                    )
+
+
+            elif obj_type in ['Galaxy', 'Seyfert1', 'Seyfert2', 'AGN_Candidate', 'QSO']:
+                # color = 'darkred'
+                # color = 'salmon'
+                color = 'lightsalmon'
+                #   Test if object dimension is available
+                if 'DIMENSIONS' in obj.colnames and obj['DIMENSIONS'] is not None:
+                    dimensions = obj['DIMENSIONS']
+                    print(dimensions)
+                    try:
+                        major_axis, minor_axis = [float(dim) for dim in dimensions.split('x')]
+                        #   TODO: Check if rotation information is available
+                        angle = 0
+
+                        #   Convert arc minute to pixel
+                        # major_axis_px = (major_axis / 60.0) / np.abs(wcs.wcs.cdelt[0])
+                        # minor_axis_px = (minor_axis / 60.0) / np.abs(wcs.wcs.cdelt[1])
+                        major_axis_px = (major_axis / 60.0) / wcs.wcs.cdelt[0]
+                        minor_axis_px = (minor_axis / 60.0) / wcs.wcs.cdelt[1]
+
+                        #   Draw ellipse
+                        ellipse = Ellipse(
+                            (x, y),
+                            width=major_axis_px,
+                            height=minor_axis_px,
+                            angle=angle,
+                            edgecolor=color,
+                            facecolor='none',
+                            lw=1.5,
+                            alpha=0.7,
+                        )
+                        ax.add_patch(ellipse)
+                    except ValueError:
+                        pass
+                else:
+                    #   No dimension tag -> set default marker
+                    marker = 's'
+                    plot_marker = True
+
+                if not any(e.get_label() == 'Galaxy' for e in legend_elements):
+                    legend_elements.append(
+                        plt.Line2D(
+                            [0],
+                            [0],
+                            color=color,
+                            marker=marker,
+                            markerfacecolor='none',
+                            markersize=8,
+                            linestyle='None',
+                            label='Galaxy',
+                        )
+                    )
+
+            elif 'Nebula' in obj_type:
+                # color, marker = 'darkorange', 'o'
+                color, marker = 'lightpink', 'o'
+                plot_marker = True
+
+                if not any(e.get_label() == 'Nebula' for e in legend_elements):
+                    legend_elements.append(
+                        plt.Line2D(
+                            [0],
+                            [0],
+                            color=color,
+                            marker=marker,
+                            markerfacecolor='none',
+                            markersize=8,
+                            linestyle='None',
+                            label='Nebula',
+                        )
+                    )
+
+            else:
+                # color, marker = 'purple', 'o'
+                # color, marker = 'darkviolet', 'o'
+                # color, marker = 'darkorange', 'o'
+                # color, marker = 'orange', 'o'
+                # color, marker = 'chocolate', 'o'
+                # color, marker = 'rebeccapurple', 'o'
+                # color, marker = 'limegreen', 'd'
+                # color, marker = 'forestgreen', 'v'
+                color, marker = 'lightgreen', 'H'
+                plot_marker = True
+                name = f'{name} ({obj_type})'
+
+                if not any(e.get_label() == 'Other' for e in legend_elements):
+                    legend_elements.append(
+                        plt.Line2D(
+                            [0],
+                            [0],
+                            color=color,
+                            marker=marker,
+                            markerfacecolor='none',
+                            markersize=8,
+                            linestyle='None',
+                            label='Other',
+                        )
+                    )
+
+            #   Mark objects
+            if plot_marker:
+                ax.plot(
+                    x,
+                    y,
+                    marker=marker,
+                    markerfacecolor='none',
+                    markeredgecolor=color,
+                    markeredgewidth=1.2,
+                    markersize=11,
+                    alpha=0.8,
+                    # linestyle='-',
+                    # linewidth=6.,
+                )
+            ax.text(
+                x + 70,
+                y,
+                name,
+                color=color,
+                fontsize=8,
+                alpha=0.9,
+                verticalalignment='center',
+                weight="bold",
+            )
+
+
+    #   Add legend
+    ax.legend(
+        bbox_to_anchor=(0., 1.02, 1.0, 0.102),
+        loc=3,
+        handles=legend_elements,
+        ncol=5,
+        # loc='upper right',
+        fontsize=8,
+        frameon=True,
+        # title="Object Types",
+        mode='expand',
+        borderaxespad=0.,
+    )
+
+    #   Save plot
+    plt.savefig(
+        output_dir / f'starmaps/annotated_starmap_{filter_}.{file_type}',
+        bbox_inches='tight',
+        format=file_type,
+    )
+    plt.close()
+    # plt.show()

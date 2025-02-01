@@ -603,7 +603,11 @@ class Observation:
             plots_for_all_images: bool = False,
             plot_for_reference_image_only: bool = True,
             use_wcs_projection_for_star_maps: bool = True,
-            file_type_plots: str = 'pdf') -> None:
+            file_type_plots: str = 'pdf',
+            annotate_image: bool = False,
+            magnitude_limit_image_annotation: float | None = None,
+            filter_magnitude_limit_image_annotation: str | None = None,
+        ) -> None:
         """
         Extract flux and fill the observation container
 
@@ -767,6 +771,18 @@ class Observation:
         file_type_plots
             Type of plot file to be created
             Default is ``pdf``.
+
+        annotate_image
+            If ``True``, a starmap will be created with known Simbad objects marked.
+            Default is ``False``.
+
+        magnitude_limit_image_annotation
+            Limiting magnitude, only objects brighter as this limit will be shown
+            Default is ``None``.
+
+        filter_magnitude_limit_image_annotation
+            Name of the filter (e.g. 'V')
+            Default is ``None``.
         """
         #   Check output directories
         checks.check_output_directories(
@@ -861,6 +877,9 @@ class Observation:
                 plot_for_reference_image_only=plot_for_reference_image_only,
                 file_type_plots=file_type_plots,
                 use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+                annotate_image=annotate_image,
+                magnitude_limit_image_annotation=magnitude_limit_image_annotation,
+                filter_magnitude_limit_image_annotation=filter_magnitude_limit_image_annotation,
             )
 
         if photometry_extraction_method == 'PSF':
@@ -921,7 +940,11 @@ class Observation:
             plots_for_all_images: bool = False,
             plot_for_reference_image_only: bool = True,
             use_wcs_projection_for_star_maps: bool = True,
-            file_type_plots: str = 'pdf') -> None:
+            file_type_plots: str = 'pdf',
+            annotate_reference_image: bool = False,
+            magnitude_limit_image_annotation: float | None = None,
+            filter_magnitude_limit_image_annotation: str | None = None,
+        ) -> None:
         """
         Extract flux from multiple images per filter and add results to
         the observation container
@@ -1125,6 +1148,18 @@ class Observation:
         file_type_plots
             Type of plot file to be created
             Default is ``pdf``.
+
+        annotate_reference_image
+            If ``True``, a starmap will be created with known Simbad objects marked.
+            Default is ``False``.
+
+        magnitude_limit_image_annotation
+            Limiting magnitude, only objects brighter as this limit will be shown
+            Default is ``None``.
+
+        filter_magnitude_limit_image_annotation
+            Name of the filter (e.g. 'V')
+            Default is ``None``.
         """
         #   Check output directories
         checks.check_output_directories(output_dir, os.path.join(output_dir, 'tables'))
@@ -1187,6 +1222,9 @@ class Observation:
                 file_type_plots=file_type_plots,
                 use_initial_positions_epsf=use_initial_positions_epsf,
                 use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+                annotate_reference_image=annotate_reference_image,
+                magnitude_limit_image_annotation=magnitude_limit_image_annotation,
+                filter_magnitude_limit_image_annotation=filter_magnitude_limit_image_annotation,
             )
 
             #   Correlate results from all images within the current image
@@ -2303,7 +2341,7 @@ def find_stars(
         #   Find stars - make table
         tbl_objects = iraf_finder(ccd.data)
     else:
-        raise RuntimeError(
+        raise ValueError(
             f"{style.Bcolors.FAIL}\nExtraction method ({method}) not valid: "
             f"use either IRAF or DAO {style.Bcolors.ENDC}"
         )
@@ -2324,15 +2362,27 @@ def find_stars(
     xy_pos = list(zip(table_fwhm['xcentroid'], table_fwhm['ycentroid']))
 
     #   Estimate FWHM
-    fwhm = fit_fwhm(
-        ccd.data,
-        xypos=xy_pos,
-        fit_shape=25,
-        mask=ccd.mask,
-        error=ccd.uncertainty.array,
-    )
-    #   Get median
-    median_fwhm = sigma_clipped_stats(fwhm)[1]
+    try:
+        fwhm = fit_fwhm(
+            ccd.data,
+            xypos=xy_pos,
+            fit_shape=25,
+            mask=ccd.mask,
+            error=ccd.uncertainty.array,
+        )
+        #   Get median
+        median_fwhm = sigma_clipped_stats(fwhm)[1]
+    except ValueError as e:
+        terminal_output.print_to_terminal(
+            f"[Info] FWHM determination failed with the following error {e}. "
+            f"Use the default FWHM of {default_fwhm}.",
+            style_name='WARNING',
+        )
+
+        #   Add positions to image class
+        image.positions = tbl_objects['id', 'xcentroid', 'ycentroid', 'flux']
+        image.fwhm = default_fwhm
+        return
 
     #   Check the validity of the FWHM estimate, assuming that FWHM values
     #   below 2 and above 9 are most likely erroneous.
@@ -2364,9 +2414,7 @@ def find_stars(
         #   Find stars - make table
         tbl_objects = iraf_finder(ccd.data)
 
-
     #   Add positions to image class
-    #   TODO: check if the whole table needs to be returned
     image.positions = tbl_objects['id', 'xcentroid', 'ycentroid', 'flux']
     image.fwhm = median_fwhm
 
@@ -3419,7 +3467,11 @@ def extract_multiprocessing(
         plots_for_all_images: bool = False,
         plot_for_reference_image_only: bool = True,
         use_wcs_projection_for_star_maps: bool = True,
-        file_type_plots: str = 'pdf'):
+        file_type_plots: str = 'pdf',
+        annotate_reference_image: bool = False,
+        magnitude_limit_image_annotation: float | None = None,
+        filter_magnitude_limit_image_annotation: str | None = None,
+    ) -> None:
     """
     Extract flux and object positions using multiprocessing
 
@@ -3546,6 +3598,18 @@ def extract_multiprocessing(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
+
+    annotate_reference_image
+        If ``True``, a starmap will be created with known Simbad objects marked.
+        Default is ``False``.
+
+    magnitude_limit_image_annotation
+        Limiting magnitude, only objects brighter as this limit will be shown
+        Default is ``None``.
+
+    filter_magnitude_limit_image_annotation
+        Name of the filter (e.g. 'V')
+        Default is ``None``.
     """
     #   Get filter
     filter_ = image_series.filter_
@@ -3556,22 +3620,6 @@ def extract_multiprocessing(
     else:
         fwhm = None
 
-    #   Find the stars (using DAO or IRAF StarFinder) on the reference image,
-    #   if these positions are to be used for all images in the series.
-    # if not identify_objects_on_image:
-    #     _, background_rms = determine_background(
-    #         image_series.reference_image,
-    #         sigma_background=sigma_value_background_clipping,
-    #     )
-    #
-    #     find_stars(
-    #         image_series.reference_image,
-    #         sigma_object_psf[filter_],
-    #         background_rms,
-    #         multiplier_background_rms=multiplier_background_rms,
-    #         method=object_finder_method,
-    #     )
-
     ###
     #   Main loop: Extract stars and info from all images, using
     #              multiprocessing
@@ -3581,9 +3629,11 @@ def extract_multiprocessing(
 
     #   Main loop
     for image in image_series.image_list:
-        #   Set positions of the reference image if required
-        # if not identify_objects_on_image:
-        #     image.positions = image_series.reference_image.positions
+        #   Set bool if reference image should be annotated with known Simbad objects
+        if image.pd == image_series.reference_image_id and annotate_reference_image:
+            annotate_image = True
+        else:
+            annotate_image = False
 
         #   Extract photometry
         executor.schedule(
@@ -3621,6 +3671,9 @@ def extract_multiprocessing(
                 'plot_for_reference_image_only': plot_for_reference_image_only,
                 'file_type_plots': file_type_plots,
                 'use_wcs_projection_for_star_maps': use_wcs_projection_for_star_maps,
+                'annotate_image': annotate_image,
+                'magnitude_limit_image_annotation': magnitude_limit_image_annotation,
+                'filter_magnitude_limit_image_annotation': filter_magnitude_limit_image_annotation,
             }
         )
 
@@ -3676,14 +3729,18 @@ def main_extract(
         saturation_level: float = 65535., plots_for_all_images: bool = False,
         plot_for_reference_image_only: bool = True,
         file_type_plots: str = 'pdf',
-        use_wcs_projection_for_star_maps: bool = True) -> None | tuple[int, Table]:
+        use_wcs_projection_for_star_maps: bool = True,
+        annotate_image: bool = False,
+        magnitude_limit_image_annotation: float | None = None,
+        filter_magnitude_limit_image_annotation: str | None = None,
+    ) -> None | tuple[int, Table]:
     """
     Main function to extract the information from the individual images
 
     Parameters
     ----------
     image
-        Object all image specific properties
+        Object with all image specific properties
 
     fwhm_object_psf
         FWHM of the objects PSF, assuming it is a Gaussian
@@ -3829,6 +3886,18 @@ def main_extract(
         If ``True`` the starmap will be plotted with sky coordinates instead
         of pixel coordinates
         Default is ``True``.
+
+    annotate_image
+        If ``True``, a starmap will be created with known Simbad objects marked.
+        Default is ``False``.
+
+    magnitude_limit_image_annotation
+        Limiting magnitude, only objects brighter as this limit will be shown
+        Default is ``None``.
+
+    filter_magnitude_limit_image_annotation
+        Name of the filter (e.g. 'V')
+        Default is ``None``.
     """
     #   Initialize output class in case of multiprocessing
     if multiprocessing:
@@ -3870,6 +3939,18 @@ def main_extract(
         method=object_finder_method,
         terminal_logger=terminal_logger,
     )
+
+    #   Annotate all known Simbad objects on the image
+    if annotate_image:
+        utilities.mark_simbad_objects_on_image(
+            image.get_data(),
+            image.wcs,
+            image.out_path,
+            image.filter_,
+            file_type=file_type_plots,
+            filter_mag=filter_magnitude_limit_image_annotation,
+            mag_limit=magnitude_limit_image_annotation,
+        )
 
     if photometry_extraction_method == 'PSF':
         #   Check size of ePSF extraction region
