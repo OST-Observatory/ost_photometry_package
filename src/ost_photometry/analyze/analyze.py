@@ -119,13 +119,15 @@ class ImageSeries:
                  reference_image_id: int = 0):
         #   Setup file list
         if os.path.isdir(path):
-            formats: list[str] = [".FIT", ".fit", ".FITS", ".fits"]
+            formats: list[str] = [".FIT", ".fit"]
+            # formats: list[str] = [".FIT", ".fit", ".FITS", ".fits"]
             file_list = os.listdir(path)
 
             #   Remove not FITS entries
             temp_list = []
             for file_i in file_list:
                 for j, form in enumerate(formats):
+                    #   TODO: Reverse this: Search for the file ending in formats
                     if file_i.find(form) != -1:
                         temp_list.append(file_i)
             file_list = temp_list
