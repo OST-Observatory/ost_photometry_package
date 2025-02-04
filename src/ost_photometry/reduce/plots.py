@@ -16,7 +16,7 @@ from photutils.psf import EPSFStars
 
 import ccdproc as ccdp
 
-from .. import checks
+from .. import checks, terminal_output
 
 
 ############################################################################
@@ -209,7 +209,7 @@ def plot_dark_with_distributions(
 
 
 def plot_histogram(
-        image_data: np.ndarray, output_dir: Path, gain: float,
+        image_data: np.ndarray, output_dir: Path, gain: int,
         exposure_time: float) -> None:
     """
     Plot image histogram for dark images
@@ -273,7 +273,7 @@ def plot_histogram(
 
 def plot_median_of_flat_fields(
         image_file_collection: ccdp.ImageFileCollection,
-        image_type: str, output_dir: Path, filter_: str) -> None:
+        image_type: str | list[str] | None, output_dir: Path, filter_: str) -> None:
     """
     Plot median and mean of each flat field in a file collection
 
@@ -304,9 +304,30 @@ def plot_median_of_flat_fields(
     #   Calculate median and mean for each image
     median_count = []
     mean_count = []
-    for data in image_file_collection.data(imagetyp=image_type, filter=filter_):
-        median_count.append(np.median(data))
-        mean_count.append(np.mean(data))
+    if isinstance(image_type, str):
+        for data in image_file_collection.data(imagetyp=image_type, filter=filter_):
+            median_count.append(np.median(data))
+            mean_count.append(np.mean(data))
+    elif isinstance(image_type, list):
+        for type in image_type:
+            for data in image_file_collection.data(imagetyp=type, filter=filter_):
+                    median_count.append(np.median(data))
+                    mean_count.append(np.mean(data))
+    elif image_type is None:
+        terminal_output.print_to_terminal(
+            f"PLot of the median flat field not possible, because image_type "
+            f"is None."
+            style_name='WARNING',
+        )
+        return
+    else:
+        terminal_output.print_to_terminal(
+            f"PLot of the median flat field not possible, because the data "
+            f"type of the variable image_type is not known: Current type "
+            f"is {type(image_type)}",
+            style_name='WARNING',
+        )
+        return
 
     #   Use bmh style
     # plt.style.use('bmh')

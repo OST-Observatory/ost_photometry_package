@@ -310,7 +310,7 @@ def reduce_main(
     #   Check if bias frames are available
     bias_true = np.any(
         [True if t in ifc_image_types else False for t in image_type_dir['bias']]
-    )
+    ).astype(bool)
 
     #   Check flats
     image_scaling_required = utilities.check_exposure_times(
@@ -1139,14 +1139,14 @@ def master_dark(
         return
 
     #   Get all available shapes with exposure times
-    all_available_image_shapes_and_exposure_times = set(tuple(zip(
+    all_available_image_shapes_and_exposure_times: set[tuple[int, int, float]] = set(tuple(zip(
         image_file_collection.summary['naxis1'][dark_mask],
         image_file_collection.summary['naxis2'][dark_mask],
         image_file_collection.summary['exptime'][dark_mask]
     )))
 
     #   Get only the shapes
-    all_available_image_shapes = set(tuple(zip(
+    all_available_image_shapes: set[tuple[int, int]] = set(tuple(zip(
         image_file_collection.summary['naxis1'][dark_mask],
         image_file_collection.summary['naxis2'][dark_mask]
     )))
@@ -1224,7 +1224,7 @@ def master_dark_stacking(
         image_file_collection: ccdp.ImageFileCollection,
         exposure_time: float, dark_image_type: str | list[str] | None,
         max_exposure_time_per_shape: list[tuple[int, int, float]],
-        out_path: Path, dark_rate: float, gain: float | None = None,
+        out_path: Path, dark_rate: float, gain: int | None = None,
         read_noise: float = 8., mk_hot_pixel_mask: bool = True,
         plot_plots: bool = False, debug: bool = False, rm_bias: bool = False,
         trim_x_start: int = 0, trim_x_end: int = 0, trim_y_start: int = 0,
@@ -1345,7 +1345,7 @@ def master_dark_stacking(
 
     #   Set gain _> get it from Header if not provided
     if gain is None:
-        gain = combined_dark.header['EGAIN']
+        gain = int(combined_dark.header['EGAIN'])
 
     #   Plot histogram
     if plot_plots:
@@ -2539,7 +2539,7 @@ def shift_image_apply(
         current_image_name: str, reference_image_name: str,
         output_path: Path, shift_method: str = 'aa_true',
         modify_file_name: bool = False, rm_enlarged_keyword: bool = False,
-        instrument: bool = None,
+        instrument: str | None = None,
     ) -> None:
     """
     Apply shift to an individual image
@@ -3128,6 +3128,7 @@ def shift_all_images(
         shutil.rmtree(file_path, ignore_errors=True)
 
 
+#   TODO: Combinbe with image_shift_astroalign_method
 def shift_stack_astroalign(
         path: str | Path, output_dir: Path, image_type: list[str]) -> None:
     """
@@ -3170,6 +3171,7 @@ def shift_stack_astroalign(
                 '=': sbo,
                 '|': 'not applicable',
             }
+            #   TODO: I think this endian block needs an update
             if endian_map[current_image_ccd.data.dtype.byteorder] != sbo:
                 current_image_ccd.data = current_image_ccd.data.byteswap().newbyteorder()
                 reference_image_ccd.data = reference_image_ccd.data.byteswap().newbyteorder()
@@ -3286,7 +3288,7 @@ def stack_image(
         image_file_collection,
         image_type_list,
     )
-    filters = set(h['filter'] for h in image_file_collection.headers(imagetyp=image_type))
+    filters: set[str] = set(h['filter'] for h in image_file_collection.headers(imagetyp=image_type))
 
     #   Combine images for the individual filters
     #   TODO: Add multiprocessing
@@ -3331,7 +3333,7 @@ def stack_image(
 
 
 def make_big_images(
-        image_path: str | Path | None, output_dir: str | Path | None,
+        image_path: str | Path, output_dir: str | Path,
         image_type_list: list[str], combined_only: bool = True) -> None:
     """
     Image size unification:
@@ -3375,10 +3377,10 @@ def make_big_images(
     }
 
     #   Image list
-    image_list = list(img_dict.values())
+    image_list: list[CCDData] = list(img_dict.values())
 
     #   File name list
-    file_names = list(img_dict.keys())
+    file_names: list[str] = list(img_dict.keys())
 
     #   Number of images
     n_images = len(file_names)
