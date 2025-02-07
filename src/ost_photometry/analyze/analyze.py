@@ -5,6 +5,7 @@
 import os
 
 import numpy as np
+import numpy.ma as ma
 
 from astropy import uncertainty as unc
 
@@ -2211,6 +2212,7 @@ def determine_background(
         bkg = Background2D(
             ccd.data,
             (50, 50),
+            mask=ccd.mask,
             filter_size=(3, 3),
             sigma_clip=sigma_clip,
             bkg_estimator=bkg_estimator,
@@ -2232,7 +2234,9 @@ def determine_background(
     else:
         #   Estimate 1D background
         mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
-        background_value = mmm_bkg.calc_background(ccd.data)
+        background_value = mmm_bkg.calc_background(
+            ma.masked_array(ccd.data, mask=ccd.mask)
+        )
 
         #   Remove background
         image_no_bg = ccd.subtract(background_value)
