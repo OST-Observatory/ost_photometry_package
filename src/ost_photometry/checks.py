@@ -149,7 +149,8 @@ def clear_directory(path: Path) -> None:
         Directory path
     """
     if path.is_dir():
-        file_list = [x for x in path.iterdir()]
+        #   Get file list - restrict to files and leave directories untouched
+        file_list = [x for x in path.iterdir() if x.is_file()]
         for fil in file_list:
             fil.unlink()
     else:
