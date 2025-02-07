@@ -431,7 +431,7 @@ def get_instrument_info(
     files_with_ccd_temperature = np.array(image_file_collection.files)[np.invert(mask)]
     temperatures = image_file_collection.summary['ccd-temp'][np.invert(mask)]
 
-    #   Fix for weird crash due to dtype error in 'sigma_clip' 
+    #   Fix for weird crash due to dtype error in 'sigma_clip'
     if temperatures.fill_value == '?':
         temperatures.fill_value = 999.
     if temperatures.dtype == 'object':
@@ -1584,11 +1584,15 @@ def image_shift_astroalign_method(
     )
 
     #   Transform image data
+    #   TODO: Check whether 'footprint' should be saved in an extra mask,
+    #         so that it can be used as 'coverage_mask' in 2D background
+    #         extraction, for example.
     image_data, footprint_mask = aa.apply_transform(
         transformation_coefficients,
         current_ccd_object,
         reference_ccd_object,
         propagate_mask=True,
+        fill_value=0.,
     )
 
     #   Transform uncertainty array
@@ -1596,6 +1600,7 @@ def image_shift_astroalign_method(
         transformation_coefficients,
         current_ccd_object.uncertainty.array,
         reference_ccd_object.uncertainty.array,
+        fill_value=0.,
     )
 
     #   Build new CCDData object
