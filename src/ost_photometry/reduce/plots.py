@@ -316,7 +316,7 @@ def plot_median_of_flat_fields(
     elif image_type is None:
         terminal_output.print_to_terminal(
             f"PLot of the median flat field not possible, because image_type "
-            f"is None."
+            f"is None.",
             style_name='WARNING',
         )
         return
