@@ -2535,11 +2535,10 @@ def shift_image_evaluate_apply(
     output_image.write(output_path / file_name, overwrite=True)
 
 
-def shift_image_apply(
+def shift_image_apply_flow(
         current_image_name: str, reference_image_name: str,
-        output_path: Path, shift_method: str = 'aa_true',
-        modify_file_name: bool = False, rm_enlarged_keyword: bool = False,
-        instrument: str | None = None,
+        output_path: Path, modify_file_name: bool = False,
+        rm_enlarged_keyword: bool = False, instrument: str | None = None,
     ) -> None:
     """
     Apply shift to an individual image
@@ -2554,14 +2553,6 @@ def shift_image_apply(
 
     output_path
         Path to the output directory
-
-    shift_method
-        Method to use for image alignment.
-        Possibilities: 'aa_true' = astroalign module with corresponding
-                                   transformation
-                       'flow'    = image registration using optical flow
-                                   implementation by skimage
-        Default is ``skimage``.
 
     modify_file_name
         It true the trimmed image will be saved, using a modified file
@@ -2580,45 +2571,96 @@ def shift_image_apply(
     current_image_ccd = CCDData.read(current_image_name)
 
     #   Trim images
-    if shift_method == 'flow':
-        reference_image_ccd = CCDData.read(reference_image_name)
-        try:
-            output_image = utilities.image_shift_optical_flow_method(
-                reference_image_ccd,
-                current_image_ccd,
-            )
-        except ValueError as e:
-            terminal_output.print_to_terminal(
-                f"WARNING: Failed to calculate image offset for image"
-                f" {current_image_name} with ERROR code: \n\n {e} \n Skip file.",
-                style_name='WARNING',
-                indent=2,
-            )
-            return
-
-    #   Using astroalign to align the images
-    elif shift_method == 'aa_true':
-        reference_image_ccd = CCDData.read(reference_image_name)
-        try:
-            output_image = utilities.image_shift_astroalign_method(
-                reference_image_ccd,
-                current_image_ccd,
-            )
-        except (aa.MaxIterError, TypeError, ValueError) as e:
-            terminal_output.print_to_terminal(
-                f"WARNING: Failed to calculate image offset for image"
-                f" {current_image_name} with ERROR code: \n\n {e} \n Skip file.",
-                style_name='WARNING',
-                indent=2,
-            )
-            return
-
-    else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nThe provided method to determine the "
-            f"shifts is not known. Got {shift_method}. Allowed: own, "
-            f"skimage, aa, flow, aa_true {style.Bcolors.ENDC}"
+    reference_image_ccd = CCDData.read(reference_image_name)
+    try:
+        output_image = utilities.image_shift_optical_flow_method(
+            reference_image_ccd,
+            current_image_ccd,
         )
+    except ValueError as e:
+        terminal_output.print_to_terminal(
+            f"WARNING: Failed to calculate image offset for image"
+            f" {current_image_name} with ERROR code: \n\n {e} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+        return
+
+    #   Reset the device as it may have been updated
+    if instrument is not None and instrument != '':
+        output_image.meta['INSTRUME'] = instrument
+
+    #   Add Header keyword to mark the file as trimmed
+    output_image.meta['trimmed'] = True
+    if rm_enlarged_keyword:
+        output_image.meta.remove('enlarged')
+
+    #   Get file name
+    file_name = current_image_name.split('/')[-1]
+
+    if modify_file_name:
+        #   Get filter
+        filter_ = output_image.meta['filter']
+
+        #   Define name and write trimmed image to disk
+        file_name = 'combined_trimmed_filter_{}.fit'.format(
+            filter_.replace("''", "p")
+        )
+
+    #   Write trimmed image to disk
+    output_image.write(output_path / file_name, overwrite=True)
+
+
+def shift_image_apply_aa_true(
+        current_image_name: str, reference_image_name: str,
+        output_path: Path, modify_file_name: bool = False,
+        rm_enlarged_keyword: bool = False, instrument: str | None = None,
+    ) -> None:
+    """
+    Apply shift to an individual image
+
+    Parameters
+    ----------
+    current_image_name
+        Path to the current image
+
+    reference_image_name
+        Path to the reference image
+
+    output_path
+        Path to the output directory
+
+    modify_file_name
+        It true the trimmed image will be saved, using a modified file
+        name.
+        Default is ``False``.
+
+    rm_enlarged_keyword
+        It true the header keyword 'enlarged' will be removed.
+        Default is ``False``.
+
+    instrument
+        The instrument used
+        Default is ``None``.
+    """
+    #   Get image data
+    current_image_ccd = CCDData.read(current_image_name)
+
+    #   Trim images
+    reference_image_ccd = CCDData.read(reference_image_name)
+    try:
+        output_image = utilities.image_shift_astroalign_method(
+            reference_image_ccd,
+            current_image_ccd,
+        )
+    except (aa.MaxIterError, TypeError, ValueError) as e:
+        terminal_output.print_to_terminal(
+            f"WARNING: Failed to calculate image offset for image"
+            f" {current_image_name} with ERROR code: \n\n {e} \n Skip file.",
+            style_name='WARNING',
+            indent=2,
+        )
+        return
 
     #   Reset the device as it may have been updated
     if instrument is not None and instrument != '':
@@ -2832,8 +2874,7 @@ def shift_image_core(
         #   Close multiprocessing pool and wait until it finishes
         executor.wait()
 
-
-    elif shift_method in ['aa_true', 'flow']:
+    elif shift_method == 'flow':
         reference_file_name = image_file_collection.files[reference_image_id]
 
         #   Initialize multiprocessing object
@@ -2847,26 +2888,56 @@ def shift_image_core(
         for current_image_id, current_image_name in enumerate(image_file_collection.files):
             # try:
             executor.schedule(
-                shift_image_apply,
+                shift_image_apply_flow,
                 args=(
                     current_image_name,
                     reference_file_name,
                     output_path,
                 ),
                 kwargs={
-                    'shift_method': shift_method,
                     'modify_file_name': modify_file_name,
                     'rm_enlarged_keyword': rm_enlarged_keyword,
                     'instrument': instrument,
                 }
             )
-            # except (RuntimeError, ValueError, TypeError) as e:
-            #     terminal_output.print_to_terminal(
-            #         f"WARNING: Failed to calculate image offset for image"
-            #         f" {current_image_name} with ERROR code: \n\n {e} \n Skip file.",
-            #         style_name='WARNING',
-            #         indent=2,
-            #     )
+
+        #   Exit if exceptions occurred
+        if executor.err is not None:
+            raise RuntimeError(
+                f'\n{style.Bcolors.FAIL}Image offset could not be determined or applied.'
+                f'It was not possible to recover from this error.'
+                f':({style.Bcolors.ENDC}'
+            )
+
+        #   Close multiprocessing pool and wait until it finishes
+        executor.wait()
+
+    elif shift_method == 'aa_true':
+        reference_file_name = image_file_collection.files[reference_image_id]
+
+        #   Initialize multiprocessing object
+        executor = Executor(
+            n_cores_multiprocessing,
+            n_tasks=len(image_file_collection.files),
+            add_progress_bar=True,
+        )
+
+        #   Trim all images
+        for current_image_id, current_image_name in enumerate(image_file_collection.files):
+            # try:
+            executor.schedule(
+                shift_image_apply_aa_true,
+                args=(
+                    current_image_name,
+                    reference_file_name,
+                    output_path,
+                ),
+                kwargs={
+                    'modify_file_name': modify_file_name,
+                    'rm_enlarged_keyword': rm_enlarged_keyword,
+                    'instrument': instrument,
+                }
+            )
 
         #   Exit if exceptions occurred
         if executor.err is not None:
@@ -2879,7 +2950,7 @@ def shift_image_core(
         #   Close multiprocessing pool and wait until it finishes
         executor.wait()
     else:
-        raise RuntimeError(
+        raise ValueError(
             f'{style.Bcolors.FAIL}Method {shift_method} not known '
             f'-> EXIT {style.Bcolors.ENDC}'
         )
