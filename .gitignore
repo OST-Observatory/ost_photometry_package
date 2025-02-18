@@ -7,3 +7,4 @@ dist
 .idea
 __pycache__
 *~
+.zed

@@ -4,10 +4,10 @@
 
 import os
 
+import yaml
+
 import numpy as np
 import numpy.ma as ma
-
-from astropy import uncertainty as unc
 
 from collections import Counter
 
@@ -37,6 +37,7 @@ from photutils.aperture import (
     CircularAnnulus,
     ApertureStats,
 )
+from skimage.transform import SimilarityTransform
 
 import ccdproc as ccdp
 
@@ -51,6 +52,7 @@ from astropy.coordinates import SkyCoord, name_resolve
 import astropy.units as u
 from astropy.nddata import CCDData
 from astropy import wcs
+from astropy import uncertainty as unc
 
 from regions import RectanglePixelRegion
 
@@ -93,10 +95,12 @@ class ObjectOfInterest:
         )
 
         #   Set right ascension
-        self.ra = self.coordinates_object.ra.degree
+        if self.coordinates_object.ra is not None:
+            self.ra = self.coordinates_object.ra.degree
 
         #   Set declination
-        self.dec = self.coordinates_object.dec.degree
+        if self.coordinates_object.dec is not None:
+            self.dec = self.coordinates_object.dec.degree
 
         #   Set object_name
         self.name = name
@@ -125,13 +129,17 @@ class ImageSeries:
             file_list = os.listdir(path)
 
             #   Remove not FITS entries
-            temp_list = []
+            temp_list: list[str] = []
             for file_i in file_list:
                 for j, form in enumerate(formats):
                     #   TODO: Reverse this: Search for the file ending in formats
                     if file_i.find(form) != -1:
                         temp_list.append(file_i)
             file_list = temp_list
+
+            #   Sort file list
+            file_list.sort(key=lambda x: int(x.split('_')[0]))
+            # file_list.sort()
         elif os.path.isfile(path):
             file_list = [str(path).split('/')[-1]]
             path = os.path.dirname(path)
@@ -141,11 +149,11 @@ class ImageSeries:
                 f' nor a directory -> EXIT {style.Bcolors.ENDC}'
             )
 
-        #   Sort file list
-        file_list.sort()
+        #   Add file list
+        self.file_list: list[str] = file_list
 
         #   Check if the id of the reference image is valid
-        if reference_image_id > len(file_list):
+        if reference_image_id > len(self.file_list):
             raise ValueError(
                 f'{style.Bcolors.FAIL} ERROR: Reference image ID '
                 '[reference_image_id] is larger than the total number of '
@@ -234,8 +242,8 @@ class ImageSeries:
             img.wcs = w
 
     #   Get extracted photometry of all images
-    def get_photometry(self) -> dict[str, Table]:
-        photo_dict: dict[str, Table] = {}
+    def get_photometry(self) -> dict[str, Table | None]:
+        photo_dict: dict[str, Table | None] = {}
         for img in self.image_list:
             # photo_dict[str(img.pd)] = img.photometry
             photo_dict[str(img.pd)] = getattr(img, 'photometry', None)
@@ -260,7 +268,7 @@ class ImageSeries:
         return sigma_clipped_stats(am_list, sigma=1.5)[0]
 
     #   Get median of the air mass
-    def median_air_mass(self) -> float:
+    def median_air_mass(self) -> np.floating:
         am_list: list[float] = []
         for img in self.image_list:
             # am_list.append(img.air_mass)
@@ -287,7 +295,7 @@ class ImageSeries:
         return np.array(obs_time_list)
 
     #   Get median of the observation time
-    def median_observation_time(self) -> float:
+    def median_observation_time(self) -> np.floating:
         obs_time_list: list[float] = []
         for img in self.image_list:
             # obs_time_list.append(img.jd)
@@ -312,9 +320,10 @@ class ImageSeries:
         x: list[Column] = []
         y: list[Column] = []
         for i, tbl in enumerate(tbl_s.values()):
-            x.append(tbl['x_fit'])
-            y.append(tbl['y_fit'])
-            n_max_list.append(len(x[i]))
+            if tbl is not None:
+                x.append(tbl['x_fit'])
+                y.append(tbl['y_fit'])
+                n_max_list.append(len(x[i]))
 
         return x, y, np.max(n_max_list)
 
@@ -327,13 +336,14 @@ class ImageSeries:
         #   Create list of distributions
         flux_list: list[unc.core.NdarrayDistribution] = []
         for tbl in tbl_s:
-            flux_list.append(
-                unc.normal(
-                    tbl['flux_fit'] * u.mag,
-                    std=tbl['flux_err'] * u.mag,
-                    n_samples=distribution_samples,
+            if tbl is not None:
+                flux_list.append(
+                    unc.normal(
+                        tbl['flux_fit'] * u.mag,
+                        std=tbl['flux_err'] * u.mag,
+                        n_samples=distribution_samples,
+                    )
                 )
-            )
 
         return flux_list
 
@@ -349,8 +359,9 @@ class ImageSeries:
         flux_err = np.zeros((n_images, n_objects))
 
         for i, tbl in enumerate(tbl_s):
-            flux[i] = tbl['flux_fit']
-            flux_err[i] = tbl['flux_err']
+            if tbl is not None:
+                flux[i] = tbl['flux_fit']
+                flux_err[i] = tbl['flux_err']
 
         return flux, flux_err
 
@@ -370,13 +381,13 @@ class Observation:
         #   Check for object of interest
         #   Parameters: right ascension, declination, units, object names,
         #   periods, and transit times
-        ra_objects: (list[str] | None) = kwargs.get('ra_objects', None)
-        ra_unit: (str | None) = kwargs.get('ra_unit', None)
-        dec_objects: (list[str] | None) = kwargs.get('dec_objects', None)
-        dec_unit: (str | None) = kwargs.get('dec_unit', None)
-        object_names: (list[str] | None) = kwargs.get('object_names', None)
-        periods: (list[float] | None) = kwargs.get('periods', None)
-        transit_times: (list[str] | None) = kwargs.get('transit_times', None)
+        ra_objects: list[str] | None = kwargs.get('ra_objects', None)
+        ra_unit: str | None = kwargs.get('ra_unit', None)
+        dec_objects: list[str] | None = kwargs.get('dec_objects', None)
+        dec_unit: str | None = kwargs.get('dec_unit', None)
+        object_names: list[str] | None = kwargs.get('object_names', None)
+        periods: list[float] | None = kwargs.get('periods', None)
+        transit_times: list[str] | None = kwargs.get('transit_times', None)
 
         add_periods = False
         if all([periods, transit_times]):
@@ -458,9 +469,9 @@ class Observation:
     # def get_epsf(self):
     #     epsf_dict = {}
     def get_epsf(self) -> dict[str, list[ImagePSF]]:
-        epsf_dict: dict[str, list[ImagePSF | None]] = {}
+        epsf_dict: dict[str, list[ImagePSF]] = {}
         for key, image_series in self.image_series_dict.items():
-            epsf_list: list[ImagePSF | None] = []
+            epsf_list: list[ImagePSF] = []
             for img in image_series.image_list:
                 epsf_list.append(img.epsf)
             epsf_dict[key] = epsf_list
@@ -471,7 +482,7 @@ class Observation:
     # def get_reference_epsf(self):
     #     epsf_dict = {}
     def get_reference_epsf(self) -> dict[str, list[ImagePSF]]:
-        epsf_dict: dict[str, list[ImagePSF] | None] = {}
+        epsf_dict: dict[str, list[ImagePSF]] = {}
         for key, image_series in self.image_series_dict.items():
             reference_image_id = image_series.reference_image_id
 
@@ -501,7 +512,8 @@ class Observation:
 
             img = image_series.image_list[reference_image_id]
 
-            img_dict[key] = img.residual_image
+            if img.residual_image is not None:
+                img_dict[key] = img.residual_image
 
         return img_dict
 
@@ -610,6 +622,7 @@ class Observation:
             annotate_image: bool = False,
             magnitude_limit_image_annotation: float | None = None,
             filter_magnitude_limit_image_annotation: str | None = None,
+            transform_object_positions_to_reference: bool = False,
         ) -> None:
         """
         Extract flux and fill the observation container
@@ -786,6 +799,13 @@ class Observation:
         filter_magnitude_limit_image_annotation
             Name of the filter (e.g. 'V')
             Default is ``None``.
+
+        transform_object_positions_to_reference
+                    If ``True``, the object pixel coordinates extracted from the images
+                    are be transformed to the reference frame defined by the reference
+                    image. It assumes that similarity transformations are available
+                    from an image correlation run.
+                    Default is ``False``.
         """
         #   Check output directories
         checks.check_output_directories(
@@ -908,11 +928,16 @@ class Observation:
             )
             p.start()
 
+        #   Transform the object positions to the reference frame
+        if transform_object_positions_to_reference:
+            image_list: list[Image] = list(self.get_reference_image.values())
+            transform_object_positions(image_list)
+
     def extract_flux_multi(
             self, filter_list: list[str], image_paths: dict[str, str],
             output_dir: str, fwhm_object_psf: dict[str, float] | None = None,
             n_cores_multiprocessing: int = 6, wcs_method: str = 'astrometry',
-            force_wcs_determ: bool = False,
+            force_wcs_determination: bool = False,
             sigma_value_background_clipping: float = 5.,
             multiplier_background_rms: float = 5., size_epsf_region: int = 25,
             size_extraction_region_epsf: int = 11,
@@ -947,6 +972,7 @@ class Observation:
             annotate_reference_image: bool = False,
             magnitude_limit_image_annotation: float | None = None,
             filter_magnitude_limit_image_annotation: str | None = None,
+            transform_object_positions_to_reference: bool = False,
         ) -> None:
         """
         Extract flux from multiple images per filter and add results to
@@ -1144,7 +1170,8 @@ class Observation:
             Default is ``True``.
 
         use_wcs_projection_for_star_maps
-            If ``True`` the starmap will be plotted with sky coordinates instead
+            If ``True`` the starmap will be plotted with sky coordinates
+            instead.
             of pixel coordinates
             Default is ``True``.
 
@@ -1153,16 +1180,25 @@ class Observation:
             Default is ``pdf``.
 
         annotate_reference_image
-            If ``True``, a starmap will be created with known Simbad objects marked.
+            If ``True``, a starmap will be created with known Simbad objects
+            marked.
             Default is ``False``.
 
         magnitude_limit_image_annotation
-            Limiting magnitude, only objects brighter as this limit will be shown
+            Limiting magnitude, only objects brighter as this limit will be
+            shown.
             Default is ``None``.
 
         filter_magnitude_limit_image_annotation
             Name of the filter (e.g. 'V')
             Default is ``None``.
+
+        transform_object_positions_to_reference
+            If ``True``, the object pixel coordinates extracted from the images
+            are be transformed to the reference frame defined by the reference
+            image. It assumes that similarity transformations are available
+            from an image correlation run.
+            Default is ``False``.
         """
         #   Check output directories
         checks.check_output_directories(output_dir, os.path.join(output_dir, 'tables'))
@@ -1190,7 +1226,7 @@ class Observation:
                 self.image_series_dict[filter_],
                 reference_image_id=reference_image_id,
                 method=wcs_method,
-                force_wcs_determination=force_wcs_determ,
+                force_wcs_determination=force_wcs_determination,
                 indent=3,
             )
 
@@ -1230,6 +1266,10 @@ class Observation:
                 filter_magnitude_limit_image_annotation=filter_magnitude_limit_image_annotation,
             )
 
+            #   Transform the object positions to the reference frame
+            if transform_object_positions_to_reference:
+                transform_object_positions(self.image_series_dict[filter_])
+
             #   Correlate results from all images within the current image
             #   series, while preserving the variable objects
             correlate.correlate_preserve_variable(
@@ -1251,30 +1291,6 @@ class Observation:
                 file_type_plots=file_type_plots,
             )
 
-
-        # if photometry_extraction_method == 'PSF':
-        #     #   Plot the ePSFs
-        #     p = mp.Process(
-        #         target=plots.plot_epsf,
-        #         args=(output_dir, self.get_epsf(),),
-        #         kwargs={'file_type': file_type_plots},
-        #     )
-        #     p.start()
-        #
-        #     #   Plot original and residual image
-        #     #   TODO: Make this work?
-        #     # p = mp.Process(
-        #     #     target=plots.plot_residual,
-        #     #     args=(
-        #     #         self.get_images(),
-        #     #         self.get_residual_images(),
-        #     #         output_dir,
-        #     #     ),
-        #     #     kwargs={
-        #     #         'file_type': file_type_plots,
-        #     #     }
-        #     # )
-        #     # p.start()
 
     def correlate_calibrate(
             self, filter_list: list[str], max_pixel_between_objects: int = 3,
@@ -2040,11 +2056,81 @@ class Observation:
                         p.start()
 
 
+def transform_object_positions(image_series: ImageSeries | list[Image]) -> None:
+    """
+    Use the provided similarity transformations to transform the object
+    positions in each image to the reference frame.
+
+    Parameters
+    ----------
+    image_series
+        List or image series object with the images that should be transformed
+    """
+    #   Get list with images
+    if isinstance(image_series, list):
+        image_list = image_series
+    elif isinstance(image_series, ImageSeries):
+        image_list = image_series.image_list
+    else:
+        raise ValueError(
+            f'{style.Bcolors.FAIL} ERROR: Neither an ImageSeries object nor a '
+            f'list of Image objects was provided. The type provided was '
+            f'{type(image_series)}. -> EXIT {style.Bcolors.ENDC}'
+        )
+
+    #   Get reference image and image name
+    if isinstance(image_series, ImageSeries):
+        reference_image = image_series.reference_image
+    else:
+        reference_image = image_list[0]
+    reference_file_name = reference_image.filename
+    reference_base_name = base_utilities.get_basename(reference_file_name)
+    path_transformation = 'output/aligned_lights/transformation/'
+
+    #   Load reference transformation matrix
+    reference_transformation_file = f'{path_transformation}{reference_base_name}.yaml'
+    with open(reference_transformation_file) as f:
+        loaded = yaml.safe_load(f)
+        reference_matrix = np.array(loaded)
+
+    #   Prepare reference similarity transform object
+    reference_trans = SimilarityTransform(reference_matrix)
+
+    #   Transform object positions for all images
+    for image in image_list:
+        #   Get coordinates
+        x_pixel_coordinates = image.photometry['x_fit'].value
+        y_pixel_coordinates = image.photometry['y_fit'].value
+
+        #   Load transformation matrix
+        file_name = image.filename
+        base_name = base_utilities.get_basename(file_name)
+        path_transformation_file = f'{path_transformation}{base_name}.yaml'
+        with open(path_transformation_file) as f:
+            loaded = yaml.safe_load(f)
+            matrix = np.array(loaded)
+
+        #   Prepare similarity transform object
+        current_trans = SimilarityTransform(matrix)
+
+        #   Transform coordinates
+        transformed_coordinates = reference_trans(
+            current_trans.inverse(
+                list(zip(x_pixel_coordinates, y_pixel_coordinates))
+            )
+        )
+
+        #   Write object positions back to image object
+        image.photometry['x_fit'] = transformed_coordinates[:,0]
+        image.photometry['y_fit'] = transformed_coordinates[:,1]
+
+
 def rm_cosmic_rays(
         image: Image, limiting_contrast: float = 5., read_noise: float = 8.,
         sigma_clipping_value: float = 4.5, saturation_level: float = 65535.,
         verbose: bool = False, add_mask: bool = True,
-        terminal_logger: terminal_output.TerminalLog | None = None) -> None:
+        terminal_logger: terminal_output.TerminalLog | None = None
+    ) -> None:
     """
         Remove cosmic rays
 
@@ -2211,11 +2297,12 @@ def determine_background(
         bkg_estimator = MedianBackground()
         bkg = Background2D(
             ccd.data,
-            (50, 50),
+            (80, 80),
             mask=ccd.mask,
             filter_size=(3, 3),
             sigma_clip=sigma_clip,
             bkg_estimator=bkg_estimator,
+            exclude_percentile=20,
         )
 
         #   Remove background
@@ -3947,7 +4034,7 @@ def main_extract(
     )
 
     #   Annotate all known Simbad objects on the image
-    if annotate_image:
+    if annotate_image and image.pd == id_reference_image:
         utilities.mark_simbad_objects_on_image(
             image.get_data(),
             image.wcs,

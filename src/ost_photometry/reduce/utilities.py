@@ -35,7 +35,7 @@ from skimage.registration import (
     optical_flow_tvl1,
     # optical_flow_ilk,
 )
-from skimage.transform import warp
+from skimage.transform import warp, SimilarityTransform
 
 import astroalign as aa
 
@@ -68,6 +68,7 @@ def make_symbolic_links(
     working_dir = os.getcwd()
 
     #   Loop over directories
+    i: int = 0
     for path in path_list:
         #   Get file list
         files = os.listdir(path)
@@ -76,11 +77,12 @@ def make_symbolic_links(
             if os.path.isfile(os.path.join(path, file_)):
                 #   Check if a file of the same name already exist in the
                 #   temp directory
-                if os.path.isfile(os.path.join(temp_dir.name, file_)):
-                    random_string = base_utilities.random_string_generator(7)
-                    new_filename = f'{random_string}_{file_}'
-                else:
-                    new_filename = file_
+                # if os.path.isfile(os.path.join(temp_dir.name, file_)):
+                    # random_string = base_utilities.random_string_generator(7)
+                    # new_filename = f'{random_string}_{file_}'
+                # else:
+                #     new_filename = file_
+                new_filename = f'{i}_{file_}'
 
                 #   Fill temp directory with file links
                 os.symlink(
@@ -88,8 +90,10 @@ def make_symbolic_links(
                     os.path.join(temp_dir.name, new_filename),
                 )
 
+                i += 1
 
-def inverse_median(data: np.ndarray) -> float:
+
+def inverse_median(data: np.ndarray) -> np.floating:
     """
     Inverse median
 
@@ -107,7 +111,8 @@ def inverse_median(data: np.ndarray) -> float:
 
 
 def get_instruments(
-        image_file_collection: ccdp.ImageFileCollection) -> set[str]:
+        image_file_collection: ccdp.ImageFileCollection
+    ) -> set[str] | None:
     """
     Extract instrument information.
 
@@ -129,7 +134,15 @@ def get_instruments(
         )
 
     #   Get instruments
-    instruments = set(image_file_collection.summary['instrume'])
+    if image_file_collection.summary is not None:
+        instruments: set[str] = set(image_file_collection.summary['instrume'])
+    else:
+        terminal_output.print_to_terminal(
+            "WARNING: Instruments could not be determined because the image "
+            "file collection does not contain a summery -> Returning None",
+            style_name='WARNING',
+        )
+        return None
 
     return instruments
 
@@ -270,15 +283,23 @@ def get_instrument_info(
     readout_mode = 'default'
 
     #   Determine readout mode keyword
-    if 'readoutm' in image_file_collection.summary.colnames:
-        readout_mode_keyword = 'readoutm'
-    elif 'readmode' in image_file_collection.summary.colnames:
-        readout_mode_keyword = 'readmode'
+    if isinstance(image_file_collection.summary, Table):
+        if 'readoutm' in image_file_collection.summary.colnames:
+            readout_mode_keyword = 'readoutm'
+        elif 'readmode' in image_file_collection.summary.colnames:
+            readout_mode_keyword = 'readmode'
+        else:
+            raise KeyError(
+                f"{style.Bcolors.FAIL} \nReadout mode keyword for FITS Header could not"
+                f" be determined -> ABORT {style.Bcolors.ENDC}"
+            )
     else:
-        raise KeyError(
-            f"{style.Bcolors.FAIL} \nReadout mode keyword for FITS Header could not"
-            f" be determined -> ABORT {style.Bcolors.ENDC}"
+        raise ValueError(
+            f"{style.Bcolors.FAIL} \nReadout mode keyword for FITS Header "
+            "could notbe determined. Summary table of image file collectiont "
+            f"is not available. -> ABORT {style.Bcolors.ENDC}"
         )
+
 
     #   Readout mode: Restricting files to once with a set read mode
     readout_mode_mask = image_file_collection.summary[readout_mode_keyword].mask
@@ -1530,7 +1551,8 @@ def calculate_image_shifts(
 
 
 def image_shift_astroalign_method(
-        reference_ccd_object: CCDData, current_ccd_object:CCDData) -> CCDData:
+        reference_ccd_object: CCDData, current_ccd_object:CCDData
+    ) -> tuple[CCDData, SimilarityTransform]:
     """
     Calculate image shifts using the astroalign method
 
@@ -1604,17 +1626,19 @@ def image_shift_astroalign_method(
     )
 
     #   Build new CCDData object
-    return CCDData(
+    new_ccd = CCDData(
         image_data,
         mask=footprint_mask,
         meta=current_ccd_object.meta,
         unit=current_ccd_object.unit,
         uncertainty=StdDevUncertainty(image_uncertainty),
     )
+    return new_ccd, transformation_coefficients
 
 
 def image_shift_optical_flow_method(
-        reference_ccd_object: CCDData, current_ccd_object: CCDData) -> CCDData:
+        reference_ccd_object: CCDData, current_ccd_object: CCDData
+    ) -> CCDData:
     """
     Calculate image shifts using the optical flow method
 
@@ -1980,9 +2004,13 @@ def prepare_reduction(
     else:
         raw_files_path = checks.list_subdirectories(raw_files_path)
 
-        if len(raw_files_path) == 1:
-            raw_files_path = raw_files_path[0]
-        elif len(raw_files_path) > 1:
+        # if len(raw_files_path) == 1:
+        #     raw_files_path = raw_files_path[0]
+        # elif len(raw_files_path) > 1:
+        #     #   Link all files to the temporary directory
+        #     make_symbolic_links(raw_files_path, temp_dir)
+
+        if len(raw_files_path) >= 1:
             #   Link all files to the temporary directory
             make_symbolic_links(raw_files_path, temp_dir)
 
@@ -2683,7 +2711,6 @@ def determine_wcs_all_images(
             file_path / file_name,
             output_dir,
         )
-        # base_utilities.calculate_field_of_view(image_object, verbose=False)
 
         #   Test if the image contains already a WCS
         wcs_available = base_utilities.check_wcs_exists(image_object)

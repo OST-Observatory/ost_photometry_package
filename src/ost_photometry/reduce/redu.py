@@ -6,6 +6,8 @@ import sys
 
 import shutil
 
+import yaml
+
 from pytimedinput import timedInput
 
 from pathlib import Path
@@ -26,7 +28,7 @@ from . import utilities, plots
 
 from .. import checks, style, terminal_output, calibration_parameters
 
-from .. import utilities as aux_general
+from .. import utilities as base_utilities
 
 from ..analyze.utilities import Executor
 
@@ -59,7 +61,8 @@ def reduce_main(
         plot_flat_statistic_plots: bool = False,
         ignore_readout_mode_mismatch: bool = False, trim_x_start: int = 0,
         trim_x_end: int = 0, trim_y_start: int = 0, trim_y_end: int = 0,
-        dtype: str | np.dtype | None = None, debug: bool = False
+        dtype: str | np.dtype | None = None, debug: bool = False,
+        save_only_transformation: bool = False,
     ) -> None:
     """
     Main reduction routine: Creates master images for bias, darks,
@@ -258,7 +261,28 @@ def reduce_main(
         If `True` the intermediate files of the data reduction will not
         be removed.
         Default is ``False``.
+
+    save_only_transformation
+        If ``True'', only the transformation matrix is saved, not the transformed image itself.
+        Default is ``False``.
     """
+    ###
+    #   Parameter sanity checks (some parameter combination do not make sence)
+    #
+    #   It makes no sense to keep only the transformation matrices if the
+    #   images are to be stacked, because the images have to be there to be
+    #   stacked.
+    if stack_images and save_only_transformation:
+        terminal_output.print_to_terminal(
+                "WARNING: Both 'stack_images' and 'save_only_transformation' "
+                "are set to ``True``. It makes no sense to keep only the "
+                "transformation matrices if the images are to be stacked, "
+                "because the images have to be there to be stacked. -> Set "
+                "'save_only_transformation' to ``False``.",
+                style_name='WARNING',
+            )
+        save_only_transformation = False
+
     ###
     #   Prepare reduction
     #
@@ -533,6 +557,7 @@ def reduce_main(
         "Trim images to the same field of view...",
         indent=1,
     )
+
     if shift_all:
         shift_all_images(
             output_path / 'light',
@@ -546,6 +571,7 @@ def reduce_main(
             threshold=threshold_image_shifts,
             instrument=instrument,
             debug=debug,
+            save_only_transformation=save_only_transformation,
         )
     else:
         shift_image(
@@ -560,16 +586,27 @@ def reduce_main(
             threshold=threshold_image_shifts,
             instrument=instrument,
             debug=debug,
+            save_only_transformation=save_only_transformation,
         )
 
     if find_wcs and find_wcs_of_all_images:
         ###
         #   Determine WCS and add it to all reduced images
         #
+        #   If 'save_only_transformation' is ``True``, the WCS must to be
+        #   determined for the non-aligned images. If
+        #   'save_only_transformation' is ``False``, the WCS will be determined
+        #   for the aligned images, although this may not be what is intended,
+        #   as the transformation determined in the alignment process may be
+        #   used instead.
+        if save_only_transformation:
+            output_directory = 'light'
+        else:
+            output_directory = 'aligned_lights'
         terminal_output.print_to_terminal("Determine WCS ...", indent=1)
         utilities.determine_wcs_all_images(
-            output_path / 'shifted_and_trimmed',
-            output_path / 'shifted_and_trimmed',
+            output_path / output_directory,
+            output_path / output_directory,
             wcs_method=wcs_method,
             force_wcs_determination=force_wcs_determination,
         )
@@ -580,7 +617,7 @@ def reduce_main(
         #
         terminal_output.print_to_terminal("Estimate FWHM ...", indent=1)
         utilities.estimate_fwhm(
-            output_path / 'shifted_and_trimmed',
+            output_path / 'aligned_lights',
             output_path,
             image_type_dir['light'],
         )
@@ -594,7 +631,7 @@ def reduce_main(
             indent=1,
         )
         stack_image(
-            output_path / 'shifted_and_trimmed',
+            output_path / 'aligned_lights',
             output_path,
             image_type_dir['light'],
             stacking_method=stack_method,
@@ -618,73 +655,119 @@ def reduce_main(
             )
 
         if not shift_all:
-            if shift_method == 'aa_true':
-                ###
-                #   Trim stacked images using astroalign
-                #
-                shift_stack_astroalign(
-                    output_path,
-                    output_path,
-                    image_type_dir['light'],
-                )
-
-            elif shift_method in ['own', 'skimage', 'aa']:
-                ###
-                #   Make large images with the same dimensions to allow
-                #   cross correlation
-                #
+            ###
+            #   Make large images with the same dimensions to allow
+            #   cross correlation
+            #
+            enlarged: bool = False
+            if shift_method != 'aa_true':
                 make_big_images(
                     output_path,
                     output_path,
                     image_type_dir['light'],
                 )
+                enlarged = True
 
-                ###
-                #   Calculate and apply image shifts between filters
-                #
-                terminal_output.print_to_terminal(
-                    "Trim stacked images of the filters to the same "
-                    "field of view...",
-                    indent=1,
-                )
+            ###
+            #   Calculate and apply image shifts between filters
+            #
+            terminal_output.print_to_terminal(
+                "Trim stacked images of the filters to the same "
+                "field of view...",
+                indent=1,
+            )
 
-                trim_image(
-                    output_path,
-                    output_path,
-                    image_type_dir['light'],
-                    shift_method=shift_method,
-                    n_cores_multiprocessing=n_cores_multiprocessing,
-                    rm_outliers=rm_outliers_image_shifts,
-                    filter_window=filter_window_image_shifts,
-                    threshold=threshold_image_shifts,
-                    verbose=debug,
-                )
+            trim_image(
+                output_path,
+                output_path,
+                image_type_dir['light'],
+                shift_method=shift_method,
+                n_cores_multiprocessing=n_cores_multiprocessing,
+                rm_outliers=rm_outliers_image_shifts,
+                filter_window=filter_window_image_shifts,
+                threshold=threshold_image_shifts,
+                verbose=debug,
+                save_only_transformation=save_only_transformation,
+                enlarged_only=enlarged,
+            )
+            # if shift_method == 'aa_true':
+            #     ###
+            #     #   Trim stacked images using astroalign
+            #     #
+            #     shift_stack_astroalign(
+            #         output_path,
+            #         output_path,
+            #         image_type_dir['light'],
+            #     )
 
-            else:
-                raise RuntimeError(
-                    f"{style.Bcolors.FAIL}Method for determining image "
-                    f"shifts {shift_method} not known {style.Bcolors.ENDC}"
-                )
+            # elif shift_method in ['own', 'skimage', 'aa']:
+            #     ###
+            #     #   Make large images with the same dimensions to allow
+            #     #   cross correlation
+            #     #
+            #     make_big_images(
+            #         output_path,
+            #         output_path,
+            #         image_type_dir['light'],
+            #     )
+
+            #     ###
+            #     #   Calculate and apply image shifts between filters
+            #     #
+            #     terminal_output.print_to_terminal(
+            #         "Trim stacked images of the filters to the same "
+            #         "field of view...",
+            #         indent=1,
+            #     )
+
+            #     trim_image(
+            #         output_path,
+            #         output_path,
+            #         image_type_dir['light'],
+            #         shift_method=shift_method,
+            #         n_cores_multiprocessing=n_cores_multiprocessing,
+            #         rm_outliers=rm_outliers_image_shifts,
+            #         filter_window=filter_window_image_shifts,
+            #         threshold=threshold_image_shifts,
+            #         verbose=debug,
+            #         save_only_transformation=save_only_transformation,
+            #     )
+
+            # else:
+            #     raise RuntimeError(
+            #         f"{style.Bcolors.FAIL}Method for determining image "
+            #         f"shifts {shift_method} not known {style.Bcolors.ENDC}"
+            #     )
 
     else:
-        #   Sort files according to filter into subdirectories
+        ###
+        #   Sort images according to filter into subdirectories
+        #
+        #   Select ``light`` frames from image file collection
         light_image_type = utilities.get_image_type(
             image_file_collection,
             image_type_dir,
             image_class='light',
         )
         ifc_filtered = image_file_collection.filter(imagetyp=light_image_type)
+
+        #   Find used filters
         filters = set(
             ifc_filtered.summary['filter'][
                 np.invert(ifc_filtered.summary['filter'].mask)
             ]
         )
         for filter_ in filters:
+            ###
+            #   The aligned images
+            #
             #   Remove old files in the output directory
             checks.clear_directory(output_path / filter_)
 
             #   Set path to files
-            file_path = checks.check_pathlib_path(output_path / 'shifted_and_trimmed')
+            file_path = checks.check_pathlib_path(
+                output_path / 'aligned_lights'
+            )
 
             #   New image collection for the images
             image_file_collection = ccdp.ImageFileCollection(file_path)
@@ -696,7 +779,31 @@ def reduce_main(
             )
 
             #   Link files to corresponding directory
-            aux_general.link_files(output_path / filter_, filtered_files)
+            base_utilities.link_files(output_path / filter_, filtered_files)
+
+            ###
+            #   The NOT shifted and/or trimmed images
+            #
+            #   Remove old files in the output directory
+            checks.clear_directory(output_path / f'{filter_}_not_aligned')
+
+            #   Set path to files
+            file_path = checks.check_pathlib_path(output_path / 'light')
+
+            #   New image collection for the images
+            image_file_collection = ccdp.ImageFileCollection(file_path)
+
+            #   Restrict to current filter
+            filtered_files = image_file_collection.files_filtered(
+                filter=filter_,
+                include_path=True,
+            )
+
+            #   Link files to corresponding directory
+            base_utilities.link_files(
+                output_path / f'{filter_}_not_aligned',
+                filtered_files,
+            )
 
 
 def master_bias(
@@ -2613,8 +2720,9 @@ def shift_image_apply_flow(
 
 def shift_image_apply_aa_true(
         current_image_name: str, reference_image_name: str,
-        output_path: Path, modify_file_name: bool = False,
-        rm_enlarged_keyword: bool = False, instrument: str | None = None,
+        output_path: Path, output_path_transformation: Path,
+        modify_file_name: bool = False, rm_enlarged_keyword: bool = False,
+        instrument: str | None = None, save_only_transformation: bool = False,
     ) -> None:
     """
     Apply shift to an individual image
@@ -2630,6 +2738,9 @@ def shift_image_apply_aa_true(
     output_path
         Path to the output directory
 
+    output_path_transformation
+        Path to save the image transformation matrices
+
     modify_file_name
         It true the trimmed image will be saved, using a modified file
         name.
@@ -2642,14 +2753,18 @@ def shift_image_apply_aa_true(
     instrument
         The instrument used
         Default is ``None``.
+
+    save_only_transformation
+        If ``True'', only the transformation matrix is saved, not the transformed image itself.
+        Default is ``False``.
     """
     #   Get image data
     current_image_ccd = CCDData.read(current_image_name)
+    reference_image_ccd = CCDData.read(reference_image_name)
 
     #   Trim images
-    reference_image_ccd = CCDData.read(reference_image_name)
     try:
-        output_image = utilities.image_shift_astroalign_method(
+        output_image, similarity_transforma = utilities.image_shift_astroalign_method(
             reference_image_ccd,
             current_image_ccd,
         )
@@ -2661,15 +2776,6 @@ def shift_image_apply_aa_true(
             indent=2,
         )
         return
-
-    #   Reset the device as it may have been updated
-    if instrument is not None and instrument != '':
-        output_image.meta['INSTRUME'] = instrument
-
-    #   Add Header keyword to mark the file as trimmed
-    output_image.meta['trimmed'] = True
-    if rm_enlarged_keyword:
-        output_image.meta.remove('enlarged')
 
     #   Get file name
     file_name = current_image_name.split('/')[-1]
@@ -2683,8 +2789,23 @@ def shift_image_apply_aa_true(
             filter_.replace("''", "p")
         )
 
-    #   Write trimmed image to disk
-    output_image.write(output_path / file_name, overwrite=True)
+    if not save_only_transformation:
+        #   Reset the instrument as it may have been updated
+        if instrument is not None and instrument != '':
+            output_image.meta['INSTRUME'] = instrument
+
+        #   Add Header keyword to mark the file as trimmed
+        output_image.meta['trimmed'] = True
+        if rm_enlarged_keyword:
+            output_image.meta.remove('enlarged')
+
+        #   Write trimmed image to disk
+        output_image.write(output_path / file_name, overwrite=True)
+
+    #   Save similarity transformation matrix
+    base_name = base_utilities.get_basename(file_name)
+    with open(output_path_transformation / f'{base_name}.yaml', 'w') as file:
+        yaml.dump(similarity_transforma.params.tolist(), file)
 
 
 def detect_outlier(
@@ -2724,6 +2845,7 @@ def detect_outlier(
 
 def shift_image_core(
         image_file_collection: ccdp.ImageFileCollection, output_path: Path,
+        output_path_transformation: Path,
         shift_method: str = 'skimage',
         n_cores_multiprocessing: int | None = None,
         reference_image_id: int = 0,
@@ -2731,7 +2853,8 @@ def shift_image_core(
         rm_enlarged_keyword: bool = False, modify_file_name: bool = False,
         rm_outliers: bool = True, filter_window: int = 25,
         threshold: int | float = 10., instrument: str | None = None,
-        verbose: bool = False) -> None:
+        verbose: bool = False, save_only_transformation: bool = False,
+    ) -> None:
     """
     Core steps of the image shift calculations and trimming to a
     common filed of view
@@ -2743,6 +2866,9 @@ def shift_image_core(
 
     output_path
         Path to the output directory
+
+    output_path_transformation
+        Path to save the image transformation matrices
 
     shift_method
         Method to use for image alignment.
@@ -2799,6 +2925,10 @@ def shift_image_core(
 
     verbose
         If True additional output will be printed to the console
+        Default is ``False``.
+
+    save_only_transformation
+        If ``True'', only the transformation matrix is saved, not the transformed image itself.
         Default is ``False``.
     """
     #   Calculate image shifts
@@ -2931,11 +3061,13 @@ def shift_image_core(
                     current_image_name,
                     reference_file_name,
                     output_path,
+                    output_path_transformation,
                 ),
                 kwargs={
                     'modify_file_name': modify_file_name,
                     'rm_enlarged_keyword': rm_enlarged_keyword,
                     'instrument': instrument,
+                    'save_only_transformation': save_only_transformation,
                 }
             )
 
@@ -2962,7 +3094,8 @@ def shift_image(
         n_cores_multiprocessing: int | None = None,
         rm_outliers: bool = True, filter_window: int = 25,
         threshold: int | float = 10., instrument: str | None = None,
-        debug: bool = False) -> None:
+        debug: bool = False, save_only_transformation: bool = False,
+    ) -> None:
     """
     Calculate shift between images taken in the same filter
     and trim those to the save field of view
@@ -3020,6 +3153,10 @@ def shift_image(
         If `True` the intermediate files of the data reduction will not
         be removed.
         Default is ``False``.
+
+    save_only_transformation
+        If ``True'', only the transformation matrix is saved, not the transformed image itself.
+        Default is ``False``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(path)
@@ -3050,9 +3187,11 @@ def shift_image(
         h['filter'] for h in image_file_collection.headers(imagetyp=image_type)
     )
 
-    #   Set science image path
-    trim_path = Path(out_path / 'shifted_and_trimmed')
+    #   Set output image path
+    trim_path = Path(out_path / 'aligned_lights')
     checks.clear_directory(trim_path)
+    output_path_transformation = Path(out_path / 'image_transformations')
+    checks.clear_directory(output_path_transformation)
 
     #   Calculate shifts for the images in the individual filters
     for filter_ in filters:
@@ -3064,6 +3203,7 @@ def shift_image(
         shift_image_core(
             ifc_filter,
             trim_path,
+            output_path_transformation,
             shift_method=shift_method,
             n_cores_multiprocessing=n_cores_multiprocessing,
             reference_image_id=reference_image_id,
@@ -3073,6 +3213,7 @@ def shift_image(
             instrument=instrument,
             threshold=threshold,
             verbose=debug,
+            save_only_transformation=save_only_transformation,
         )
 
     #   Remove reduced dark files if they exist
@@ -3087,7 +3228,8 @@ def shift_all_images(
         n_cores_multiprocessing: int | None = None,
         rm_outliers: bool = True, filter_window: int = 25,
         threshold: int | float = 10., instrument: str | None = None,
-        debug: bool = False) -> None:
+        debug: bool = False, save_only_transformation: bool = False,
+    ) -> None:
     """
     Calculate shift between images and trim those to the save field of
     view
@@ -3145,6 +3287,10 @@ def shift_all_images(
         If `True` the intermediate files of the data reduction will not
         be removed.
         Default is ``False``.
+
+    save_only_transformation
+        If ``True'', only the transformation matrix is saved, not the transformed image itself.
+        Default is ``False``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -3153,18 +3299,18 @@ def shift_all_images(
     #   New image collection for the images
     image_file_collection = ccdp.ImageFileCollection(file_path)
 
-    #   Sort by time
-    if 'jd' in image_file_collection.summary.colnames:
-        image_file_collection.sort('jd')
-    elif 'date-obs' in image_file_collection.summary.colnames:
-        image_file_collection.sort('date-obs')
-
     #   Check if image_file_collection is not empty
     if not image_file_collection.files:
         raise RuntimeError(
             f"{style.Bcolors.FAIL}No FITS files found in {file_path}. "
             f"=> EXIT {style.Bcolors.ENDC}"
         )
+
+    #   Sort by time
+    if 'jd' in image_file_collection.summary.colnames:
+        image_file_collection.sort('jd')
+    elif 'date-obs' in image_file_collection.summary.colnames:
+        image_file_collection.sort('date-obs')
 
     #   Apply image_file_collection filter to the image collection
     #   -> This is necessary so that the path to the image directory is
@@ -3177,13 +3323,16 @@ def shift_all_images(
     ifc_filtered = image_file_collection.filter(imagetyp=image_type)
 
     #   Set output path
-    trim_path = Path(out_path / 'shifted_and_trimmed')
+    trim_path = Path(out_path / 'aligned_lights')
     checks.clear_directory(trim_path)
+    output_path_transformation = Path(out_path / 'image_transformations')
+    checks.clear_directory(output_path_transformation)
 
     #   Calculate image shifts and trim images accordingly
     shift_image_core(
         ifc_filtered,
         trim_path,
+        output_path_transformation,
         shift_method=shift_method,
         n_cores_multiprocessing=n_cores_multiprocessing,
         reference_image_id=reference_image_id,
@@ -3192,6 +3341,7 @@ def shift_all_images(
         instrument=instrument,
         threshold=threshold,
         verbose=debug,
+        save_only_transformation=save_only_transformation,
     )
 
     #   Remove reduced files if they exist
@@ -3200,6 +3350,7 @@ def shift_all_images(
 
 
 #   TODO: Combinbe with image_shift_astroalign_method
+#   TODO: Check if this can be removed
 def shift_stack_astroalign(
         path: str | Path, output_dir: Path, image_type: list[str]) -> None:
     """
@@ -3405,7 +3556,9 @@ def stack_image(
 
 def make_big_images(
         image_path: str | Path, output_dir: str | Path,
-        image_type_list: list[str], combined_only: bool = True) -> None:
+        image_type_list: list[str], combined_only: bool = True,
+        set_efault_file_name: bool = False,
+    ) -> None:
     """
     Image size unification:
         Find the largest image and use this for all other images
@@ -3426,6 +3579,11 @@ def make_big_images(
         It true the file selection will be restricted to images with a
         header keyword 'combined' that is set to True.
         Default is ``True``.
+
+    set_efault_file_name
+        If ``True'', a new filename is created that marks the image as
+        enlarged and contains the filter used.
+        Default is ``False``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -3439,7 +3597,7 @@ def make_big_images(
         image_file_collection,
         image_type_list,
     )
-    img_dict = {
+    img_dict: dict[str, CCDData] = {
         file_name: ccd for ccd, file_name in image_file_collection.ccds(
             imagetyp=image_type,
             return_fname=True,
@@ -3492,9 +3650,12 @@ def make_big_images(
         filter_ = current_image.meta['filter']
 
         #   Define name and write trimmed image to disk
-        file_name = 'combined_enlarged_filter_{}.fit'.format(
-            filter_.replace("''", "p")
-        )
+        if set_efault_file_name:
+            file_name = 'combined_enlarged_filter_{}.fit'.format(
+                filter_.replace("''", "p")
+            )
+        else:
+            file_name = file_names[i]
         current_image.write(out_path / file_name, overwrite=True)
 
 
@@ -3504,7 +3665,9 @@ def trim_image(
         enlarged_only: bool = True, shift_method: str = 'skimage',
         n_cores_multiprocessing: int | None = None,
         rm_outliers: bool = True, filter_window: int = 25,
-        threshold: int | float =10., verbose: bool = False) -> None:
+        threshold: int | float =10., verbose: bool = False,
+        save_only_transformation: bool = False
+    ) -> None:
     """
     Trim images to the same field of view
 
@@ -3561,10 +3724,16 @@ def trim_image(
     verbose
         If True additional output will be printed to the command line.
         Default is ``False``.
+
+    save_only_transformation
+        If ``True'', only the transformation matrix is saved, not the transformed image itself.
+        Default is ``False``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
     out_path = checks.check_pathlib_path(output_dir)
+    output_path_transformation = Path(out_path / 'image_transformations')
+    checks.clear_directory(output_path_transformation)
 
     #   New image collection for the images
     image_file_collection = ccdp.ImageFileCollection(file_path)
@@ -3575,15 +3744,21 @@ def trim_image(
         image_file_collection,
         image_type_list,
     )
-    ifc_filtered = image_file_collection.filter(
-        imagetyp=image_type,
-        enlarged=enlarged_only,
-    )
+    if enlarged_only:
+        ifc_filtered = image_file_collection.filter(
+            imagetyp=image_type,
+            enlarged=enlarged_only,
+        )
+    else:
+        ifc_filtered = image_file_collection.filter(
+            imagetyp=image_type,
+        )
 
     #   Calculate image shifts and trim images accordingly
     shift_image_core(
         ifc_filtered,
         out_path,
+        output_path_transformation,
         shift_method=shift_method,
         n_cores_multiprocessing=n_cores_multiprocessing,
         reference_image_id=reference_image_id,
@@ -3594,4 +3769,5 @@ def trim_image(
         filter_window=filter_window,
         threshold=threshold,
         verbose=verbose,
+        save_only_transformation=save_only_transformation,
     )

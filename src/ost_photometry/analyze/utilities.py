@@ -697,9 +697,9 @@ def fit_curve(
     #   Fit curve
     if np.any(sigma == 0.):
         para, coma = optimization.curve_fit(
-            fit_func, 
-            np.ravel(x), 
-            np.ravel(y), 
+            fit_func,
+            np.ravel(x),
+            np.ravel(y),
             x0,
         )
     else:
