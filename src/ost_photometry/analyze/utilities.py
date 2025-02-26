@@ -965,7 +965,7 @@ class Executor:
             mp.set_start_method('spawn')
 
         if not process_num:
-            process_num: int = int(mp.cpu_count()/2)
+            process_num = int(mp.cpu_count()/2)
 
         #   Get max_tasks_per_child parameter
         max_tasks_per_child = kwargs.get('maxtasksperchild', None)
@@ -1107,7 +1107,7 @@ def mk_ds9_region(
 def prepare_and_plot_starmap(
         image: base_utilities.Image,
         terminal_logger: terminal_output.TerminalLog | None = None,
-        tbl: Table = None, x_name: str = 'x_fit', y_name: str = 'y_fit',
+        tbl: Table | None = None, x_name: str = 'x_fit', y_name: str = 'y_fit',
         rts_pre: str = 'image',
         label: str = 'Stars with photometric extractions',
         add_image_id: bool = True,

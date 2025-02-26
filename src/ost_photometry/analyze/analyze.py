@@ -152,6 +152,13 @@ class ImageSeries:
         #   Add file list
         self.file_list: list[str] = file_list
 
+        #   Check if any image was detected
+        if len(self.file_list) <=0:
+            raise ValueError(
+                f'{style.Bcolors.FAIL} ERROR: No FITS image detected in '
+                f'{path}! -> EXIT {style.Bcolors.ENDC}'
+            )
+
         #   Check if the id of the reference image is valid
         if reference_image_id > len(self.file_list):
             raise ValueError(
@@ -2056,7 +2063,9 @@ class Observation:
                         p.start()
 
 
-def transform_object_positions(image_series: ImageSeries | list[Image]) -> None:
+def transform_object_positions(
+    image_series: ImageSeries | list[Image], output_dir: str | None = None
+    ) -> None:
     """
     Use the provided similarity transformations to transform the object
     positions in each image to the reference frame.
@@ -2065,12 +2074,40 @@ def transform_object_positions(image_series: ImageSeries | list[Image]) -> None:
     ----------
     image_series
         List or image series object with the images that should be transformed
+
+    output_dir
+        Path to the shared output directory
+        Default is ``None``.
     """
-    #   Get list with images
+    #   Get list with images and output directory if possible
     if isinstance(image_series, list):
         image_list = image_series
+        if output_dir is None:
+            terminal_output.print_to_terminal(
+                "No output directory specified. Use: 'output/' ",
+                indent=2,
+                style_name='WARNING',
+            )
+            output_path = Path('./output')
+        else:
+            checks.check_path(output_dir)
+            output_path = Path(output_dir)
+
     elif isinstance(image_series, ImageSeries):
         image_list = image_series.image_list
+        if output_dir is None:
+            output_path = image_series.out_path
+        else:
+            terminal_output.print_to_terminal(
+                "Additional output path passed to "
+                f"'transform_object_positions': {output_dir}. Use this "
+                "instead of the one specified in the image series passed.",
+                indent=2,
+                style_name='WARNING',
+            )
+            checks.check_path(output_dir)
+            output_path = Path(output_dir)
+
     else:
         raise ValueError(
             f'{style.Bcolors.FAIL} ERROR: Neither an ImageSeries object nor a '
@@ -2085,10 +2122,12 @@ def transform_object_positions(image_series: ImageSeries | list[Image]) -> None:
         reference_image = image_list[0]
     reference_file_name = reference_image.filename
     reference_base_name = base_utilities.get_basename(reference_file_name)
-    path_transformation = 'output/aligned_lights/transformation/'
+
+    #   Set default path
+    path_transformation = output_path / 'image_transformations/'
 
     #   Load reference transformation matrix
-    reference_transformation_file = f'{path_transformation}{reference_base_name}.yaml'
+    reference_transformation_file = f'{path_transformation}/{reference_base_name}.yaml'
     with open(reference_transformation_file) as f:
         loaded = yaml.safe_load(f)
         reference_matrix = np.array(loaded)
@@ -2105,7 +2144,7 @@ def transform_object_positions(image_series: ImageSeries | list[Image]) -> None:
         #   Load transformation matrix
         file_name = image.filename
         base_name = base_utilities.get_basename(file_name)
-        path_transformation_file = f'{path_transformation}{base_name}.yaml'
+        path_transformation_file = f'{path_transformation}/{base_name}.yaml'
         with open(path_transformation_file) as f:
             loaded = yaml.safe_load(f)
             matrix = np.array(loaded)

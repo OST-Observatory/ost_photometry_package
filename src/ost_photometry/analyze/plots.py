@@ -342,7 +342,7 @@ def starmap(
     ax.tick_params(
         axis='both',
         which='both',
-        # top=True, 
+        # top=True,
         # right=True,
         direction='in',
     )
@@ -3599,6 +3599,15 @@ def plot_annotated_image(
     legend_elements = []
 
     for obj in simbad_objects:
+        if 'ra' in obj.colnames:
+           simbad_objects.rename_column('ra', 'RA')
+        if 'dec' in obj.colnames:
+            simbad_objects.rename_column('dec', 'DEC')
+        if 'otype' in obj.colnames:
+            simbad_objects.rename_column('otype', 'OTYPE')
+        if 'main_id' in obj.colnames:
+            simbad_objects.rename_column('main_id', 'MAIN_ID')
+
         ra, dec = obj['RA'], obj['DEC']
         obj_type = obj['OTYPE']
         name = obj['MAIN_ID']

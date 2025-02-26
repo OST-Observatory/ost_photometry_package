@@ -47,7 +47,9 @@ def cross_correlation_matrix(
     plt.imshow(image_data, norm=norm, cmap='gray')
 
     #   Set title & ticks
-    plt.title('Input Image'), plt.xticks([]), plt.yticks([])
+    plt.title('Input Image')
+    plt.xticks([])
+    plt.yticks([])
 
     #   Norm of cc matrix
     norm = simple_norm(
@@ -57,14 +59,17 @@ def cross_correlation_matrix(
     )
 
     #   Plot cc matrix
-    plt.subplot(122), plt.imshow(
+    plt.subplot(122)
+    plt.imshow(
         np.absolute(cross_correlation_data),
         norm=norm,
         cmap='gray',
     )
 
     #   Set title & ticks
-    plt.title('cc'), plt.xticks([]), plt.yticks([])
+    plt.title('cc')
+    plt.xticks([])
+    plt.yticks([])
     plt.show()
 
 
