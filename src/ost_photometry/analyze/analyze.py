@@ -938,7 +938,8 @@ class Observation:
         #   Transform the object positions to the reference frame
         if transform_object_positions_to_reference:
             image_list: list[Image] = list(self.get_reference_image.values())
-            transform_object_positions(image_list)
+            image_list = transform_object_positions(image_list)
+            #   TODO: Add check if returned image_list has the same length. If yes, find a solution
 
     def extract_flux_multi(
             self, filter_list: list[str], image_paths: dict[str, str],
@@ -2065,7 +2066,7 @@ class Observation:
 
 def transform_object_positions(
     image_series: ImageSeries | list[Image], output_dir: str | None = None
-    ) -> None:
+    ) -> None | list[Image]:
     """
     Use the provided similarity transformations to transform the object
     positions in each image to the reference frame.
@@ -2128,15 +2129,25 @@ def transform_object_positions(
 
     #   Load reference transformation matrix
     reference_transformation_file = f'{path_transformation}/{reference_base_name}.yaml'
-    with open(reference_transformation_file) as f:
-        loaded = yaml.safe_load(f)
-        reference_matrix = np.array(loaded)
+    try:
+        with open(reference_transformation_file) as f:
+            loaded = yaml.safe_load(f)
+            reference_matrix = np.array(loaded)
+    except FileNotFoundError as e:
+        terminal_output.print_to_terminal(
+                f"The image transformation matrix file does not exist for the "
+                f"reference image. Without this information, transformation "
+                f"to the reference frame is not possible. -> Exit {e}.",
+                style_name='ERROR',
+            )
+        raise FileNotFoundError(e)
 
     #   Prepare reference similarity transform object
     reference_trans = SimilarityTransform(reference_matrix)
 
     #   Transform object positions for all images
-    for image in image_list:
+    image_ids_to_rm = []
+    for i, image in enumerate(image_list):
         #   Get coordinates
         x_pixel_coordinates = image.photometry['x_fit'].value
         y_pixel_coordinates = image.photometry['y_fit'].value
@@ -2145,9 +2156,19 @@ def transform_object_positions(
         file_name = image.filename
         base_name = base_utilities.get_basename(file_name)
         path_transformation_file = f'{path_transformation}/{base_name}.yaml'
-        with open(path_transformation_file) as f:
-            loaded = yaml.safe_load(f)
-            matrix = np.array(loaded)
+        try:
+            with open(path_transformation_file) as f:
+                loaded = yaml.safe_load(f)
+                matrix = np.array(loaded)
+        except FileNotFoundError:
+            terminal_output.print_to_terminal(
+                f"The image transformation matrix file does not exist for the "
+                f"current image. Without this information, transformation "
+                f"to the reference frame is not possible. -> Skip this image.",
+                style_name='WARNING',
+            )
+            image_ids_to_rm.append(i)
+            continue
 
         #   Prepare similarity transform object
         current_trans = SimilarityTransform(matrix)
@@ -2162,6 +2183,14 @@ def transform_object_positions(
         #   Write object positions back to image object
         image.photometry['x_fit'] = transformed_coordinates[:,0]
         image.photometry['y_fit'] = transformed_coordinates[:,1]
+
+    #   Remove images without transformation from the image list and return
+    for i in reversed(image_ids_to_rm):
+        image_list.pop(i)
+    if isinstance(image_series, ImageSeries):
+        image_series.image_list = image_list
+    else:
+        return image_list
 
 
 def rm_cosmic_rays(
