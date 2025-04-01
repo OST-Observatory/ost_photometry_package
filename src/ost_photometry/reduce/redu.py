@@ -711,29 +711,30 @@ def reduce_main(
                 #   Link files to corresponding directory
                 base_utilities.link_files(output_path / filter_, filtered_files)
 
-            ###
-            #   The NOT shifted and/or trimmed images
-            #
-            #   Remove old files in the output directory
-            checks.clear_directory(output_path / f'{filter_}_not_aligned')
+            if debug or save_only_transformation:
+                ###
+                #   The NOT shifted and/or trimmed images
+                #
+                #   Remove old files in the output directory
+                checks.clear_directory(output_path / f'{filter_}_not_aligned')
 
-            #   Set path to files
-            file_path = checks.check_pathlib_path(output_path / 'light')
+                #   Set path to files
+                file_path = checks.check_pathlib_path(output_path / 'light')
 
-            #   New image collection for the images
-            image_file_collection = ccdp.ImageFileCollection(file_path)
+                #   New image collection for the images
+                image_file_collection = ccdp.ImageFileCollection(file_path)
 
-            #   Restrict to current filter
-            filtered_files = image_file_collection.files_filtered(
-                filter=filter_,
-                include_path=True,
-            )
+                #   Restrict to current filter
+                filtered_files = image_file_collection.files_filtered(
+                    filter=filter_,
+                    include_path=True,
+                )
 
-            #   Link files to corresponding directory
-            base_utilities.link_files(
-                output_path / f'{filter_}_not_aligned',
-                filtered_files,
-            )
+                #   Link files to corresponding directory
+                base_utilities.link_files(
+                    output_path / f'{filter_}_not_aligned',
+                    filtered_files,
+                )
 
 
 def master_bias(
