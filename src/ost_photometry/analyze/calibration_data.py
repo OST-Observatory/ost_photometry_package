@@ -401,6 +401,9 @@ def get_vizier_catalog(
     }
 
     if cleanup_magnitudes:
+        #   TODO: Keep track of the magnitude systems used, or add a magnitude
+        #         transformation here if the catalogues use magnitudes from
+        #         different systems.
         #   Rename columns to default names
         if 'column_rename' in catalog_properties_dict:
             for element in catalog_properties_dict['column_rename']:

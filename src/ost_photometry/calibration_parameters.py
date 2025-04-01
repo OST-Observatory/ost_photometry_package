@@ -666,12 +666,12 @@ catalog_properties_dict = {
         'columns': ["Bmag", "Vmag", "r'mag", "i'mag"],
         'err_columns': ["e_Bmag", "e_Vmag", "e_r'mag", "e_i'mag"],
         'ra_unit': default_ra_unit,
-        'column_rename': [
-            ("r_mag", "Rmag"),
-            ("i_mag", "Imag"),
-            ("e_r_mag", "e_Rmag"),
-            ("e_i_mag", "e_Imag")
-        ],
+        # 'column_rename': [
+        #     ("r_mag", "Rmag"),
+        #     ("i_mag", "Imag"),
+        #     ("e_r_mag", "e_Rmag"),
+        #     ("e_i_mag", "e_Imag")
+        # ],
     },
     'I/297': {
         'ra_dec_columns': ['RAJ2000', 'DEJ2000'],
