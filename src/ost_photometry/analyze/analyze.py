@@ -1279,7 +1279,7 @@ class Observation:
                 protect_reference_obj=protect_reference_obj,
                 verbose=verbose,
                 duplicate_handling_object_identification=duplicate_handling_object_identification,
-                plot_reference_only=plot_for_reference_image_only,
+                plots_for_all_images=plots_for_all_images,
                 correlation_method=correlation_method,
                 separation_limit=separation_limit,
                 use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
