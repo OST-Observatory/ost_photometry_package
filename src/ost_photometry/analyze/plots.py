@@ -2997,8 +2997,8 @@ def d3_scatter(
 def scatter(
         x_values: list[np.ndarray], name_x: str, y_values: list[np.ndarray],
         name_y: str, rts: str, output_dir: str,
-        x_errors: list[np.ndarray] | None = None,
-        y_errors: list[np.ndarray] | None = None,
+        x_errors: list[np.ndarray | None] = [None],
+        y_errors: list[np.ndarray | None] = [None],
         dataset_label: list[str] | None = None, name_object: str | None = None,
         fits: list[fitting] | None = None, one_to_one: bool = False,
         file_type: str = 'pdf') -> None:
@@ -3369,7 +3369,6 @@ def filled_iso_contours(
         colors='k',
         origin='lower',
     )
-    # ax.clabel(cs, inline=True, fontsize=10)
     ax.set_title(object_property.upper())
 
     #   Add color bar
@@ -3491,7 +3490,6 @@ def histogram_statistic(
                 median_parameter = median_parameter.value
             plt.axvline(
                 median_parameter,
-                # color='g',
                 color=color_pick.to_rgba(i),
             )
 
@@ -3564,15 +3562,8 @@ def plot_annotated_image(
     #   Display the actual image
     ax.imshow(
         image_data,
-        # cmap='PuBu',
         cmap='gray',
-        # cmap='viridis',
-        # cmap='RdYlBu',
-        # cmap='PuBu',
-        # cmap='bone',
         origin='lower',
-        # vmin=np.percentile(image_data, 5),
-        # vmax=np.percentile(image_data, 95),
         norm=norm,
         interpolation='nearest',
     )
@@ -3581,8 +3572,6 @@ def plot_annotated_image(
     ax.tick_params(
         axis='both',
         which='both',
-        # top=True,
-        # right=True,
         direction='in',
     )
     ax.minorticks_on()
@@ -3626,11 +3615,10 @@ def plot_annotated_image(
 
         #   Check if the objects are actually within the image boundaries
         if 0 <= x < image_data.shape[1] and 0 <= y < image_data.shape[0]:
-            print(obj_type)
+            # print(obj_type)
             #   Select icon and colour based on the object type
             plot_marker = False
             if 'Star' in obj_type:
-                # color, marker = 'blue', '*'
                 color, marker = 'lightblue', '*'
                 plot_marker = True
 
@@ -3650,21 +3638,17 @@ def plot_annotated_image(
 
 
             elif obj_type in ['Galaxy', 'Seyfert1', 'Seyfert2', 'AGN_Candidate', 'QSO']:
-                # color = 'darkred'
-                # color = 'salmon'
                 color = 'lightsalmon'
                 #   Test if object dimension is available
                 if 'DIMENSIONS' in obj.colnames and obj['DIMENSIONS'] is not None:
                     dimensions = obj['DIMENSIONS']
-                    print(dimensions)
+                    # print(dimensions)
                     try:
                         major_axis, minor_axis = [float(dim) for dim in dimensions.split('x')]
                         #   TODO: Check if rotation information is available
                         angle = 0
 
                         #   Convert arc minute to pixel
-                        # major_axis_px = (major_axis / 60.0) / np.abs(wcs.wcs.cdelt[0])
-                        # minor_axis_px = (minor_axis / 60.0) / np.abs(wcs.wcs.cdelt[1])
                         major_axis_px = (major_axis / 60.0) / wcs.wcs.cdelt[0]
                         minor_axis_px = (minor_axis / 60.0) / wcs.wcs.cdelt[1]
 
@@ -3702,7 +3686,6 @@ def plot_annotated_image(
                     )
 
             elif 'Nebula' in obj_type:
-                # color, marker = 'darkorange', 'o'
                 color, marker = 'lightpink', 'o'
                 plot_marker = True
 
@@ -3721,14 +3704,6 @@ def plot_annotated_image(
                     )
 
             else:
-                # color, marker = 'purple', 'o'
-                # color, marker = 'darkviolet', 'o'
-                # color, marker = 'darkorange', 'o'
-                # color, marker = 'orange', 'o'
-                # color, marker = 'chocolate', 'o'
-                # color, marker = 'rebeccapurple', 'o'
-                # color, marker = 'limegreen', 'd'
-                # color, marker = 'forestgreen', 'v'
                 color, marker = 'lightgreen', 'H'
                 plot_marker = True
                 name = f'{name} ({obj_type})'
@@ -3758,8 +3733,6 @@ def plot_annotated_image(
                     markeredgewidth=1.2,
                     markersize=11,
                     alpha=0.8,
-                    # linestyle='-',
-                    # linewidth=6.,
                 )
             ax.text(
                 x + 70,
@@ -3779,10 +3752,8 @@ def plot_annotated_image(
         loc=3,
         handles=legend_elements,
         ncol=5,
-        # loc='upper right',
         fontsize=8,
         frameon=True,
-        # title="Object Types",
         mode='expand',
         borderaxespad=0.,
     )

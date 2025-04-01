@@ -173,7 +173,7 @@ def get_comp_stars_aavso(
             "filtering",
             indent=indent,
         )
-    
+
         return tbl, column_dict
 
 
@@ -233,7 +233,7 @@ def get_comp_stars_simbad(
         my_simbad.add_votable_fields(f'flux_error({filter_})')
 
     simbad_table = my_simbad.query_region(
-        coordinates_sky, 
+        coordinates_sky,
         radius=field_of_view * 0.66 * u.arcmin,
     )
     terminal_output.print_to_terminal(
@@ -254,7 +254,7 @@ def get_comp_stars_simbad(
     for filter_ in filters:
         simbad_table.rename_column(f'FLUX_{filter_}', f'{filter_}mag')
         simbad_table.rename_column(f'FLUX_ERROR_{filter_}', f'e_{filter_}mag')
-    
+
     #   Restrict magnitudes to requested range
     if 'Vmag' in simbad_table.keys():
         preferred_filer = 'Vmag'
@@ -274,7 +274,7 @@ def get_comp_stars_simbad(
             style_name='ERROR',
         )
         raise RuntimeError
-    
+
     mask = (simbad_table[preferred_filer] <= magnitude_range[1]) & (simbad_table[preferred_filer] >= magnitude_range[0])
     simbad_table = simbad_table[mask]
 
@@ -283,10 +283,10 @@ def get_comp_stars_simbad(
         "filtering",
         indent=indent,
     )
-    
+
     #   Define dict with column names
     column_dict = {'ra': 'RA', 'dec': 'DEC'}
-    
+
     for filter_ in filters:
         if f'{filter_}mag' in simbad_table.colnames:
             column_dict[f'mag{filter_}'] = f'{filter_}mag'
@@ -658,12 +658,6 @@ def load_calibration_data_table(
             f"-> EXIT {style.Bcolors.ENDC}"
         )
 
-    # terminal_output.print_to_terminal(
-    #     f"{len(calib_tbl)} calibration stars downloaded",
-    #     indent=indent + 2,
-    #     style_name='OKBLUE',
-    # )
-
     #   Remove masked columns from calibration table, since those could cause
     #   problems during calibration
     for filter_ in filter_list:
@@ -868,16 +862,7 @@ def derive_calibration(
         calibration_tbl = calibration_tbl[mask]
 
     #   Remove a specific star from the loaded calibration stars
-    #   TODO: Rewrite such that multiple objects can be removed
     if coordinates_obj_to_rm is not None:
-        # from astropy.coordinates import matching
-        # _, index_obj_to_rm, _, _ = matching.search_around_sky(
-        #     coordinates_obj_to_rm,
-        #     calibration_object_coordinates,
-        #     separation_limit,
-        # )
-        # calibration_tbl.remove_rows(index_obj_to_rm)
-
         mask = np.ones(len(calibration_object_coordinates), dtype=bool)
         for coordinate_object in coordinates_obj_to_rm:
             separation = calibration_object_coordinates.separation(coordinate_object)
@@ -994,8 +979,6 @@ def distribution_from_calibration_table(
         ]
 
         literature_magnitudes_distribution = unc.normal(
-            # calibration_magnitudes.value * u.mag,
-            # std=calibration_magnitudes_err.value * u.mag,
             calibration_magnitudes.value << u.mag,
             std=calibration_magnitudes_err.value << u.mag,
             n_samples=distribution_samples,

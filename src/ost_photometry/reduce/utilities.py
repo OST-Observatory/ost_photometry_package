@@ -40,7 +40,8 @@ from ..terminal_output import print_to_terminal
 ############################################################################
 
 def make_symbolic_links(
-        path_list: list[str], temp_dir: TemporaryDirectory) -> None:
+        path_list: list[str], temp_dir: TemporaryDirectory
+    ) -> None:
     """
     Make symbolic links
 
@@ -60,16 +61,11 @@ def make_symbolic_links(
     for path in path_list:
         #   Get file list
         files = os.listdir(path)
+        files.sort()
         #   Loop over files
         for file_ in files:
             if os.path.isfile(os.path.join(path, file_)):
-                #   Check if a file of the same name already exist in the
-                #   temp directory
-                # if os.path.isfile(os.path.join(temp_dir.name, file_)):
-                    # random_string = base_utilities.random_string_generator(7)
-                    # new_filename = f'{random_string}_{file_}'
-                # else:
-                #     new_filename = file_
+                #   Add ID to file name
                 new_filename = f'{i}_{file_}'
 
                 #   Fill temp directory with file links
@@ -827,17 +823,6 @@ def check_filter_keywords(
     if not image_file_collection.files:
         return file_path
 
-    # #   Get and check imaging software
-    # imaging_soft = get_imaging_soft(image_file_collection)
-    # if len(imaging_soft) > 1:
-    # terminal_output.print_terminal(
-    # imaging_soft,
-    # string="Images are taken with multiple software versions: {}. "\
-    # "The pipeline cannot account for that, but will try anyway...",
-    # indent=2,
-    # style_name='WARNING',
-    # )
-
     #   Get image types
     image_type_dict = calibration_parameters.get_image_types()
     image_type = image_type_dict[image_type]
@@ -963,7 +948,6 @@ def get_pixel_mask(
                     mask_bad_pixel = mask_data.astype('bool')
 
             #   Combine mask
-            # mask = mask_hot_pixel | mask_bad_pixel
             mask = np.logical_or(mask_hot_pixel, mask_bad_pixel)
             success = True
         except ValueError:
@@ -1141,9 +1125,7 @@ def prepare_reduction(
         Points to the path with the raw files. Either the temporary
         directory or the already provided 'raw_files_path' directory.
     """
-    ###
     #   Check directories
-    #
     terminal_output.print_to_terminal("Check if directories exists...")
 
     checks.check_output_directories(output_dir)
@@ -1155,25 +1137,19 @@ def prepare_reduction(
             checks.check_path(bias_path)
 
         #   Find sub directories
-        darks_path = checks.list_subdirectories(darks_path)
-        flats_path = checks.list_subdirectories(flats_path)
-        images_path = checks.list_subdirectories(images_path)
+        darks_path_list = checks.list_subdirectories(darks_path)
+        flats_path_list = checks.list_subdirectories(flats_path)
+        images_path_list = checks.list_subdirectories(images_path)
         if bias_path != '?':
-            bias_path = checks.list_subdirectories(bias_path)
+            bias_path_list = checks.list_subdirectories(bias_path)
 
-    else:
-        checks.check_path(raw_files_path)
-
-    ###
-    #   Check consistency between images and fits header keywords
-    #
-    if raw_files_path == '?':
+        #   Check consistency between images and fits header keywords
         terminal_output.print_to_terminal(
             "Check header keywords for consistency...",
         )
+        raw_files_path_list = []
         if bias_path != '?':
-            bias_path_new = []
-            for path in bias_path:
+            for path in bias_path_list:
                 if image_type is not None:
                     image_type_keyword = image_type['bias']
                 else:
@@ -1184,11 +1160,9 @@ def prepare_reduction(
                     image_type_keyword,
                 )
                 if isinstance(new_bias_path, str):
-                    bias_path_new.append(new_bias_path)
-            bias_path = bias_path_new
+                    raw_files_path_list.append(new_bias_path)
 
-        darks_path_new = []
-        for path in darks_path:
+        for path in darks_path_list:
             if image_type is not None:
                 image_type_keyword =  image_type['dark']
             else:
@@ -1199,11 +1173,9 @@ def prepare_reduction(
                 image_type_keyword,
             )
             if isinstance(new_darks_path, str):
-                darks_path_new.append(new_darks_path)
-        darks_path = darks_path_new
+                raw_files_path_list.append(new_darks_path)
 
-        flats_path_new = []
-        for path in flats_path:
+        for path in flats_path_list:
             if image_type is not None:
                 image_type_keyword = image_type['flat']
             else:
@@ -1214,11 +1186,9 @@ def prepare_reduction(
                 image_type_keyword,
             )
             if isinstance(new_flats_path, str):
-                flats_path_new.append(new_flats_path)
-        flats_path = flats_path_new
+                raw_files_path_list.append(new_flats_path)
 
-        images_path_new = []
-        for path in images_path:
+        for path in images_path_list:
             if image_type is not None:
                 image_type_keyword = image_type['light']
             else:
@@ -1229,37 +1199,22 @@ def prepare_reduction(
                 image_type_keyword,
             )
             if isinstance(new_images_path, str):
-                images_path_new.append(new_images_path)
-        images_path = images_path_new
-
-    ###
-    #   Prepare temporary directory, if individual
-    #   directories were defined above
-    #
-    if raw_files_path == '?':
-        #   Combine directories
-        raw_files_path = darks_path + flats_path + images_path
-        if bias_path != '?':
-            raw_files_path = raw_files_path + bias_path
+                raw_files_path_list.append(new_images_path)
 
         #   Link all files to the temporary directory
-        make_symbolic_links(raw_files_path, temp_dir)
+        make_symbolic_links(raw_files_path_list, temp_dir)
 
-        raw_files_path = temp_dir.name
+        raw_files_path_new = temp_dir.name
     else:
-        raw_files_path = checks.list_subdirectories(raw_files_path)
-
-        # if len(raw_files_path) == 1:
-        #     raw_files_path = raw_files_path[0]
-        # elif len(raw_files_path) > 1:
-        #     #   Link all files to the temporary directory
-        #     make_symbolic_links(raw_files_path, temp_dir)
+        #   Check directories
+        checks.check_path(raw_files_path)
+        raw_files_path_list = checks.list_subdirectories(raw_files_path)
 
         if len(raw_files_path) >= 1:
             #   Link all files to the temporary directory
-            make_symbolic_links(raw_files_path, temp_dir)
+            make_symbolic_links(raw_files_path_list, temp_dir)
 
-            raw_files_path = temp_dir.name
+            raw_files_path_new = temp_dir.name
         else:
             #   This should not happen...
             raise RuntimeError(
@@ -1267,7 +1222,7 @@ def prepare_reduction(
                 f'decoded...\n {style.Bcolors.ENDC}'
             )
 
-    return raw_files_path
+    return raw_files_path_new
 
 
 def get_star_profiles(
@@ -1754,7 +1709,7 @@ def determine_wcs(
 
     #   Filter priority list:
     #   Give the highest priority to the filter with the highest
-    #    probability of detecting a large number of stars
+    #   probability of detecting a large number of stars
     filter_list = ['I', 'R', 'V', 'B', 'U']
 
     #   Filter image_file_collection according to filter list

@@ -257,10 +257,10 @@ def find_objects_of_interest_srcor(
             elif duplicate_handling == 'flux':
                 #   Calculate nd filter object ids based on observed flux.
                 #   Use the one with the highes flux.
-                print('pre flux filtering: ', object_id)
-                print(flux[object_id])
+                # print('pre flux filtering: ', object_id)
+                # print(flux[object_id])
                 object_id = object_id[np.argmax(flux[object_id])]
-                print('after flux filtering: ', object_id)
+                # print('after flux filtering: ', object_id)
                 terminal_output.print_to_terminal(
                     f"Use the object that is the brightest.",
                     style_name='WARNING',
@@ -603,7 +603,6 @@ def correlate_datasets(
             style_name='ITALIC',
             indent=2,
         )
-    # terminal_output.print_to_terminal('')
 
     #   Post process correlation results
     #
@@ -1712,7 +1711,7 @@ def correlate_preserve_variable(
         correlation_method: str = 'astropy',
         separation_limit: u.Quantity = 2. * u.arcsec, verbose: bool = False,
         duplicate_handling_object_identification: dict[str, str] | None = None,
-        plot_reference_only: bool = True,
+        plots_for_all_images: bool = False,
         use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf') -> None:
     """
@@ -1787,10 +1786,9 @@ def correlate_preserve_variable(
         If True additional output will be printed to the command line.
         Default is ``False``.
 
-    plot_reference_only
-        If True only the starmap for the reference image will
-        be created.
-        Default is ``True``.
+    plots_for_all_images
+        If True star map plots for all stars are created
+        Default is ``False``.
 
     use_wcs_projection_for_star_maps
         If ``True`` the starmap will be plotted with sky coordinates instead
@@ -1874,21 +1872,12 @@ def correlate_preserve_variable(
         0,
     )
 
-    # ###
-    # #   Check if variable star was detected II
-    # #
-    # if n_detections == 0:
-    #     raise RuntimeError(
-    #         f"{style.Bcolors.FAIL} \tERROR: The variable was not detected "
-    #         f"in the reference image.\n\t-> EXIT{style.Bcolors.ENDC}"
-    #     )
-
     #   Plot image with the final positions overlaid (final version)
     utilities.prepare_and_plot_starmap_from_image_series(
         image_series,
         x_position_object,
         y_position_object,
-        plot_reference_only=plot_reference_only,
+        plots_for_all_images=plots_for_all_images,
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )
@@ -2345,8 +2334,7 @@ def correlate_with_calibration_objects(
         style_name='OKBLUE',
     )
 
-    # Add calibration star indexes to the calibration table
-    # calibration_tbl_sort['index_literature'] = index_obj_literature
+    #   Add calibration star indexes to the calibration table
     calibration_tbl_sort['index_instrument'] = index_obj_instrument
 
     #   Limit number of calibration stars to the 100 brightest

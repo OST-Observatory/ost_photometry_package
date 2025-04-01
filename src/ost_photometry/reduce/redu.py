@@ -542,64 +542,45 @@ def reduce_main(
     )
 
     ###
-    #   Calculate and apply image shifts for individual filters or all
-    #   images
+    #   Calculate and apply image shifts
     #
     terminal_output.print_to_terminal(
         "Trim images to the same field of view...",
         indent=1,
     )
 
-    if shift_all:
-        registration.align_all_images(
-            output_path / 'light',
-            output_path,
-            image_type_dir['light'],
-            reference_image_id=reference_image_id,
-            shift_method=shift_method,
-            n_cores_multiprocessing=n_cores_multiprocessing,
-            rm_outliers=rm_outliers_image_shifts,
-            filter_window=filter_window_image_shifts,
-            threshold=threshold_image_shifts,
-            instrument=instrument,
-            debug=debug,
-            image_output_directory='aligned_lights',
-            save_only_transformation=save_only_transformation,
-        )
+    registration.align_images(
+        output_path / 'light',
+        output_path,
+        image_type_dir['light'],
+        reference_image_id=reference_image_id,
+        shift_method=shift_method,
+        n_cores_multiprocessing=n_cores_multiprocessing,
+        rm_outliers=rm_outliers_image_shifts,
+        filter_window=filter_window_image_shifts,
+        threshold=threshold_image_shifts,
+        instrument=instrument,
+        debug=debug,
+        image_output_directory='aligned_lights',
+        save_only_transformation=save_only_transformation,
+        align_filter_wise=not shift_all,
+    )
+
+    #   Set the image directory depending on whether we have aligned images or
+    #   just the image transformation matrices.
+    if save_only_transformation:
+        image_directory = 'light'
     else:
-        registration.align_images_filter(
-            output_path / 'light',
-            output_path,
-            image_type_dir['light'],
-            reference_image_id=reference_image_id,
-            shift_method=shift_method,
-            n_cores_multiprocessing=n_cores_multiprocessing,
-            rm_outliers=rm_outliers_image_shifts,
-            filter_window=filter_window_image_shifts,
-            threshold=threshold_image_shifts,
-            instrument=instrument,
-            debug=debug,
-            save_only_transformation=save_only_transformation,
-        )
+        image_directory = 'aligned_lights'
 
     if find_wcs and find_wcs_of_all_images:
         ###
         #   Determine WCS and add it to all reduced images
         #
-        #   If 'save_only_transformation' is ``True``, the WCS must to be
-        #   determined for the non-aligned images. If
-        #   'save_only_transformation' is ``False``, the WCS will be determined
-        #   for the aligned images, although this may not be what is intended,
-        #   as the transformation determined in the alignment process may be
-        #   used instead.
-        if save_only_transformation:
-            output_directory = 'light'
-        else:
-            output_directory = 'aligned_lights'
         terminal_output.print_to_terminal("Determine WCS ...", indent=1)
         utilities.determine_wcs_all_images(
-            output_path / output_directory,
-            output_path / output_directory,
+            output_path / image_directory,
+            output_path / image_directory,
             wcs_method=wcs_method,
             force_wcs_determination=force_wcs_determination,
         )
@@ -610,8 +591,9 @@ def reduce_main(
         #
         terminal_output.print_to_terminal("Estimate FWHM ...", indent=1)
         utilities.estimate_fwhm(
-            output_path / 'aligned_lights',
-            output_path,
+            # output_path / 'aligned_lights',
+            output_path / image_directory,
+            output_path / 'fwhm',
             image_type_dir['light'],
         )
 
@@ -670,7 +652,7 @@ def reduce_main(
                 indent=1,
             )
 
-            registration.align_all_images(
+            registration.align_images(
                 output_path,
                 output_path,
                 image_type_dir['light'],
@@ -685,67 +667,6 @@ def reduce_main(
                 terminal_alignment_comment='\tDisplacement between the images of the different filters',
                 modify_file_name=True,
             )
-            # registration.trim_images_to_same_fov(
-            #     output_path,
-            #     output_path,
-            #     image_type_dir['light'],
-            #     shift_method=shift_method,
-            #     n_cores_multiprocessing=n_cores_multiprocessing,
-            #     rm_outliers=rm_outliers_image_shifts,
-            #     filter_window=filter_window_image_shifts,
-            #     threshold=threshold_image_shifts,
-            #     verbose=debug,
-            #     save_only_transformation=save_only_transformation,
-            #     enlarged_only=enlarged,
-            # )
-            # if shift_method == 'aa_true':
-            #     ###
-            #     #   Trim stacked images using astroalign
-            #     #
-            #     shift_stack_astroalign(
-            #         output_path,
-            #         output_path,
-            #         image_type_dir['light'],
-            #     )
-
-            # elif shift_method in ['own', 'skimage', 'aa']:
-            #     ###
-            #     #   Make large images with the same dimensions to allow
-            #     #   cross correlation
-            #     #
-            #     make_big_images(
-            #         output_path,
-            #         output_path,
-            #         image_type_dir['light'],
-            #     )
-
-            #     ###
-            #     #   Calculate and apply image shifts between filters
-            #     #
-            #     terminal_output.print_to_terminal(
-            #         "Trim stacked images of the filters to the same "
-            #         "field of view...",
-            #         indent=1,
-            #     )
-
-            #     trim_image(
-            #         output_path,
-            #         output_path,
-            #         image_type_dir['light'],
-            #         shift_method=shift_method,
-            #         n_cores_multiprocessing=n_cores_multiprocessing,
-            #         rm_outliers=rm_outliers_image_shifts,
-            #         filter_window=filter_window_image_shifts,
-            #         threshold=threshold_image_shifts,
-            #         verbose=debug,
-            #         save_only_transformation=save_only_transformation,
-            #     )
-
-            # else:
-            #     raise RuntimeError(
-            #         f"{style.Bcolors.FAIL}Method for determining image "
-            #         f"shifts {shift_method} not known {style.Bcolors.ENDC}"
-            #     )
 
     else:
         ###
@@ -769,25 +690,26 @@ def reduce_main(
             ###
             #   The aligned images
             #
-            #   Remove old files in the output directory
-            checks.clear_directory(output_path / filter_)
+            if not save_only_transformation:
+                #   Remove old files in the output directory
+                checks.clear_directory(output_path / filter_)
 
-            #   Set path to files
-            file_path = checks.check_pathlib_path(
-                output_path / 'aligned_lights'
-            )
+                #   Set path to files
+                file_path = checks.check_pathlib_path(
+                    output_path / 'aligned_lights'
+                )
 
-            #   New image collection for the images
-            image_file_collection = ccdp.ImageFileCollection(file_path)
+                #   New image collection for the images
+                image_file_collection = ccdp.ImageFileCollection(file_path)
 
-            #   Restrict to current filter
-            filtered_files = image_file_collection.files_filtered(
-                filter=filter_,
-                include_path=True,
-            )
+                #   Restrict to current filter
+                filtered_files = image_file_collection.files_filtered(
+                    filter=filter_,
+                    include_path=True,
+                )
 
-            #   Link files to corresponding directory
-            base_utilities.link_files(output_path / filter_, filtered_files)
+                #   Link files to corresponding directory
+                base_utilities.link_files(output_path / filter_, filtered_files)
 
             ###
             #   The NOT shifted and/or trimmed images
@@ -1632,7 +1554,6 @@ def reduce_flat(
     #   TODO: Replace with flats below if rewrite above has happened
     executor = Executor(
         n_cores_multiprocessing,
-        # n_tasks=len(flats),
         n_tasks=len(image_file_collection.files_filtered(imagetyp=flat_image_type)),
         add_progress_bar=True,
     )
@@ -2011,7 +1932,7 @@ def reduce_light(
         image_path: str | Path, output_dir: str | Path,
         image_type: dict[str, list[str]], rm_cosmic_rays: bool = True,
         mask_cosmics: bool = False, gain: float | None = None,
-        read_noise: float = 8., saturation_level: float = 65535.,
+        read_noise: float = 8., saturation_level: float | None = 65535.,
         limiting_contrast_rm_cosmic_rays: float = 5.,
         sigma_clipping_value_rm_cosmic_rays: float = 4.5,
         scale_image_with_exposure_time: bool = True, rm_bias: bool = False,
@@ -2133,7 +2054,6 @@ def reduce_light(
             f"{style.Bcolors.FAIL} \tNo object image detected.\n\t"
             f"-> EXIT{style.Bcolors.ENDC}"
         )
-        # return
 
     #   Limit images to those of the target. If a target is given.
     if target_name is not None:
@@ -2289,7 +2209,7 @@ def reduce_light_image(
         add_hot_bad_pixel_mask: bool = True, rm_cosmic_rays: bool = True,
         limiting_contrast_rm_cosmic_rays: float = 5.,
         sigma_clipping_value_rm_cosmic_rays: float = 4.5,
-        saturation_level: float = 65535., mask_cosmics: bool = False,
+        saturation_level: float | None = 65535., mask_cosmics: bool = False,
         scale_image_with_exposure_time: bool = True, verbose: bool = False,
         trim_x_start: int = 0, trim_x_end: int = 0, trim_y_start: int = 0,
         trim_y_end: int = 0
@@ -2496,7 +2416,19 @@ def reduce_light_image(
     #   Remove cosmic rays
     if rm_cosmic_rays:
         if verbose:
-            print(f'Remove cosmic rays from image {file_name}')
+            terminal_output.print_to_terminal(
+                f'Remove cosmic rays from image {file_name}'
+            )
+
+        #   Sanitize saturation level
+        if saturation_level is None:
+            terminal_output.print_to_terminal(
+                f"Saturation level not specified. Assume 16bit == 65535",
+                indent=1,
+                style_name='WARNING',
+            )
+            saturation_level = 65535
+
         reduced_without_cosmics = ccdp.cosmicray_lacosmic(
             reduced,
             objlim=limiting_contrast_rm_cosmic_rays,

@@ -41,141 +41,9 @@ from ..analyze import utilities as analysis_utilities
 #                           Routines & definitions                         #
 ############################################################################
 
-def align_images_filter(
-        path: str | Path, output_dir: str | Path, image_type_list: list[str],
-        reference_image_id: int = 0, shift_method: str = 'skimage',
-        n_cores_multiprocessing: int | None = None,
-        rm_outliers: bool = True, filter_window: int = 25,
-        threshold: int | float = 10., instrument: str | None = None,
-        debug: bool = False, save_only_transformation: bool = False,
-    ) -> None:
-    """
-    Calculate shift between images taken in the same filter
-    and trim those to the save field of view
-
-    Parameters
-    ----------
-    path
-        The path to the images
-
-    output_dir
-        Path to the directory where the master files should be saved to
-
-    image_type_list
-        Header keyword characterizing the image type for which the
-        shifts shall be determined
-
-    reference_image_id
-        ID of the image that should be used as a reference
-        Default is ``0``.
-
-    shift_method
-        Method to use for image alignment.
-        Possibilities: 'aa'      = astroalign module only accounting for
-                                   xy shifts
-                       'aa_true' = astroalign module with corresponding
-                                   transformation
-                       'own'     = own correlation routine based on
-                                   phase correlation, applying fft to
-                                   the images
-                       'skimage' = phase correlation with skimage
-        Default is ``skimage``.
-
-    n_cores_multiprocessing
-        Number of cores to use during calculation of the image shifts.
-        Default is ``None``.
-
-    rm_outliers
-        If True outliers in the image shifts will be detected and removed.
-        Default is ``True``.
-
-    filter_window
-        Width of the median filter window
-        Default is ``25``.
-
-    threshold
-        Difference above the running median above an element is
-        considered to be an outlier.
-        Default is ``10.``.
-
-    instrument
-        The instrument used
-        Default is ``None``.
-
-    debug
-        If `True` the intermediate files of the data reduction will not
-        be removed.
-        Default is ``False``.
-
-    save_only_transformation
-        If ``True'', only the transformation matrix is saved, not the transformed image itself.
-        Default is ``False``.
-    """
-    #   Sanitize the provided paths
-    file_path = checks.check_pathlib_path(path)
-    out_path = checks.check_pathlib_path(output_dir)
-
-    #   New image collection for the images
-    image_file_collection = ccdp.ImageFileCollection(file_path)
-
-    #   Check if image_file_collection is not empty
-    if not image_file_collection.files:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL}No FITS files found in {file_path}. "
-            f"=> EXIT {style.Bcolors.ENDC}"
-        )
-
-    #   Sort by time
-    if 'jd' in image_file_collection.summary.colnames:
-        image_file_collection.sort('jd')
-    elif 'date-obs' in image_file_collection.summary.colnames:
-        image_file_collection.sort('date-obs')
-
-    #   Determine filter
-    image_type = utilities.get_image_type(
-        image_file_collection,
-        image_type_list,
-    )
-    filters = set(
-        h['filter'] for h in image_file_collection.headers(imagetyp=image_type)
-    )
-
-    #   Set output image path
-    trim_path = Path(out_path / 'aligned_lights')
-    checks.clear_directory(trim_path)
-    output_path_transformation = Path(out_path / 'image_transformations')
-    checks.clear_directory(output_path_transformation)
-
-    #   Calculate shifts for the images in the individual filters
-    for filter_ in filters:
-        #   Restrict image collection to those images with the correct
-        #   filter
-        ifc_filter = image_file_collection.filter(filter=filter_)
-
-        #   Calculate image shifts and trim images accordingly
-        align_image_main(
-            ifc_filter,
-            trim_path,
-            output_path_transformation,
-            shift_method=shift_method,
-            n_cores_multiprocessing=n_cores_multiprocessing,
-            reference_image_id=reference_image_id,
-            terminal_alignment_comment=f'\tDisplacement for images in filter: {filter_}',
-            rm_outliers=rm_outliers,
-            filter_window=filter_window,
-            instrument=instrument,
-            threshold=threshold,
-            verbose=debug,
-            save_only_transformation=save_only_transformation,
-        )
-
-    #   Remove reduced dark files if they exist
-    if not debug:
-        shutil.rmtree(file_path, ignore_errors=True)
-
 
 #   TODO: Combine align_images_filter and align_all_images?
-def align_all_images(
+def align_images(
         image_path: str | Path, output_dir: str | Path,
         image_type_list: list[str], reference_image_id: int = 0,
         enlarged_only: bool = False, shift_method: str = 'skimage',
@@ -187,6 +55,7 @@ def align_all_images(
         save_only_transformation: bool = False,
         terminal_alignment_comment: str | None = None,
         modify_file_name: bool = False,
+        align_filter_wise: bool = False,
     ) -> None:
     """
     Calculate shift between images and trim those to the save field of
@@ -268,9 +137,12 @@ def align_all_images(
         Default is ``None``.
 
     modify_file_name
-        It True the trimmed image will be saved, using a modified file name.
+        It ``True`` the trimmed image will be saved, using a modified file name.
         Default is ``False``.
 
+    align_filter_wise
+        If ``True'', only the images that belong to the same filter will be aligned.
+        Default is ``False``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -279,13 +151,11 @@ def align_all_images(
     #   Set output paths
     if image_output_directory is not None:
         aligned_path = Path(out_path / image_output_directory)
-        # aligned_path = Path(out_path / 'aligned_lights')
+        checks.clear_directory(aligned_path)
     else:
         aligned_path = out_path
-    checks.clear_directory(aligned_path)
 
     output_path_transformation = out_path / transformation_output_directory
-    # output_path_transformation = out_path / 'image_transformations'
     checks.clear_directory(output_path_transformation)
 
     #   New image collection for the images
@@ -298,53 +168,94 @@ def align_all_images(
             f"=> EXIT {style.Bcolors.ENDC}"
         )
 
-    #   Sort by time
-    if 'jd' in image_file_collection.summary.colnames:
-        image_file_collection.sort('jd')
-    elif 'date-obs' in image_file_collection.summary.colnames:
-        image_file_collection.sort('date-obs')
-
     #   Get image type
     image_type = utilities.get_image_type(
         image_file_collection,
         image_type_list,
     )
-    if enlarged_only:
-        #   Select only enlarged images
-        ifc_filtered = image_file_collection.filter(
-            imagetyp=image_type,
-            enlarged=enlarged_only,
-        )
-    else:
-        #   Apply image_file_collection filter to the image collection
-        #   -> This is necessary so that the path to the image directory is
-        #      added to the file names. This is required for
-        #      `align_image_main`.
-        ifc_filtered = image_file_collection.filter(
-            imagetyp=image_type,
-        )
 
-    #   Calculate image shifts and trim images accordingly
-    align_image_main(
-        ifc_filtered,
-        aligned_path,
-        output_path_transformation,
-        shift_method=shift_method,
-        n_cores_multiprocessing=n_cores_multiprocessing,
-        reference_image_id=reference_image_id,
-        terminal_alignment_comment=terminal_alignment_comment,
-        rm_enlarged_keyword=enlarged_only,
-        modify_file_name=modify_file_name,
-        rm_outliers=rm_outliers,
-        filter_window=filter_window,
-        instrument=instrument,
-        threshold=threshold,
-        verbose=debug,
-        save_only_transformation=save_only_transformation,
+    #   Apply image_file_collection filter to the image collection
+    #   -> This is necessary so that:
+    #       1) the path to the image directory is
+    #          added to the file names. This is required for
+    #          `align_image_main`.
+    #       2) Files like masks are excluded
+    ifc_image_type_filtered = image_file_collection.filter(
+        imagetyp=image_type,
     )
 
+    #   Sort by time
+    if 'jd' in ifc_image_type_filtered.summary.colnames:
+        ifc_image_type_filtered.sort('jd')
+    elif 'date-obs' in ifc_image_type_filtered.summary.colnames:
+        ifc_image_type_filtered.sort('date-obs')
+
+    if align_filter_wise:
+        #   Determine filter
+        filters = set(
+            h['filter'] for h in ifc_image_type_filtered.headers()
+        )
+
+        for filter_ in filters:
+            #   Restrict image collection to those images with the correct
+            #   filter
+            if enlarged_only:
+                #   Select only enlarged images
+                ifc_filtered = ifc_image_type_filtered.filter(
+                    filter=filter_,
+                    enlarged=enlarged_only,
+                )
+            else:
+                ifc_filtered = ifc_image_type_filtered.filter(
+                    filter=filter_,
+                )
+
+            #   Calculate image shifts and trim images accordingly
+            align_image_main(
+                ifc_filtered,
+                aligned_path,
+                output_path_transformation,
+                shift_method=shift_method,
+                n_cores_multiprocessing=n_cores_multiprocessing,
+                reference_image_id=reference_image_id,
+                terminal_alignment_comment=f'\tDisplacement for images in filter: {filter_}',
+                rm_outliers=rm_outliers,
+                filter_window=filter_window,
+                instrument=instrument,
+                threshold=threshold,
+                verbose=debug,
+                save_only_transformation=save_only_transformation,
+            )
+    else:
+        if enlarged_only:
+            #   Select only enlarged images
+            ifc_filtered = ifc_image_type_filtered.filter(
+                enlarged=enlarged_only,
+            )
+        else:
+            ifc_filtered = ifc_image_type_filtered
+
+        #   Calculate image shifts and trim images accordingly
+        align_image_main(
+            ifc_filtered,
+            aligned_path,
+            output_path_transformation,
+            shift_method=shift_method,
+            n_cores_multiprocessing=n_cores_multiprocessing,
+            reference_image_id=reference_image_id,
+            terminal_alignment_comment=terminal_alignment_comment,
+            rm_enlarged_keyword=enlarged_only,
+            modify_file_name=modify_file_name,
+            rm_outliers=rm_outliers,
+            filter_window=filter_window,
+            instrument=instrument,
+            threshold=threshold,
+            verbose=debug,
+            save_only_transformation=save_only_transformation,
+        )
+
     #   Remove reduced files if they exist
-    if not debug:
+    if not debug and not save_only_transformation:
         shutil.rmtree(file_path, ignore_errors=True)
 
 
@@ -532,7 +443,6 @@ def align_image_main(
 
         #   Trim all images
         for current_image_id, current_image_name in enumerate(image_file_collection.files):
-            # try:
             executor.schedule(
                 apply_optical_flow,
                 args=(
@@ -570,7 +480,6 @@ def align_image_main(
 
         #   Trim all images
         for current_image_id, current_image_name in enumerate(image_file_collection.files):
-            # try:
             executor.schedule(
                 apply_astro_align,
                 args=(
@@ -644,24 +553,6 @@ def shift_stack_astroalign(
             #   Adjust endianness
             current_image_ccd = utilities.adjust_edian_compatibility(current_image_ccd)
             reference_image_ccd = utilities.adjust_edian_compatibility(reference_image_ccd)
-
-            # #   Map with endianness symbols
-            # endian_map = {
-            #     '>': 'big',
-            #     '<': 'little',
-            #     '=': sbo,
-            #     '|': 'not applicable',
-            # }
-            # #   TODO: I think this endian block needs an update
-            # if endian_map[current_image_ccd.data.dtype.byteorder] != sbo:
-            #     current_image_ccd.data = current_image_ccd.data.byteswap().newbyteorder()
-            #     reference_image_ccd.data = reference_image_ccd.data.byteswap().newbyteorder()
-            #     current_image_ccd.uncertainty = StdDevUncertainty(
-            #         current_image_ccd.uncertainty.array.byteswap().newbyteorder()
-            #     )
-            #     reference_image_ccd.uncertainty = StdDevUncertainty(
-            #         reference_image_ccd.uncertainty.array.byteswap().newbyteorder()
-            #     )
 
             #   Determine transformation between the images
             transformation_parameter, (_, _) = aa.find_transform(
@@ -812,122 +703,6 @@ def make_big_images(
         else:
             file_name = file_names[i]
         current_image.write(out_path / file_name, overwrite=True)
-
-
-#   TODO: Remove
-# def trim_images_to_same_fov(
-#         image_path: str | Path, output_dir: str | Path,
-#         image_type_list: list[str], reference_image_id: int = 0,
-#         enlarged_only: bool = True, shift_method: str = 'skimage',
-#         n_cores_multiprocessing: int | None = None,
-#         rm_outliers: bool = True, filter_window: int = 25,
-#         threshold: int | float = 10., verbose: bool = False,
-#         save_only_transformation: bool = False
-#     ) -> None:
-#     """
-#     Trim images to the same field of view
-
-#     Parameters
-#     ----------
-#     image_path
-#         Path to the images
-
-#     output_dir
-#         Path to the directory where the master files should be saved to
-
-#     image_type_list
-#         Header keyword characterizing the image type for which the
-#         shifts shall be determined
-
-#     reference_image_id
-#         ID of the image that should be used as a reference
-#         Default is ``0``.
-
-#     enlarged_only
-#         It true the file selection will be restricted to images with a
-#         header keyword 'enlarged' that is set to True.
-#         Default is ``True``.
-
-#     shift_method
-#         Method to use for image alignment.
-#         Possibilities: 'aa'      = astroalign module only accounting for
-#                                    xy shifts
-#                        'aa_true' = astroalign module with corresponding
-#                                    transformation
-#                        'own'     = own correlation routine based on
-#                                    phase correlation, applying fft to
-#                                    the images
-#                        'skimage' = phase correlation with skimage
-#         Default is ``skimage``.
-
-#     n_cores_multiprocessing
-#         Number of cores to use during calculation of the image shifts.
-#         Default is ``None``.
-
-#     rm_outliers
-#         If True outliers in the image shifts will be detected and removed.
-#         Default is ``True``.
-
-#     filter_window
-#         Width of the median filter window
-#         Default is ``25``.
-
-#     threshold
-#         Difference above the running median above an element is
-#         considered to be an outlier.
-#         Default is ``10.``.
-
-#     verbose
-#         If True additional output will be printed to the command line.
-#         Default is ``False``.
-
-#     save_only_transformation
-#         If ``True'', only the transformation matrix is saved, not the transformed image itself.
-#         Default is ``False``.
-#     """
-#     #   Sanitize the provided paths
-#     file_path = checks.check_pathlib_path(image_path)
-#     out_path = checks.check_pathlib_path(output_dir)
-
-#     output_path_transformation = out_path / 'image_transformations'
-#     checks.clear_directory(output_path_transformation)
-
-#     #   New image collection for the images
-#     image_file_collection = ccdp.ImageFileCollection(file_path)
-
-#     #   Restrict image collection to those images with the correct image
-#     #   type and the 'enlarged' Header keyword
-#     image_type = utilities.get_image_type(
-#         image_file_collection,
-#         image_type_list,
-#     )
-#     if enlarged_only:
-#         ifc_filtered = image_file_collection.filter(
-#             imagetyp=image_type,
-#             enlarged=enlarged_only,
-#         )
-#     else:
-#         ifc_filtered = image_file_collection.filter(
-#             imagetyp=image_type,
-#         )
-
-#     #   Calculate image shifts and trim images accordingly
-#     align_image_main(
-#         ifc_filtered,
-#         out_path,
-#         output_path_transformation,
-#         shift_method=shift_method,
-#         n_cores_multiprocessing=n_cores_multiprocessing,
-#         reference_image_id=reference_image_id,
-#         terminal_alignment_comment='\tDisplacement between the images of the different filters',
-#         rm_enlarged_keyword=enlarged_only,
-#         modify_file_name=True,
-#         rm_outliers=rm_outliers,
-#         filter_window=filter_window,
-#         threshold=threshold,
-#         verbose=verbose,
-#         save_only_transformation=save_only_transformation,
-#     )
 
 
 def apply_xy_image_shift(
@@ -1339,7 +1114,7 @@ def calculate_min_max_image_shifts(
 def calculate_xy_image_shifts_core(
         current_file_name: str, reference_file_name: str,
         image_id: int, correlation_method: str = 'skimage'
-    ) -> tuple[int, tuple[float | int], bool]:
+    ) -> tuple[int, tuple[float | int, float | int], bool]:
     """
     Calculate image shifts using different methods
 
@@ -1393,8 +1168,6 @@ def calculate_xy_image_shifts_core(
             np.flip,
             axis=(0, 1),
         )
-        # current_data = np.flip(current_data, axis=(0, 1))
-        # current_mask = np.flip(current_mask, axis=(0, 1))
         flip_necessary = True
     else:
         flip_necessary = False
@@ -1463,33 +1236,6 @@ def calculate_xy_image_shifts_core(
         #   Adjust endianness
         image_ccd = utilities.adjust_edian_compatibility(image_ccd)
         reference_ccd = utilities.adjust_edian_compatibility(reference_ccd)
-        # #   Map with endianness symbols
-        # endian_map = {
-        #     '>': 'big',
-        #     '<': 'little',
-        #     '=': sys.byteorder,
-        #     '|': 'not applicable',
-        # }
-        # if endian_map[image_ccd.data.dtype.byteorder] != sys.byteorder:
-        #     image_ccd.data = image_ccd.data.byteswap()
-        #     image_ccd.data = image_ccd.data.view(
-        #         image_ccd.data.dtype.newbyteorder()
-        #     )
-
-        #     reference_ccd.data = reference_ccd.data.byteswap()
-        #     reference_ccd.data = reference_ccd.data.view(
-        #         reference_ccd.data.dtype.newbyteorder()
-        #     )
-
-        #     u_img = image_ccd.uncertainty.array.byteswap()
-        #     u_img = u_img.view(u_img.dtype.newbyteorder())
-
-        #     image_ccd.uncertainty = StdDevUncertainty(u_img)
-
-        #     u_re = reference_ccd.uncertainty.array.byteswap()
-        #     u_re = u_re.view(u_re.dtype.newbyteorder())
-
-        #     reference_ccd.uncertainty = StdDevUncertainty(u_re)
 
         #   Determine transformation between the images
         try:
@@ -1504,12 +1250,6 @@ def calculate_xy_image_shifts_core(
                 transformation_coefficients.translation[0]
             )
         except (aa.MaxIterError, IndexError, TypeError, ValueError) as e:
-            # image_shift = (0., 0.)
-            # terminal_output.print_to_terminal(
-            #     f"WARNING: Offset determination for image {image_id}"
-            #     " failed. Assume offset is 0.",
-            #     style_name='WARNING',
-            # )
             image_shift = (np.nan, np.nan)
             terminal_output.print_to_terminal(
                 f"Image offset determination failed for image: {current_file_name}",
@@ -1665,35 +1405,6 @@ def astro_align(
     #   Adjust endianness
     current_ccd = utilities.adjust_edian_compatibility(current_ccd)
     reference_ccd = utilities.adjust_edian_compatibility(reference_ccd)
-
-    # #   Map with endianness symbols
-    # endian_map = {
-    #     '>': 'big',
-    #     '<': 'little',
-    #     '=': sys.byteorder,
-    #     '|': 'not applicable',
-    # }
-    # if endian_map[current_ccd.data.dtype.byteorder] != sys.byteorder:
-    #     current_ccd.data = current_ccd.data.byteswap()
-    #     current_ccd.data = current_ccd.data.view(
-    #         current_ccd.data.dtype.newbyteorder()
-    #     )
-
-    #     reference_ccd.data = reference_ccd.data.byteswap()
-    #     reference_ccd.data = reference_ccd.data.view(
-    #         reference_ccd.data.dtype.newbyteorder()
-    #     )
-
-    #     u_img = current_ccd.uncertainty.array.byteswap()
-    #     u_img = u_img.view(u_img.dtype.newbyteorder())
-
-    #     current_ccd.uncertainty = StdDevUncertainty(u_img)
-
-    #     u_re = reference_ccd.uncertainty.array.byteswap()
-    #     u_re = u_re.view(u_re.dtype.newbyteorder())
-
-    #     reference_ccd.uncertainty = StdDevUncertainty(u_re)
-
 
     #   Determine transformation between the images
     transformation_coefficients, (_, _) = aa.find_transform(
@@ -1891,11 +1602,6 @@ def trim_image(
         )
 
     if correlation_method in ['own', 'skimage']:
-        #   Ensure full pixel shifts
-        # if not issubclass(type(image_shift[0, 0]), np.integer):
-        #     image_shift = image_shift.astype('int')
-        #     print(image_shift)
-
         #   Calculate indexes from image shifts
         x_start, x_end, y_start, y_end = calculate_index_from_shifts(
             image_shift,

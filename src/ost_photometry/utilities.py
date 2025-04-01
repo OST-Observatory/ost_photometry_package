@@ -71,7 +71,7 @@ from . import checks, terminal_output, style, calibration_parameters
 #     def get_data(self):
 #         return CCDData.read(self.path).data
 
-
+#   TODO: Split into a base class and a derived class for analysis
 class Image:
     """
         Image class: Provides relevant image information and some methods for
@@ -286,148 +286,6 @@ class Image:
         self.instrument = instrument
 
 
-#   TODO: Maybe remove?!
-# def calculate_field_of_view(image, indent=2, verbose=True):
-#     """
-#         Calculate field of view, pixel scale, etc. ...
-#
-#         Parameters
-#         ----------
-#         image           : `image.class`
-#             Image class with all image specific properties
-#
-#         indent          : `integer`, optional
-#             Indentation for the console output
-#             Default is ``2``.
-#
-#         verbose         : `boolean`, optional
-#             If True additional output will be printed to the command line.
-#             Default is ``False``.
-#     """
-#     if verbose:
-#         terminal_output.print_to_terminal(
-#             "Calculating field of view, PIXEL scale, etc. ... ",
-#             indent=indent,
-#         )
-#
-#     #   Get header
-#     header = image.get_header()
-#
-#     #   Read focal length - set default to 3454. mm
-#     focal_length = header.get('FOCALLEN', 3454.)
-#
-#     #   Read ra and dec of image center
-#     ra = header.get('OBJCTRA', '00 00 00')
-#     dec = header.get('OBJCTDEC', '+00 00 00')
-#
-#     #   Convert ra & dec to degrees
-#     coordinates_sky = SkyCoord(
-#         ra,
-#         dec,
-#         unit=(u.hourangle, u.deg),
-#         frame="icrs",
-#     )
-#
-#     #   Number of pixels
-#     n_pixel_x = header.get('NAXIS1', 0)
-#     n_pixel_y = header.get('NAXIS2', 0)
-#
-#     if n_pixel_x == 0:
-#         raise ValueError(
-#             f"{style.Bcolors.FAIL}\nException in calculate_field_of_view(): X "
-#             f"dimension of the image is 0 {style.Bcolors.ENDC}"
-#         )
-#     if n_pixel_y == 0:
-#         raise ValueError(
-#             f"{style.Bcolors.FAIL}\nException in calculate_field_of_view(): Y "
-#             f"dimension of the image is 0 {style.Bcolors.ENDC}"
-#         )
-#
-#     #   Get binning
-#     x_binning = header.get('XBINNING', 1)
-#     y_binning = header.get('YBINNING', 1)
-#
-#     #   Set instrument
-#     instrument = header.get('INSTRUME', '')
-#
-#     if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
-#         #   Physical chip dimensions in pixel
-#         physical_dimension_x = n_pixel_x * x_binning
-#         physical_dimension_y = n_pixel_y * y_binning
-#
-#         #   Set instrument
-#         if physical_dimension_x == 9576 and physical_dimension_y in [6387, 6388]:
-#             instrument = 'QHY600M'
-#         elif physical_dimension_x in [6280, 6279] and physical_dimension_y in [4210, 4209]:
-#             instrument = 'QHY268M'
-#         elif physical_dimension_x == 3864 and physical_dimension_y in [2180, 2178]:
-#             instrument = 'QHY485C'
-#         else:
-#             instrument = ''
-#
-#     #   Calculate chip size in mm
-#     if 'XPIXSZ' in header:
-#         pixel_width = header['XPIXSZ']
-#         chip_length = n_pixel_x * pixel_width / 1000
-#         chip_height = n_pixel_y * pixel_width / 1000
-#     else:
-#         chip_length, chip_height = calibration_parameters.get_chip_dimensions(
-#             instrument
-#         )
-#
-#     #   Calculate field of view
-#     field_of_view_x = 2 * np.arctan(chip_length / 2 / focal_length)
-#     field_of_view_y = 2 * np.arctan(chip_height / 2 / focal_length)
-#
-#     #   Convert to arc min
-#     field_of_view_x = field_of_view_x * 360. / 2. / np.pi * 60.
-#     field_of_view_y = field_of_view_y * 360. / 2. / np.pi * 60.
-#
-#     #   Calculate pixel scale
-#     pixel_scale = field_of_view_x * 60 / n_pixel_x
-#
-#     #   Create RectangleSkyRegion that covers the field of view
-#     # region_sky = RectangleSkyRegion(
-#     # center=coordinates_sky,
-#     # width=field_of_view_x * u.rad,
-#     # height=field_of_view_y * u.rad,
-#     # angle=0 * u.deg,
-#     # )
-#     #   Create RectanglePixelRegion that covers the field of view
-#     pixel_region = RectanglePixelRegion(
-#         center=PixCoord(x=int(n_pixel_x / 2), y=int(n_pixel_y / 2)),
-#         width=n_pixel_x,
-#         height=n_pixel_y,
-#     )
-#
-#     #   Add to image class
-#     image.coordinates_image_center = coordinates_sky
-#     image.field_of_view_x = field_of_view_x
-#     image.field_of_view_y = field_of_view_y
-#     image.instrument = instrument
-#     image.pixel_scale = pixel_scale
-#     # image.region_sky  = region_sky
-#     image.fov_pixel_region = pixel_region
-#
-#     #   Add JD (observation time) and air mass from Header to image class
-#     jd = header.get('JD', None)
-#     if jd is None:
-#         obs_time = header.get('DATE-OBS', None)
-#         if not obs_time:
-#             raise ValueError(
-#                 f"{style.Bcolors.FAIL} \tERROR: No information about the "
-#                 "observation time was found in the header"
-#                 f"{style.Bcolors.ENDC}"
-#             )
-#         jd = Time(obs_time, format='fits').jd
-#
-#     image.jd = jd
-#     image.air_mass = header.get('AIRMASS', 1.0)
-#
-#     #  Add instrument to image class
-#     image.instrument = instrument
-
-
 def mk_file_list(
         file_path: str, formats: list[str] | None = None,
         add_path_to_file_names: bool = False, sort: bool = False
@@ -633,7 +491,7 @@ def find_wcs_astrometry(
         Indentation for the console output lines
         Default is ``2``.
 
-    wcs_working_dir            
+    wcs_working_dir
         Path to the working directory, where intermediate data will be
         saved. If `None` a wcs_images directory will be created in the
         output directory.

@@ -815,11 +815,6 @@ def flux_normalization_image_series(
     )
 
     #   Prepare distributions
-    # normalization_factor = unc.normal(
-    #     median,
-    #     std=stddev,
-    #     n_samples=distribution_samples,
-    # )
     normalized_flux = flux_distribution / median
 
     return normalized_flux

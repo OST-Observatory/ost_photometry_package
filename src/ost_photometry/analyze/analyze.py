@@ -623,7 +623,6 @@ class Observation:
             sigma_clipping_value: float = 4.5,
             saturation_level: float = 65535.,
             plots_for_all_images: bool = False,
-            plot_for_reference_image_only: bool = True,
             use_wcs_projection_for_star_maps: bool = True,
             file_type_plots: str = 'pdf',
             annotate_image: bool = False,
@@ -781,11 +780,6 @@ class Observation:
             If True star map plots for all stars are created
             Default is ``False``.
 
-        plot_for_reference_image_only
-            If True a star map plots only for the reference image [reference_image_id] is
-            created
-            Default is ``True``.
-
         use_wcs_projection_for_star_maps
             If ``True`` the starmap will be plotted with sky coordinates instead
             of pixel coordinates
@@ -904,7 +898,6 @@ class Observation:
                 sigma_clipping_value=sigma_clipping_value,
                 saturation_level=saturation_level,
                 plots_for_all_images=plots_for_all_images,
-                plot_for_reference_image_only=plot_for_reference_image_only,
                 file_type_plots=file_type_plots,
                 use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
                 annotate_image=annotate_image,
@@ -974,7 +967,6 @@ class Observation:
             verbose: bool = False,
             duplicate_handling_object_identification: dict[str, str] | None = None,
             plots_for_all_images: bool = False,
-            plot_for_reference_image_only: bool = True,
             use_wcs_projection_for_star_maps: bool = True,
             file_type_plots: str = 'pdf',
             annotate_reference_image: bool = False,
@@ -1173,10 +1165,6 @@ class Observation:
             If True star map plots for all stars are created
             Default is ``False``.
 
-        plot_for_reference_image_only
-            If True a star map plot only for the reference image is created
-            Default is ``True``.
-
         use_wcs_projection_for_star_maps
             If ``True`` the starmap will be plotted with sky coordinates
             instead.
@@ -1265,7 +1253,6 @@ class Observation:
                 outer_annulus_radius=outer_annulus_radius,
                 radii_unit=radii_unit,
                 plots_for_all_images=plots_for_all_images,
-                plot_for_reference_image_only=plot_for_reference_image_only,
                 file_type_plots=file_type_plots,
                 use_initial_positions_epsf=use_initial_positions_epsf,
                 use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
@@ -3626,7 +3613,6 @@ def extract_multiprocessing(
         outer_annulus_radius: float = 10., radii_unit: str = 'arcsec',
         strict_epsf_checks: bool = True,
         plots_for_all_images: bool = False,
-        plot_for_reference_image_only: bool = True,
         use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf',
         annotate_reference_image: bool = False,
@@ -3747,10 +3733,6 @@ def extract_multiprocessing(
         If True star map plots for all stars are created
         Default is ``False``.
 
-    plot_for_reference_image_only
-        If True a star map plots only for the reference image is created
-        Default is ``True``.
-
     use_wcs_projection_for_star_maps
         If ``True`` the starmap will be plotted with sky coordinates instead
         of pixel coordinates
@@ -3829,7 +3811,6 @@ def extract_multiprocessing(
                 'radii_unit': radii_unit,
                 # 'identify_objects_on_image': identify_objects_on_image,
                 'plots_for_all_images': plots_for_all_images,
-                'plot_for_reference_image_only': plot_for_reference_image_only,
                 'file_type_plots': file_type_plots,
                 'use_wcs_projection_for_star_maps': use_wcs_projection_for_star_maps,
                 'annotate_image': annotate_image,
@@ -3888,7 +3869,6 @@ def main_extract(
         limiting_contrast_rm_cosmics: float = 5.,
         read_noise: float = 8., sigma_clipping_value: float = 4.5,
         saturation_level: float = 65535., plots_for_all_images: bool = False,
-        plot_for_reference_image_only: bool = True,
         file_type_plots: str = 'pdf',
         use_wcs_projection_for_star_maps: bool = True,
         annotate_image: bool = False,
@@ -4035,10 +4015,6 @@ def main_extract(
         If True star map plots for all stars are created
         Default is ``False``.
 
-    plot_for_reference_image_only
-        If True a star map plot only for the reference image is created
-        Default is ``True``.
-
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
@@ -4130,8 +4106,7 @@ def main_extract(
         )
 
         #   Plot images with the identified stars overlaid
-        if plots_for_all_images or (plot_for_reference_image_only
-                                    and image.pd == id_reference_image):
+        if plots_for_all_images or image.pd == id_reference_image:
             plots.starmap(
                 image.out_path.name,
                 image.get_data(),
@@ -4234,8 +4209,7 @@ def main_extract(
     image.photometry['mags_unc'] = magnitudes_error
 
     #   Plot images with extracted stars overlaid
-    if plots_for_all_images or (plot_for_reference_image_only
-                                and image.pd == id_reference_image):
+    if plots_for_all_images or image.pd == id_reference_image:
         utilities.prepare_and_plot_starmap(
             image,
             terminal_logger=terminal_logger,

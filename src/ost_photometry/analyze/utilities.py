@@ -504,8 +504,6 @@ def mk_time_series(
         data={
             filter_: magnitudes << u.mag,
             filter_ + '_err': magnitude_errors << u.mag,
-            # filter_: magnitudes * u.mag,
-            # filter_ + '_err': magnitude_errors * u.mag,
         }
     )
     return ts
@@ -960,7 +958,6 @@ class Executor:
     """
 
     def __init__(self, process_num: int | None, **kwargs):
-        # mp.set_start_method('spawn', force=True)
         if not mp.get_start_method(allow_none=True):
             mp.set_start_method('spawn')
 
@@ -1163,7 +1160,6 @@ def prepare_and_plot_starmap(
         tbl = image.photometry
     data = image.get_data()
     filter_ = image.filter_
-    # name = image.object_name
 
     #   Prepare table
     n_stars = len(tbl)
@@ -1252,7 +1248,7 @@ def prepare_and_plot_starmap_from_observation(
 def prepare_and_plot_starmap_from_image_series(
         image_series: 'analyze.ImageSeries',
         calib_xs: np.ndarray | list[float], calib_ys: np.ndarray | list[float],
-        plot_reference_only: bool = True,
+        plots_for_all_images: bool = False,
         use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf') -> None:
     """
@@ -1271,10 +1267,9 @@ def prepare_and_plot_starmap_from_image_series(
         Position of the calibration objects on the image in pixel
         in Y direction
 
-    plot_reference_only
-        If True only the starmap for the reference image will
-        be created.
-        Default is ``True``.
+    plots_for_all_images
+        If True star map plots for all stars are created
+        Default is ``False``.
 
     use_wcs_projection_for_star_maps
         If ``True`` the starmap will be plotted with sky coordinates instead
@@ -1302,7 +1297,7 @@ def prepare_and_plot_starmap_from_image_series(
 
     #   Make the plot using multiprocessing
     for j, image_id in enumerate(img_ids):
-        if plot_reference_only and j != image_series.reference_image_id:
+        if not plots_for_all_images and j != image_series.reference_image_id:
             continue
         p = mp.Process(
             target=plots.starmap,
@@ -2491,6 +2486,15 @@ def distribution_from_table(
     distribution
         Normal distribution representing observed magnitudes
     """
+    #   Return if no photometry information are available
+    if image.photometry is None:
+        terminal_output.print_to_terminal(
+            "Photometric data not yet available. Distribution cannot be "
+            "created. -> returns 'None'.",
+            style_name='WARNING',
+        )
+        return
+
     #   Build normal distribution
     magnitude_distribution = unc.normal(
         image.photometry['mags_fit'].value * u.mag,
@@ -2563,28 +2567,11 @@ def convert_magnitudes_to_other_system(
         if image_id not in available_filter_image_error[magnitude_type]:
             available_filter_image_error[magnitude_type][image_id] =[]
 
-        #   Is an image ID available?
-        #   An image ID should now be always available -> TODO: Remove when tested
-        # if image_id != '':
         #   Check for error column
         error = any(x == f'{column_filter}_err ({magnitude_type}, image={image_id})' for x in column_names)
 
-        #   Combine derived info -> (ID of the image, Filter, magnitude type,
-        #                            boolean: error available?)
-        # info = (image_id, column_filter, magnitude_type, error)
         #   Combine derived info -> (Filter, boolean: error available?)
         info = (column_filter, error)
-
-        # else:
-        #     #   Set dummy image ID
-        #     image_id = -1
-        #
-        #     #   Check for error column
-        #     error = any(x == f'{column_filter}_err' for x in column_names)
-        #
-        #     #   Combine derived info -> (ID of the image, Filter,
-        #     #                            boolean: error available?)
-        #     info = (-1, column_filter, error)
 
         #   Check if image and filter combination is already known.
         #   If yes continue.
@@ -2605,23 +2592,7 @@ def convert_magnitudes_to_other_system(
             data_dict = {}
 
             #   Get image ID, filter and error combination
-            # for (current_image_id, column_filter, magnitude_type, error) in available_filter_image_error:
             for (column_filter, error) in available_filter_image_error[type_magnitude][image_id]:
-                #   Fill data dictionary, branch according to error and image
-                #   ID availability
-                # if image_id == -1:
-                #     if error:
-                #         data_dict[column_filter] = unc.normal(
-                #             tbl[f'{column_filter}'].value * u.mag,
-                #             std=tbl[f'{column_filter}_err'].value * u.mag,
-                #             n_samples=distribution_samples,
-                #         )
-                #     else:
-                #         data_dict[column_filter] = unc.normal(
-                #             tbl[f'{column_filter}'].value * u.mag,
-                #             n_samples=distribution_samples,
-                #         )
-                # else:
                 if error:
                     data_dict[column_filter] = unc.normal(
                         tbl[f'{column_filter} ({type_magnitude}, image={image_id})'].value * u.mag,
@@ -2745,7 +2716,7 @@ def find_filter_for_magnitude_transformation(
         Filter combinations for which magnitude transformation
         can be applied
     """
-#   Load valid filter combinations, if none are supplied
+    #   Load valid filter combinations, if none are supplied
     if valid_filter_combinations is None:
         valid_filter_combinations = calibration_parameters.valid_filter_combinations_for_transformation
 
@@ -2905,42 +2876,43 @@ def prepare_calibration_check_plots(
         1,
     )
 
-    if multiprocessing:
-        p = mp.Process(
-            target=plots.scatter,
-            args=(
+    if uncalibrated_magnitudes_err is not None:
+        if multiprocessing:
+            p = mp.Process(
+                target=plots.scatter,
+                args=(
+                    [uncalibrated_magnitudes[ids_calibration_stars]],
+                    f'{filter_}_measured [mag]',
+                    [literature_magnitudes],
+                    f'{filter_}_literature [mag]',
+                    f'mags_{filter_}_img_{image_id}_{plot_type}',
+                    out_dir,
+                ),
+                kwargs={
+                    'fits': [None, fit],
+                    'x_errors': [
+                        uncalibrated_magnitudes_err[ids_calibration_stars]
+                    ],
+                    'y_errors': [
+                        literature_magnitudes_err
+                    ],
+                    'file_type': file_type_plots,
+                }
+            )
+            p.start()
+        else:
+            plots.scatter(
                 [uncalibrated_magnitudes[ids_calibration_stars]],
                 f'{filter_}_measured [mag]',
                 [literature_magnitudes],
                 f'{filter_}_literature [mag]',
                 f'mags_{filter_}_img_{image_id}_{plot_type}',
                 out_dir,
-            ),
-            kwargs={
-                'fits': [None, fit],
-                'x_errors': [
-                    uncalibrated_magnitudes_err[ids_calibration_stars]
-                ],
-                'y_errors': [
-                    literature_magnitudes_err
-                ],
-                'file_type': file_type_plots,
-            }
-        )
-        p.start()
-    else:
-        plots.scatter(
-            [uncalibrated_magnitudes[ids_calibration_stars]],
-            f'{filter_}_measured [mag]',
-            [literature_magnitudes],
-            f'{filter_}_literature [mag]',
-            f'mags_{filter_}_img_{image_id}_{plot_type}',
-            out_dir,
-            fits=[None, fit],
-            x_errors=uncalibrated_magnitudes_err[ids_calibration_stars],
-            y_errors=[literature_magnitudes_err],
-            file_type=file_type_plots,
-        )
+                fits=[None, fit],
+                x_errors=[uncalibrated_magnitudes_err[ids_calibration_stars]],
+                y_errors=[literature_magnitudes_err],
+                file_type=file_type_plots,
+            )
 
     #   Comparison observed vs. literature color
     if (color_observed is not None and color_literature is not None
@@ -2986,42 +2958,43 @@ def prepare_calibration_check_plots(
             )
 
     #   Difference between literature values and calibration results
-    if multiprocessing:
-        p = mp.Process(
-            target=plots.scatter,
-            args=(
+    if magnitudes_err is not None:
+        if multiprocessing:
+            p = mp.Process(
+                target=plots.scatter,
+                args=(
+                    [literature_magnitudes],
+                    f'{filter_}_literature [mag]',
+                    [
+                        magnitudes[ids_calibration_stars] - literature_magnitudes,
+                    ],
+                    f'{filter_}_observed - {filter_}_literature [mag]',
+                    f'magnitudes_literature-vs-observed_{image_id}_{filter_}_{plot_type}',
+                    out_dir,
+                ),
+                kwargs={
+                    'x_errors': [literature_magnitudes_err],
+                    'y_errors': [
+                        err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
+                    ],
+                    'file_type': file_type_plots,
+                },
+            )
+            p.start()
+        else:
+            plots.scatter(
                 [literature_magnitudes],
                 f'{filter_}_literature [mag]',
-                [
-                    magnitudes[ids_calibration_stars] - literature_magnitudes,
-                ],
+                [magnitudes[ids_calibration_stars] - literature_magnitudes],
                 f'{filter_}_observed - {filter_}_literature [mag]',
                 f'magnitudes_literature-vs-observed_{image_id}_{filter_}_{plot_type}',
                 out_dir,
-            ),
-            kwargs={
-                'x_errors': [literature_magnitudes_err],
-                'y_errors': [
+                x_errors=[literature_magnitudes_err],
+                y_errors=[
                     err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
                 ],
-                'file_type': file_type_plots,
-            },
-        )
-        p.start()
-    else:
-        plots.scatter(
-            [literature_magnitudes],
-            f'{filter_}_literature [mag]',
-            [magnitudes[ids_calibration_stars] - literature_magnitudes],
-            f'{filter_}_observed - {filter_}_literature [mag]',
-            f'magnitudes_literature-vs-observed_{image_id}_{filter_}_{plot_type}',
-            out_dir,
-            x_errors=[literature_magnitudes_err],
-            y_errors=[
-                err_prop(magnitudes_err[ids_calibration_stars], literature_magnitudes_err),
-            ],
-            file_type=file_type_plots,
-        )
+                file_type=file_type_plots,
+            )
 
 
 def save_calibration(

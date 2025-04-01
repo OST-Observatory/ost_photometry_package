@@ -122,7 +122,6 @@ def camera_info(
     if camera in ['SBIG STF-8300 CCD Camera']:
         read_noise = 9.3
         gain = None
-        # dark_rate = {0:0.18, -10:0.04, -15.8:0.02}
 
     #   QHYs
     elif camera in ['QHY600M', 'QHY268M']:
@@ -796,9 +795,6 @@ filter_systems = {
     'Halpha`': 'narrow_band',
     'SII': 'narrow_band',
     'OIII': 'narrow_band',
-    # 'Blue':
-    # 'Green':
-    # 'Red':
 }
 
 
@@ -845,7 +841,6 @@ def fitzpatrick_extinction_curve(r: float) -> interpolate.CubicSpline:
         -0.426 + 1.0044 * r,
         -0.050 + 1.0016 * r,
         0.701 + 1.0016 * r,
-        # -1.208 + 1.0032 * r - 0.00033 * r * r,
         1.208 + 1.0032 * r - 0.00033 * r * r,
         r + c1 + c2 * 3.704 + 0.6492006,
         r + c1 + c2 * 3.846 + 0.8752775,
