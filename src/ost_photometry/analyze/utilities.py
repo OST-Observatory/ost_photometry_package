@@ -1967,11 +1967,11 @@ def find_cluster(
 
     #   Restrict proper motion to Simbad value plus some margin
     custom_simbad = Simbad()
-    custom_simbad.add_votable_fields('pm')
+    custom_simbad.add_votable_fields('pmra', 'pmdec')
 
     result_simbad = custom_simbad.query_object(object_name)
-    pm_ra_object = result_simbad['PMRA'].value[0]
-    pm_de_object = result_simbad['PMDEC'].value[0]
+    pm_ra_object = result_simbad['pmra'].value[0]
+    pm_de_object = result_simbad['pmdec'].value[0]
     if pm_ra_object != '--' and pm_de_object != '--':
         pm_m = 3.
         mask_de = ((result['pmDE'] <= pm_de_object - pm_m) |
