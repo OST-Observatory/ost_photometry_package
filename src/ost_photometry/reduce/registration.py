@@ -41,8 +41,6 @@ from ..analyze import utilities as analysis_utilities
 #                           Routines & definitions                         #
 ############################################################################
 
-
-#   TODO: Combine align_images_filter and align_all_images?
 def align_images(
         image_path: str | Path, output_dir: str | Path,
         image_type_list: list[str], reference_image_id: int = 0,
@@ -254,8 +252,14 @@ def align_images(
             save_only_transformation=save_only_transformation,
         )
 
-    #   Remove reduced files if they exist
-    if not debug and not save_only_transformation:
+    #   Remove reduced files if they exist, but only if they are no longer
+    #   needed. DO NOT remove files if only enlarged images are aligned, as
+    #   this is currently done directly in the output directory, so this would
+    #   remove all results. DO NOT remove files when running in debug mode.
+    #   Do not remove images if only transformations are saved, so that there
+    #   are still reduced images for checking. This will be simplified in a
+    #   future release.
+    if not debug and not save_only_transformation and not enlarged_only:
         shutil.rmtree(file_path, ignore_errors=True)
 
 
@@ -513,91 +517,91 @@ def align_image_main(
         )
 
 
-#   TODO: Combinbe with image_shift_astroalign_method
+#   TODO: Combine with image_shift_astroalign_method
 #   TODO: Check if this can be removed
-def shift_stack_astroalign(
-        path: str | Path, output_dir: Path, image_type: list[str]) -> None:
-    """
-    Calculate shift between stacked images and trim those
-    to the save field of view
+# def shift_stack_astroalign(
+#         path: str | Path, output_dir: Path, image_type: list[str]) -> None:
+#     """
+#     Calculate shift between stacked images and trim those
+#     to the save field of view
 
-    Parameters
-    ----------
-    path
-        The path to the images
+#     Parameters
+#     ----------
+#     path
+#         The path to the images
 
-    output_dir
-        Path to the directory where the master files should be saved to
+#     output_dir
+#         Path to the directory where the master files should be saved to
 
-    image_type
-        Header keyword characterizing the image type for which the
-        shifts shall be determined
-    """
-    #   New image collection for the images
-    image_file_collection = ccdp.ImageFileCollection(path)
-    img_type = utilities.get_image_type(image_file_collection, image_type)
-    ifc_filtered = image_file_collection.filter(
-        combined=True,
-        imagetyp=img_type,
-    )
+#     image_type
+#         Header keyword characterizing the image type for which the
+#         shifts shall be determined
+#     """
+#     #   New image collection for the images
+#     image_file_collection = ccdp.ImageFileCollection(path)
+#     img_type = utilities.get_image_type(image_file_collection, image_type)
+#     ifc_filtered = image_file_collection.filter(
+#         combined=True,
+#         imagetyp=img_type,
+#     )
 
-    for current_image_id, (current_image_ccd, file_name) in enumerate(ifc_filtered.ccds(return_fname=True)):
-        reference_image_ccd: ccdp.CCDData | None = None
-        if current_image_id == 0:
-            reference_image_ccd = current_image_ccd
-            image_out = reference_image_ccd
-        else:
-            #   Byte order of the system
-            sbo = sys.byteorder
+#     for current_image_id, (current_image_ccd, file_name) in enumerate(ifc_filtered.ccds(return_fname=True)):
+#         reference_image_ccd: ccdp.CCDData | None = None
+#         if current_image_id == 0:
+#             reference_image_ccd = current_image_ccd
+#             image_out = reference_image_ccd
+#         else:
+#             #   Byte order of the system
+#             sbo = sys.byteorder
 
-            #   Adjust endianness
-            current_image_ccd = utilities.adjust_edian_compatibility(current_image_ccd)
-            reference_image_ccd = utilities.adjust_edian_compatibility(reference_image_ccd)
+#             #   Adjust endianness
+#             current_image_ccd = utilities.adjust_edian_compatibility(current_image_ccd)
+#             reference_image_ccd = utilities.adjust_edian_compatibility(reference_image_ccd)
 
-            #   Determine transformation between the images
-            transformation_parameter, (_, _) = aa.find_transform(
-                current_image_ccd,
-                reference_image_ccd,
-                max_control_points=100,
-                detection_sigma=3,
-            )
+#             #   Determine transformation between the images
+#             transformation_parameter, (_, _) = aa.find_transform(
+#                 current_image_ccd,
+#                 reference_image_ccd,
+#                 max_control_points=100,
+#                 detection_sigma=3,
+#             )
 
-            #   Transform image data
-            image_data, footprint = aa.apply_transform(
-                transformation_parameter,
-                current_image_ccd,
-                reference_image_ccd,
-                propagate_mask=True,
-            )
+#             #   Transform image data
+#             image_data, footprint = aa.apply_transform(
+#                 transformation_parameter,
+#                 current_image_ccd,
+#                 reference_image_ccd,
+#                 propagate_mask=True,
+#             )
 
-            #   Transform uncertainty array
-            image_uncertainty, _ = aa.apply_transform(
-                transformation_parameter,
-                current_image_ccd.uncertainty.array,
-                reference_image_ccd.uncertainty.array,
-            )
+#             #   Transform uncertainty array
+#             image_uncertainty, _ = aa.apply_transform(
+#                 transformation_parameter,
+#                 current_image_ccd.uncertainty.array,
+#                 reference_image_ccd.uncertainty.array,
+#             )
 
-            #   Build new CCDData object
-            image_out = CCDData(
-                image_data,
-                mask=footprint,
-                meta=current_image_ccd.meta,
-                unit=current_image_ccd.unit,
-                wcs=current_image_ccd.wcs,
-                uncertainty=StdDevUncertainty(image_uncertainty),
-            )
+#             #   Build new CCDData object
+#             image_out = CCDData(
+#                 image_data,
+#                 mask=footprint,
+#                 meta=current_image_ccd.meta,
+#                 unit=current_image_ccd.unit,
+#                 wcs=current_image_ccd.wcs,
+#                 uncertainty=StdDevUncertainty(image_uncertainty),
+#             )
 
-        #   Get filter
-        filter_ = image_out.meta['filter']
+#         #   Get filter
+#         filter_ = image_out.meta['filter']
 
-        image_out.meta['trimmed'] = True
-        image_out.meta.remove('combined')
+#         image_out.meta['trimmed'] = True
+#         image_out.meta.remove('combined')
 
-        #   Define name and write trimmed image to disk
-        file_name = 'combined_trimmed_filter_{}.fit'.format(
-            filter_.replace("''", "p")
-        )
-        image_out.write(output_dir / file_name, overwrite=True)
+#         #   Define name and write trimmed image to disk
+#         file_name = 'combined_trimmed_filter_{}.fit'.format(
+#             filter_.replace("''", "p")
+#         )
+#         image_out.write(output_dir / file_name, overwrite=True)
 
 
 def make_big_images(
