@@ -1665,6 +1665,7 @@ def correlate_image_series(
     #   Check if correlation with calibration data is necessary
     calibration_parameters = observation.calib_parameters
 
+    #   TODO: Put the following in a function?
     if calibration_parameters is not None and (calibration_parameters.ids_calibration_objects is None
                                                or force_correlation_calibration_objects):
         calibration_tbl = calibration_parameters.calib_tbl

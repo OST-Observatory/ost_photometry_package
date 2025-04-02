@@ -844,7 +844,7 @@ def prepare_zero_point(
 
     magnitudes_calibration_stars
         Observed magnitudes of the objects that were used for the
-        calibration from the image of filter 1
+        calibration
 
     calculate_zero_point_statistic
         If `True` a statistic on the zero points will be calculated.
@@ -1087,6 +1087,9 @@ def calibrate_magnitudes_zero_point(
         distribution_samples=distribution_samples,
     )
 
+    #   Get IDs calibration data
+    index_calibration_stars = observation.calib_parameters.ids_calibration_objects
+
     for current_filter_id, filter_ in enumerate(filter_list):
         #   Get image series
         image_series = image_series_dict[filter_]
@@ -1100,9 +1103,6 @@ def calibrate_magnitudes_zero_point(
             add_progress_bar=add_progress_bar,
             n_tasks=len(image_series.image_list),
         )
-
-        #   Get IDs calibration data
-        index_calibration_stars = observation.calib_parameters.ids_calibration_objects
 
         #   Loop over images
         for current_image_id, current_image in enumerate(image_list):

@@ -1963,6 +1963,45 @@ class Observation:
 
                     plot_quantity = quasi_calibrated_normalized_flux
                 else:
+                    #   Correlation of observation objects with calibration
+                    #   objects, if this is not already the case
+                    calibration_parameters = self.calib_parameters
+
+                    #   TODO: Put this in a function
+                    if calibration_parameters.ids_calibration_objects is None:
+                        calibration_tbl = calibration_parameters.calib_tbl
+                        column_names = calibration_parameters.column_names
+                        ra_unit_calibration = calibration_parameters.ra_unit
+                        dec_unit_calibration = calibration_parameters.dec_unit
+
+                        #   Convert coordinates of the calibration stars to SkyCoord object
+                        calibration_object_coordinates = SkyCoord(
+                            calibration_tbl[column_names['ra']].data,
+                            calibration_tbl[column_names['dec']].data,
+                            unit=(ra_unit_calibration, dec_unit_calibration),
+                            frame="icrs"
+                        )
+
+                        #   Correlate with calibration stars
+                        #   -> assumes that calibration stars are already cleared of any reference objects
+                        #      or variable stars
+                        calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
+                            list(self.image_series_dict.values())[0],
+                            calibration_object_coordinates,
+                            calibration_tbl,
+                            filter_list,
+                            column_names,
+                            correlation_method=correlation_method,
+                            separation_limit=separation_limit,
+                            max_pixel_between_objects=max_pixel_between_objects,
+                            own_correlation_option=own_correlation_option,
+                            file_type_plots=file_type_plots,
+                            indent=2,
+                        )
+
+                        self.calib_parameters.calib_tbl = calibration_tbl
+                        self.calib_parameters.ids_calibration_objects = index_obj_instrument
+
                     #   Apply calibration
                     calibration.apply_calibration(
                         self,
