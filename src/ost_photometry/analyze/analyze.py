@@ -1755,10 +1755,10 @@ class Observation:
         #   Check if correlation with observed objects can be applied directly
         #   after loading the calibration data. If only one filter and thus one
         #   image series is available, correlation will be applied immediately.
-        if len(filter_list) == 1:
-            correlate_with_observed_objects = True
-        else:
-            correlate_with_observed_objects = False
+        # if len(filter_list) == 1:
+        #     correlate_with_observed_objects = True
+        # else:
+        #     correlate_with_observed_objects = False
 
         #   Get coordinates for objects of interest
         coordinates_objects_of_interest = self.objects_of_interest_coordinates
@@ -1780,7 +1780,7 @@ class Observation:
             correlation_method=correlation_method,
             separation_limit=separation_limit,
             region_to_select_calibration_stars=region_to_select_calibration_stars,
-            correlate_with_observed_objects=correlate_with_observed_objects,
+            # correlate_with_observed_objects=correlate_with_observed_objects,
             coordinates_obj_to_rm=coordinates_objects_of_interest,
             file_type_plots=file_type_plots,
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
@@ -1965,32 +1965,11 @@ class Observation:
                 else:
                     #   Correlation of observation objects with calibration
                     #   objects, if this is not already the case
-                    calibration_parameters = self.calib_parameters
-
-                    #   TODO: Put this in a function
-                    if calibration_parameters.ids_calibration_objects is None:
-                        calibration_tbl = calibration_parameters.calib_tbl
-                        column_names = calibration_parameters.column_names
-                        ra_unit_calibration = calibration_parameters.ra_unit
-                        dec_unit_calibration = calibration_parameters.dec_unit
-
-                        #   Convert coordinates of the calibration stars to SkyCoord object
-                        calibration_object_coordinates = SkyCoord(
-                            calibration_tbl[column_names['ra']].data,
-                            calibration_tbl[column_names['dec']].data,
-                            unit=(ra_unit_calibration, dec_unit_calibration),
-                            frame="icrs"
-                        )
-
-                        #   Correlate with calibration stars
-                        #   -> assumes that calibration stars are already cleared of any reference objects
-                        #      or variable stars
-                        calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
-                            list(self.image_series_dict.values())[0],
-                            calibration_object_coordinates,
-                            calibration_tbl,
-                            filter_list,
-                            column_names,
+                    # calibration_parameters = self.calib_parameters
+                    if self.calib_parameters.ids_calibration_objects is None:
+                        correlate.select_calibration_objects(
+                            self,
+                            [filter_],
                             correlation_method=correlation_method,
                             separation_limit=separation_limit,
                             max_pixel_between_objects=max_pixel_between_objects,
@@ -1998,21 +1977,50 @@ class Observation:
                             file_type_plots=file_type_plots,
                             indent=2,
                         )
+                    #     calibration_tbl = calibration_parameters.calib_tbl
+                    #     column_names = calibration_parameters.column_names
+                    #     ra_unit_calibration = calibration_parameters.ra_unit
+                    #     dec_unit_calibration = calibration_parameters.dec_unit
 
-                        self.calib_parameters.calib_tbl = calibration_tbl
-                        self.calib_parameters.ids_calibration_objects = index_obj_instrument
+                    #     #   Convert coordinates of the calibration stars to SkyCoord object
+                    #     calibration_object_coordinates = SkyCoord(
+                    #         calibration_tbl[column_names['ra']].data,
+                    #         calibration_tbl[column_names['dec']].data,
+                    #         unit=(ra_unit_calibration, dec_unit_calibration),
+                    #         frame="icrs"
+                    #     )
 
-                    #   Apply calibration
-                    calibration.apply_calibration(
-                        self,
-                        [filter_],
-                        photometry_extraction_method=photometry_extraction_method,
-                        calculate_zero_point_statistic=calculate_zero_point_statistic,
-                        n_cores_multiprocessing=n_cores_multiprocessing_calibration,
-                        distribution_samples=distribution_samples,
-                        file_type_plots=file_type_plots,
-                    )
-                    plot_quantity = self.table_magnitudes
+                    #     #   Correlate with calibration stars
+                    #     #   -> assumes that calibration stars are already cleared of any reference objects
+                    #     #      or variable stars
+                    #     calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
+                    #         list(self.image_series_dict.values())[0],
+                    #         calibration_object_coordinates,
+                    #         calibration_tbl,
+                    #         [filter_],
+                    #         column_names,
+                    #         correlation_method=correlation_method,
+                    #         separation_limit=separation_limit,
+                    #         max_pixel_between_objects=max_pixel_between_objects,
+                    #         own_correlation_option=own_correlation_option,
+                    #         file_type_plots=file_type_plots,
+                    #         indent=2,
+                    #     )
+
+                    #     self.calib_parameters.calib_tbl = calibration_tbl
+                    #     self.calib_parameters.ids_calibration_objects = index_obj_instrument
+
+                    # #   Apply calibration
+                    # calibration.apply_calibration(
+                    #     self,
+                    #     [filter_],
+                    #     photometry_extraction_method=photometry_extraction_method,
+                    #     calculate_zero_point_statistic=calculate_zero_point_statistic,
+                    #     n_cores_multiprocessing=n_cores_multiprocessing_calibration,
+                    #     distribution_samples=distribution_samples,
+                    #     file_type_plots=file_type_plots,
+                    # )
+                    # plot_quantity = self.table_magnitudes
 
                 #   Plot light curve
                 #

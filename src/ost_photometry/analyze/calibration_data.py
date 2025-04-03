@@ -31,7 +31,7 @@ if typing.TYPE_CHECKING:
 
 class CalibParameters:
     def __init__(
-            self, index: np.ndarray, column_names: dict[str, str],
+            self, index: np.ndarray | None, column_names: dict[str, str],
             calib_tbl: Table, **kwargs):
         self.ids_calibration_objects = index
         self.column_names = column_names
@@ -733,7 +733,7 @@ def derive_calibration(
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         reference_filter: str | None = None,
         region_to_select_calibration_stars: RectanglePixelRegion | None = None,
-        correlate_with_observed_objects: bool = True,
+        # correlate_with_observed_objects: bool = True,
         file_type_plots: str = 'pdf',
         use_wcs_projection_for_star_maps: bool = True,
         indent: int = 1) -> None:
@@ -916,27 +916,28 @@ def derive_calibration(
         style_name='GOOD',
     )
 
-    if correlate_with_observed_objects and len(column_names) > 2:
-        calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
-            image_series,
-            calibration_object_coordinates,
-            calibration_tbl,
-            filter_list,
-            column_names,
-            correlation_method=correlation_method,
-            separation_limit=separation_limit,
-            max_pixel_between_objects=max_pixel_between_objects,
-            own_correlation_option=own_correlation_option,
-            indent=indent + 1,
-            file_type_plots=file_type_plots,
-            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-        )
-    else:
-        index_obj_instrument = None
+    # if correlate_with_observed_objects and len(column_names) > 2:
+    #     calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
+    #         image_series,
+    #         calibration_object_coordinates,
+    #         calibration_tbl,
+    #         filter_list,
+    #         column_names,
+    #         correlation_method=correlation_method,
+    #         separation_limit=separation_limit,
+    #         max_pixel_between_objects=max_pixel_between_objects,
+    #         own_correlation_option=own_correlation_option,
+    #         indent=indent + 1,
+    #         file_type_plots=file_type_plots,
+    #         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+    #     )
+    # else:
+    #     index_obj_instrument = None
 
     #   Add calibration data to observation container
     observation.calib_parameters = CalibParameters(
-        index_obj_instrument,
+        # index_obj_instrument,
+        None,
         column_names,
         calibration_tbl,
         ra_unit=ra_unit_calibration,
