@@ -2010,17 +2010,17 @@ class Observation:
                     #     self.calib_parameters.calib_tbl = calibration_tbl
                     #     self.calib_parameters.ids_calibration_objects = index_obj_instrument
 
-                    # #   Apply calibration
-                    # calibration.apply_calibration(
-                    #     self,
-                    #     [filter_],
-                    #     photometry_extraction_method=photometry_extraction_method,
-                    #     calculate_zero_point_statistic=calculate_zero_point_statistic,
-                    #     n_cores_multiprocessing=n_cores_multiprocessing_calibration,
-                    #     distribution_samples=distribution_samples,
-                    #     file_type_plots=file_type_plots,
-                    # )
-                    # plot_quantity = self.table_magnitudes
+                    #   Apply calibration
+                    calibration.apply_calibration(
+                        self,
+                        [filter_],
+                        photometry_extraction_method=photometry_extraction_method,
+                        calculate_zero_point_statistic=calculate_zero_point_statistic,
+                        n_cores_multiprocessing=n_cores_multiprocessing_calibration,
+                        distribution_samples=distribution_samples,
+                        file_type_plots=file_type_plots,
+                    )
+                    plot_quantity = self.table_magnitudes
 
                 #   Plot light curve
                 #
