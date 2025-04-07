@@ -1287,6 +1287,7 @@ class Observation:
             )
 
 
+    #   TODO: Rename to reflect that it is only used for stacked data
     def correlate_calibrate(
             self, filter_list: list[str], max_pixel_between_objects: int = 3,
             own_correlation_option: int = 1, reference_image_id: int = 0,
@@ -1474,6 +1475,8 @@ class Observation:
             style_name='HEADER',
         )
 
+        #   TODO: Change order of correlation and downloading calibration
+        #         data ('derive_calibration')
         #   Correlate the stellar positions from the different filter
         correlate.correlate_image_series(
             self,
@@ -1752,14 +1755,6 @@ class Observation:
         if plot_light_curve_calibration_objects:
             checks.clear_directory(Path(f'{output_dir}/lightcurve/calibration'))
 
-        #   Check if correlation with observed objects can be applied directly
-        #   after loading the calibration data. If only one filter and thus one
-        #   image series is available, correlation will be applied immediately.
-        # if len(filter_list) == 1:
-        #     correlate_with_observed_objects = True
-        # else:
-        #     correlate_with_observed_objects = False
-
         #   Get coordinates for objects of interest
         coordinates_objects_of_interest = self.objects_of_interest_coordinates
         if coordinates_objects_of_interest is None:
@@ -1780,7 +1775,6 @@ class Observation:
             correlation_method=correlation_method,
             separation_limit=separation_limit,
             region_to_select_calibration_stars=region_to_select_calibration_stars,
-            # correlate_with_observed_objects=correlate_with_observed_objects,
             coordinates_obj_to_rm=coordinates_objects_of_interest,
             file_type_plots=file_type_plots,
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
@@ -1964,8 +1958,7 @@ class Observation:
                     plot_quantity = quasi_calibrated_normalized_flux
                 else:
                     #   Correlation of observation objects with calibration
-                    #   objects, if this is not already the case
-                    # calibration_parameters = self.calib_parameters
+                    #   objects
                     if self.calib_parameters.ids_calibration_objects is None:
                         correlate.select_calibration_objects(
                             self,
@@ -1977,38 +1970,6 @@ class Observation:
                             file_type_plots=file_type_plots,
                             indent=2,
                         )
-                    #     calibration_tbl = calibration_parameters.calib_tbl
-                    #     column_names = calibration_parameters.column_names
-                    #     ra_unit_calibration = calibration_parameters.ra_unit
-                    #     dec_unit_calibration = calibration_parameters.dec_unit
-
-                    #     #   Convert coordinates of the calibration stars to SkyCoord object
-                    #     calibration_object_coordinates = SkyCoord(
-                    #         calibration_tbl[column_names['ra']].data,
-                    #         calibration_tbl[column_names['dec']].data,
-                    #         unit=(ra_unit_calibration, dec_unit_calibration),
-                    #         frame="icrs"
-                    #     )
-
-                    #     #   Correlate with calibration stars
-                    #     #   -> assumes that calibration stars are already cleared of any reference objects
-                    #     #      or variable stars
-                    #     calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
-                    #         list(self.image_series_dict.values())[0],
-                    #         calibration_object_coordinates,
-                    #         calibration_tbl,
-                    #         [filter_],
-                    #         column_names,
-                    #         correlation_method=correlation_method,
-                    #         separation_limit=separation_limit,
-                    #         max_pixel_between_objects=max_pixel_between_objects,
-                    #         own_correlation_option=own_correlation_option,
-                    #         file_type_plots=file_type_plots,
-                    #         indent=2,
-                    #     )
-
-                    #     self.calib_parameters.calib_tbl = calibration_tbl
-                    #     self.calib_parameters.ids_calibration_objects = index_obj_instrument
 
                     #   Apply calibration
                     calibration.apply_calibration(

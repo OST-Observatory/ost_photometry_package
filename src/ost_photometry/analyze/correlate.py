@@ -1663,10 +1663,9 @@ def correlate_image_series(
 
     terminal_output.print_to_terminal('')
 
-    #   Check if correlation with calibration data is necessary
+    #   Correlate with calibration data if necessary
     calibration_parameters = observation.calib_parameters
 
-    #   TODO: Put the following in a function?
     if calibration_parameters is not None and (calibration_parameters.ids_calibration_objects is None
                                                or force_correlation_calibration_objects):
         select_calibration_objects(
@@ -1679,38 +1678,6 @@ def correlate_image_series(
             file_type_plots=file_type_plots,
             indent=2,
         )
-        # calibration_tbl = calibration_parameters.calib_tbl
-        # column_names = calibration_parameters.column_names
-        # ra_unit_calibration = calibration_parameters.ra_unit
-        # dec_unit_calibration = calibration_parameters.dec_unit
-
-        # #   Convert coordinates of the calibration stars to SkyCoord object
-        # calibration_object_coordinates = SkyCoord(
-        #     calibration_tbl[column_names['ra']].data,
-        #     calibration_tbl[column_names['dec']].data,
-        #     unit=(ra_unit_calibration, dec_unit_calibration),
-        #     frame="icrs"
-        # )
-
-        # #   Correlate with calibration stars
-        # #   -> assumes that calibration stars are already cleared of any reference objects
-        # #      or variable stars
-        # calibration_tbl, index_obj_instrument = correlate_with_calibration_objects(
-        #     list(image_series_dict.values())[reference_image_series_id],
-        #     calibration_object_coordinates,
-        #     calibration_tbl,
-        #     filter_list,
-        #     column_names,
-        #     correlation_method=correlation_method,
-        #     separation_limit=separation_limit,
-        #     max_pixel_between_objects=max_pixel_between_objects,
-        #     own_correlation_option=own_correlation_option,
-        #     file_type_plots=file_type_plots,
-        #     indent=indent+1,
-        # )
-
-        # observation.calib_parameters.calib_tbl = calibration_tbl
-        # observation.calib_parameters.ids_calibration_objects = index_obj_instrument
 
 
 def correlate_preserve_variable(

@@ -721,6 +721,9 @@ def observed_magnitude_of_calibration_stars(
     return distribution_calibration_observed
 
 
+#   TODO: Rename to 'downloading_calibration_data' after 'correlate_calibrate'
+#         of 'Observation' in analysis.py changed the order of correlation and
+#         downloading of calibration data.
 def derive_calibration(
         observation: 'analyze.Observation', filter_list: list[str],
         calibration_method: str = 'APASS', max_pixel_between_objects: int = 3,
@@ -733,7 +736,7 @@ def derive_calibration(
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         reference_filter: str | None = None,
         region_to_select_calibration_stars: RectanglePixelRegion | None = None,
-        # correlate_with_observed_objects: bool = True,
+        correlate_with_observed_objects: bool = True,
         file_type_plots: str = 'pdf',
         use_wcs_projection_for_star_maps: bool = True,
         indent: int = 1) -> None:
@@ -916,28 +919,31 @@ def derive_calibration(
         style_name='GOOD',
     )
 
-    # if correlate_with_observed_objects and len(column_names) > 2:
-    #     calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
-    #         image_series,
-    #         calibration_object_coordinates,
-    #         calibration_tbl,
-    #         filter_list,
-    #         column_names,
-    #         correlation_method=correlation_method,
-    #         separation_limit=separation_limit,
-    #         max_pixel_between_objects=max_pixel_between_objects,
-    #         own_correlation_option=own_correlation_option,
-    #         indent=indent + 1,
-    #         file_type_plots=file_type_plots,
-    #         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-    #     )
-    # else:
-    #     index_obj_instrument = None
+    #   TODOP: Remove the following after changing the order of correlation and
+    #          download of calibration data in 'correlate_calibrate' of
+    #          'observation' in analysis.py
+    if correlate_with_observed_objects and len(column_names) > 2:
+        calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
+            image_series,
+            calibration_object_coordinates,
+            calibration_tbl,
+            filter_list,
+            column_names,
+            correlation_method=correlation_method,
+            separation_limit=separation_limit,
+            max_pixel_between_objects=max_pixel_between_objects,
+            own_correlation_option=own_correlation_option,
+            indent=indent + 1,
+            file_type_plots=file_type_plots,
+            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+        )
+    else:
+        index_obj_instrument = None
 
     #   Add calibration data to observation container
     observation.calib_parameters = CalibParameters(
-        # index_obj_instrument,
-        None,
+        index_obj_instrument,
+        # None,
         column_names,
         calibration_tbl,
         ra_unit=ra_unit_calibration,
