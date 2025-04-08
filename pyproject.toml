@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ost_photometry"
-version = "0.2.2"
+version = "0.3.0"
 authors = [
-  { name="Rainer Hainich", email="rhainich@astro.physik.uni-potsdam.de" },
+    { name = "Rainer Hainich", email = "rhainich@astro.physik.uni-potsdam.de" },
 ]
 description = "Phtometry reduction and analysis package for the OST observatory"
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
