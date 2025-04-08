@@ -14,6 +14,12 @@ import subprocess
 import json
 import yaml
 
+try:
+    from pytimedinput import timedInput
+    use_timed_input = True
+except ImportError:
+    use_timed_input = False
+
 import numpy as np
 
 from astropy.nddata import CCDData
@@ -882,3 +888,39 @@ def read_params_from_yaml(yaml_file: str) -> dict:
         data = {}
 
     return data
+
+
+def get_input(prompt: str, timeout: int = 30) -> tuple[str | None, bool]:
+    """
+    Prompt the user for input. Uses pytimedinput with a timeout if available,
+    otherwise falls back to the built-in input function.
+
+    Parameters
+    ----------
+    prompt (str):
+        The message displayed to the user.
+
+    timeout (int, optional):
+        Timeout in seconds for timed input. Only applies if pytimedinput is
+        installed.
+        Default is ``30``.
+
+    Returns
+    -------
+    str | None:
+        The user's input as a string, or None if input timed out (only possible
+        with pytimedinput).
+
+    boolean:
+        Returns `True` if the prompt timed out (only possible with
+        pytimedinput). When using the built-in input() function, `False` is
+        always returned.
+    """
+    if use_timed_input:
+        user_input, timed_out = timedInput(prompt, timeout=timeout)
+        if timed_out:
+            print("\nTimed out!")
+            return None
+        return user_input, timed_out
+    else:
+        return input(prompt), False

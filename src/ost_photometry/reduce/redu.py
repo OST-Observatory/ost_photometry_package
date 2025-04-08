@@ -4,8 +4,6 @@
 
 import shutil
 
-from pytimedinput import timedInput
-
 from pathlib import Path
 
 import numpy as np
@@ -400,10 +398,9 @@ def reduce_main(
 
     mk_new_master_files = True
     if master_available:
-        user_input, timed_out = timedInput(
+        user_input, timed_out = base_utilities.get_input(
             f"{style.Bcolors.OKBLUE}   Master files are already calculated."
-            f" Should these files be used? [yes/no] {style.Bcolors.ENDC}",
-            timeout=30,
+            f" Should these files be used? [yes/no] {style.Bcolors.ENDC}"
         )
         if timed_out:
             user_input = 'n'
@@ -2126,10 +2123,9 @@ def reduce_light(
     dir_empty = checks.check_if_directory_is_empty(light_path)
 
     if not dir_empty:
-        user_input, timed_out = timedInput(
+        user_input, timed_out = base_utilities.get_input(
             f"{style.Bcolors.OKBLUE}   Reduced images from a previous run "
-            f"found. Should these be used? [yes/no] {style.Bcolors.ENDC}",
-            timeout=30,
+            f"found. Should these be used? [yes/no] {style.Bcolors.ENDC}"
         )
         if timed_out:
             user_input = 'n'

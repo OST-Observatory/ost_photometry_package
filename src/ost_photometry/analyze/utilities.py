@@ -5,8 +5,6 @@ import sys
 
 import numpy as np
 
-from pytimedinput import timedInput
-
 from pathlib import Path
 
 from tqdm import tqdm
@@ -2134,13 +2132,13 @@ def find_cluster(
     # )
 
     #   Get user input
-    cluster_id, timed_out = timedInput(
+    cluster_id, timed_out = base_utilities.get_input(
         style.Bcolors.OKBLUE +
         "\n   Which one is the correct cluster (id)? \n"
         + style.Bcolors.ENDC,
         timeout=300,
     )
-    if timed_out or cluster_id == '':
+    if timed_out or cluster_id == '' or cluster_id is None:
         cluster_id = 0
     else:
         cluster_id = int(cluster_id)
