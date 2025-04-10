@@ -739,7 +739,8 @@ def derive_calibration(
         correlate_with_observed_objects: bool = True,
         file_type_plots: str = 'pdf',
         use_wcs_projection_for_star_maps: bool = True,
-        indent: int = 1) -> None:
+        indent: int = 1
+    ) -> None:
     """
     Find suitable calibration stars
 

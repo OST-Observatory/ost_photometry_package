@@ -629,7 +629,7 @@ def correlation_astropy(
         separation_limit: u.Quantity = 2. * u.arcsec,
         advanced_cleanup: bool = True) -> tuple[np.ndarray, np.ndarray]:
     """
-    Correlation based on astropy matching algorithm
+    The function correlates data sets based on astropy matching algorithm
 
     Parameters
     ----------
@@ -711,6 +711,7 @@ def correlation_astropy(
             #              reference and the current data set,
             #              matching.search_around_sky will fail.
             #              => set reference indexes
+            #   TODO: Check if this can be replaced by a more efficient test, such as with try:
             if ((len(x_pixel_positions[i]) == len(x_pixel_positions[reference_dataset_id])) and
                     (np.all(x_pixel_positions[i] == x_pixel_positions[reference_dataset_id]) and
                      np.all(y_pixel_positions[i] == y_pixel_positions[reference_dataset_id]))):
@@ -804,7 +805,7 @@ def correlation_astropy(
         )
 
         #   Create mask -> Identify all datasets as bad that contain less
-        #                  than 90% of all objects from the reference dataset.
+        #                  than 98% of all objects from the reference dataset.
         mask = n_times_to_rm > 0.02 * len(x_pixel_positions[reference_dataset_id])
         rejected_images = images_to_rm[mask]
 
@@ -829,8 +830,8 @@ def correlation_astropy(
         if np.any(ref_is_in):
             if n_datasets <= 2:
                 raise RuntimeError(
-                    f"{style.Bcolors.FAIL} \nReference object only found on "
-                    "one or on none image at all. This is not sufficient. "
+                    f"{style.Bcolors.FAIL} \nSpecial objects found on only"
+                    f"one image or not at all. This is not sufficient. "
                     f"=> Exit {style.Bcolors.ENDC}"
                 )
             rejected_object_ids = rows_to_rm[1]
