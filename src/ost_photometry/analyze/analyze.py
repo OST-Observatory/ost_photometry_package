@@ -1778,6 +1778,7 @@ class Observation:
             coordinates_obj_to_rm=coordinates_objects_of_interest,
             file_type_plots=file_type_plots,
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+            correlate_with_observed_objects=False,
         )
         calibration_filters = self.calib_parameters.column_names
         terminal_output.print_to_terminal('')
