@@ -3074,6 +3074,12 @@ def clear_duplicates(
         additional_array: np.ndarray
         ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
+    Find duplicates in an array (data_array). Select the best of the
+    duplicates based on a selection criterium (selection_quantity)
+    such as the distance between two points.
+
+    The resulting changes will be applied to a second array (additional_array)
+    of the same dimensions.
 
     Parameters
     ----------
