@@ -134,7 +134,8 @@ def get_instruments(
 def get_instrument_info(
         image_file_collection: ccdp.ImageFileCollection,
         temperature_tolerance: float,
-        ignore_readout_mode_mismatch: bool = False
+        ignore_readout_mode_mismatch: bool = False,
+        ignore_instrument_mismatch: bool = False
         ) -> tuple[str, str, int | None, int, float]:
     """
     Extract information regarding the instruments and readout mode.
@@ -154,6 +155,11 @@ def get_instrument_info(
 
     ignore_readout_mode_mismatch
         If set to `True` a mismatch of the detected readout modes will
+        be ignored.
+        Default is ``False``.
+
+    ignore_instrument_mismatch
+        If set to `True` a mismatch of the detected instrument will
         be ignored.
         Default is ``False``.
 
@@ -201,10 +207,17 @@ def get_instrument_info(
     )
 
     if len(instruments) > 1:
-        raise RuntimeError(
-            f'{style.Bcolors.FAIL}Multiple instruments detected.\n'
-            f'This is currently not supported -> EXIT \n{style.Bcolors.ENDC}'
-        )
+        if ignore_instrument_mismatch:
+            terminal_output.print_to_terminal(
+                f"Multiple instruments detected: {instruments} "
+                "Will use first one."
+                style_name='WARNING',
+            )
+        else:
+            raise RuntimeError(
+                f'{style.Bcolors.FAIL}Multiple instruments detected.\n'
+                f'This is currently not supported -> EXIT \n{style.Bcolors.ENDC}'
+            )
     instrument = list(instruments)[0]
 
     #   Sanitize camera strings from Kstars
