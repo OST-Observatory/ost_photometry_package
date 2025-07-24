@@ -49,7 +49,8 @@ def reduce_main(
         threshold_image_shifts: float = 10., temperature_tolerance: float = 5.,
         plot_dark_statistic_plots: bool = False,
         plot_flat_statistic_plots: bool = False,
-        ignore_readout_mode_mismatch: bool = False, trim_x_start: int = 0,
+        ignore_readout_mode_mismatch: bool = False,
+        ignore_instrument_mismatch: bool = False, trim_x_start: int = 0,
         trim_x_end: int = 0, trim_y_start: int = 0, trim_y_end: int = 0,
         dtype: str | np.dtype | None = None, debug: bool = False,
         save_only_transformation: bool = False,
@@ -223,6 +224,11 @@ def reduce_main(
         be ignored.
         Default is ``False``.
 
+    ignore_instrument_mismatch
+        If set to `True` a mismatch of the detected instruments will
+        be ignored.
+        Default is ``False``.
+
     trim_x_start
         Number of pixels to trim from the start of the X direction,
         e.g. to remove an overscan region.
@@ -353,6 +359,7 @@ def reduce_main(
         image_file_collection,
         temperature_tolerance,
         ignore_readout_mode_mismatch=ignore_readout_mode_mismatch,
+        ignore_instrument_mismatch=ignore_instrument_mismatch,
     )
     instrument = image_parameters[0]
     readout_mode = image_parameters[1]
