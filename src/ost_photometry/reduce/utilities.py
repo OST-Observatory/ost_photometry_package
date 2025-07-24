@@ -459,7 +459,7 @@ def get_instrument_info(
     std_temperature = np.std(temperatures)
 
     if std_temperature > temperature_tolerance:
-        clipped_temperatures_mask = sigma_clip(temperatures).mask
+        clipped_temperatures_mask = sigma_clip(temperatures, sigma=2.).mask
         clipped_temperatures = temperatures[clipped_temperatures_mask]
         clipped_images = files_with_ccd_temperature[clipped_temperatures_mask]
 
