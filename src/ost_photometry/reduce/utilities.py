@@ -210,7 +210,7 @@ def get_instrument_info(
         if ignore_instrument_mismatch:
             terminal_output.print_to_terminal(
                 f"Multiple instruments detected: {instruments} "
-                "Will use first one."
+                "Will use first one.",
                 style_name='WARNING',
             )
         else:
