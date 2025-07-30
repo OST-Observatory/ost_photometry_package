@@ -47,13 +47,12 @@ from astropy.table import Table, Column
 from astropy.time import Time
 from astropy.nddata import NDData
 from astropy.stats import sigma_clipped_stats
-from astropy.modeling.fitting import LevMarLSQFitter, LMLSQFitter, TRFLSQFitter
+from astropy.modeling.fitting import LevMarLSQFitter, LMLSQFitter, TRFLSQFitter, NonFiniteValueError
 from astropy.coordinates import SkyCoord, name_resolve
 import astropy.units as u
 from astropy.nddata import CCDData
 from astropy import wcs
 from astropy import uncertainty as unc
-
 from regions import RectanglePixelRegion
 
 #   hips2fits module is not in the Ubuntu 22.04 package version
@@ -2529,7 +2528,7 @@ def find_stars(
         )
         #   Get median
         median_fwhm = sigma_clipped_stats(fwhm)[1]
-    except ValueError as e:
+    except (ValueError, NonFiniteValueError) as e:
         terminal_output.print_to_terminal(
             f"[Info] FWHM determination failed with the following error {e}. "
             f"Use the default FWHM of {default_fwhm}.",
