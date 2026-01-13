@@ -3,58 +3,68 @@
 ############################################################################
 
 import shutil
-
 from pathlib import Path
 
-import numpy as np
-
-import ccdproc as ccdp
-
-from astropy.stats import mad_std
-from astropy.nddata import CCDData
 import astropy.units as u
+import ccdproc as ccdp
+import numpy as np
+from astropy.nddata import CCDData
+from astropy.stats import mad_std
 
-from . import utilities, plots, registration
-
-from .. import checks, style, terminal_output, calibration_parameters
-
+from .. import calibration_parameters, checks, style, terminal_output
 from .. import utilities as base_utilities
-
 from ..analyze.utilities import Executor
-
+from . import plots, registration, utilities
 
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
 
+
 def reduce_main(
-        image_path: str, output_dir: str,
-        image_type_dir: dict[str, list[str]] | None = None,
-        gain: float | None = None, read_noise: float | None = None,
-        dark_rate: float | None = None, rm_cosmic_rays: bool = True,
-        mask_cosmic_rays: bool = False, saturation_level: float | None = None,
-        limiting_contrast_rm_cosmic_rays: float = 5.,
-        sigma_clipping_value_rm_cosmic_rays: float = 4.0,
-        scale_image_with_exposure_time: bool = True,
-        reference_image_id: int = 0, enforce_bias: bool = False,
-        add_hot_bad_pixel_mask: bool = True, shift_method: str = 'skimage',
-        n_cores_multiprocessing: int | None = None, stack_images: bool = True,
-        estimate_fwhm: bool = False, shift_all: bool = False,
-        exposure_time_tolerance: float = 0.5, stack_method: str = 'average',
-        target_name: str | None = None, find_wcs: bool = True,
-        wcs_method: str = 'astrometry', find_wcs_of_all_images: bool = False,
-        force_wcs_determination: bool = False,
-        rm_outliers_image_shifts: bool = True,
-        filter_window_image_shifts: int = 25,
-        threshold_image_shifts: float = 10., temperature_tolerance: float = 5.,
-        plot_dark_statistic_plots: bool = False,
-        plot_flat_statistic_plots: bool = False,
-        ignore_readout_mode_mismatch: bool = False,
-        ignore_instrument_mismatch: bool = False, trim_x_start: int = 0,
-        trim_x_end: int = 0, trim_y_start: int = 0, trim_y_end: int = 0,
-        dtype: str | np.dtype | None = None, debug: bool = False,
-        save_only_transformation: bool = False,
-    ) -> None:
+    image_path: str,
+    output_dir: str,
+    image_type_dir: dict[str, list[str]] | None = None,
+    gain: float | None = None,
+    read_noise: float | None = None,
+    dark_rate: float | None = None,
+    rm_cosmic_rays: bool = True,
+    mask_cosmic_rays: bool = False,
+    saturation_level: float | None = None,
+    limiting_contrast_rm_cosmic_rays: float = 5.0,
+    sigma_clipping_value_rm_cosmic_rays: float = 4.0,
+    scale_image_with_exposure_time: bool = True,
+    reference_image_id: int = 0,
+    enforce_bias: bool = False,
+    add_hot_bad_pixel_mask: bool = True,
+    shift_method: str = "skimage",
+    n_cores_multiprocessing: int | None = None,
+    stack_images: bool = True,
+    estimate_fwhm: bool = False,
+    shift_all: bool = False,
+    exposure_time_tolerance: float = 0.5,
+    stack_method: str = "average",
+    target_name: str | None = None,
+    find_wcs: bool = True,
+    wcs_method: str = "astrometry",
+    find_wcs_of_all_images: bool = False,
+    force_wcs_determination: bool = False,
+    rm_outliers_image_shifts: bool = True,
+    filter_window_image_shifts: int = 25,
+    threshold_image_shifts: float = 10.0,
+    temperature_tolerance: float = 5.0,
+    plot_dark_statistic_plots: bool = False,
+    plot_flat_statistic_plots: bool = False,
+    ignore_readout_mode_mismatch: bool = False,
+    ignore_instrument_mismatch: bool = False,
+    trim_x_start: int = 0,
+    trim_x_end: int = 0,
+    trim_y_start: int = 0,
+    trim_y_end: int = 0,
+    dtype: str | np.dtype | None = None,
+    debug: bool = False,
+    save_only_transformation: bool = False,
+) -> None:
     """
     Main reduction routine: Creates master images for bias, darks,
                             flats, reduces the science images and trims
@@ -275,7 +285,7 @@ def reduce_main(
             "transformation matrices if the images are to be stacked, "
             "because the images have to be there to be stacked. -> Set "
             "'save_only_transformation' to ``False``.",
-            style_name='WARNING',
+            style_name="WARNING",
         )
         save_only_transformation = False
 
@@ -296,15 +306,17 @@ def reduce_main(
     #   Except if image collection is empty
     if not image_file_collection.files:
         raise RuntimeError(
-            f'{style.Bcolors.FAIL}No images found -> EXIT\n'
-            f'\t=> Check paths to the images!{style.Bcolors.ENDC}'
+            f"{style.Bcolors.FAIL}No images found -> EXIT\n"
+            f"\t=> Check paths to the images!{style.Bcolors.ENDC}"
         )
 
     #   Get image types
-    ifc_image_types = set(image_file_collection.summary['imagetyp'])
+    ifc_image_types = set(image_file_collection.summary["imagetyp"])
 
     #   TODO: Add a completeness check so that all science images have
     #         the necessary flats. Add here or in utilities.
+    #   TODO: Add a sanity check that the images are not completely zero
+    #         or something like this
 
     #   Check exposure times:   Successful if dark frames with ~ the same
     #                           exposure time are available all flat and
@@ -312,30 +324,30 @@ def reduce_main(
     #   Dark times
     dark_times = utilities.get_exposure_times(
         image_file_collection,
-        image_type_dir['dark'],
+        image_type_dir["dark"],
     )
 
     #   Flat times
     flat_times = utilities.get_exposure_times(
         image_file_collection,
-        image_type_dir['flat'],
+        image_type_dir["flat"],
     )
 
     #   Science times
     science_times = utilities.get_exposure_times(
         image_file_collection,
-        image_type_dir['light'],
+        image_type_dir["light"],
     )
 
     #   Check if bias frames are available
     bias_true = np.any(
-        [True if t in ifc_image_types else False for t in image_type_dir['bias']]
+        [True if t in ifc_image_types else False for t in image_type_dir["bias"]]
     ).astype(bool)
 
     #   Check flats
     image_scaling_required = utilities.check_exposure_times(
         image_file_collection,
-        image_type_dir['flat'],
+        image_type_dir["flat"],
         flat_times,
         dark_times,
         bias_true,
@@ -345,7 +357,7 @@ def reduce_main(
     #   Check science exposures
     image_scaling_required = image_scaling_required | utilities.check_exposure_times(
         image_file_collection,
-        image_type_dir['light'],
+        image_type_dir["light"],
         science_times,
         dark_times,
         bias_true,
@@ -367,8 +379,12 @@ def reduce_main(
     pixel_bit_value = image_parameters[3]
     temperature = image_parameters[4]
 
-    if (read_noise is None or gain is None or dark_rate is None
-            or saturation_level is None):
+    if (
+        read_noise is None
+        or gain is None
+        or dark_rate is None
+        or saturation_level is None
+    ):
         camera_info = calibration_parameters.camera_info(
             instrument,
             readout_mode,
@@ -389,8 +405,8 @@ def reduce_main(
     #
     #   Get all filter
     filters = set(
-        image_file_collection.summary['filter'][
-            np.invert(image_file_collection.summary['filter'].mask)
+        image_file_collection.summary["filter"][
+            np.invert(image_file_collection.summary["filter"].mask)
         ]
     )
 
@@ -410,9 +426,9 @@ def reduce_main(
             f" Should these files be used? [yes/no] {style.Bcolors.ENDC}"
         )
         if timed_out:
-            user_input = 'n'
+            user_input = "n"
 
-        if user_input in ['y', 'yes']:
+        if user_input in ["y", "yes"]:
             mk_new_master_files = False
 
     #   Set master boolean for bias subtraction
@@ -459,7 +475,7 @@ def reduce_main(
             )
 
             #   Set dark path
-            dark_path = Path(output_path / 'dark')
+            dark_path = Path(output_path / "dark")
         else:
             dark_path = file_path
 
@@ -506,7 +522,7 @@ def reduce_main(
 
         #   Create master flat
         master_flat(
-            Path(output_path / 'flat'),
+            Path(output_path / "flat"),
             output_path,
             image_type_dir,
             plot_plots=plot_flat_statistic_plots,
@@ -554,9 +570,9 @@ def reduce_main(
     )
 
     registration.align_images(
-        output_path / 'light',
+        output_path / "light",
         output_path,
-        image_type_dir['light'],
+        image_type_dir["light"],
         reference_image_id=reference_image_id,
         shift_method=shift_method,
         n_cores_multiprocessing=n_cores_multiprocessing,
@@ -565,7 +581,7 @@ def reduce_main(
         threshold=threshold_image_shifts,
         instrument=instrument,
         debug=debug,
-        image_output_directory='aligned_lights',
+        image_output_directory="aligned_lights",
         save_only_transformation=save_only_transformation,
         align_filter_wise=not shift_all,
     )
@@ -573,9 +589,9 @@ def reduce_main(
     #   Set the image directory depending on whether we have aligned images or
     #   just the image transformation matrices.
     if save_only_transformation:
-        image_directory = 'light'
+        image_directory = "light"
     else:
-        image_directory = 'aligned_lights'
+        image_directory = "aligned_lights"
 
     if find_wcs and find_wcs_of_all_images:
         ###
@@ -597,8 +613,8 @@ def reduce_main(
         utilities.estimate_fwhm(
             # output_path / 'aligned_lights',
             output_path / image_directory,
-            output_path / 'fwhm',
-            image_type_dir['light'],
+            output_path / "fwhm",
+            image_type_dir["light"],
         )
 
     if stack_images:
@@ -610,9 +626,9 @@ def reduce_main(
             indent=1,
         )
         stack_image(
-            output_path / 'aligned_lights',
+            output_path / "aligned_lights",
             output_path,
-            image_type_dir['light'],
+            image_type_dir["light"],
             stacking_method=stack_method,
             dtype=dtype,
             debug=debug,
@@ -630,7 +646,7 @@ def reduce_main(
                 force_wcs_determination=force_wcs_determination,
                 wcs_method=wcs_method,
                 only_combined_images=True,
-                image_type=image_type_dir['light'],
+                image_type=image_type_dir["light"],
             )
 
         if not shift_all:
@@ -639,11 +655,11 @@ def reduce_main(
             #   cross correlation
             #
             enlarged: bool = False
-            if shift_method != 'aa_true':
+            if shift_method != "aa_true":
                 registration.make_big_images(
                     output_path,
                     output_path,
-                    image_type_dir['light'],
+                    image_type_dir["light"],
                 )
                 enlarged = True
 
@@ -651,15 +667,14 @@ def reduce_main(
             #   Calculate and apply image shifts between filters
             #
             terminal_output.print_to_terminal(
-                "Trim stacked images of the filters to the same "
-                "field of view...",
+                "Trim stacked images of the filters to the same field of view...",
                 indent=1,
             )
 
             registration.align_images(
                 output_path,
                 output_path,
-                image_type_dir['light'],
+                image_type_dir["light"],
                 shift_method=shift_method,
                 n_cores_multiprocessing=n_cores_multiprocessing,
                 rm_outliers=rm_outliers_image_shifts,
@@ -668,7 +683,7 @@ def reduce_main(
                 debug=debug,
                 save_only_transformation=save_only_transformation,
                 enlarged_only=enlarged,
-                terminal_alignment_comment='\tDisplacement between the images of the different filters',
+                terminal_alignment_comment="\tDisplacement between the images of the different filters",
                 modify_file_name=True,
             )
 
@@ -680,14 +695,14 @@ def reduce_main(
         light_image_type = utilities.get_image_type(
             image_file_collection,
             image_type_dir,
-            image_class='light',
+            image_class="light",
         )
         ifc_filtered = image_file_collection.filter(imagetyp=light_image_type)
 
         #   Find used filters
         filters = set(
-            ifc_filtered.summary['filter'][
-                np.invert(ifc_filtered.summary['filter'].mask)
+            ifc_filtered.summary["filter"][
+                np.invert(ifc_filtered.summary["filter"].mask)
             ]
         )
         for filter_ in filters:
@@ -699,9 +714,7 @@ def reduce_main(
                 checks.clear_directory(output_path / filter_)
 
                 #   Set path to files
-                file_path = checks.check_pathlib_path(
-                    output_path / 'aligned_lights'
-                )
+                file_path = checks.check_pathlib_path(output_path / "aligned_lights")
 
                 #   New image collection for the images
                 image_file_collection = ccdp.ImageFileCollection(file_path)
@@ -720,10 +733,10 @@ def reduce_main(
                 #   The NOT shifted and/or trimmed images
                 #
                 #   Remove old files in the output directory
-                checks.clear_directory(output_path / f'{filter_}_not_aligned')
+                checks.clear_directory(output_path / f"{filter_}_not_aligned")
 
                 #   Set path to files
-                file_path = checks.check_pathlib_path(output_path / 'light')
+                file_path = checks.check_pathlib_path(output_path / "light")
 
                 #   New image collection for the images
                 image_file_collection = ccdp.ImageFileCollection(file_path)
@@ -736,17 +749,21 @@ def reduce_main(
 
                 #   Link files to corresponding directory
                 base_utilities.link_files(
-                    output_path / f'{filter_}_not_aligned',
+                    output_path / f"{filter_}_not_aligned",
                     filtered_files,
                 )
 
 
 def master_bias(
-        bias_path: str | Path, output_dir: str | Path,
-        image_type: dict[str, list[str]], trim_x_start: int = 0,
-        trim_x_end: int = 0, trim_y_start: int = 0,
-        trim_y_end: int = 0, dtype: str | np.dtype | None = None
-    ) -> None:
+    bias_path: str | Path,
+    output_dir: str | Path,
+    image_type: dict[str, list[str]],
+    trim_x_start: int = 0,
+    trim_x_end: int = 0,
+    trim_y_start: int = 0,
+    trim_y_end: int = 0,
+    dtype: str | np.dtype | None = None,
+) -> None:
     """
     This function calculates master biases from individual bias images
     located in one directory.
@@ -802,7 +819,7 @@ def master_bias(
     bias_image_type = utilities.get_image_type(
         image_file_collection,
         image_type,
-        image_class='bias',
+        image_class="bias",
     )
     bias_frames = image_file_collection.files_filtered(
         imagetyp=bias_image_type,
@@ -815,49 +832,54 @@ def master_bias(
     #                   solution
     combined_bias = ccdp.combine(
         bias_frames,
-        method='average',
+        method="average",
         sigma_clip=True,
         sigma_clip_low_thresh=5,
         sigma_clip_high_thresh=5,
         sigma_clip_func=np.ma.median,
         signma_clip_dev_func=mad_std,
         mem_limit=15e9,
-        unit='adu',
+        unit="adu",
         dtype=dtype,
     )
 
     #   Trimming the image, for example to remove an overscan region
     image_shape = combined_bias.data.shape
     combined_bias = combined_bias[
-                        trim_y_start:image_shape[0]-trim_y_end,
-                        trim_x_start:image_shape[1]-trim_x_end
-                    ]
+        trim_y_start : image_shape[0] - trim_y_end,
+        trim_x_start : image_shape[1] - trim_x_end,
+    ]
 
     #   Add header keyword to mark the file as a Master
-    combined_bias.meta['combined'] = True
+    combined_bias.meta["combined"] = True
 
     #   Write file to disk
-    combined_bias.write(out_path / 'combined_bias.fit', overwrite=True)
+    combined_bias.write(out_path / "combined_bias.fit", overwrite=True)
 
 
 def master_image_list(*args, **kwargs):
     """
-        Wrapper function to create a master calibration image for the files
-        in the directories given in the path list 'paths'
+    Wrapper function to create a master calibration image for the files
+    in the directories given in the path list 'paths'
     """
-    if kwargs['calib_type'] == 'dark':
+    if kwargs["calib_type"] == "dark":
         master_dark(*args, **kwargs)
-    elif kwargs['calib_type'] == 'flat':
+    elif kwargs["calib_type"] == "flat":
         master_flat(*args, **kwargs)
 
 
 def reduce_dark(
-        image_path: str | Path, output_dir: str | Path,
-        image_type: dict[str, list[str]], gain: float | None = None,
-        read_noise: float = 8., n_cores_multiprocessing: int | None = None,
-        trim_x_start: int = 0, trim_x_end: int = 0, trim_y_start: int = 0,
-        trim_y_end: int = 0
-    ) -> None:
+    image_path: str | Path,
+    output_dir: str | Path,
+    image_type: dict[str, list[str]],
+    gain: float | None = None,
+    read_noise: float = 8.0,
+    n_cores_multiprocessing: int | None = None,
+    trim_x_start: int = 0,
+    trim_x_end: int = 0,
+    trim_y_start: int = 0,
+    trim_y_end: int = 0,
+) -> None:
     """
     Reduce dark images: This function reduces the raw dark frames
 
@@ -922,7 +944,7 @@ def reduce_dark(
     bias_image_type = utilities.get_image_type(
         image_file_collection_reduced,
         image_type,
-        image_class='bias',
+        image_class="bias",
     )
     stacked_bias = CCDData.read(
         image_file_collection_reduced.files_filtered(
@@ -933,14 +955,14 @@ def reduce_dark(
     )
 
     #   Set new dark path
-    dark_path = Path(out_path / 'dark')
+    dark_path = Path(out_path / "dark")
     checks.clear_directory(dark_path)
 
     #   Determine possible image types
     dark_image_type = utilities.get_image_type(
         image_file_collection,
         image_type,
-        image_class='dark',
+        image_class="dark",
     )
 
     #   Initialize multiprocessing object
@@ -952,8 +974,8 @@ def reduce_dark(
 
     #   Loop over darks and reduce darks
     for file_name in image_file_collection.files_filtered(
-            include_path=True,
-            imagetyp=dark_image_type,
+        include_path=True,
+        imagetyp=dark_image_type,
     ):
         executor.schedule(
             reduce_dark_image,
@@ -963,30 +985,37 @@ def reduce_dark(
                 dark_path,
             ),
             kwargs={
-                'gain': gain,
-                'read_noise': read_noise,
-                'trim_x_start': trim_x_start,
-                'trim_x_end': trim_x_end,
-                'trim_y_start': trim_y_start,
-                'trim_y_end': trim_y_end,
-            }
+                "gain": gain,
+                "read_noise": read_noise,
+                "trim_x_start": trim_x_start,
+                "trim_x_end": trim_x_end,
+                "trim_y_start": trim_y_start,
+                "trim_y_end": trim_y_end,
+            },
         )
 
     #   Exit if exceptions occurred
     if executor.err is not None:
         raise RuntimeError(
-            f'\n{style.Bcolors.FAIL}Dark image reduction using multiprocessing'
-            f' failed :({style.Bcolors.ENDC}'
+            f"\n{style.Bcolors.FAIL}Dark image reduction using multiprocessing"
+            f" failed :({style.Bcolors.ENDC}"
         )
 
     #   Close multiprocessing pool and wait until it finishes
     executor.wait()
 
+
 def reduce_dark_image(
-        dark_file_name: str, stacked_bias: CCDData, dark_path: Path,
-        gain: float | None = None, read_noise: float = 8., trim_x_start: int = 0,
-        trim_x_end: int = 0, trim_y_start: int = 0, trim_y_end: int = 0
-    ) -> None:
+    dark_file_name: str,
+    stacked_bias: CCDData,
+    dark_path: Path,
+    gain: float | None = None,
+    read_noise: float = 8.0,
+    trim_x_start: int = 0,
+    trim_x_end: int = 0,
+    trim_y_start: int = 0,
+    trim_y_end: int = 0,
+) -> None:
     """
     This function reduces the individual raw dark frame images
 
@@ -1031,18 +1060,18 @@ def reduce_dark_image(
         Default is ``0``.
     """
     #   Read image file
-    dark = CCDData.read(dark_file_name, unit='adu')
+    dark = CCDData.read(dark_file_name, unit="adu")
 
     #   Set gain _> get it from Header if not provided
     if gain is None:
-        gain = dark.header['EGAIN']
+        gain = dark.header["EGAIN"]
 
     #   Trimming the image, for example to remove an overscan region
     image_shape = dark.data.shape
     dark = dark[
-                trim_y_start:image_shape[0]-trim_y_end,
-                trim_x_start:image_shape[1]-trim_x_end
-            ]
+        trim_y_start : image_shape[0] - trim_y_end,
+        trim_x_start : image_shape[1] - trim_x_end,
+    ]
 
     #   Calculated uncertainty
     dark = ccdp.create_deviation(
@@ -1056,20 +1085,29 @@ def reduce_dark_image(
     dark = ccdp.subtract_bias(dark, stacked_bias)
 
     #   Save the result
-    file_name = dark_file_name.split('/')[-1]
+    file_name = dark_file_name.split("/")[-1]
     dark.write(dark_path / file_name, overwrite=True)
 
 
 def master_dark(
-        image_path: str | Path, output_dir: str | Path,
-        image_type: dict[str, list[str]], gain: float | None = None,
-        read_noise: float = 8., dark_rate: float | None = None,
-        mk_hot_pixel_mask: bool = True, plot_plots: bool = False,
-        debug: bool = False, n_cores_multiprocessing: int | None = None,
-        rm_bias: bool = False, trim_x_start: int = 0, trim_x_end: int = 0,
-        trim_y_start: int = 0, trim_y_end: int = 0,
-        dtype: str | np.dtype | None = None, **kwargs
-    ) -> None:
+    image_path: str | Path,
+    output_dir: str | Path,
+    image_type: dict[str, list[str]],
+    gain: float | None = None,
+    read_noise: float = 8.0,
+    dark_rate: float | None = None,
+    mk_hot_pixel_mask: bool = True,
+    plot_plots: bool = False,
+    debug: bool = False,
+    n_cores_multiprocessing: int | None = None,
+    rm_bias: bool = False,
+    trim_x_start: int = 0,
+    trim_x_end: int = 0,
+    trim_y_start: int = 0,
+    trim_y_end: int = 0,
+    dtype: str | np.dtype | None = None,
+    **kwargs,
+) -> None:
     """
     This function calculates master darks from individual dark images
     located in one directory. The dark images are group according to
@@ -1157,14 +1195,14 @@ def master_dark(
         terminal_output.print_to_terminal(
             f"Dark current not specified. Assume 0.1 e-/pix/s.",
             indent=1,
-            style_name='WARNING',
+            style_name="WARNING",
         )
         # dark_rate = {0: 0.1}
         dark_rate = 0.1
 
     #   Create image collection
     try:
-        image_file_collection = ccdp.ImageFileCollection(out_path / 'dark')
+        image_file_collection = ccdp.ImageFileCollection(out_path / "dark")
     except FileNotFoundError:
         image_file_collection = ccdp.ImageFileCollection(file_path)
 
@@ -1173,25 +1211,35 @@ def master_dark(
         return
 
     #   Find darks
-    dark_mask = [True if file in image_type['dark'] else False
-                 for file in image_file_collection.summary['imagetyp']]
+    dark_mask = [
+        True if file in image_type["dark"] else False
+        for file in image_file_collection.summary["imagetyp"]
+    ]
 
     #   Return if no darks are found in this directory
     if not dark_mask:
         return
 
     #   Get all available shapes with exposure times
-    all_available_image_shapes_and_exposure_times: set[tuple[int, int, float]] = set(tuple(zip(
-        image_file_collection.summary['naxis1'][dark_mask],
-        image_file_collection.summary['naxis2'][dark_mask],
-        image_file_collection.summary['exptime'][dark_mask]
-    )))
+    all_available_image_shapes_and_exposure_times: set[tuple[int, int, float]] = set(
+        tuple(
+            zip(
+                image_file_collection.summary["naxis1"][dark_mask],
+                image_file_collection.summary["naxis2"][dark_mask],
+                image_file_collection.summary["exptime"][dark_mask],
+            )
+        )
+    )
 
     #   Get only the shapes
-    all_available_image_shapes: set[tuple[int, int]] = set(tuple(zip(
-        image_file_collection.summary['naxis1'][dark_mask],
-        image_file_collection.summary['naxis2'][dark_mask]
-    )))
+    all_available_image_shapes: set[tuple[int, int]] = set(
+        tuple(
+            zip(
+                image_file_collection.summary["naxis1"][dark_mask],
+                image_file_collection.summary["naxis2"][dark_mask],
+            )
+        )
+    )
 
     #   Get the maximum exposure time for each shape
     max_exposure_time_per_shape: list = []
@@ -1203,15 +1251,13 @@ def master_dark(
         max_exposure_time_per_shape.append((*shape, np.max(exposure_times)))
 
     #   Get exposure times (set allows to return only unique values)
-    dark_exposure_times = set(
-        image_file_collection.summary['exptime'][dark_mask]
-    )
+    dark_exposure_times = set(image_file_collection.summary["exptime"][dark_mask])
 
     #   Get dark image type
     dark_image_type = utilities.get_image_type(
         image_file_collection,
         image_type,
-        image_class='dark',
+        image_class="dark",
     )
 
     #   Initialize multiprocessing object
@@ -1235,24 +1281,24 @@ def master_dark(
                 dark_rate,
             ),
             kwargs={
-                'gain': gain,
-                'read_noise': read_noise,
-                'mk_hot_pixel_mask': mk_hot_pixel_mask,
-                'plot_plots': plot_plots,
-                'rm_bias': rm_bias,
-                'trim_x_start': trim_x_start,
-                'trim_x_end': trim_x_end,
-                'trim_y_start': trim_y_start,
-                'trim_y_end': trim_y_end,
-                'dtype': dtype,
-            }
+                "gain": gain,
+                "read_noise": read_noise,
+                "mk_hot_pixel_mask": mk_hot_pixel_mask,
+                "plot_plots": plot_plots,
+                "rm_bias": rm_bias,
+                "trim_x_start": trim_x_start,
+                "trim_x_end": trim_x_end,
+                "trim_y_start": trim_y_start,
+                "trim_y_end": trim_y_end,
+                "dtype": dtype,
+            },
         )
 
     #   Exit if exceptions occurred
     if executor.err is not None:
         raise RuntimeError(
-            f'\n{style.Bcolors.FAIL}Dark image stacking using multiprocessing'
-            f' failed :({style.Bcolors.ENDC}'
+            f"\n{style.Bcolors.FAIL}Dark image stacking using multiprocessing"
+            f" failed :({style.Bcolors.ENDC}"
         )
 
     #   Close multiprocessing pool and wait until it finishes
@@ -1260,18 +1306,28 @@ def master_dark(
 
     #   Remove reduced dark files if they exist
     if not debug:
-        shutil.rmtree(out_path / 'dark', ignore_errors=True)
+        shutil.rmtree(out_path / "dark", ignore_errors=True)
+
 
 def master_dark_stacking(
-        image_file_collection: ccdp.ImageFileCollection,
-        exposure_time: float, dark_image_type: str | list[str] | None,
-        max_exposure_time_per_shape: list[tuple[int, int, float]],
-        out_path: Path, dark_rate: float, gain: int | None = None,
-        read_noise: float = 8., mk_hot_pixel_mask: bool = True,
-        plot_plots: bool = False, debug: bool = False, rm_bias: bool = False,
-        trim_x_start: int = 0, trim_x_end: int = 0, trim_y_start: int = 0,
-        trim_y_end: int = 0, dtype: str | np.dtype | None = None
-    ) -> None:
+    image_file_collection: ccdp.ImageFileCollection,
+    exposure_time: float,
+    dark_image_type: str | list[str] | None,
+    max_exposure_time_per_shape: list[tuple[int, int, float]],
+    out_path: Path,
+    dark_rate: float,
+    gain: int | None = None,
+    read_noise: float = 8.0,
+    mk_hot_pixel_mask: bool = True,
+    plot_plots: bool = False,
+    debug: bool = False,
+    rm_bias: bool = False,
+    trim_x_start: int = 0,
+    trim_x_end: int = 0,
+    trim_y_start: int = 0,
+    trim_y_end: int = 0,
+    dtype: str | np.dtype | None = None,
+) -> None:
     """
     This function stacks all dark images with the same exposure time.
 
@@ -1359,14 +1415,14 @@ def master_dark_stacking(
     #                  -> find better solution
     combined_dark = ccdp.combine(
         calibrated_darks,
-        method='average',
+        method="average",
         sigma_clip=True,
         sigma_clip_low_thresh=5,
         sigma_clip_high_thresh=5,
         sigma_clip_func=np.ma.median,
         sigma_clip_dev_func=mad_std,
         mem_limit=15e9,
-        unit='adu',
+        unit="adu",
         dtype=dtype,
     )
 
@@ -1374,20 +1430,20 @@ def master_dark_stacking(
     if not rm_bias:
         image_shape = combined_dark.data.shape
         combined_dark = combined_dark[
-                            trim_y_start:image_shape[0]-trim_y_end,
-                            trim_x_start:image_shape[1]-trim_x_end
-                        ]
+            trim_y_start : image_shape[0] - trim_y_end,
+            trim_x_start : image_shape[1] - trim_x_end,
+        ]
 
     #   Add Header keyword to mark the file as a Master
-    combined_dark.meta['combined'] = True
+    combined_dark.meta["combined"] = True
 
     #   Write file to disk
-    dark_file_name = f'combined_dark_{exposure_time:4.2f}.fit'
+    dark_file_name = f"combined_dark_{exposure_time:4.2f}.fit"
     combined_dark.write(out_path / dark_file_name, overwrite=True)
 
     #   Set gain _> get it from Header if not provided
     if gain is None:
-        gain = int(combined_dark.header['EGAIN'])
+        gain = int(combined_dark.header["EGAIN"])
 
     #   Plot histogram
     if plot_plots:
@@ -1407,10 +1463,13 @@ def master_dark_stacking(
         )
 
     #   Create mask with hot pixels
-    current_shape_x = combined_dark.meta['naxis1']
-    current_shape_y = combined_dark.meta['naxis2']
-    if ((current_shape_x, current_shape_y, exposure_time) in
-            max_exposure_time_per_shape and mk_hot_pixel_mask):
+    current_shape_x = combined_dark.meta["naxis1"]
+    current_shape_y = combined_dark.meta["naxis2"]
+    if (
+        current_shape_x,
+        current_shape_y,
+        exposure_time,
+    ) in max_exposure_time_per_shape and mk_hot_pixel_mask:
         utilities.make_hot_pixel_mask(
             combined_dark,
             gain,
@@ -1420,13 +1479,20 @@ def master_dark_stacking(
 
 
 def reduce_flat(
-        image_path: str | Path, output_dir: str | Path,
-        image_type: dict[str, list[str]], gain: float | None = None,
-        read_noise: float = 8., rm_bias: bool = False,
-        exposure_time_tolerance: float = 0.5,
-        n_cores_multiprocessing: int | None = None, trim_x_start: int = 0,
-        trim_x_end: int = 0, trim_y_start: int = 0, trim_y_end: int = 0,
-        **kwargs) -> None:
+    image_path: str | Path,
+    output_dir: str | Path,
+    image_type: dict[str, list[str]],
+    gain: float | None = None,
+    read_noise: float = 8.0,
+    rm_bias: bool = False,
+    exposure_time_tolerance: float = 0.5,
+    n_cores_multiprocessing: int | None = None,
+    trim_x_start: int = 0,
+    trim_x_end: int = 0,
+    trim_y_start: int = 0,
+    trim_y_end: int = 0,
+    **kwargs,
+) -> None:
     """
     Reduce flat images: This function reduces the raw flat frames,
                         subtracts master dark and if necessary also
@@ -1503,8 +1569,8 @@ def reduce_flat(
     #   Find flats
     #   TODO: Rewrite with image_file_collection from the loop below
     flats = [
-        True if file in image_type['flat'] else False for file in
-        image_file_collection.summary['imagetyp']
+        True if file in image_type["flat"] else False
+        for file in image_file_collection.summary["imagetyp"]
     ]
 
     #   Return if no flats are found in this directory
@@ -1518,10 +1584,11 @@ def reduce_flat(
     dark_image_type = utilities.get_image_type(
         image_file_collection_reduced,
         image_type,
-        image_class='dark',
+        image_class="dark",
     )
     combined_darks = {
-        ccd.header['exptime']: ccd for ccd in image_file_collection_reduced.ccds(
+        ccd.header["exptime"]: ccd
+        for ccd in image_file_collection_reduced.ccds(
             imagetyp=dark_image_type,
             combined=True,
         )
@@ -1533,7 +1600,7 @@ def reduce_flat(
         bias_image_type = utilities.get_image_type(
             image_file_collection_reduced,
             image_type,
-            image_class='bias',
+            image_class="bias",
         )
 
         combined_bias = CCDData.read(
@@ -1545,14 +1612,14 @@ def reduce_flat(
         )
 
     #   Set new flat path
-    flat_path = Path(out_path / 'flat')
+    flat_path = Path(out_path / "flat")
     checks.clear_directory(flat_path)
 
     #   Get flat image types
     flat_image_type = utilities.get_image_type(
         image_file_collection,
         image_type,
-        image_class='flat',
+        image_class="flat",
     )
 
     #   Initialize multiprocessing object
@@ -1565,34 +1632,29 @@ def reduce_flat(
 
     #   Reduce science images and save to an extra directory
     for file_name in image_file_collection.files_filtered(
-            include_path=True,
-            imagetyp=flat_image_type,
+        include_path=True,
+        imagetyp=flat_image_type,
     ):
         executor.schedule(
             reduce_flat_image,
-            args=(
-                file_name,
-                combined_bias,
-                combined_darks,
-                flat_path
-            ),
+            args=(file_name, combined_bias, combined_darks, flat_path),
             kwargs={
-                'gain': gain,
-                'read_noise': read_noise,
-                'rm_bias': rm_bias,
-                'exposure_time_tolerance': exposure_time_tolerance,
-                'trim_x_start': trim_x_start,
-                'trim_x_end': trim_x_end,
-                'trim_y_start': trim_y_start,
-                'trim_y_end': trim_y_end,
-            }
+                "gain": gain,
+                "read_noise": read_noise,
+                "rm_bias": rm_bias,
+                "exposure_time_tolerance": exposure_time_tolerance,
+                "trim_x_start": trim_x_start,
+                "trim_x_end": trim_x_end,
+                "trim_y_start": trim_y_start,
+                "trim_y_end": trim_y_end,
+            },
         )
 
     #   Exit if exceptions occurred
     if executor.err is not None:
         raise RuntimeError(
-            f'\n{style.Bcolors.FAIL}Flat image reduction using multiprocessing'
-            f' failed :({style.Bcolors.ENDC}'
+            f"\n{style.Bcolors.FAIL}Flat image reduction using multiprocessing"
+            f" failed :({style.Bcolors.ENDC}"
         )
 
     #   Close multiprocessing pool and wait until it finishes
@@ -1600,13 +1662,19 @@ def reduce_flat(
 
 
 def reduce_flat_image(
-        flat_file_name: str, combined_bias: CCDData | None,
-        combined_darks: dict[float, CCDData],
-        flat_path: Path, gain: float | None = None, read_noise: float = 8.,
-        rm_bias: bool = False, exposure_time_tolerance: float = 0.5,
-        trim_x_start: int = 0, trim_x_end: int = 0, trim_y_start: int = 0,
-        trim_y_end: int = 0
-    ) -> None:
+    flat_file_name: str,
+    combined_bias: CCDData | None,
+    combined_darks: dict[float, CCDData],
+    flat_path: Path,
+    gain: float | None = None,
+    read_noise: float = 8.0,
+    rm_bias: bool = False,
+    exposure_time_tolerance: float = 0.5,
+    trim_x_start: int = 0,
+    trim_x_end: int = 0,
+    trim_y_start: int = 0,
+    trim_y_end: int = 0,
+) -> None:
     """
     Reduce an individual image
 
@@ -1663,18 +1731,18 @@ def reduce_flat_image(
         Default is ``0``.
     """
     #   Read fla image
-    flat = CCDData.read(flat_file_name, unit='adu')
+    flat = CCDData.read(flat_file_name, unit="adu")
 
     #   Trimming the image, for example to remove an overscan region
     image_shape = flat.data.shape
     flat = flat[
-                trim_y_start:image_shape[0]-trim_y_end,
-                trim_x_start:image_shape[1]-trim_x_end
-            ]
+        trim_y_start : image_shape[0] - trim_y_end,
+        trim_x_start : image_shape[1] - trim_x_end,
+    ]
 
     #   Set gain _> get it from Header if not provided
     if gain is None:
-        gain = flat.header['EGAIN']
+        gain = flat.header["EGAIN"]
 
     #   Calculated uncertainty
     flat = ccdp.create_deviation(
@@ -1689,10 +1757,12 @@ def reduce_flat_image(
         flat = ccdp.subtract_bias(flat, combined_bias)
 
     #   Find the correct dark exposure
-    valid_dark_available, closest_dark_exposure_time = utilities.find_nearest_exposure_time_to_reference_image(
-        flat,
-        list(combined_darks.keys()),
-        time_tolerance=exposure_time_tolerance,
+    valid_dark_available, closest_dark_exposure_time = (
+        utilities.find_nearest_exposure_time_to_reference_image(
+            flat,
+            list(combined_darks.keys()),
+            time_tolerance=exposure_time_tolerance,
+        )
     )
 
     #   Exit if no dark with a similar exposure time have been found
@@ -1707,23 +1777,27 @@ def reduce_flat_image(
     flat = ccdp.subtract_dark(
         flat,
         combined_darks[closest_dark_exposure_time],
-        exposure_time='exptime',
+        exposure_time="exptime",
         exposure_unit=u.second,
         scale=rm_bias,
     )
 
     #   Save the result
-    file_name = flat_file_name.split('/')[-1]
+    file_name = flat_file_name.split("/")[-1]
     flat.write(flat_path / file_name, overwrite=True)
 
 
 def master_flat(
-        image_path: str | Path, output_dir: str | Path,
-        image_type: dict[str, list[str]], mk_bad_pixel_mask: bool = True,
-        plot_plots: bool = False, debug: bool = False,
-        n_cores_multiprocessing: int | None = None,
-        dtype: str | np.dtype | None = None, **kwargs
-    ) -> None:
+    image_path: str | Path,
+    output_dir: str | Path,
+    image_type: dict[str, list[str]],
+    mk_bad_pixel_mask: bool = True,
+    plot_plots: bool = False,
+    debug: bool = False,
+    n_cores_multiprocessing: int | None = None,
+    dtype: str | np.dtype | None = None,
+    **kwargs,
+) -> None:
     """
     This function calculates master flats from individual flat field
     images located in one directory. The flat field images are group
@@ -1776,10 +1850,10 @@ def master_flat(
     flat_image_type = utilities.get_image_type(
         image_file_collection,
         image_type,
-        image_class='flat',
+        image_class="flat",
     )
     filters = set(
-        h['filter'] for h in image_file_collection.headers(imagetyp=flat_image_type)
+        h["filter"] for h in image_file_collection.headers(imagetyp=flat_image_type)
     )
 
     #   Initialize multiprocessing object
@@ -1800,16 +1874,16 @@ def master_flat(
                 out_path,
             ),
             kwargs={
-                'plot_plots': plot_plots,
-                'dtype': dtype,
-            }
+                "plot_plots": plot_plots,
+                "dtype": dtype,
+            },
         )
 
     #   Exit if exceptions occurred
     if executor.err is not None:
         raise RuntimeError(
-            f'\n{style.Bcolors.FAIL}Stacking of flat images using multiprocessing'
-            f' failed :({style.Bcolors.ENDC}'
+            f"\n{style.Bcolors.FAIL}Stacking of flat images using multiprocessing"
+            f" failed :({style.Bcolors.ENDC}"
         )
 
     #   Close multiprocessing pool and wait until it finishes
@@ -1833,10 +1907,13 @@ def master_flat(
 
 
 def stack_flat_images(
-        image_file_collection: ccdp.ImageFileCollection,
-        flat_image_type: str | list[str] | None, filter_: str, out_path: Path,
-        plot_plots: bool = False, dtype: str | np.dtype | None = None
-    ) -> np.ndarray:
+    image_file_collection: ccdp.ImageFileCollection,
+    flat_image_type: str | list[str] | None,
+    filter_: str,
+    out_path: Path,
+    plot_plots: bool = False,
+    dtype: str | np.dtype | None = None,
+) -> np.ndarray:
     """
     Stack flats for the individual filters
 
@@ -1880,7 +1957,7 @@ def stack_flat_images(
     #                  ('inv_median')
     combined_flat = ccdp.combine(
         flats_to_combine,
-        method='average',
+        method="average",
         scale=utilities.inverse_median,
         sigma_clip=True,
         sigma_clip_low_thresh=5,
@@ -1892,12 +1969,10 @@ def stack_flat_images(
     )
 
     #   Add Header keyword to mark the file as a Master
-    combined_flat.meta['combined'] = True
+    combined_flat.meta["combined"] = True
 
     #   Define name and write file to disk
-    flat_file_name = 'combined_flat_filter_{}.fit'.format(
-        filter_.replace("''", "p")
-    )
+    flat_file_name = "combined_flat_filter_{}.fit".format(filter_.replace("''", "p"))
     combined_flat.write(out_path / flat_file_name, overwrite=True)
 
     #   Plot flat medians and means
@@ -1928,25 +2003,34 @@ def reduce_master(paths, *args, **kwargs):
         reduce_light(paths, *args, **kwargs)
     else:
         raise RuntimeError(
-            f'{style.Bcolors.FAIL}Supplied path is neither str nor list'
-            f'{style.Bcolors.ENDC}'
+            f"{style.Bcolors.FAIL}Supplied path is neither str nor list"
+            f"{style.Bcolors.ENDC}"
         )
 
 
 def reduce_light(
-        image_path: str | Path, output_dir: str | Path,
-        image_type: dict[str, list[str]], rm_cosmic_rays: bool = True,
-        mask_cosmics: bool = False, gain: float | None = None,
-        read_noise: float = 8., saturation_level: float | None = 65535.,
-        limiting_contrast_rm_cosmic_rays: float = 5.,
-        sigma_clipping_value_rm_cosmic_rays: float = 4.5,
-        scale_image_with_exposure_time: bool = True, rm_bias: bool = False,
-        verbose: bool = False, add_hot_bad_pixel_mask: bool = True,
-        exposure_time_tolerance: float = 0.5,
-        target_name: str | None = None,
-        n_cores_multiprocessing: int | None = None, trim_x_start: int = 0,
-        trim_x_end: int = 0, trim_y_start: int = 0, trim_y_end: int = 0
-    ) -> None:
+    image_path: str | Path,
+    output_dir: str | Path,
+    image_type: dict[str, list[str]],
+    rm_cosmic_rays: bool = True,
+    mask_cosmics: bool = False,
+    gain: float | None = None,
+    read_noise: float = 8.0,
+    saturation_level: float | None = 65535.0,
+    limiting_contrast_rm_cosmic_rays: float = 5.0,
+    sigma_clipping_value_rm_cosmic_rays: float = 4.5,
+    scale_image_with_exposure_time: bool = True,
+    rm_bias: bool = False,
+    verbose: bool = False,
+    add_hot_bad_pixel_mask: bool = True,
+    exposure_time_tolerance: float = 0.5,
+    target_name: str | None = None,
+    n_cores_multiprocessing: int | None = None,
+    trim_x_start: int = 0,
+    trim_x_end: int = 0,
+    trim_y_start: int = 0,
+    trim_y_end: int = 0,
+) -> None:
     """
     Reduce the science images
 
@@ -2062,9 +2146,7 @@ def reduce_light(
 
     #   Limit images to those of the target. If a target is given.
     if target_name is not None:
-        image_file_collection = image_file_collection.filter(
-            object=target_name
-        )
+        image_file_collection = image_file_collection.filter(object=target_name)
 
     if not image_file_collection.files:
         raise RuntimeError(
@@ -2073,8 +2155,10 @@ def reduce_light(
         )
 
     #   Find science images
-    lights = [True if file in image_type['light'] else False for file in
-              image_file_collection.summary['imagetyp']]
+    lights = [
+        True if file in image_type["light"] else False
+        for file in image_file_collection.summary["imagetyp"]
+    ]
 
     #   Return if no science images are found in this directory
     if not lights:
@@ -2087,10 +2171,11 @@ def reduce_light(
     dark_image_type = utilities.get_image_type(
         image_file_collection_reduced,
         image_type,
-        image_class='dark',
+        image_class="dark",
     )
     combined_darks: dict[float, CCDData] = {
-        ccd.header['exptime']: ccd for ccd in image_file_collection_reduced.ccds(
+        ccd.header["exptime"]: ccd
+        for ccd in image_file_collection_reduced.ccds(
             imagetyp=dark_image_type,
             combined=True,
         )
@@ -2098,10 +2183,11 @@ def reduce_light(
     flat_image_type = utilities.get_image_type(
         image_file_collection_reduced,
         image_type,
-        image_class='flat',
+        image_class="flat",
     )
     combined_flats: dict[str, CCDData] = {
-        ccd.header['filter']: ccd for ccd in image_file_collection_reduced.ccds(
+        ccd.header["filter"]: ccd
+        for ccd in image_file_collection_reduced.ccds(
             imagetyp=flat_image_type,
             combined=True,
         )
@@ -2113,7 +2199,7 @@ def reduce_light(
         bias_image_type = utilities.get_image_type(
             image_file_collection_reduced,
             image_type,
-            image_class='bias',
+            image_class="bias",
         )
 
         combined_bias = CCDData.read(
@@ -2125,7 +2211,7 @@ def reduce_light(
         )
 
     #   Set science image path
-    light_path = Path(out_path / 'light')
+    light_path = Path(out_path / "light")
 
     dir_empty = checks.check_if_directory_is_empty(light_path)
 
@@ -2135,9 +2221,9 @@ def reduce_light(
             f"found. Should these be used? [yes/no] {style.Bcolors.ENDC}"
         )
         if timed_out:
-            user_input = 'n'
+            user_input = "n"
 
-        if user_input in ['y', 'yes']:
+        if user_input in ["y", "yes"]:
             return
 
     checks.clear_directory(light_path)
@@ -2146,7 +2232,7 @@ def reduce_light(
     light_image_type = utilities.get_image_type(
         image_file_collection,
         image_type,
-        image_class='light',
+        image_class="light",
     )
 
     #   Initialize multiprocessing object
@@ -2158,10 +2244,10 @@ def reduce_light(
 
     #   Reduce science images and save to an extra directory
     for file_name in image_file_collection.files_filtered(
-            include_path=True,
-            imagetyp=light_image_type,
-            # ccd_kwargs=dict(unit='adu'),
-        ):
+        include_path=True,
+        imagetyp=light_image_type,
+        # ccd_kwargs=dict(unit='adu'),
+    ):
         executor.schedule(
             reduce_light_image,
             args=(
@@ -2170,33 +2256,33 @@ def reduce_light(
                 combined_darks,
                 combined_flats,
                 out_path,
-                light_path
+                light_path,
             ),
             kwargs={
-                'gain': gain,
-                'read_noise': read_noise,
-                'rm_bias': rm_bias,
-                'exposure_time_tolerance': exposure_time_tolerance,
-                'add_hot_bad_pixel_mask': add_hot_bad_pixel_mask,
-                'rm_cosmic_rays': rm_cosmic_rays,
-                'limiting_contrast_rm_cosmic_rays': limiting_contrast_rm_cosmic_rays,
-                'sigma_clipping_value_rm_cosmic_rays': sigma_clipping_value_rm_cosmic_rays,
-                'saturation_level': saturation_level,
-                'mask_cosmics': mask_cosmics,
-                'scale_image_with_exposure_time': scale_image_with_exposure_time,
-                'verbose': verbose,
-                'trim_x_start': trim_x_start,
-                'trim_x_end': trim_x_end,
-                'trim_y_start': trim_y_start,
-                'trim_y_end': trim_y_end,
-            }
+                "gain": gain,
+                "read_noise": read_noise,
+                "rm_bias": rm_bias,
+                "exposure_time_tolerance": exposure_time_tolerance,
+                "add_hot_bad_pixel_mask": add_hot_bad_pixel_mask,
+                "rm_cosmic_rays": rm_cosmic_rays,
+                "limiting_contrast_rm_cosmic_rays": limiting_contrast_rm_cosmic_rays,
+                "sigma_clipping_value_rm_cosmic_rays": sigma_clipping_value_rm_cosmic_rays,
+                "saturation_level": saturation_level,
+                "mask_cosmics": mask_cosmics,
+                "scale_image_with_exposure_time": scale_image_with_exposure_time,
+                "verbose": verbose,
+                "trim_x_start": trim_x_start,
+                "trim_x_end": trim_x_end,
+                "trim_y_start": trim_y_start,
+                "trim_y_end": trim_y_end,
+            },
         )
 
     #   Exit if exceptions occurred
     if executor.err is not None:
         raise RuntimeError(
-            f'\n{style.Bcolors.FAIL}Light image reduction using multiprocessing'
-            f' failed :({style.Bcolors.ENDC}'
+            f"\n{style.Bcolors.FAIL}Light image reduction using multiprocessing"
+            f" failed :({style.Bcolors.ENDC}"
         )
 
     #   Close multiprocessing pool and wait until it finishes
@@ -2204,20 +2290,29 @@ def reduce_light(
 
 
 def reduce_light_image(
-        light_file_name: str, combined_bias: CCDData | None,
-        combined_darks: dict[float, CCDData],
-        combined_flats: dict[str, CCDData],
-        out_path: Path, light_path: Path,
-        gain: float | None = None, read_noise: float = 8.,
-        rm_bias: bool = False, exposure_time_tolerance: float = 0.5,
-        add_hot_bad_pixel_mask: bool = True, rm_cosmic_rays: bool = True,
-        limiting_contrast_rm_cosmic_rays: float = 5.,
-        sigma_clipping_value_rm_cosmic_rays: float = 4.5,
-        saturation_level: float | None = 65535., mask_cosmics: bool = False,
-        scale_image_with_exposure_time: bool = True, verbose: bool = False,
-        trim_x_start: int = 0, trim_x_end: int = 0, trim_y_start: int = 0,
-        trim_y_end: int = 0
-    ) -> None:
+    light_file_name: str,
+    combined_bias: CCDData | None,
+    combined_darks: dict[float, CCDData],
+    combined_flats: dict[str, CCDData],
+    out_path: Path,
+    light_path: Path,
+    gain: float | None = None,
+    read_noise: float = 8.0,
+    rm_bias: bool = False,
+    exposure_time_tolerance: float = 0.5,
+    add_hot_bad_pixel_mask: bool = True,
+    rm_cosmic_rays: bool = True,
+    limiting_contrast_rm_cosmic_rays: float = 5.0,
+    sigma_clipping_value_rm_cosmic_rays: float = 4.5,
+    saturation_level: float | None = 65535.0,
+    mask_cosmics: bool = False,
+    scale_image_with_exposure_time: bool = True,
+    verbose: bool = False,
+    trim_x_start: int = 0,
+    trim_x_end: int = 0,
+    trim_y_start: int = 0,
+    trim_y_end: int = 0,
+) -> None:
     """
     Reduce an individual image
 
@@ -2318,28 +2413,28 @@ def reduce_light_image(
         Default is ``0``.
     """
     #   Read light image
-    light = CCDData.read(light_file_name, unit='adu')
+    light = CCDData.read(light_file_name, unit="adu")
 
     #   Trimming the image, for example to remove an overscan region
     image_shape = light.data.shape
     light = light[
-                trim_y_start:image_shape[0]-trim_y_end,
-                trim_x_start:image_shape[1]-trim_x_end
-            ]
+        trim_y_start : image_shape[0] - trim_y_end,
+        trim_x_start : image_shape[1] - trim_x_end,
+    ]
 
     #   Get base file name
-    file_name = light_file_name.split('/')[-1]
+    file_name = light_file_name.split("/")[-1]
 
     #   Set gain -> get it from Header if not provided
     if gain is None:
         try:
-            gain = light.header['EGAIN']
+            gain = light.header["EGAIN"]
         except KeyError:
-            gain = 1.
+            gain = 1.0
             terminal_output.print_to_terminal(
                 "WARNING: Gain could not de derived from the "
                 "image header. Use 1.0 instead",
-                style_name='WARNING',
+                style_name="WARNING",
                 indent=2,
             )
 
@@ -2356,10 +2451,12 @@ def reduce_light_image(
         light = ccdp.subtract_bias(light, combined_bias)
 
     #   Find the correct dark exposure
-    valid_dark_available, closest_dark_exposure_time = utilities.find_nearest_exposure_time_to_reference_image(
-        light,
-        list(combined_darks.keys()),
-        time_tolerance=exposure_time_tolerance,
+    valid_dark_available, closest_dark_exposure_time = (
+        utilities.find_nearest_exposure_time_to_reference_image(
+            light,
+            list(combined_darks.keys()),
+            time_tolerance=exposure_time_tolerance,
+        )
     )
 
     #   Exit if no dark with a similar exposure time have been found
@@ -2374,28 +2471,28 @@ def reduce_light_image(
     reduced: CCDData = ccdp.subtract_dark(
         light,
         combined_darks[closest_dark_exposure_time],
-        exposure_time='exptime',
+        exposure_time="exptime",
         exposure_unit=u.second,
         scale=rm_bias,
     )
 
     #   Mask negative pixel
-    mask = reduced.data < 0.
+    mask = reduced.data < 0.0
     reduced.mask = reduced.mask | mask
 
     #   Check if the "FILTER" keyword is set in Header
     #   TODO: Added ability to skip if filter not found. Add warning about which file will be skipped.
     #   TODO: Check if this works...
-    if 'filter' not in reduced.header:
+    if "filter" not in reduced.header:
         terminal_output.print_to_terminal(
             f"WARNING: FILTER keyword not found in HEADER. \n Skip file: {file_name}.",
-            style_name='WARNING',
+            style_name="WARNING",
             indent=2,
         )
         return
 
     #   Get master flat field
-    flat_master = combined_flats[reduced.header['filter']]
+    flat_master = combined_flats[reduced.header["filter"]]
 
     #   Divided science by the master flat
     reduced: CCDData = ccdp.flat_correct(reduced, flat_master)
@@ -2421,7 +2518,7 @@ def reduce_light_image(
     if rm_cosmic_rays:
         if verbose:
             terminal_output.print_to_terminal(
-                f'Remove cosmic rays from image {file_name}'
+                f"Remove cosmic rays from image {file_name}"
             )
 
         #   Sanitize saturation level
@@ -2429,7 +2526,7 @@ def reduce_light_image(
             terminal_output.print_to_terminal(
                 f"Saturation level not specified. Assume 16bit == 65535",
                 indent=1,
-                style_name='WARNING',
+                style_name="WARNING",
             )
             saturation_level = 65535
 
@@ -2448,22 +2545,23 @@ def reduce_light_image(
 
                 #   Add a header keyword to indicate that the cosmics have been
                 #   masked
-                reduced.meta['cosmic_mas'] = True
+                reduced.meta["cosmic_mas"] = True
+            #   TODO: Add else with Warning
         else:
             reduced = reduced_without_cosmics
             if not add_hot_bad_pixel_mask:
                 reduced.mask = np.zeros(reduced.shape, dtype=bool)
 
             #   Add header keyword to indicate that cosmics have been removed
-            reduced.meta['cosmics_rm'] = True
+            reduced.meta["cosmics_rm"] = True
 
         if verbose:
-            terminal_output.print_to_terminal('')
+            terminal_output.print_to_terminal("")
 
     #   Scale image with exposure time
     if scale_image_with_exposure_time:
         #   Get exposure time and all meta data
-        exposure_time = reduced.header['exptime']
+        exposure_time = reduced.header["exptime"]
         reduced_meta = reduced.meta
 
         #   Scale image
@@ -2472,8 +2570,8 @@ def reduce_light_image(
         #   Put metadata back on the image, because it is lost while
         #   dividing
         reduced.meta = reduced_meta
-        reduced.meta['HIERARCH'] = 'Image scaled by exposure time:'
-        reduced.meta['HIERARCH'] = 'Unit: e-/s/pixel'
+        reduced.meta["HIERARCH"] = "Image scaled by exposure time:"
+        reduced.meta["HIERARCH"] = "Unit: e-/s/pixel"
 
         #   Set data units to electron / s
         reduced.unit = u.electron / u.s
@@ -2483,10 +2581,14 @@ def reduce_light_image(
 
 
 def stack_image(
-        image_path: Path, output_dir: Path, image_type_list: list[str],
-        stacking_method: str = 'average', dtype: str | np.dtype | None = None,
-        new_target_name: str | None = None, debug: bool = False
-    ) -> None:
+    image_path: Path,
+    output_dir: Path,
+    image_type_list: list[str],
+    stacking_method: str = "average",
+    dtype: str | np.dtype | None = None,
+    new_target_name: str | None = None,
+    debug: bool = False,
+) -> None:
     """
     Combine images
 
@@ -2542,7 +2644,9 @@ def stack_image(
         image_file_collection,
         image_type_list,
     )
-    filters: set[str] = set(h['filter'] for h in image_file_collection.headers(imagetyp=image_type))
+    filters: set[str] = set(
+        h["filter"] for h in image_file_collection.headers(imagetyp=image_type)
+    )
 
     #   Combine images for the individual filters
     #   TODO: Add multiprocessing
@@ -2576,9 +2680,7 @@ def stack_image(
         )
 
         #   Define name and write file to disk
-        file_name = 'combined_filter_{}.fit'.format(
-            filter_.replace("''", "p")
-        )
+        file_name = "combined_filter_{}.fit".format(filter_.replace("''", "p"))
         combined_image.write(out_path / file_name, overwrite=True)
 
     #   Remove individual reduced images

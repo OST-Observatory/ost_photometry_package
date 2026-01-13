@@ -16,6 +16,7 @@ import yaml
 
 try:
     from pytimedinput import timedInput
+
     use_timed_input = True
 except ImportError:
     use_timed_input = False
@@ -77,15 +78,17 @@ from . import checks, terminal_output, style, calibration_parameters
 #     def get_data(self):
 #         return CCDData.read(self.path).data
 
+
 #   TODO: Split into a base class and a derived class for analysis
 class Image:
     """
-        Image class: Provides relevant image information and some methods for
-                     handling image data.
+    Image class: Provides relevant image information and some methods for
+                 handling image data.
     """
+
     def __init__(
-            self, pd: int, filter_: str, path: str | Path,
-            output_dir: str | Path) -> None:
+        self, pd: int, filter_: str, path: str | Path, output_dir: str | Path
+    ) -> None:
         #   Set image ID
         self.pd: int = pd
 
@@ -97,7 +100,7 @@ class Image:
             self.filename: str = path.name
             self.path: Path = path
         else:
-            self.filename = path.split('/')[-1]
+            self.filename = path.split("/")[-1]
             self.path: Path = Path(path)
 
         #   Set path to output directory
@@ -121,7 +124,7 @@ class Image:
         self.calculate_field_of_view_etc()
 
         #   Set some defaults
-        self.fwhm: float = 4.
+        self.fwhm: float = 4.0
 
         #   Prepare variables for later use
         self.epsf: ImagePSF | None = None
@@ -167,11 +170,11 @@ class Image:
         header = self.get_header()
 
         #   Read focal length - set default to 3454. mm
-        focal_length = header.get('FOCALLEN', 3454.)
+        focal_length = header.get("FOCALLEN", 3454.0)
 
         #   Read ra and dec of image center
-        ra = header.get('OBJCTRA', '00 00 00')
-        dec = header.get('OBJCTDEC', '+00 00 00')
+        ra = header.get("OBJCTRA", "00 00 00")
+        dec = header.get("OBJCTDEC", "+00 00 00")
 
         #   Convert ra & dec to degrees
         coordinates_sky = SkyCoord(
@@ -182,8 +185,8 @@ class Image:
         )
 
         #   Number of pixels
-        n_pixel_x = header.get('NAXIS1', 0)
-        n_pixel_y = header.get('NAXIS2', 0)
+        n_pixel_x = header.get("NAXIS1", 0)
+        n_pixel_y = header.get("NAXIS2", 0)
 
         if n_pixel_x == 0:
             raise ValueError(
@@ -197,34 +200,37 @@ class Image:
             )
 
         #   Get binning
-        x_binning = header.get('XBINNING', 1)
-        y_binning = header.get('YBINNING', 1)
+        x_binning = header.get("XBINNING", 1)
+        y_binning = header.get("YBINNING", 1)
 
         #   Set instrument
-        instrument = header.get('INSTRUME', '')
+        instrument = header.get("INSTRUME", "")
 
-        if instrument in ['QHYCCD-Cameras-Capture', 'QHYCCD-Cameras2-Capture']:
+        if instrument in ["QHYCCD-Cameras-Capture", "QHYCCD-Cameras2-Capture"]:
             #   Physical chip dimensions in pixel
             physical_dimension_x = n_pixel_x * x_binning
             physical_dimension_y = n_pixel_y * y_binning
 
             #   Set instrument
             if physical_dimension_x == 9576 and physical_dimension_y in [6387, 6388]:
-                instrument = 'QHY600M'
-            elif physical_dimension_x in [6280, 6279] and physical_dimension_y in [4210, 4209]:
-                instrument = 'QHY268M'
+                instrument = "QHY600M"
+            elif physical_dimension_x in [6280, 6279] and physical_dimension_y in [
+                4210,
+                4209,
+            ]:
+                instrument = "QHY268M"
             elif physical_dimension_x == 3864 and physical_dimension_y in [2180, 2178]:
-                instrument = 'QHY485C'
+                instrument = "QHY485C"
             else:
-                instrument = ''
+                instrument = ""
 
         #   Calculate chip size in mm
-        if 'XPIXSZ' in header:
-            pixel_width = header['XPIXSZ']
+        if "XPIXSZ" in header:
+            pixel_width = header["XPIXSZ"]
             chip_length = n_pixel_x * float(pixel_width) / 1000
             chip_height = n_pixel_y * float(pixel_width) / 1000
-        elif 'PIXSIZE1' in header:
-            pixel_width = header['PIXSIZE1']
+        elif "PIXSIZE1" in header:
+            pixel_width = header["PIXSIZE1"]
             chip_length = n_pixel_x * float(pixel_width) / 1000
             chip_height = n_pixel_y * float(pixel_width) / 1000
         else:
@@ -233,7 +239,7 @@ class Image:
                 "Use default values, assuming the image has not been cropped. "
                 "This may be completely wrong. ",
                 indent=1,
-                style_name='WARNING'
+                style_name="WARNING",
             )
             chip_length, chip_height = calibration_parameters.get_chip_dimensions(
                 instrument
@@ -244,8 +250,8 @@ class Image:
         field_of_view_y = 2 * np.arctan(chip_height / 2 / focal_length)
 
         #   Convert to arc min
-        field_of_view_x = field_of_view_x * 360. / 2. / np.pi * 60.
-        field_of_view_y = field_of_view_y * 360. / 2. / np.pi * 60.
+        field_of_view_x = field_of_view_x * 360.0 / 2.0 / np.pi * 60.0
+        field_of_view_y = field_of_view_y * 360.0 / 2.0 / np.pi * 60.0
 
         #   Calculate pixel scale [arcsec/pixel]
         pixel_scale = field_of_view_x * 60 / n_pixel_x
@@ -274,28 +280,30 @@ class Image:
         self.fov_pixel_region = pixel_region
 
         #   Add JD (observation time) and air mass from Header to image class
-        jd = header.get('JD', None)
+        jd = header.get("JD", None)
         if jd is None:
-            obs_time = header.get('DATE-OBS', None)
+            obs_time = header.get("DATE-OBS", None)
             if not obs_time:
                 raise ValueError(
                     f"{style.Bcolors.FAIL} \tERROR: No information about the "
                     "observation time was found in the header"
                     f"{style.Bcolors.ENDC}"
                 )
-            jd = Time(obs_time, format='fits').jd
+            jd = Time(obs_time, format="fits").jd
 
         self.jd = jd
-        self.air_mass = header.get('AIRMASS', 1.0)
+        self.air_mass = header.get("AIRMASS", 1.0)
 
         #  Add instrument to image class
         self.instrument = instrument
 
 
 def mk_file_list(
-        file_path: str, formats: list[str] | None = None,
-        add_path_to_file_names: bool = False, sort: bool = False
-    ) -> tuple[list[str], int]:
+    file_path: str,
+    formats: list[str] | None = None,
+    add_path_to_file_names: bool = False,
+    sort: bool = False,
+) -> tuple[list[str], int]:
     """
     Fill the file list
 
@@ -361,7 +369,7 @@ def random_string_generator(str_size: int) -> str:
     """
     allowed_chars = string.ascii_letters
 
-    return ''.join(random.choice(allowed_chars) for x in range(str_size))
+    return "".join(random.choice(allowed_chars) for x in range(str_size))
 
 
 def get_basename(path: str | Path) -> str:
@@ -379,24 +387,24 @@ def get_basename(path: str | Path) -> str:
     basename
         The basename without ending
     """
-    name_parts = str(path).split('/')[-1].split('.')[0:-1]
+    name_parts = str(path).split("/")[-1].split(".")[0:-1]
     if len(name_parts) == 1:
         basename = name_parts[0]
     else:
         basename = name_parts[0]
         for part in name_parts[1:]:
-            basename = basename + '.' + part
+            basename = basename + "." + part
 
     return basename
 
 
 def execution_time(function):
     """
-        Decorator that reports the execution time
+    Decorator that reports the execution time
 
-        Parameters
-        ----------
-        function        : `function`
+    Parameters
+    ----------
+    function        : `function`
     """
 
     def wrap(*args, **kwargs):
@@ -473,9 +481,12 @@ def link_files(output_path: Path, file_list: list[str]) -> None:
 
 
 def find_wcs_astrometry(
-        image: Image, cosmic_rays_removed: bool = False,
-        path_cosmic_cleaned_image: str | None = None, indent: int = 2,
-        wcs_working_dir: str | None = None) -> wcs.WCS:
+    image: Image,
+    cosmic_rays_removed: bool = False,
+    path_cosmic_cleaned_image: str | None = None,
+    indent: int = 2,
+    wcs_working_dir: str | None = None,
+) -> wcs.WCS:
     """
     Find WCS (using astrometry.net)
 
@@ -515,7 +526,7 @@ def find_wcs_astrometry(
 
     #   Define WCS dir
     if wcs_working_dir is None:
-        wcs_working_dir = (image.out_path / 'wcs_images')
+        wcs_working_dir = image.out_path / "wcs_images"
     else:
         wcs_working_dir = checks.check_pathlib_path(wcs_working_dir)
         wcs_working_dir = wcs_working_dir / random_string_generator(7)
@@ -539,7 +550,7 @@ def find_wcs_astrometry(
     basename = get_basename(wcs_file)
 
     #   Compose file name
-    filename = basename + '.new'
+    filename = basename + ".new"
     filepath = Path(wcs_working_dir / filename)
 
     #   String passed to the shell
@@ -553,10 +564,10 @@ def find_wcs_astrometry(
     pixel_scale_low = pixel_scale - 0.1
     pixel_scale_up = pixel_scale + 0.1
     command: str = (
-        f'solve-field --overwrite --scale-units arcsecperpix --scale-low ' +
-        f'{pixel_scale_low} --scale-high {pixel_scale_up} --ra {ra} ' +
-        f'--dec {dec} --radius 1.0 --dir {wcs_working_dir} --resort ' +
-        '"{}" --fits-image -z 2'.format(str(wcs_file).replace(" ", "\ "))
+        f"solve-field --overwrite --scale-units arcsecperpix --scale-low "
+        + f"{pixel_scale_low} --scale-high {pixel_scale_up} --ra {ra} "
+        + f"--dec {dec} --radius 1.0 --dir {wcs_working_dir} --resort "
+        + '"{}" --fits-image -z 2'.format(str(wcs_file).replace(" ", "\ "))
     )
 
     #   Running the command
@@ -568,7 +579,7 @@ def find_wcs_astrometry(
     )
 
     return_code = command_result.returncode
-    fits_created = command_result.stdout.find('Creating new FITS file')
+    fits_created = command_result.stdout.find("Creating new FITS file")
     if return_code != 0 or fits_created == -1:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
@@ -581,7 +592,7 @@ def find_wcs_astrometry(
     terminal_output.print_to_terminal(
         "WCS solution found :)",
         indent=indent,
-        style_name='OKGREEN',
+        style_name="OKGREEN",
     )
 
     #   Get image hdu list
@@ -596,8 +607,11 @@ def find_wcs_astrometry(
 
 #   TODO: Make this work
 def find_wcs_twirl(
-        image: Image, object_pixel_position_x: np.ndarray | None = None,
-        object_pixel_position_y: np.ndarray = None, indent: int = 2) -> wcs.WCS:
+    image: Image,
+    object_pixel_position_x: np.ndarray | None = None,
+    object_pixel_position_y: np.ndarray = None,
+    indent: int = 2,
+) -> wcs.WCS:
     """
     Calculate WCS information from star positions
     -> use twirl library
@@ -632,9 +646,7 @@ def find_wcs_twirl(
     #   Arrange object positions
     object_pixel_position_x = np.array(object_pixel_position_x)
     object_pixel_position_y = np.array(object_pixel_position_y)
-    objects = np.column_stack(
-        (object_pixel_position_x, object_pixel_position_y)
-    )
+    objects = np.column_stack((object_pixel_position_x, object_pixel_position_y))
 
     #   Limit the number of objects to 50
     if len(objects) > 50:
@@ -645,7 +657,9 @@ def find_wcs_twirl(
 
     coordinates = image.coordinates_image_center
     field_of_view = image.field_of_view_x
-    print('n', n, 'field_of_view', field_of_view, coordinates.ra.deg, coordinates.dec.deg)
+    print(
+        "n", n, "field_of_view", field_of_view, coordinates.ra.deg, coordinates.dec.deg
+    )
     #   Calculate WCS
     gaia_twirl = twirl.gaia_radecs(
         [coordinates.ra.deg, coordinates.dec.deg],
@@ -658,17 +672,18 @@ def find_wcs_twirl(
     gaia_twirl_pixel = np.array(
         SkyCoord(gaia_twirl, unit="deg").to_pixel(derived_wcs)
     ).T
-    print('gaia_twirl_pixel')
+    print("gaia_twirl_pixel")
     print(gaia_twirl_pixel)
     print(gaia_twirl_pixel.T)
-    print('objects')
+    print("objects")
     print(objects)
 
     from matplotlib import pyplot as plt
+
     plt.figure(figsize=(8, 8))
     plt.plot(*objects.T, "o", fillstyle="none", c="b", ms=12)
     plt.plot(*gaia_twirl_pixel.T, "o", fillstyle="none", c="C1", ms=18)
-    plt.savefig('/tmp/test_twirl.pdf', bbox_inches='tight', format='pdf')
+    plt.savefig("/tmp/test_twirl.pdf", bbox_inches="tight", format="pdf")
     plt.show()
 
     # #derived_wcs = twirl.compute_wcs(
@@ -683,7 +698,7 @@ def find_wcs_twirl(
     terminal_output.print_to_terminal(
         "WCS solution found :)",
         indent=indent,
-        style_name='OKGREEN',
+        style_name="OKGREEN",
     )
 
     image.wcs = derived_wcs
@@ -715,15 +730,13 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
     )
 
     #   Field of view in degrees
-    field_of_view = image.field_of_view_x / 60.
+    field_of_view = image.field_of_view_x / 60.0
 
     #   Path to image
     wcs_file = image.path
 
     #   String passed to the shell
-    command = (
-        'astap_cli -f "{}" -r 3 -fov {} -update'.format(wcs_file, field_of_view)
-    )
+    command = 'astap_cli -f "{}" -r 3 -fov {} -update'.format(wcs_file, field_of_view)
 
     #   Running the command
     command_result = subprocess.run(
@@ -734,7 +747,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
     )
 
     return_code = command_result.returncode
-    solution_found = command_result.stdout.find('Solution found:')
+    solution_found = command_result.stdout.find("Solution found:")
     if return_code != 0 or solution_found == -1:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
@@ -747,7 +760,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
     terminal_output.print_to_terminal(
         "WCS solution found :)",
         indent=indent,
-        style_name='OKGREEN',
+        style_name="OKGREEN",
     )
 
     #   Get image hdu list
@@ -761,8 +774,8 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
 
 
 def check_wcs_exists(
-        image: Image, wcs_dir: str | None = None, indent: int = 2
-    ) -> tuple[bool, Path | str]:
+    image: Image, wcs_dir: str | None = None, indent: int = 2
+) -> tuple[bool, Path | str]:
     """
     Checks if the image contains already a valid WCS.
 
@@ -796,13 +809,13 @@ def check_wcs_exists(
     wcs_original = wcs.WCS(fits.open(wcs_file)[0].header)
 
     #   Determine wcs type of original WCS
-    wcs_original_type = wcs_original.get_axis_types()[0]['coordinate_type']
+    wcs_original_type = wcs_original.get_axis_types()[0]["coordinate_type"]
 
-    if wcs_original_type == 'celestial':
+    if wcs_original_type == "celestial":
         terminal_output.print_to_terminal(
             "Image contains already a valid WCS.",
             indent=indent,
-            style_name='OKGREEN',
+            style_name="OKGREEN",
         )
         return True, wcs_file
     else:
@@ -811,13 +824,13 @@ def check_wcs_exists(
 
         #   Set WCS dir
         if wcs_dir is None:
-            wcs_dir = (image.out_path / 'wcs_images')
+            wcs_dir = image.out_path / "wcs_images"
 
         #   Get image base name
         basename = get_basename(image.path)
 
         #   Compose file name
-        filename = f'{basename}.new'
+        filename = f"{basename}.new"
         filepath = Path(wcs_dir / filename)
 
         if filepath.is_file():
@@ -826,18 +839,18 @@ def check_wcs_exists(
 
             #   Determine wcs type
             wcs_astronomy_net_type = wcs_astronomy_net.get_axis_types()[0][
-                'coordinate_type'
+                "coordinate_type"
             ]
 
-            if wcs_astronomy_net_type == 'celestial':
+            if wcs_astronomy_net_type == "celestial":
                 terminal_output.print_to_terminal(
                     "Image found in wcs_dir with a valid WCS.",
                     indent=indent,
-                    style_name='OKGREEN',
+                    style_name="OKGREEN",
                 )
                 return True, filepath
 
-        return False, ''
+        return False, ""
 
 
 def read_params_from_json(json_file: str) -> dict:
@@ -880,7 +893,7 @@ def read_params_from_yaml(yaml_file: str) -> dict:
         Dictionary with the data from the YAML file
     """
     try:
-        with open(yaml_file, 'r') as file:
+        with open(yaml_file, "r") as file:
             data = yaml.safe_load(file)
             #   TODO: Check data datatype
     except:
@@ -919,8 +932,11 @@ def get_input(prompt: str, timeout: int = 30) -> tuple[str | None, bool]:
     if use_timed_input:
         user_input, timed_out = timedInput(prompt, timeout=timeout)
         if timed_out:
-            print("\nTimed out!")
-            return None
+            terminal_output.print_to_terminal(
+                "The prompt timed out!",
+                indent=2,
+                style_name="WARNING",
+            )
         return user_input, timed_out
     else:
         return input(prompt), False
