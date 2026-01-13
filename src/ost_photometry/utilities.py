@@ -2,16 +2,13 @@
 #                               Libraries                                  #
 ############################################################################
 
+import json
 import os
-
-import time
-
 import random
 import string
-
 import subprocess
+import time
 
-import json
 import yaml
 
 try:
@@ -21,25 +18,22 @@ try:
 except ImportError:
     use_timed_input = False
 
-import numpy as np
+from pathlib import Path
 
-from astropy.nddata import CCDData
-from astropy.coordinates import SkyCoord
 import astropy.units as u
-from astropy.io import fits
-from astropy.time import Time
+import numpy as np
 from astropy import wcs
+from astropy.coordinates import SkyCoord
+from astropy.io import fits
+from astropy.nddata import CCDData
 from astropy.table import Table
-
+from astropy.time import Time
 from photutils.psf import ImagePSF
 
 # import twirl
-
 from regions import PixCoord, RectanglePixelRegion
 
-from pathlib import Path
-
-from . import checks, terminal_output, style, calibration_parameters
+from . import calibration_parameters, checks, style, terminal_output
 
 ############################################################################
 #                           Routines & definitions                         #
@@ -937,6 +931,7 @@ def get_input(prompt: str, timeout: int = 30) -> tuple[str | None, bool]:
                 indent=2,
                 style_name="WARNING",
             )
+            user_input: str = "no"
         return user_input, timed_out
     else:
         return input(prompt), False

@@ -425,9 +425,6 @@ def reduce_main(
             f"{style.Bcolors.OKBLUE}   Master files are already calculated."
             f" Should these files be used? [yes/no] {style.Bcolors.ENDC}"
         )
-        if timed_out:
-            user_input = "n"
-
         if user_input in ["y", "yes"]:
             mk_new_master_files = False
 
@@ -2220,9 +2217,6 @@ def reduce_light(
             f"{style.Bcolors.OKBLUE}   Reduced images from a previous run "
             f"found. Should these be used? [yes/no] {style.Bcolors.ENDC}"
         )
-        if timed_out:
-            user_input = "n"
-
         if user_input in ["y", "yes"]:
             return
 
