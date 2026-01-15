@@ -310,7 +310,7 @@ def starmap(
         try:
             magnitudes = tbl['mag_cali_trans']
         except KeyError:
-            magnitudes = tbl['mag_cali']
+            magnitudes = tbl['mag_cali_no-trans']
         for i in range(0, len(x)):
             ax.text(
                 x[i] + 11,
@@ -1510,6 +1510,10 @@ class MakeCMDs:
             magnitude_2 = self.magnitude_filter_2_absolute
             color = self.magnitude_color_absolute
         except AttributeError:
+            magnitude_2 = self.magnitude_filter_2
+            color = self.magnitude_color
+
+        if magnitude_2 is None:
             magnitude_2 = self.magnitude_filter_2
             color = self.magnitude_color
 

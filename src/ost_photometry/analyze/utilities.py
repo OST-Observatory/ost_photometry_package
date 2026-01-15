@@ -1379,7 +1379,7 @@ def derive_limiting_magnitude(
         try:
             magnitude_type = 'mag_cali_trans'
             tbl_mag = photo.group_by(magnitude_type)
-        except KeyError:
+        except (KeyError, ValueError):
             magnitude_type = 'mag_cali_no-trans'
             tbl_mag = photo.group_by(magnitude_type)
 
