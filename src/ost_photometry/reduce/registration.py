@@ -32,10 +32,9 @@ from skimage.transform import warp, SimilarityTransform
 
 from . import utilities, plots
 from .. import checks, style, terminal_output
-from ..analyze.utilities import Executor
+from ..core.parallel import Executor
 from .. import utilities as base_utilities
 from ..terminal_output import print_to_terminal
-from ..analyze import utilities as analysis_utilities
 
 ############################################################################
 #                           Routines & definitions                         #
@@ -1346,7 +1345,7 @@ def calculate_xy_image_shifts(
     )
 
     #   Initialize multiprocessing object
-    executor = analysis_utilities.Executor(n_cores_multiprocessing)
+    executor = Executor(n_cores_multiprocessing)
 
     #   Calculate image shifts
     for i, current_file_name in enumerate(image_file_collection.files):

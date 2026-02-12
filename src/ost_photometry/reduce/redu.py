@@ -3,6 +3,7 @@
 ############################################################################
 
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 import astropy.units as u
@@ -13,12 +14,60 @@ from astropy.stats import mad_std
 
 from .. import calibration_parameters, checks, style, terminal_output
 from .. import utilities as base_utilities
-from ..analyze.utilities import Executor
+from ..core.parallel import Executor
 from . import plots, registration, utilities
 
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
+
+
+@dataclass
+class ReduceConfig:
+    """Configuration for the data reduction pipeline."""
+
+    image_path: Path
+    output_dir: Path
+    image_type_dir: dict[str, list[str]]
+    gain: float | None = None
+    read_noise: float | None = None
+    dark_rate: float | None = None
+    rm_cosmic_rays: bool = True
+    mask_cosmic_rays: bool = False
+    saturation_level: float | None = None
+    limiting_contrast_rm_cosmic_rays: float = 5.0
+    sigma_clipping_value_rm_cosmic_rays: float = 4.0
+    scale_image_with_exposure_time: bool = True
+    reference_image_id: int = 0
+    enforce_bias: bool = False
+    add_hot_bad_pixel_mask: bool = True
+    shift_method: str = "skimage"
+    n_cores_multiprocessing: int | None = None
+    stack_images: bool = True
+    estimate_fwhm: bool = False
+    shift_all: bool = False
+    exposure_time_tolerance: float = 0.5
+    stack_method: str = "average"
+    target_name: str | None = None
+    find_wcs: bool = True
+    wcs_method: str = "astrometry"
+    find_wcs_of_all_images: bool = False
+    force_wcs_determination: bool = False
+    rm_outliers_image_shifts: bool = True
+    filter_window_image_shifts: int = 25
+    threshold_image_shifts: float = 10.0
+    temperature_tolerance: float = 5.0
+    plot_dark_statistic_plots: bool = False
+    plot_flat_statistic_plots: bool = False
+    ignore_readout_mode_mismatch: bool = False
+    ignore_instrument_mismatch: bool = False
+    trim_x_start: int = 0
+    trim_x_end: int = 0
+    trim_y_start: int = 0
+    trim_y_end: int = 0
+    dtype: str | np.dtype | None = None
+    debug: bool = False
+    save_only_transformation: bool = False
 
 
 def reduce_main(
@@ -272,13 +321,59 @@ def reduce_main(
         If ``True'', only the transformation matrix is saved, not the transformed image itself.
         Default is ``False``.
     """
+    cfg = ReduceConfig(
+        image_path=Path(image_path),
+        output_dir=Path(output_dir),
+        image_type_dir=image_type_dir or calibration_parameters.get_image_types(),
+        gain=gain,
+        read_noise=read_noise,
+        dark_rate=dark_rate,
+        rm_cosmic_rays=rm_cosmic_rays,
+        mask_cosmic_rays=mask_cosmic_rays,
+        saturation_level=saturation_level,
+        limiting_contrast_rm_cosmic_rays=limiting_contrast_rm_cosmic_rays,
+        sigma_clipping_value_rm_cosmic_rays=sigma_clipping_value_rm_cosmic_rays,
+        scale_image_with_exposure_time=scale_image_with_exposure_time,
+        reference_image_id=reference_image_id,
+        enforce_bias=enforce_bias,
+        add_hot_bad_pixel_mask=add_hot_bad_pixel_mask,
+        shift_method=shift_method,
+        n_cores_multiprocessing=n_cores_multiprocessing,
+        stack_images=stack_images,
+        estimate_fwhm=estimate_fwhm,
+        shift_all=shift_all,
+        exposure_time_tolerance=exposure_time_tolerance,
+        stack_method=stack_method,
+        target_name=target_name,
+        find_wcs=find_wcs,
+        wcs_method=wcs_method,
+        find_wcs_of_all_images=find_wcs_of_all_images,
+        force_wcs_determination=force_wcs_determination,
+        rm_outliers_image_shifts=rm_outliers_image_shifts,
+        filter_window_image_shifts=filter_window_image_shifts,
+        threshold_image_shifts=threshold_image_shifts,
+        temperature_tolerance=temperature_tolerance,
+        plot_dark_statistic_plots=plot_dark_statistic_plots,
+        plot_flat_statistic_plots=plot_flat_statistic_plots,
+        ignore_readout_mode_mismatch=ignore_readout_mode_mismatch,
+        ignore_instrument_mismatch=ignore_instrument_mismatch,
+        trim_x_start=trim_x_start,
+        trim_x_end=trim_x_end,
+        trim_y_start=trim_y_start,
+        trim_y_end=trim_y_end,
+        dtype=dtype,
+        debug=debug,
+        save_only_transformation=save_only_transformation,
+    )
+    return _run_reduction(cfg)
+
+
+def _run_reduction(cfg: ReduceConfig) -> None:
+    """Execute the reduction pipeline with the given configuration."""
     ###
-    #   Parameter sanity checks (some parameter combination do not make sence)
+    #   Parameter sanity checks
     #
-    #   It makes no sense to keep only the transformation matrices if the
-    #   images are to be stacked, because the images have to be there to be
-    #   stacked.
-    if stack_images and save_only_transformation:
+    if cfg.stack_images and cfg.save_only_transformation:
         terminal_output.print_to_terminal(
             "WARNING: Both 'stack_images' and 'save_only_transformation' "
             "are set to ``True``. It makes no sense to keep only the "
@@ -287,21 +382,17 @@ def reduce_main(
             "'save_only_transformation' to ``False``.",
             style_name="WARNING",
         )
-        save_only_transformation = False
+        cfg.save_only_transformation = False
 
     ###
     #   Prepare reduction
     #
-    #   Sanitize the provided paths
-    file_path = Path(image_path)
-    output_path = Path(output_dir)
+    file_path = cfg.image_path
+    output_path = cfg.output_dir
+    image_type_dir = cfg.image_type_dir
 
     #   Get image file collection
     image_file_collection = ccdp.ImageFileCollection(file_path)
-
-    #   Get image types
-    if image_type_dir is None:
-        image_type_dir = calibration_parameters.get_image_types()
 
     #   Except if image collection is empty
     if not image_file_collection.files:
@@ -351,7 +442,7 @@ def reduce_main(
         flat_times,
         dark_times,
         bias_true,
-        exposure_time_tolerance=exposure_time_tolerance,
+        exposure_time_tolerance=cfg.exposure_time_tolerance,
     )
 
     #   Check science exposures
@@ -361,7 +452,7 @@ def reduce_main(
         science_times,
         dark_times,
         bias_true,
-        exposure_time_tolerance=exposure_time_tolerance,
+        exposure_time_tolerance=cfg.exposure_time_tolerance,
     )
 
     ###
@@ -369,9 +460,9 @@ def reduce_main(
     #
     image_parameters = utilities.get_instrument_info(
         image_file_collection,
-        temperature_tolerance,
-        ignore_readout_mode_mismatch=ignore_readout_mode_mismatch,
-        ignore_instrument_mismatch=ignore_instrument_mismatch,
+        cfg.temperature_tolerance,
+        ignore_readout_mode_mismatch=cfg.ignore_readout_mode_mismatch,
+        ignore_instrument_mismatch=cfg.ignore_instrument_mismatch,
     )
     instrument = image_parameters[0]
     readout_mode = image_parameters[1]
@@ -379,6 +470,10 @@ def reduce_main(
     pixel_bit_value = image_parameters[3]
     temperature = image_parameters[4]
 
+    gain = cfg.gain
+    read_noise = cfg.read_noise
+    dark_rate = cfg.dark_rate
+    saturation_level = cfg.saturation_level
     if (
         read_noise is None
         or gain is None
@@ -429,7 +524,7 @@ def reduce_main(
             mk_new_master_files = False
 
     #   Set master boolean for bias subtraction
-    rm_bias = True if image_scaling_required or enforce_bias else False
+    rm_bias = True if image_scaling_required or cfg.enforce_bias else False
 
     if mk_new_master_files:
         ###
@@ -444,11 +539,11 @@ def reduce_main(
                 file_path,
                 output_path,
                 image_type_dir,
-                trim_x_start=trim_x_start,
-                trim_x_end=trim_x_end,
-                trim_y_start=trim_y_start,
-                trim_y_end=trim_y_end,
-                dtype=dtype,
+                trim_x_start=cfg.trim_x_start,
+                trim_x_end=cfg.trim_x_end,
+                trim_y_start=cfg.trim_y_start,
+                trim_y_end=cfg.trim_y_end,
+                dtype=cfg.dtype,
             )
 
         ###
@@ -464,11 +559,11 @@ def reduce_main(
                 image_type_dir,
                 gain=gain,
                 read_noise=read_noise,
-                n_cores_multiprocessing=n_cores_multiprocessing,
-                trim_x_start=trim_x_start,
-                trim_x_end=trim_x_end,
-                trim_y_start=trim_y_start,
-                trim_y_end=trim_y_end,
+                n_cores_multiprocessing=cfg.n_cores_multiprocessing,
+                trim_x_start=cfg.trim_x_start,
+                trim_x_end=cfg.trim_x_end,
+                trim_y_start=cfg.trim_y_start,
+                trim_y_end=cfg.trim_y_end,
             )
 
             #   Set dark path
@@ -484,15 +579,15 @@ def reduce_main(
             gain=gain,
             read_noise=read_noise,
             dark_rate=dark_rate,
-            plot_plots=plot_dark_statistic_plots,
-            debug=debug,
-            n_cores_multiprocessing=n_cores_multiprocessing,
+            plot_plots=cfg.plot_dark_statistic_plots,
+            debug=cfg.debug,
+            n_cores_multiprocessing=cfg.n_cores_multiprocessing,
             rm_bias=rm_bias,
-            trim_x_start=trim_x_start,
-            trim_x_end=trim_x_end,
-            trim_y_start=trim_y_start,
-            trim_y_end=trim_y_end,
-            dtype=dtype,
+            trim_x_start=cfg.trim_x_start,
+            trim_x_end=cfg.trim_x_end,
+            trim_y_start=cfg.trim_y_start,
+            trim_y_end=cfg.trim_y_end,
+            dtype=cfg.dtype,
         )
 
         ###
@@ -508,13 +603,13 @@ def reduce_main(
             gain=gain,
             read_noise=read_noise,
             rm_bias=rm_bias,
-            exposure_time_tolerance=exposure_time_tolerance,
-            debug=debug,
-            n_cores_multiprocessing=n_cores_multiprocessing,
-            trim_x_start=trim_x_start,
-            trim_x_end=trim_x_end,
-            trim_y_start=trim_y_start,
-            trim_y_end=trim_y_end,
+            exposure_time_tolerance=cfg.exposure_time_tolerance,
+            debug=cfg.debug,
+            n_cores_multiprocessing=cfg.n_cores_multiprocessing,
+            trim_x_start=cfg.trim_x_start,
+            trim_x_end=cfg.trim_x_end,
+            trim_y_start=cfg.trim_y_start,
+            trim_y_end=cfg.trim_y_end,
         )
 
         #   Create master flat
@@ -522,11 +617,10 @@ def reduce_main(
             Path(output_path / "flat"),
             output_path,
             image_type_dir,
-            plot_plots=plot_flat_statistic_plots,
-            debug=debug,
-            # n_cores_multiprocessing=n_cores_multiprocessing,
+            plot_plots=cfg.plot_flat_statistic_plots,
+            debug=cfg.debug,
             n_cores_multiprocessing=1,
-            dtype=dtype,
+            dtype=cfg.dtype,
         )
 
     ###
@@ -538,24 +632,24 @@ def reduce_main(
         file_path,
         output_path,
         image_type_dir,
-        rm_cosmic_rays=rm_cosmic_rays,
-        mask_cosmics=mask_cosmic_rays,
+        rm_cosmic_rays=cfg.rm_cosmic_rays,
+        mask_cosmics=cfg.mask_cosmic_rays,
         gain=gain,
         read_noise=read_noise,
-        limiting_contrast_rm_cosmic_rays=limiting_contrast_rm_cosmic_rays,
-        sigma_clipping_value_rm_cosmic_rays=sigma_clipping_value_rm_cosmic_rays,
+        limiting_contrast_rm_cosmic_rays=cfg.limiting_contrast_rm_cosmic_rays,
+        sigma_clipping_value_rm_cosmic_rays=cfg.sigma_clipping_value_rm_cosmic_rays,
         saturation_level=saturation_level,
         rm_bias=rm_bias,
-        verbose=debug,
-        add_hot_bad_pixel_mask=add_hot_bad_pixel_mask,
-        exposure_time_tolerance=exposure_time_tolerance,
-        target_name=target_name,
-        scale_image_with_exposure_time=scale_image_with_exposure_time,
-        n_cores_multiprocessing=n_cores_multiprocessing,
-        trim_x_start=trim_x_start,
-        trim_x_end=trim_x_end,
-        trim_y_start=trim_y_start,
-        trim_y_end=trim_y_end,
+        verbose=cfg.debug,
+        add_hot_bad_pixel_mask=cfg.add_hot_bad_pixel_mask,
+        exposure_time_tolerance=cfg.exposure_time_tolerance,
+        target_name=cfg.target_name,
+        scale_image_with_exposure_time=cfg.scale_image_with_exposure_time,
+        n_cores_multiprocessing=cfg.n_cores_multiprocessing,
+        trim_x_start=cfg.trim_x_start,
+        trim_x_end=cfg.trim_x_end,
+        trim_y_start=cfg.trim_y_start,
+        trim_y_end=cfg.trim_y_end,
     )
 
     ###
@@ -570,27 +664,27 @@ def reduce_main(
         output_path / "light",
         output_path,
         image_type_dir["light"],
-        reference_image_id=reference_image_id,
-        shift_method=shift_method,
-        n_cores_multiprocessing=n_cores_multiprocessing,
-        rm_outliers=rm_outliers_image_shifts,
-        filter_window=filter_window_image_shifts,
-        threshold=threshold_image_shifts,
+        reference_image_id=cfg.reference_image_id,
+        shift_method=cfg.shift_method,
+        n_cores_multiprocessing=cfg.n_cores_multiprocessing,
+        rm_outliers=cfg.rm_outliers_image_shifts,
+        filter_window=cfg.filter_window_image_shifts,
+        threshold=cfg.threshold_image_shifts,
         instrument=instrument,
-        debug=debug,
+        debug=cfg.debug,
         image_output_directory="aligned_lights",
-        save_only_transformation=save_only_transformation,
-        align_filter_wise=not shift_all,
+        save_only_transformation=cfg.save_only_transformation,
+        align_filter_wise=not cfg.shift_all,
     )
 
     #   Set the image directory depending on whether we have aligned images or
     #   just the image transformation matrices.
-    if save_only_transformation:
+    if cfg.save_only_transformation:
         image_directory = "light"
     else:
         image_directory = "aligned_lights"
 
-    if find_wcs and find_wcs_of_all_images:
+    if cfg.find_wcs and cfg.find_wcs_of_all_images:
         ###
         #   Determine WCS and add it to all reduced images
         #
@@ -598,11 +692,11 @@ def reduce_main(
         utilities.determine_wcs_all_images(
             output_path / image_directory,
             output_path / image_directory,
-            wcs_method=wcs_method,
-            force_wcs_determination=force_wcs_determination,
+            wcs_method=cfg.wcs_method,
+            force_wcs_determination=cfg.force_wcs_determination,
         )
 
-    if estimate_fwhm:
+    if cfg.estimate_fwhm:
         ###
         #   Estimate FWHM
         #
@@ -614,7 +708,7 @@ def reduce_main(
             image_type_dir["light"],
         )
 
-    if stack_images:
+    if cfg.stack_images:
         ###
         #   Stack images of the individual filters
         #
@@ -626,12 +720,12 @@ def reduce_main(
             output_path / "aligned_lights",
             output_path,
             image_type_dir["light"],
-            stacking_method=stack_method,
-            dtype=dtype,
-            debug=debug,
+            stacking_method=cfg.stack_method,
+            dtype=cfg.dtype,
+            debug=cfg.debug,
         )
 
-        if find_wcs and not find_wcs_of_all_images:
+        if cfg.find_wcs and not cfg.find_wcs_of_all_images:
             ###
             #   Determine WCS and add it to the stacked images
             #
@@ -640,19 +734,19 @@ def reduce_main(
             utilities.determine_wcs_all_images(
                 output_path,
                 output_path,
-                force_wcs_determination=force_wcs_determination,
-                wcs_method=wcs_method,
+                force_wcs_determination=cfg.force_wcs_determination,
+                wcs_method=cfg.wcs_method,
                 only_combined_images=True,
                 image_type=image_type_dir["light"],
             )
 
-        if not shift_all:
+        if not cfg.shift_all:
             ###
             #   Make large images with the same dimensions to allow
             #   cross correlation
             #
             enlarged: bool = False
-            if shift_method != "aa_true":
+            if cfg.shift_method != "aa_true":
                 registration.make_big_images(
                     output_path,
                     output_path,
@@ -672,13 +766,13 @@ def reduce_main(
                 output_path,
                 output_path,
                 image_type_dir["light"],
-                shift_method=shift_method,
-                n_cores_multiprocessing=n_cores_multiprocessing,
-                rm_outliers=rm_outliers_image_shifts,
-                filter_window=filter_window_image_shifts,
-                threshold=threshold_image_shifts,
-                debug=debug,
-                save_only_transformation=save_only_transformation,
+                shift_method=cfg.shift_method,
+                n_cores_multiprocessing=cfg.n_cores_multiprocessing,
+                rm_outliers=cfg.rm_outliers_image_shifts,
+                filter_window=cfg.filter_window_image_shifts,
+                threshold=cfg.threshold_image_shifts,
+                debug=cfg.debug,
+                save_only_transformation=cfg.save_only_transformation,
                 enlarged_only=enlarged,
                 terminal_alignment_comment="\tDisplacement between the images of the different filters",
                 modify_file_name=True,
@@ -706,7 +800,7 @@ def reduce_main(
             ###
             #   The aligned images
             #
-            if not save_only_transformation:
+            if not cfg.save_only_transformation:
                 #   Remove old files in the output directory
                 checks.clear_directory(output_path / filter_)
 
@@ -725,7 +819,7 @@ def reduce_main(
                 #   Link files to corresponding directory
                 base_utilities.link_files(output_path / filter_, filtered_files)
 
-            if debug or save_only_transformation:
+            if cfg.debug or cfg.save_only_transformation:
                 ###
                 #   The NOT shifted and/or trimmed images
                 #
@@ -834,7 +928,7 @@ def master_bias(
         sigma_clip_low_thresh=5,
         sigma_clip_high_thresh=5,
         sigma_clip_func=np.ma.median,
-        signma_clip_dev_func=mad_std,
+        sigma_clip_dev_func=mad_std,
         mem_limit=15e9,
         unit="adu",
         dtype=dtype,
@@ -1960,7 +2054,7 @@ def stack_flat_images(
         sigma_clip_low_thresh=5,
         sigma_clip_high_thresh=5,
         sigma_clip_func=np.ma.median,
-        signma_clip_dev_func=mad_std,
+        sigma_clip_dev_func=mad_std,
         mem_limit=15e9,
         dtype=dtype,
     )
@@ -2661,7 +2755,7 @@ def stack_image(
             sigma_clip_low_thresh=5,
             sigma_clip_high_thresh=5,
             sigma_clip_func=np.ma.median,
-            signma_clip_dev_func=mad_std,
+            sigma_clip_dev_func=mad_std,
             mem_limit=15e9,
             dtype=dtype,
         )

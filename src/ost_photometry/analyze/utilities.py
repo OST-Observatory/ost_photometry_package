@@ -41,6 +41,7 @@ import multiprocessing as mp
 import scipy.optimize as optimization
 
 from .. import utilities as base_utilities
+from ..core.parallel import Executor
 
 from .. import checks, style, terminal_output, calibration_parameters
 
@@ -947,111 +948,6 @@ def check_variable_absolute_cmd(
             )
             sys.exit()
 
-
-#   TODO: Move to general utilities
-class Executor:
-    """
-        Class that handles the multiprocessing, using apply_async.
-        -> allows for easy catch of exceptions
-    """
-
-    def __init__(self, process_num: int | None, **kwargs):
-        if not mp.get_start_method(allow_none=True):
-            mp.set_start_method('spawn')
-
-        if not process_num:
-            process_num = int(mp.cpu_count()/2)
-
-        #   Get max_tasks_per_child parameter
-        max_tasks_per_child = kwargs.get('maxtasksperchild', None)
-        if max_tasks_per_child is None:
-            max_tasks_per_child = 6
-
-        #   Init multiprocessing pool
-        self.pool: mp.Pool = mp.Pool(
-            process_num,
-            maxtasksperchild=max_tasks_per_child,
-        )
-        #   Init variables
-        self.res: list[any] = []
-        self.err: any = None
-
-        #   Add progress bar if requested
-        self.progress_bar: tqdm | None = None
-        self.add_progress_bar: bool = kwargs.get('add_progress_bar', False)
-        n_tasks: int | None = kwargs.get('n_tasks', None)
-        if self.add_progress_bar and n_tasks:
-            self.progress_bar = tqdm(total=n_tasks)
-
-    def collect_results(self, result: any):
-        """
-            Uses apply_async's callback to set up a separate Queue
-            for each process
-        """
-        #   Update progress bar
-        if isinstance(self.progress_bar, tqdm):
-            self.progress_bar.update(1)
-
-        #   Catch all results
-        self.res.append(result)
-
-    def callback_error(self, e):
-        """
-            Handles exceptions by apply_async's error callback
-        """
-        terminal_output.print_to_terminal(
-            'Exception detected: Try to terminate the multiprocessing Pool',
-            style_name='ERROR',
-        )
-        terminal_output.print_to_terminal(
-            f'The exception is: {e}',
-            style_name='ERROR',
-        )
-        #   Terminate pool
-        self.pool.terminate()
-        # self.pool.join()
-
-        #   Terminate progress bar
-        if isinstance(self.progress_bar, tqdm):
-            self.progress_bar.close()
-        self.progress_bar = None
-
-        #   Raise exceptions
-        self.err = e
-        raise e
-
-    def schedule(self, function, args=(), kwargs=None):
-        """
-            Call to apply_async
-        """
-        if kwargs is None:
-            kwargs = {}
-
-        self.pool.apply_async(
-            function,
-            args,
-            kwargs,
-            callback=self.collect_results,
-            error_callback=self.callback_error
-        )
-
-    def wait(self):
-        """
-            Close pool and wait for completion
-        """
-        try:
-            self.pool.close()
-            self.pool.join()
-        finally:
-            #   Terminate progress bar
-            if isinstance(self.progress_bar, tqdm):
-                self.progress_bar.close()
-            self.progress_bar = None
-
-    def __del__(self):
-        if self.pool:
-            self.pool.terminate()
-            self.pool.join()
 
 def mk_ds9_region(
         x_pixel_positions: np.ndarray, y_pixel_positions: np.ndarray,
