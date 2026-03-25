@@ -41,6 +41,7 @@ import multiprocessing as mp
 import scipy.optimize as optimization
 
 from .. import utilities as base_utilities
+from .. import wcs as wcs_utilities
 from ..core.parallel import Executor
 
 from .. import checks, style, terminal_output, calibration_parameters
@@ -158,6 +159,78 @@ def mk_magnitudes_table(
     return tbl
 
 
+def differential_calibrated_to_legacy_table(
+    calibrated: Table,
+    filter_list: list[str],
+) -> Table:
+    """
+    Convert differential calibration output (vstacked by calibration epoch) to legacy format.
+
+    Legacy format: one row per star, columns i, x, y, ra (deg), dec (deg),
+    and per filter/image: {filter} (transformed, image={id}), {filter}_err (transformed, image={id}).
+
+    Parameters
+    ----------
+    calibrated : Table
+        Output from PhotometryCalibrator.get_calibrated_photometry (vstacked).
+        Must have columns: id, ra, dec, x, y, epoch_id (or legacy frame_id),
+        mag_cal_<filter>, err_cal_<filter>.
+
+    filter_list : list[str]
+        Filter names in order (e.g. ['B', 'V']).
+
+    Returns
+    -------
+    Table
+        Table in legacy format for save_magnitudes_ascii.
+    """
+    id_col = "epoch_id" if "epoch_id" in calibrated.colnames else "frame_id"
+    unique_epochs = np.unique(calibrated[id_col])
+    ref_epoch_id = unique_epochs[0]
+    ref_mask = calibrated[id_col] == ref_epoch_id
+    ref = calibrated[ref_mask]
+    n_obj = len(ref)
+    index_objects = np.asarray(ref["id"], dtype=int)
+    x_positions = np.asarray(ref["x"], dtype=float)
+    y_positions = np.asarray(ref["y"], dtype=float)
+    ra_deg = np.asarray(ref["ra"], dtype=float)
+    dec_deg = np.asarray(ref["dec"], dtype=float)
+
+    tbl = Table(
+        names=["i", "x", "y"],
+        data=[index_objects, x_positions, y_positions],
+    )
+    tbl["ra (deg)"] = ra_deg
+    tbl["dec (deg)"] = dec_deg
+
+    for epoch_key in np.unique(calibrated[id_col]):
+        sk = str(epoch_key)
+        if sk.startswith("epoch_"):
+            image_label = sk[len("epoch_") :]
+        else:
+            parts = sk.rsplit("_", 1)
+            image_label = parts[1] if len(parts) > 1 else "0"
+        epoch_mask = calibrated[id_col] == epoch_key
+        epoch_data = calibrated[epoch_mask]
+        id_to_idx = {int(ref["id"][i]): i for i in range(n_obj)}
+        for filter_ in filter_list:
+            mag_col = f"mag_cal_{filter_}"
+            err_col = f"err_cal_{filter_}"
+            if mag_col not in calibrated.colnames or err_col not in calibrated.colnames:
+                continue
+            mag_arr = np.full(n_obj, 999.0)
+            err_arr = np.full(n_obj, 999.0)
+            for row in epoch_data:
+                idx = id_to_idx.get(int(row["id"]))
+                if idx is not None:
+                    mag_arr[idx] = row[mag_col]
+                    err_arr[idx] = row[err_col]
+            tbl[f"{filter_} (transformed, image={image_label})"] = mag_arr
+            tbl[f"{filter_}_err (transformed, image={image_label})"] = err_arr
+
+    return tbl
+
+
 def mk_magnitudes_array(
         observation: 'analyze.Observation', filter_list: list[str],
         photometry_column_keyword: str
@@ -267,13 +340,13 @@ def find_wcs(
         img = image_series.image_list[reference_image_id]
 
         #   Test if the image contains already a WCS
-        cal_wcs, wcs_file = base_utilities.check_wcs_exists(img)
+        cal_wcs, wcs_file = wcs_utilities.check_wcs_exists(img)
 
         if not cal_wcs or force_wcs_determination:
             #   Calculate WCS -> astrometry.net
             if method == 'astrometry':
                 image_series.set_wcs(
-                    base_utilities.find_wcs_astrometry(
+                    wcs_utilities.find_wcs_astrometry(
                         img,
                         cosmic_rays_removed=cosmics_removed,
                         path_cosmic_cleaned_image=image_path_cosmics_removed,
@@ -284,7 +357,7 @@ def find_wcs(
             #   Calculate WCS -> ASTAP program
             elif method == 'astap':
                 image_series.set_wcs(
-                    base_utilities.find_wcs_astap(img, indent=indent)
+                    wcs_utilities.find_wcs_astap(img, indent=indent)
                 )
 
             #   Calculate WCS -> twirl library
@@ -295,7 +368,7 @@ def find_wcs(
                         f"\n'x' or 'y' is None -> Exit {style.Bcolors.ENDC}"
                     )
                 image_series.set_wcs(
-                    base_utilities.find_wcs_twirl(img, object_x_coordinates, object_y_coordinates, indent=indent)
+                    wcs_utilities.find_wcs_twirl(img, object_x_coordinates, object_y_coordinates, indent=indent)
                 )
             #   Raise exception
             else:
@@ -309,12 +382,12 @@ def find_wcs(
     else:
         for i, img in enumerate(image_series.image_list):
             #   Test if the image contains already a WCS
-            cal_wcs = base_utilities.check_wcs_exists(img)
+            cal_wcs = wcs_utilities.check_wcs_exists(img)
 
             if not cal_wcs or force_wcs_determination:
                 #   Calculate WCS -> astrometry.net
                 if method == 'astrometry':
-                    w = base_utilities.find_wcs_astrometry(
+                    w = wcs_utilities.find_wcs_astrometry(
                         img,
                         cosmic_rays_removed=cosmics_removed,
                         path_cosmic_cleaned_image=image_path_cosmics_removed,
@@ -323,7 +396,7 @@ def find_wcs(
 
                 #   Calculate WCS -> ASTAP program
                 elif method == 'astap':
-                    w = base_utilities.find_wcs_astap(img, indent=indent)
+                    w = wcs_utilities.find_wcs_astap(img, indent=indent)
 
                 #   Calculate WCS -> twirl library
                 elif method == 'twirl':
@@ -333,7 +406,7 @@ def find_wcs(
                             "find_wcs(): ' \n'x' or 'y' is None -> Exit"
                             f"{style.Bcolors.ENDC}"
                         )
-                    w = base_utilities.find_wcs_twirl(img, object_x_coordinates, object_y_coordinates, indent=indent)
+                    w = wcs_utilities.find_wcs_twirl(img, object_x_coordinates, object_y_coordinates, indent=indent)
 
                 #   Raise exception
                 else:
@@ -1971,9 +2044,38 @@ def find_cluster(
     )
 
     #   Find "cluster" in the data
-    pd_result['cluster'] = spectral_cluster_model.fit_predict(
-        pd_result[['pmDE', 'pmRA', 'distance']],
-    )
+    #   SpectralClustering is O(n³) and hangs on datasets >~1500 objects.
+    #   Subsample when necessary and assign rest via nearest centroid.
+    max_cluster_sample = 100
+    cluster_features = ['pmDE', 'pmRA', 'distance']
+    n_objects = len(pd_result)
+    if n_objects > max_cluster_sample:
+        rng = np.random.default_rng(random_state)
+        sample_idx = rng.choice(
+            len(pd_result), size=max_cluster_sample, replace=False
+        )
+        pd_sample = pd_result.iloc[sample_idx]
+        sample_labels = spectral_cluster_model.fit_predict(
+            pd_sample[cluster_features]
+        )
+        # Compute cluster centroids and assign all points to nearest
+        centroids = []
+        for c in range(n_clusters):
+            mask_c = sample_labels == c
+            centroids.append(
+                pd_sample.loc[mask_c, cluster_features].mean().values
+            )
+        from scipy.spatial.distance import cdist
+        centroid_arr = np.array(centroids)
+        dists = cdist(
+            pd_result[cluster_features].values,
+            centroid_arr,
+        )
+        pd_result['cluster'] = np.argmin(dists, axis=1)
+    else:
+        pd_result['cluster'] = spectral_cluster_model.fit_predict(
+            pd_result[cluster_features],
+        )
 
     #   3D plot of the proper motion and the distance
     #   -> select the star cluster by eye
@@ -2015,6 +2117,7 @@ def find_cluster(
         file_type=file_type_plots,
     )
 
+    #   Get user input
     # plots.D3_scatter(
     # [pd_result['pmRA']],
     # [pd_result['pmDE']],

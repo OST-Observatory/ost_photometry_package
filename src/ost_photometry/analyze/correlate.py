@@ -2,6 +2,7 @@
 #                               Libraries                                  #
 ############################################################################
 import multiprocessing as mp
+import warnings
 
 import numpy as np
 
@@ -11,6 +12,7 @@ if typing.TYPE_CHECKING:
     from . import analyze, plots
 
 from . import calibration_data, utilities, plots
+from .warnings_types import OstPhotometryAnalyzeWarning
 from .. import style, terminal_output
 from .. import utilities as base_utilities
 
@@ -1314,6 +1316,98 @@ def correlation_own(
     return index_array, rejected_images, count, rejected_objects
 
 
+def assign_global_correlated_object_ids(
+    observation: "analyze.Observation",
+    filter_list: list[str],
+) -> None:
+    """
+    Set photometry ``id`` to 0 .. N-1 in correlated row order on all images.
+
+    After intra- and inter-filter correlation, row ``k`` refers to the same
+    physical object across filters (and across images within each filter).
+    The table ``id`` column is aligned to that index so downstream code
+    (e.g. differential calibration, ``differential_calibrated_to_legacy_table``)
+    can match objects by ``id``.
+
+    Object-of-interest ``id_in_image_series`` values are row indices in these
+    tables; they stay valid when ``id`` equals the row index.
+
+    Parameters
+    ----------
+    observation
+        Observation whose ``image_series_dict`` entries hold correlated photometry.
+    filter_list
+        Filters to update (typically the filters that participated in correlation).
+    """
+    n_expect: int | None = None
+    ref_filter: str | None = None
+    for filter_ in filter_list:
+        series = observation.image_series_dict.get(filter_)
+        if series is None or not series.image_list:
+            continue
+        ref_im = series.reference_image_id
+        phot0 = series.image_list[ref_im].photometry
+        if phot0 is None:
+            continue
+        n = len(phot0)
+        if n_expect is None:
+            n_expect = n
+            ref_filter = filter_
+        elif n != n_expect:
+            warnings.warn(
+                "assign_global_correlated_object_ids: "
+                f"filter {filter_!r} has {n} correlated objects, "
+                f"{ref_filter!r} has {n_expect}. "
+                "Assigning 0..n-1 per filter; cross-filter id matching may be wrong.",
+                category=OstPhotometryAnalyzeWarning,
+                stacklevel=2,
+            )
+        ids = np.arange(n, dtype=np.int64)
+        for image in series.image_list:
+            if image.photometry is None:
+                continue
+            ni = len(image.photometry)
+            if ni != n:
+                warnings.warn(
+                    "assign_global_correlated_object_ids: "
+                    f"filter {filter_!r} image has {ni} rows, reference has {n}; "
+                    "assigning id = 0 .. ni-1 for this image only.",
+                    category=OstPhotometryAnalyzeWarning,
+                    stacklevel=2,
+                )
+                image.photometry["id"] = np.arange(ni, dtype=np.int64)
+            else:
+                image.photometry["id"] = ids.copy()
+
+
+def assign_correlated_object_ids_single_series(
+    image_series: "analyze.ImageSeries",
+) -> None:
+    """Same as :func:`assign_global_correlated_object_ids` for one ImageSeries (intra only)."""
+    if not image_series.image_list:
+        return
+    ref_im = image_series.reference_image_id
+    phot0 = image_series.image_list[ref_im].photometry
+    if phot0 is None:
+        return
+    n = len(phot0)
+    ids = np.arange(n, dtype=np.int64)
+    for image in image_series.image_list:
+        if image.photometry is None:
+            continue
+        ni = len(image.photometry)
+        if ni != n:
+            warnings.warn(
+                "assign_correlated_object_ids_single_series: "
+                f"image has {ni} rows, reference has {n}.",
+                category=OstPhotometryAnalyzeWarning,
+                stacklevel=2,
+            )
+            image.photometry["id"] = np.arange(ni, dtype=np.int64)
+        else:
+            image.photometry["id"] = ids.copy()
+
+
 def correlate_image_series_images(
         image_series: 'analyze.ImageSeries',
         max_pixel_between_objects: float = 3.,
@@ -1438,6 +1532,8 @@ def correlate_image_series_images(
     #   Limit the photometry tables to common objects.
     for j, image in enumerate(image_series.image_list):
         image.photometry = image.photometry[correlation_index[j, :]]
+
+    assign_correlated_object_ids_single_series(image_series)
 
 
 def correlate_image_series(
@@ -1679,6 +1775,9 @@ def correlate_image_series(
             file_type_plots=file_type_plots,
             indent=2,
         )
+
+    # Global object id = row index after correlation (for cross-filter pipelines)
+    assign_global_correlated_object_ids(observation, list(image_series_dict.keys()))
 
 
 def correlate_preserve_variable(

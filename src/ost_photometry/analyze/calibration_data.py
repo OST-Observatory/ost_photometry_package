@@ -920,7 +920,7 @@ def derive_calibration(
         style_name='GOOD',
     )
 
-    #   TODOP: Remove the following after changing the order of correlation and
+    #   TODO: Remove the following after changing the order of correlation and
     #          download of calibration data in 'correlate_calibrate' of
     #          'observation' in analysis.py
     if correlate_with_observed_objects and len(column_names) > 2:

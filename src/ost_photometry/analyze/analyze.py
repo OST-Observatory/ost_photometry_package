@@ -11,50 +11,21 @@ from pathlib import Path
 import astropy.units as u
 import ccdproc as ccdp
 import numpy as np
-import numpy.ma as ma
 import regions
 import yaml
 from astropy import uncertainty as unc
-from astropy import wcs
 from astropy.coordinates import SkyCoord, name_resolve
-from astropy.modeling.fitting import (
-    LevMarLSQFitter,
-    LMLSQFitter,
-    NonFiniteValueError,
-    TRFLSQFitter,
-)
-from astropy.nddata import CCDData, NDData
-from astropy.stats import SigmaClip, sigma_clipped_stats
-from astropy.table import Column, Table
+from astropy.nddata import CCDData
+from astropy.table import Table
 from astropy.time import Time
 
 #   hips2fits module is not in the Ubuntu 22.04 package version
 #   of astroquery (0.4.1)
 # from astroquery.hips2fits import hips2fits
 from astroquery.hips2fits import hips2fitsClass
-from photutils.aperture import (
-    ApertureStats,
-    CircularAnnulus,
-    CircularAperture,
-    aperture_photometry,
-)
-from photutils.background import (
-    Background2D,
-    LocalBackground,
-    MADStdBackgroundRMS,
-    MedianBackground,
-    MMMBackground,
-)
-from photutils.detection import DAOStarFinder, IRAFStarFinder
 from photutils.psf import (
-    EPSFBuilder,
     ImagePSF,
-    IterativePSFPhotometry,
-    SourceGrouper,
-    extract_stars,
-    fit_fwhm,
 )
-from regions import RectanglePixelRegion
 from skimage.transform import SimilarityTransform
 
 # from . import subtraction
@@ -62,8 +33,12 @@ from .. import checks, style, terminal_output
 from .. import utilities as base_utilities
 from ..utilities import Image
 from . import calibration, calibration_data, correlate, plots, utilities
+from .extraction import extract_multiprocessing, main_extract
 from .models import ImageSeries, ObjectOfInterest
+from .pipeline import AnalysisContext, AnalysisPipeline, PipelineConfig
 
+# Suppress noisy dependency UserWarnings. Package diagnostics use
+# OstPhotometryAnalyzeWarning (see warnings_types) so they are not hidden here.
 warnings.filterwarnings("ignore", category=UserWarning, append=True)
 
 
@@ -294,6 +269,115 @@ class Observation:
 
         return dec_list
 
+    def run_pipeline(
+        self,
+        filter_list: list[str],
+        image_paths: dict[str, str] | None = None,
+        output_dir: str | None = None,
+        config: PipelineConfig | None = None,
+        extraction_mode: str = "auto",
+        **kwargs,
+    ) -> None:
+        """
+        Run the full analysis pipeline (WCS, extraction, correlation, calibration).
+
+        Parameters
+        ----------
+        filter_list
+            List of filter names.
+        image_paths
+            Paths to images or directories: key=filter name, value=path.
+            If None, uses existing image_series_dict (e.g. after extract_flux).
+        output_dir
+            Output directory. If None and image_paths is None, taken from
+            existing image series.
+        config
+            Pipeline configuration. If None, uses defaults.
+        extraction_mode
+            "single" (1 image per filter), "multi" (N images), or "auto".
+        **kwargs
+            Override config attributes.
+        """
+        cfg = config or PipelineConfig()
+        cfg.extraction_mode = extraction_mode
+        for key, val in kwargs.items():
+            if hasattr(cfg, key):
+                setattr(cfg, key, val)
+
+        if image_paths is not None and output_dir is not None:
+            checks.check_output_directories(
+                output_dir,
+                os.path.join(output_dir, "tables"),
+            )
+            if cfg.extraction_mode == "multi" or (
+                cfg.extraction_mode == "auto"
+                and all(os.path.isdir(image_paths.get(f, "")) for f in filter_list)
+            ):
+                checks.check_dir(image_paths)
+            else:
+                for f in filter_list:
+                    checks.check_file(image_paths[f])
+            context = self._to_context(filter_list, image_paths, output_dir, cfg)
+        else:
+            # Use existing image_series_dict (e.g. correlate_calibrate)
+            if output_dir is None and filter_list:
+                output_dir = str(self.image_series_dict[filter_list[0]].out_path)
+            context = self._to_context_from_observation(filter_list, output_dir, cfg)
+
+        context = AnalysisPipeline(config=cfg).run(context)
+        self._from_context(context)
+
+    def _to_context(
+        self,
+        filter_list: list[str],
+        image_paths: dict[str, str],
+        output_dir: str,
+        config: PipelineConfig,
+    ) -> AnalysisContext:
+        """Build AnalysisContext from paths."""
+        for filter_ in filter_list:
+            self.image_series_dict[filter_] = ImageSeries(
+                filter_,
+                image_paths[filter_],
+                output_dir,
+                reference_image_id=config.reference_image_id,
+            )
+
+        context = AnalysisContext(
+            image_series_dict=self.image_series_dict,
+            filter_list=filter_list,
+            output_dir=output_dir,
+            objects_of_interest=self.objects_of_interest,
+            calib_parameters=self.calib_parameters,
+            table_magnitudes=self.table_magnitudes,
+        )
+        context._observation = self
+        return context
+
+    def _to_context_from_observation(
+        self,
+        filter_list: list[str],
+        output_dir: str,
+        config: PipelineConfig,
+    ) -> AnalysisContext:
+        """Build AnalysisContext from existing Observation (no image_paths)."""
+        image_series_dict = {f: self.image_series_dict[f] for f in filter_list}
+        context = AnalysisContext(
+            image_series_dict=image_series_dict,
+            filter_list=filter_list,
+            output_dir=output_dir,
+            objects_of_interest=self.objects_of_interest,
+            calib_parameters=self.calib_parameters,
+            table_magnitudes=self.table_magnitudes,
+        )
+        context._observation = self
+        return context
+
+    def _from_context(self, context: AnalysisContext) -> None:
+        """Copy pipeline results back to Observation."""
+        self.calib_parameters = context.calib_parameters
+        self.table_magnitudes = context.table_magnitudes
+
     def extract_flux(
         self,
         filter_list: list[str],
@@ -301,7 +385,7 @@ class Observation:
         output_dir: str,
         fwhm_object_psf: dict[str, float] | None = None,
         wcs_method: str = "astrometry",
-        force_wcs_determ: bool = False,
+        force_wcs_determination: bool = False,
         sigma_value_background_clipping: float = 5.0,
         multiplier_background_rms: float = 5.0,
         size_epsf_region: int = 25,
@@ -359,7 +443,7 @@ class Observation:
             Method that should be used to determine the WCS.
             Default is ``'astrometry'``.
 
-        force_wcs_determ
+        force_wcs_determination
             If ``True`` a new WCS determination will be calculated even if
             a WCS is already present in the FITS Header.
             Default is ``False``.
@@ -515,134 +599,52 @@ class Observation:
                     from an image correlation run.
                     Default is ``False``.
         """
-        #   Check output directories
-        checks.check_output_directories(
+        self.run_pipeline(
+            filter_list,
+            image_paths,
             output_dir,
-            os.path.join(output_dir, "tables"),
+            extraction_mode="single",
+            fwhm_object_psf=fwhm_object_psf,
+            wcs_method=wcs_method,
+            force_wcs_determination=force_wcs_determination,
+            sigma_value_background_clipping=sigma_value_background_clipping,
+            multiplier_background_rms=multiplier_background_rms,
+            size_epsf_region=size_epsf_region,
+            size_extraction_region_epsf=size_extraction_region_epsf,
+            epsf_fitter=epsf_fitter,
+            n_iterations_eps_extraction=n_iterations_eps_extraction,
+            fraction_epsf_stars=fraction_epsf_stars,
+            oversampling_factor_epsf=oversampling_factor_epsf,
+            max_n_iterations_epsf_determination=max_n_iterations_epsf_determination,
+            use_initial_positions_epsf=use_initial_positions_epsf,
+            object_finder_method=object_finder_method,
+            multiplier_background_rms_epsf=multiplier_background_rms_epsf,
+            multiplier_grouper_epsf=multiplier_grouper_epsf,
+            strict_cleaning_epsf_results=strict_cleaning_epsf_results,
+            minimum_n_eps_stars=minimum_n_eps_stars,
+            reference_image_id=reference_image_id,
+            strict_epsf_checks=strict_epsf_checks,
+            photometry_extraction_method=photometry_extraction_method,
+            radius_aperture=radius_aperture,
+            inner_annulus_radius=inner_annulus_radius,
+            outer_annulus_radius=outer_annulus_radius,
+            radii_unit=radii_unit,
+            cosmic_ray_removal=cosmic_ray_removal,
+            limiting_contrast_rm_cosmics=limiting_contrast_rm_cosmics,
+            read_noise=read_noise,
+            sigma_clipping_value=sigma_clipping_value,
+            saturation_level=saturation_level,
+            plots_for_all_images=plots_for_all_images,
+            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+            file_type_plots=file_type_plots,
+            annotate_image=annotate_image,
+            magnitude_limit_image_annotation=magnitude_limit_image_annotation,
+            filter_magnitude_limit_image_annotation=filter_magnitude_limit_image_annotation,
+            skip_correlation_intra=True,
+            skip_correlation_inter=True,
+            skip_calibration=True,
+            skip_post_process=True,
         )
-
-        #   Loop over all filter
-        for filter_ in filter_list:
-            terminal_output.print_to_terminal(
-                f"Analyzing {filter_} images",
-                style_name="HEADER",
-            )
-
-            #   Check input paths
-            checks.check_file(image_paths[filter_])
-
-            #   Get user provided FWHM for current filter
-            if fwhm_object_psf is not None:
-                fwhm = fwhm_object_psf[filter_]
-            else:
-                fwhm = None
-
-            #   Initialize image series object
-            self.image_series_dict[filter_] = current_image_series = ImageSeries(
-                filter_,
-                image_paths[filter_],
-                output_dir,
-            )
-
-            #   Find the WCS solution for the image
-            try:
-                utilities.find_wcs(
-                    current_image_series,
-                    reference_image_id=0,
-                    method=wcs_method,
-                    force_wcs_determination=force_wcs_determ,
-                    indent=3,
-                )
-            except RuntimeError as e:
-                #   Get the WCS from one of the other filters, if they have one
-                for wcs_filter in filter_list:
-                    reference_wcs = getattr(
-                        self.image_series_dict[wcs_filter],
-                        "wcs",
-                        None,
-                    )
-                    if reference_wcs is not None:
-                        current_image_series.set_wcs(reference_wcs)
-                        terminal_output.print_to_terminal(
-                            f"WCS could not be determined for filter {filter_}"
-                            f"The WCS of filter {wcs_filter} will be used instead."
-                            f"This could lead to problems...",
-                            indent=1,
-                            style_name="WARNING",
-                        )
-                        break
-                else:
-                    raise RuntimeError(e)
-
-            #   Main extraction
-            main_extract(
-                current_image_series.image_list[reference_image_id],
-                fwhm_object_psf=fwhm,
-                sigma_value_background_clipping=sigma_value_background_clipping,
-                multiplier_background_rms=multiplier_background_rms,
-                size_epsf_region=size_epsf_region,
-                size_extraction_region_epsf=size_extraction_region_epsf,
-                epsf_fitter=epsf_fitter,
-                n_iterations_eps_extraction=n_iterations_eps_extraction,
-                fraction_epsf_stars=fraction_epsf_stars,
-                oversampling_factor_epsf=oversampling_factor_epsf,
-                max_n_iterations_epsf_determination=max_n_iterations_epsf_determination,
-                use_initial_positions_epsf=use_initial_positions_epsf,
-                object_finder_method=object_finder_method,
-                multiplier_background_rms_epsf=multiplier_background_rms_epsf,
-                multiplier_grouper_epsf=multiplier_grouper_epsf,
-                strict_cleaning_epsf_results=strict_cleaning_epsf_results,
-                minimum_n_eps_stars=minimum_n_eps_stars,
-                strict_epsf_checks=strict_epsf_checks,
-                photometry_extraction_method=photometry_extraction_method,
-                radius_aperture=radius_aperture,
-                inner_annulus_radius=inner_annulus_radius,
-                outer_annulus_radius=outer_annulus_radius,
-                radii_unit=radii_unit,
-                cosmic_ray_removal=cosmic_ray_removal,
-                limiting_contrast_rm_cosmics=limiting_contrast_rm_cosmics,
-                read_noise=read_noise,
-                sigma_clipping_value=sigma_clipping_value,
-                saturation_level=saturation_level,
-                plots_for_all_images=plots_for_all_images,
-                file_type_plots=file_type_plots,
-                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-                annotate_image=annotate_image,
-                magnitude_limit_image_annotation=magnitude_limit_image_annotation,
-                filter_magnitude_limit_image_annotation=filter_magnitude_limit_image_annotation,
-            )
-
-        if photometry_extraction_method == "PSF":
-            #   Plot the ePSFs
-            p = mp.Process(
-                target=plots.plot_epsf,
-                args=(
-                    output_dir,
-                    self.get_reference_epsf(),
-                ),
-                kwargs={"file_type": file_type_plots},
-            )
-            p.start()
-
-            #   Plot original and residual image
-            p = mp.Process(
-                target=plots.plot_residual,
-                args=(
-                    self.get_reference_image(),
-                    self.get_reference_image_residual(),
-                    output_dir,
-                ),
-                kwargs={
-                    "file_type": file_type_plots,
-                },
-            )
-            p.start()
-
-        #   Transform the object positions to the reference frame
-        if transform_object_positions_to_reference:
-            image_list: list[Image] = list(self.get_reference_image.values())
-            image_list = transform_object_positions(image_list)
-            #   TODO: Add check if returned image_list has the same length. If yes, find a solution
 
     def extract_flux_multi(
         self,
@@ -720,7 +722,7 @@ class Observation:
             Method that should be used to determine the WCS.
             Default is ``'astrometry'``.
 
-        force_wcs_determ
+        force_wcs_determination
             If ``True`` a new WCS determination will be calculated even if
             a WCS is already present in the FITS Header.
             Default is ``False``.
@@ -915,95 +917,58 @@ class Observation:
             from an image correlation run.
             Default is ``False``.
         """
-        #   Check output directories
-        checks.check_output_directories(output_dir, os.path.join(output_dir, "tables"))
-
-        #   Check image directories
-        checks.check_dir(image_paths)
-
-        #   Outer loop over all filter
-        for filter_ in filter_list:
-            terminal_output.print_to_terminal(
-                f"Analyzing {filter_} images",
-                style_name="HEADER",
-            )
-
-            #   Initialize image series object
-            self.image_series_dict[filter_] = ImageSeries(
-                filter_,
-                image_paths[filter_],
-                output_dir,
-                reference_image_id=reference_image_id,
-            )
-
-            #   Find the WCS solution for the image
-            utilities.find_wcs(
-                self.image_series_dict[filter_],
-                reference_image_id=reference_image_id,
-                method=wcs_method,
-                force_wcs_determination=force_wcs_determination,
-                indent=3,
-            )
-
-            #   Main extraction of object positions and object fluxes
-            #   using multiprocessing
-            extract_multiprocessing(
-                self.image_series_dict[filter_],
-                n_cores_multiprocessing,
-                fwhm_object_psf=fwhm_object_psf,
-                sigma_value_background_clipping=sigma_value_background_clipping,
-                multiplier_background_rms=multiplier_background_rms,
-                size_epsf_region=size_epsf_region,
-                size_extraction_region_epsf=size_extraction_region_epsf,
-                epsf_fitter=epsf_fitter,
-                n_iterations_eps_extraction=n_iterations_eps_extraction,
-                fraction_epsf_stars=fraction_epsf_stars,
-                oversampling_factor_epsf=oversampling_factor_epsf,
-                max_n_iterations_epsf_determination=max_n_iterations_epsf_determination,
-                object_finder_method=object_finder_method,
-                multiplier_background_rms_epsf=multiplier_background_rms_epsf,
-                multiplier_grouper_epsf=multiplier_grouper_epsf,
-                strict_cleaning_epsf_results=strict_cleaning_epsf_results,
-                minimum_n_eps_stars=minimum_n_eps_stars,
-                strict_epsf_checks=strict_epsf_checks,
-                photometry_extraction_method=photometry_extraction_method,
-                radius_aperture=radius_aperture,
-                inner_annulus_radius=inner_annulus_radius,
-                outer_annulus_radius=outer_annulus_radius,
-                radii_unit=radii_unit,
-                plots_for_all_images=plots_for_all_images,
-                file_type_plots=file_type_plots,
-                use_initial_positions_epsf=use_initial_positions_epsf,
-                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-                annotate_reference_image=annotate_reference_image,
-                magnitude_limit_image_annotation=magnitude_limit_image_annotation,
-                filter_magnitude_limit_image_annotation=filter_magnitude_limit_image_annotation,
-            )
-
-            #   Transform the object positions to the reference frame
-            if transform_object_positions_to_reference:
-                transform_object_positions(self.image_series_dict[filter_])
-
-            #   Correlate results from all images within the current image
-            #   series, while preserving the variable objects
-            correlate.correlate_preserve_variable(
-                self,
-                filter_,
-                max_pixel_between_objects=max_pixel_between_objects,
-                own_correlation_option=own_correlation_option,
-                cross_identification_limit=cross_identification_limit,
-                reference_image_id=reference_image_id,
-                n_allowed_non_detections_object=n_allowed_non_detections_object,
-                expected_bad_image_fraction=expected_bad_image_fraction,
-                protect_reference_obj=protect_reference_obj,
-                verbose=verbose,
-                duplicate_handling_object_identification=duplicate_handling_object_identification,
-                plots_for_all_images=plots_for_all_images,
-                correlation_method=correlation_method,
-                separation_limit=separation_limit,
-                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-                file_type_plots=file_type_plots,
-            )
+        self.run_pipeline(
+            filter_list,
+            image_paths,
+            output_dir,
+            extraction_mode="multi",
+            fwhm_object_psf=fwhm_object_psf,
+            n_cores_multiprocessing=n_cores_multiprocessing,
+            wcs_method=wcs_method,
+            force_wcs_determination=force_wcs_determination,
+            sigma_value_background_clipping=sigma_value_background_clipping,
+            multiplier_background_rms=multiplier_background_rms,
+            size_epsf_region=size_epsf_region,
+            size_extraction_region_epsf=size_extraction_region_epsf,
+            epsf_fitter=epsf_fitter,
+            n_iterations_eps_extraction=n_iterations_eps_extraction,
+            fraction_epsf_stars=fraction_epsf_stars,
+            oversampling_factor_epsf=oversampling_factor_epsf,
+            max_n_iterations_epsf_determination=max_n_iterations_epsf_determination,
+            use_initial_positions_epsf=use_initial_positions_epsf,
+            object_finder_method=object_finder_method,
+            multiplier_background_rms_epsf=multiplier_background_rms_epsf,
+            multiplier_grouper_epsf=multiplier_grouper_epsf,
+            strict_cleaning_epsf_results=strict_cleaning_epsf_results,
+            minimum_n_eps_stars=minimum_n_eps_stars,
+            strict_epsf_checks=strict_epsf_checks,
+            photometry_extraction_method=photometry_extraction_method,
+            radius_aperture=radius_aperture,
+            inner_annulus_radius=inner_annulus_radius,
+            outer_annulus_radius=outer_annulus_radius,
+            radii_unit=radii_unit,
+            max_pixel_between_objects=max_pixel_between_objects,
+            own_correlation_option=own_correlation_option,
+            cross_identification_limit=cross_identification_limit,
+            reference_image_id=reference_image_id,
+            n_allowed_non_detections_object=n_allowed_non_detections_object,
+            expected_bad_image_fraction=expected_bad_image_fraction,
+            protect_reference_obj=protect_reference_obj,
+            correlation_method=correlation_method,
+            separation_limit=separation_limit,
+            verbose=verbose,
+            duplicate_handling_object_identification=duplicate_handling_object_identification,
+            plots_for_all_images=plots_for_all_images,
+            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+            file_type_plots=file_type_plots,
+            annotate_reference_image=annotate_reference_image,
+            magnitude_limit_image_annotation=magnitude_limit_image_annotation,
+            filter_magnitude_limit_image_annotation=filter_magnitude_limit_image_annotation,
+            transform_object_positions_to_reference=transform_object_positions_to_reference,
+            skip_correlation_inter=True,
+            skip_calibration=True,
+            skip_post_process=True,
+        )
 
     #   TODO: Rename to reflect that it is only used for stacked data
     def correlate_calibrate(
@@ -1195,104 +1160,44 @@ class Observation:
             of pixel coordinates
             Default is ``True``.
         """
-        terminal_output.print_to_terminal(
-            f"Correlate and calibrate image series",
-            style_name="HEADER",
-        )
-
-        #   TODO: Change order of correlation and downloading calibration
-        #         data ('derive_calibration')
-        #   Correlate the stellar positions from the different filter
-        correlate.correlate_image_series(
-            self,
+        self.run_pipeline(
             filter_list,
+            image_paths=None,
+            output_dir=None,
+            skip_wcs=True,
+            skip_extraction=True,
+            skip_correlation_intra=True,
             max_pixel_between_objects=max_pixel_between_objects,
             own_correlation_option=own_correlation_option,
-            correlation_method=correlation_method,
-            separation_limit=separation_limit,
-            file_type_plots=file_type_plots,
-            duplicate_handling_object_identification=duplicate_handling_object_identification,
-        )
-
-        #   Plot image with the final positions overlaid (final version)
-        if len(filter_list) > 1:
-            utilities.prepare_and_plot_starmap_from_observation(
-                self,
-                filter_list,
-                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-                file_type_plots=file_type_plots,
-            )
-
-        #   Calibrate the magnitudes
-        #   Load calibration information
-        calibration_data.derive_calibration(
-            self,
-            filter_list,
+            reference_image_id=reference_image_id,
             calibration_method=calibration_method,
-            max_pixel_between_objects=max_pixel_between_objects,
-            own_correlation_option=own_correlation_option,
             vizier_dict=vizier_dict,
             path_calibration_file=path_calibration_file,
+            object_id=object_id,
             magnitude_range=magnitude_range,
+            apply_transformation=apply_transformation,
+            transformation_coefficients_dict=transformation_coefficients_dict,
+            derive_transformation_coefficients=derive_transformation_coefficients,
+            photometry_extraction_method=photometry_extraction_method,
+            extract_only_circular_region=extract_only_circular_region,
+            region_radius=region_radius,
+            identify_cluster_gaia_data=identify_cluster_gaia_data,
+            clean_objs_using_pm=clean_objs_using_pm,
+            max_distance_cluster=max_distance_cluster,
+            find_cluster_para_set=find_cluster_para_set,
+            correlation_method=correlation_method,
+            separation_limit=separation_limit,
+            aperture_radius=aperture_radius,
+            radii_unit=radii_unit,
+            convert_magnitudes=convert_magnitudes,
+            target_filter_system=target_filter_system,
             region_to_select_calibration_stars=region_to_select_calibration_stars,
+            calculate_zero_point_statistic=calculate_zero_point_statistic,
+            distribution_samples=distribution_samples,
+            duplicate_handling_object_identification=duplicate_handling_object_identification,
             file_type_plots=file_type_plots,
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         )
-        calibration_filters = self.calib_parameters.column_names
-
-        #   Find filter combinations for which magnitude transformation is possible
-        _, usable_filter_combinations = (
-            utilities.find_filter_for_magnitude_transformation(
-                filter_list,
-                calibration_filters,
-            )
-        )
-
-        for filter_combination in usable_filter_combinations:
-            #   Apply calibration and perform magnitude transformation
-            calibration.apply_calibration(
-                self,
-                filter_combination,
-                apply_transformation=apply_transformation,
-                transformation_coefficients_dict=transformation_coefficients_dict,
-                derive_transformation_coefficients=derive_transformation_coefficients,
-                photometry_extraction_method=photometry_extraction_method,
-                calculate_zero_point_statistic=calculate_zero_point_statistic,
-                distribution_samples=distribution_samples,
-                file_type_plots=file_type_plots,
-                add_progress_bar=False,
-            )
-
-            #   Restrict results to specific areas of the image and filter by means
-            #   of proper motion and distance using Gaia
-            utilities.post_process_results(
-                self,
-                filter_combination,
-                id_object=object_id,
-                extraction_method=photometry_extraction_method,
-                extract_only_circular_region=extract_only_circular_region,
-                region_radius=region_radius,
-                identify_cluster_gaia_data=identify_cluster_gaia_data,
-                clean_objects_using_proper_motion=clean_objs_using_pm,
-                max_distance_cluster=max_distance_cluster,
-                find_cluster_para_set=find_cluster_para_set,
-                convert_magnitudes=convert_magnitudes,
-                target_filter_system=target_filter_system,
-                distribution_samples=distribution_samples,
-                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-                file_type_plots=file_type_plots,
-            )
-
-            #   Determine limiting magnitudes
-            utilities.derive_limiting_magnitude(
-                self,
-                filter_combination,
-                reference_image_id,
-                aperture_radius=aperture_radius,
-                radii_unit=radii_unit,
-                file_type_plots=file_type_plots,
-                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-            )
 
     def calibrate_data_mk_light_curve(
         self,
@@ -1931,2109 +1836,6 @@ def transform_object_positions(
         image_series.image_list = image_list
     else:
         return image_list
-
-
-def rm_cosmic_rays(
-    image: Image,
-    limiting_contrast: float = 5.0,
-    read_noise: float = 8.0,
-    sigma_clipping_value: float = 4.5,
-    saturation_level: float = 65535.0,
-    verbose: bool = False,
-    add_mask: bool = True,
-    terminal_logger: terminal_output.TerminalLog | None = None,
-) -> None:
-    """
-    Remove cosmic rays
-
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    limiting_contrast
-        Parameter for the cosmic ray removal: Minimum contrast between
-        Laplacian image and the fine structure image.
-        Default is ``5``.
-
-    read_noise
-        The read noise (e-) of the camera chip.
-        Default is ``8`` e-.
-
-    sigma_clipping_value
-        Parameter for the cosmic ray removal: Fractional detection limit
-        for neighboring pixels.
-        Default is ``4.5``.
-
-    saturation_level
-        Saturation limit of the camera chip.
-        Default is ``65535``.
-
-    verbose
-        If True additional output will be printed to the command line.
-        Default is ``False``.
-
-    add_mask
-        If True add hot and bad pixel mask to the reduced science images.
-        Default is ``True``.
-
-    terminal_logger
-        Logger object. If provided, the terminal output will be directed
-        to this object.
-        Default is ``None``.
-    """
-    if terminal_logger is not None:
-        terminal_logger.add_to_cache("Remove cosmic rays ...")
-    else:
-        terminal_output.print_to_terminal("Remove cosmic rays ...")
-
-    #   Get image
-    ccd = image.read_image()
-
-    #   Get status cosmic ray removal status
-    status_cosmics = ccd.meta.get("cosmics_rm", False)
-
-    #   Get exposure time
-    exposure_time = ccd.meta.get("exptime", 1.0)
-
-    #   Get unit of the image to check if the image was scaled with the
-    #   exposure time
-    if ccd.unit == u.electron / u.s:
-        scaled = True
-        reduced = ccd.multiply(exposure_time * u.second)
-    else:
-        scaled = False
-        reduced = ccd
-
-    if not status_cosmics:
-        #   Remove cosmic rays
-        reduced = ccdp.cosmicray_lacosmic(
-            reduced,
-            objlim=limiting_contrast,
-            readnoise=read_noise,
-            sigclip=sigma_clipping_value,
-            satlevel=saturation_level,
-            verbose=verbose,
-        )
-        if not add_mask:
-            reduced.mask = np.zeros(reduced.shape, dtype=bool)
-        if verbose:
-            if terminal_logger is not None:
-                terminal_logger.add_to_cache("")
-            else:
-                terminal_output.print_to_terminal("")
-
-        #   Add Header keyword to mark the file as combined
-        reduced.meta["cosmics_rm"] = True
-
-        #   Reapply scaling if image was scaled with the exposure time
-        if scaled:
-            reduced = reduced.divide(exposure_time * u.second)
-
-        #   Set file name
-        basename = base_utilities.get_basename(image.filename)
-        file_name = f"{basename}_cosmic-rm.fit"
-
-        #   Set new file name and path
-        image.filename = file_name
-        image.path = os.path.join(
-            str(image.out_path),
-            "cosmics_rm",
-            file_name,
-        )
-
-        #   Check if the 'cosmics_rm' directory already exits.
-        #   If not, create it.
-        checks.check_output_directories(os.path.join(str(image.out_path), "cosmics_rm"))
-
-        #   Save image
-        reduced.write(image.path, overwrite=True)
-
-
-def determine_background(
-    image: Image,
-    sigma_background: float = 5.0,
-    two_d_background: bool = True,
-    apply_background: bool = True,
-    verbose: bool = False,
-) -> tuple[float, float]:
-    """
-    Determine background, using photutils
-
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    sigma_background
-        Sigma used for the sigma clipping of the background
-        Default is ``5.``.
-
-    two_d_background
-        If True a 2D background will be estimated and subtracted.
-        Default is ``True``.
-
-    apply_background
-        If True path and file name will be set to the background
-        subtracted images, so that those will automatically be used in
-        further processing steps.
-
-    verbose
-        If True additional output will be printed to the command line.
-        Default is ``False``.
-
-    Returns
-    -------
-    background_value
-        Image background
-
-    rms_background
-        Root mean square of the image background
-    """
-    if verbose:
-        terminal_output.print_to_terminal(
-            f"Determine background: {image.filter_} filter",
-            indent=2,
-        )
-
-    #   Load image data
-    ccd = image.read_image()
-
-    #   Set up sigma clipping
-    sigma_clip = SigmaClip(sigma=sigma_background)
-
-    #   Calculate background RMS
-    background_rms = MADStdBackgroundRMS(sigma_clip=sigma_clip)
-    rms_background = background_rms(ccd.data)
-
-    #   2D background?
-    if two_d_background:
-        #   Estimate 2D background
-        bkg_estimator = MedianBackground()
-        bkg = Background2D(
-            ccd.data,
-            (80, 80),
-            mask=ccd.mask,
-            filter_size=(3, 3),
-            sigma_clip=sigma_clip,
-            bkg_estimator=bkg_estimator,
-            exclude_percentile=20,
-        )
-
-        #   Remove background
-        image_no_bg = ccd.subtract(bkg.background * u.electron / u.s)
-
-        #   Put metadata back on the image, because it is lost while
-        #   subtracting the background
-        image_no_bg.meta = ccd.meta
-        image_no_bg.meta["HIERARCH"] = "2D background removed"
-
-        #   Add Header keyword to mark the file as background subtracted
-        image_no_bg.meta["NO_BG"] = True
-
-        #   Get median of the background
-        background_value = bkg.background_median
-    else:
-        #   Estimate 1D background
-        mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
-        background_value = mmm_bkg.calc_background(
-            ma.masked_array(ccd.data, mask=ccd.mask)
-        )
-
-        #   Remove background
-        image_no_bg = ccd.subtract(background_value)
-
-        #   Put metadata back on the image, because it is lost while
-        #   subtracting the background
-        image_no_bg.meta = ccd.meta
-        image_no_bg.meta["HIERARCH"] = "1D background removed"
-
-        #   Add Header keyword to mark the file as background subtracted
-        image_no_bg.meta["NO_BG"] = True
-
-    #   Define name and save image
-    file_name = f"{base_utilities.get_basename(image.filename)}_no_bkg.fit"
-    output_path = image.out_path / "no_bkg"
-    checks.check_output_directories(output_path)
-    image_no_bg.write(output_path / file_name, overwrite=True)
-
-    #   Set new path and file
-    #   -> Background subtracted image will be used in further processing steps
-    if apply_background:
-        image.path = output_path / file_name
-        image.filename = file_name
-
-    return background_value, rms_background
-
-
-def find_stars(
-    image: Image,
-    rms_background: float,
-    fwhm_object_psf: float | None = None,
-    multiplier_background_rms: float = 5.0,
-    method: str = "IRAF",
-    terminal_logger: terminal_output.TerminalLog | None = None,
-    indent: int = 2,
-) -> None:
-    """
-    Find the stars on the images, using photutils and search and select
-    stars for the ePSF stars
-
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    rms_background
-        Root mean square of the image background
-
-    fwhm_object_psf
-        FWHM of the objects PSF, assuming it is a Gaussian
-        Default is ``None``.
-
-    multiplier_background_rms
-        Multiplier for the background RMS, used to calculate the
-        threshold to identify stars
-        Default is ``5``.
-
-    method
-        Finder method DAO or IRAF
-        Default is ``IRAF``.
-
-    terminal_logger
-        Logger object. If provided, the terminal output will be directed
-        to this object.
-        Default is ``None``.
-
-    indent
-        Indentation for the console output lines
-        Default is ``2``.
-    """
-    if terminal_logger is not None:
-        terminal_logger.add_to_cache("Identify stars", indent=indent)
-    else:
-        terminal_output.print_to_terminal("Identify stars", indent=indent)
-
-    #   Load image data
-    ccd = image.read_image()
-
-    #   Use background RMS as sigma
-    sigma = rms_background
-
-    #   Set default FWHM
-    if fwhm_object_psf is not None:
-        default_fwhm = fwhm_object_psf
-    else:
-        default_fwhm = image.fwhm
-
-    #   First run of finder with default FWHM or user provided FWHM
-    #   -> needed to have some initial object positions for FWHM determination
-    if method == "DAO":
-        #   Set up DAO finder
-        dao_finder = DAOStarFinder(
-            fwhm=default_fwhm, threshold=multiplier_background_rms * sigma
-        )
-
-        #   Find stars - make table
-        tbl_objects = dao_finder(ccd.data, mask=ccd.mask)
-    elif method == "IRAF":
-        #   Set up IRAF finder
-        iraf_finder = IRAFStarFinder(
-            threshold=multiplier_background_rms * sigma,
-            fwhm=default_fwhm,
-            minsep_fwhm=0.01,
-            roundhi=5.0,
-            roundlo=-5.0,
-            sharplo=0.0,
-            sharphi=2.0,
-        )
-
-        #   Find stars - make table
-        tbl_objects = iraf_finder(ccd.data, mask=ccd.mask)
-    else:
-        raise ValueError(
-            f"{style.Bcolors.FAIL}\nExtraction method ({method}) not valid: "
-            f"use either IRAF or DAO {style.Bcolors.ENDC}"
-        )
-
-    #   TODO: put the FWHM determination in a function and use it also in reduction
-    #   Determine FWHM
-    #   Sort table first
-    tbl_objects.sort("flux")
-
-    if len(tbl_objects) >= 40:
-        #   Use only 20 bright objects but not the brightest,
-        #   since those might be overexposed
-        table_fwhm = tbl_objects[20:40]
-    else:
-        table_fwhm = tbl_objects
-
-    #   Get positions
-    xy_pos = list(zip(table_fwhm["xcentroid"], table_fwhm["ycentroid"]))
-
-    #   Estimate FWHM
-    try:
-        fwhm = fit_fwhm(
-            ccd.data,
-            xypos=xy_pos,
-            fit_shape=25,
-            mask=ccd.mask,
-            error=ccd.uncertainty.array,
-        )
-        #   Get median
-        median_fwhm = sigma_clipped_stats(fwhm)[1]
-    except (ValueError, NonFiniteValueError) as e:
-        terminal_output.print_to_terminal(
-            f"[Info] FWHM determination failed with the following error {e}. "
-            f"Use the default FWHM of {default_fwhm}.",
-            style_name="WARNING",
-        )
-
-        #   Add positions to image class
-        image.positions = tbl_objects["id", "xcentroid", "ycentroid", "flux"]
-        image.fwhm = default_fwhm
-        return
-
-    #   Check the validity of the FWHM estimate, assuming that FWHM values
-    #   below 2 and above 9 are most likely erroneous.
-    if median_fwhm < 2.0 or median_fwhm > 9.0:
-        median_fwhm = default_fwhm
-
-    #   Run finder with new FWHM
-    if method == "DAO":
-        #   Set up DAO finder
-        dao_finder = DAOStarFinder(
-            fwhm=median_fwhm, threshold=multiplier_background_rms * sigma
-        )
-
-        #   Find stars - make table
-        tbl_objects = dao_finder(ccd.data, mask=ccd.mask)
-    elif method == "IRAF":
-        #   Set up IRAF finder
-        iraf_finder = IRAFStarFinder(
-            threshold=multiplier_background_rms * sigma,
-            fwhm=median_fwhm,
-            minsep_fwhm=0.01,
-            roundhi=5.0,
-            roundlo=-5.0,
-            sharplo=0.0,
-            sharphi=2.0,
-        )
-
-        #   Find stars - make table
-        tbl_objects = iraf_finder(ccd.data, mask=ccd.mask)
-
-    #   Add positions to image class
-    image.positions = tbl_objects["id", "xcentroid", "ycentroid", "flux"]
-    image.fwhm = median_fwhm
-
-
-def check_epsf_stars(
-    image: Image,
-    size_epsf_region: int = 25,
-    minimum_n_stars: int = 25,
-    fraction_epsf_stars: float = 0.2,
-    terminal_logger: terminal_output.TerminalLog | None = None,
-    strict_epsf_checks: bool = True,
-    indent: int = 2,
-) -> Table:
-    """
-    Select ePSF stars and check if there are enough
-
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    size_epsf_region
-        Size of the extraction region in pixel
-        Default is ``25``.
-
-    minimum_n_stars
-        Minimal number of stars required for the ePSF calculations
-        Default is ``25``.
-
-    fraction_epsf_stars
-        Fraction of all stars that should be used to calculate the ePSF
-        Default is ``0.2``.
-
-    terminal_logger
-        Logger object. If provided, the terminal output will be directed
-        to this object.
-        Default is ``None``.
-
-    strict_epsf_checks
-        If True a stringent test of the ePSF conditions is applied.
-        Default is ``True``.
-
-    indent
-        Indentation for the console output lines
-        Default is ``2``.
-    """
-    #   Get object positions
-    tbl_positions = image.positions
-
-    #   Number of objects
-    n_stars = len(tbl_positions)
-
-    #   Get image data
-    image_data = image.get_data()
-
-    #   Combine identification string
-    identification_string = f"{image.pd}. {image.filter_}"
-
-    #   Useful information
-    out_string = (
-        f"{n_stars} sources identified in the {identification_string} band image"
-    )
-    if terminal_logger is not None:
-        terminal_logger.add_to_cache(
-            out_string,
-            indent=indent + 1,
-            style_name="OK",
-        )
-    else:
-        terminal_output.print_to_terminal(
-            out_string,
-            indent=indent + 1,
-            style_name="OK",
-        )
-
-    #  Determine sample of stars used for estimating the ePSF
-    #   (rm the brightest 1% of all stars because those are often saturated)
-    #   Sort list with star positions according to flux
-    tbl_positions_sort = tbl_positions.group_by("flux")
-    # Determine the 99 percentile
-    percentile_99 = np.percentile(tbl_positions_sort["flux"], 99)
-    #   Determine the position of the 99 percentile in the position list
-    id_percentile_99 = np.argmin(
-        np.absolute(tbl_positions_sort["flux"] - percentile_99)
-    )
-
-    #   Check that the minimum number of ePSF stars can be achieved
-    available_epsf_stars = int(n_stars * fraction_epsf_stars)
-    #   If the available number of stars is less than required (the default is
-    #   25 as required by the cutout plots, 25 also seems reasonable for a
-    #   good ePSF), use the required number anyway. The following check will
-    #   catch any problems.
-    if available_epsf_stars < minimum_n_stars:
-        available_epsf_stars = minimum_n_stars
-
-    #   Check if enough stars have been identified
-    if (
-        id_percentile_99 - available_epsf_stars < minimum_n_stars and strict_epsf_checks
-    ) or (id_percentile_99 - available_epsf_stars < 1 and not strict_epsf_checks):
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNot enough stars ("
-            f"{id_percentile_99 - available_epsf_stars}) found to determine "
-            f"the ePSF in the {identification_string} band{style.Bcolors.ENDC}"
-        )
-
-    #   Resize table -> limit it to the suitable stars
-    tbl_epsf_stars = tbl_positions_sort[:][
-        id_percentile_99 - available_epsf_stars : id_percentile_99
-    ]
-
-    #   Exclude stars that are too close to the image boarder
-    #   Size of the extraction box around each star
-    half_size_epsf_region = (size_epsf_region - 1) / 2
-
-    #   New lists with x and y positions
-    x = tbl_epsf_stars["xcentroid"]
-    y = tbl_epsf_stars["ycentroid"]
-
-    mask = (
-        (x > half_size_epsf_region)
-        & (x < (image_data.shape[1] - 1 - half_size_epsf_region))
-        & (y > half_size_epsf_region)
-        & (y < (image_data.shape[0] - 1 - half_size_epsf_region))
-    )
-
-    #   Updated positions table
-    tbl_epsf_stars = tbl_epsf_stars[:][mask]
-    n_useful_epsf_stars = len(tbl_epsf_stars)
-
-    #   Check if there are still enough stars
-    if (n_useful_epsf_stars < minimum_n_stars and strict_epsf_checks) or (
-        n_useful_epsf_stars < 1 and not strict_epsf_checks
-    ):
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNot enough stars ({n_useful_epsf_stars}) "
-            f"for the ePSF determination in the {identification_string} band "
-            "image. Too many potential ePSF stars have been removed, because "
-            "they are too close to the image border. Check first that enough "
-            "stars have been identified, using the starmap_?.pdf files.\n If "
-            "that is the case, shrink extraction region or allow for higher "
-            "fraction of ePSF stars (size_epsf) from all identified stars "
-            f"(frac_epsf_stars). {style.Bcolors.ENDC}"
-        )
-
-    #   Find all potential ePSF stars with close neighbors
-    x1 = tbl_positions_sort["xcentroid"]
-    y1 = tbl_positions_sort["ycentroid"]
-    x2 = tbl_epsf_stars["xcentroid"]
-    y2 = tbl_epsf_stars["ycentroid"]
-    max_objects = np.max((len(x1), len(x2)))
-    x_all = np.zeros((max_objects, 2))
-    y_all = np.zeros((max_objects, 2))
-    x_all[0 : len(x1), 0] = x1
-    x_all[0 : len(x2), 1] = x2
-    y_all[0 : len(y1), 0] = y1
-    y_all[0 : len(y2), 1] = y2
-
-    id_percentile_99 = correlate.correlation_own(
-        x_all,
-        y_all,
-        max_pixel_between_objects=size_epsf_region,
-        option=3,
-        silent=True,
-    )[1]
-
-    #   Determine multiple entries -> stars that are contaminated
-    index_percentile_99_mult = [
-        ite for ite, count in Counter(id_percentile_99).items() if count > 1
-    ]
-
-    #   Find unique entries -> stars that are not contaminated
-    index_percentile_99_unique = [
-        ite for ite, count in Counter(id_percentile_99).items() if count == 1
-    ]
-    n_useful_epsf_stars = len(index_percentile_99_unique)
-
-    #   Remove ePSF stars with close neighbors from the corresponding table
-    tbl_epsf_stars.remove_rows(index_percentile_99_mult)
-
-    #   Check if there are still enough stars
-    if (n_useful_epsf_stars < minimum_n_stars and strict_epsf_checks) or (
-        n_useful_epsf_stars < 1 and not strict_epsf_checks
-    ):
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNot enough stars ({n_useful_epsf_stars}) "
-            f" for the ePSF determination in the {identification_string} band "
-            "image. Too many potential ePSF stars have been removed, because "
-            "other stars are in the extraction region. Check first that enough"
-            " stars have been identified, using the starmap_?.pdf files.\n"
-            "If that is the case, shrink extraction region or allow for "
-            "higher fraction of ePSF stars (size_epsf) from all identified "
-            f"stars (frac_epsf_stars). {style.Bcolors.ENDC}"
-        )
-
-    #   Return ePSF stars
-    return tbl_epsf_stars
-
-
-def determine_epsf(
-    image: Image,
-    epsf_star_positions: Table,
-    size_epsf_region: int = 25,
-    oversampling_factor: int = 2,
-    max_n_iterations: int = 7,
-    minimum_n_stars: int = 25,
-    multiprocess_plots: bool = True,
-    terminal_logger: terminal_output.TerminalLog | None = None,
-    file_type_plots: str = "pdf",
-    indent: int = 2,
-) -> None:
-    """
-    Main function to determine the ePSF, using photutils
-
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    epsf_star_positions
-        Table with position of the ePSF stars
-
-    size_epsf_region
-        Size of the extraction region in pixel
-        Default is ``25``.
-
-    oversampling_factor
-        ePSF oversampling factor
-        Default is ``2``.
-
-    max_n_iterations
-        Number of ePSF iterations
-        Default is ``7``.
-
-    minimum_n_stars
-        Minimal number of stars required for the ePSF calculations
-        Default is ``25``.
-
-    multiprocess_plots
-        If True multiprocessing is used for plotting.
-        Default is ``True``.
-
-    terminal_logger
-        Logger object. If provided, the terminal output will be directed
-        to this object.
-        Default is ``None``.
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    indent
-        Indentation for the console output lines
-        Default is ``2``.
-    """
-    #   Get image data
-    data = image.get_data()
-
-    #   Number of ePSF stars
-    n_epsf = len(epsf_star_positions)
-
-    if n_epsf < minimum_n_stars:
-        terminal_logger.add_to_cache(
-            f"The number of ePSF stars is less than required."
-            f"{n_epsf} ePSF stars available. {minimum_n_stars} were "
-            "requested.",
-            indent=indent,
-            style_name="WARNING",
-        )
-
-    #   Get object name
-    # name_object = image.object_name
-
-    if terminal_logger is not None:
-        terminal_logger.add_to_cache(
-            "Determine the point spread function", indent=indent
-        )
-        terminal_logger.add_to_cache(
-            f"{n_epsf} bright stars used",
-            indent=indent + 1,
-            style_name="OK",
-        )
-    else:
-        terminal_output.print_to_terminal(
-            "Determine the point spread function", indent=indent
-        )
-        terminal_output.print_to_terminal(
-            f"{n_epsf} bright stars used",
-            indent=indent + 1,
-            style_name="OK",
-        )
-
-    #   Create new table with the names required by "extract_stars"
-    stars_tbl = Table()
-    stars_tbl["x"] = epsf_star_positions["xcentroid"]
-    stars_tbl["y"] = epsf_star_positions["ycentroid"]
-
-    #   Put image into NDData container (required by "extract_stars")
-    nd_data = NDData(data=data)
-
-    #   Extract cutouts of the selected stars
-    stars = extract_stars(nd_data, stars_tbl, size=size_epsf_region)
-
-    #   Combine plot identification string
-    string = f"img-{image.pd}-{image.filter_}"
-
-    #   Get output directory
-    output_dir = image.out_path.name
-
-    #   Plot the brightest ePSF stars
-    if multiprocess_plots:
-        p = mp.Process(
-            target=plots.plot_cutouts,
-            args=(output_dir, stars, string),
-            kwargs={
-                "file_type": file_type_plots,
-            },
-        )
-        p.start()
-    else:
-        plots.plot_cutouts(
-            output_dir,
-            stars,
-            string,
-            terminal_logger=terminal_logger,
-            file_type=file_type_plots,
-        )
-
-    #   Build the ePSF (set oversampling and max. number of iterations)
-    epsf_builder = EPSFBuilder(
-        oversampling=oversampling_factor,
-        maxiters=max_n_iterations,
-        progress_bar=False,
-    )
-    epsf, fitted_stars = epsf_builder(stars)
-
-    #   Add ePSF and fitted stars to image class
-    image.epsf = epsf
-
-
-def extraction_epsf(
-    image: Image,
-    background_rms: float,
-    sigma_background: float = 5.0,
-    use_initial_positions: bool = True,
-    finder_method: str = "IRAF",
-    size_extraction_region: int = 11,
-    epsf_fitter: str = "TRFLSQFitter",
-    n_iterations_eps_extraction: int = 1,
-    multiplier_background_rms: float = 5.0,
-    multiplier_grouper: float = 2.0,
-    strict_cleaning_results: bool = True,
-    terminal_logger: terminal_output.TerminalLog | None = None,
-    rm_background: bool = False,
-    indent: int = 2,
-) -> None:
-    """
-    Main function to perform the eEPSF photometry, using photutils
-
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    background_rms
-        Root mean square of the image background
-
-    sigma_background
-        Sigma used for the sigma clipping of the background
-        Default is ``5.``.
-
-    use_initial_positions
-        If True the initial positions from a previous object
-        identification procedure will be used. If False the objects
-        will be identified by means of the ``method_finder`` method.
-        Default is ``True``.
-
-    finder_method
-        Finder method DAO or IRAF
-        Default is ``IRAF``.
-
-    size_extraction_region
-        Size of the extraction region in pixel
-        Default is ``11``.
-
-    epsf_fitter
-        Fitter function used during ePSF fitting to the data.
-        Options are: ``LevMarLSQFitter``, ``LMLSQFitter`` and ``TRFLSQFitter``
-        Default is ``LMLSQFitter``.
-
-    n_iterations_eps_extraction
-        Number of extraction iterations in the ePSF fit to the data. In certain
-        cases, such as very crowded fields, numbers greater than 1 can lead to
-        very large CPU loads and recursions within astropy that may exceed the
-        defined limits.
-        Default is ``1``.
-
-    multiplier_background_rms
-        Multiplier for the background RMS, used to calculate the
-        threshold to identify stars
-        Default is ``5.0``.
-
-    multiplier_grouper
-        Multiplier for the DAO grouper
-        Default is ``2.0``.
-
-    strict_cleaning_results
-        If True objects with negative flux uncertainties will be removed
-        Default is ``True``.
-
-    terminal_logger
-        Logger object. If provided, the terminal output will be directed
-        to this object.
-        Default is ``None``.
-
-    rm_background
-        If True the background will be estimated and considered.
-        Default is ``False``. -> It is expected that the background
-        was removed before.
-
-    indent
-        Indentation for the console output lines
-        Default is ``2`.
-    """
-    #   Get output path
-    output_path = image.out_path
-
-    #   Check output directories
-    checks.check_output_directories(
-        output_path,
-        output_path / "tables",
-    )
-
-    #   Get image data
-    data = image.get_data()
-
-    #   Get image uncertainty information
-    error = image.get_error()
-
-    #   Get image mask
-    image_mask = image.get_mask()
-
-    #   Get filter
-    filter_ = image.filter_
-
-    #   Get already identified objects (position and flux)
-    initial_positions = None
-    if use_initial_positions:
-        try:
-            #   Get position information
-            positions_flux = image.positions
-            initial_positions = Table(
-                names=["x_0", "y_0", "flux_0"],
-                data=[
-                    positions_flux["xcentroid"],
-                    positions_flux["ycentroid"],
-                    positions_flux["flux"],
-                ],
-            )
-        except RuntimeError:
-            #   If positions and fluxes are not available,
-            #   those will need to be determined. Set
-            #   switch accordingly.
-            use_initial_positions = False
-
-    #   Set output and plot identification string
-    identification_str = f"{image.pd}-{filter_}"
-
-    #   Get ePSF and FWHM
-    epsf = image.epsf
-    fwhm = image.fwhm
-
-    output_str = f"Performing the actual PSF photometry ({identification_str} image)"
-    if terminal_logger is not None:
-        terminal_logger.add_to_cache(output_str, indent=indent)
-    else:
-        terminal_output.print_to_terminal(output_str, indent=indent)
-
-    #  Set up all necessary classes
-    if finder_method == "IRAF":
-        #   IRAF finder
-        finder = IRAFStarFinder(
-            threshold=multiplier_background_rms * background_rms,
-            fwhm=fwhm,
-            minsep_fwhm=0.01,
-            roundhi=5.0,
-            roundlo=-5.0,
-            sharplo=0.0,
-            sharphi=2.0,
-        )
-    elif finder_method == "DAO":
-        #   DAO finder
-        finder = DAOStarFinder(
-            fwhm=fwhm,
-            threshold=multiplier_background_rms * background_rms,
-            exclude_border=True,
-        )
-    else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nExtraction method ({finder_method}) "
-            f"not valid: use either IRAF or DAO {style.Bcolors.ENDC}"
-        )
-    #   Fitter used
-    if epsf_fitter == "LevMarLSQFitter":
-        fitter = LevMarLSQFitter()
-    elif epsf_fitter == "LMLSQFitter":
-        fitter = LMLSQFitter()
-    elif epsf_fitter == "TRFLSQFitter":
-        fitter = TRFLSQFitter()
-    else:
-        terminal_output.print_to_terminal(
-            f"WARNING: Fitter method ({epsf_fitter}) for ePSF "
-            f"extraction not known: Switching to LMLSQFitter.",
-            style_name="WARNING",
-            indent=indent,
-        )
-        fitter = LMLSQFitter()
-
-    #   Make sure the size of the extraction region is uneven
-    if size_extraction_region % 2 == 0:
-        size_extraction_region = size_extraction_region + 1
-
-    #   Set up sigma clipping
-    if rm_background:
-        sigma_clip = SigmaClip(sigma=sigma_background)
-        mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
-        local_bkg_estimator = LocalBackground(7, 10, mmm_bkg)
-    else:
-        local_bkg_estimator = None
-
-    #   Group sources into clusters based on a minimum separation distance
-    source_grouper = SourceGrouper(min_separation=multiplier_grouper * fwhm)
-
-    #  Set up the overall class to extract the data
-    photometry = IterativePSFPhotometry(
-        psf_model=epsf,
-        fit_shape=(size_extraction_region, size_extraction_region),
-        # fit_shape=(11, 11),
-        finder=finder,
-        grouper=source_grouper,
-        fitter=fitter,
-        maxiters=n_iterations_eps_extraction,
-        localbkg_estimator=local_bkg_estimator,
-        mode="all",
-        aperture_radius=(size_extraction_region - 1) / 2,
-        # aperture_radius=(11 - 1) / 2
-    )
-
-    #   Extract the photometry and make a t\\able
-    if use_initial_positions:
-        result_tbl = photometry(
-            data=data,
-            error=error,
-            mask=image_mask,
-            init_params=initial_positions,
-        )
-    else:
-        result_tbl = photometry(data=data, error=error, mask=image_mask)
-
-    #   Check if result table contains a 'flux_err' column
-    #   For some reason, it's missing for some extractions....
-    #   The following has be deactivated for test purposes (20.08.2024)
-    if "flux_err" not in result_tbl.colnames:
-        #   Calculate a very, very rough approximation of the uncertainty
-        #   by means of the actual extraction result 'flux_fit' and the
-        #   early estimate 'flux_0'
-        estimated_uncertainty = np.absolute(
-            result_tbl["flux_fit"] - result_tbl["flux_init"]
-        )
-        result_tbl.add_column(estimated_uncertainty, name="flux_err")
-
-    #   Clean output for objects with NANs in uncertainties
-    try:
-        uncertainty_mask = np.invert(np.isnan(result_tbl["flux_err"].value))
-        result_tbl = result_tbl[uncertainty_mask]
-    except KeyError:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nProblem with cleanup of NANs in "
-            f"uncertainties... {style.Bcolors.ENDC}"
-        )
-
-    #   Clean output for objects with negative uncertainties
-    try:
-        bad_results = np.where(result_tbl["flux_fit"].data < 0.0)
-        result_tbl.remove_rows(bad_results)
-        n_bad_objects = np.size(bad_results)
-        if strict_cleaning_results:
-            bad_results = np.where(result_tbl["flux_err"].data < 0.0)
-            n_bad_objects += len(bad_results)
-            result_tbl.remove_rows(bad_results)
-    except KeyError:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nProblem with cleanup of negative "
-            f"uncertainties... {style.Bcolors.ENDC}"
-        )
-
-    #   Clean output for objects with negative pixel coordinates
-    try:
-        bad_results = np.where(result_tbl["x_fit"].data < 0.0)
-        n_bad_objects += np.size(bad_results)
-        result_tbl.remove_rows(bad_results)
-        bad_results = np.where(result_tbl["y_fit"].data < 0.0)
-        n_bad_objects += np.size(bad_results)
-        result_tbl.remove_rows(bad_results)
-    except KeyError:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nProblem with cleanup of negative pixel "
-            f"coordinates... {style.Bcolors.ENDC}"
-        )
-
-    if n_bad_objects != 0:
-        out_str = f"{n_bad_objects} objects removed because of poor quality"
-        if terminal_logger is not None:
-            terminal_logger.add_to_cache(out_str, indent=indent + 1)
-        else:
-            terminal_output.print_to_terminal(out_str, indent=indent + 1)
-
-    try:
-        n_stars = len(result_tbl["flux_fit"].data)
-    except KeyError:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nTable produced by "
-            "IterativePSFPhotometry is empty after cleaning up "
-            "of objects with negative pixel coordinates and negative "
-            f"uncertainties {style.Bcolors.ENDC}"
-        )
-
-    out_str = f"{n_stars} good stars extracted from the image"
-    if terminal_logger is not None:
-        terminal_logger.add_to_cache(
-            out_str,
-            indent=indent + 1,
-            style_name="OK",
-        )
-    else:
-        terminal_output.print_to_terminal(out_str, indent=indent + 1, style_name="OK")
-
-    #   Remove objects that are too close to the image edges
-    result_tbl = utilities.rm_edge_objects(
-        result_tbl,
-        data,
-        int((size_extraction_region - 1) / 2),
-        terminal_logger=terminal_logger,
-    )
-
-    #   Write table
-    filename = "table_photometry_{}_PSF.dat".format(identification_str)
-    result_tbl.write(
-        output_path / "tables" / filename,
-        format="ascii",
-        overwrite=True,
-    )
-
-    #  Make residual image
-    residual_image = photometry.make_residual_image(
-        data,
-        # (size_extraction_region, size_extraction_region),
-    )
-
-    #   Add photometry and residual image to image class
-    image.photometry = result_tbl
-    image.residual_image = residual_image
-
-
-def compute_aperture_photometry_uncertainties(
-    flux_variance: np.ndarray,
-    aperture_area: float,
-    annulus_area: float,
-    uncertainty_background: np.ndarray,
-    gain: float = 1.0,
-) -> np.ndarray:
-    """
-    This function is largely borrowed from the Space Telescope Science
-    Institute's wfc3_photometry package:
-
-    https://github.com/spacetelescope/wfc3_photometry
-
-    It computes the flux errors for aperture photometry using the DAOPHOT
-    style computation:
-
-    err = sqrt (Poisson_noise / gain
-        + ap_area * stdev**2
-        + ap_area**2 * stdev**2 / nsky)
-
-    Parameters
-    ----------
-    flux_variance
-        Extracted aperture flux data or the error^2 of the extraction
-        if available -> proxy for the Poisson noise
-
-    aperture_area
-        Photometric aperture area
-
-    annulus_area
-        Sky annulus area
-
-    uncertainty_background
-        Uncertainty in the sky measurement
-
-    gain
-        Electrons per ADU
-        Default is ``1.0``. Usually we already work with gain corrected
-        data.
-
-    Returns
-    -------
-    flux_error
-        Uncertainty of flux measurements
-    """
-
-    #   Calculate flux error as above
-    bg_variance_terms = (aperture_area * uncertainty_background**2.0) * (
-        1.0 + aperture_area / annulus_area
-    )
-    variance = flux_variance / gain + bg_variance_terms
-    flux_error = variance**0.5
-
-    return flux_error
-
-
-def define_apertures(
-    image: Image,
-    aperture_radius: float,
-    inner_annulus_radius: float,
-    outer_annulus_radius: float,
-    unit_radii: str,
-) -> tuple[CircularAperture, CircularAnnulus]:
-    """
-    Define stellar and background apertures
-
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    aperture_radius
-        Radius of the stellar aperture
-
-    inner_annulus_radius
-        Inner radius of the background annulus
-
-    outer_annulus_radius
-        Outer radius of the background annulus
-
-    unit_radii
-        Unit of the radii above. Permitted values are ``pixel``
-        and ``arcsec``.
-
-    Returns
-    -------
-    aperture
-        Stellar aperture
-
-    annulus_aperture
-        Background annulus
-    """
-    #   Get position information
-    tbl = image.positions
-
-    #   Extract positions and prepare a position list
-    try:
-        x_positions = tbl["x_fit"]
-        y_positions = tbl["y_fit"]
-    except KeyError:
-        x_positions = tbl["xcentroid"]
-        y_positions = tbl["ycentroid"]
-    positions = list(zip(x_positions, y_positions))
-
-    #   Check unit of radii
-    if unit_radii not in ["pixel", "arcsec"]:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nUnit of the aperture radii not valid: "
-            f"set it either to pixel or arcsec {style.Bcolors.ENDC}"
-        )
-
-    #   Convert radii in arcsec to pixel
-    #   (this part is prone to errors and needs to be rewritten)
-    pixel_scale = image.pixel_scale
-    if pixel_scale is not None and unit_radii == "arcsec":
-        aperture_radius = aperture_radius / pixel_scale
-        inner_annulus_radius = inner_annulus_radius / pixel_scale
-        outer_annulus_radius = outer_annulus_radius / pixel_scale
-
-    #   Make stellar aperture
-    aperture = CircularAperture(positions, r=aperture_radius)
-
-    #   Make background annulus
-    annulus_aperture = CircularAnnulus(
-        positions,
-        r_in=inner_annulus_radius,
-        r_out=outer_annulus_radius,
-    )
-
-    return aperture, annulus_aperture
-
-
-#   TODO: Deprecated: rm in the future
-def background_simple(
-    image: Image, annulus_aperture: CircularAnnulus
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Calculate background from annulus
-
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    annulus_aperture
-        Background annulus
-
-    Returns
-    -------
-    bkg_median
-        Median of the background
-
-    bkg_standard_deviation
-        Standard deviation of the background
-    """
-    bkg_median = []
-    bkg_standard_deviation = []
-
-    #   Calculate mask from background annulus
-    annulus_masks = annulus_aperture.to_mask(method="center")
-
-    #   Loop over all masks
-    for mask in annulus_masks:
-        #   Extract annulus data
-        annulus_data = mask.multiply(image.get_data())
-
-        #   Convert annulus data to 1D
-        annulus_data_1d = annulus_data[mask.data > 0]
-
-        #   Sigma clipping
-        _, median, standard_deviation = sigma_clipped_stats(annulus_data_1d)
-
-        #   Add to list
-        bkg_median.append(median)
-        bkg_standard_deviation.append(standard_deviation)
-
-    #   Convert to numpy array
-    bkg_median = np.array(bkg_median)
-    bkg_standard_deviation = np.array(bkg_standard_deviation)
-
-    return bkg_median, bkg_standard_deviation
-
-
-def extraction_aperture(
-    image: Image,
-    radius_aperture: float,
-    inner_annulus_radius: float,
-    outer_annulus_radius: float,
-    radii_unit: str = "pixel",
-    background_estimate_simple: bool = False,
-    plot_aperture_positions: bool = False,
-    terminal_logger: terminal_output.TerminalLog | None = None,
-    file_type_plots: str = "pdf",
-    indent: int = 2,
-) -> None:
-    """
-    Perform aperture photometry using the photutils aperture package
-
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    radius_aperture
-        Radius of the stellar aperture
-
-    inner_annulus_radius
-        Inner radius of the background annulus
-
-    outer_annulus_radius
-        Outer radius of the background annulus
-
-    radii_unit
-        Unit of the radii above. Permitted values are ``pixel`` and
-        ``arcsec``.
-        Default is ``pixel``.
-
-    background_estimate_simple
-        If True the background will be extract by a simple algorithm that
-        calculates the median within the background annulus. If False the
-        background will be extracted using
-        photutils.aperture.aperture_photometry.
-        Default is ``False``.
-
-    plot_aperture_positions
-        IF true a plot showing the apertures in relation to image is
-        created.
-        Default is ``False``.
-
-    terminal_logger
-        Logger object. If provided, the terminal output will be directed
-        to this object.
-        Default is ``None``.
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    indent
-        Indentation for the console output lines
-        Default is ``2``.
-    """
-    #   Load image data and uncertainty
-    ccd = image.read_image()
-    data = ccd.data
-    uncertainty = ccd.uncertainty.array
-
-    #   Get filter
-    filter_ = image.filter_
-
-    if terminal_logger is not None:
-        terminal_logger.add_to_cache(
-            f"Performing aperture photometry ({filter_} image)",
-            indent=indent,
-        )
-    else:
-        terminal_output.print_to_terminal(
-            f"Performing aperture photometry ({filter_} image)",
-            indent=indent,
-        )
-
-    #   Define apertures
-    aperture, annulus_aperture = define_apertures(
-        image,
-        radius_aperture,
-        inner_annulus_radius,
-        outer_annulus_radius,
-        radii_unit,
-    )
-
-    #   Extract photometry
-    #
-    #   Extract aperture
-    photometry_tbl = aperture_photometry(
-        data,
-        aperture,
-        mask=ccd.mask,
-        error=uncertainty,
-    )
-
-    #   Get aperture and annulus area
-    aperture_area = aperture.area_overlap(data, mask=ccd.mask)
-    annulus_aperture_area = annulus_aperture.area_overlap(data, mask=ccd.mask)
-
-    #   Extract background and calculate median - extract background aperture
-    # background_estimate_simple = True
-    if background_estimate_simple:
-        # bkg_median, bkg_err = background_simple(image, annulus_aperture)
-        sigma_clip = SigmaClip(sigma=3.0, maxiters=10)
-        bkg_stats = ApertureStats(data, annulus_aperture, sigma_clip=sigma_clip)
-        bkg_median = bkg_stats.median
-        bkg_err = bkg_stats.std
-
-        #   Add median background to the output table
-        photometry_tbl["annulus_median"] = bkg_median
-
-        #   Calculate background for the apertures add to the output table
-        photometry_tbl["aper_bkg"] = bkg_median * aperture_area
-    else:
-        bkg_phot = aperture_photometry(
-            data,
-            annulus_aperture,
-            mask=ccd.mask,
-            error=uncertainty,
-        )
-
-        #   Calculate aperture background and the corresponding error
-        photometry_tbl["aper_bkg"] = (
-            bkg_phot["aperture_sum"] * aperture_area / annulus_aperture_area
-        )
-
-        bkg_err = photometry_tbl["aper_bkg_err"] = (
-            bkg_phot["aperture_sum_err"] * aperture_area / annulus_aperture_area
-        )
-
-        # bkg_err = photometry_tbl['aper_bkg_err']
-
-    #   Subtract background from aperture flux and add it to the
-    #   output table
-    photometry_tbl["flux_fit"] = (
-        photometry_tbl["aperture_sum"] - photometry_tbl["aper_bkg"]
-    )
-
-    #   Define flux column
-    #   (necessary to have the same column names for aperture and PSF
-    #   photometry)
-    # photometry_tbl['flux_fit'] = photometry_tbl['aper_sum_bkgsub']
-
-    # Error estimate
-    if uncertainty is not None:
-        err_column = photometry_tbl["aperture_sum_err"]
-    else:
-        err_column = photometry_tbl["flux_fit"] ** 0.5
-
-    photometry_tbl["flux_err"] = compute_aperture_photometry_uncertainties(
-        err_column,
-        aperture_area,
-        annulus_aperture_area,
-        bkg_err,
-    )
-
-    #   Rename position columns
-    photometry_tbl.rename_column("xcenter", "x_fit")
-    photometry_tbl.rename_column("ycenter", "y_fit")
-
-    #   Convert distance/radius to the border to pixel.
-    if radii_unit == "pixel":
-        required_distance_to_edge = int(outer_annulus_radius)
-    elif radii_unit == "arcsec":
-        pixel_scale = image.pixel_scale
-        required_distance_to_edge = int(round(outer_annulus_radius / pixel_scale))
-    else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nException in aperture_extract(): '"
-            f"\n'r_unit ({radii_unit}) not known -> Exit {style.Bcolors.ENDC}"
-        )
-
-    #   Remove objects that are too close to the image edges
-    photometry_tbl = utilities.rm_edge_objects(
-        photometry_tbl,
-        data,
-        required_distance_to_edge,
-        terminal_logger=terminal_logger,
-    )
-
-    #   Remove negative flux values as they are not physical
-    flux = np.array(photometry_tbl["flux_fit"])
-    mask = np.where(flux > 0.0)
-    photometry_tbl = photometry_tbl[mask]
-
-    #   Add photometry to image class
-    image.photometry = photometry_tbl
-
-    #   Plot star map with aperture overlay
-    if plot_aperture_positions:
-        plots.plot_apertures(
-            image.out_path.name,
-            data,
-            aperture,
-            annulus_aperture,
-            f"{filter_}_{image.pd}",
-            file_type=file_type_plots,
-        )
-
-    #   Number of stars
-    n_objects = len(flux)
-
-    #   Useful info
-    if terminal_logger is not None:
-        terminal_logger.add_to_cache(
-            f"{n_objects} good objects extracted from the image",
-            indent=indent + 1,
-            # style_name='OK',
-        )
-    else:
-        terminal_output.print_to_terminal(
-            f"{n_objects} good objects extracted from the image",
-            indent=indent + 1,
-            # style_name='OK',
-        )
-
-
-def extract_multiprocessing(
-    image_series: ImageSeries,
-    n_cores_multiprocessing: int,
-    fwhm_object_psf: dict[str, float] | None = None,
-    sigma_value_background_clipping: float = 5.0,
-    multiplier_background_rms: float = 5.0,
-    size_epsf_region: int = 25,
-    size_extraction_region_epsf: int = 11,
-    epsf_fitter: str = "TRFLSQFitter",
-    n_iterations_eps_extraction: int = 1,
-    fraction_epsf_stars: float = 0.2,
-    oversampling_factor_epsf: int = 4,
-    max_n_iterations_epsf_determination: int = 7,
-    use_initial_positions_epsf: bool = True,
-    object_finder_method: str = "IRAF",
-    multiplier_background_rms_epsf: float = 5.0,
-    multiplier_grouper_epsf: float = 2.0,
-    strict_cleaning_epsf_results: bool = True,
-    minimum_n_eps_stars: int = 15,
-    photometry_extraction_method: str = "PSF",
-    radius_aperture: float = 5.0,
-    inner_annulus_radius: float = 7.0,
-    outer_annulus_radius: float = 10.0,
-    radii_unit: str = "arcsec",
-    strict_epsf_checks: bool = True,
-    plots_for_all_images: bool = False,
-    use_wcs_projection_for_star_maps: bool = True,
-    file_type_plots: str = "pdf",
-    annotate_reference_image: bool = False,
-    magnitude_limit_image_annotation: float | None = None,
-    filter_magnitude_limit_image_annotation: str | None = None,
-) -> None:
-    """
-    Extract flux and object positions using multiprocessing
-
-    Parameters
-    ----------
-    image_series
-        Image series object with all image data taken in a specific
-        filter
-
-    n_cores_multiprocessing
-        Number of cores to use during multiprocessing.
-
-    fwhm_object_psf
-        FWHM of the objects PSF, assuming it is a Gaussian
-        Default is ``None``.
-
-    sigma_value_background_clipping
-        Sigma used for the sigma clipping of the background
-        Default is ``5.``.
-
-    multiplier_background_rms
-        Multiplier for the background RMS, used to calculate the
-        threshold to identify stars
-        Default is ``7``.
-
-    size_epsf_region
-        Size of the extraction region in pixel
-        Default is `25``.
-
-    size_extraction_region_epsf
-        Size of the extraction region in pixel
-        Default is ``11``.
-
-    epsf_fitter
-        Fitter function used during ePSF fitting to the data.
-        Options are: ``LevMarLSQFitter``, ``LMLSQFitter`` and ``TRFLSQFitter``
-        Default is ``LMLSQFitter``.
-
-    n_iterations_eps_extraction
-        Number of extraction iterations in the ePSF fit to the data. In certain
-        cases, such as very crowded fields, numbers greater than 1 can lead to
-        very large CPU loads and recursions within astropy that may exceed the
-        defined limits.
-        Default is ``1``.
-
-    fraction_epsf_stars
-        Fraction of all stars that should be used to calculate the ePSF
-        Default is ``0.2``.
-
-    oversampling_factor_epsf
-        ePSF oversampling factor
-        Default is ``4``.
-
-    max_n_iterations_epsf_determination
-        Number of ePSF iterations
-        Default is ``7``.
-        Default is ``7``.
-
-    use_initial_positions_epsf
-        If True the initial positions from a previous object
-        identification procedure will be used. If False the objects
-        will be identified by means of the ``method_finder`` method.
-        Default is ``True``.
-
-    object_finder_method
-        Finder method DAO or IRAF
-        Default is ``IRAF``.
-
-    multiplier_background_rms_epsf
-        Multiplier for the background RMS, used to calculate the
-        threshold to identify stars
-        Default is ``5.0``.
-
-    multiplier_grouper_epsf
-        Multiplier for the DAO grouper
-        Default is ``5.0``.
-
-    strict_cleaning_epsf_results
-        If True objects with negative flux uncertainties will be removed
-        Default is ``True``.
-
-    minimum_n_eps_stars
-        Minimal number of required ePSF stars
-        Default is ``15``.
-
-    photometry_extraction_method
-        Switch between aperture and ePSF photometry.
-        Possibilities: 'PSF' & 'APER'
-        Default is ``PSF``.
-
-    radius_aperture
-        Radius of the stellar aperture
-        Default is ``5``.
-
-    inner_annulus_radius
-        Inner radius of the background annulus
-        Default is ``7``.
-
-    outer_annulus_radius
-        Outer radius of the background annulus
-        Default is ``10``.
-
-    radii_unit
-        Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
-        Default is ``pixel``.
-
-    strict_epsf_checks
-        If True a stringent test of the ePSF conditions is applied.
-        Default is ``True``.
-
-    plots_for_all_images
-        If True star map plots for all stars are created
-        Default is ``False``.
-
-    use_wcs_projection_for_star_maps
-        If ``True`` the starmap will be plotted with sky coordinates instead
-        of pixel coordinates
-        Default is ``True``.
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    annotate_reference_image
-        If ``True``, a starmap will be created with known Simbad objects marked.
-        Default is ``False``.
-
-    magnitude_limit_image_annotation
-        Limiting magnitude, only objects brighter as this limit will be shown
-        Default is ``None``.
-
-    filter_magnitude_limit_image_annotation
-        Name of the filter (e.g. 'V')
-        Default is ``None``.
-    """
-    #   Get filter
-    filter_ = image_series.filter_
-
-    #   Get user provided FWHM for current filter
-    if fwhm_object_psf is not None:
-        fwhm = fwhm_object_psf[filter_]
-    else:
-        fwhm = None
-
-    ###
-    #   Main loop: Extract stars and info from all images, using
-    #              multiprocessing
-    #
-    #   Initialize multiprocessing object
-    executor = utilities.Executor(n_cores_multiprocessing)
-
-    #   Main loop
-    for image in image_series.image_list:
-        #   Set bool if reference image should be annotated with known Simbad objects
-        if image.pd == image_series.reference_image_id and annotate_reference_image:
-            annotate_image = True
-        else:
-            annotate_image = False
-
-        #   Extract photometry
-        executor.schedule(
-            main_extract,
-            args=(image,),
-            kwargs={
-                "fwhm_object_psf": fwhm,
-                "multiprocessing": True,
-                "sigma_value_background_clipping": sigma_value_background_clipping,
-                "multiplier_background_rms": multiplier_background_rms,
-                "size_epsf_region": size_epsf_region,
-                "size_extraction_region_epsf": size_extraction_region_epsf,
-                "epsf_fitter": epsf_fitter,
-                "n_iterations_eps_extraction": n_iterations_eps_extraction,
-                "fraction_epsf_stars": fraction_epsf_stars,
-                "oversampling_factor_epsf": oversampling_factor_epsf,
-                "max_n_iterations_epsf_determination": max_n_iterations_epsf_determination,
-                "use_initial_positions_epsf": use_initial_positions_epsf,
-                "object_finder_method": object_finder_method,
-                "multiplier_background_rms_epsf": multiplier_background_rms_epsf,
-                "multiplier_grouper_epsf": multiplier_grouper_epsf,
-                "strict_cleaning_epsf_results": strict_cleaning_epsf_results,
-                "minimum_n_eps_stars": minimum_n_eps_stars,
-                "strict_epsf_checks": strict_epsf_checks,
-                "id_reference_image": image_series.reference_image_id,
-                "photometry_extraction_method": photometry_extraction_method,
-                "radius_aperture": radius_aperture,
-                "inner_annulus_radius": inner_annulus_radius,
-                "outer_annulus_radius": outer_annulus_radius,
-                "radii_unit": radii_unit,
-                # 'identify_objects_on_image': identify_objects_on_image,
-                "plots_for_all_images": plots_for_all_images,
-                "file_type_plots": file_type_plots,
-                "use_wcs_projection_for_star_maps": use_wcs_projection_for_star_maps,
-                "annotate_image": annotate_image,
-                "magnitude_limit_image_annotation": magnitude_limit_image_annotation,
-                "filter_magnitude_limit_image_annotation": filter_magnitude_limit_image_annotation,
-            },
-        )
-
-    #   Exit if exceptions occurred
-    if executor.err is not None:
-        raise RuntimeError(
-            f"\n{style.Bcolors.FAIL}Extraction using multiprocessing failed "
-            f"for {filter_} :({style.Bcolors.ENDC}"
-        )
-
-    #   Close multiprocessing pool and wait until it finishes
-    executor.wait()
-
-    #   Sort multiprocessing results
-    #
-    #   Extract results
-    res = executor.res
-
-    #   Sort observation times and images & build dictionary for the
-    #   tables with the extraction results
-    tmp_list = []
-    for img in image_series.image_list:
-        for pd, tbl in res:
-            if pd == img.pd:
-                img.photometry = tbl
-                tmp_list.append(img)
-
-    image_series.image_list = tmp_list
-
-
-def main_extract(
-    image: Image,
-    fwhm_object_psf: float | None = None,
-    multiprocessing: bool = False,
-    sigma_value_background_clipping: float = 5.0,
-    multiplier_background_rms: float = 5.0,
-    size_epsf_region: int = 25,
-    size_extraction_region_epsf: int = 11,
-    epsf_fitter: str = "TRFLSQFitter",
-    n_iterations_eps_extraction: int = 1,
-    fraction_epsf_stars: float = 0.2,
-    oversampling_factor_epsf: int = 4,
-    max_n_iterations_epsf_determination: int = 7,
-    use_initial_positions_epsf: bool = True,
-    object_finder_method: str = "IRAF",
-    multiplier_background_rms_epsf: float = 5.0,
-    multiplier_grouper_epsf: float = 2.0,
-    strict_cleaning_epsf_results: bool = True,
-    minimum_n_eps_stars: int = 15,
-    id_reference_image: int = 0,
-    photometry_extraction_method: str = "PSF",
-    radius_aperture: float = 4.0,
-    inner_annulus_radius: float = 7.0,
-    outer_annulus_radius: float = 10.0,
-    radii_unit: str = "arcsec",
-    strict_epsf_checks: bool = True,
-    cosmic_ray_removal: bool = False,
-    limiting_contrast_rm_cosmics: float = 5.0,
-    read_noise: float = 8.0,
-    sigma_clipping_value: float = 4.5,
-    saturation_level: float = 65535.0,
-    plots_for_all_images: bool = False,
-    file_type_plots: str = "pdf",
-    use_wcs_projection_for_star_maps: bool = True,
-    annotate_image: bool = False,
-    magnitude_limit_image_annotation: float | None = None,
-    filter_magnitude_limit_image_annotation: str | None = None,
-) -> None | tuple[int, Table]:
-    """
-    Main function to extract the information from the individual images
-
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    fwhm_object_psf
-        FWHM of the objects PSF, assuming it is a Gaussian
-        Default is ``None``.
-
-    multiprocessing
-        If True, the routine is set up to meet the requirements of
-        multiprocessing, such as returning results and delayed
-        output to the terminal.
-
-    sigma_value_background_clipping
-        Sigma used for the sigma clipping of the background
-        Default is ``5``.
-
-    multiplier_background_rms
-        Multiplier for the background RMS, used to calculate the
-        threshold to identify stars
-        Default is ``5``.
-
-    size_epsf_region
-        Size of the extraction region in pixel
-        Default is ``25``.
-
-    size_extraction_region_epsf
-        Size of the extraction region in pixel
-        Default is ``11``.
-
-    epsf_fitter
-        Fitter function used during ePSF fitting to the data.
-        Options are: ``LevMarLSQFitter``, ``LMLSQFitter`` and ``TRFLSQFitter``
-        Default is ``LMLSQFitter``.
-
-    n_iterations_eps_extraction
-        Number of extraction iterations in the ePSF fit to the data. In certain
-        cases, such as very crowded fields, numbers greater than 1 can lead to
-        very large CPU loads and recursions within astropy that may exceed the
-        defined limits.
-        Default is ``1``.
-
-    fraction_epsf_stars
-        Fraction of all stars that should be used to calculate the ePSF
-        Default is ``0.2``.
-
-    oversampling_factor_epsf
-        ePSF oversampling factor
-        Default is ``4``.
-
-    max_n_iterations_epsf_determination
-        Number of ePSF iterations
-        Default is ``7``.
-
-    use_initial_positions_epsf
-        If True the initial positions from a previous object
-        identification procedure will be used. If False the objects
-        will be identified by means of the ``method_finder`` method.
-        Default is ``True``.
-
-    object_finder_method
-        Finder method DAO or IRAF
-        Default is ``IRAF``.
-
-    multiplier_background_rms_epsf
-        Multiplier for the background RMS, used to calculate the
-        threshold to identify stars
-        Default is ``5.0``.
-
-    multiplier_grouper_epsf
-        Multiplier for the DAO grouper
-        Default is ``5.0``.
-
-    strict_cleaning_epsf_results
-        If True objects with negative flux uncertainties will be removed
-        Default is ``True``.
-
-    minimum_n_eps_stars
-        Minimal number of required ePSF stars
-        Default is ``15``.
-
-    id_reference_image
-        ID of the reference image
-        Default is ``0``.
-
-    photometry_extraction_method
-        Switch between aperture and ePSF photometry.
-        Possibilities: 'PSF' & 'APER'
-        Default is ``PSF``.
-
-    radius_aperture
-        Radius of the stellar aperture
-        Default is ``5``.
-
-    inner_annulus_radius
-        Inner radius of the background annulus
-        Default is ``7``.
-
-    outer_annulus_radius
-        Outer radius of the background annulus
-        Default is ``10``.
-
-    radii_unit
-        Unit of the radii above. Permitted values are ``pixel`` and ``arcsec``.
-        Default is ``pixel``.
-
-    strict_epsf_checks
-        If True a stringent test of the ePSF conditions is applied.
-        Default is ``True``.
-
-    cosmic_ray_removal
-        If True cosmic rays will be removed from the image.
-        Default is ``False``.
-
-    limiting_contrast_rm_cosmics
-        Parameter for the cosmic ray removal: Minimum contrast between
-        Laplacian image and the fine structure image.
-        Default is ``5``.
-
-    read_noise
-        The read noise (e-) of the camera chip.
-        Default is ``8`` e-.
-
-    sigma_clipping_value
-        Parameter for the cosmic ray removal: Fractional detection limit
-        for neighboring pixels.
-        Default is ``4.5``.
-
-    saturation_level
-        Saturation limit of the camera chip.
-        Default is ``65535``.
-
-    plots_for_all_images
-        If True star map plots for all stars are created
-        Default is ``False``.
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    use_wcs_projection_for_star_maps
-        If ``True`` the starmap will be plotted with sky coordinates instead
-        of pixel coordinates
-        Default is ``True``.
-
-    annotate_image
-        If ``True``, a starmap will be created with known Simbad objects marked.
-        Default is ``False``.
-
-    magnitude_limit_image_annotation
-        Limiting magnitude, only objects brighter as this limit will be shown
-        Default is ``None``.
-
-    filter_magnitude_limit_image_annotation
-        Name of the filter (e.g. 'V')
-        Default is ``None``.
-    """
-    #   Initialize output class in case of multiprocessing
-    if multiprocessing:
-        terminal_logger = terminal_output.TerminalLog()
-        terminal_logger.add_to_cache(
-            f"Image: {image.pd}",
-            style_name="UNDERLINE",
-        )
-    else:
-        terminal_output.print_to_terminal(
-            f"Image: {image.pd}",
-            indent=2,
-            style_name="UNDERLINE",
-        )
-        terminal_logger = None
-
-    #   Remove cosmics (optional)
-    if cosmic_ray_removal:
-        rm_cosmic_rays(
-            image,
-            limiting_contrast=limiting_contrast_rm_cosmics,
-            read_noise=read_noise,
-            sigma_clipping_value=sigma_clipping_value,
-            saturation_level=saturation_level,
-        )
-
-    #   Estimate and remove background
-    _, rms_background = determine_background(
-        image,
-        sigma_background=sigma_value_background_clipping,
-    )
-
-    #   Find the stars (via DAO or IRAF StarFinder)
-    find_stars(
-        image,
-        rms_background,
-        fwhm_object_psf=fwhm_object_psf,
-        multiplier_background_rms=multiplier_background_rms,
-        method=object_finder_method,
-        terminal_logger=terminal_logger,
-    )
-
-    #   Annotate all known Simbad objects on the image
-    if annotate_image and image.pd == id_reference_image:
-        utilities.mark_simbad_objects_on_image(
-            image.get_data(),
-            image.wcs,
-            image.out_path,
-            image.filter_,
-            file_type=file_type_plots,
-            filter_mag=filter_magnitude_limit_image_annotation,
-            mag_limit=magnitude_limit_image_annotation,
-        )
-
-    if photometry_extraction_method == "PSF":
-        #   Check size of ePSF extraction region
-        if size_epsf_region % 2 == 0:
-            size_epsf_region = size_epsf_region + 1
-
-        #   Check if enough stars have been detected to allow ePSF
-        #   calculations
-        epsf_stars = check_epsf_stars(
-            image,
-            size_epsf_region=size_epsf_region,
-            minimum_n_stars=minimum_n_eps_stars,
-            fraction_epsf_stars=fraction_epsf_stars,
-            terminal_logger=terminal_logger,
-            strict_epsf_checks=strict_epsf_checks,
-        )
-
-        #   Plot images with the identified stars overlaid
-        if plots_for_all_images or image.pd == id_reference_image:
-            plots.starmap(
-                image.out_path.name,
-                image.get_data(),
-                image.filter_,
-                image.positions,
-                tbl_2=epsf_stars,
-                label="identified stars",
-                label_2="stars used to determine the ePSF",
-                rts=f"Initial object identification [Image: {image.pd}]",
-                wcs_image=image.wcs,
-                use_wcs_projection=use_wcs_projection_for_star_maps,
-                terminal_logger=terminal_logger,
-                file_type=file_type_plots,
-            )
-
-        #   Calculate the ePSF
-        determine_epsf(
-            image,
-            epsf_stars,
-            size_epsf_region=size_epsf_region,
-            oversampling_factor=oversampling_factor_epsf,
-            max_n_iterations=max_n_iterations_epsf_determination,
-            minimum_n_stars=minimum_n_eps_stars,
-            multiprocess_plots=False,
-            terminal_logger=terminal_logger,
-            file_type_plots=file_type_plots,
-        )
-
-        #   Plot the ePSFs
-        plots.plot_epsf(
-            image.out_path.name,
-            {f"img-{image.pd}-{image.filter_}": [image.epsf]},
-            terminal_logger=terminal_logger,
-            file_type=file_type_plots,
-            id_image=f"_{image.pd}_{image.filter_}",
-            indent=2,
-        )
-
-        #   Performing the PSF photometry
-        extraction_epsf(
-            image,
-            rms_background,
-            sigma_background=sigma_value_background_clipping,
-            use_initial_positions=use_initial_positions_epsf,
-            finder_method=object_finder_method,
-            size_extraction_region=size_extraction_region_epsf,
-            epsf_fitter=epsf_fitter,
-            n_iterations_eps_extraction=n_iterations_eps_extraction,
-            multiplier_background_rms=multiplier_background_rms_epsf,
-            multiplier_grouper=multiplier_grouper_epsf,
-            strict_cleaning_results=strict_cleaning_epsf_results,
-            terminal_logger=terminal_logger,
-        )
-
-        #   Plot original and residual image
-        plots.plot_residual(
-            {f"{image.filter_}, Image ID: {image.pd}": image.get_data()},
-            {f"{image.filter_}, Image ID: {image.pd}": image.residual_image},
-            image.out_path.name,
-            terminal_logger=terminal_logger,
-            file_type=file_type_plots,
-            # name_object=image.object_name,
-            indent=2,
-        )
-
-    elif photometry_extraction_method == "APER":
-        #   Perform aperture photometry
-        if image.pd == id_reference_image:
-            plot_aperture_positions = True
-        else:
-            plot_aperture_positions = False
-
-        extraction_aperture(
-            image,
-            radius_aperture,
-            inner_annulus_radius,
-            outer_annulus_radius,
-            radii_unit=radii_unit,
-            plot_aperture_positions=plot_aperture_positions,
-            terminal_logger=terminal_logger,
-            file_type_plots=file_type_plots,
-            indent=3,
-        )
-
-    else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nExtraction method "
-            f"({photometry_extraction_method}) not "
-            f"valid: use either APER or PSF {style.Bcolors.ENDC}"
-        )
-
-    #   Conversion of flux to magnitudes
-    #   TODO: Move this to the calibration stage, where it makes more sense?
-    magnitudes, magnitudes_error = utilities.flux_to_magnitudes(
-        image.photometry["flux_fit"],
-        image.photometry["flux_err"],
-    )
-
-    image.photometry["mags_fit"] = magnitudes
-    image.photometry["mags_unc"] = magnitudes_error
-
-    #   Plot images with extracted stars overlaid
-    if plots_for_all_images or image.pd == id_reference_image:
-        utilities.prepare_and_plot_starmap(
-            image,
-            terminal_logger=terminal_logger,
-            file_type_plots=file_type_plots,
-            label=f"Stars with photometric extractions ({photometry_extraction_method})",
-            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-        )
-
-    if multiprocessing:
-        terminal_logger.print_to_terminal("")
-    else:
-        terminal_output.print_to_terminal("")
-
-    if multiprocessing:
-        return image.pd, image.photometry
 
 
 def subtract_archive_img_from_img(

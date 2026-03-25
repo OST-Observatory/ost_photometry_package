@@ -1,4 +1,4 @@
-﻿############################################################################
+############################################################################
 #                               Libraries                                  #
 ############################################################################
 import numpy as np
@@ -3770,3 +3770,285 @@ def plot_annotated_image(
     )
     plt.close()
     # plt.show()
+
+
+def plot_extinction_fit_flux_airmass(
+    output_dir: str | Path,
+    data_by_filter: dict[str, tuple[np.ndarray, np.ndarray]],
+    coefficients: dict[str, object],
+    use_magnitude: bool = True,
+    y_label: str | None = None,
+    file_type: str = "pdf",
+) -> None:
+    """
+    Plot extinction fit from flux/magnitude vs airmass (cat-star.org method).
+
+    For each filter: scatter of y vs X with regression line and k ± err in title.
+    Supports per-star fits (multiple series) or single overall fit.
+
+    Parameters
+    ----------
+    output_dir : str or Path
+        Base output directory. Plots saved to output_dir/extinction_fit/.
+    data_by_filter : dict
+        {filter_name: (X_arr, y_arr)} with airmass and ln(flux) or magnitude.
+    coefficients : dict
+        {filter_name: ExtinctionCoefficients} from fit_extinction_from_flux_airmass.
+    use_magnitude : bool
+        If True, y is magnitude (slope = k). If False, y is ln(flux) (slope = -k).
+    y_label : str, optional
+        Override y-axis label (e.g. "m [mag]" or "ln(flux)").
+    file_type : str
+        Plot file format (pdf, png, etc.). Default is ``pdf``.
+    """
+    from .. import checks
+
+    out = Path(output_dir) / "extinction_fit"
+    checks.check_output_directories(out)
+
+    for filt, (X, y) in data_by_filter.items():
+        ec = coefficients.get(filt)
+        if ec is None:
+            continue
+        k = ec.k_prime
+        k_err = ec.k_prime_err
+
+        fig, ax = plt.subplots(figsize=(6, 5))
+        ax.scatter(X, y, alpha=0.7, s=20, color="C0", edgecolors="none")
+
+        # Regression line
+        slope = k if use_magnitude else -k
+        intercept = float(np.nanmean(y) - slope * np.nanmean(X))
+        X_line = np.linspace(X.min(), X.max(), 50)
+        ax.plot(X_line, slope * X_line + intercept, "C1-", lw=2, label="Fit")
+
+        ax.set_xlabel("Airmass X")
+        if y_label is not None:
+            ax.set_ylabel(y_label)
+        else:
+            ax.set_ylabel("m [mag]" if use_magnitude else "ln(flux)")
+        ax.set_title(f"Filter {filt}: k' = {k:.4f} ± {k_err:.4f} mag/airmass")
+        ax.legend(loc="best")
+        ax.grid(True, alpha=0.3)
+
+        plt.savefig(
+            out / f"extinction_flux_airmass_{filt}.{file_type}",
+            bbox_inches="tight",
+            format=file_type,
+        )
+        plt.close()
+
+
+def plot_extinction_fit_comparison_stars(
+    output_dir: str | Path,
+    data_by_filter: dict[str, tuple[np.ndarray, np.ndarray]],
+    coefficients: dict[str, object],
+    file_type: str = "pdf",
+) -> None:
+    """
+    Plot extinction fit from comparison stars (mean(m_obs - m_std) vs airmass).
+
+    For each filter: scatter of delta vs X with regression line and k ± err in title.
+    One point per frame.
+
+    Parameters
+    ----------
+    output_dir : str or Path
+        Base output directory. Plots saved to output_dir/extinction_fit/.
+    data_by_filter : dict
+        {filter_name: (X_arr, delta_arr)} with airmass and mean(m_obs - m_std).
+    coefficients : dict
+        {filter_name: ExtinctionCoefficients} from fit_extinction_from_comparison_stars.
+    file_type : str
+        Plot file format (pdf, png, etc.). Default is ``pdf``.
+    """
+    from .. import checks
+
+    out = Path(output_dir) / "extinction_fit"
+    checks.check_output_directories(out)
+
+    for filt, (X, delta) in data_by_filter.items():
+        ec = coefficients.get(filt)
+        if ec is None:
+            continue
+        k = ec.k_prime
+        k_err = ec.k_prime_err
+
+        fig, ax = plt.subplots(figsize=(6, 5))
+        ax.scatter(X, delta, alpha=0.7, s=40, color="C0", edgecolors="none")
+
+        # Regression line
+        slope = k
+        intercept = float(np.nanmean(delta) - slope * np.nanmean(X))
+        X_line = np.linspace(X.min(), X.max(), 50)
+        ax.plot(X_line, slope * X_line + intercept, "C1-", lw=2, label="Fit")
+
+        ax.set_xlabel("Airmass X")
+        ax.set_ylabel(r"$\langle m_{\mathrm{obs}} - m_{\mathrm{std}} \rangle$ [mag]")
+        ax.set_title(f"Filter {filt}: k' = {k:.4f} ± {k_err:.4f} mag/airmass")
+        ax.legend(loc="best")
+        ax.grid(True, alpha=0.3)
+
+        plt.savefig(
+            out / f"extinction_comparison_stars_{filt}.{file_type}",
+            bbox_inches="tight",
+            format=file_type,
+        )
+        plt.close()
+
+
+def plot_calibration_transformation(
+    output_dir: str | Path,
+    epoch_id: str,
+    data_by_filter: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]],
+    coefficients: dict[str, object],
+    file_type: str = "pdf",
+) -> None:
+    """
+    Plot calibration transformation fit: m_std - m_inst vs color.
+
+    For each filter: scatter of (m_std - m_inst) vs color index with fit line
+    T*color + ZP, and residuals panel. Allows checking fit quality and outliers.
+
+    Parameters
+    ----------
+    output_dir : str or Path
+        Base output directory. Plots saved to output_dir/calibration/.
+    epoch_id : str
+        Identifier for the calibration epoch (e.g. ``epoch_000``).
+    data_by_filter : dict
+        {filter: (color_arr, delta_arr, mask)} with color index, m_std - m_inst,
+        and boolean mask of stars used in fit.
+    coefficients : dict
+        {filter: TransformationCoefficients} with T, ZP, color_index_filters.
+    file_type : str
+        Plot file format. Default is ``pdf``.
+    """
+    from .. import checks
+
+    out = Path(output_dir) / "calibration"
+    checks.check_output_directories(out)
+
+    for filt, (color, delta, mask) in data_by_filter.items():
+        tc = coefficients.get(filt)
+        if tc is None:
+            continue
+        T, ZP = tc.color_term, tc.zero_point
+        ci = f"({tc.color_index_filters[0]}-{tc.color_index_filters[1]})"
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
+
+        # Left: m_std - m_inst vs color with fit
+        n_excl = np.sum(~mask)
+        if n_excl > 0:
+            ax1.scatter(color[~mask], delta[~mask], alpha=0.4, s=15, c="gray", label="excluded")
+        ax1.scatter(color[mask], delta[mask], alpha=0.7, s=25, c="C0", label="used")
+        c_min, c_max = color.min(), color.max()
+        if c_max - c_min > 0.01:
+            c_line = np.linspace(c_min, c_max, 50)
+            ax1.plot(c_line, T * c_line + ZP, "C1-", lw=2, label="Fit")
+        else:
+            ax1.axhline(ZP, color="C1", ls="-", lw=2, label="Fit (ZP only)")
+        ax1.set_xlabel(f"Color {ci} [mag]")
+        ax1.set_ylabel(r"$m_{\mathrm{std}} - m_{\mathrm{inst}}$ [mag]")
+        ax1.set_title(f"{epoch_id} {filt}: T={T:.4f}, ZP={ZP:.4f}")
+        ax1.legend(loc="best", fontsize=8)
+        ax1.grid(True, alpha=0.3)
+
+        # Right: residuals
+        residuals = delta - (T * color + ZP)
+        if n_excl > 0:
+            ax2.scatter(color[~mask], residuals[~mask], alpha=0.4, s=15, c="gray")
+        ax2.scatter(color[mask], residuals[mask], alpha=0.7, s=25, c="C0")
+        ax2.axhline(0, color="C1", ls="--", lw=1)
+        ax2.set_xlabel(f"Color {ci} [mag]")
+        ax2.set_ylabel("Residual [mag]")
+        rms_val = np.nanstd(residuals[mask]) if np.sum(mask) > 0 else 0.0
+        ax2.set_title(f"RMS = {rms_val:.4f} mag")
+        ax2.grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        safe_id = str(epoch_id).replace("/", "_").replace(":", "_")
+        plt.savefig(
+            out / f"calibration_{safe_id}_{filt}.{file_type}",
+            bbox_inches="tight",
+            format=file_type,
+        )
+        plt.close()
+
+
+def plot_calibration_night_summary(
+    output_dir: str | Path,
+    epoch_ids: list[str],
+    coefficients_per_epoch: list[dict],
+    filters: list[str],
+    file_type: str = "pdf",
+) -> None:
+    """
+    Plot T and ZP across calibration epochs for a night calibration.
+
+    Shows stability of transformation coefficients over the night.
+    One subplot per filter with epoch index on x-axis.
+
+    Parameters
+    ----------
+    output_dir : str or Path
+        Base output directory. Plots saved to output_dir/calibration/.
+    epoch_ids : list
+        Epoch identifiers in order.
+    coefficients_per_epoch : list of dict
+        Each element: {filter: TransformationCoefficients} for that epoch.
+    filters : list
+        Filter names to plot.
+    file_type : str
+        Plot file format. Default is ``pdf``.
+    """
+    from .. import checks
+
+    out = Path(output_dir) / "calibration"
+    checks.check_output_directories(out)
+
+    n_filt = len(filters)
+    if n_filt == 0:
+        return
+    fig, axes = plt.subplots(n_filt, 2, figsize=(10, 3 * n_filt), sharex=True)
+    if n_filt == 1:
+        axes = axes.reshape(1, -1)
+
+    x = np.arange(len(epoch_ids))
+    for i, filt in enumerate(filters):
+        T_vals = []
+        ZP_vals = []
+        for cf in coefficients_per_epoch:
+            tc = cf.get(filt)
+            if tc is not None:
+                T_vals.append(tc.color_term)
+                ZP_vals.append(tc.zero_point)
+            else:
+                T_vals.append(np.nan)
+                ZP_vals.append(np.nan)
+
+        axes[i, 0].plot(x, T_vals, "o-", color="C0", markersize=6)
+        axes[i, 0].set_ylabel(f"T ({filt})")
+        axes[i, 0].grid(True, alpha=0.3)
+        axes[i, 0].set_title("Color term")
+
+        axes[i, 1].plot(x, ZP_vals, "s-", color="C1", markersize=6)
+        axes[i, 1].set_ylabel(f"ZP ({filt})")
+        axes[i, 1].grid(True, alpha=0.3)
+        axes[i, 1].set_title("Zero point")
+
+    axes[-1, 0].set_xticks(x)
+    axes[-1, 0].set_xticklabels(epoch_ids, rotation=45, ha="right")
+    axes[-1, 1].set_xticks(x)
+    axes[-1, 1].set_xticklabels(epoch_ids, rotation=45, ha="right")
+    axes[-1, 0].set_xlabel("Epoch")
+    axes[-1, 1].set_xlabel("Epoch")
+
+    plt.tight_layout()
+    plt.savefig(
+        out / f"calibration_night_summary.{file_type}",
+        bbox_inches="tight",
+        format=file_type,
+    )
+    plt.close()

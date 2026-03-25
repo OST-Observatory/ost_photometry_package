@@ -25,3 +25,7 @@ package:
 
 For astrometric solutions a local installation of the 
 [astronomy.net](https://nova.astrometry.net/) software is required.
+
+## Differential pipeline: calibration epochs
+
+The analysis pipeline’s differential calibration step builds **multi-band epoch tables** (`epoch_000`, …) instead of per-image keys such as `B_0`. See [MIGRATION_calibration_epochs.md](src/ost_photometry/analyze/pipeline/MIGRATION_calibration_epochs.md) if you have custom code using `context.frames`, `observation_to_frame_tables`, or older `PhotometryCalibrator` method names (`add_frame`, …).

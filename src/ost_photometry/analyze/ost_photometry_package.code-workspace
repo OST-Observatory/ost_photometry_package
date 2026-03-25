@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "../../.."
+		},
+		{
+			"path": "../../../../reduction_scripts_supervisors"
+		},
+		{
+			"path": "../../../../reduction_scripts_students"
+		},
+		{
+			"path": "../../../../auxiliary_scripts"
+		}
+	],
+	"settings": {}
+}
