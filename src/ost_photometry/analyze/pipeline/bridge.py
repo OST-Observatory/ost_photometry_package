@@ -7,17 +7,21 @@ context.calibration_epoch_meta, and context.calibration_epochs_skipped.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
 from astropy.table import Table
 
+from ... import terminal_output
 from .config import PipelineConfig
 from .context import AnalysisContext
 
+from ..post_processing import schema
+
 
 def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Optional[Table]:
-    """One band: id, ra, dec, x, y, mag_<f>, err_<f>. Returns None if unusable."""
+    """One band: id, ra, dec, x, y, mag_<f>, err_<f>, flux_<f>, flux_err_<f>. Returns None if unusable."""
     if image.photometry is None:
         return None
     phot = image.photometry
@@ -47,6 +51,21 @@ def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Optional[Table
         err_vals = err_vals.value
     tbl[mag_col] = np.asarray(mag_vals, dtype=float)
     tbl[err_col] = np.asarray(err_vals, dtype=float)
+
+    flux_col = f"flux_{filter_}"
+    ferr_col = f"flux_err_{filter_}"
+    if "flux_fit" in phot.colnames:
+        fv = phot["flux_fit"]
+        if hasattr(fv, "value"):
+            fv = fv.value
+        fe = phot["flux_err"] if "flux_err" in phot.colnames else np.full(n, np.nan)
+        if hasattr(fe, "value"):
+            fe = fe.value
+        tbl[flux_col] = np.asarray(fv, dtype=float)
+        tbl[ferr_col] = np.asarray(fe, dtype=float)
+    else:
+        tbl[flux_col] = np.full(n, np.nan, dtype=float)
+        tbl[ferr_col] = np.full(n, np.nan, dtype=float)
     return tbl
 
 
@@ -62,6 +81,17 @@ def _jd_for_image(image) -> Optional[float]:
     if jd is None:
         return None
     return float(jd)
+
+
+def _image_pairing_label(image) -> str:
+    """Basename for logs (``Image.filename`` / ``Image.path``)."""
+    fn = getattr(image, "filename", None)
+    if isinstance(fn, str) and fn:
+        return fn
+    p = getattr(image, "path", None)
+    if p is not None:
+        return Path(p).name
+    return f"image_id={getattr(image, 'image_id', '?')}"
 
 
 def _merge_epoch_on_id(
@@ -96,6 +126,19 @@ def _merge_epoch_on_id(
         base[mag_col] = mag_arr
         base[err_col] = err_arr
 
+        flux_col = f"flux_{f}"
+        ferr_col = f"flux_err_{f}"
+        fflux = np.full(n, np.nan, dtype=float)
+        ferr = np.full(n, np.nan, dtype=float)
+        if flux_col in t.colnames:
+            for i in range(n):
+                j = id_to_row.get(int(base_ids[i]))
+                if j is not None:
+                    fflux[i] = float(np.asarray(t[flux_col])[j])
+                    ferr[i] = float(np.asarray(t[ferr_col])[j])
+        base[flux_col] = fflux
+        base[ferr_col] = ferr
+
     ams = [airmasses[f] for f in filter_order]
     base["airmass"] = np.full(n, float(np.mean(ams)), dtype=float)
     return base
@@ -105,6 +148,8 @@ def _pairing_index(
     context: AnalysisContext,
     filter_list: List[str],
     skipped: List[dict],
+    *,
+    debug: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Build list of pair dicts: {filter: image} per epoch.
@@ -117,6 +162,12 @@ def _pairing_index(
     }
     if len(series_by_f) != len(filter_list):
         return []
+
+    if debug:
+        terminal_output.print_to_terminal(
+            "Differential exposure pairing [index]: same list index per filter → one epoch",
+            style_name="HEADER",
+        )
 
     lengths = [len(s.image_list) for s in series_by_f.values()]
     n_epoch = min(lengths)
@@ -148,13 +199,24 @@ def _pairing_index(
                         "reason": "missing_photometry",
                         "index": i,
                         "filter": f,
-                        "pd": getattr(im, "pd", None),
+                        "image_id": getattr(im, "image_id", None),
                     }
                 )
                 break
             group[f] = im
         if ok and len(group) == len(filter_list):
             pairs.append(group)
+            if debug:
+                parts: List[str] = []
+                for f in filter_list:
+                    im = group[f]
+                    jd = _jd_for_image(im)
+                    jd_s = f"{jd:.6f}" if jd is not None else "?"
+                    parts.append(f"{f}={_image_pairing_label(im)} jd={jd_s}")
+                terminal_output.print_to_terminal(
+                    f"  slot {i}: " + " | ".join(parts),
+                    style_name="INFO",
+                )
     return pairs
 
 
@@ -164,6 +226,8 @@ def _pairing_jd_nearest(
     ref_filter: str,
     jd_tolerance: float,
     skipped: List[dict],
+    *,
+    debug: bool = False,
 ) -> List[Dict[str, Any]]:
     series_by_f = {
         f: context.image_series_dict[f]
@@ -172,6 +236,13 @@ def _pairing_jd_nearest(
     }
     if ref_filter not in series_by_f:
         return []
+
+    if debug:
+        terminal_output.print_to_terminal(
+            f"Differential exposure pairing [jd_nearest]: ref_filter={ref_filter!r}, "
+            f"jd_tolerance={jd_tolerance} d",
+            style_name="HEADER",
+        )
 
     ref_images = [
         im
@@ -222,7 +293,7 @@ def _pairing_jd_nearest(
                     {
                         "reason": "jd_no_partner" if best_im is None else "jd_exceeds_tolerance",
                         "reference_filter": ref_filter,
-                        "reference_pd": getattr(ref_im, "pd", None),
+                        "reference_exposure_image_id": getattr(ref_im, "image_id", None),
                         "reference_jd": jd0,
                         "failed_filter": f,
                         "best_delta_jd": best_dj if best_im is not None else None,
@@ -234,6 +305,25 @@ def _pairing_jd_nearest(
             group[f] = best_im
         if ok:
             pairs.append(group)
+            if debug:
+                ep_n = len(pairs) - 1
+                bits: List[str] = [
+                    f"{ref_filter}={_image_pairing_label(ref_im)} jd={jd0:.6f}"
+                ]
+                for f in other_filters:
+                    im = group[f]
+                    jdi = _jd_for_image(im)
+                    if jdi is not None:
+                        bits.append(
+                            f"{f}={_image_pairing_label(im)} jd={jdi:.6f} "
+                            f"Δjd={abs(jdi - jd0):.6f}"
+                        )
+                    else:
+                        bits.append(f"{f}={_image_pairing_label(im)} jd=?")
+                terminal_output.print_to_terminal(
+                    f"  epoch_{ep_n:03d}: " + " | ".join(bits),
+                    style_name="INFO",
+                )
 
     return pairs
 
@@ -260,6 +350,12 @@ def observation_to_calibration_epochs(
     -------
     dict[str, Table]
         Same as ``context.calibration_epochs`` after the call.
+
+    Notes
+    -----
+    ``context.calibration_epoch_meta[epoch_id]`` includes ``jd_by_filter`` (filter
+    name → exposure JD) and ``image_id_by_filter`` (filter name → ``Image.image_id``
+    for that epoch’s image), plus ``reference_filter``, ``pairing_mode``, ``airmasses``.
     """
     context.calibration_epochs = {}
     context.calibration_epoch_meta = {}
@@ -275,9 +371,14 @@ def observation_to_calibration_epochs(
 
     pairing = config.differential_exposure_pairing
     skipped = context.calibration_epochs_skipped
+    debug_pairing = bool(
+        getattr(config, "differential_debug_exposure_pairing", False)
+    )
 
     if pairing == "index":
-        image_groups = _pairing_index(context, filter_list, skipped)
+        image_groups = _pairing_index(
+            context, filter_list, skipped, debug=debug_pairing
+        )
     else:
         image_groups = _pairing_jd_nearest(
             context,
@@ -285,14 +386,16 @@ def observation_to_calibration_epochs(
             ref_filter,
             config.differential_exposure_jd_tolerance,
             skipped,
+            debug=debug_pairing,
         )
 
     epoch_idx = 0
     for group in image_groups:
         tables: Dict[str, Table] = {}
         airmasses: Dict[str, float] = {}
-        filter_jds: Dict[str, Optional[float]] = {}
-        filter_pds: Dict[str, Any] = {}
+        # Per paired epoch: exposure time (JD) and pipeline image id per band
+        jd_by_filter: Dict[str, Optional[float]] = {}
+        image_id_by_filter: Dict[str, Any] = {}
 
         failed = False
         for f in filter_list:
@@ -310,13 +413,13 @@ def observation_to_calibration_epochs(
             if t is None:
                 failed = True
                 skipped.append(
-                    {"reason": "bad_photometry_or_wcs", "filter": f, "pd": getattr(im, "pd", None)}
+                    {"reason": "bad_photometry_or_wcs", "filter": f, "image_id": getattr(im, "image_id", None)}
                 )
                 break
             tables[f] = t
             airmasses[f] = _airmass_for_image(im)
-            filter_jds[f] = _jd_for_image(im)
-            filter_pds[f] = getattr(im, "pd", None)
+            jd_by_filter[f] = _jd_for_image(im)
+            image_id_by_filter[f] = getattr(im, "image_id", None)
 
         if failed:
             continue
@@ -332,14 +435,62 @@ def observation_to_calibration_epochs(
 
         context.calibration_epochs[epoch_id] = merged
         context.calibration_epoch_meta[epoch_id] = {
-            "filter_pds": filter_pds,
-            "filter_jds": filter_jds,
+            "image_id_by_filter": image_id_by_filter,
+            "jd_by_filter": jd_by_filter,
             "reference_filter": ref_filter,
             "pairing_mode": pairing,
             "airmasses": airmasses,
         }
 
     return context.calibration_epochs
+
+
+def instrumental_epoch_native_from_calibration_epochs(
+    epochs: Dict[str, Table],
+    filter_list: List[str],
+) -> Table:
+    """
+    Vstack per-epoch tables from :func:`observation_to_calibration_epochs` into one
+    epoch-native table.
+
+    Renames ``mag_<filter>`` / ``err_<filter>`` to ``mag_inst_<filter>`` /
+    ``err_inst_<filter>`` (instrumental ``mags_fit`` / ``mags_unc``), and
+    ``flux_<filter>`` / ``flux_err_<filter>`` to ``flux_inst_*`` / ``flux_err_inst_*``.
+    Calibrated differential output uses ``mag_cal_*`` / ``err_cal_*`` instead.
+    """
+    from astropy.table import vstack
+
+    if not epochs:
+        return Table()
+    pieces: List[Table] = []
+    for eid in sorted(epochs.keys()):
+        t = epochs[eid].copy()
+        n = len(t)
+        t["epoch_id"] = np.asarray([eid] * n, dtype=str)
+        for f in filter_list:
+            mc = f"mag_{f}"
+            ec = f"err_{f}"
+            if mc in t.colnames:
+                t.rename_column(mc, f"mag_inst_{f}")
+            if ec in t.colnames:
+                t.rename_column(ec, f"err_inst_{f}")
+            fc = f"flux_{f}"
+            fec = f"flux_err_{f}"
+            if fc in t.colnames:
+                t.rename_column(fc, f"flux_inst_{f}")
+            if fec in t.colnames:
+                t.rename_column(fec, f"flux_err_inst_{f}")
+        pieces.append(t)
+    out = vstack(pieces, metadata_conflicts="silent")
+    meta = dict(out.meta) if out.meta else {}
+    meta["photometry_schema"] = schema.PHOTOMETRY_TABLE_SCHEMA_ID
+    meta["photometry_data"] = "instrumental_extracted"
+    meta["mag_column_semantics"] = (
+        "mag_inst_* / err_inst_* are instrumental (mags_fit / mags_unc); "
+        "no photometric zero-point calibration was applied."
+    )
+    out.meta = meta
+    return out
 
 
 def observation_to_epoch_tables(context: AnalysisContext) -> Dict[str, Table]:
@@ -352,5 +503,69 @@ def observation_to_epoch_tables(context: AnalysisContext) -> Dict[str, Table]:
     return dict(context.calibration_epochs)
 
 
-# Backward-compatible alias
-observation_to_frame_tables = observation_to_epoch_tables
+def build_legacy_calibration_epoch_meta(
+    observation,
+    filter_list: list[str],
+    tbl_epoch_native: Table,
+) -> dict:
+    """
+    Build ``calibration_epoch_meta``-style dict from legacy ``epoch_*`` ids in a table.
+
+    ``epoch_id`` values like ``epoch_0`` / ``epoch_0_simple`` map to JDs via
+    ``ImageSeries.get_observation_time()`` index ``int(tag)`` per filter.
+    Each epoch entry stores ``jd_by_filter`` (and ``reference_filter``, ``pairing_mode``).
+    """
+    if len(tbl_epoch_native) == 0 or "epoch_id" not in tbl_epoch_native.colnames:
+        return {}
+    meta: dict = {}
+    eids = np.unique(np.asarray(tbl_epoch_native["epoch_id"]).astype(str))
+    image_series_dict = observation.image_series_dict
+    for eid in eids:
+        sid = str(eid)
+        if sid.endswith("_simple"):
+            core = sid[: -len("_simple")]
+        else:
+            core = sid
+        prefix = "epoch_"
+        if not core.startswith(prefix):
+            continue
+        tag = core[len(prefix) :]
+        try:
+            idx = int(tag)
+        except ValueError:
+            idx = 0
+        jd_by_filter: dict[str, Any] = {}
+        for f in filter_list:
+            series = image_series_dict.get(f)
+            if series is None:
+                jd_by_filter[f] = None
+                continue
+            times = series.get_observation_time()
+            times_arr = np.atleast_1d(np.asarray(times, dtype=float))
+            if len(times_arr) == 0:
+                jd_by_filter[f] = None
+            elif idx < len(times_arr):
+                jd_by_filter[f] = float(times_arr[idx])
+            else:
+                jd_by_filter[f] = float(times_arr[-1])
+        meta[sid] = {
+            "jd_by_filter": jd_by_filter,
+            "reference_filter": filter_list[0] if filter_list else None,
+            "pairing_mode": "legacy_wide",
+        }
+    return meta
+
+
+def populate_legacy_calibration_epoch_meta(context: AnalysisContext) -> None:
+    """Fill ``context.calibration_epoch_meta`` for legacy-calibrated epoch-native tables."""
+    obs = context._observation
+    tbl = context.table_magnitudes
+    if obs is None or tbl is None or len(tbl) == 0:
+        return
+    if "epoch_id" not in tbl.colnames:
+        return
+    context.calibration_epoch_meta = build_legacy_calibration_epoch_meta(
+        obs,
+        list(context.filter_list),
+        tbl,
+    )

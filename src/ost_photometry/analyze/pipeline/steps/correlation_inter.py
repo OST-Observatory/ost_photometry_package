@@ -44,11 +44,12 @@ class CorrelationInterStep(base.PipelineStep):
             obs,
             context.filter_list,
             max_pixel_between_objects=config.max_pixel_between_objects,
-            own_correlation_option=config.own_correlation_option,
+            ooi_correlation_strategy=config.ooi_correlation_strategy,
             correlation_method=config.correlation_method,
             separation_limit=config.separation_limit,
             file_type_plots=config.file_type_plots,
             duplicate_handling_object_identification=config.duplicate_handling_object_identification,
+            debug_verify_ooi_global_ids=config.debug_verify_ooi_global_ids,
         )
 
         if len(context.filter_list) > 1:
@@ -60,6 +61,10 @@ class CorrelationInterStep(base.PipelineStep):
                 use_wcs_projection_for_star_maps=config.use_wcs_projection_for_star_maps,
                 file_type_plots=config.file_type_plots,
             )
+
+        from ...diagnostic_plot_hooks import run_diagnostic_plots_phase
+
+        run_diagnostic_plots_phase(context, config, "correlation_inter")
 
         context.correlation_inter_done = True
         return context

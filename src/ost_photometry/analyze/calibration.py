@@ -18,6 +18,7 @@ if typing.TYPE_CHECKING:
     from .. import utilities
 
 from .. import style, calibration_parameters, terminal_output
+from ..core.parallel import Executor
 
 
 ############################################################################
@@ -276,7 +277,7 @@ def derive_transformation_onthefly(
         f'Color literature [mag]',
         [zp_sum.pdf_median(), zp_sum.pdf_median()[sigma_clip_mask]],
         f'Zero point sum - {filter_str} [mag]',
-        f'zero_point_sum_sigma_clipped_image_{image.pd}',
+        f'zero_point_sum_sigma_clipped_image_{image.image_id}',
         image.out_path.name,
         x_errors=[color_literature.pdf_std(), color_literature_err_plot],
         y_errors=[zp_sum.pdf_std(), zp_sum.pdf_std()[sigma_clip_mask]],
@@ -326,7 +327,7 @@ def derive_transformation_onthefly(
         image.air_mass,
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_1_err,
-        image_id=image.pd,
+        image_id=image.image_id,
         x_data_original=color_literature.pdf_median(),
         y_data_original=diff_mag_1.pdf_median(),
         file_type=file_type_plots,
@@ -347,7 +348,7 @@ def derive_transformation_onthefly(
         image.air_mass,
         color_literature_err=color_literature_err_plot.value,
         fit_variable_err=z_2_err,
-        image_id=image.pd,
+        image_id=image.image_id,
         x_data_original=color_literature.pdf_median(),
         y_data_original=diff_mag_2.pdf_median(),
         file_type=file_type_plots,
@@ -659,7 +660,7 @@ def apply_magnitude_transformation(
     utilities.prepare_calibration_check_plots(
         filter_list[filter_id],
         image.out_path.name,
-        image.pd,
+        image.image_id,
         calibration_stars_ids,
         calib_magnitudes_literature[filter_id].pdf_median(),
         image.photometry['mag_cali_trans'],
@@ -678,7 +679,7 @@ def apply_magnitude_transformation(
     )
 
     if multiprocessing:
-        return image.pd, image.photometry
+        return image.image_id, image.photometry
 
 
 def calibrate_simple(
@@ -724,6 +725,52 @@ def calibrate_simple(
     photometry_table['mag_cali_no-trans_unc'] = stddev
 
 
+def quasi_flux_calibration_flux_arrays(
+    flux: np.ndarray,
+    flux_error: np.ndarray,
+    *,
+    distribution_samples: int = 1000,
+) -> unc.core.NdarrayDistribution:
+    """
+    Quasi flux calibration on a 2D array ``(n_epochs, n_objects)``.
+
+    Per epoch, divide flux by the sigma-clipped median flux over objects (same
+    idea as :func:`quasi_flux_calibration_image_series`). Zero flux is masked
+    like in the image-series path.
+    """
+    _, median, _stddev = sigma_clipped_stats(
+        flux,
+        axis=1,
+        sigma=1.5,
+        mask_value=0.0,
+    )
+    flux_distribution = unc.normal(
+        flux,
+        std=flux_error,
+        n_samples=distribution_samples,
+    )
+    return flux_distribution / median[:, np.newaxis]
+
+
+def flux_normalization_flux_distribution(
+    flux_distribution: unc.core.NdarrayDistribution,
+) -> unc.core.NdarrayDistribution:
+    """
+    Per-object normalization: divide by sigma-clipped median over epochs (axis 0).
+
+    Matches :func:`flux_normalization_image_series` when given quasi-calibrated
+    flux, or raw flux wrapped in a normal distribution.
+    """
+    flux = flux_distribution.pdf_median()
+    _, median, _stddev = sigma_clipped_stats(
+        flux,
+        axis=0,
+        sigma=1.5,
+        mask_value=0.0,
+    )
+    return flux_distribution / median
+
+
 def quasi_flux_calibration_image_series(
         image_series: 'analyze.ImageSeries',
         distribution_samples: int = 1000) -> unc.core.NdarrayDistribution:
@@ -746,27 +793,12 @@ def quasi_flux_calibration_image_series(
         flux_calibrated
             Quasi calibrated flux
     """
-    #   Get flux as numpy array
     flux, flux_error = image_series.get_flux_array()
-
-    #   Derive median of flux in individual images
-    _, median, stddev = sigma_clipped_stats(
+    return quasi_flux_calibration_flux_arrays(
         flux,
-        axis=1,
-        sigma=1.5,
-        mask_value=0.0,
+        flux_error,
+        distribution_samples=distribution_samples,
     )
-
-    #   Normalize the flux of all objects with the median flux in the
-    #   corresponding images
-    flux_distribution = unc.normal(
-        flux,
-        std=flux_error,
-        n_samples=distribution_samples,
-    )
-    flux_calibrated = flux_distribution / median[:, np.newaxis]
-
-    return flux_calibrated
 
 
 def flux_normalization_image_series(
@@ -797,7 +829,6 @@ def flux_normalization_image_series(
     """
     if quasi_calibrated_flux is not None:
         flux_distribution = quasi_calibrated_flux
-        flux = flux_distribution.pdf_median()
     else:
         flux, flux_error = image_series.get_flux_array()
         flux_distribution = unc.normal(
@@ -805,19 +836,7 @@ def flux_normalization_image_series(
             std=flux_error,
             n_samples=distribution_samples,
         )
-
-    #   Calculated sigma clipped magnitudes
-    _, median, stddev = sigma_clipped_stats(
-        flux,
-        axis=0,
-        sigma=1.5,
-        mask_value=0.0,
-    )
-
-    #   Prepare distributions
-    normalized_flux = flux_distribution / median
-
-    return normalized_flux
+    return flux_normalization_flux_distribution(flux_distribution)
 
 
 def prepare_zero_point(
@@ -1014,7 +1033,7 @@ def calibrate_magnitudes_zero_point_core(
     utilities.prepare_calibration_check_plots(
         current_image.filter_,
         current_image.out_path.name,
-        current_image.pd,
+        current_image.image_id,
         index_calibration_stars,
         literature_magnitudes[current_filter_id].pdf_median(),
         current_image.photometry['mag_cali_no-trans'],
@@ -1027,7 +1046,7 @@ def calibrate_magnitudes_zero_point_core(
         file_type_plots=file_type_plots,
     )
 
-    return current_image.pd, current_image.photometry, zp.distribution
+    return current_image.image_id, current_image.photometry, zp.distribution
 
 
 def calibrate_magnitudes_zero_point(
@@ -1098,7 +1117,7 @@ def calibrate_magnitudes_zero_point(
         image_list = image_series.image_list
 
         #   Initialize multiprocessing object
-        executor = utilities.Executor(
+        executor = Executor(
             n_cores_multiprocessing,
             add_progress_bar=add_progress_bar,
             n_tasks=len(image_series.image_list),
@@ -1141,8 +1160,8 @@ def calibrate_magnitudes_zero_point(
         #   Sort multiprocessing results
         tmp_list = []
         for image_ in image_series.image_list:
-            for pd, tbl, zp in res:
-                if pd == image_.pd:
+            for img_id, tbl, zp in res:
+                if img_id == image_.image_id:
                     image_.zp = zp
                     image_.photometry = tbl
                     tmp_list.append(image_)
@@ -1247,7 +1266,7 @@ def calibrate_magnitudes_transformation(
         if transformation_type is not None:
 
             #   Initialize multiprocessing object
-            executor = utilities.Executor(
+            executor = Executor(
                 n_cores_multiprocessing,
                 add_progress_bar=add_progress_bar,
                 n_tasks=len(image_list),
@@ -1339,8 +1358,8 @@ def calibrate_magnitudes_transformation(
             #   Sort multiprocessing results
             tmp_list = []
             for image_ in current_image_series.image_list:
-                for pd, tbl in res:
-                    if pd == image_.pd:
+                for img_id, tbl in res:
+                    if img_id == image_.image_id:
                         image_.photometry = tbl
                         tmp_list.append(image_)
 
@@ -1361,7 +1380,7 @@ def apply_calibration(
         apply_transformation: bool = False,
         transformation_coefficients_dict: dict[str, (float | str)] | None = None,
         derive_transformation_coefficients: bool = False,
-        id_object: (int | None) = None, photometry_extraction_method: str = '',
+        object_id: (int | None) = None, photometry_extraction_method: str = '',
         calculate_zero_point_statistic: bool = True, distribution_samples: int = 1000,
         n_cores_multiprocessing: int | None = None,
         file_type_plots: str = 'pdf', add_progress_bar: bool = True,
@@ -1392,8 +1411,8 @@ def apply_calibration(
         are available in the database.
         Default is ``False``
 
-    id_object
-        ID of the object
+    object_id
+        Photometry ``id`` (row index) for output filename suffix; optional.
         Default is ``None``.
 
     photometry_extraction_method
@@ -1464,7 +1483,7 @@ def apply_calibration(
     utilities.save_calibration(
         observation,
         filter_list,
-        id_object,
+        object_id,
         photometry_extraction_method=photometry_extraction_method,
         rts=rts,
     )
@@ -1474,7 +1493,7 @@ def apply_calibration(
 def determine_transformation_coefficients(
         observation: 'analyze.Observation', current_filter: str,
         filter_list: list[str], tbl_transformation_coefficients: Table,
-        fit_function=utilities.lin_func,
+        fit_function=None,
         apply_uncertainty_weights: bool = True,
         distribution_samples: int = 1000, file_type_plots: str = 'pdf',
         indent: int = 2) -> None:
@@ -1515,6 +1534,9 @@ def determine_transformation_coefficients(
         Indentation for the console output lines
         Default is ``2``.
     """
+    if fit_function is None:
+        fit_function = utilities.lin_func
+
     #   Get image series
     image_series_dict = observation.image_series_dict
 
@@ -1728,11 +1750,11 @@ def calculate_trans(
         filter_list: list[str],
         tbl_transformation_coefficients: Table,
         apply_uncertainty_weights: bool = True,
-        max_pixel_between_objects: int = 3, own_correlation_option: int = 1,
-        calibration_method: str = 'APASS',
+        max_pixel_between_objects: int = 3, ooi_correlation_strategy: int = 1,
+        calibration_source: str = 'APASS',
         vizier_dict: dict[str, str] | None = None,
         calibration_file: str | None = None,
-        magnitude_range: tuple[float, float] = (0., 18.5),
+        calibration_catalog_mag_range: tuple[float, float] = (0., 18.5),
         region_to_select_calibration_stars: RectanglePixelRegion | None = None,
         distribution_samples: int = 1000,
         duplicate_handling_object_identification: dict[str, str] | None = None,
@@ -1764,12 +1786,12 @@ def calculate_trans(
         Maximal distance between two objects in Pixel
         Default is ``3``.
 
-    own_correlation_option
+    ooi_correlation_strategy
         Option for the srcor correlation function
         Default is ``1``.
 
-    calibration_method
-        Calibration method
+    calibration_source
+        Catalog / lookup key (e.g. ``APASS``, ``simbad``, ``vsp``, or a ``vizier_dict`` key).
         Default is ``APASS``.
 
     vizier_dict
@@ -1781,8 +1803,8 @@ def calculate_trans(
         Path to the calibration file
         Default is ``None``.
 
-    magnitude_range
-        Magnitude range
+    calibration_catalog_mag_range
+        Inclusive magnitude range for calibration catalog stars.
         Default is ``(0.,18.5)``.
 
     region_to_select_calibration_stars
@@ -1829,7 +1851,7 @@ def calculate_trans(
         observation,
         filter_list,
         max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
+        ooi_correlation_strategy=ooi_correlation_strategy,
         file_type_plots=file_type_plots,
         duplicate_handling_object_identification=duplicate_handling_object_identification,
     )
@@ -1847,12 +1869,12 @@ def calculate_trans(
     calibration_data.derive_calibration(
         observation,
         filter_list,
-        calibration_method=calibration_method,
+        calibration_source=calibration_source,
         max_pixel_between_objects=max_pixel_between_objects,
-        own_correlation_option=own_correlation_option,
+        ooi_correlation_strategy=ooi_correlation_strategy,
         vizier_dict=vizier_dict,
         path_calibration_file=calibration_file,
-        magnitude_range=magnitude_range,
+        calibration_catalog_mag_range=calibration_catalog_mag_range,
         region_to_select_calibration_stars=region_to_select_calibration_stars,
         file_type_plots=file_type_plots,
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,

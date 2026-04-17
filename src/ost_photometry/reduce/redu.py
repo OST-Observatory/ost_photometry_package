@@ -38,7 +38,7 @@ class ReduceConfig:
     limiting_contrast_rm_cosmic_rays: float = 5.0
     sigma_clipping_value_rm_cosmic_rays: float = 4.0
     scale_image_with_exposure_time: bool = True
-    reference_image_id: int = 0
+    reference_image_index: int = 0
     enforce_bias: bool = False
     add_hot_bad_pixel_mask: bool = True
     shift_method: str = "skimage"
@@ -83,7 +83,7 @@ def reduce_main(
     limiting_contrast_rm_cosmic_rays: float = 5.0,
     sigma_clipping_value_rm_cosmic_rays: float = 4.0,
     scale_image_with_exposure_time: bool = True,
-    reference_image_id: int = 0,
+    reference_image_index: int = 0,
     enforce_bias: bool = False,
     add_hot_bad_pixel_mask: bool = True,
     shift_method: str = "skimage",
@@ -173,7 +173,7 @@ def reduce_main(
         If True the image will be scaled with the exposure time.
         Default is ``True``.
 
-    reference_image_id
+    reference_image_index
         ID of the image that should be used as a reference
         Default is ``0``.
 
@@ -334,7 +334,7 @@ def reduce_main(
         limiting_contrast_rm_cosmic_rays=limiting_contrast_rm_cosmic_rays,
         sigma_clipping_value_rm_cosmic_rays=sigma_clipping_value_rm_cosmic_rays,
         scale_image_with_exposure_time=scale_image_with_exposure_time,
-        reference_image_id=reference_image_id,
+        reference_image_index=reference_image_index,
         enforce_bias=enforce_bias,
         add_hot_bad_pixel_mask=add_hot_bad_pixel_mask,
         shift_method=shift_method,
@@ -664,7 +664,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
         output_path / "light",
         output_path,
         image_type_dir["light"],
-        reference_image_id=cfg.reference_image_id,
+        reference_image_index=cfg.reference_image_index,
         shift_method=cfg.shift_method,
         n_cores_multiprocessing=cfg.n_cores_multiprocessing,
         rm_outliers=cfg.rm_outliers_image_shifts,

@@ -15,7 +15,7 @@ from .image_types import get_image_type
 def determine_wcs(
     input_dir: str | Path,
     output_dir: str | Path,
-    reference_image_id: int = 0,
+    reference_image_index: int = 0,
     force_wcs_determination: bool = False,
     wcs_method: str = "astrometry",
     x_pixel_coordinates: np.ndarray | None = None,
@@ -37,7 +37,7 @@ def determine_wcs(
     output_dir
         Path to the output directory.
 
-    reference_image_id
+    reference_image_index
         ID of the reference image.
         Default is ``0``.
 
@@ -97,10 +97,10 @@ def determine_wcs(
         ifc_filtered = image_file_collection.filter(filter=reference_filter)
 
     #   Get reference image
-    reference_image_path = ifc_filtered.files[reference_image_id]
+    reference_image_path = ifc_filtered.files[reference_image_index]
 
     reference_image = base_utilities.Image(
-        reference_image_id,
+        reference_image_index,
         reference_filter,
         reference_image_path,
         output_dir,

@@ -57,7 +57,7 @@ class ImageSeries:
     """
 
     def __init__(
-        self, filter_: str, path: str, output_dir: str, reference_image_id: int = 0
+        self, filter_: str, path: str, output_dir: str, reference_image_index: int = 0
     ):
         #   Setup file list
         if os.path.isdir(path):
@@ -94,18 +94,18 @@ class ImageSeries:
             )
 
         #   Check if the id of the reference image is valid
-        if reference_image_id > len(self.file_list):
+        if reference_image_index > len(self.file_list):
             raise ValueError(
-                f"{style.Bcolors.FAIL} ERROR: Reference image ID "
-                "[reference_image_id] is larger than the total number of "
+                f"{style.Bcolors.FAIL} ERROR: Reference image index "
+                "[reference_image_index] is larger than the total number of "
                 f"images! -> EXIT {style.Bcolors.ENDC}"
             )
 
         #   Set filter
         self.filter_: str = filter_
 
-        #   Set ID of the reference image
-        self.reference_image_id: int = reference_image_id
+        #   Set list index of the reference image in image_list
+        self.reference_image_index: int = reference_image_index
 
         #   Prepare image list
         self.image_list: list[Image] = []
@@ -130,7 +130,7 @@ class ImageSeries:
             self.start_jd: float | None = None
 
         #   Set reference image
-        self.reference_image = self.image_list[reference_image_id]
+        self.reference_image = self.image_list[reference_image_index]
 
         #   Set field of view
         self.field_of_view_x: float | None = getattr(
@@ -183,13 +183,13 @@ class ImageSeries:
 
         photo_dict: dict[str, object] = {}
         for img in self.image_list:
-            photo_dict[str(img.pd)] = getattr(img, "photometry", None)
+            photo_dict[str(img.image_id)] = getattr(img, "photometry", None)
         return photo_dict
 
     def get_image_ids(self) -> list[int]:
         img_ids: list[int] = []
         for img in self.image_list:
-            img_ids.append(img.pd)
+            img_ids.append(img.image_id)
         return img_ids
 
     def mean_sigma_clip_air_mass(self) -> float:

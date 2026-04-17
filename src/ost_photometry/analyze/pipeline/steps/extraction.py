@@ -28,7 +28,7 @@ class ExtractionStep(base.PipelineStep):
         import multiprocessing as mp
 
         mode = context.get_extraction_mode(config)
-        ref_id = config.reference_image_id
+        ref_id = config.reference_image_index
         fwhm_dict = config.fwhm_object_psf
 
         for filter_ in context.filter_list:
@@ -121,13 +121,13 @@ class ExtractionStep(base.PipelineStep):
                     output_dir=context.output_dir,
                 )
 
-        # Plot ePSFs and residuals for PSF mode (single-image case from extract_flux)
+        # Plot ePSFs and residuals for PSF mode (single-image extraction path)
         if mode == "single" and config.photometry_extraction_method == "PSF":
             epsf_dict = {}
             img_dict = {}
             residual_dict = {}
             for key, image_series in context.image_series_dict.items():
-                ref_id = image_series.reference_image_id
+                ref_id = image_series.reference_image_index
                 img = image_series.image_list[ref_id]
                 epsf_dict[key] = [img.epsf]
                 img_dict[key] = img.get_data()
@@ -146,6 +146,10 @@ class ExtractionStep(base.PipelineStep):
                 kwargs={"file_type": config.file_type_plots},
             )
             p.start()
+
+        from ...diagnostic_plot_hooks import run_diagnostic_plots_phase
+
+        run_diagnostic_plots_phase(context, config, "extraction")
 
         context.extraction_done = True
         return context

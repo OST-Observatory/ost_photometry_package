@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -92,21 +93,38 @@ def find_wcs_astrometry(
     filename = basename + ".new"
     filepath = Path(wcs_working_dir / filename)
 
-    #   String passed to the shell
+    #   Invoke solve-field without shell=True so paths with spaces, plus signs,
+    #   or odd quoting never need manual escaping or optional quotes.
     pixel_scale = image.pixel_scale
     pixel_scale_low = pixel_scale - 0.1
     pixel_scale_up = pixel_scale + 0.1
-    command: str = (
-        f"solve-field --overwrite --scale-units arcsecperpix --scale-low "
-        + f"{pixel_scale_low} --scale-high {pixel_scale_up} --ra {ra} "
-        + f"--dec {dec} --radius 1.0 --dir {wcs_working_dir} --resort "
-        + '"{}" --fits-image -z 2'.format(str(wcs_file).replace(" ", "\ "))
-    )
+    cmd = [
+        "solve-field",
+        "--overwrite",
+        "--scale-units",
+        "arcsecperpix",
+        "--scale-low",
+        str(pixel_scale_low),
+        "--scale-high",
+        str(pixel_scale_up),
+        "--ra",
+        str(ra),
+        "--dec",
+        str(dec),
+        "--radius",
+        "1.0",
+        "--dir",
+        str(wcs_working_dir),
+        "--resort",
+        str(wcs_file),
+        "--fits-image",
+        "-z",
+        "2",
+    ]
 
-    #   Running the command
     command_result = subprocess.run(
-        [command],
-        shell=True,
+        cmd,
+        shell=False,
         text=True,
         capture_output=True,
     )
@@ -117,7 +135,7 @@ def find_wcs_astrometry(
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
             f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"
-            f"The command was:\n {command} \nDetailed error output:\n"
+            f"The command was:\n {shlex.join(cmd)} \nDetailed error output:\n"
             f"{style.Bcolors.ENDC}{command_result.stdout}{command_result.stderr}"
             f"{style.Bcolors.FAIL}Exit{style.Bcolors.ENDC}"
         )
@@ -251,7 +269,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
     """
     terminal_output.print_to_terminal(
         "Searching for a WCS solution (pixel to ra/dec conversion)"
-        f" for image {image.pd}",
+        f" for image {image.image_id}",
         indent=indent,
     )
 

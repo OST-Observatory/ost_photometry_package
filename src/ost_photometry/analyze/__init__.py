@@ -1,23 +1,21 @@
 """Photometry analysis module: extraction, calibration, light curves."""
 
-from .analyze import Observation, main_extract
+from .analyze import Observation
+from .extraction import main_extract
 from .extinction import (
     CoefficientMode,
     ExtinctionCorrector,
     ExtinctionOrder,
     calculate_airmass,
 )
-from .calibration_differential_catalog import (
-    APASSCatalog,
-    PhotometryCalibrator,
-)
+from .differential_photometry import PhotometryCalibrator
 from .models import ImageSeries, ObjectOfInterest
-from .pipeline import AnalysisContext, AnalysisPipeline, PipelineConfig
+from .pipeline import AnalysisContext, AnalysisPipeline, DiagnosticPlots, PipelineConfig
 
 __all__ = [
-    "APASSCatalog",
     "AnalysisContext",
     "AnalysisPipeline",
+    "DiagnosticPlots",
     "CoefficientMode",
     "ExtinctionCorrector",
     "ExtinctionOrder",

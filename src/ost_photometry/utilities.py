@@ -47,7 +47,7 @@ from .wcs import check_wcs_exists, find_wcs_astap, find_wcs_astrometry, find_wcs
 #     """
 #
 #     def __init__(self, pd, filter_, object_name, file_path, output_dir):
-#         self.pd = pd
+#         self.image_id = image_id
 #         self.filter_ = filter_
 #         # self.object_name = object_name
 #         if isinstance(file_path, Path):
@@ -82,10 +82,10 @@ class Image:
     """
 
     def __init__(
-        self, pd: int, filter_: str, path: str | Path, output_dir: str | Path
+        self, image_id: int, filter_: str, path: str | Path, output_dir: str | Path
     ) -> None:
         #   Set image ID
-        self.pd: int = pd
+        self.image_id: int = image_id
 
         #   Set filter
         self.filter_: str = filter_

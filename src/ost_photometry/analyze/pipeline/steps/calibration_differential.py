@@ -1,18 +1,72 @@
-"""Differential calibration step (APASSCatalog, PhotometryCalibrator)."""
+"""
+Differential calibration step: PhotometryCalibrator + shared calibration_sources fetch.
+
+Uses the same ``PipelineConfig.calibration_source`` / ``vizier_dict`` / ``path_calibration_file``
+as the legacy calibration_data step; radius and mag range from ``calibration_catalog_*``.
+"""
 
 import warnings
+from pathlib import Path
 
 import numpy as np
 
-from .... import terminal_output
+from .... import checks, terminal_output
 from ... import utilities
+from ...post_processing.adapters import ensure_epoch_native_photometry_table
+from ...post_processing.io import write_epoch_native_magnitudes
+from ...post_processing.light_curve import attach_observation_jd_column
 from .. import base
 from ..context import AnalysisContext
 from ..config import PipelineConfig
-from ..bridge import observation_to_calibration_epochs
+from ..bridge import (
+    instrumental_epoch_native_from_calibration_epochs,
+    observation_to_calibration_epochs,
+)
 from ...extinction import CoefficientMode, ExtinctionOrder
-from ...calibration_differential_catalog import PhotometryCalibrator
+from ...differential_photometry import PhotometryCalibrator
 from ...warnings_types import OstPhotometryAnalyzeWarning
+
+
+def _calibration_summary_jd_by_epoch_id(
+    context: AnalysisContext, config: PipelineConfig
+) -> dict[str, float]:
+    """Map epoch_id -> JD for summary plot (reference filter, else first available)."""
+    meta = context.calibration_epoch_meta or {}
+    fl = context.filter_list
+    if not fl:
+        return {}
+    ref = config.differential_reference_filter or fl[0]
+    out: dict[str, float] = {}
+    for eid, m in meta.items():
+        jdf = m.get("jd_by_filter") or m.get("filter_jds") or {}
+        v = jdf.get(ref)
+        if v is None:
+            for f in fl:
+                if f in jdf and jdf[f] is not None:
+                    v = jdf[f]
+                    break
+        if v is not None:
+            vf = float(v)
+            if np.isfinite(vf):
+                out[str(eid)] = vf
+    return out
+
+
+def _attach_jd_from_epoch_meta(
+    tbl,
+    context: AnalysisContext,
+    config: PipelineConfig,
+    filter_list: list,
+):
+    """Match legacy ``CalibrationApplyStep``: add ``observation_jd`` for standalone ECSV."""
+    if len(tbl) == 0 or not filter_list or not context.calibration_epoch_meta:
+        return tbl
+    ref = config.differential_reference_filter or filter_list[0]
+    return attach_observation_jd_column(
+        tbl,
+        context.calibration_epoch_meta,
+        ref,
+    )
 
 
 def _log_calibration_skips(skipped: list) -> None:
@@ -26,7 +80,7 @@ def _log_calibration_skips(skipped: list) -> None:
         elif reason in ("jd_no_partner", "jd_exceeds_tolerance"):
             terminal_output.print_to_terminal(
                 f"Skipped calibration epoch: {reason} — ref_filter={entry.get('reference_filter')!r} "
-                f"pd={entry.get('reference_pd')} jd={entry.get('reference_jd')} "
+                f"image_id={entry.get('reference_exposure_image_id')} jd={entry.get('reference_jd')} "
                 f"failed_filter={entry.get('failed_filter')!r} "
                 f"best_delta_jd={entry.get('best_delta_jd')} "
                 f"tolerance={entry.get('jd_tolerance')}",
@@ -41,7 +95,8 @@ def _log_calibration_skips(skipped: list) -> None:
 
 class DifferentialCalibrationStep(base.PipelineStep):
     """
-    Differential photometry calibration using APASS and PhotometryCalibrator.
+    Differential photometry calibration using a standard calibration catalog
+    (``config.calibration_source``, same sources as legacy) and PhotometryCalibrator.
 
     Replaces CalibrationDataStep + CalibrationApplyStep when
     config.calibration_module == "differential".
@@ -67,7 +122,6 @@ class DifferentialCalibrationStep(base.PipelineStep):
     ) -> AnalysisContext:
         from astropy.coordinates import SkyCoord
         from astropy.time import Time
-        import astropy.units as u
 
         obs = context._observation
         if obs is None:
@@ -76,7 +130,7 @@ class DifferentialCalibrationStep(base.PipelineStep):
             )
 
         terminal_output.print_to_terminal(
-            "Differential calibration (APASS + PhotometryCalibrator)",
+            "Differential calibration (PhotometryCalibrator)",
             style_name="HEADER",
         )
 
@@ -128,16 +182,21 @@ class DifferentialCalibrationStep(base.PipelineStep):
         dec_mean = np.mean(first_tbl["dec"])
         field_center = SkyCoord(ra_mean, dec_mean, unit="deg")
 
-        calibrator.setup_apass(
+        calibrator.setup_calibration_source(
             field_center,
-            radius=config.differential_apass_radius * u.arcmin,
-            mag_limit=config.differential_apass_mag_limit,
+            context.filter_list,
+            calibration_source=config.calibration_source,
+            radius_arcmin=config.calibration_catalog_radius_arcmin,
+            calibration_catalog_mag_range=config.calibration_catalog_mag_range,
+            vizier_dict=config.vizier_dict,
+            path_calibration_file=config.path_calibration_file,
         )
 
         for epoch_id, tbl in epochs.items():
             meta = context.calibration_epoch_meta.get(epoch_id, {})
             filter_obstimes = {}
-            for f, jd in meta.get("filter_jds", {}).items():
+            jd_map = meta.get("jd_by_filter") or meta.get("filter_jds") or {}
+            for f, jd in jd_map.items():
                 if jd is not None:
                     filter_obstimes[f] = Time(jd, format="jd")
             calibrator.add_epoch(
@@ -169,14 +228,22 @@ class DifferentialCalibrationStep(base.PipelineStep):
                     stacklevel=1,
                 )
 
-        # Calibrate
-        calibrator.calibrate(
+        # Fit T/ZP per mode, then get_calibrated_photometry applies them
+        jd_map = _calibration_summary_jd_by_epoch_id(context, config)
+        calibrator.fit_transformation_parameters(
             filters=context.filter_list,
             determine_color_terms=True,
             min_comparisons=5,
-            sigma_clip=2.5,
+            sigma_clip=config.differential_fit_sigma_clip,
             output_dir=context.output_dir,
             file_type=getattr(config, "file_type_plots", "pdf"),
+            per_image_rolling_median_color_term=config.differential_per_image_rolling_median_color_term,
+            per_image_rolling_median_zero_point=config.differential_per_image_rolling_median_zero_point,
+            per_image_rolling_mean_color_term=config.differential_per_image_rolling_mean_color_term,
+            per_image_rolling_mean_zero_point=config.differential_per_image_rolling_mean_zero_point,
+            per_image_rolling_window=config.differential_per_image_rolling_window,
+            calibration_summary_x_jd=jd_map if jd_map else None,
+            calibration_summary_use_jd_x=config.differential_calibration_summary_use_jd_x,
         )
 
         # Get calibrated photometry and write to observation
@@ -184,31 +251,104 @@ class DifferentialCalibrationStep(base.PipelineStep):
             output_prefix="mag_cal_",
         )
 
-        obs.table_magnitudes = calibrated
+        # Test dump: raw vstacked table (mag_cal_*, epoch_id, …) for debugging
+        # if len(calibrated) > 0:
+        #     out_base = Path(context.output_dir)
+        #     tables_dir = out_base / "tables"
+        #     checks.check_output_directories(out_base, tables_dir)
+        #     dump_path = tables_dir / "calibrated_differential_vstack.ecsv"
+        #     calibrated.write(
+        #         str(dump_path), format="ascii.ecsv", overwrite=True
+        #     )
+        #     terminal_output.print_to_terminal(
+        #         f"Test dump (differential calibrated vstack): {dump_path}",
+        #         style_name="INFO",
+        #     )
 
-        # Save to file in legacy format for compatibility with existing scripts
         filter_list = context.filter_list
-        if filter_list and len(calibrated) > 0:
-            table_legacy = utilities.differential_calibrated_to_legacy_table(
-                calibrated, filter_list
+        if len(calibrated) > 0:
+            table_native = ensure_epoch_native_photometry_table(calibrated)
+            table_native = _attach_jd_from_epoch_meta(
+                table_native, context, config, filter_list
             )
-            if len(filter_list) == 1:
-                rts = ""
-            elif len(filter_list) == 2:
-                rts = f"_{filter_list[0]}-{filter_list[1]}"
+            obs.table_magnitudes = table_native
+            context.table_magnitudes = table_native
+            if filter_list:
+                if len(filter_list) == 1:
+                    rts = ""
+                elif len(filter_list) == 2:
+                    rts = f"_{filter_list[0]}-{filter_list[1]}"
+                else:
+                    rts = ""
+                write_epoch_native_magnitudes(
+                    obs,
+                    table_native,
+                    object_id=config.object_id,
+                    photometry_extraction_method=config.photometry_extraction_method,
+                    rts=rts,
+                )
+                if config.write_differential_legacy_magnitudes_dat:
+                    table_legacy = utilities.differential_calibrated_to_legacy_table(
+                        calibrated, filter_list
+                    )
+                    utilities.save_magnitudes_ascii(
+                        obs,
+                        table_legacy,
+                        object_id=config.object_id,
+                        photometry_extraction_method=config.photometry_extraction_method,
+                        rts=rts,
+                    )
+        else:
+            inst = instrumental_epoch_native_from_calibration_epochs(epochs, filter_list)
+            if len(inst) > 0:
+                inst = _attach_jd_from_epoch_meta(
+                    inst, context, config, filter_list
+                )
+                obs.table_magnitudes = inst
+                context.table_magnitudes = inst
+                if filter_list:
+                    if len(filter_list) == 1:
+                        rts_inst = ""
+                    elif len(filter_list) == 2:
+                        rts_inst = f"_{filter_list[0]}-{filter_list[1]}"
+                    else:
+                        rts_inst = ""
+                else:
+                    rts_inst = ""
+                out_path = write_epoch_native_magnitudes(
+                    obs,
+                    inst,
+                    object_id=config.object_id,
+                    photometry_extraction_method=config.photometry_extraction_method,
+                    rts=rts_inst,
+                    file_stem="extracted_magnitudes",
+                )
+                terminal_output.print_to_terminal(
+                    f"Differential calibration produced no rows; wrote instrumental "
+                    f"epoch-native table: {out_path}",
+                    style_name="INFO",
+                )
             else:
-                rts = ""
-            utilities.save_magnitudes_ascii(
-                obs,
-                table_legacy,
-                id_object=config.object_id,
-                photometry_extraction_method=config.photometry_extraction_method,
-                rts=rts,
-            )
+                obs.table_magnitudes = calibrated
+                context.table_magnitudes = calibrated
+                terminal_output.print_to_terminal(
+                    "Differential calibration produced no rows and epoch tables were empty; "
+                    "no instrumental ECSV was written.",
+                    style_name="WARNING",
+                )
 
-        # Store calibrator results in context for post-process if needed
-        context.calib_parameters = getattr(
-            calibrator, "_calibration_results", None
+        # Fit results (T/ZP per epoch); do not assign to context.calib_parameters (legacy CalibParameters)
+        context.differential_calib_parameters = getattr(
+            calibrator, "calib_parameters", None
+        )
+
+        from ...diagnostic_plot_hooks import run_diagnostic_plots_phase
+
+        run_diagnostic_plots_phase(
+            context,
+            config,
+            "calibration_differential",
+            differential_epochs=calibrator.epochs,
         )
 
         return context

@@ -1,4 +1,4 @@
-"""Extinction fit step: determine ExtinctionCoefficients via fit_extinction_from_flux_airmass."""
+"""Extinction fit step: determine ExtinctionCoefficients via fit_extinction_from_value_airmass."""
 
 import json
 from pathlib import Path
@@ -8,7 +8,7 @@ from ..context import AnalysisContext
 from ..config import PipelineConfig
 from ...extinction import (
     ExtinctionCoefficients,
-    fit_extinction_from_flux_airmass,
+    fit_extinction_from_value_airmass,
     observation_to_extinction_fit_table,
 )
 
@@ -71,14 +71,14 @@ class ExtinctionFitStep(base.PipelineStep):
                 "of same stars at different airmasses (observe over several hours)."
             )
 
-        # Build flux_cols from available filter columns
-        flux_cols = {}
+        # Build value_cols from available filter columns
+        value_cols = {}
         for f in filter_list:
             col = f"flux_{f}" if use_flux else f"mag_{f}"
             if col in data.colnames:
-                flux_cols[f] = col
+                value_cols[f] = col
 
-        if not flux_cols:
+        if not value_cols:
             raise RuntimeError(
                 "No magnitude/flux columns found. Check filter_list and mag_col."
             )
@@ -86,10 +86,10 @@ class ExtinctionFitStep(base.PipelineStep):
         # Fit
         output_dir = Path(context.output_dir)
         file_type = getattr(config, "file_type_plots", "pdf")
-        coefficients = fit_extinction_from_flux_airmass(
+        coefficients = fit_extinction_from_value_airmass(
             data,
-            flux_cols=flux_cols,
-            airmass_col="airmass",
+            value_cols=value_cols,
+            fallback_airmass_col="airmass",
             id_col="id",
             use_magnitude=not use_flux,
             output_dir=str(output_dir),

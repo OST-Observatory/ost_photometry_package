@@ -47,7 +47,7 @@ class ExtinctionCoefficients:
     Coefficients depend strongly on observing conditions: humidity, aerosols,
     altitude, and light pollution (Bortle) all affect k. They can vary
     night-to-night and season-to-season. For precision, determine from your
-    own data via fit_extinction_from_flux_airmass or fit_extinction_from_comparison_stars.
+    own data via fit_extinction_from_value_airmass or fit_extinction_from_comparison_stars.
     """
 
     filter_name: str
@@ -74,7 +74,7 @@ class ExtinctionCoefficients:
 # AAVSO https://www.aavso.org/content/typical-values-2nd-order-extinction-coefficients;
 # cat-star.org http://cat-star.org/SOCO/PROCESSING/extinction.html
 # Note: Coefficients vary night-to-night and season-to-season (humidity, aerosols).
-# For precision use fit_extinction_from_flux_airmass or fit_extinction_from_comparison_stars.
+# For precision use fit_extinction_from_value_airmass or fit_extinction_from_comparison_stars.
 DEFAULT_EXTINCTION = {
     "U": ExtinctionCoefficients(
         "U", k_prime=0.60, k_prime_err=0.06, k_second=0.03,
@@ -99,18 +99,18 @@ DEFAULT_EXTINCTION = {
 }
 
 
-def fit_extinction_from_flux_airmass(
+def fit_extinction_from_value_airmass(
     data: Table,
-    flux_col: str | None = None,
-    flux_cols: dict[str, str] | None = None,
-    airmass_col: str = "airmass",
+    value_col: str | None = None,
+    value_cols: dict[str, str] | None = None,
+    fallback_airmass_col: str = "airmass",
     id_col: str | None = "id",
     use_magnitude: bool = False,
     output_dir: str | None = None,
     file_type: str = "pdf",
 ) -> dict[str, ExtinctionCoefficients]:
     """
-    Determine extinction coefficients from flux vs airmass (cat-star.org method).
+    Determine extinction coefficients from flux or magnitude vs airmass (cat-star.org method).
 
     Observe stars (e.g. G2V) over several hours as they rise/set.
     - With flux: ln(flux) vs X has slope -k (extinction dims the star).
@@ -121,11 +121,11 @@ def fit_extinction_from_flux_airmass(
     ----------
     data : Table
         Rows = individual measurements. Must have airmass and flux or magnitude.
-    flux_col : str, optional
-        Single flux/mag column. Mutually exclusive with flux_cols.
-    flux_cols : dict, optional
+    value_col : str, optional
+        Single column (flux or magnitude). Mutually exclusive with value_cols.
+    value_cols : dict, optional
         {filter_name: column_name}. Use for multi-filter.
-    airmass_col : str
+    fallback_airmass_col : str
         Column with airmass X.
     id_col : str, optional
         Column identifying the star/source. If given, fit per-source then average k.
@@ -148,18 +148,18 @@ def fit_extinction_from_flux_airmass(
     """
     from scipy import stats
 
-    X = np.asarray(data[airmass_col], dtype=float)
-    valid = np.isfinite(X) & (X >= 1.0)
+    airmass = np.asarray(data[fallback_airmass_col], dtype=float)
+    valid = np.isfinite(airmass) & (airmass >= 1.0)
     if not np.any(valid):
         return {}
 
-    if flux_col is not None and flux_cols is None:
-        flux_cols = {"default": flux_col}
-    elif flux_cols is None:
-        raise ValueError("Provide flux_col or flux_cols")
+    if value_col is not None and value_cols is None:
+        value_cols = {"default": value_col}
+    elif value_cols is None:
+        raise ValueError("Provide value_col or value_cols")
 
     result = {}
-    for filt, col in flux_cols.items():
+    for filter_, col in value_cols.items():
         if col not in data.colnames:
             continue
         vals = np.asarray(data[col], dtype=float)
@@ -173,7 +173,7 @@ def fit_extinction_from_flux_airmass(
             sign = -1.0  # slope of ln(flux) vs X = -k
         if np.sum(ok) < 3:
             continue
-        X_ok = X[ok]
+        airmass_ok = airmass[ok]
 
         if id_col is not None and id_col in data.colnames:
             ids = np.asarray(data[id_col])[ok]
@@ -182,7 +182,7 @@ def fit_extinction_from_flux_airmass(
                 mask = ids == uid
                 if np.sum(mask) < 2:
                     continue
-                slope, intercept, r, p, se = stats.linregress(X_ok[mask], y[mask])
+                slope, intercept, r, p, se = stats.linregress(airmass_ok[mask], y[mask])
                 slopes.append((slope, se))
             if not slopes:
                 continue
@@ -191,19 +191,19 @@ def fit_extinction_from_flux_airmass(
             k_prime = float(np.mean(k_vals))
             k_prime_err = float(np.sqrt(np.mean(k_errs**2) + np.var(k_vals)))
         else:
-            slope, intercept, r, p, se = stats.linregress(X_ok, y)
+            slope, intercept, r, p, se = stats.linregress(airmass_ok, y)
             k_prime = float(sign * slope)
             k_prime_err = float(se)
 
-        result[filt] = ExtinctionCoefficients(
-            filt, k_prime=k_prime, k_prime_err=k_prime_err, k_second=0.0
+        result[filter_] = ExtinctionCoefficients(
+            filter_, k_prime=k_prime, k_prime_err=k_prime_err, k_second=0.0
         )
 
     if output_dir and result:
         from . import plots
         data_by_filter = {}
-        for filt, col in flux_cols.items():
-            if col not in data.colnames or filt not in result:
+        for filter_, col in value_cols.items():
+            if col not in data.colnames or filter_ not in result:
                 continue
             vals = np.asarray(data[col], dtype=float)
             if use_magnitude:
@@ -214,10 +214,10 @@ def fit_extinction_from_flux_airmass(
                 y = np.log(vals[ok])
             if np.sum(ok) < 3:
                 continue
-            X_ok = X[ok]
-            data_by_filter[filt] = (X_ok, y)
+            airmass_ok = airmass[ok]
+            data_by_filter[filter_] = (airmass_ok, y)
         if data_by_filter:
-            plots.plot_extinction_fit_flux_airmass(
+            plots.plot_extinction_fit_value_airmass(
                 output_dir,
                 data_by_filter,
                 result,
@@ -235,7 +235,7 @@ def observation_to_extinction_fit_table(
     use_flux: bool = False,
 ) -> Table:
     """
-    Build table for fit_extinction_from_flux_airmass from reduced observation.
+    Build table for fit_extinction_from_value_airmass from reduced observation.
 
     Collects (id, airmass, mag/flux) for each star in each image. Requires
     WCS, extraction, and correlation to be done. Stars must be observed at
@@ -297,13 +297,13 @@ def observation_to_extinction_fit_table(
 def extinction_airmass_ready(
     data: Table,
     filters: list[str],
-    airmass_col: str = "airmass",
+    fallback_airmass_col: str = "airmass",
 ) -> bool:
     """
     True if extinction correction can obtain X for every ``filters`` entry:
-    either a global ``airmass_col`` or per-filter ``airmass_<f>`` for each f.
+    either a global ``fallback_airmass_col`` or per-filter ``airmass_<f>`` for each f.
     """
-    if airmass_col in data.colnames:
+    if fallback_airmass_col in data.colnames:
         return True
     return all(f"airmass_{f}" in data.colnames for f in filters)
 
@@ -312,7 +312,7 @@ def fit_extinction_from_comparison_stars(
     epochs: dict[str, Table],
     mag_col_prefix: str = "mag_",
     std_col_prefix: str = "mag_std_",
-    airmass_col: str = "airmass",
+    fallback_airmass_col: str = "airmass",
     output_dir: str | None = None,
     file_type: str = "pdf",
 ) -> dict[str, ExtinctionCoefficients]:
@@ -335,7 +335,7 @@ def fit_extinction_from_comparison_stars(
         instrument mags.
     std_col_prefix : str
         Prefix for standard magnitude columns.
-    airmass_col : str
+    fallback_airmass_col : str
         Column with airmass.
     output_dir : str, optional
         If provided, save diagnostic plots to output_dir/extinction_fit/.
@@ -372,25 +372,29 @@ def fit_extinction_from_comparison_stars(
             # e.g. mag_std_B also starts with mag_; treat as std column, not mag_*.
             if col.startswith(std_col_prefix):
                 continue
-            filt = col[len(mag_col_prefix) :]
-            x_col = f"airmass_{filt}"
-            if x_col in tbl.colnames:
-                X = float(np.median(np.asarray(tbl[x_col], dtype=float)))
-            elif airmass_col in tbl.colnames:
-                X = float(np.median(np.asarray(tbl[airmass_col], dtype=float)))
+            filter_ = col[len(mag_col_prefix) :]
+            band_airmass_col = f"airmass_{filter_}"
+            if band_airmass_col in tbl.colnames:
+                airmass_median = float(
+                    np.median(np.asarray(tbl[band_airmass_col], dtype=float))
+                )
+            elif fallback_airmass_col in tbl.colnames:
+                airmass_median = float(
+                    np.median(np.asarray(tbl[fallback_airmass_col], dtype=float))
+                )
             else:
                 warnings.warn(
                     f"fit_extinction_from_comparison_stars: epoch {epoch_id!r} filter "
-                    f"{filt!r}: no {x_col!r} or {airmass_col!r}; skipping this band.",
+                    f"{filter_!r}: no {band_airmass_col!r} or {fallback_airmass_col!r}; skipping this band.",
                     category=OstPhotometryAnalyzeWarning,
                     stacklevel=2,
                 )
                 continue
-            std_col = f"{std_col_prefix}{filt}"
+            std_col = f"{std_col_prefix}{filter_}"
             if std_col not in tbl.colnames:
                 warnings.warn(
                     f"fit_extinction_from_comparison_stars: epoch {epoch_id!r} filter "
-                    f"{filt!r}: has {col!r} but missing {std_col!r}.",
+                    f"{filter_!r}: has {col!r} but missing {std_col!r}.",
                     category=OstPhotometryAnalyzeWarning,
                     stacklevel=2,
                 )
@@ -401,7 +405,7 @@ def fit_extinction_from_comparison_stars(
             if not np.any(valid):
                 warnings.warn(
                     f"fit_extinction_from_comparison_stars: epoch {epoch_id!r} filter "
-                    f"{filt!r}: no finite pairs for instrumental vs standard magnitude.",
+                    f"{filter_!r}: no finite pairs for instrumental vs standard magnitude.",
                     category=OstPhotometryAnalyzeWarning,
                     stacklevel=2,
                 )
@@ -409,38 +413,40 @@ def fit_extinction_from_comparison_stars(
 
             # Mean over stars: epoch-level offset cancels in the slope; slope is k'.
             delta = np.nanmean((m_obs - m_std)[valid])
-            if by_filter.get(filt) is None:
-                by_filter[filt] = []
-            by_filter[filt].append((X, delta))
+            if by_filter.get(filter_) is None:
+                by_filter[filter_] = []
+            by_filter[filter_].append((airmass_median, delta))
 
     # Per filter: linear regression delta ≈ k' * X + const (intercept absorbs mean ZP).
     result = {}
     data_by_filter = {}
-    for filt, pairs in by_filter.items():
+    for filter_, pairs in by_filter.items():
         if len(pairs) < 3:
             warnings.warn(
-                f"fit_extinction_from_comparison_stars: filter {filt!r} has only "
+                f"fit_extinction_from_comparison_stars: filter {filter_!r} has only "
                 f"{len(pairs)} epoch point(s), need >= 3 for regression; skipping.",
                 stacklevel=2,
             )
             continue
-        X_arr = np.array([p[0] for p in pairs])
+        airmass_arr = np.array([p[0] for p in pairs])
         d_arr = np.array([p[1] for p in pairs])
-        valid = np.isfinite(X_arr) & np.isfinite(d_arr)
+        valid = np.isfinite(airmass_arr) & np.isfinite(d_arr)
         if np.sum(valid) < 3:
             warnings.warn(
-                f"fit_extinction_from_comparison_stars: filter {filt!r} has only "
-                f"{int(np.sum(valid))} finite (X, delta) point(s) after NaN filter; skipping.",
+                f"fit_extinction_from_comparison_stars: filter {filter_!r} has only "
+                f"{int(np.sum(valid))} finite (airmass, delta) point(s) after NaN filter; skipping.",
                 category=OstPhotometryAnalyzeWarning,
                 stacklevel=2,
             )
             continue
-        slope, intercept, r, p, se = stats.linregress(X_arr[valid], d_arr[valid])
-        result[filt] = ExtinctionCoefficients(
-            filt, k_prime=float(slope), k_prime_err=float(se), k_second=0.0
+        slope, intercept, r, p, se = stats.linregress(
+            airmass_arr[valid], d_arr[valid]
+        )
+        result[filter_] = ExtinctionCoefficients(
+            filter_, k_prime=float(slope), k_prime_err=float(se), k_second=0.0
         )
         if output_dir:
-            data_by_filter[filt] = (X_arr[valid], d_arr[valid])
+            data_by_filter[filter_] = (airmass_arr[valid], d_arr[valid])
 
     # Plots only for filters that got a successful fit (same arrays as used in linregress).
     if output_dir and data_by_filter:
@@ -535,7 +541,7 @@ class ExtinctionCorrector:
     def correct(
         self,
         data: Table,
-        airmass_col: str = "airmass",
+        fallback_airmass_col: str = "airmass",
         mag_col_prefix: str = "mag_",
         output_prefix: str = "mag_ext_",
         filters: Optional[list[str]] = None,
@@ -550,9 +556,9 @@ class ExtinctionCorrector:
         ----------
         data : Table
             Input table with magnitudes and airmass
-        airmass_col : str
+        fallback_airmass_col : str
             Global airmass column, used when per-filter ``airmass_<f>`` is absent.
-            At least one of ``airmass_col`` or all ``airmass_<f>`` for active filters
+            At least one of ``fallback_airmass_col`` or all ``airmass_<f>`` for active filters
             must be present (see :func:`extinction_airmass_ready`).
         mag_col_prefix : str
             Prefix of magnitude columns
@@ -587,41 +593,41 @@ class ExtinctionCorrector:
                 )
             ]
 
-        if not extinction_airmass_ready(data, filters, airmass_col):
+        if not extinction_airmass_ready(data, filters, fallback_airmass_col):
             raise ValueError(
-                f"Need '{airmass_col}' or all of "
+                f"Need '{fallback_airmass_col}' or all of "
                 f"{[f'airmass_{f}' for f in filters]} for extinction correction."
             )
 
-        for filt in filters:
-            mag_col = f"{mag_col_prefix}{filt}"
+        for filter_ in filters:
+            mag_col = f"{mag_col_prefix}{filter_}"
             if mag_col not in data.colnames:
                 continue
 
-            coeff = self.coefficients.get(filt)
+            coeff = self.coefficients.get(filter_)
             if coeff is None or not coeff.valid:
                 warnings.warn(
-                    f"No extinction coefficients for {filt}. Skipping.",
+                    f"No extinction coefficients for {filter_}. Skipping.",
                     category=OstPhotometryAnalyzeWarning,
                     stacklevel=2,
                 )
                 continue
 
-            x_band = f"airmass_{filt}"
-            if x_band in data.colnames:
-                X = np.asarray(data[x_band], dtype=float)
+            band_airmass_col = f"airmass_{filter_}"
+            if band_airmass_col in data.colnames:
+                airmass = np.asarray(data[band_airmass_col], dtype=float)
             else:
-                X = np.asarray(data[airmass_col], dtype=float)
+                airmass = np.asarray(data[fallback_airmass_col], dtype=float)
 
             m_obs = np.array(data[mag_col], dtype=float)
-            correction = coeff.k_prime * X
+            correction = coeff.k_prime * airmass
 
             if self.order == ExtinctionOrder.SECOND and coeff.k_second != 0:
                 ci_col1 = f"{mag_col_prefix}{coeff.color_filter_1}"
                 ci_col2 = f"{mag_col_prefix}{coeff.color_filter_2}"
                 if ci_col1 in data.colnames and ci_col2 in data.colnames:
                     color = np.array(data[ci_col1]) - np.array(data[ci_col2])
-                    correction += coeff.k_second * X * color
+                    correction += coeff.k_second * airmass * color
                 elif catalog_color_prefix:
                     s1 = f"{catalog_color_prefix}{coeff.color_filter_1}"
                     s2 = f"{catalog_color_prefix}{coeff.color_filter_2}"
@@ -630,11 +636,11 @@ class ExtinctionCorrector:
                             data[s2], dtype=float
                         )
                         color = np.where(np.isfinite(color), color, 0.0)
-                        correction += coeff.k_second * X * color
+                        correction += coeff.k_second * airmass * color
                     else:
                         missing = [c for c in (ci_col1, ci_col2) if c not in data.colnames]
                         warnings.warn(
-                            f"Second-order extinction for filter {filt} skipped: missing "
+                            f"Second-order extinction for filter {filter_} skipped: missing "
                             f"instrumental color {missing} and catalog columns "
                             f"{[c for c in (s1, s2) if c not in data.colnames]}.",
                             category=OstPhotometryAnalyzeWarning,
@@ -643,7 +649,7 @@ class ExtinctionCorrector:
                 else:
                     missing = [c for c in (ci_col1, ci_col2) if c not in data.colnames]
                     warnings.warn(
-                        f"Second-order extinction for filter {filt} skipped: missing "
+                        f"Second-order extinction for filter {filter_} skipped: missing "
                         f"columns {missing} (need {coeff.color_filter_1}-{coeff.color_filter_2} "
                         f"under prefix '{mag_col_prefix}').",
                         category=OstPhotometryAnalyzeWarning,
@@ -651,7 +657,7 @@ class ExtinctionCorrector:
                     )
 
             m_corrected = m_obs - correction
-            data[f"{output_prefix}{filt}"] = m_corrected
+            data[f"{output_prefix}{filter_}"] = m_corrected
 
         return data
 
@@ -664,7 +670,7 @@ __all__ = [
     "calculate_airmass",
     "DEFAULT_EXTINCTION",
     "extinction_airmass_ready",
-    "fit_extinction_from_flux_airmass",
+    "fit_extinction_from_value_airmass",
     "fit_extinction_from_comparison_stars",
     "observation_to_extinction_fit_table",
 ]

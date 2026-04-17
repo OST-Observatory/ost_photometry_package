@@ -12,7 +12,14 @@ from .steps import (
     CalibrationDataStep,
     CalibrationApplyStep,
     CalibrationDifferentialStep,
-    PostProcessStep,
+    PostProcessClusterGaiaStep,
+    PostProcessProperMotionStep,
+    PostProcessRegionStep,
+    PostProcessMagnitudeConvertStep,
+    PostProcessSaveMagnitudesStep,
+    DeriveLimitingMagnitudeStep,
+    HipsReferenceSubtractStep,
+    LightCurveStep,
 )
 
 
@@ -37,7 +44,14 @@ class AnalysisPipeline:
             CalibrationDataStep(),
             CalibrationDifferentialStep(),
             CalibrationApplyStep(),
-            PostProcessStep(),
+            PostProcessRegionStep(),
+            PostProcessClusterGaiaStep(),
+            PostProcessProperMotionStep(),
+            PostProcessMagnitudeConvertStep(),
+            PostProcessSaveMagnitudesStep(),
+            DeriveLimitingMagnitudeStep(),
+            HipsReferenceSubtractStep(),
+            LightCurveStep(),
         ]
 
     def run(self, context: AnalysisContext) -> AnalysisContext:

@@ -42,7 +42,7 @@ from ..terminal_output import print_to_terminal
 
 def align_images(
         image_path: str | Path, output_dir: str | Path,
-        image_type_list: list[str], reference_image_id: int = 0,
+        image_type_list: list[str], reference_image_index: int = 0,
         enlarged_only: bool = False, shift_method: str = 'skimage',
         n_cores_multiprocessing: int | None = None,
         rm_outliers: bool = True, filter_window: int = 25,
@@ -70,7 +70,7 @@ def align_images(
         Header keywords characterizing the image type for which the
         shifts shall be determined
 
-    reference_image_id
+    reference_image_index
         ID of the image that should be used as a reference
         Default is ``0``.
 
@@ -214,7 +214,7 @@ def align_images(
                 output_path_transformation,
                 shift_method=shift_method,
                 n_cores_multiprocessing=n_cores_multiprocessing,
-                reference_image_id=reference_image_id,
+                reference_image_index=reference_image_index,
                 terminal_alignment_comment=f'\tDisplacement for images in filter: {filter_}',
                 rm_outliers=rm_outliers,
                 filter_window=filter_window,
@@ -239,7 +239,7 @@ def align_images(
             output_path_transformation,
             shift_method=shift_method,
             n_cores_multiprocessing=n_cores_multiprocessing,
-            reference_image_id=reference_image_id,
+            reference_image_index=reference_image_index,
             terminal_alignment_comment=terminal_alignment_comment,
             rm_enlarged_keyword=enlarged_only,
             modify_file_name=modify_file_name,
@@ -267,7 +267,7 @@ def align_image_main(
         output_path_transformation: Path,
         shift_method: str = 'skimage',
         n_cores_multiprocessing: int | None = None,
-        reference_image_id: int = 0,
+        reference_image_index: int = 0,
         terminal_alignment_comment: str | None = None,
         rm_enlarged_keyword: bool = False, modify_file_name: bool = False,
         rm_outliers: bool = True, filter_window: int = 25,
@@ -308,7 +308,7 @@ def align_image_main(
         Number of cores to use during calculation of the image shifts.
         Default is ``None``.
 
-    reference_image_id
+    reference_image_index
         ID of the image that should be used as a reference
         Default is ``0``.
 
@@ -365,7 +365,7 @@ def align_image_main(
     if shift_method in ['own', 'skimage', 'aa']:
         image_shifts, image_flips = calculate_xy_image_shifts(
             image_file_collection,
-            reference_image_id,
+            reference_image_index,
             terminal_alignment_comment,
             correlation_method=shift_method,
             n_cores_multiprocessing=n_cores_multiprocessing,
@@ -435,7 +435,7 @@ def align_image_main(
         executor.wait()
 
     elif shift_method == 'flow':
-        reference_file_name = image_file_collection.files[reference_image_id]
+        reference_file_name = image_file_collection.files[reference_image_index]
 
         #   Initialize multiprocessing object
         executor = Executor(
@@ -472,7 +472,7 @@ def align_image_main(
         executor.wait()
 
     elif shift_method == 'aa_true':
-        reference_file_name = image_file_collection.files[reference_image_id]
+        reference_file_name = image_file_collection.files[reference_image_index]
 
         #   Initialize multiprocessing object
         executor = Executor(

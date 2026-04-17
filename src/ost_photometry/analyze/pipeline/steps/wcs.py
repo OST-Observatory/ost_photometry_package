@@ -36,7 +36,7 @@ class WcsStep(base.PipelineStep):
             try:
                 find_wcs(
                     image_series,
-                    reference_image_id=config.reference_image_id,
+                    reference_image_index=config.reference_image_index,
                     method=config.wcs_method,
                     force_wcs_determination=config.force_wcs_determination,
                     indent=3,

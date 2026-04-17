@@ -7,18 +7,15 @@ import numpy as np
 
 from pathlib import Path
 
-from tqdm import tqdm
-
 from astropy.table import Table, Column
 from astropy.stats import sigma_clip
 from astropy.io import fits
 from astropy.coordinates import SkyCoord, matching
-from astropy.timeseries import TimeSeries
 from astropy.modeling import models, fitting, polynomial
-from astropy import uncertainty as unc
 import astropy.units as u
 from astropy import wcs
-from astropy.time import Time
+from astropy import uncertainty as unc
+
 
 from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
@@ -42,11 +39,18 @@ import scipy.optimize as optimization
 
 from .. import utilities as base_utilities
 from .. import wcs as wcs_utilities
-from ..core.parallel import Executor
 
 from .. import checks, style, terminal_output, calibration_parameters
 
 from . import plots
+from .post_processing.adapters import ensure_epoch_native_photometry_table
+from .post_processing.io import write_epoch_native_magnitudes
+from .post_processing.coords import (
+    plot_starmap_from_imaging_context,
+    table_object_sky_coords,
+)
+from .post_processing.imaging import ImagingPlotContext, imaging_context_from_image_series
+from .post_processing.light_curve import attach_observation_jd_column
 
 import typing
 if typing.TYPE_CHECKING:
@@ -56,6 +60,78 @@ if typing.TYPE_CHECKING:
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
+
+
+def _resolve_imaging_plot_context(
+    *,
+    image_series: "analyze.ImageSeries | None" = None,
+    plot_context: ImagingPlotContext | None = None,
+) -> ImagingPlotContext:
+    if plot_context is not None:
+        return plot_context
+    if image_series is not None:
+        return imaging_context_from_image_series(image_series)
+    raise TypeError(
+        "Provide plot_context=... or image_series=... (for example "
+        "plot_context=imaging_context_from_image_series(series))."
+    )
+
+
+def _vizier_field_cone(
+    ctx: ImagingPlotContext,
+    image_series: "analyze.ImageSeries | None",
+) -> tuple[SkyCoord, u.Quantity]:
+    """Center and radius for ``Vizier.query_region`` (Gaia cone)."""
+    if ctx.field_center_icrs is not None and ctx.field_radius_arcmin is not None:
+        return ctx.field_center_icrs, ctx.field_radius_arcmin * u.arcmin
+    if image_series is not None:
+        return (
+            image_series.coordinates_image_center,
+            image_series.field_of_view_x * u.arcmin,
+        )
+    raise TypeError(
+        "ImagingPlotContext.field_center_icrs and field_radius_arcmin must be set, "
+        "or pass image_series=..., for Gaia / Vizier cone queries."
+    )
+
+
+def distribution_from_table(
+        image: 'analyze.Image',
+        distribution_samples: int = 1000) -> unc.core.NdarrayDistribution:
+    """
+    Arrange the literature values in a numpy array or uncertainty array.
+
+    Parameters
+    ----------
+    image
+        Object with image data
+
+    distribution_samples
+        Number of samples used for distributions
+        Default is `1000`
+
+    Returns
+    -------
+    distribution
+        Normal distribution representing observed magnitudes
+    """
+    #   Return if no photometry information are available
+    if image.photometry is None:
+        terminal_output.print_to_terminal(
+            "Photometric data not yet available. Distribution cannot be "
+            "created. -> returns 'None'.",
+            style_name='WARNING',
+        )
+        return
+
+    #   Build normal distribution
+    magnitude_distribution = unc.normal(
+        image.photometry['mags_fit'].value * u.mag,
+        std=image.photometry['mags_unc'].value * u.mag,
+        n_samples=distribution_samples,
+    )
+
+    return magnitude_distribution
 
 
 def err_prop(*args) -> float | np.ndarray:
@@ -156,6 +232,23 @@ def mk_magnitudes_table(
                     names=[column_name, column_name_err]
                 )
 
+            try:
+                flux_fit = np.asarray(photometry_table["flux_fit"], dtype=float)
+                flux_err = np.asarray(photometry_table["flux_err"], dtype=float)
+            except KeyError:
+                flux_fit = np.full(len(index_objects), np.nan, dtype=float)
+                flux_err = np.full(len(index_objects), np.nan, dtype=float)
+            tbl.add_columns(
+                [
+                    flux_fit,
+                    flux_err,
+                ],
+                names=[
+                    f"{filter_} (flux, image={image_id})",
+                    f"{filter_}_err (flux, image={image_id})",
+                ],
+            )
+
     return tbl
 
 
@@ -172,7 +265,8 @@ def differential_calibrated_to_legacy_table(
     Parameters
     ----------
     calibrated : Table
-        Output from PhotometryCalibrator.get_calibrated_photometry (vstacked).
+        Output from PhotometryCalibrator.get_calibrated_photometry (vstacked),
+        after fit_transformation_parameters().
         Must have columns: id, ra, dec, x, y, epoch_id (or legacy frame_id),
         mag_cal_<filter>, err_cal_<filter>.
 
@@ -229,6 +323,32 @@ def differential_calibrated_to_legacy_table(
             tbl[f"{filter_}_err (transformed, image={image_label})"] = err_arr
 
     return tbl
+
+
+def transformation_keys_for_table_magnitudes(
+    tbl: Table, filter_list: list[str],
+) -> dict[str, str]:
+    """
+    Build ``{ 'magB': column_name, ... }`` for
+    :func:`find_filter_for_magnitude_transformation`.
+
+    Recognizes legacy wide columns ``{filter} (transformed, image=...)`` (as produced
+    by :func:`differential_calibrated_to_legacy_table`) and, as fallback, raw
+    differential columns ``mag_cal_<filter>`` or instrumental ``mag_inst_<filter>``.
+    """
+    out: dict[str, str] = {}
+    for f in filter_list:
+        prefix = f"{f} (transformed,"
+        for name in tbl.colnames:
+            if name.startswith(prefix) and not name.startswith(f"{f}_err"):
+                out[f"mag{f}"] = name
+                break
+        else:
+            if f"mag_cal_{f}" in tbl.colnames:
+                out[f"mag{f}"] = f"mag_cal_{f}"
+            elif f"mag_inst_{f}" in tbl.colnames:
+                out[f"mag{f}"] = f"mag_inst_{f}"
+    return out
 
 
 def mk_magnitudes_array(
@@ -290,7 +410,7 @@ def mk_magnitudes_array(
 
 def find_wcs(
         image_series: 'analyze.ImageSeries',
-        reference_image_id: int | None = None, method: str = 'astrometry',
+        reference_image_index: int | None = None, method: str = 'astrometry',
         cosmics_removed: bool = False,
         image_path_cosmics_removed: str | None = None,
         object_x_coordinates: np.ndarray | None = None,
@@ -304,7 +424,7 @@ def find_wcs(
     image_series
         Image class with all images taken in a specific filter
 
-    reference_image_id
+    reference_image_index
         ID of the reference image
         Default is ``None``.
 
@@ -335,9 +455,9 @@ def find_wcs(
         Indentation for the console output lines
         Default is ``2``.
     """
-    if reference_image_id is not None:
+    if reference_image_index is not None:
         #   Image
-        img = image_series.image_list[reference_image_id]
+        img = image_series.image_list[reference_image_index]
 
         #   Test if the image contains already a WCS
         cal_wcs, wcs_file = wcs_utilities.check_wcs_exists(img)
@@ -475,247 +595,6 @@ def extract_wcs(
 
     return w
 
-
-def prepare_time_series_data(
-        data: unc.core.NdarrayDistribution | Table,
-        filter_: str, object_id: int, calibration_type: str = 'transformed'
-        ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    This function prepares the data for the creation of time series objects.
-    The input data for the time series can be of different type (expects
-    astropy distribution or a Table). This function sanitizes
-    the input data and returns a dictionary with an array for the magnitudes
-    and another one for the magnitudes errors.
-
-    Parameters
-    ----------
-    data
-        Input data
-
-    filter_
-        Filter the data is associated with
-
-    object_id
-        Index of the object of interest
-
-    calibration_type
-        Type of calibrated data to use for the time series. Available options are
-        ``simple`` and ''transformed``.
-        The default is ``transformed``.
-
-    Returns
-    -------
-    magnitudes
-        Magnitude values
-
-    magnitude_errors
-        Magnitude errors
-    """
-    if isinstance(data, Table):
-        column_names = data.colnames
-        err_column_names = []
-        magnitude_column_names = []
-        for col_name in column_names:
-            if f'{filter_}' in col_name:
-                if 'transformed' in col_name and calibration_type == 'transformed':
-                    if 'err' in col_name:
-                        err_column_names.append(col_name)
-                    else:
-                        magnitude_column_names.append(col_name)
-                elif 'simple' in col_name and calibration_type == 'simple':
-                    if 'err' in col_name:
-                        err_column_names.append(col_name)
-                    else:
-                        magnitude_column_names.append(col_name)
-
-        magnitudes = np.array(
-            data[magnitude_column_names][object_id].as_void().tolist()
-        )
-        magnitude_errors = np.array(
-            data[err_column_names][object_id].as_void().tolist()
-        )
-        return magnitudes, magnitude_errors
-
-    if isinstance(data, unc.core.NdarrayDistribution):
-        return data.pdf_median()[:,object_id], data.pdf_std()[:,object_id]
-    else:
-        raise Exception(
-            f"{style.Bcolors.FAIL} \nThis should never happen. Data object is "
-            f"neither an NdarrayDistribution nor a astropy.Table. The data type was"
-            f"{type(data)}.{style.Bcolors.ENDC}"
-        )
-
-
-def mk_time_series(
-        observation_times: Time, magnitudes: np.ndarray,
-        magnitude_errors: np.ndarray, filter_: str) -> TimeSeries:
-    """
-    Make a time series object
-
-    Parameters
-    ----------
-    observation_times
-        Observation times
-
-    magnitudes
-        Object magnitudes
-
-    magnitude_errors
-        Object uncertainties
-
-    filter_
-        Filter
-
-    Returns
-    -------
-    ts
-    """
-    #   Make time series and use reshape to get a justified array
-    ts = TimeSeries(
-        time=observation_times,
-        data={
-            filter_: magnitudes << u.mag,
-            filter_ + '_err': magnitude_errors << u.mag,
-        }
-    )
-    return ts
-
-
-def prepare_plot_time_series(
-        data: unc.core.NdarrayDistribution | Table, observation_times: Time,
-        filter_: str, object_name: str, object_id: int, output_dir: str,
-        binning_factor: float, transit_time: str | None = None,
-        period: float | None = None, file_name_suffix: str = '',
-        light_curve_save_format: str = 'csv', subdirectory: str = '',
-        file_type_plots: str = 'pdf', calibration_type: str = 'transformed'
-        ) -> None:
-    """
-    Prepares, plot, and saves a time series for the object with the
-    object ID: ``object_id``
-
-    Parameters
-    ----------
-    data
-        Object with magnitudes and magnitude uncertainties
-
-    observation_times
-        Time object with the observation times of the extracted
-        magnitudes above
-
-    filter_
-        Filter in which the magnitudes are taken
-
-    object_name
-        Object name
-
-    object_id
-        ID of the object in the list of extracted objects
-
-    output_dir
-        Path to the directory where the light curves will be saved
-
-    binning_factor
-        Factor by which the data should be binned
-
-    transit_time
-        Reference transit time: Used to phase fold the data
-
-    period
-        The period of the recurring property, such as the orbital period
-
-    file_name_suffix
-        Suffix used in the file names of the saved light curves
-
-    light_curve_save_format
-        Format used to save the ASCII data of the light curve
-
-    subdirectory
-        Name of the subdirectory where the plots will be saved
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    calibration_type
-        Type of calibrated data to use for the time series. Available options are
-        ``simple`` and ''transformed``.
-        The default is ``transformed``.
-    """
-    if object_id is None:
-        terminal_output.print_to_terminal(
-            f"ID of object {object_name} is None. Failed to create "
-            f"light curve.",
-            style_name='WARNING',
-        )
-        return
-
-    #   Prepare data for time series
-    magnitudes, magnitudes_error = prepare_time_series_data(
-        data,
-        filter_,
-        object_id,
-        calibration_type=calibration_type,
-    )
-
-    #   Create a time series object
-    time_series = mk_time_series(
-        observation_times,
-        magnitudes,
-        magnitudes_error,
-        filter_,
-    )
-
-    #   Write time series
-    if light_curve_save_format not in ['dat', 'csv']:
-        terminal_output.print_to_terminal(
-            f"Format to save the light curve not known. Assume csv. "
-            f"The provided format was: {light_curve_save_format}",
-            style_name='WARNING',
-        )
-
-    if light_curve_save_format == 'dat':
-        time_series.write(
-            f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-            f'{file_name_suffix}.dat',
-            format='ascii',
-            overwrite=True,
-        )
-    else:
-        time_series.write(
-            f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-            f'{file_name_suffix}.csv',
-            format='ascii.csv',
-            overwrite=True,
-        )
-
-    #   Plot light curve over JD
-    plots.light_curve_jd(
-        time_series,
-        filter_,
-        f'{filter_}_err',
-        output_dir,
-        name_object=object_name,
-        file_name_suffix=file_name_suffix,
-        subdirectory=subdirectory,
-        file_type=file_type_plots,
-    )
-
-    #   Plot the light curve folded on the period
-    if (transit_time is not None and transit_time != '?'
-            and period is not None and period != '?' and period > 0.):
-        plots.light_curve_fold(
-            time_series,
-            filter_,
-            f'{filter_}_err',
-            output_dir,
-            transit_time,
-            period,
-            binning_factor=binning_factor,
-            name_object=object_name,
-            file_name_suffix=file_name_suffix,
-            subdirectory=subdirectory,
-            file_type=file_type_plots,
-        )
 
 
 def lin_func(x, a, b):
@@ -1137,7 +1016,7 @@ def prepare_and_plot_starmap(
 
     #   Prepare string for file name
     if add_image_id:
-        rts_pre += f': {image.pd}'
+        rts_pre += f': {image.image_id}'
 
     #   Plot star map
     plots.starmap(
@@ -1264,7 +1143,7 @@ def prepare_and_plot_starmap_from_image_series(
 
     #   Make the plot using multiprocessing
     for j, image_id in enumerate(img_ids):
-        if not plots_for_all_images and j != image_series.reference_image_id:
+        if not plots_for_all_images and j != image_series.reference_image_index:
             continue
         p = mp.Process(
             target=plots.starmap,
@@ -1289,179 +1168,375 @@ def prepare_and_plot_starmap_from_image_series(
         terminal_output.print_to_terminal('')
 
 
-def derive_limiting_magnitude(
-        observation: 'analyze.Observation', filter_list: list[str],
-        reference_image_id: int, aperture_radius: float = 4.,
-        radii_unit: str = 'arcsec', file_type_plots: str = 'pdf',
-        use_wcs_projection_for_star_maps: bool = True,
-        indent: int = 1) -> None:
-    """
-    Determine limiting magnitude
+def _subset_photometry_by_epoch(tbl: Table, epoch_id: str | None) -> Table:
+    """Return rows for one epoch, or the full table if no ``epoch_id`` column."""
+    if 'epoch_id' not in tbl.colnames:
+        return tbl
+    col = tbl['epoch_id']
+    ids = np.unique(np.asarray(col).astype(str))
+    if epoch_id is not None:
+        return tbl[np.asarray(col).astype(str) == str(epoch_id)]
+    if len(ids) == 1:
+        return tbl
+    raise ValueError(
+        "Photometry table has multiple epoch_id values; pass epoch_id=... "
+        f"(available: {list(ids)!r})."
+    )
 
-    Parameters
-    ----------
-    observation
-        Container object with image series objects for each filter
 
-    filter_list
-        List with filter names
+def _resolve_limiting_mag_column(tbl: Table, filter_: str) -> str:
+    """Pick magnitude column (epoch-native ``mag_cal_*``, ``mag_inst_*``, or legacy)."""
+    mc = f"mag_cal_{filter_}"
+    mi = f"mag_inst_{filter_}"
+    if mc in tbl.colnames:
+        return mc
+    if mi in tbl.colnames:
+        return mi
+    if 'mag_cali_trans' in tbl.colnames:
+        return 'mag_cali_trans'
+    if 'mag_cali_no-trans' in tbl.colnames:
+        return 'mag_cali_no-trans'
+    raise ValueError(
+        f"No magnitude column for filter {filter_!r}: expected {mc!r}, {mi!r}, or "
+        "'mag_cali_trans' / 'mag_cali_no-trans'."
+    )
 
-    reference_image_id
-        ID of the reference image
-        Default is ``0``.
 
-    aperture_radius
-        Radius of the aperture used to derive the limiting magnitude
-        Default is ``4``.
+def _sort_table_by_magnitude(tbl: Table, magnitude_col: str) -> Table:
+    out = tbl.copy()
+    out.sort(magnitude_col)
+    return out
 
-    radii_unit
-        Unit of the radii above. Permitted are ``pixel`` and ``arcsec``.
-        Default is ``arcsec``.
 
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
+def _plausible_magnitude_mask(tbl: Table, magnitude_col: str) -> np.ndarray:
+    col = tbl[magnitude_col]
+    if hasattr(col, 'unit') and col.unit is not None:
+        return np.asarray(col < 30 * u.mag)
+    return np.asarray(np.asarray(col, dtype=float) < 30.0)
 
-    use_wcs_projection_for_star_maps
-        If ``True`` the starmap will be plotted with sky coordinates instead
-        of pixel coordinates
-        Default is ``True``.
 
-    indent
-        Indentation for the console output lines
-        Default is ``1``.
-    """
-    #   Get image series
-    image_series_dict = observation.image_series_dict
-
-    #   Get magnitudes of reference image
-    for i, filter_ in enumerate(filter_list):
-        #   Get image series
-        image_series = image_series_dict[filter_]
-
-        #   Get reference image
-        image = image_series.image_list[reference_image_id]
-
-        #   Get object position and magnitudes
-        photo = image_series.image_list[reference_image_id].photometry
-
-        try:
-            magnitude_type = 'mag_cali_trans'
-            tbl_mag = photo.group_by(magnitude_type)
-        except (KeyError, ValueError):
-            magnitude_type = 'mag_cali_no-trans'
-            tbl_mag = photo.group_by(magnitude_type)
-
-        #   Remove implausible dark results
-        mask = tbl_mag[magnitude_type] < 30 * u.mag
-        tbl_mag = tbl_mag[mask]
-
-        #   Plot star map
-        if reference_image_id != '':
-            rts = f'faintest objects, image: {reference_image_id}'
-        else:
-            rts = 'faintest objects'
-        p = mp.Process(
-            target=plots.starmap,
-            args=(
-                image.out_path.name,
-                image.get_data(),
-                filter_,
-                tbl_mag[:][-10:],
-            ),
-            kwargs={
-                'label': '10 faintest objects',
-                'rts': rts,
-                'mode': 'mags',
-                # 'name_object': image.object_name,
-                'wcs_image': image.wcs,
-                'use_wcs_projection': use_wcs_projection_for_star_maps,
-                'file_type': file_type_plots,
-            }
+def _pixel_indices_for_depth_mask(tbl: Table) -> tuple[np.ndarray, np.ndarray]:
+    if 'x_fit' in tbl.colnames and 'y_fit' in tbl.colnames:
+        xs = tbl['x_fit']
+        ys = tbl['y_fit']
+    elif 'x' in tbl.colnames and 'y' in tbl.colnames:
+        xs = tbl['x']
+        ys = tbl['y']
+    else:
+        raise ValueError(
+            "Table needs ('x', 'y') or ('x_fit', 'y_fit') for limiting magnitude mask."
         )
-        p.start()
+    if hasattr(xs, 'value'):
+        xs = xs.value
+    if hasattr(ys, 'value'):
+        ys = ys.value
+    return np.rint(np.asarray(xs)).astype(int), np.rint(np.asarray(ys)).astype(int)
 
-        #   Print result
+
+def _median_zeropoint(zp) -> float:
+    if zp is None:
+        raise ValueError("Zero point (image.zp or zeropoint=...) is required.")
+    z = np.median(np.asarray(zp))
+    return float(z.value) if hasattr(z, 'value') else float(z)
+
+
+def _derive_limiting_magnitude_one_epoch(
+        *,
+        image_data: np.ndarray,
+        out_path_stub: str,
+        filter_: str,
+        wcs_image,
+        photo: Table,
+        magnitude_col: str,
+        pixel_scale: float,
+        zeropoint: float,
+        aperture_radius: float,
+        radii_unit: str,
+        file_type_plots: str,
+        use_wcs_projection_for_star_maps: bool,
+        indent: int,
+        rts: str,
+        image_depth_mag_offset: float = 0.0,
+) -> None:
+    tbl_sorted = _sort_table_by_magnitude(photo, magnitude_col)
+    mask_mag = _plausible_magnitude_mask(tbl_sorted, magnitude_col)
+    tbl_mag = tbl_sorted[mask_mag]
+
+    n_take = min(10, len(tbl_mag))
+    tbl_faintest = tbl_mag[-n_take:] if n_take else tbl_mag
+
+    p = mp.Process(
+        target=plots.starmap,
+        args=(
+            out_path_stub,
+            image_data,
+            filter_,
+            tbl_faintest,
+        ),
+        kwargs={
+            'label': f'{n_take} faintest objects' if n_take else 'faintest objects',
+            'rts': rts,
+            'mode': 'mags',
+            'magnitude_column': magnitude_col,
+            'wcs_image': wcs_image,
+            'use_wcs_projection': use_wcs_projection_for_star_maps,
+            'file_type': file_type_plots,
+        },
+    )
+    p.start()
+
+    terminal_output.print_to_terminal(
+        f"\nDetermine limiting magnitude for filter: {filter_}",
+        indent=indent,
+    )
+    terminal_output.print_to_terminal(
+        "Based on detected objects:",
+        indent=indent * 2,
+    )
+    if n_take == 0:
         terminal_output.print_to_terminal(
-            f"\nDetermine limiting magnitude for filter: {filter_}",
-            indent=indent,
+            "No stars passed the magnitude plausibility cut (< 30 mag).",
+            indent=indent * 3,
+            style_name='WARNING',
         )
+    else:
+        mcol = tbl_faintest[magnitude_col]
+        marr = np.asarray(mcol.value if hasattr(mcol, 'value') else mcol, dtype=float)
+        median_faintest_objects = np.median(marr)
+        mean_faintest_objects = np.mean(marr)
         terminal_output.print_to_terminal(
-            "Based on detected objects:",
-            indent=indent * 2,
-        )
-        median_faintest_objects = np.median(tbl_mag[magnitude_type][-10:])
-        terminal_output.print_to_terminal(
-            f"Median of the 10 faintest objects: "
+            f"Median of the {n_take} faintest objects: "
             f"{median_faintest_objects:.1f} mag",
             indent=indent * 3,
             style_name='OKBLUE',
         )
-        mean_faintest_objects = np.mean(tbl_mag[magnitude_type][-10:])
         terminal_output.print_to_terminal(
-            f"Mean of the 10 faintest objects: "
+            f"Mean of the {n_take} faintest objects: "
             f"{mean_faintest_objects:.1f} mag",
             indent=indent * 3,
             style_name='OKBLUE',
         )
 
-        #   Convert object positions to pixel index values
-        index_x = np.rint(tbl_mag['x_fit']).astype(int)
-        index_y = np.rint(tbl_mag['y_fit']).astype(int)
+    index_x, index_y = _pixel_indices_for_depth_mask(tbl_mag)
+    mask = np.zeros(image_data.shape, dtype=bool)
+    inside = (
+        (index_y >= 0) & (index_y < image_data.shape[0])
+        & (index_x >= 0) & (index_x < image_data.shape[1])
+    )
+    mask[index_y[inside], index_x[inside]] = True
 
-        #   Convert object positions to mask
-        mask = np.zeros(image.get_shape(), dtype=bool)
-        mask[index_y, index_x] = True
+    radius = aperture_radius
+    if radii_unit == 'arcsec':
+        if pixel_scale is None:
+            raise ValueError(
+                "radii_unit='arcsec' requires a known pixel_scale (arcsec/pixel)."
+            )
+        radius = radius / pixel_scale
 
-        #   Set radius for the apertures
-        radius = aperture_radius
-        if radii_unit == 'arcsec':
-            radius = radius / image.pixel_scale
+    depth = ImageDepth(
+        radius,
+        nsigma=5.0,
+        napers=500,
+        niters=2,
+        overlap=False,
+        zeropoint=zeropoint,
+        progress_bar=False,
+    )
 
-        #   Setup ImageDepth object from the photutils package
-        depth = ImageDepth(
-            radius,
-            nsigma=5.0,
-            napers=500,
-            niters=2,
-            overlap=False,
-            # seed=123,
-            zeropoint=np.median(image.zp).value,
-            progress_bar=False,
-        )
+    flux_limit, mag_limit = depth(image_data, mask)
 
-        #   Derive limits
-        flux_limit, mag_limit = depth(image.get_data(), mask)
+    plots.plot_limiting_mag_sky_apertures(
+        out_path_stub,
+        image_data,
+        mask,
+        depth,
+        file_type=file_type_plots,
+    )
 
-        #   Plot sky apertures
-        #   TODO: See if this can be reactivated. Deactivated on 12/20/2024 due to pickle issues.
-        # p = mp.Process(
-        #     target=plots.plot_limiting_mag_sky_apertures,
-        #     args=(image.out_path.name, image.get_data(), mask, depth),
-        #     kwargs={'file_type': file_type_plots},
-        # )
-        # p.start()
-        plots.plot_limiting_mag_sky_apertures(
-            image.out_path.name,
-            image.get_data(),
-            mask,
-            depth,
-            file_type=file_type_plots,
-        )
+    mag_report = float(mag_limit) + image_depth_mag_offset
 
-        #   Print results
+    terminal_output.print_to_terminal(
+        "Based on the ImageDepth (photutils) routine:",
+        indent=indent * 2,
+    )
+    if image_depth_mag_offset != 0.0:
         terminal_output.print_to_terminal(
-            "Based on the ImageDepth (photutils) routine:",
+            f"(limit shifted by {image_depth_mag_offset:+.3f} mag to match calibrated table)",
             indent=indent * 2,
+            style_name='INFO',
         )
-        #   Remark: the error is only based on the zero point error
-        terminal_output.print_to_terminal(
-            f"500 apertures, 5 sigma, 2 iterations: "
-            # f"{mag_limit:6.2f} +/- "
-            # f"{mag_limit():6.2f} mag",
-            f"{mag_limit:6.2f} mag",
-            indent=indent * 3,
-            style_name='OKBLUE',
+    terminal_output.print_to_terminal(
+        f"500 apertures, 5 sigma, 2 iterations: "
+        f"{mag_report:6.2f} mag",
+        indent=indent * 3,
+        style_name='OKBLUE',
+    )
+
+
+def derive_limiting_magnitude(
+        observation: 'analyze.Observation | None' = None,
+        filter_list: list[str] | None = None,
+        reference_image_index: int = 0,
+        aperture_radius: float = 4.,
+        radii_unit: str = 'arcsec', file_type_plots: str = 'pdf',
+        use_wcs_projection_for_star_maps: bool = True,
+        indent: int = 1,
+        *,
+        photometry_table: Table | None = None,
+        epoch_id: str | None = None,
+        imaging_context: ImagingPlotContext | None = None,
+        pixel_scale: float | None = None,
+        zeropoint: float | None = None,
+        image_depth_mag_offset: float = 0.0,
+) -> None:
+    """
+    Determine limiting magnitude.
+
+    Two input styles:
+
+    1. **Legacy (per-image photometry on ``Observation``):** pass ``observation``
+       and ``filter_list``; uses ``image_series_dict[filter].image_list[id]``.
+
+    2. **Epoch-native table + imaging context:** pass ``photometry_table`` (long
+       form with ``mag_cal_<filter>`` and optional ``epoch_id``),
+       ``imaging_context`` (:class:`~ost_photometry.analyze.post_processing.imaging.ImagingPlotContext`),
+       ``filter_list``, and ``pixel_scale`` / ``zeropoint`` for the reference
+       image. ``observation`` may be omitted. This path does not require an
+       :class:`~ost_photometry.analyze.models.ImageSeries` object, but you still
+       need the 2D image array, WCS, scale, and zero point for ``ImageDepth``.
+
+    Parameters
+    ----------
+    observation
+        Container with ``image_series_dict`` (legacy path). Optional if
+        ``photometry_table`` is given.
+
+    filter_list
+        Filter name(s) matching keys in ``image_series_dict`` (legacy) or
+        ``mag_cal_<filter>`` columns (table path).
+
+    reference_image_index
+        Index into ``image_list`` (legacy path only). Default ``0``.
+
+    aperture_radius
+        Aperture radius for ``ImageDepth``. Default ``4``.
+
+    radii_unit
+        ``pixel`` or ``arcsec``. Default ``arcsec``.
+
+    file_type_plots
+        Plot file type. Default ``pdf``.
+
+    use_wcs_projection_for_star_maps
+        Use WCS for the starmap when ``True``. Default ``True``.
+
+    indent
+        Console indent. Default ``1``.
+
+    photometry_table
+        If set, use epoch-native (or legacy one-epoch) photometry instead of
+        ``image.photometry``.
+
+    epoch_id
+        When the table has an ``epoch_id`` column, select this epoch; if omitted
+        and only one epoch exists, that epoch is used.
+
+    imaging_context
+        Reference image data, WCS, and output name stub (table path).
+
+    pixel_scale
+        Arcsec per pixel (required for ``radii_unit='arcsec'`` on the table path;
+        legacy uses ``Image.pixel_scale``).
+
+    zeropoint
+        Instrumental zero point for ``ImageDepth`` on the table path (legacy uses
+        ``median(image.zp)``). Use ``0.`` when magnitudes follow
+        ``-2.5 log10(flux)`` without an additive ZP.
+
+    image_depth_mag_offset
+        Added to the ``ImageDepth`` magnitude limit before reporting (e.g. median
+        ``mag_cal - mag_inst`` for differential calibration). Default ``0``.
+    """
+    if photometry_table is not None:
+        if filter_list is None:
+            raise TypeError("filter_list is required when photometry_table is set.")
+        if imaging_context is None:
+            raise TypeError(
+                "imaging_context=... is required when photometry_table is set "
+                "(needs reference image array, WCS, and out_path_stub)."
+            )
+        if pixel_scale is None or zeropoint is None:
+            raise TypeError(
+                "pixel_scale and zeropoint are required when photometry_table is set."
+            )
+        tbl = ensure_epoch_native_photometry_table(photometry_table)
+        photo_epoch = _subset_photometry_by_epoch(tbl, epoch_id)
+        image_data = np.asarray(imaging_context.reference_image)
+        out_stub = str(imaging_context.out_path_stub)
+        wcs_obj = imaging_context.wcs
+        for filter_ in filter_list:
+            magnitude_col = _resolve_limiting_mag_column(photo_epoch, filter_)
+            rts = (
+                f'faintest objects, epoch={epoch_id}'
+                if epoch_id is not None
+                else 'faintest objects'
+            )
+            _derive_limiting_magnitude_one_epoch(
+                image_data=image_data,
+                out_path_stub=out_stub,
+                filter_=filter_,
+                wcs_image=wcs_obj,
+                photo=photo_epoch,
+                magnitude_col=magnitude_col,
+                pixel_scale=pixel_scale,
+                zeropoint=zeropoint,
+                aperture_radius=aperture_radius,
+                radii_unit=radii_unit,
+                file_type_plots=file_type_plots,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+                indent=indent,
+                rts=rts,
+                image_depth_mag_offset=image_depth_mag_offset,
+            )
+        return
+
+    if observation is None or filter_list is None:
+        raise TypeError(
+            "Provide observation=... and filter_list=..., or photometry_table=... "
+            "with imaging_context=..., pixel_scale=..., zeropoint=...."
+        )
+
+    image_series_dict = observation.image_series_dict
+
+    for filter_ in filter_list:
+        image_series = image_series_dict[filter_]
+        image = image_series.image_list[reference_image_index]
+        photo = image.photometry
+        if photo is None:
+            raise ValueError(
+                f"No photometry on reference image for filter {filter_!r}."
+            )
+
+        magnitude_col = _resolve_limiting_mag_column(photo, filter_)
+        rts = f'faintest objects, image: {reference_image_index}'
+        zp_med = _median_zeropoint(image.zp)
+
+        _derive_limiting_magnitude_one_epoch(
+            image_data=image.get_data(),
+            out_path_stub=image.out_path.name,
+            filter_=filter_,
+            wcs_image=image.wcs,
+            photo=photo,
+            magnitude_col=magnitude_col,
+            pixel_scale=image.pixel_scale,
+            zeropoint=zp_med,
+            aperture_radius=aperture_radius,
+            radii_unit=radii_unit,
+            file_type_plots=file_type_plots,
+            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+            indent=indent,
+            rts=rts,
+            image_depth_mag_offset=image_depth_mag_offset,
         )
 
 
@@ -1524,23 +1599,32 @@ def rm_edge_objects(
 
 
 def proper_motion_selection(
-        image_series: 'analyze.ImageSeries', tbl: Table,
+        tbl: Table,
+        *,
+        image_series: 'analyze.ImageSeries | None' = None,
+        plot_context: ImagingPlotContext | None = None,
         catalog: str = "I/355/gaiadr3", g_mag_limit: int = 20,
         separation_limit: float = 1., sigma: float = 3.,
         max_n_iterations_sigma_clipping: int = 3,
         use_wcs_projection_for_star_maps: bool = True,
-        file_type_plots: str = 'pdf') -> Column:
+        file_type_plots: str = 'pdf',
+    ) -> Column:
     """
     Select a subset of objects based on their proper motion
 
     Parameters
     ----------
-    image_series
-        Image series object with all image data taken in a specific
-        filter
-
     tbl
         Table with position information
+
+    image_series
+        Optional :class:`~ost_photometry.analyze.models.ImageSeries`; used with
+        ``plot_context is None`` to build an :class:`~ost_photometry.analyze.post_processing.imaging.ImagingPlotContext`.
+
+    plot_context
+        :class:`~ost_photometry.analyze.post_processing.imaging.ImagingPlotContext`
+        with WCS, filter name, and (for Gaia) field center / radius. Provide this **or**
+        ``image_series``.
 
     catalog
         Identifier for the catalog to download.
@@ -1572,19 +1656,14 @@ def proper_motion_selection(
         Type of plot file to be created
         Default is ``pdf``.
     """
-    #   Get wcs
-    w = image_series.wcs
-
-    #   Convert pixel coordinates to ra & dec
-    coordinates = w.all_pix2world(tbl['x'], tbl['y'], 0)
-
-    #   Create SkyCoord object with coordinates of all objects
-    obj_coordinates = SkyCoord(
-        coordinates[0],
-        coordinates[1],
-        unit=(u.degree, u.degree),
-        frame="icrs"
+    ctx = _resolve_imaging_plot_context(
+        image_series=image_series, plot_context=plot_context
     )
+    w = ctx.wcs
+    plot_stub = str(ctx.out_path_stub)
+    v_center, v_radius = _vizier_field_cone(ctx, image_series)
+
+    obj_coordinates = table_object_sky_coords(tbl, w)
 
     #   Get Gaia data from Vizier
     #
@@ -1612,10 +1691,7 @@ def proper_motion_selection(
 
     #   Get data from the corresponding catalog for the objects in
     #   the field of view
-    result = v.query_region(
-        image_series.coordinates_image_center,
-        radius=image_series.field_of_view_x * u.arcmin,
-    )
+    result = v.query_region(v_center, radius=v_radius)
 
     #   Create SkyCoord object with coordinates of all Gaia objects
     calib_coordinates = SkyCoord(
@@ -1688,15 +1764,16 @@ def proper_motion_selection(
         0,
     )
 
-    #   Get image
-    image = image_series.reference_image
-
-    #   Star map
-    prepare_and_plot_starmap(
-        image,
-        tbl=Table(names=['x_fit', 'y_fit'], data=[x_obj, y_obj]),
-        rts_pre='proper motion [Gaia]',
-        label='Objects selected based on proper motion',
+    tbl_pm_plot = Table(names=["x_fit", "y_fit"], data=[x_obj, y_obj])
+    plot_starmap_from_imaging_context(
+        ctx,
+        tbl_pm_plot,
+        filter_=ctx.filter_name,
+        x_name="x_fit",
+        y_name="y_fit",
+        rts_pre="proper motion [Gaia]",
+        label="Objects selected based on proper motion",
+        add_image_id=True,
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )
@@ -1708,14 +1785,14 @@ def proper_motion_selection(
         [pm_de],
         'pm_DEC (mas/yr)',
         'compare_pm_',
-        image.out_path.name,
+        plot_stub,
         file_type=file_type_plots,
     )
     plots.d3_scatter(
         [pm_ra],
         [pm_de],
         [distance],
-        image.out_path.name,
+        plot_stub,
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
@@ -1727,8 +1804,10 @@ def proper_motion_selection(
 
 
 def region_selection(
-        image_series: 'analyze.ImageSeries',
         coordinates_target: SkyCoord | list[SkyCoord], tbl: Table,
+        *,
+        image_series: 'analyze.ImageSeries | None' = None,
+        plot_context: ImagingPlotContext | None = None,
         radius: float = 600., file_type_plots: str = 'pdf',
         use_wcs_projection_for_star_maps: bool = True,
     ) -> tuple[Table, np.ndarray]:
@@ -1737,15 +1816,18 @@ def region_selection(
 
     Parameters
     ----------
-    image_series
-        Image series object with all image data taken in a specific
-        filter
-
     coordinates_target
         Coordinates of the observed object such as a star cluster
 
     tbl
         Table with object position information
+
+    image_series
+        Optional series used to build ``ImagingPlotContext`` when ``plot_context``
+        is omitted.
+
+    plot_context
+        Context for WCS and starmaps; provide this or ``image_series``.
 
     radius
         Selection radius around the object in arcsec
@@ -1768,19 +1850,10 @@ def region_selection(
     mask
         Boolean mask applied to the table
     """
-    #   Get wcs
-    w = image_series.wcs
-
-    #   Convert pixel coordinates to ra & dec
-    coordinates = w.all_pix2world(tbl['x'], tbl['y'], 0)
-
-    #   Create SkyCoord object with coordinates of all objects
-    obj_coordinates = SkyCoord(
-        coordinates[0],
-        coordinates[1],
-        unit=(u.degree, u.degree),
-        frame="icrs"
+    ctx = _resolve_imaging_plot_context(
+        image_series=image_series, plot_context=plot_context
     )
+    obj_coordinates = table_object_sky_coords(tbl, ctx.wcs)
 
     #   Calculate separation between the coordinates defined in ``coord``
     #   the objects in ``tbl``
@@ -1801,11 +1874,15 @@ def region_selection(
     tbl = tbl[mask]
 
     #   Plot starmap
-    prepare_and_plot_starmap(
-        image_series.reference_image,
-        tbl=Table(names=['x_fit', 'y_fit'], data=[tbl['x'], tbl['y']]),
-        rts_pre='radius selection, image',
+    plot_starmap_from_imaging_context(
+        ctx,
+        tbl,
+        filter_=ctx.filter_name,
+        x_name="x",
+        y_name="y",
+        rts_pre="radius selection, image",
         label=f"Objects selected within {radius}'' of the target",
+        add_image_id=True,
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )
@@ -1814,7 +1891,10 @@ def region_selection(
 
 
 def find_cluster(
-        image_series: 'analyze.ImageSeries', tbl: Table, object_names: list[str],
+        tbl: Table, object_names: list[str],
+        *,
+        image_series: 'analyze.ImageSeries | None' = None,
+        plot_context: ImagingPlotContext | None = None,
         catalog: str = "I/355/gaiadr3", g_mag_limit: float = 20.,
         separation_limit: float = 1., max_distance: float = 6.,
         parameter_set: int = 1, file_type_plots: str = 'pdf',
@@ -1825,16 +1905,18 @@ def find_cluster(
 
     Parameters
     ----------
-    image_series
-        Image series object with all image data taken in a specific
-        filter
-
     tbl
         Table with position information
 
     object_names
         Names of the objects. This first entry in the list is assumed to
         be the custer of interest.
+
+    image_series
+        Optional series; used to build context when ``plot_context`` is omitted.
+
+    plot_context
+        Imaging context (WCS, filter, Vizier cone). Provide this or ``image_series``.
 
     catalog
         Identifier for the catalog to download.
@@ -1880,22 +1962,12 @@ def find_cluster(
         Mask that identifies cluster members according to the user
         input.
     """
-    #   Get wcs
-    w = image_series.wcs
-
-    #   Convert pixel coordinates to ra & dec
-    coordinates = w.all_pix2world(tbl['x'], tbl['y'], 0)
-
-    #   Create SkyCoord object with coordinates of all objects
-    obj_coordinates = SkyCoord(
-        coordinates[0],
-        coordinates[1],
-        unit=(u.degree, u.degree),
-        frame="icrs"
+    ctx = _resolve_imaging_plot_context(
+        image_series=image_series, plot_context=plot_context
     )
-
-    #   Get reference image
-    image = image_series.reference_image
+    obj_coordinates = table_object_sky_coords(tbl, ctx.wcs)
+    plot_stub = str(ctx.out_path_stub)
+    v_center, v_radius = _vizier_field_cone(ctx, image_series)
 
     #   Get Gaia data from Vizier
     #
@@ -1923,10 +1995,7 @@ def find_cluster(
 
     #   Get data from the corresponding catalog for the objects in
     #   the field of view
-    result = v.query_region(
-        image_series.coordinates_image_center,
-        radius=image_series.field_of_view_x * u.arcmin,
-    )[0]
+    result = v.query_region(v_center, radius=v_radius)[0]
 
     #   Multiple objects can be specified. The first object is assumed to
     #   be the cluster of interest.
@@ -2091,7 +2160,7 @@ def find_cluster(
         pm_ra_group,
         pm_de_group,
         distance_group,
-        image.out_path.name,
+        plot_stub,
         # color=np.unique(pd_result['cluster']),
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
@@ -2105,7 +2174,7 @@ def find_cluster(
         pm_ra_group,
         pm_de_group,
         distance_group,
-        image.out_path.name,
+        plot_stub,
         # color=np.unique(pd_result['cluster']),
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
@@ -2150,13 +2219,14 @@ def find_cluster(
 
     #   Make star map
     #
-    prepare_and_plot_starmap(
-        image,
-        tbl=tbl,
-        x_name='x',
-        y_name='y',
-        rts_pre='selected cluster members',
-        label='Cluster members based on proper motion and distance evaluation',
+    plot_starmap_from_imaging_context(
+        ctx,
+        tbl,
+        filter_=ctx.filter_name,
+        x_name="x",
+        y_name="y",
+        rts_pre="selected cluster members",
+        label="Cluster members based on proper motion and distance evaluation",
         add_image_id=False,
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
@@ -2168,7 +2238,7 @@ def find_cluster(
 
 def save_magnitudes_ascii(
         observation: 'analyze.Observation', tbl: Table,
-        id_object: int | None = None,
+        object_id: int | None = None,
         rts: str = '', photometry_extraction_method: str = '') -> None:
     """
     Save magnitudes as ASCII files
@@ -2182,8 +2252,8 @@ def save_magnitudes_ascii(
     tbl
         Table with magnitudes
 
-    id_object
-        ID of the object
+    object_id
+        Photometry ``id`` (row index) for filename suffix; optional.
         Default is ``None``.
 
     rts
@@ -2203,15 +2273,17 @@ def save_magnitudes_ascii(
     )
 
     #   Define file name specifier
-    if id_object is not None:
-        id_object = f'_img_{id_object}'
+    if object_id is not None:
+        object_id_suffix = f'_img_{object_id}'
     else:
-        id_object = ''
+        object_id_suffix = ''
     if photometry_extraction_method != '':
         photometry_extraction_method = f'_{photometry_extraction_method}'
 
     #   Set file name
-    filename = f'calibrated_magnitudes{photometry_extraction_method}{id_object}{rts}.dat'
+    filename = (
+        f'calibrated_magnitudes{photometry_extraction_method}{object_id_suffix}{rts}.dat'
+    )
 
     #   Combine to a path
     out_path = output_dir / 'tables' / filename
@@ -2221,10 +2293,15 @@ def save_magnitudes_ascii(
     #   Get column names
     column_names = tbl.colnames
 
-    #   Set default
+    #   Set default float format only for numeric columns (skip ra/dec and
+    #   string columns such as epoch_id from differential calibration).
     for column_name in column_names:
-        if column_name not in ['ra (deg)', 'dec (deg)']:
-            tbl[column_name].info.format = '{:12.3f}'
+        if column_name in ('ra (deg)', 'dec (deg)'):
+            continue
+        col = tbl[column_name]
+        if not np.issubdtype(col.dtype, np.number):
+            continue
+        col.info.format = '{:12.3f}'
 
     #   Reset for x and y column
     formats = {
@@ -2242,447 +2319,8 @@ def save_magnitudes_ascii(
     )
 
 
-def post_process_results(
-        observation: 'analyze.Observation', filter_list: list[str],
-        id_object: int | None = None, extraction_method: str = '',
-        extract_only_circular_region: bool = False, region_radius: float = 600,
-        identify_cluster_gaia_data: bool = False,
-        clean_objects_using_proper_motion: bool = False,
-        max_distance_cluster: float = 6., find_cluster_para_set: int = 1,
-        convert_magnitudes: bool = False, target_filter_system: str = 'SDSS',
-        input_table: Table | None = None, distribution_samples: int = 1000,
-        use_wcs_projection_for_star_maps: bool = True,
-        file_type_plots: str = 'pdf') -> None:
-    """
-    Restrict results to specific areas of the image and filter by means
-    of proper motion and distance using Gaia
 
-    Parameters
-    ----------
-    observation
-        Container object with image series objects for each
-        filter
 
-    filter_list
-        Filter names
-
-    id_object
-        ID of the object
-        Default is ``None``.
-
-    extraction_method
-        Applied extraction method. Possibilities: ePSF or APER`
-        Default is ``''``.
-
-    extract_only_circular_region
-        If True the extracted objects will be filtered such that only
-        objects with ``radius`` will be returned.
-        Default is ``False``.
-
-    region_radius
-        Radius around the object in arcsec.
-        Default is ``600``.
-
-    identify_cluster_gaia_data
-        If True cluster in the Gaia distance and proper motion data
-        will be identified.
-        Default is ``False``.
-
-    clean_objects_using_proper_motion
-        If True only the object list will be clean based on their
-        proper motion.
-        Default is ``False``.
-
-    max_distance_cluster
-        Expected maximal distance of the cluster in kpc. Used to
-        restrict the parameter space to facilitate an easy
-        identification of the star cluster.
-        Default is ``6``.
-
-    find_cluster_para_set
-        Parameter set used to identify the star cluster in proper
-        motion and distance data.
-        Default is ``1``.
-
-    convert_magnitudes
-        If True the magnitudes will be converted to another
-        filter systems specified in `target_filter_system`.
-        Default is ``False``.
-
-    target_filter_system
-        Photometric system the magnitudes should be converted to
-        Default is ``SDSS``.
-
-    input_table
-        Table containing magnitudes etc. If None are provided,
-        the table will be read from the observation container.
-        Default is ``None``.
-
-    distribution_samples
-        Number of samples used for distributions
-        Default is `1000`.
-
-    use_wcs_projection_for_star_maps
-        If ``True`` the starmap will be plotted with sky coordinates instead
-        of pixel coordinates
-        Default is ``True``.
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-    """
-    #   Do nothing if no post process method were defined
-    if (not extract_only_circular_region and not clean_objects_using_proper_motion
-            and not identify_cluster_gaia_data and not convert_magnitudes):
-        return
-
-    #   Get image series
-    image_series_dict = observation.image_series_dict
-
-    #   Get astropy tables with positions and magnitudes
-    if input_table is None:
-        tbl = observation.table_magnitudes
-    else:
-        tbl = input_table
-
-    #   Loop over all Tables
-    mask_region = None
-    img_id_cluster = None
-    mask_cluster = None
-    mask_objects = None
-    img_id_pm = None
-    mask_pm = None
-
-    #   Post process data
-    #
-    #   Extract circular region around a certain object
-    #   such as a star cluster
-    if extract_only_circular_region:
-        if mask_region is None:
-            tbl, mask_region = region_selection(
-                image_series_dict[filter_list[0]],
-                observation.objects_of_interest_coordinates,
-                tbl,
-                radius=region_radius,
-                file_type_plots=file_type_plots,
-                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-            )
-        else:
-            tbl = tbl[mask_region]
-
-    #   Find a cluster in the Gaia data that could be the star cluster
-    if identify_cluster_gaia_data:
-        if any(x is None for x in [img_id_cluster, mask_cluster, mask_objects]):
-            tbl, img_id_cluster, mask_cluster, mask_objects = find_cluster(
-                image_series_dict[filter_list[0]],
-                tbl,
-                observation.get_object_of_interest_names(),
-                max_distance=max_distance_cluster,
-                parameter_set=find_cluster_para_set,
-                file_type_plots=file_type_plots,
-                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-            )
-        else:
-            tbl = tbl[img_id_cluster][mask_cluster][mask_objects]
-
-    #   Clean objects according to proper motion (Gaia)
-    #   TODO: Check if this is still a useful option
-    if clean_objects_using_proper_motion:
-        if any(x is None for x in [img_id_pm, mask_pm]):
-            tbl, img_id_pm, mask_pm = proper_motion_selection(
-                image_series_dict[filter_list[0]],
-                tbl,
-                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-                file_type_plots=file_type_plots,
-            )
-        else:
-            tbl = tbl[img_id_pm][mask_pm]
-
-    #   Convert magnitudes to a different filter system
-    if convert_magnitudes:
-        tbl = convert_magnitudes_to_other_system(
-            tbl,
-            target_filter_system,
-            distribution_samples=distribution_samples,
-        )
-
-    #   Save results as ASCII files
-    if len(filter_list) == 2:
-        rts = f'_{filter_list[0]}-{filter_list[1]}_post_processed'
-    elif len(filter_list) == 1:
-        rts = '_post_processed'
-    else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nThis should never happen: Number of "
-            f"{len(filter_list)} were provided, but only 1 or 2 are supported."
-            f"{style.Bcolors.ENDC}"
-        )
-
-    save_magnitudes_ascii(
-        observation,
-        tbl,
-        id_object=id_object,
-        rts=rts,
-        photometry_extraction_method=extraction_method,
-    )
-
-
-def add_column_to_table(
-        tbl: Table, column_name: str, data: unc.core.NdarrayDistribution,
-        additional_column_name: str) -> Table:
-    """
-    Adds data from a distribution to an astropy Table
-
-    Parameters
-    ----------
-    tbl
-        Table that already contains some data
-
-    column_name
-        Name of the column to add
-
-    data
-        The data that should be added to the table
-
-    additional_column_name
-        Additional string that characterizes the column
-
-    Returns
-    -------
-    tbl
-        Table with the added column
-    """
-    tbl.add_columns(
-        [data.pdf_median(), data.pdf_std()],
-        names=[
-            f'{column_name} {additional_column_name}',
-            f'{column_name}_err {additional_column_name}',
-        ]
-    )
-
-    return tbl
-
-
-def distribution_from_table(
-        image: 'analyze.Image',
-        distribution_samples: int = 1000) -> unc.core.NdarrayDistribution:
-    """
-    Arrange the literature values in a numpy array or uncertainty array.
-
-    Parameters
-    ----------
-    image
-        Object with image data
-
-    distribution_samples
-        Number of samples used for distributions
-        Default is `1000`
-
-    Returns
-    -------
-    distribution
-        Normal distribution representing observed magnitudes
-    """
-    #   Return if no photometry information are available
-    if image.photometry is None:
-        terminal_output.print_to_terminal(
-            "Photometric data not yet available. Distribution cannot be "
-            "created. -> returns 'None'.",
-            style_name='WARNING',
-        )
-        return
-
-    #   Build normal distribution
-    magnitude_distribution = unc.normal(
-        image.photometry['mags_fit'].value * u.mag,
-        std=image.photometry['mags_unc'].value * u.mag,
-        n_samples=distribution_samples,
-    )
-
-    return magnitude_distribution
-
-
-def convert_magnitudes_to_other_system(
-        tbl: Table, target_filter_system: str, distribution_samples=1000
-        ) -> Table:
-    """
-    Convert magnitudes from one magnitude system to another
-
-    Parameters
-    ----------
-    tbl                     : `astropy.table.Table`
-        Table with magnitudes
-
-    target_filter_system    : `string`
-        Photometric system the magnitudes should be converted to
-
-    distribution_samples    : `integer`, optional
-        Number of samples used for distributions
-        Default is `1000`.
-    """
-    #   Get column names
-    column_names = tbl.colnames
-
-    #   Checks
-    if target_filter_system not in ['SDSS', 'AB', 'BESSELL']:
-        terminal_output.print_to_terminal(
-            f'Magnitude conversion not possible. Unfortunately, '
-            f'there is currently no conversion formula for this '
-            f'photometric system: {target_filter_system}.',
-            style_name='WARNING',
-        )
-
-    #   Select magnitudes and errors and corresponding filter
-    available_image_ids: list[str] = []
-    available_filter_image_error: dict[str, dict[str, list[tuple]]] = {
-        'simple': {},
-        'transformed': {},
-    }
-
-    #   Loop over column names
-    for column_name in column_names:
-        #   Detect color: 'continue in this case, since colors are not yet
-        #   supported' -> look for '-' at position '1', since colors are
-        #   usually given as stings such as B-V
-        if len(column_name) > 1 and column_name[1] == '-':
-            continue
-
-        #   Get filter
-        column_filter = column_name[0]
-
-        #   Skip index and position columns
-        if column_filter in ['i', 'x', 'y', 'r', 'd']:
-            continue
-
-        #   Get the image ID and magnitude type
-        bracket_string = column_name.split('(')[1].split(')')[0].split(', image=')
-        magnitude_type = bracket_string[0]
-        image_id = bracket_string[1]
-
-        #   Setup list for filter/error information tuples, if it does not
-        #   already exist.
-        if image_id not in available_filter_image_error[magnitude_type]:
-            available_filter_image_error[magnitude_type][image_id] =[]
-
-        #   Check for error column
-        error = any(x == f'{column_filter}_err ({magnitude_type}, image={image_id})' for x in column_names)
-
-        #   Combine derived info -> (Filter, boolean: error available?)
-        info = (column_filter, error)
-
-        #   Check if image and filter combination is already known.
-        #   If yes continue.
-        if info in available_filter_image_error[magnitude_type][image_id]:
-            continue
-
-        #   Save image, filter, & error info
-        available_filter_image_error[magnitude_type][image_id].append(info)
-
-        if image_id not in available_image_ids:
-            available_image_ids.append(image_id)
-
-    #   TODO: Reduce the number of loops and convert to matrix calculation
-    #   Make conversion for each image ID individually
-    for image_id in available_image_ids:
-        for type_magnitude in ['simple', 'transformed']:
-            #   Reset dictionary with data
-            data_dict = {}
-
-            #   Get image ID, filter and error combination
-            for (column_filter, error) in available_filter_image_error[type_magnitude][image_id]:
-                if error:
-                    data_dict[column_filter] = unc.normal(
-                        tbl[f'{column_filter} ({type_magnitude}, image={image_id})'].value * u.mag,
-                        std=tbl[f'{column_filter}_err ({type_magnitude}, image={image_id})'].value * u.mag,
-                        n_samples=distribution_samples,
-                    )
-                else:
-                    data_dict[column_filter] = unc.normal(
-                        tbl[f'{column_filter} ({type_magnitude}, image={image_id})'].value * u.mag,
-                        n_samples=distribution_samples,
-                    )
-
-            if target_filter_system == 'AB':
-                #   TODO: Fix this
-                print('Will be available soon...')
-
-            elif target_filter_system == 'SDSS':
-                #   Get conversion function - only Jordi et a. (2005) currently
-                #   available:
-                calib_functions = calibration_parameters \
-                    .filter_system_conversions['SDSS']['Jordi_et_al_2005']
-
-                #   Convert magnitudes and add those to data dictionary and the Table
-                g = calib_functions['g'](
-                    **data_dict,
-                    distribution_samples=distribution_samples,
-                )
-                if g is not None:
-                    data_dict['g'] = g
-                    tbl = add_column_to_table(
-                        tbl,
-                        'g',
-                        g,
-                        additional_column_name=f'({type_magnitude}, image={image_id})',
-                    )
-
-                u_mag = calib_functions['u'](
-                    **data_dict,
-                    distribution_samples=distribution_samples,
-                )
-                if u_mag is not None:
-                    data_dict['u'] = u_mag
-                    tbl = add_column_to_table(
-                        tbl,
-                        'u',
-                        u_mag,
-                        additional_column_name=f'({type_magnitude}, image={image_id})',
-                    )
-
-                r = calib_functions['r'](
-                    **data_dict,
-                    distribution_samples=distribution_samples,
-                )
-                if r is not None:
-                    data_dict['r'] = r
-                    tbl = add_column_to_table(
-                        tbl,
-                        'r',
-                        r,
-                        additional_column_name=f'({type_magnitude}, image={image_id})',
-                    )
-
-                i = calib_functions['i'](
-                    **data_dict,
-                    distribution_samples=distribution_samples,
-                )
-                if i is not None:
-                    data_dict['i'] = i
-                    tbl = add_column_to_table(
-                        tbl,
-                        'i',
-                        i,
-                        additional_column_name=f'({type_magnitude}, image={image_id})',
-                    )
-
-                z = calib_functions['z'](
-                    **data_dict,
-                    distribution_samples=distribution_samples,
-                )
-                if z is not None:
-                    data_dict['z'] = z
-                    tbl = add_column_to_table(
-                        tbl,
-                        'z',
-                        z,
-                        additional_column_name=f'({type_magnitude}, image={image_id})',
-                    )
-
-            elif target_filter_system == 'BESSELL':
-                #   TODO: Fix this
-                print('Will be available soon...')
-
-    return tbl
 
 
 def find_filter_for_magnitude_transformation(
@@ -2996,10 +2634,12 @@ def prepare_calibration_check_plots(
 
 def save_calibration(
         observation: 'analyze.Observation', filter_list: list[str],
-        id_object: int, photometry_extraction_method: str = '', rts: str = ''
+        object_id: int | None = None,
+        photometry_extraction_method: str = '', rts: str = ''
         ) -> None:
     """
-    #   Save results of the calibration as ASCII files
+    Save calibrated magnitudes: legacy wide ``.dat`` under ``tables/`` and the same
+    data as epoch-native ``.ecsv`` (``calibrated_magnitudes_<method>_<filters>.ecsv``).
 
     Parameters
     ----------
@@ -3009,8 +2649,9 @@ def save_calibration(
     filter_list
         Filter
 
-    id_object
-        ID of the object in the list of detected objects
+    object_id
+        Photometry ``id`` (row index) for filename suffix ``_img_<id>_``; ``None`` omits
+        that suffix (same behaviour as :func:`save_magnitudes_ascii`).
 
     photometry_extraction_method
         Applied extraction method. Possibilities: ePSF or APER`
@@ -3034,9 +2675,33 @@ def save_calibration(
     save_magnitudes_ascii(
         observation,
         table_magnitudes,
-        id_object=id_object,
+        object_id=object_id,
         photometry_extraction_method=photometry_extraction_method,
         rts=rts,
+    )
+
+    table_epoch_native = ensure_epoch_native_photometry_table(table_magnitudes)
+
+    # Local import: avoid importing pipeline (orchestrator/steps) during
+    # analyze.utilities module load — that cycle broke calibration import.
+    from .pipeline.bridge import build_legacy_calibration_epoch_meta
+
+    _meta = build_legacy_calibration_epoch_meta(
+        observation,
+        filter_list,
+        table_epoch_native,
+    )
+    _ref_f = filter_list[0] if filter_list else "V"
+    table_epoch_native = attach_observation_jd_column(
+        table_epoch_native, _meta, _ref_f
+    )
+    write_epoch_native_magnitudes(
+        observation,
+        table_epoch_native,
+        object_id=object_id,
+        photometry_extraction_method=photometry_extraction_method,
+        rts=rts,
+        file_stem="calibrated_magnitudes",
     )
 
 

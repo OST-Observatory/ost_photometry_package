@@ -1,4 +1,4 @@
-"""Calibration data step (derive_calibration)."""
+"""Legacy calibration step: load catalog via calibration_sources, then derive_calibration."""
 
 from .. import base
 from ..context import AnalysisContext
@@ -32,15 +32,19 @@ class CalibrationDataStep(base.PipelineStep):
         calibration_data.derive_calibration(
             obs,
             context.filter_list,
-            calibration_method=config.calibration_method,
+            calibration_source=config.calibration_source,
             max_pixel_between_objects=config.max_pixel_between_objects,
-            own_correlation_option=config.own_correlation_option,
+            ooi_correlation_strategy=config.ooi_correlation_strategy,
             vizier_dict=config.vizier_dict,
             path_calibration_file=config.path_calibration_file,
-            magnitude_range=config.magnitude_range,
+            calibration_catalog_mag_range=config.calibration_catalog_mag_range,
             region_to_select_calibration_stars=config.region_to_select_calibration_stars,
             file_type_plots=config.file_type_plots,
             use_wcs_projection_for_star_maps=config.use_wcs_projection_for_star_maps,
         )
+
+        from ...diagnostic_plot_hooks import run_diagnostic_plots_phase
+
+        run_diagnostic_plots_phase(context, config, "calibration_data")
 
         return context

@@ -29,11 +29,14 @@ class AnalysisContext:
     objects_of_interest: list = field(default_factory=list)
     calib_parameters: object = None
     table_magnitudes: Table | None = None
+    # PhotometryCalibrator.calib_parameters (epoch_id -> CalibrationResult); not legacy CalibParameters
+    differential_calib_parameters: dict | None = None
 
     # Optional (new pipeline / bridging)
     # epoch_id (e.g. epoch_000) -> multi-band photometry Table for differential calibration
     calibration_epochs: dict = field(default_factory=dict)
-    calibration_epoch_meta: dict = field(default_factory=dict)  # epoch_id -> metadata dict
+    # epoch_id -> metadata dict (e.g. jd_by_filter, image_id_by_filter from bridge)
+    calibration_epoch_meta: dict = field(default_factory=dict)
     calibration_epochs_skipped: list = field(
         default_factory=list
     )  # skipped pairing attempts (for terminal logging)

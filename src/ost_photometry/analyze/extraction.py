@@ -44,6 +44,7 @@ from photutils.psf import (
 )
 
 from .. import checks, style, terminal_output
+from ..core.parallel import Executor
 from .. import utilities as base_utilities
 from ..utilities import Image
 from . import correlate, plots, utilities
@@ -497,7 +498,7 @@ def check_epsf_stars(
     image_data = image.get_data()
 
     #   Combine identification string
-    identification_string = f"{image.pd}. {image.filter_}"
+    identification_string = f"{image.image_id}. {image.filter_}"
 
     #   Useful information
     out_string = (
@@ -602,7 +603,7 @@ def check_epsf_stars(
         x_all,
         y_all,
         max_pixel_between_objects=size_epsf_region,
-        option=3,
+        ooi_correlation_strategy=3,
         silent=True,
     )[1]
 
@@ -741,7 +742,7 @@ def determine_epsf(
     stars = extract_stars(nd_data, stars_tbl, size=size_epsf_region)
 
     #   Combine plot identification string
-    string = f"img-{image.pd}-{image.filter_}"
+    string = f"img-{image.image_id}-{image.filter_}"
 
     #   Get output directory
     output_dir = image.out_path.name
@@ -823,7 +824,7 @@ def extraction_epsf(
         except RuntimeError:
             use_initial_positions = False
 
-    identification_str = f"{image.pd}-{filter_}"
+    identification_str = f"{image.image_id}-{filter_}"
     epsf = image.epsf
     fwhm = image.fwhm
 
@@ -1168,7 +1169,7 @@ def extraction_aperture(
             data,
             aperture,
             annulus_aperture,
-            f"{filter_}_{image.pd}",
+            f"{filter_}_{image.image_id}",
             file_type=file_type_plots,
         )
 
@@ -1227,10 +1228,10 @@ def extract_multiprocessing(
     else:
         fwhm = None
 
-    executor = utilities.Executor(n_cores_multiprocessing)
+    executor = Executor(n_cores_multiprocessing)
 
     for image in image_series.image_list:
-        if image.pd == image_series.reference_image_id and annotate_reference_image:
+        if image.image_id == image_series.reference_image_index and annotate_reference_image:
             annotate_image = True
         else:
             annotate_image = False
@@ -1257,7 +1258,7 @@ def extract_multiprocessing(
                 "strict_cleaning_epsf_results": strict_cleaning_epsf_results,
                 "minimum_n_eps_stars": minimum_n_eps_stars,
                 "strict_epsf_checks": strict_epsf_checks,
-                "id_reference_image": image_series.reference_image_id,
+                "id_reference_image": image_series.reference_image_index,
                 "photometry_extraction_method": photometry_extraction_method,
                 "radius_aperture": radius_aperture,
                 "inner_annulus_radius": inner_annulus_radius,
@@ -1283,8 +1284,8 @@ def extract_multiprocessing(
 
     tmp_list = []
     for img in image_series.image_list:
-        for pd, tbl in res:
-            if pd == img.pd:
+        for img_id, tbl in res:
+            if img_id == img.image_id:
                 img.photometry = tbl
                 tmp_list.append(img)
 
@@ -1335,12 +1336,12 @@ def main_extract(
     if multiprocessing:
         terminal_logger = terminal_output.TerminalLog()
         terminal_logger.add_to_cache(
-            f"Image: {image.pd}",
+            f"Image: {image.image_id}",
             style_name="UNDERLINE",
         )
     else:
         terminal_output.print_to_terminal(
-            f"Image: {image.pd}",
+            f"Image: {image.image_id}",
             indent=2,
             style_name="UNDERLINE",
         )
@@ -1369,7 +1370,7 @@ def main_extract(
         terminal_logger=terminal_logger,
     )
 
-    if annotate_image and image.pd == id_reference_image:
+    if annotate_image and image.image_id == id_reference_image:
         utilities.mark_simbad_objects_on_image(
             image.get_data(),
             image.wcs,
@@ -1393,7 +1394,7 @@ def main_extract(
             strict_epsf_checks=strict_epsf_checks,
         )
 
-        if plots_for_all_images or image.pd == id_reference_image:
+        if plots_for_all_images or image.image_id == id_reference_image:
             plots.starmap(
                 image.out_path.name,
                 image.get_data(),
@@ -1402,7 +1403,7 @@ def main_extract(
                 tbl_2=epsf_stars,
                 label="identified stars",
                 label_2="stars used to determine the ePSF",
-                rts=f"Initial object identification [Image: {image.pd}]",
+                rts=f"Initial object identification [Image: {image.image_id}]",
                 wcs_image=image.wcs,
                 use_wcs_projection=use_wcs_projection_for_star_maps,
                 terminal_logger=terminal_logger,
@@ -1423,10 +1424,10 @@ def main_extract(
 
         plots.plot_epsf(
             image.out_path.name,
-            {f"img-{image.pd}-{image.filter_}": [image.epsf]},
+            {f"img-{image.image_id}-{image.filter_}": [image.epsf]},
             terminal_logger=terminal_logger,
             file_type=file_type_plots,
-            id_image=f"_{image.pd}_{image.filter_}",
+            id_image=f"_{image.image_id}_{image.filter_}",
             indent=2,
         )
 
@@ -1446,8 +1447,8 @@ def main_extract(
         )
 
         plots.plot_residual(
-            {f"{image.filter_}, Image ID: {image.pd}": image.get_data()},
-            {f"{image.filter_}, Image ID: {image.pd}": image.residual_image},
+            {f"{image.filter_}, Image ID: {image.image_id}": image.get_data()},
+            {f"{image.filter_}, Image ID: {image.image_id}": image.residual_image},
             image.out_path.name,
             terminal_logger=terminal_logger,
             file_type=file_type_plots,
@@ -1455,7 +1456,7 @@ def main_extract(
         )
 
     elif photometry_extraction_method == "APER":
-        if image.pd == id_reference_image:
+        if image.image_id == id_reference_image:
             plot_aperture_positions = True
         else:
             plot_aperture_positions = False
@@ -1487,7 +1488,7 @@ def main_extract(
     image.photometry["mags_fit"] = magnitudes
     image.photometry["mags_unc"] = magnitudes_error
 
-    if plots_for_all_images or image.pd == id_reference_image:
+    if plots_for_all_images or image.image_id == id_reference_image:
         utilities.prepare_and_plot_starmap(
             image,
             terminal_logger=terminal_logger,
@@ -1502,7 +1503,7 @@ def main_extract(
         terminal_output.print_to_terminal("")
 
     if multiprocessing:
-        return image.pd, image.photometry
+        return image.image_id, image.photometry
 
 
 __all__ = [
