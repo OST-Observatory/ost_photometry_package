@@ -359,11 +359,9 @@ def find_stars(
         iraf_finder = IRAFStarFinder(
             threshold=multiplier_background_rms * sigma,
             fwhm=default_fwhm,
-            minsep_fwhm=0.01,
-            roundhi=5.0,
-            roundlo=-5.0,
-            sharplo=0.0,
-            sharphi=2.0,
+            # min_separation=max(2, int(default_fwhm * 2.5 + 0.5)),
+            roundness_range=(-5.0, 5.0),
+            sharpness_range=(0.0, 2.0),
         )
 
         #   Find stars - make table
@@ -387,7 +385,7 @@ def find_stars(
         table_fwhm = tbl_objects
 
     #   Get positions
-    xy_pos = list(zip(table_fwhm["xcentroid"], table_fwhm["ycentroid"]))
+    xy_pos = list(zip(table_fwhm["x_centroid"], table_fwhm["y_centroid"]))
 
     #   Estimate FWHM
     try:
@@ -408,7 +406,7 @@ def find_stars(
         )
 
         #   Add positions to image class
-        image.positions = tbl_objects["id", "xcentroid", "ycentroid", "flux"]
+        image.positions = tbl_objects["id", "x_centroid", "y_centroid", "flux"]
         image.fwhm = default_fwhm
         return
 
@@ -431,18 +429,26 @@ def find_stars(
         iraf_finder = IRAFStarFinder(
             threshold=multiplier_background_rms * sigma,
             fwhm=median_fwhm,
-            minsep_fwhm=0.01,
-            roundhi=5.0,
-            roundlo=-5.0,
-            sharplo=0.0,
-            sharphi=2.0,
+            # min_separation=max(2, int(median_fwhm * 2.5 + 0.5)),
+            roundness_range=(-5.0, 5.0),
+            sharpness_range=(0.0, 2.0),
         )
 
         #   Find stars - make table
         tbl_objects = iraf_finder(ccd.data, mask=ccd.mask)
 
+        if tbl_objects is None:
+            iraf_finder = IRAFStarFinder(
+                threshold=multiplier_background_rms * sigma,
+                fwhm=default_fwhm,
+                # min_separation=max(2, int(median_fwhm * 2.5 + 0.5)),
+                roundness_range=(-5.0, 5.0),
+                sharpness_range=(0.0, 2.0),
+            )
+            tbl_objects = iraf_finder(ccd.data, mask=ccd.mask)
+
     #   Add positions to image class
-    image.positions = tbl_objects["id", "xcentroid", "ycentroid", "flux"]
+    image.positions = tbl_objects["id", "x_centroid", "y_centroid", "flux"]
     image.fwhm = median_fwhm
 
 
@@ -557,8 +563,8 @@ def check_epsf_stars(
     half_size_epsf_region = (size_epsf_region - 1) / 2
 
     #   New lists with x and y positions
-    x = tbl_epsf_stars["xcentroid"]
-    y = tbl_epsf_stars["ycentroid"]
+    x = tbl_epsf_stars["x_centroid"]
+    y = tbl_epsf_stars["y_centroid"]
 
     mask = (
         (x > half_size_epsf_region)
@@ -587,10 +593,10 @@ def check_epsf_stars(
         )
 
     #   Find all potential ePSF stars with close neighbors
-    x1 = tbl_positions_sort["xcentroid"]
-    y1 = tbl_positions_sort["ycentroid"]
-    x2 = tbl_epsf_stars["xcentroid"]
-    y2 = tbl_epsf_stars["ycentroid"]
+    x1 = tbl_positions_sort["x_centroid"]
+    y1 = tbl_positions_sort["y_centroid"]
+    x2 = tbl_epsf_stars["x_centroid"]
+    y2 = tbl_epsf_stars["y_centroid"]
     max_objects = np.max((len(x1), len(x2)))
     x_all = np.zeros((max_objects, 2))
     y_all = np.zeros((max_objects, 2))
@@ -732,8 +738,8 @@ def determine_epsf(
 
     #   Create new table with the names required by "extract_stars"
     stars_tbl = Table()
-    stars_tbl["x"] = epsf_star_positions["xcentroid"]
-    stars_tbl["y"] = epsf_star_positions["ycentroid"]
+    stars_tbl["x"] = epsf_star_positions["x_centroid"]
+    stars_tbl["y"] = epsf_star_positions["y_centroid"]
 
     #   Put image into NDData container (required by "extract_stars")
     nd_data = NDData(data=data)
@@ -816,8 +822,8 @@ def extraction_epsf(
             initial_positions = Table(
                 names=["x_0", "y_0", "flux_0"],
                 data=[
-                    positions_flux["xcentroid"],
-                    positions_flux["ycentroid"],
+                    positions_flux["x_centroid"],
+                    positions_flux["y_centroid"],
                     positions_flux["flux"],
                 ],
             )
@@ -838,11 +844,9 @@ def extraction_epsf(
         finder = IRAFStarFinder(
             threshold=multiplier_background_rms * background_rms,
             fwhm=fwhm,
-            minsep_fwhm=0.01,
-            roundhi=5.0,
-            roundlo=-5.0,
-            sharplo=0.0,
-            sharphi=2.0,
+            min_separation=max(2, int(fwhm * 2.5 + 0.5)),
+            roundness_range=(-5.0, 5.0),
+            sharpness_range=(0.0, 2.0),
         )
     elif finder_method == "DAO":
         finder = DAOStarFinder(
@@ -890,10 +894,23 @@ def extraction_epsf(
         grouper=source_grouper,
         fitter=fitter,
         maxiters=n_iterations_eps_extraction,
-        localbkg_estimator=local_bkg_estimator,
+        local_bkg_estimator=local_bkg_estimator,
         mode="all",
         aperture_radius=(size_extraction_region - 1) / 2,
     )
+
+    #   Check if error is finite
+    finite_error_mask = np.isfinite(error)
+    error[np.invert(finite_error_mask)] = np.max(error[finite_error_mask])
+    finite_error_mask = np.isfinite(error)
+
+    #   Check if error is negative
+    negative_error_mask = error < 0.0
+    error[negative_error_mask] = np.max(error[np.invert(negative_error_mask)])
+
+    #   Check if error is nan
+    nan_error_mask = np.isnan(error)
+    error[np.invert(nan_error_mask)] = np.max(error[np.invert(nan_error_mask)])
 
     if use_initial_positions:
         result_tbl = photometry(
@@ -1026,8 +1043,8 @@ def define_apertures(
         x_positions = tbl["x_fit"]
         y_positions = tbl["y_fit"]
     except KeyError:
-        x_positions = tbl["xcentroid"]
-        y_positions = tbl["ycentroid"]
+        x_positions = tbl["x_centroid"]
+        y_positions = tbl["y_centroid"]
     positions = list(zip(x_positions, y_positions))
 
     if unit_radii not in ["pixel", "arcsec"]:
@@ -1136,8 +1153,8 @@ def extraction_aperture(
         bkg_err,
     )
 
-    photometry_tbl.rename_column("xcenter", "x_fit")
-    photometry_tbl.rename_column("ycenter", "y_fit")
+    photometry_tbl.rename_column("x_center", "x_fit")
+    photometry_tbl.rename_column("y_center", "y_fit")
 
     if radii_unit == "pixel":
         required_distance_to_edge = int(outer_annulus_radius)
@@ -1158,7 +1175,7 @@ def extraction_aperture(
     )
 
     flux = np.array(photometry_tbl["flux_fit"])
-    mask = np.where(flux > 0.0)
+    mask = np.argwhere(flux > 0.0)
     photometry_tbl = photometry_tbl[mask]
 
     image.photometry = photometry_tbl

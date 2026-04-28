@@ -126,8 +126,8 @@ def distribution_from_table(
 
     #   Build normal distribution
     magnitude_distribution = unc.normal(
-        image.photometry['mags_fit'].value * u.mag,
-        std=image.photometry['mags_unc'].value * u.mag,
+        image.photometry['mags_fit'].value.ravel() * u.mag,
+        std=image.photometry['mags_unc'].value.ravel() * u.mag,
         n_samples=distribution_samples,
     )
 
@@ -180,9 +180,9 @@ def mk_magnitudes_table(
     #   Get object indices, X & Y pixel positions and wcs
     #   Assumes that the image series are already correlated
     image_wcs = observation.image_series_dict[filter_list[0]].wcs
-    index_objects = observation.image_series_dict[filter_list[0]].image_list[0].photometry['id']
-    x_positions = observation.image_series_dict[filter_list[0]].image_list[0].photometry['x_fit']
-    y_positions = observation.image_series_dict[filter_list[0]].image_list[0].photometry['y_fit']
+    index_objects = observation.image_series_dict[filter_list[0]].image_list[0].photometry['id'].value.ravel()
+    x_positions = observation.image_series_dict[filter_list[0]].image_list[0].photometry['x_fit'].value.ravel()
+    y_positions = observation.image_series_dict[filter_list[0]].image_list[0].photometry['y_fit'].value.ravel()
 
     # Make CMD table
     tbl = Table(
@@ -233,11 +233,12 @@ def mk_magnitudes_table(
                 )
 
             try:
-                flux_fit = np.asarray(photometry_table["flux_fit"], dtype=float)
-                flux_err = np.asarray(photometry_table["flux_err"], dtype=float)
+                flux_fit = np.asarray(photometry_table["flux_fit"].value.ravel(), dtype=float)
+                flux_err = np.asarray(photometry_table["flux_err"].value.ravel(), dtype=float)
             except KeyError:
                 flux_fit = np.full(len(index_objects), np.nan, dtype=float)
                 flux_err = np.full(len(index_objects), np.nan, dtype=float)
+
             tbl.add_columns(
                 [
                     flux_fit,
@@ -1010,7 +1011,7 @@ def prepare_and_plot_starmap(
     #   Prepare table
     n_stars = len(tbl)
     tbl_xy = Table(
-        names=['id', 'xcentroid', 'ycentroid'],
+        names=['id', 'x_centroid', 'y_centroid'],
         data=[np.arange(0, n_stars), tbl[x_name], tbl[y_name]],
     )
 
@@ -1137,7 +1138,7 @@ def prepare_and_plot_starmap_from_image_series(
 
     #   Make new table with the position of the calibration stars
     tbl_xy_calib = Table(
-        names=['xcentroid', 'ycentroid'],
+        names=['x_centroid', 'y_centroid'],
         data=[[calib_xs], [calib_ys]]
     )
 
@@ -1335,9 +1336,9 @@ def _derive_limiting_magnitude_one_epoch(
 
     depth = ImageDepth(
         radius,
-        nsigma=5.0,
-        napers=500,
-        niters=2,
+        n_sigma=5.0,
+        n_apertures=500,
+        n_iters=2,
         overlap=False,
         zeropoint=zeropoint,
         progress_bar=False,

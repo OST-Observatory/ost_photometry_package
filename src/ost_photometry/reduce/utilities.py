@@ -462,8 +462,8 @@ def estimate_fwhm(
             extraction_box = 25
             half_box = (extraction_box - 1) / 2
 
-            x = object_tbl["xcentroid"]
-            y = object_tbl["ycentroid"]
+            x = object_tbl["x_centroid"]
+            y = object_tbl["y_centroid"]
             flux = object_tbl["flux"]
 
             mask = (

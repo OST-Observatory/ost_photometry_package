@@ -121,8 +121,8 @@ def _merge_epoch_on_id(
         for i in range(n):
             j = id_to_row.get(int(base_ids[i]))
             if j is not None:
-                mag_arr[i] = float(np.asarray(t[mag_col])[j])
-                err_arr[i] = float(np.asarray(t[err_col])[j])
+                mag_arr[i] = float(np.asarray(t[mag_col].ravel())[j])
+                err_arr[i] = float(np.asarray(t[err_col].ravel())[j])
         base[mag_col] = mag_arr
         base[err_col] = err_arr
 
@@ -134,8 +134,8 @@ def _merge_epoch_on_id(
             for i in range(n):
                 j = id_to_row.get(int(base_ids[i]))
                 if j is not None:
-                    fflux[i] = float(np.asarray(t[flux_col])[j])
-                    ferr[i] = float(np.asarray(t[ferr_col])[j])
+                    fflux[i] = float(np.asarray(t[flux_col].ravel())[j])
+                    ferr[i] = float(np.asarray(t[ferr_col].ravel())[j])
         base[flux_col] = fflux
         base[ferr_col] = ferr
 

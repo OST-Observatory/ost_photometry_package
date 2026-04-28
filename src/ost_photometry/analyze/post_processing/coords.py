@@ -52,9 +52,10 @@ def plot_starmap_from_imaging_context(
     data = ctx.reference_image
     n_stars = len(tbl)
     tbl_xy = Table(
-        names=["id", "xcentroid", "ycentroid"],
+        names=["id", "x_centroid", "y_centroid"],
         data=[np.arange(n_stars, dtype=int), tbl[x_name], tbl[y_name]],
     )
+    
     rts = rts_pre
     if add_image_id and ctx.plot_reference_image_id is not None:
         rts += f": {ctx.plot_reference_image_id}"

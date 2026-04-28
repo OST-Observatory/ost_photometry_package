@@ -25,7 +25,7 @@ from .pipeline import AnalysisContext, AnalysisPipeline, PipelineConfig
 
 # Suppress noisy dependency UserWarnings. Package diagnostics use
 # OstPhotometryAnalyzeWarning (see warnings_types) so they are not hidden here.
-warnings.filterwarnings("ignore", category=UserWarning, append=True)
+# warnings.filterwarnings("ignore", category=UserWarning, append=True)
 
 
 ############################################################################

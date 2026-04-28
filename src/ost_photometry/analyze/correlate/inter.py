@@ -773,8 +773,8 @@ def correlate_with_calibration_objects(
 
     #   Pixel positions of the observed object
     reference_image_index = image_series.reference_image_index
-    pixel_position_obj_x = image_series.image_list[reference_image_index].photometry['x_fit']
-    pixel_position_obj_y = image_series.image_list[reference_image_index].photometry['y_fit']
+    pixel_position_obj_x = image_series.image_list[reference_image_index].photometry['x_fit'].value.ravel()
+    pixel_position_obj_y = image_series.image_list[reference_image_index].photometry['y_fit'].value.ravel()
 
     #   Pixel positions of calibration object
     pixel_position_cali_x, pixel_position_cali_y = calibration_object_coordinates.to_pixel(image_series.wcs)
@@ -894,12 +894,12 @@ def correlate_with_calibration_objects(
     #   Add pixel positions and object ids to the calibration table
     calibration_tbl_sort.add_columns(
         [np.intc(index_common_new), pixel_position_common_objs_x, pixel_position_common_objs_y],
-        names=['id', 'xcentroid', 'ycentroid']
+        names=['id', 'x_centroid', 'y_centroid']
     )
 
     calibration_tbl.add_columns(
         [np.arange(0, len(pixel_position_cali_y)), pixel_position_cali_x, pixel_position_cali_y],
-        names=['id', 'xcentroid', 'ycentroid']
+        names=['id', 'x_centroid', 'y_centroid']
     )
 
     #   Plot star map with calibration stars

@@ -728,7 +728,7 @@ class DifferentialPhotometer:
                     err_col = f"{err_col_prefix}{filter_}"
                     if err_col in data.colnames:
                         tc = cal.transformation[filter_]
-                        inst_err = np.asarray(data[err_col], dtype=float)
+                        inst_err = np.asarray(data[err_col].ravel(), dtype=float)
                         n = len(inst_err)
                         ci_f1, ci_f2 = tc.color_index_filters
                         # Final color (same logic as calibration iteration)
@@ -757,8 +757,8 @@ class DifferentialPhotometer:
                         e2c = f"{err_col_prefix}{ci_f2}"
                         if e1c in data.colnames and e2c in data.colnames:
                             sigma_color_sq = (
-                                np.asarray(data[e1c], dtype=float) ** 2
-                                + np.asarray(data[e2c], dtype=float) ** 2
+                                np.asarray(data[e1c].ravel(), dtype=float) ** 2
+                                + np.asarray(data[e2c].ravel(), dtype=float) ** 2
                             )
                         else:
                             sigma_color_sq = np.zeros(n, dtype=float)

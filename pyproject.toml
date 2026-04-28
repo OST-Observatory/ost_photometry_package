@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ost_photometry"
-version = "0.4.0"
+version = "0.4.1"
 authors = [
     { name = "Rainer Hainich", email = "rhainich@astro.physik.uni-potsdam.de" },
 ]
@@ -27,13 +27,13 @@ dependencies = [
     # PyPI name is "path" (path.py); pin reflects tested 17.1.x
     "path>=17.0",
     "numpy>=2.2,<3",
-    "astropy>=6.1",
+    "astropy>=6.1.4",
     "ccdproc>=2.4",
     "astroalign>=2.4",
-    "scipy>=1.11",
-    "matplotlib>=3.8",
-    "photutils>=2.1",
-    "scikit-image>=0.22",
+    "scipy>=1.13",
+    "matplotlib>=3.9",
+    "photutils>=3.0.0",
+    "scikit-image>=0.23",
     "astroquery>=0.4.7",
     "regions>=0.6",
     "scikit-learn>=1.3",

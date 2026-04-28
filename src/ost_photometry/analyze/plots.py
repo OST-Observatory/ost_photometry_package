@@ -288,9 +288,9 @@ def starmap(
     if 'x' in tbl.colnames:
         x_column = 'x'
         y_column = 'y'
-    elif 'xcentroid' in tbl.colnames:
-        x_column = 'xcentroid'
-        y_column = 'ycentroid'
+    elif 'x_centroid' in tbl.colnames:
+        x_column = 'x_centroid'
+        y_column = 'y_centroid'
     elif 'xfit' in tbl.colnames:
         x_column = 'xfit'
         y_column = 'yfit'
@@ -307,9 +307,9 @@ def starmap(
         if 'x' in tbl_2.colnames:
             x_column_2 = 'x'
             y_column_2 = 'y'
-        elif 'xcentroid' in tbl_2.colnames:
-            x_column_2 = 'xcentroid'
-            y_column_2 = 'ycentroid'
+        elif 'x_centroid' in tbl_2.colnames:
+            x_column_2 = 'x_centroid'
+            y_column_2 = 'y_centroid'
         elif 'xfit' in tbl_2.colnames:
             x_column_2 = 'xfit'
             y_column_2 = 'yfit'
@@ -393,12 +393,14 @@ def starmap(
     ax.set_ylim(0, image.shape[0] - 1)
 
     # Plot labels next to the apertures
-    if isinstance(tbl[x_column], u.quantity.Quantity):
-        x = tbl[x_column].value
-        y = tbl[y_column].value
+    # if isinstance(tbl[x_column], u.quantity.Quantity):
+    if hasattr(tbl[x_column], "value"):
+        x = tbl[x_column].value.ravel()
+        y = tbl[y_column].value.ravel()
     else:
         x = tbl[x_column]
         y = tbl[y_column]
+
     if mode == 'mags':
         if magnitude_column is not None:
             magnitudes = tbl[magnitude_column]
@@ -3022,7 +3024,7 @@ def d3_scatter(
                     ys[j],
                     zs[j],
                     # c=zs[i],
-                    cmap='cividis',
+                    # cmap='cividis',
                     # cmap='tab20',
                     label=f'Cluster {j}',
                     # picker=True,
@@ -3397,7 +3399,7 @@ def filled_iso_contours(
 
     #   Define positions and apertures
     xy_object_position = np.transpose(
-        (object_table['ycentroid'], object_table['xcentroid'])
+        (object_table['y_centroid'], object_table['x_centroid'])
     )
 
     #   Set up mesh and define grid positions
@@ -4418,7 +4420,8 @@ def plot_photometry_mag_vs_error(
     _mf, _mu = photometry["mags_fit"], photometry["mags_unc"]
     mag = np.asarray(_mf.value if hasattr(_mf, "value") else _mf, dtype=float)
     err = np.asarray(_mu.value if hasattr(_mu, "value") else _mu, dtype=float)
-    ok = np.isfinite(mag) & np.isfinite(err) & (err > 0)
+    # ok = np.isfinite(mag) & np.isfinite(err) & (err > 0)
+    ok = np.isfinite(mag) & np.isfinite(err)
     if not np.any(ok):
         return None
     stem = filename_stem or (

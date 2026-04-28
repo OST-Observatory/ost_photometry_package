@@ -305,9 +305,11 @@ def correlation_astropy(
     n_datasets = len(x_pixel_positions)
 
     #   Create reference SkyCoord object
+    x_pixel_positions_reference = x_pixel_positions[reference_dataset_id].value.ravel()
+    y_pixel_positions_reference = y_pixel_positions[reference_dataset_id].value.ravel()
     reference_coordinates = SkyCoord.from_pixel(
-        x_pixel_positions[reference_dataset_id],
-        y_pixel_positions[reference_dataset_id],
+        x_pixel_positions_reference,
+        y_pixel_positions_reference,
         current_wcs,
     )
 
@@ -336,9 +338,11 @@ def correlation_astropy(
                 index_array[i, :] = index_array[reference_dataset_id, :]
             else:
                 #   Create coordinates object
+                x_pixel_positions_current = x_pixel_positions[i].value.ravel()
+                y_pixel_positions_current = y_pixel_positions[i].value.ravel()
                 current_coordinates = SkyCoord.from_pixel(
-                    x_pixel_positions[i],
-                    y_pixel_positions[i],
+                    x_pixel_positions_current,
+                    y_pixel_positions_current,
                     current_wcs,
                 )
 
