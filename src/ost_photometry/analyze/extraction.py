@@ -1140,7 +1140,7 @@ def extraction_aperture(
     photometry_tbl["flux_fit"] = (
         photometry_tbl["aperture_sum"] - photometry_tbl["aper_bkg"]
     )
-
+    
     if uncertainty is not None:
         err_column = photometry_tbl["aperture_sum_err"]
     else:
@@ -1175,7 +1175,7 @@ def extraction_aperture(
     )
 
     flux = np.array(photometry_tbl["flux_fit"])
-    mask = np.argwhere(flux > 0.0)
+    mask = np.argwhere(flux > 0.0).ravel()
     photometry_tbl = photometry_tbl[mask]
 
     image.photometry = photometry_tbl
@@ -1496,7 +1496,6 @@ def main_extract(
             f"({photometry_extraction_method}) not "
             f"valid: use either APER or PSF {style.Bcolors.ENDC}"
         )
-
     magnitudes, magnitudes_error = utilities.flux_to_magnitudes(
         image.photometry["flux_fit"],
         image.photometry["flux_err"],

@@ -509,6 +509,8 @@ def determine_object_position(
     return indexes, count, x_position_object, y_position_object
 
 
+#   TODO: Make the option to protect claibration objects from beeing eliminated in the correlation process 
+#         available as a generall option
 def correlate_preserve_calibration_objects(
         image_series: 'analyze.ImageSeries', filter_list: list[str],
         calibration_source: str = 'APASS',

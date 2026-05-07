@@ -28,7 +28,6 @@ class CorrelationInterStep(base.PipelineStep):
         config: PipelineConfig,
     ) -> AnalysisContext:
         from .... import terminal_output
-
         obs = context._observation
         if obs is None:
             raise RuntimeError(

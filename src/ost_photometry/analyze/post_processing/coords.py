@@ -22,14 +22,14 @@ def table_object_sky_coords(tbl: Table, wcs_fallback: "WCS") -> SkyCoord:
     """
     cols = tbl.colnames
     if "ra" in cols and "dec" in cols:
-        ra = u.Quantity(tbl["ra"], u.deg)
-        dec = u.Quantity(tbl["dec"], u.deg)
+        ra = u.Quantity(tbl["ra"].ravel(), u.deg)
+        dec = u.Quantity(tbl["dec"].ravel(), u.deg)
         return SkyCoord(ra=ra, dec=dec, frame="icrs")
     if "ra (deg)" in cols and "dec (deg)" in cols:
-        ra = u.Quantity(tbl["ra (deg)"], u.deg)
-        dec = u.Quantity(tbl["dec (deg)"], u.deg)
+        ra = u.Quantity(tbl["ra (deg)"].ravel(), u.deg)
+        dec = u.Quantity(tbl["dec (deg)"].ravel(), u.deg)
         return SkyCoord(ra=ra, dec=dec, frame="icrs")
-    lon, lat = wcs_fallback.all_pix2world(tbl["x"], tbl["y"], 0)
+    lon, lat = wcs_fallback.all_pix2world(tbl["x"].ravel(), tbl["y"].ravel(), 0)
     return SkyCoord(lon, lat, unit=u.deg, frame="icrs")
 
 
