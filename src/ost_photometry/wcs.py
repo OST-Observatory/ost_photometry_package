@@ -209,9 +209,6 @@ def find_wcs_twirl(
 
     coordinates = image.coordinates_image_center
     field_of_view = image.field_of_view_x
-    print(
-        "n", n, "field_of_view", field_of_view, coordinates.ra.deg, coordinates.dec.deg
-    )
     #   Calculate WCS
     gaia_twirl = twirl.gaia_radecs(
         [coordinates.ra.deg, coordinates.dec.deg],
@@ -223,11 +220,6 @@ def find_wcs_twirl(
     gaia_twirl_pixel = np.array(
         SkyCoord(gaia_twirl, unit="deg").to_pixel(derived_wcs)
     ).T
-    print("gaia_twirl_pixel")
-    print(gaia_twirl_pixel)
-    print(gaia_twirl_pixel.T)
-    print("objects")
-    print(objects)
 
     from matplotlib import pyplot as plt
 
@@ -236,8 +228,6 @@ def find_wcs_twirl(
     plt.plot(*gaia_twirl_pixel.T, "o", fillstyle="none", c="C1", ms=18)
     plt.savefig("/tmp/test_twirl.pdf", bbox_inches="tight", format="pdf")
     plt.show()
-
-    print(derived_wcs)
 
     terminal_output.print_to_terminal(
         "WCS solution found :)",

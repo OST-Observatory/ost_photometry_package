@@ -9,6 +9,7 @@ __pycache__
 *~
 .zed
 .pytest_cache/
+.venv/
 .cursor
 
 ost_photometry_package.code-workspace

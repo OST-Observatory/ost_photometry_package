@@ -17,7 +17,11 @@ from ... import terminal_output
 from .config import PipelineConfig
 from .context import AnalysisContext
 
+import logging
+
 from ..post_processing import schema
+
+_log = logging.getLogger(__name__)
 
 
 def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Optional[Table]:
@@ -31,7 +35,8 @@ def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Optional[Table
         sky = wcs_obj.pixel_to_world(x, y)
         ra = sky.ra.deg
         dec = sky.dec.deg
-    except Exception:
+    except (ValueError, TypeError, AttributeError) as exc:
+        _log.debug("pixel_to_world failed for filter %s: %s", filter_, exc)
         return None
 
     mag_col = f"mag_{filter_}"

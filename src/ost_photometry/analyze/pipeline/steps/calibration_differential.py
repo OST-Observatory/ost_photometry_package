@@ -123,7 +123,7 @@ class DifferentialCalibrationStep(base.PipelineStep):
         from astropy.coordinates import SkyCoord
         from astropy.time import Time
 
-        obs = context._observation
+        obs = context.require_observation()
         if obs is None:
             raise RuntimeError(
                 "DifferentialCalibrationStep requires context._observation"

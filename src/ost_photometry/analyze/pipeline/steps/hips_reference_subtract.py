@@ -35,7 +35,7 @@ class HipsReferenceSubtractStep(base.PipelineStep):
     def skip(self, context: AnalysisContext, config: PipelineConfig) -> bool:
         if config.skip_hips_reference_subtraction:
             return True
-        obs = context._observation
+        obs = context.require_observation()
         if obs is None:
             return True
         flist = getattr(context, "filter_list", None) or []
@@ -60,7 +60,7 @@ class HipsReferenceSubtractStep(base.PipelineStep):
         return False
 
     def run(self, context: AnalysisContext, config: PipelineConfig) -> AnalysisContext:
-        obs = context._observation
+        obs = context.require_observation()
         assert obs is not None
         output_dir = context.output_dir
         flist = context.filter_list or []

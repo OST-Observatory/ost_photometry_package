@@ -14,6 +14,19 @@ from .. import style, terminal_output
 from ..utilities import Image
 
 
+def _air_mass_values(image_list: list[Image]) -> list[float]:
+    """Collect finite air-mass values; raise if none are available."""
+    values: list[float] = []
+    for img in image_list:
+        am = getattr(img, "air_mass", None)
+        if am is None:
+            continue
+        values.append(float(am))
+    if not values:
+        raise ValueError("No air mass values available in image series")
+    return values
+
+
 class ObjectOfInterest:
     """Represents an astronomical object of interest with sky coordinates."""
 
@@ -79,9 +92,8 @@ class ImageSeries:
             path = os.path.dirname(path)
         else:
             raise RuntimeError(
-                f"{style.Bcolors.FAIL}ERROR: Provided path is neither a file"
-                f" nor a directory -> EXIT {style.Bcolors.ENDC}"
-            )
+            "ERROR: Provided path is neither a file nor a directory"
+        )
 
         #   Add file list
         self.file_list: list[str] = file_list
@@ -193,22 +205,13 @@ class ImageSeries:
         return img_ids
 
     def mean_sigma_clip_air_mass(self) -> float:
-        am_list: list[float] = []
-        for img in self.image_list:
-            am_list.append(getattr(img, "air_mass", 0.0))
-        return sigma_clipped_stats(am_list, sigma=1.5)[0]
+        return sigma_clipped_stats(_air_mass_values(self.image_list), sigma=1.5)[0]
 
     def median_air_mass(self) -> np.floating:
-        am_list: list[float] = []
-        for img in self.image_list:
-            am_list.append(getattr(img, "air_mass", 0.0))
-        return np.median(am_list)
+        return np.median(_air_mass_values(self.image_list))
 
-    def get_air_mass(self) -> list[float]:
-        am_list: list[float] = []
-        for img in self.image_list:
-            am_list.append(getattr(img, "air_mass", 0.0))
-        return am_list
+    def get_air_mass(self) -> list[float | None]:
+        return [getattr(img, "air_mass", None) for img in self.image_list]
 
     def get_observation_time(self) -> np.ndarray:
         obs_time_list: list[float] = []

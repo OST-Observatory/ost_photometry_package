@@ -1,10 +1,12 @@
-"""Pipeline configuration."""
+"""Pipeline configuration with step-specific sub-configs."""
 
-from dataclasses import dataclass, field
-from typing import Literal, Optional, Tuple
+from __future__ import annotations
 
-from astropy.coordinates import EarthLocation
+from dataclasses import dataclass, field, fields
+from typing import Any, Literal, Optional, Tuple
+
 import astropy.units as u
+from astropy.coordinates import EarthLocation
 
 WcsMethod = Literal["astrometry", "astap", "twirl"]
 CorrelationMethod = Literal["astropy", "own"]
@@ -15,13 +17,7 @@ DifferentialExtinctionOrder = Literal["none", "first", "second"]
 
 @dataclass
 class DiagnosticPlots:
-    """
-    Toggle optional quality-control / debugging figures written under
-    ``<output_dir>/diagnostics/`` (format from ``PipelineConfig.file_type_plots``).
-
-    All default to ``False`` so normal runs stay quiet. Enable individual flags or
-    pass overrides via ``run_pipeline(..., diagnostic_plots__<field>=True)``.
-    """
+    """Optional QC figures under ``<output_dir>/diagnostics/``."""
 
     calibration_crossmatch_separation_histogram: bool = False
     photometry_mag_vs_error_scatter: bool = False
@@ -35,16 +31,18 @@ class DiagnosticPlots:
 
 
 @dataclass
-class PipelineConfig:
-    """Central configuration for the analysis pipeline."""
+class WcsConfig:
+    wcs_method: WcsMethod = "astrometry"
+    force_wcs_determination: bool = False
+    skip_wcs: bool = False
 
-    # Extraction
+
+@dataclass
+class ExtractionConfig:
     extraction_mode: Literal["single", "multi", "auto"] = "auto"
     n_cores_multiprocessing: int = 6
     reference_image_index: int = 0
     fwhm_object_psf: dict[str, float] | None = None
-
-    # Extraction plot/output options
     cosmic_ray_removal: bool = False
     limiting_contrast_rm_cosmics: float = 5.0
     read_noise: float = 8.0
@@ -57,12 +55,6 @@ class PipelineConfig:
     annotate_reference_image: bool = False
     magnitude_limit_image_annotation: float | None = None
     filter_magnitude_limit_image_annotation: str | None = None
-
-    # WCS
-    wcs_method: WcsMethod = "astrometry"
-    force_wcs_determination: bool = False
-
-    # Extraction parameters (passed to main_extract/extract_multiprocessing)
     sigma_value_background_clipping: float = 5.0
     multiplier_background_rms: float = 5.0
     size_epsf_region: int = 25
@@ -84,11 +76,65 @@ class PipelineConfig:
     outer_annulus_radius: float = 10.0
     radii_unit: str = "arcsec"
     strict_epsf_checks: bool = True
-
-    # Transform (multi mode)
     transform_object_positions_to_reference: bool = False
+    skip_extraction: bool = False
 
-    # Correlation
+    def main_extract_kwargs(self, *, fwhm: float | None = None) -> dict[str, Any]:
+        """Keyword arguments for ``main_extract`` (single-image path)."""
+        return {
+            "fwhm_object_psf": fwhm,
+            "sigma_value_background_clipping": self.sigma_value_background_clipping,
+            "multiplier_background_rms": self.multiplier_background_rms,
+            "size_epsf_region": self.size_epsf_region,
+            "size_extraction_region_epsf": self.size_extraction_region_epsf,
+            "epsf_fitter": self.epsf_fitter,
+            "n_iterations_eps_extraction": self.n_iterations_eps_extraction,
+            "fraction_epsf_stars": self.fraction_epsf_stars,
+            "oversampling_factor_epsf": self.oversampling_factor_epsf,
+            "max_n_iterations_epsf_determination": self.max_n_iterations_epsf_determination,
+            "use_initial_positions_epsf": self.use_initial_positions_epsf,
+            "object_finder_method": self.object_finder_method,
+            "multiplier_background_rms_epsf": self.multiplier_background_rms_epsf,
+            "multiplier_grouper_epsf": self.multiplier_grouper_epsf,
+            "strict_cleaning_epsf_results": self.strict_cleaning_epsf_results,
+            "minimum_n_eps_stars": self.minimum_n_eps_stars,
+            "strict_epsf_checks": self.strict_epsf_checks,
+            "photometry_extraction_method": self.photometry_extraction_method,
+            "radius_aperture": self.radius_aperture,
+            "inner_annulus_radius": self.inner_annulus_radius,
+            "outer_annulus_radius": self.outer_annulus_radius,
+            "radii_unit": self.radii_unit,
+            "cosmic_ray_removal": self.cosmic_ray_removal,
+            "limiting_contrast_rm_cosmics": self.limiting_contrast_rm_cosmics,
+            "read_noise": self.read_noise,
+            "sigma_clipping_value": self.sigma_clipping_value,
+            "saturation_level": self.saturation_level,
+            "plots_for_all_images": self.plots_for_all_images,
+            "file_type_plots": self.file_type_plots,
+            "use_wcs_projection_for_star_maps": self.use_wcs_projection_for_star_maps,
+            "annotate_image": self.annotate_image,
+            "magnitude_limit_image_annotation": self.magnitude_limit_image_annotation,
+            "filter_magnitude_limit_image_annotation": (
+                self.filter_magnitude_limit_image_annotation
+            ),
+        }
+
+    def extract_multiprocessing_kwargs(self) -> dict[str, Any]:
+        """Keyword arguments for ``extract_multiprocessing`` (multi-image path)."""
+        kw = self.main_extract_kwargs()
+        kw.pop("fwhm_object_psf", None)
+        kw.pop("cosmic_ray_removal", None)
+        kw.pop("limiting_contrast_rm_cosmics", None)
+        kw.pop("read_noise", None)
+        kw.pop("sigma_clipping_value", None)
+        kw.pop("saturation_level", None)
+        kw.pop("annotate_image", None)
+        kw["annotate_reference_image"] = self.annotate_reference_image
+        return kw
+
+
+@dataclass
+class CorrelationConfig:
     max_pixel_between_objects: int = 3
     ooi_correlation_strategy: int = 1
     cross_identification_limit: int = 1
@@ -99,53 +145,54 @@ class PipelineConfig:
     separation_limit: u.Quantity = 2.0 * u.arcsec
     duplicate_handling_object_identification: dict[str, str] | None = None
     verbose: bool = False
+    skip_correlation_intra: bool = False
+    skip_correlation_inter: bool = False
 
-    # Calibration
+
+@dataclass
+class CalibrationConfig:
     calibration_module: Literal["legacy", "differential"] = "legacy"
     differential_coefficient_mode: DifferentialCoefficientMode = "per_night"
-    # T/ZP fit: reject comparison stars with |residual| > sigma_clip * rms (iterative)
     differential_fit_sigma_clip: float = 2.5
-    # PER_IMAGE: optional centered rolling median / mean over the epoch-ordered run (pandas rolling)
     differential_per_image_rolling_median_color_term: bool = False
     differential_per_image_rolling_median_zero_point: bool = False
     differential_per_image_rolling_mean_color_term: bool = False
     differential_per_image_rolling_mean_zero_point: bool = False
-    differential_per_image_rolling_window: int = 3  # odd >= 1; even values are bumped to odd; median and mean
+    differential_per_image_rolling_window: int = 3
     differential_extinction_order: DifferentialExtinctionOrder = "first"
-    differential_fit_extinction_from_data: bool = False  # fit k from catalog comparison stars
+    differential_fit_extinction_from_data: bool = False
     calibration_catalog_radius_arcmin: float = 15.0
     calibration_catalog_mag_range: tuple[float, float] = (2.0, 18.5)
-    # Color indices for transformation: {filter: (filter1, filter2)} e.g. {"V": ("B", "V")}
     differential_color_indices: dict[str, tuple[str, str]] | None = None
-    # Multi-band calibration epochs (bridge): pair exposures across filters
     differential_exposure_pairing: Literal["jd_nearest", "index"] = "jd_nearest"
-    differential_exposure_jd_tolerance: float = 0.02  # days (~29 min)
-    # Log paired exposure filenames (see bridge._pairing_index / _pairing_jd_nearest)
+    differential_exposure_jd_tolerance: float = 0.02
     differential_debug_exposure_pairing: bool = False
-    # After inter-filter correlation: re-match OOI sky coords vs id_in_image_series
     debug_verify_ooi_global_ids: bool = False
-    differential_reference_filter: Optional[str] = None  # None -> filter_list[0]
-    # Calibration summary plot (T/ZP vs epochs): use JD from calibration_epoch_meta when True
+    differential_reference_filter: Optional[str] = None
     differential_calibration_summary_use_jd_x: bool = False
-    # EarthLocation for airmass
-    observatory_location: EarthLocation = EarthLocation(
-        lat=52.409184 * u.deg,
-        lon=12.973185 * u.deg,
-        height=39 * u.m,
+    observatory_location: EarthLocation = field(
+        default_factory=lambda: EarthLocation(
+            lat=52.409184 * u.deg,
+            lon=12.973185 * u.deg,
+            height=39 * u.m,
+        )
     )
-    # Legacy + differential: calibration_source key (APASS, simbad, vsp, simbad_vot, or vizier_dict key)
     calibration_source: str = "APASS"
     path_calibration_file: str | None = None
     vizier_dict: dict[str, str] | None = None
-    region_to_select_calibration_stars: object = None  # regions.RectanglePixelRegion
+    region_to_select_calibration_stars: object = None
     apply_transformation: bool = True
     transformation_coefficients_dict: dict[str, float | str] | None = None
     derive_transformation_coefficients: bool = False
     calculate_zero_point_statistic: bool = True
     distribution_samples: int = 1000
     aperture_radius: float = 4.0
+    write_differential_legacy_magnitudes_dat: bool = False
+    skip_calibration: bool = False
 
-    # Post-process
+
+@dataclass
+class PostProcessConfig:
     object_id: int | None = None
     extract_only_circular_region: bool = False
     region_radius: float = 600.0
@@ -161,10 +208,10 @@ class PipelineConfig:
     skip_magnitude_convert_step: bool = False
     skip_save_post_processed_magnitudes: bool = False
     skip_derive_limiting_magnitude: bool = False
-    # Differential calibration: also write legacy wide ``.dat`` (``save_magnitudes_ascii``)
-    write_differential_legacy_magnitudes_dat: bool = False
 
-    # Light curves (``LightCurveStep``; disabled by default)
+
+@dataclass
+class LightCurveConfig:
     skip_light_curve: bool = True
     plot_light_curve_objects_of_interest: bool = True
     plot_light_curve_calibration_objects: bool = False
@@ -173,7 +220,9 @@ class PipelineConfig:
     light_curve_quantity: Literal["magnitude", "flux"] = "magnitude"
     light_curve_calibration_rows: Literal["auto", "transformed", "simple"] = "auto"
 
-    # HiPS archival template subtraction (HOTPANTS; disabled by default)
+
+@dataclass
+class HipsConfig:
     skip_hips_reference_subtraction: bool = True
     hips_reference_subtraction_filter: Optional[str] = None
     hips_reference_subtraction_image_index: int = 0
@@ -193,18 +242,106 @@ class PipelineConfig:
     )
     hips_reference_subtraction_output_filename: str = "hotpants_diff.fits"
 
-    # Extinction fit workflow (cat-star.org method)
-    skip_extinction_fit: bool = True  # Set False to run extinction determination
+
+@dataclass
+class ExtinctionConfig:
+    skip_extinction_fit: bool = True
     extinction_fit_mag_col: str = "mags_fit"
     extinction_fit_use_flux: bool = False
     extinction_coefficients_filename: str = "extinction_coefficients.json"
 
-    # Optional diagnostic figures (see ``DiagnosticPlots``)
-    diagnostic_plots: DiagnosticPlots = field(default_factory=DiagnosticPlots)
 
-    # Skip flags
-    skip_wcs: bool = False
-    skip_extraction: bool = False
-    skip_correlation_intra: bool = False
-    skip_correlation_inter: bool = False
-    skip_calibration: bool = False
+_SECTION_NAMES = (
+    "wcs",
+    "extraction",
+    "correlation",
+    "calibration",
+    "post_process",
+    "light_curve",
+    "hips",
+    "extinction",
+)
+
+
+class PipelineConfig:
+    """
+    Central pipeline configuration composed of step-specific sub-configs.
+
+    Flat attribute access (``config.skip_extraction``) is supported for backward
+    compatibility with existing scripts and ``run_pipeline(**kwargs)``.
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.wcs = WcsConfig()
+        self.extraction = ExtractionConfig()
+        self.correlation = CorrelationConfig()
+        self.calibration = CalibrationConfig()
+        self.post_process = PostProcessConfig()
+        self.light_curve = LightCurveConfig()
+        self.hips = HipsConfig()
+        self.extinction = ExtinctionConfig()
+        self.diagnostic_plots = DiagnosticPlots()
+        self.apply_overrides(**kwargs)
+
+    def _sections(self) -> tuple[Any, ...]:
+        return (
+            self.wcs,
+            self.extraction,
+            self.correlation,
+            self.calibration,
+            self.post_process,
+            self.light_curve,
+            self.hips,
+            self.extinction,
+            self.diagnostic_plots,
+        )
+
+    def _find_section_for(self, name: str) -> Any | None:
+        if name == "diagnostic_plots":
+            return self.diagnostic_plots
+        for section_name in _SECTION_NAMES:
+            section = getattr(self, section_name)
+            if hasattr(section, name):
+                return section
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        if name in _SECTION_NAMES or name == "diagnostic_plots":
+            raise AttributeError(name)
+        section = self._find_section_for(name)
+        if section is not None:
+            return getattr(section, name)
+        raise AttributeError(f"{type(self).__name__!r} has no attribute {name!r}")
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in _SECTION_NAMES or name == "diagnostic_plots":
+            super().__setattr__(name, value)
+            return
+        section = None
+        if hasattr(self, "wcs"):
+            section = self._find_section_for(name)
+        if section is not None:
+            setattr(section, name, value)
+            return
+        super().__setattr__(name, value)
+
+    def apply_overrides(self, **kwargs: Any) -> None:
+        """Apply flat keyword overrides (used by ``run_pipeline``)."""
+        diag_prefix = "diagnostic_plots__"
+        for key, val in kwargs.items():
+            if key.startswith(diag_prefix):
+                sub = key[len(diag_prefix) :]
+                if hasattr(self.diagnostic_plots, sub):
+                    setattr(self.diagnostic_plots, sub, val)
+                continue
+            section = self._find_section_for(key)
+            if section is not None:
+                setattr(section, key, val)
+
+    def as_flat_dict(self) -> dict[str, Any]:
+        """Serialize all sub-config fields to a flat dictionary."""
+        out: dict[str, Any] = {}
+        for section in self._sections():
+            for f in fields(section):
+                out[f.name] = getattr(section, f.name)
+        return out

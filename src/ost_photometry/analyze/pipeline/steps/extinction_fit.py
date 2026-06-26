@@ -40,7 +40,7 @@ class ExtinctionFitStep(base.PipelineStep):
     ) -> AnalysisContext:
         from .... import terminal_output
 
-        obs = context._observation
+        obs = context.require_observation()
         if obs is None:
             raise RuntimeError(
                 "ExtinctionFitStep requires context._observation (run via Observation.run_pipeline)"

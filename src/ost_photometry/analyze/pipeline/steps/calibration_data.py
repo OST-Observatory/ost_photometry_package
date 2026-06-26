@@ -23,11 +23,14 @@ class CalibrationDataStep(base.PipelineStep):
         context: AnalysisContext,
         config: PipelineConfig,
     ) -> AnalysisContext:
-        obs = context._observation
-        if obs is None:
-            raise RuntimeError(
-                "CalibrationDataStep requires context._observation"
-            )
+        import warnings
+
+        warnings.warn(
+            "Pipeline calibration_module='legacy' (CalibrationDataStep) is deprecated.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        obs = context.require_observation()
 
         calibration_data.derive_calibration(
             obs,

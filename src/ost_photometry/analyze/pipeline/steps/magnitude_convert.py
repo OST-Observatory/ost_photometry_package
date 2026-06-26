@@ -25,7 +25,7 @@ class PostProcessMagnitudeConvertStep(base.PipelineStep):
         return not config.convert_magnitudes
 
     def run(self, context: AnalysisContext, config: PipelineConfig) -> AnalysisContext:
-        obs = context._observation
+        obs = context.require_observation()
         if obs is None:
             raise RuntimeError(
                 "PostProcessMagnitudeConvertStep requires context._observation"

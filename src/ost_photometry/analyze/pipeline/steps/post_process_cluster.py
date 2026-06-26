@@ -99,7 +99,7 @@ class PostProcessRegionStep(base.PipelineStep):
         return not config.extract_only_circular_region
 
     def run(self, context: AnalysisContext, config: PipelineConfig) -> AnalysisContext:
-        obs = context._observation
+        obs = context.require_observation()
         if obs is None:
             raise RuntimeError("PostProcessRegionStep requires context._observation")
         img = _reference_image_series(context, obs)
@@ -126,7 +126,7 @@ class PostProcessClusterGaiaStep(base.PipelineStep):
         return not config.identify_cluster_gaia_data
 
     def run(self, context: AnalysisContext, config: PipelineConfig) -> AnalysisContext:
-        obs = context._observation
+        obs = context.require_observation()
         if obs is None:
             raise RuntimeError("PostProcessClusterGaiaStep requires context._observation")
         img = _reference_image_series(context, obs)
@@ -153,7 +153,7 @@ class PostProcessProperMotionStep(base.PipelineStep):
         return not config.clean_objs_using_pm
 
     def run(self, context: AnalysisContext, config: PipelineConfig) -> AnalysisContext:
-        obs = context._observation
+        obs = context.require_observation()
         if obs is None:
             raise RuntimeError("PostProcessProperMotionStep requires context._observation")
         img = _reference_image_series(context, obs)
@@ -178,7 +178,7 @@ class PostProcessSaveMagnitudesStep(base.PipelineStep):
         return config.skip_save_post_processed_magnitudes
 
     def run(self, context: AnalysisContext, config: PipelineConfig) -> AnalysisContext:
-        obs = context._observation
+        obs = context.require_observation()
         if obs is None:
             raise RuntimeError(
                 "PostProcessSaveMagnitudesStep requires context._observation"

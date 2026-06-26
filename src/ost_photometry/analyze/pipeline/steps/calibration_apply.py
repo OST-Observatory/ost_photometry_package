@@ -32,15 +32,23 @@ class CalibrationApplyStep(base.PipelineStep):
         context: AnalysisContext,
         config: PipelineConfig,
     ) -> AnalysisContext:
-        obs = context._observation
-        if obs is None or obs.calib_parameters is None:
+        obs = context.require_observation()
+        if obs.calib_parameters is None:
             raise RuntimeError(
-                "CalibrationApplyStep requires context._observation with calib_parameters"
+                "CalibrationApplyStep requires calib_parameters on the Observation"
             )
 
         terminal_output.print_to_terminal(
             "Default calibration (legacy)",
             style_name="HEADER",
+        )
+        import warnings
+
+        warnings.warn(
+            "Pipeline calibration_module='legacy' is deprecated; prefer 'differential' "
+            "once comparison tests pass.",
+            DeprecationWarning,
+            stacklevel=2,
         )
 
         calibration_filters = obs.calib_parameters.column_names

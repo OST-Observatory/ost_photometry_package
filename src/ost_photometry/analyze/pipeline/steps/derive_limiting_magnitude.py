@@ -78,7 +78,7 @@ class DeriveLimitingMagnitudeStep(base.PipelineStep):
         return False
 
     def run(self, context: AnalysisContext, config: PipelineConfig) -> AnalysisContext:
-        obs = context._observation
+        obs = context.require_observation()
         if obs is None:
             raise RuntimeError(
                 "DeriveLimitingMagnitudeStep requires context._observation"

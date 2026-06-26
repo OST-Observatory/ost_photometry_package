@@ -28,11 +28,7 @@ class CorrelationIntraStep(base.PipelineStep):
         context: AnalysisContext,
         config: PipelineConfig,
     ) -> AnalysisContext:
-        obs = context._observation
-        if obs is None:
-            raise RuntimeError(
-                "CorrelationIntraStep requires context._observation (run from Observation.run_pipeline)"
-            )
+        obs = context.require_observation()
 
         for filter_ in context.filter_list:
             image_series = context.image_series_dict[filter_]

@@ -47,7 +47,7 @@ class LightCurveStep(base.PipelineStep):
             return True
         if config.skip_calibration:
             return True
-        obs = context._observation
+        obs = context.require_observation()
         if obs is None:
             return True
 
@@ -76,7 +76,7 @@ class LightCurveStep(base.PipelineStep):
         return True
 
     def run(self, context: AnalysisContext, config: PipelineConfig) -> AnalysisContext:
-        obs = context._observation
+        obs = context.require_observation()
         output_dir = context.output_dir
         assert obs is not None
 

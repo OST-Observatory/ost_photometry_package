@@ -1,8 +1,22 @@
-from . import style
+"""Terminal output helpers (ANSI formatting + logging bridge)."""
 
-############################################################################
-#                           Routines & definitions                         #
-############################################################################
+from . import style
+from .logging_config import get_logger
+
+_LEVEL = {
+    "FAIL": 40,
+    "ERROR": 40,
+    "WARNING": 30,
+    "HEADER": 20,
+    "BOLD": 20,
+    "OK": 20,
+    "OKBLUE": 20,
+    "OKGREEN": 20,
+    "GOOD": 20,
+    "UNDERLINE": 20,
+    "ITALIC": 20,
+    "NORMAL": 20,
+}
 
 
 def print_to_terminal(
@@ -24,8 +38,8 @@ def print_to_terminal(
         Style type of the output.
         Default is ``BOLD``.
     """
-    #   Print to terminal
-    print(format_string(string, indent=indent, style_name=style_name))
+    msg = format_string(string, indent=indent, style_name=style_name)
+    get_logger("terminal").log(_LEVEL.get(style_name, 20), msg)
 
 
 def format_string(
@@ -140,5 +154,5 @@ class TerminalLog:
 
         print(self.cache)
 
-        #   Reset cache
-        # self.cache = ""
+        #   Reset cache after printing this block
+        self.cache = ""

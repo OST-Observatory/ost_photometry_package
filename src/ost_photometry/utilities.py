@@ -8,6 +8,8 @@ import random
 import string
 import subprocess
 import time
+from contextlib import contextmanager
+from pathlib import Path
 
 import yaml
 
@@ -17,8 +19,6 @@ try:
     use_timed_input = True
 except ImportError:
     use_timed_input = False
-
-from pathlib import Path
 
 import astropy.units as u
 import numpy as np
@@ -41,73 +41,32 @@ from .wcs import check_wcs_exists, find_wcs_astap, find_wcs_astrometry, find_wcs
 ############################################################################
 
 
-# class Image:
-#     """
-#         Image object used to store and transport some data
-#     """
-#
-#     def __init__(self, pd, filter_, object_name, file_path, output_dir):
-#         self.image_id = image_id
-#         self.filter_ = filter_
-#         # self.object_name = object_name
-#         if isinstance(file_path, Path):
-#             self.filename = file_path.name
-#             self.path = file_path
-#         else:
-#             self.filename = file_path.split('/')[-1]
-#             self.path = Path(file_path)
-#         if isinstance(output_dir, Path):
-#             self.out_path = output_dir
-#         else:
-#             self.out_path = Path(output_dir)
-#
-#     #   Read image
-#     def read_image(self):
-#         return CCDData.read(self.path)
-#
-#     #   Get header
-#     def get_header(self):
-#         return CCDData.read(self.path).meta
-#
-#     #   Get data
-#     def get_data(self):
-#         return CCDData.read(self.path).data
-
-
 #   TODO: Split into a base class and a derived class for analysis
 class Image:
     """
-    Image class: Provides relevant image information and some methods for
-                 handling image data.
+    Image class: metadata + on-demand FITS access (no persistent pixel cache).
+
+    Use ``with image.open() as ccd:`` inside a pipeline step to avoid repeated
+    disk reads without holding all images in RAM across the full run.
     """
 
     def __init__(
         self, image_id: int, filter_: str, path: str | Path, output_dir: str | Path
     ) -> None:
-        #   Set image ID
         self.image_id: int = image_id
-
-        #   Set filter
         self.filter_: str = filter_
-
-        #   Set file name and complete path
         if isinstance(path, Path):
             self.filename: str = path.name
             self.path: Path = path
         else:
             self.filename = path.split("/")[-1]
-            self.path: Path = Path(path)
-
-        #   Set path to output directory
+            self.path = Path(path)
         if isinstance(output_dir, Path):
             self.out_path: Path = output_dir
         else:
-            self.out_path: Path = Path(output_dir)
+            self.out_path = Path(output_dir)
 
-        #   Set wcs default
         self.wcs: wcs.WCS | None = None
-
-        #   Add and calculate further image parameters
         self.instrument: str | None = None
         self.field_of_view_y: float | None = None
         self.field_of_view_x: float | None = None
@@ -116,49 +75,62 @@ class Image:
         self.fov_pixel_region: RectanglePixelRegion | None = None
         self.air_mass: float | None = None
         self.jd: float | None = None
-        self.calculate_field_of_view_etc()
-
-        #   Set some defaults
         self.fwhm: float = 4.0
-
-        #   Prepare variables for later use
         self.epsf: ImagePSF | None = None
         self.residual_image: np.ndarray | None = None
         self.photometry: Table | None = None
         self.positions: Table | None = None
-        # self.magnitudes_with_zp: u.quantity.Quantity | None = None
         self.zp: np.ndarray | None = None
 
-    #   Read image
-    def read_image(self) -> CCDData:
-        return CCDData.read(self.path)
+        self._header_cache: fits.Header | None = None
+        self._active_ccd: CCDData | None = None
+        self.ensure_metadata()
 
-    #   Get header
-    def get_header(self) -> dict[str, str]:
-        return CCDData.read(self.path).meta
+    def ensure_metadata(self) -> None:
+        """Load header-derived metadata once (small memory footprint)."""
+        if self.field_of_view_x is None:
+            self.calculate_field_of_view_etc()
 
-    #   TODO: Add unit check for error and data
-    #   Get data
-    # def get_data(self, check_unit: bool = False) -> np.ndarray:
-    #     data = CCDData.read(self.path).data
-    #     #   If no unit is available, use electron / s
-    #     if check_unit and 'unit' not in dir(data):
-    #         data = data * u.electron / u.s
-    #     return data
+    @contextmanager
+    def open(self, memmap: bool = True):
+        """Short-lived FITS session for a processing step (released on exit)."""
+        ccd = CCDData.read(self.path, memmap=memmap)
+        self._active_ccd = ccd
+        try:
+            yield ccd
+        finally:
+            self._active_ccd = None
+
+    def read_image(self, memmap: bool = True) -> CCDData:
+        return self._read_ccd(memmap=memmap)
+
+    def get_header(self) -> fits.Header:
+        if self._header_cache is None:
+            self._header_cache = fits.getheader(self.path)
+        return self._header_cache
+
+    def _read_ccd(self, memmap: bool = True) -> CCDData:
+        if self._active_ccd is not None:
+            return self._active_ccd
+        return CCDData.read(self.path, memmap=memmap)
+
     def get_data(self) -> np.ndarray:
-        return CCDData.read(self.path).data
+        return self._read_ccd().data
 
-    #   Get uncertainty
     def get_error(self) -> np.ndarray:
-        return CCDData.read(self.path).uncertainty.array
+        ccd = self._read_ccd()
+        if ccd.uncertainty is None:
+            raise ValueError(f"No uncertainty extension in {self.path}")
+        return ccd.uncertainty.array
 
-    # Get mask
-    def get_mask(self) -> np.ndarray:
-        return CCDData.read(self.path).mask
+    def get_mask(self) -> np.ndarray | None:
+        return self._read_ccd().mask
 
-    #   Get shape
     def get_shape(self) -> tuple[int, int]:
-        return CCDData.read(self.path).data.shape
+        if self._active_ccd is not None:
+            return self._active_ccd.data.shape
+        header = self.get_header()
+        return int(header.get("NAXIS1", 0)), int(header.get("NAXIS2", 0))
 
     def calculate_field_of_view_etc(self):
         #   Get header

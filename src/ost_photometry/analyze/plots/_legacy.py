@@ -34,7 +34,7 @@ from scipy.spatial import KDTree
 from itertools import cycle
 
 from .. import checks, style, terminal_output, calibration_parameters
-from .. import utilities as base_utilities
+from ... import utilities as base_utilities
 
 import matplotlib.colors as mcol
 import matplotlib.cm as cm
@@ -2814,33 +2814,13 @@ def mk_color_cycler_error_bars() -> cycle:
 
 
 def onpick3(event):
-    print('---------------------')
-    print(dir(event))
-    ind = event.ind
-    # print('onpick3 scatter:', ind, np.take(x, ind))
-    print('onpick3 scatter:', ind)
-    print(event.artist)
-    print(dir(event.artist))
-    print(event.artist.get_label())
-    print(event.artist.get_gid())
-    # print(event.mouseevent)
-    # print(dir(event.mouseevent))
-    # print(event.mouseevent.inaxes)
-    # print(dir(event.mouseevent.inaxes))
-    # print(event.name)
-    print('+++++++++++++++++++++')
+    """Matplotlib pick callback (debug output removed)."""
+    _ = event.ind
 
 
 def click_point(event):
-    print('---------------------')
-    print(dir(event))
-    print(event.button)
-    print(event.guiEvent)
-    print(event.key)
-    print(event.lastevent)
-    print(event.name)
-    print(event.step)
-    print('+++++++++++++++++++++')
+    """Matplotlib click callback (debug output removed)."""
+    _ = event.button
 
 
 def d3_scatter(

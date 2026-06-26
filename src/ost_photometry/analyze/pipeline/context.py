@@ -42,9 +42,26 @@ class AnalysisContext:
     )  # skipped pairing attempts (for terminal logging)
     extinction_coefficients: dict | None = None  # from ExtinctionFitStep
 
-    # Reference to Observation when pipeline is run from Observation.run_pipeline
-    # (needed for correlate steps which use get_ids_object_of_interest etc.)
-    _observation: object = None
+    # Optional link to the live Observation while a pipeline run is active.
+    # Prefer context data fields; use :meth:`require_observation` only for legacy APIs.
+    observation: object = None
+
+    # Deprecated alias (removed): use ``observation`` instead.
+    @property
+    def _observation(self) -> object:
+        return self.observation
+
+    @_observation.setter
+    def _observation(self, value: object) -> None:
+        self.observation = value
+
+    def require_observation(self):
+        """Return the linked Observation or raise if the pipeline was not started from one."""
+        if self.observation is None:
+            raise RuntimeError(
+                "This pipeline step requires an Observation (run via Observation.run_pipeline)"
+            )
+        return self.observation
 
     # Metadata for skip logic
     wcs_determined: bool = False

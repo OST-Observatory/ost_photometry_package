@@ -33,26 +33,19 @@ if typing.TYPE_CHECKING:
 
 class CalibParameters:
     def __init__(
-            self, index: np.ndarray | None, column_names: dict[str, str],
-            calib_tbl: Table, **kwargs):
+        self,
+        index: np.ndarray | None,
+        column_names: dict[str, str],
+        calib_tbl: Table,
+        *,
+        ra_unit: u.core.Unit | None = None,
+        dec_unit: u.core.Unit | None = None,
+    ):
         self.ids_calibration_objects = index
         self.column_names = column_names
         self.calib_tbl = calib_tbl
-
-        #   Add additional keywords
-        self.__dict__.update(kwargs)
-
-        #   Check for right ascension and declination
-        ra_unit: u.core.Unit | None = kwargs.get('ra_unit', None)
-        dec_unit: u.core.Unit | None = kwargs.get('dec_unit', None)
-        if ra_unit is not None:
-            self.ra_unit = ra_unit
-        else:
-            self.ra_unit = u.deg
-        if dec_unit is not None:
-            self.dec_unit = dec_unit
-        else:
-            self.dec_unit = u.deg
+        self.ra_unit = ra_unit if ra_unit is not None else u.deg
+        self.dec_unit = dec_unit if dec_unit is not None else u.deg
 
 
 def load_calibration_data_table(
