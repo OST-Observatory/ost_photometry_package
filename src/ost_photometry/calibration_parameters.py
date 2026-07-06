@@ -181,14 +181,24 @@ def camera_info(
     #   Dark current
     try:
         dark_current_fit_parameters = dark_current[camera]
-        spline = interpolate.BSpline(
-            dark_current_fit_parameters['t'],
-            dark_current_fit_parameters['c'],
-            dark_current_fit_parameters['k'],
-            extrapolate=True,
-        )
-        dark_rate = spline(temperature)
-    except KeyError as e:
+        if dark_current_fit_parameters.get("interp") == "linear":
+            dark_rate_interp = interpolate.interp1d(
+                dark_current_fit_parameters["t"],
+                dark_current_fit_parameters["c"],
+                kind="linear",
+                fill_value="extrapolate",
+                bounds_error=False,
+            )
+            dark_rate = float(dark_rate_interp(temperature))
+        else:
+            spline = interpolate.BSpline(
+                dark_current_fit_parameters['t'],
+                dark_current_fit_parameters['c'],
+                dark_current_fit_parameters['k'],
+                extrapolate=True,
+            )
+            dark_rate = float(spline(temperature))
+    except (KeyError, ValueError) as e:
         terminal_output.print_to_terminal(
             f'Camera: {camera}\n'
             "   The dark current could not be determined... \n"
@@ -199,7 +209,7 @@ def camera_info(
         )
         if camera == 'QHY600M':
             dark_rate = 0.002
-        elif camera == 'QHY600M':
+        elif camera == 'QHY268M':
             dark_rate = 0.0005
         elif camera == 'SBIG STF-8300 CCD Camera':
             dark_rate = 0.02
@@ -597,7 +607,7 @@ dark_current = {
     'SBIG STF-8300 CCD Camera': {
         't': [-15, -10, 0],
         'c': [0.02, 0.04, 0.18],
-        'k': 1,
+        'interp': 'linear',
     },
 }
 
