@@ -13,3 +13,12 @@ __pycache__
 
 ost_photometry_package.code-workspace
 migration_reports
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/

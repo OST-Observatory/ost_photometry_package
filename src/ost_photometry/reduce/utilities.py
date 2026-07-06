@@ -32,7 +32,14 @@ from .exposure import (
     get_exposure_times,
 )
 from .image_types import get_image_type
-from .instrument import get_imaging_software, get_instrument_info, get_instruments
+from .instrument import (
+    get_egain_from_collection,
+    get_imaging_software,
+    get_instrument_info,
+    get_instruments,
+    resolve_readout_mode,
+    resolve_system_gain,
+)
 from .masks import get_pixel_mask, make_bad_pixel_mask, make_hot_pixel_mask
 from .wcs_reduce import determine_wcs, determine_wcs_all_images, determine_wcs_core
 

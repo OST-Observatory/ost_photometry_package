@@ -79,7 +79,7 @@ def chip_dimensions(camera: str) -> tuple[float, float]:
 
 def camera_info(
         camera: str, readout_mode: str, temperature: float,
-        gain_setting: int | None = None
+        gain_setting: int | float | None = None
     ) -> tuple[float, float, float, int, int]:
     """
     Camera specific parameters

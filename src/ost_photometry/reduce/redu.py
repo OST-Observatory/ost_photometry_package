@@ -16,6 +16,7 @@ from .. import calibration_parameters, checks, style, terminal_output
 from .. import utilities as base_utilities
 from ..core.parallel import Executor
 from . import plots, registration, utilities
+from .instrument import get_egain_from_collection, resolve_system_gain
 
 ############################################################################
 #                           Routines & definitions                         #
@@ -474,6 +475,8 @@ def _run_reduction(cfg: ReduceConfig) -> None:
     read_noise = cfg.read_noise
     dark_rate = cfg.dark_rate
     saturation_level = cfg.saturation_level
+    egain = get_egain_from_collection(image_file_collection)
+    calibration_gain = None
     if (
         read_noise is None
         or gain is None
@@ -488,12 +491,19 @@ def _run_reduction(cfg: ReduceConfig) -> None:
         )
         if read_noise is None:
             read_noise = camera_info[0]
-        if gain is None:
-            gain = camera_info[1]
+        calibration_gain = camera_info[1]
         if dark_rate is None:
             dark_rate = camera_info[2]
         if saturation_level is None:
             saturation_level = pow(2, pixel_bit_value) - 1
+
+    gain = resolve_system_gain(
+        instrument,
+        gain_setting,
+        egain,
+        calibration_gain,
+        user_gain=cfg.gain,
+    )
 
     ###
     #   Check master files on disk

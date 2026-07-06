@@ -4,9 +4,218 @@ import numpy as np
 import ccdproc as ccdp
 from astropy.stats import sigma_clip
 from astropy.table import Table
-from astropy.stats import sigma_clip
 
 from .. import style, terminal_output
+
+_QHY_CAMERAS = frozenset({"QHY600M", "QHY268M"})
+
+
+def _get_summary_column(
+    image_file_collection: ccdp.ImageFileCollection, column_name: str
+) -> np.ma.MaskedArray | None:
+    """Return a summary column if present, otherwise ``None``."""
+    summary = image_file_collection.summary
+    if summary is None or not isinstance(summary, Table):
+        return None
+    if column_name not in summary.colnames:
+        return None
+    return summary[column_name]
+
+
+def _get_unique_header_value(
+    image_file_collection: ccdp.ImageFileCollection,
+    column_name: str,
+    label: str,
+    *,
+    required: bool = True,
+) -> int | float | None:
+    """
+    Extract a single consistent FITS header value from the file collection.
+
+    Missing values are reported per file and excluded. When ``required`` is
+    ``False`` and the keyword is absent from all headers, ``None`` is returned.
+    """
+    column = _get_summary_column(image_file_collection, column_name)
+    if column is None:
+        if required:
+            raise KeyError(
+                f"{style.Bcolors.FAIL}{label} keyword ({column_name!r}) not found "
+                f"in FITS headers -> ABORT{style.Bcolors.ENDC}"
+            )
+        return None
+
+    value_mask = column.mask
+    files_without_value = np.array(image_file_collection.files)[value_mask]
+    for file_name in files_without_value:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without {label} information: \n "
+            f"{file_name} \n Skip file.",
+            style_name="WARNING",
+            indent=2,
+        )
+
+    values = set(column[np.invert(value_mask)])
+    if len(values) > 1:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Multiple {label} values detected.\n"
+            f"This is not supported -> EXIT \n{style.Bcolors.ENDC}"
+        )
+    if not values:
+        return None
+    return list(values)[0]
+
+
+def _get_readout_mode_keyword(summary: Table) -> str | None:
+    """Return the FITS keyword used for readout mode, if present."""
+    if "readoutm" in summary.colnames:
+        return "readoutm"
+    if "readmode" in summary.colnames:
+        return "readmode"
+    return None
+
+
+def resolve_readout_mode(
+    image_file_collection: ccdp.ImageFileCollection,
+    instrument: str,
+    *,
+    ignore_readout_mode_mismatch: bool = False,
+) -> str:
+    """
+    Extract the camera readout mode from FITS headers.
+
+    Older cameras (e.g. SBIG STF-8300) often lack a readout-mode keyword; in
+    that case ``"default"`` is returned. QHY cameras without the keyword
+    default to ``"Extend Fullwell 2CMS"``.
+    """
+    summary = image_file_collection.summary
+    if not isinstance(summary, Table):
+        raise ValueError(
+            f"{style.Bcolors.FAIL} \nReadout mode keyword for FITS Header "
+            "could not be determined. Summary table of image file collection "
+            f"is not available. -> ABORT {style.Bcolors.ENDC}"
+        )
+
+    readout_mode_keyword = _get_readout_mode_keyword(summary)
+    if readout_mode_keyword is None:
+        if instrument in _QHY_CAMERAS:
+            terminal_output.print_to_terminal(
+                "No readout mode keyword in FITS headers; "
+                "assuming Extend Fullwell 2CMS for QHY camera.",
+                style_name="WARNING",
+                indent=1,
+            )
+            return "Extend Fullwell 2CMS"
+
+        terminal_output.print_to_terminal(
+            "No readout mode keyword in FITS headers; using default.",
+            style_name="WARNING",
+            indent=1,
+        )
+        return "default"
+
+    readout_mode_mask = summary[readout_mode_keyword].mask
+    files_without_readout_mode = np.array(image_file_collection.files)[
+        readout_mode_mask
+    ]
+    for file_name in files_without_readout_mode:
+        terminal_output.print_to_terminal(
+            f"WARNING: Found file without readout mode information: \n "
+            f"{file_name} \n Skip file.",
+            style_name="WARNING",
+            indent=2,
+        )
+
+    readout_modes = list(
+        set(summary[readout_mode_keyword][np.invert(readout_mode_mask)])
+    )
+
+    if len(readout_modes) > 1:
+        if ignore_readout_mode_mismatch:
+            readout_mode = readout_modes[0]
+            terminal_output.print_to_terminal(
+                f"Multiple readout modes detected. Use first one "
+                f"detected: {readout_mode}",
+                style_name="WARNING",
+            )
+        else:
+            raise RuntimeError(
+                f"{style.Bcolors.FAIL}Multiple readout modes detected.\n"
+                f"This is currently not supported -> EXIT \n{style.Bcolors.ENDC}"
+            )
+    else:
+        readout_mode = "default"
+
+    if instrument in _QHY_CAMERAS:
+        if not readout_modes:
+            readout_mode = "Extend Fullwell 2CMS"
+        elif len(readout_modes) == 1:
+            readout_mode = readout_modes[0]
+            if readout_mode in ["Fast", "Slow", "Normal"]:
+                readout_mode = "Extend Fullwell 2CMS"
+            if readout_mode == 0:
+                readout_mode = "PhotoGraphic DSO"
+            elif readout_mode == 1:
+                readout_mode = "High Gain Mode"
+            elif readout_mode == 2:
+                readout_mode = "Extend Fullwell"
+            elif readout_mode == 3:
+                readout_mode = "Extend Fullwell 2CMS"
+        elif ignore_readout_mode_mismatch:
+            terminal_output.print_to_terminal(
+                "WARNING: Multiple readout modes detected. Assume Extend Fullwell 2CMS",
+                style_name="WARNING",
+                indent=2,
+            )
+            readout_mode = "Extend Fullwell 2CMS"
+    elif len(readout_modes) == 1:
+        readout_mode = readout_modes[0]
+
+    return readout_mode
+
+
+def get_egain_from_collection(
+    image_file_collection: ccdp.ImageFileCollection,
+) -> float | None:
+    """Return the electronic gain in e-/ADU from FITS ``EGAIN`` headers."""
+    return _get_unique_header_value(
+        image_file_collection,
+        "egain",
+        "EGAIN",
+        required=False,
+    )
+
+
+def resolve_system_gain(
+    instrument: str,
+    gain_setting: int | float | None,
+    egain: float | None,
+    calibration_gain: float | None,
+    user_gain: float | None = None,
+) -> float | None:
+    """
+    Resolve the system gain in e-/ADU.
+
+    For QHY cameras the internal ``GAIN`` setting is mapped to the true gain
+    via calibration curves. When ``EGAIN`` is present and differs from the
+    driver default of 1.0, it is preferred because it is usually reliable.
+    For older cameras without a ``GAIN`` keyword, ``EGAIN`` is used directly.
+    """
+    if user_gain is not None:
+        return user_gain
+
+    if instrument in _QHY_CAMERAS and gain_setting is not None:
+        if egain is not None and egain != 1.0:
+            return float(egain)
+        if calibration_gain is not None:
+            return float(calibration_gain)
+
+    if egain is not None:
+        return float(egain)
+
+    if calibration_gain is not None:
+        return float(calibration_gain)
+
+    return None
 
 
 def get_instruments(image_file_collection: ccdp.ImageFileCollection) -> set[str] | None:
@@ -47,7 +256,7 @@ def get_instrument_info(
     temperature_tolerance: float,
     ignore_readout_mode_mismatch: bool = False,
     ignore_instrument_mismatch: bool = False,
-) -> tuple[str, str, int | None, int, float]:
+) -> tuple[str, str, int | float | None, int, float]:
     """
     Extract information regarding the instruments and readout mode.
     Currently the instrument and readout mode need to be unique. An
@@ -140,118 +349,31 @@ def get_instrument_info(
         else:
             instrument = ""
 
-    readout_mode = "default"
-
-    if isinstance(image_file_collection.summary, Table):
-        if "readoutm" in image_file_collection.summary.colnames:
-            readout_mode_keyword = "readoutm"
-        elif "readmode" in image_file_collection.summary.colnames:
-            readout_mode_keyword = "readmode"
-        else:
-            raise KeyError(
-                f"{style.Bcolors.FAIL} \nReadout mode keyword for FITS Header could not"
-                f" be determined -> ABORT {style.Bcolors.ENDC}"
-            )
-    else:
-        raise ValueError(
-            f"{style.Bcolors.FAIL} \nReadout mode keyword for FITS Header "
-            "could notbe determined. Summary table of image file collectiont "
-            f"is not available. -> ABORT {style.Bcolors.ENDC}"
-        )
-
-    readout_mode_mask = image_file_collection.summary[readout_mode_keyword].mask
-    files_without_readout_mode = np.array(image_file_collection.files)[
-        readout_mode_mask
-    ]
-    for file_name in files_without_readout_mode:
-        terminal_output.print_to_terminal(
-            f"WARNING: Found file without readout mode information: \n "
-            f"{file_name} \n Skip file.",
-            style_name="WARNING",
-            indent=2,
-        )
-
-    readout_modes = list(
-        set(
-            image_file_collection.summary[readout_mode_keyword][
-                np.invert(readout_mode_mask)
-            ]
-        )
+    readout_mode = resolve_readout_mode(
+        image_file_collection,
+        instrument,
+        ignore_readout_mode_mismatch=ignore_readout_mode_mismatch,
     )
 
-    if len(readout_modes) > 1:
-        if ignore_readout_mode_mismatch:
-            readout_mode = readout_modes[0]
-            terminal_output.print_to_terminal(
-                f"Multiple readout modes detected. Use first one "
-                f"detected: {readout_mode}",
-                style_name="WARNING",
-            )
-        else:
-            raise RuntimeError(
-                f"{style.Bcolors.FAIL}Multiple readout modes detected.\n"
-                f"This is currently not supported -> EXIT \n{style.Bcolors.ENDC}"
-            )
-
-    if instrument in ["QHY600M", "QHY268M"]:
-        if not readout_modes:
-            readout_mode = "Extend Fullwell 2CMS"
-        elif len(readout_modes) == 1:
-            readout_mode = list(readout_modes)[0]
-            if readout_mode in ["Fast", "Slow", "Normal"]:
-                readout_mode = "Extend Fullwell 2CMS"
-            if readout_mode == 0:
-                readout_mode = "PhotoGraphic DSO"
-            elif readout_mode == 1:
-                readout_mode = "High Gain Mode"
-            elif readout_mode == 2:
-                readout_mode = "Extend Fullwell"
-            elif readout_mode == 3:
-                readout_mode = "Extend Fullwell 2CMS"
-        elif ignore_readout_mode_mismatch:
-            terminal_output.print_to_terminal(
-                "WARNING: Multiple readout modes detected. Assume Extend Fullwell 2CMS",
-                style_name="WARNING",
-                indent=2,
-            )
-            readout_mode = "Extend Fullwell 2CMS"
-
-    gain_mask = image_file_collection.summary["gain"].mask
-    files_without_gain = np.array(image_file_collection.files)[gain_mask]
-    for file_name in files_without_gain:
-        terminal_output.print_to_terminal(
-            f"WARNING: Found file without gain information: \n "
-            f"{file_name} \n Skip file.",
-            style_name="WARNING",
-            indent=2,
-        )
-
-    gain_settings = set(image_file_collection.summary["gain"][np.invert(gain_mask)])
-    if len(gain_settings) > 1:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL}Multiple gain values detected.\n"
-            f"This is not supported -> EXIT \n{style.Bcolors.ENDC}"
-        )
-    gain_setting = list(gain_settings)[0]
-
-    offset_mask = image_file_collection.summary["offset"].mask
-    files_without_offset = np.array(image_file_collection.files)[offset_mask]
-    for file_name in files_without_offset:
-        terminal_output.print_to_terminal(
-            f"WARNING: Found file without offset information: \n "
-            f"{file_name} \n Skip file.",
-            style_name="WARNING",
-            indent=2,
-        )
-
-    offset_settings = set(
-        image_file_collection.summary["offset"][np.invert(offset_mask)]
+    gain_setting = _get_unique_header_value(
+        image_file_collection,
+        "gain",
+        "gain",
+        required=False,
     )
-    if len(offset_settings) > 1:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL}Multiple offset values detected.\n"
-            f"This is not supported -> EXIT \n{style.Bcolors.ENDC}"
+    if gain_setting is None:
+        terminal_output.print_to_terminal(
+            "No GAIN keyword in FITS headers; will rely on EGAIN where available.",
+            style_name="WARNING",
+            indent=1,
         )
+
+    _get_unique_header_value(
+        image_file_collection,
+        "offset",
+        "offset",
+        required=False,
+    )
 
     pixel_bit_mask = image_file_collection.summary["bitpix"].mask
     files_without_pixel_bit = np.array(image_file_collection.files)[pixel_bit_mask]
