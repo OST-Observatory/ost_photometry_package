@@ -51,8 +51,8 @@ def crossmatch_standard_catalog(
         result["match_sep_arcsec"] = np.full(len(result), np.nan)
         return result
 
-    source_coords = SkyCoord(sources[ra_col], sources[dec_col], unit="deg")
-    cat_coords = SkyCoord(catalog["ra"], catalog["dec"], unit="deg")
+    source_coords = SkyCoord(sources[ra_col].ravel(), sources[dec_col].ravel(), unit="deg")
+    cat_coords = SkyCoord(catalog["ra"].ravel(), catalog["dec"].ravel(), unit="deg")
 
     idx_src, idx_cat, sep, _ = matching.search_around_sky(
         source_coords, cat_coords, match_radius

@@ -174,6 +174,7 @@ def correlate_image_series_images(
 
     assign_correlated_object_ids_single_series(image_series)
 
+
 def correlate_preserve_variable(
         observation: 'analyze.Observation', filter_: str,
         max_pixel_between_objects: int = 3, ooi_correlation_strategy: int = 1,
@@ -297,7 +298,7 @@ def correlate_preserve_variable(
         duplicate_handling=duplicate_handling_object_identification,
         verbose=verbose,
     )
-
+    
     #   Check if variable star was detected I
     #
     #   Get object of interests ID list

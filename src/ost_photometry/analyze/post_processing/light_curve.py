@@ -351,8 +351,8 @@ def prepare_time_series_epoch_native(
     if len(sub) == 0:
         return np.array([]), np.array([]), Time([], format="jd")
 
-    values = np.asarray(sub[val_col], dtype=float)
-    errs = np.abs(np.asarray(sub[err_col], dtype=float))
+    values = np.asarray(sub[val_col].ravel(), dtype=float)
+    errs = np.abs(np.asarray(sub[err_col].ravel(), dtype=float))
 
     jds = _row_jds_from_table(sub, epoch_meta, filter_)
     valid = np.isfinite(jds)

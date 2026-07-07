@@ -619,21 +619,21 @@ class ExtinctionCorrector:
             else:
                 airmass = np.asarray(data[fallback_airmass_col], dtype=float)
 
-            m_obs = np.array(data[mag_col], dtype=float)
+            m_obs = np.array(data[mag_col].ravel(), dtype=float)
             correction = coeff.k_prime * airmass
 
             if self.order == ExtinctionOrder.SECOND and coeff.k_second != 0:
                 ci_col1 = f"{mag_col_prefix}{coeff.color_filter_1}"
                 ci_col2 = f"{mag_col_prefix}{coeff.color_filter_2}"
                 if ci_col1 in data.colnames and ci_col2 in data.colnames:
-                    color = np.array(data[ci_col1]) - np.array(data[ci_col2])
+                    color = np.array(data[ci_col1].ravel()) - np.array(data[ci_col2].ravel())
                     correction += coeff.k_second * airmass * color
                 elif catalog_color_prefix:
                     s1 = f"{catalog_color_prefix}{coeff.color_filter_1}"
                     s2 = f"{catalog_color_prefix}{coeff.color_filter_2}"
                     if s1 in data.colnames and s2 in data.colnames:
-                        color = np.asarray(data[s1], dtype=float) - np.asarray(
-                            data[s2], dtype=float
+                        color = np.asarray(data[s1].ravel(), dtype=float) - np.asarray(
+                            data[s2].ravel(), dtype=float
                         )
                         color = np.where(np.isfinite(color), color, 0.0)
                         correction += coeff.k_second * airmass * color

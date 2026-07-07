@@ -231,7 +231,7 @@ def correlate_datasets(
         correlation_index = np.delete(correlation_index, rejected_datasets, 0)
 
     #   Calculate new index of the reference dataset
-    shift_id = np.argwhere(rejected_datasets < reference_dataset_id)
+    shift_id = np.argwhere(rejected_datasets < reference_dataset_id).ravel()
     new_reference_dataset_id = reference_dataset_id - len(shift_id)
 
     return correlation_index, new_reference_dataset_id, rejected_datasets, n_common_objects
@@ -305,9 +305,11 @@ def correlation_astropy(
     n_datasets = len(x_pixel_positions)
 
     #   Create reference SkyCoord object
+    x_pixel_positions_reference = x_pixel_positions[reference_dataset_id].value.ravel()
+    y_pixel_positions_reference = y_pixel_positions[reference_dataset_id].value.ravel()
     reference_coordinates = SkyCoord.from_pixel(
-        x_pixel_positions[reference_dataset_id],
-        y_pixel_positions[reference_dataset_id],
+        x_pixel_positions_reference,
+        y_pixel_positions_reference,
         current_wcs,
     )
 
@@ -336,9 +338,11 @@ def correlation_astropy(
                 index_array[i, :] = index_array[reference_dataset_id, :]
             else:
                 #   Create coordinates object
+                x_pixel_positions_current = x_pixel_positions[i].value.ravel()
+                y_pixel_positions_current = y_pixel_positions[i].value.ravel()
                 current_coordinates = SkyCoord.from_pixel(
-                    x_pixel_positions[i],
-                    y_pixel_positions[i],
+                    x_pixel_positions_current,
+                    y_pixel_positions_current,
                     current_wcs,
                 )
 
@@ -383,8 +387,8 @@ def correlation_astropy(
         #   of all images
         ids_rejected_objects = np.argwhere(
             n_times_to_rm >= expected_bad_image_fraction
-        )
-        rejected_object_ids = objects_to_rm[ids_rejected_objects].flatten()
+        ).ravel()
+        rejected_object_ids = objects_to_rm[ids_rejected_objects]
 
         #   Check if special objects are within the "bad" objects
         ref_is_in = np.isin(rejected_object_ids, special_object_ids)
@@ -395,6 +399,9 @@ def correlation_astropy(
             id_special_objects_in_rejected_objects = np.argwhere(
                 id_difference == 0.
             )[:, 0]
+            #   TODO: This argwhere might cause a problem, since the shape of return value changed. Check if .ravel()
+            #         needs to be added, when this part of the code can be reliably triggered.
+            print('id_special_objects_in_rejected_objects.shape', id_special_objects_in_rejected_objects.shape)
             rejected_object_ids = np.delete(
                 rejected_object_ids,
                 id_special_objects_in_rejected_objects
@@ -407,7 +414,7 @@ def correlation_astropy(
         if not isinstance(special_object_ids, np.ndarray):
             special_object_ids = np.array(special_object_ids)
         for index, special_object_id in np.ndenumerate(special_object_ids):
-            object_shift = np.argwhere(rejected_object_ids < special_object_id)
+            object_shift = np.argwhere(rejected_object_ids < special_object_id).ravel()
             n_shift = len(object_shift)
             special_object_ids[index] = special_object_id - n_shift
 
@@ -458,6 +465,9 @@ def correlation_astropy(
             id_special_objects_in_rejected_objects = np.argwhere(
                 id_difference == 0.
             )[:, 0]
+            #   TODO: This argwhere might cause a problem, since the shape of return value changed. Check if .ravel()
+            #         needs to be added, when this part of the code can be reliably triggered.
+            print('id_special_objects_in_rejected_objects.shape', id_special_objects_in_rejected_objects.shape)
             rejected_object_ids = np.delete(
                 rejected_object_ids,
                 id_special_objects_in_rejected_objects
@@ -694,8 +704,7 @@ def correlation_own(
                         if ooi_correlation_strategy == 3:
                             #   Find objects with distances that are smaller
                             #   than the required dcr
-                            possible_matches = np.argwhere(d2 <= dcr2)
-                            possible_matches = possible_matches.ravel()
+                            possible_matches = np.argwhere(d2 <= dcr2).ravel()
 
                             #   Fill ind array
                             n_possible_matches = len(possible_matches)
@@ -812,7 +821,7 @@ def correlation_own(
             c_save = len(index_array[j, :])
 
             #   First find many-to-one identifications
-            many_to_one_ids = np.argwhere(index_array[j, :] == i)
+            many_to_one_ids = np.argwhere(index_array[j, :] == i).ravel()
             n_multi = len(many_to_one_ids)
             #   All but one of the images in WW must eventually be removed.
             if n_multi > 1:
