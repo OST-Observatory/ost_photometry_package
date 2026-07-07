@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,120 @@ from . import checks, style, terminal_output
 
 if TYPE_CHECKING:
     from .utilities import Image  # noqa: F401
+
+_ASTAP_UINT16_MAX = 60000
+
+
+def _astap_field_of_view_degrees(image: Image) -> float:
+    """Return the image height in degrees for ASTAP's ``-fov`` option."""
+    if image.field_of_view_y is not None:
+        return image.field_of_view_y / 60.0
+
+    if image.field_of_view_x is not None:
+        terminal_output.print_to_terminal(
+            "WARNING: field_of_view_y not available; using field_of_view_x "
+            "for ASTAP.",
+            style_name="WARNING",
+            indent=2,
+        )
+        return image.field_of_view_x / 60.0
+
+    raise RuntimeError(
+        f"{style.Bcolors.FAIL}Field of view could not be determined for "
+        f"ASTAP -> EXIT{style.Bcolors.ENDC}"
+    )
+
+
+def _needs_astap_preprocessing(data: np.ndarray, bitpix: int) -> bool:
+    """Return whether the FITS data should be converted for ASTAP."""
+    if bitpix in (-32, -64):
+        return True
+    if np.issubdtype(data.dtype, np.floating):
+        return True
+    if not np.all(np.isfinite(data)):
+        return True
+    return bool(np.any(data < 0))
+
+
+def _scale_image_for_astap(data: np.ndarray) -> np.ndarray:
+    """Convert image data to unsigned 16-bit values suitable for ASTAP."""
+    clean = np.nan_to_num(np.asarray(data, dtype=np.float64))
+    clean = np.where(np.isfinite(clean), clean, 0.0)
+
+    positive = clean[clean > 0]
+    if positive.size == 0:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Image contains no positive pixels; "
+            f"ASTAP preprocessing failed -> EXIT{style.Bcolors.ENDC}"
+        )
+
+    background = float(np.percentile(positive, 5)) if positive.size > 10 else 0.0
+    scaled = np.clip(clean - background, 0, None)
+    maximum = float(scaled.max())
+    if maximum <= 0:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Image contains no usable signal after "
+            f"ASTAP preprocessing -> EXIT{style.Bcolors.ENDC}"
+        )
+
+    return (scaled / maximum * _ASTAP_UINT16_MAX).astype(np.uint16)
+
+
+def _prepare_astap_fits(source_path: Path, working_dir: Path) -> tuple[Path, bool]:
+    """
+    Return an ASTAP-compatible FITS path.
+
+    Calibrated or stacked images are written as a temporary unsigned 16-bit
+    copy when required. The boolean indicates whether a temporary file was
+    created and should be removed afterwards.
+    """
+    checks.check_output_directories(working_dir)
+
+    with fits.open(source_path) as hdul:
+        data = hdul[0].data
+        if data is None:
+            raise RuntimeError(
+                f"{style.Bcolors.FAIL}FITS file contains no image data: "
+                f"{source_path}{style.Bcolors.ENDC}"
+            )
+
+        bitpix = int(hdul[0].header.get("BITPIX", 0))
+        if not _needs_astap_preprocessing(data, bitpix):
+            return source_path, False
+
+        header = hdul[0].header.copy()
+        astap_data = _scale_image_for_astap(data)
+
+    for keyword in ("BZERO", "BSCALE", "BLANK"):
+        if keyword in header:
+            del header[keyword]
+
+    header["BITPIX"] = 16
+    header.add_history(
+        "Temporary unsigned 16-bit copy for ASTAP plate solving.",
+        before=0,
+    )
+
+    temp_file = tempfile.NamedTemporaryFile(
+        prefix=f"{source_path.stem}_astap_",
+        suffix=".fit",
+        dir=working_dir,
+        delete=False,
+    )
+    temp_path = Path(temp_file.name)
+    temp_file.close()
+    fits.writeto(temp_path, astap_data, header, overwrite=True)
+    return temp_path, True
+
+
+def _apply_wcs_to_fits(target_path: Path, wcs_header: fits.Header) -> wcs.WCS:
+    """Write a WCS solution to ``target_path`` and return the WCS object."""
+    with fits.open(target_path, mode="update") as hdul:
+        hdul[0].header.update(wcs_header)
+        hdul.flush()
+        derived_wcs = wcs.WCS(hdul[0].header)
+
+    return derived_wcs
 
 
 def find_wcs_astrometry(
@@ -273,45 +388,65 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
         indent=indent,
     )
 
-    #   Field of view in degrees
-    field_of_view = image.field_of_view_x / 60.0
+    field_of_view = _astap_field_of_view_degrees(image)
+    source_path = Path(image.path)
+    working_dir = image.out_path / "wcs_images"
+    astap_path, is_temporary = _prepare_astap_fits(source_path, working_dir)
 
-    #   Path to image
-    wcs_file = image.path
-
-    #   String passed to the shell
-    command = 'astap_cli -f "{}" -r 3 -fov {} -update'.format(wcs_file, field_of_view)
-
-    #   Running the command
-    command_result = subprocess.run(
-        [command],
-        shell=True,
-        text=True,
-        capture_output=True,
-    )
-
-    return_code = command_result.returncode
-    solution_found = command_result.stdout.find("Solution found:")
-    if return_code != 0 or solution_found == -1:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
-            f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"
-            f"The command was:\n{command} \nDetailed error output:\n"
-            f"{style.Bcolors.ENDC}{command_result.stdout}{command_result.stderr}"
-            f"{style.Bcolors.FAIL}Exit{style.Bcolors.ENDC}"
+    if is_temporary:
+        terminal_output.print_to_terminal(
+            "Created temporary 16-bit FITS copy for ASTAP.",
+            indent=indent,
+            style_name="WARNING",
         )
 
-    terminal_output.print_to_terminal(
-        "WCS solution found :)",
-        indent=indent,
-        style_name="OKGREEN",
-    )
+    cmd = [
+        "astap_cli",
+        "-f",
+        str(astap_path),
+        "-r",
+        "3",
+        "-fov",
+        f"{field_of_view:.10g}",
+        "-update",
+    ]
 
-    #   Get image hdu list
-    hdu_list = fits.open(wcs_file)
+    try:
+        command_result = subprocess.run(
+            cmd,
+            shell=False,
+            text=True,
+            capture_output=True,
+        )
 
-    #   Extract the WCS
-    derived_wcs = wcs.WCS(hdu_list[0].header)
+        return_code = command_result.returncode
+        solution_found = command_result.stdout.find("Solution found:")
+        if return_code != 0 or solution_found == -1:
+            raise RuntimeError(
+                f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
+                f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"
+                f"The command was:\n{shlex.join(cmd)} \nDetailed error output:\n"
+                f"{style.Bcolors.ENDC}{command_result.stdout}{command_result.stderr}"
+                f"{style.Bcolors.ENDC}{style.Bcolors.FAIL}Exit{style.Bcolors.ENDC}"
+            )
+
+        terminal_output.print_to_terminal(
+            "WCS solution found :)",
+            indent=indent,
+            style_name="OKGREEN",
+        )
+
+        with fits.open(astap_path) as solved_hdul:
+            solved_wcs = wcs.WCS(solved_hdul[0].header)
+            wcs_header = solved_wcs.to_header(relax=True)
+
+        if is_temporary:
+            derived_wcs = _apply_wcs_to_fits(source_path, wcs_header)
+        else:
+            derived_wcs = solved_wcs
+    finally:
+        if is_temporary:
+            astap_path.unlink(missing_ok=True)
 
     image.wcs = derived_wcs
     return derived_wcs
