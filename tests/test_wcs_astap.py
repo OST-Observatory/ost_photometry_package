@@ -14,6 +14,8 @@ from ost_photometry.wcs import (
     _needs_astap_preprocessing,
     _prepare_astap_fits,
     _scale_image_for_astap,
+    _strip_wcs_keywords,
+    _wcs_maps_distinct_sky_positions,
 )
 
 
@@ -108,7 +110,7 @@ def test_apply_wcs_to_fits_replaces_conflicting_keywords(tmp_path: Path):
   solved_header["CUNIT2"] = "deg"
   solved_wcs = astropy_wcs.WCS(solved_header)
 
-  applied = _apply_wcs_to_fits(source, solved_wcs)
+  applied = _apply_wcs_to_fits(source, solved_wcs, solved_header, image_shape=(64, 64))
   corner = SkyCoord.from_pixel(0, 0, applied)
   center = SkyCoord.from_pixel(32, 32, applied)
 
@@ -116,5 +118,31 @@ def test_apply_wcs_to_fits_replaces_conflicting_keywords(tmp_path: Path):
   assert abs(corner.dec.deg - center.dec.deg) > 0.001
 
   with fits.open(source) as hdul:
+    reloaded = astropy_wcs.WCS(hdul[0].header)
+    assert _wcs_maps_distinct_sky_positions(reloaded, (64, 64))
     assert hdul[0].header["CRVAL1"] == solved_header["CRVAL1"]
     assert hdul[0].header["CDELT1"] == solved_header["CDELT1"]
+
+
+def test_prepare_astap_fits_strips_existing_wcs_from_temp_header(tmp_path: Path):
+    source = tmp_path / "reduced.fit"
+    data = np.array([[100.0, -5.0], [200.0, 50.0]], dtype=np.float32)
+    header = fits.Header()
+    header["BITPIX"] = -32
+    header["CTYPE1"] = "RA---TAN"
+    header["CTYPE2"] = "DEC--TAN"
+    header["CRVAL1"] = 10.0
+    header["CRVAL2"] = 20.0
+    header["CRPIX1"] = 1.0
+    header["CRPIX2"] = 1.0
+    header["CDELT1"] = 1.0
+    header["CDELT2"] = 1.0
+    fits.writeto(source, data, header, overwrite=True)
+
+    astap_path, is_temporary = _prepare_astap_fits(source, tmp_path)
+
+    assert is_temporary is True
+    with fits.open(astap_path) as hdul:
+        assert "CTYPE1" not in hdul[0].header
+
+    astap_path.unlink()

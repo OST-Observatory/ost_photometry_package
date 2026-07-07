@@ -503,7 +503,7 @@ def find_wcs(
     else:
         for i, img in enumerate(image_series.image_list):
             #   Test if the image contains already a WCS
-            cal_wcs = wcs_utilities.check_wcs_exists(img)
+            cal_wcs, wcs_file = wcs_utilities.check_wcs_exists(img)
 
             if not cal_wcs or force_wcs_determination:
                 #   Calculate WCS -> astrometry.net
@@ -537,7 +537,7 @@ def find_wcs(
                         f"{method} {style.Bcolors.ENDC}"
                     )
             else:
-                w = wcs.WCS(fits.open(img.path)[0].header)
+                w = extract_wcs(wcs_file)
 
             if i == 0:
                 image_series.set_wcs(w)

@@ -34,7 +34,14 @@ from photutils.psf import ImagePSF
 from regions import PixCoord, RectanglePixelRegion
 
 from . import calibration_parameters, checks, style, terminal_output
-from .wcs import check_wcs_exists, find_wcs_astap, find_wcs_astrometry, find_wcs_twirl
+from .wcs import (
+    check_wcs_exists,
+    find_wcs_astap,
+    find_wcs_astrometry,
+    find_wcs_twirl,
+    persist_wcs_to_fits,
+    sync_image_coordinates_from_wcs,
+)
 
 ############################################################################
 #                           Routines & definitions                         #
