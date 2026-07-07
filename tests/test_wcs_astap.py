@@ -4,9 +4,12 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
+from astropy.coordinates import SkyCoord
 from astropy.io import fits
+from astropy import wcs as astropy_wcs
 
 from ost_photometry.wcs import (
+    _apply_wcs_to_fits,
     _astap_field_of_view_degrees,
     _needs_astap_preprocessing,
     _prepare_astap_fits,
@@ -75,3 +78,43 @@ def test_prepare_astap_fits_converts_calibrated_float(tmp_path: Path):
         assert hdul[0].data.min() >= 0
 
     astap_path.unlink()
+
+
+def test_apply_wcs_to_fits_replaces_conflicting_keywords(tmp_path: Path):
+  source = tmp_path / "combined.fit"
+  data = np.ones((64, 64), dtype=np.float32)
+  header = fits.Header()
+  header["BITPIX"] = -32
+  header["CTYPE1"] = "RA---TAN"
+  header["CTYPE2"] = "DEC--TAN"
+  header["CRVAL1"] = 10.0
+  header["CRVAL2"] = 20.0
+  header["CRPIX1"] = 1.0
+  header["CRPIX2"] = 1.0
+  header["CDELT1"] = 1.0
+  header["CDELT2"] = 1.0
+  fits.writeto(source, data, header, overwrite=True)
+
+  solved_header = fits.Header()
+  solved_header["CTYPE1"] = "RA---TAN"
+  solved_header["CTYPE2"] = "DEC--TAN"
+  solved_header["CRVAL1"] = 11.776
+  solved_header["CRVAL2"] = 85.29
+  solved_header["CRPIX1"] = 32.5
+  solved_header["CRPIX2"] = 32.5
+  solved_header["CDELT1"] = 0.00018
+  solved_header["CDELT2"] = 0.00018
+  solved_header["CUNIT1"] = "deg"
+  solved_header["CUNIT2"] = "deg"
+  solved_wcs = astropy_wcs.WCS(solved_header)
+
+  applied = _apply_wcs_to_fits(source, solved_wcs)
+  corner = SkyCoord.from_pixel(0, 0, applied)
+  center = SkyCoord.from_pixel(32, 32, applied)
+
+  assert abs(corner.ra.deg - center.ra.deg) > 0.001
+  assert abs(corner.dec.deg - center.dec.deg) > 0.001
+
+  with fits.open(source) as hdul:
+    assert hdul[0].header["CRVAL1"] == solved_header["CRVAL1"]
+    assert hdul[0].header["CDELT1"] == solved_header["CDELT1"]

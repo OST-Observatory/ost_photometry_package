@@ -123,14 +123,39 @@ def _prepare_astap_fits(source_path: Path, working_dir: Path) -> tuple[Path, boo
     return temp_path, True
 
 
-def _apply_wcs_to_fits(target_path: Path, wcs_header: fits.Header) -> wcs.WCS:
-    """Write a WCS solution to ``target_path`` and return the WCS object."""
+def _strip_wcs_keywords(header: fits.Header) -> None:
+    """Remove existing WCS keywords before writing a new solution."""
+    remove_keys = [
+        key
+        for key in header
+        if key.startswith(
+            (
+                "CTYPE",
+                "CRVAL",
+                "CRPIX",
+                "CDELT",
+                "CROTA",
+                "CUNIT",
+                "PC",
+                "CD",
+                "PV",
+            )
+        )
+        or key in ("RADESYS", "EQUINOX", "LONPOLE", "LATPOLE")
+    ]
+    for key in remove_keys:
+        del header[key]
+
+
+def _apply_wcs_to_fits(target_path: Path, solved_wcs: wcs.WCS) -> wcs.WCS:
+    """Write an ASTAP WCS solution to ``target_path`` and return it."""
+    wcs_header = solved_wcs.to_header(relax=True)
     with fits.open(target_path, mode="update") as hdul:
+        _strip_wcs_keywords(hdul[0].header)
         hdul[0].header.update(wcs_header)
         hdul.flush()
-        derived_wcs = wcs.WCS(hdul[0].header)
 
-    return derived_wcs
+    return solved_wcs
 
 
 def find_wcs_astrometry(
@@ -438,10 +463,9 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
 
         with fits.open(astap_path) as solved_hdul:
             solved_wcs = wcs.WCS(solved_hdul[0].header)
-            wcs_header = solved_wcs.to_header(relax=True)
 
         if is_temporary:
-            derived_wcs = _apply_wcs_to_fits(source_path, wcs_header)
+            derived_wcs = _apply_wcs_to_fits(source_path, solved_wcs)
         else:
             derived_wcs = solved_wcs
     finally:
