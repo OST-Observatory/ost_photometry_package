@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import astropy.units as u
 from astropy import wcs
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
@@ -158,6 +159,33 @@ def _apply_wcs_to_fits(target_path: Path, solved_wcs: wcs.WCS) -> wcs.WCS:
     return solved_wcs
 
 
+def sync_image_coordinates_from_wcs(image: Image, derived_wcs: wcs.WCS) -> None:
+    """Align the image sky center with the solved WCS reference position."""
+    image.coordinates_image_center = SkyCoord(
+        ra=derived_wcs.wcs.crval[0] * u.deg,
+        dec=derived_wcs.wcs.crval[1] * u.deg,
+        frame="icrs",
+    )
+
+
+def _sync_image_coordinates_from_wcs(image: Image, derived_wcs: wcs.WCS) -> None:
+    sync_image_coordinates_from_wcs(image, derived_wcs)
+
+
+def _astap_search_hint_arguments(image: Image) -> list[str]:
+    """Return optional ASTAP search-center arguments from the image metadata."""
+    coordinates = image.coordinates_image_center
+    if coordinates is None:
+        return []
+
+    return [
+        "-ra",
+        f"{coordinates.ra.hour:.10g}",
+        "-spd",
+        f"{coordinates.dec.deg + 90.0:.10g}",
+    ]
+
+
 def find_wcs_astrometry(
     image: Image,
     cosmic_rays_removed: bool = False,
@@ -293,6 +321,7 @@ def find_wcs_astrometry(
     derived_wcs = wcs.WCS(hdu_list[0].header)
 
     image.wcs = derived_wcs
+    _sync_image_coordinates_from_wcs(image, derived_wcs)
     return derived_wcs
 
 
@@ -386,6 +415,7 @@ def find_wcs_twirl(
     )
 
     image.wcs = derived_wcs
+    _sync_image_coordinates_from_wcs(image, derived_wcs)
     return derived_wcs
 
 
@@ -433,6 +463,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
         "3",
         "-fov",
         f"{field_of_view:.10g}",
+        *_astap_search_hint_arguments(image),
         "-update",
     ]
 
@@ -473,6 +504,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
             astap_path.unlink(missing_ok=True)
 
     image.wcs = derived_wcs
+    _sync_image_coordinates_from_wcs(image, derived_wcs)
     return derived_wcs
 
 
