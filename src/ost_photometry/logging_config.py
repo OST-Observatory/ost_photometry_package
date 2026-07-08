@@ -33,6 +33,9 @@ def configure_logging(level: int = logging.INFO) -> None:
     handler.setFormatter(_AnsiFormatter("%(message)s"))
     _LOG.addHandler(handler)
     _LOG.setLevel(level)
+    # Keep CLI output on the package logger only; otherwise messages also
+    # reach the root logger (e.g. from astropy) and appear twice.
+    _LOG.propagate = False
     _CONFIGURED = True
 
 

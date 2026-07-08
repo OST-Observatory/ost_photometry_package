@@ -399,7 +399,7 @@ def get_instrument_info(
     files_without_ccd_temperature = np.array(image_file_collection.files)[mask]
     for file_name in files_without_ccd_temperature:
         terminal_output.print_to_terminal(
-            f"WARNING: Found file without temperature information: "
+            f"Found file without temperature information: "
             f"{file_name} -> Skip file.",
             style_name="WARNING",
             indent=2,
