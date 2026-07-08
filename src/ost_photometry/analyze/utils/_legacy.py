@@ -1010,7 +1010,7 @@ def prepare_and_plot_starmap(
     #   Prepare table
     n_stars = len(tbl)
     tbl_xy = Table(
-        names=['id', 'xcentroid', 'ycentroid'],
+        names=['id', 'x_centroid', 'y_centroid'],
         data=[np.arange(0, n_stars), tbl[x_name], tbl[y_name]],
     )
 
@@ -1137,7 +1137,7 @@ def prepare_and_plot_starmap_from_image_series(
 
     #   Make new table with the position of the calibration stars
     tbl_xy_calib = Table(
-        names=['xcentroid', 'ycentroid'],
+        names=['x_centroid', 'y_centroid'],
         data=[[calib_xs], [calib_ys]]
     )
 
