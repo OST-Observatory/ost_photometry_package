@@ -186,9 +186,12 @@ class ImageSeries:
         self.wcs: wcs.WCS | None = None
 
     def set_wcs(self, w: wcs.WCS) -> None:
+        from ost_photometry.wcs import sync_image_coordinates_from_wcs
+
         self.wcs = w
         for img in self.image_list:
             img.wcs = w
+            sync_image_coordinates_from_wcs(img, w)
 
     def get_photometry(self) -> dict[str, object]:
         from astropy.table import Table

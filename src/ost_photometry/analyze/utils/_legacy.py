@@ -502,7 +502,7 @@ def find_wcs(
     else:
         for i, img in enumerate(image_series.image_list):
             #   Test if the image contains already a WCS
-            cal_wcs = wcs_utilities.check_wcs_exists(img)
+            cal_wcs, wcs_file = wcs_utilities.check_wcs_exists(img)
 
             if not cal_wcs or force_wcs_determination:
                 #   Calculate WCS -> astrometry.net
@@ -536,7 +536,7 @@ def find_wcs(
                         f"{method} {style.Bcolors.ENDC}"
                     )
             else:
-                w = wcs.WCS(fits.open(img.path)[0].header)
+                w = extract_wcs(wcs_file)
 
             if i == 0:
                 image_series.set_wcs(w)
@@ -2770,22 +2770,38 @@ def clear_duplicates(
         additional_array
             Cleared for duplicates
     """
-    #   Find duplicates
-    duplicate_index = find_duplicates_nparray(data_array)
+    data_array = np.asarray(data_array)
+    selection_quantity = np.asarray(selection_quantity)
+    additional_array = np.asarray(additional_array)
 
-    #   Calculate most likely duplicate and remove those from the
-    #   duplicates list
-    distance_0 = selection_quantity[duplicate_index[0]]
-    distance_1 = selection_quantity[duplicate_index[1]]
-    mask = distance_0 > distance_1
-    rm_index = duplicate_index[0][mask]
+    if data_array.size == 0:
+        return data_array, selection_quantity, additional_array
 
-    #   Clear data arrays
-    data_array = np.delete(data_array, rm_index)
-    selection_quantity = np.delete(selection_quantity, rm_index)
-    additional_array = np.delete(additional_array, rm_index)
+    keep = np.ones(data_array.shape[0], dtype=bool)
+    sort_order = np.argsort(data_array, kind="stable")
 
-    return data_array, selection_quantity, additional_array
+    group_start = 0
+    while group_start < sort_order.size:
+        group_end = group_start + 1
+        while (
+            group_end < sort_order.size
+            and data_array[sort_order[group_end]] == data_array[sort_order[group_start]]
+        ):
+            group_end += 1
+
+        if group_end - group_start > 1:
+            group_indices = sort_order[group_start:group_end]
+            best_index = group_indices[np.argmin(selection_quantity[group_indices])]
+            keep[group_indices] = False
+            keep[best_index] = True
+
+        group_start = group_end
+
+    return (
+        data_array[keep],
+        selection_quantity[keep],
+        additional_array[keep],
+    )
 
 
 def query_simbad_objects(

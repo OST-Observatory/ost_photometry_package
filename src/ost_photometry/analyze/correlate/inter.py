@@ -790,24 +790,27 @@ def correlate_with_calibration_objects(
         )
 
         #   Find matches between the datasets
-        index_obj_instrument, index_obj_literature, _, _ = matching.search_around_sky(
+        index_obj_instrument, index_obj_literature, separation, _ = matching.search_around_sky(
             object_coordinates,
             calibration_object_coordinates,
             separation_limit,
         )
+        separation_arcsec = np.asarray(separation.arcsec, dtype=float)
 
-        #   Remove calibration stars with multiple identifications
-        duplicate_indexes = utilities.find_duplicates_nparray(
-            index_obj_instrument
-        )[0]
-        index_obj_instrument = np.delete(index_obj_instrument, duplicate_indexes)
-        index_obj_literature = np.delete(index_obj_literature, duplicate_indexes)
-
-        duplicate_indexes = utilities.find_duplicates_nparray(
-            index_obj_literature
-        )[0]
-        index_obj_instrument = np.delete(index_obj_instrument, duplicate_indexes)
-        index_obj_literature = np.delete(index_obj_literature, duplicate_indexes)
+        index_obj_instrument, separation_arcsec, index_obj_literature = (
+            utilities.clear_duplicates(
+                index_obj_instrument,
+                separation_arcsec,
+                index_obj_literature,
+            )
+        )
+        index_obj_literature, separation_arcsec, index_obj_instrument = (
+            utilities.clear_duplicates(
+                index_obj_literature,
+                separation_arcsec,
+                index_obj_instrument,
+            )
+        )
 
         n_identified_literature_objs = len(index_obj_literature)
 

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import astropy.units as u
 from astropy import wcs
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
@@ -16,6 +18,268 @@ from . import checks, style, terminal_output
 
 if TYPE_CHECKING:
     from .utilities import Image  # noqa: F401
+
+_ASTAP_UINT16_MAX = 60000
+
+
+def _astap_field_of_view_degrees(image: Image) -> float:
+    """Return the image height in degrees for ASTAP's ``-fov`` option."""
+    if image.field_of_view_y is not None:
+        return image.field_of_view_y / 60.0
+
+    if image.field_of_view_x is not None:
+        terminal_output.print_to_terminal(
+            "WARNING: field_of_view_y not available; using field_of_view_x "
+            "for ASTAP.",
+            style_name="WARNING",
+            indent=2,
+        )
+        return image.field_of_view_x / 60.0
+
+    raise RuntimeError(
+        f"{style.Bcolors.FAIL}Field of view could not be determined for "
+        f"ASTAP -> EXIT{style.Bcolors.ENDC}"
+    )
+
+
+def _needs_astap_preprocessing(data: np.ndarray, bitpix: int) -> bool:
+    """Return whether the FITS data should be converted for ASTAP."""
+    if bitpix in (-32, -64):
+        return True
+    if np.issubdtype(data.dtype, np.floating):
+        return True
+    if not np.all(np.isfinite(data)):
+        return True
+    return bool(np.any(data < 0))
+
+
+def _scale_image_for_astap(data: np.ndarray) -> np.ndarray:
+    """Convert image data to unsigned 16-bit values suitable for ASTAP."""
+    clean = np.nan_to_num(np.asarray(data, dtype=np.float64))
+    clean = np.where(np.isfinite(clean), clean, 0.0)
+
+    positive = clean[clean > 0]
+    if positive.size == 0:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Image contains no positive pixels; "
+            f"ASTAP preprocessing failed -> EXIT{style.Bcolors.ENDC}"
+        )
+
+    background = float(np.percentile(positive, 5)) if positive.size > 10 else 0.0
+    scaled = np.clip(clean - background, 0, None)
+    maximum = float(scaled.max())
+    if maximum <= 0:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Image contains no usable signal after "
+            f"ASTAP preprocessing -> EXIT{style.Bcolors.ENDC}"
+        )
+
+    return (scaled / maximum * _ASTAP_UINT16_MAX).astype(np.uint16)
+
+
+def _prepare_astap_fits(source_path: Path, working_dir: Path) -> tuple[Path, bool]:
+    """
+    Return an ASTAP-compatible FITS path.
+
+    Calibrated or stacked images are written as a temporary unsigned 16-bit
+    copy when required. The boolean indicates whether a temporary file was
+    created and should be removed afterwards.
+    """
+    checks.check_output_directories(working_dir)
+
+    with fits.open(source_path) as hdul:
+        data = hdul[0].data
+        if data is None:
+            raise RuntimeError(
+                f"{style.Bcolors.FAIL}FITS file contains no image data: "
+                f"{source_path}{style.Bcolors.ENDC}"
+            )
+
+        bitpix = int(hdul[0].header.get("BITPIX", 0))
+        if not _needs_astap_preprocessing(data, bitpix):
+            return source_path, False
+
+        header = hdul[0].header.copy()
+        _strip_wcs_keywords(header)
+        astap_data = _scale_image_for_astap(data)
+
+    for keyword in ("BZERO", "BSCALE", "BLANK"):
+        if keyword in header:
+            del header[keyword]
+
+    header["BITPIX"] = 16
+    header.add_history(
+        "Temporary unsigned 16-bit copy for ASTAP plate solving.",
+        before=0,
+    )
+
+    temp_file = tempfile.NamedTemporaryFile(
+        prefix=f"{source_path.stem}_astap_",
+        suffix=".fit",
+        dir=working_dir,
+        delete=False,
+    )
+    temp_path = Path(temp_file.name)
+    temp_file.close()
+    fits.writeto(temp_path, astap_data, header, overwrite=True)
+    return temp_path, True
+
+
+_WCS_KEYWORDS_SINGLE = frozenset(
+    {
+        "RADESYS",
+        "EQUINOX",
+        "LONPOLE",
+        "LATPOLE",
+        "WCSAXES",
+        "WCSNAME",
+        "A_ORDER",
+        "B_ORDER",
+        "AP_ORDER",
+        "BP_ORDER",
+    }
+)
+
+_WCS_KEYWORD_PREFIXES = (
+    "CTYPE",
+    "CRVAL",
+    "CRPIX",
+    "CDELT",
+    "CROTA",
+    "CUNIT",
+    "PC",
+    "CD",
+    "PV",
+    "A_",
+    "B_",
+    "AP_",
+    "BP_",
+)
+
+
+def _is_wcs_header_keyword(keyword: str) -> bool:
+    """Return whether a FITS keyword belongs to the celestial WCS."""
+    key = keyword.upper()
+    if key in _WCS_KEYWORDS_SINGLE:
+        return True
+    return any(key.startswith(prefix) for prefix in _WCS_KEYWORD_PREFIXES)
+
+
+def _strip_wcs_keywords(header: fits.Header) -> None:
+    """Remove existing WCS keywords before writing a new solution."""
+    remove_keys = [key for key in header if _is_wcs_header_keyword(key)]
+    for key in remove_keys:
+        del header[key]
+
+
+def _collect_wcs_header_cards(header: fits.Header) -> fits.Header:
+    """Return the WCS cards from ``header`` in their original order."""
+    cards = [card for card in header.cards if _is_wcs_header_keyword(card.keyword)]
+    return fits.Header(cards)
+
+
+def _wcs_maps_distinct_sky_positions(
+    wcs_obj: wcs.WCS,
+    shape_xy: tuple[int, int],
+    min_corner_separation_arcsec: float = 30.0,
+) -> bool:
+    """Return whether opposite image corners map to distinct sky positions."""
+    nx, ny = shape_xy
+    if nx < 2 or ny < 2:
+        return False
+
+    try:
+        corner_a = SkyCoord.from_pixel(0, 0, wcs_obj)
+        corner_b = SkyCoord.from_pixel(nx - 1, ny - 1, wcs_obj)
+    except Exception:
+        return False
+
+    return corner_a.separation(corner_b).arcsec > min_corner_separation_arcsec
+
+
+def _apply_wcs_to_fits(
+    target_path: Path,
+    solved_wcs: wcs.WCS,
+    solved_header: fits.Header | None = None,
+    image_shape: tuple[int, int] | None = None,
+) -> wcs.WCS:
+    """Write an ASTAP WCS solution to ``target_path`` and reload it."""
+    if solved_header is not None:
+        wcs_header = _collect_wcs_header_cards(solved_header)
+    else:
+        wcs_header = solved_wcs.to_header(relax=True)
+
+    with fits.open(target_path, mode="update") as hdul:
+        if image_shape is None and hdul[0].data is not None:
+            ny, nx = hdul[0].data.shape
+            image_shape = (nx, ny)
+        _strip_wcs_keywords(hdul[0].header)
+        hdul[0].header.update(wcs_header)
+        hdul.flush()
+
+    with fits.open(target_path) as hdul:
+        reloaded_wcs = wcs.WCS(hdul[0].header)
+        if image_shape is None and hdul[0].data is not None:
+            ny, nx = hdul[0].data.shape
+            image_shape = (nx, ny)
+
+    if image_shape is not None and not _wcs_maps_distinct_sky_positions(
+        reloaded_wcs,
+        image_shape,
+    ):
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}WCS written to {target_path} is invalid: "
+            f"image corners map to the same sky position."
+            f"{style.Bcolors.ENDC}"
+        )
+
+    return reloaded_wcs
+
+
+def persist_wcs_to_fits(image: Image) -> wcs.WCS:
+    """Write the in-memory WCS of ``image`` to its FITS file."""
+    if image.wcs is None:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}No WCS available for image "
+            f"{image.path}{style.Bcolors.ENDC}"
+        )
+
+    ny, nx = image.get_shape()
+    derived_wcs = _apply_wcs_to_fits(
+        Path(image.path),
+        image.wcs,
+        image_shape=(nx, ny),
+    )
+    image.wcs = derived_wcs
+    sync_image_coordinates_from_wcs(image, derived_wcs)
+    return derived_wcs
+
+
+def sync_image_coordinates_from_wcs(image: Image, derived_wcs: wcs.WCS) -> None:
+    """Align the image sky center with the solved WCS reference position."""
+    image.coordinates_image_center = SkyCoord(
+        ra=derived_wcs.wcs.crval[0] * u.deg,
+        dec=derived_wcs.wcs.crval[1] * u.deg,
+        frame="icrs",
+    )
+
+
+def _sync_image_coordinates_from_wcs(image: Image, derived_wcs: wcs.WCS) -> None:
+    sync_image_coordinates_from_wcs(image, derived_wcs)
+
+
+def _astap_search_hint_arguments(image: Image) -> list[str]:
+    """Return optional ASTAP search-center arguments from the image metadata."""
+    coordinates = image.coordinates_image_center
+    if coordinates is None:
+        return []
+
+    return [
+        "-ra",
+        f"{coordinates.ra.hour:.10g}",
+        "-spd",
+        f"{coordinates.dec.deg + 90.0:.10g}",
+    ]
 
 
 def find_wcs_astrometry(
@@ -153,6 +417,7 @@ def find_wcs_astrometry(
     derived_wcs = wcs.WCS(hdu_list[0].header)
 
     image.wcs = derived_wcs
+    _sync_image_coordinates_from_wcs(image, derived_wcs)
     return derived_wcs
 
 
@@ -236,6 +501,7 @@ def find_wcs_twirl(
     )
 
     image.wcs = derived_wcs
+    _sync_image_coordinates_from_wcs(image, derived_wcs)
     return derived_wcs
 
 
@@ -263,47 +529,77 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
         indent=indent,
     )
 
-    #   Field of view in degrees
-    field_of_view = image.field_of_view_x / 60.0
+    field_of_view = _astap_field_of_view_degrees(image)
+    source_path = Path(image.path)
+    working_dir = image.out_path / "wcs_images"
+    astap_path, is_temporary = _prepare_astap_fits(source_path, working_dir)
+    ny, nx = image.get_shape()
 
-    #   Path to image
-    wcs_file = image.path
+    if not is_temporary:
+        with fits.open(astap_path, mode="update") as hdul:
+            _strip_wcs_keywords(hdul[0].header)
+            hdul.flush()
 
-    #   String passed to the shell
-    command = 'astap_cli -f "{}" -r 3 -fov {} -update'.format(wcs_file, field_of_view)
-
-    #   Running the command
-    command_result = subprocess.run(
-        [command],
-        shell=True,
-        text=True,
-        capture_output=True,
-    )
-
-    return_code = command_result.returncode
-    solution_found = command_result.stdout.find("Solution found:")
-    if return_code != 0 or solution_found == -1:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
-            f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"
-            f"The command was:\n{command} \nDetailed error output:\n"
-            f"{style.Bcolors.ENDC}{command_result.stdout}{command_result.stderr}"
-            f"{style.Bcolors.FAIL}Exit{style.Bcolors.ENDC}"
+    if is_temporary:
+        terminal_output.print_to_terminal(
+            "Created temporary 16-bit FITS copy for ASTAP.",
+            indent=indent,
+            style_name="WARNING",
         )
 
-    terminal_output.print_to_terminal(
-        "WCS solution found :)",
-        indent=indent,
-        style_name="OKGREEN",
-    )
+    cmd = [
+        "astap_cli",
+        "-f",
+        str(astap_path),
+        "-r",
+        "3",
+        "-fov",
+        f"{field_of_view:.10g}",
+        *_astap_search_hint_arguments(image),
+        "-update",
+    ]
 
-    #   Get image hdu list
-    hdu_list = fits.open(wcs_file)
+    try:
+        command_result = subprocess.run(
+            cmd,
+            shell=False,
+            text=True,
+            capture_output=True,
+        )
 
-    #   Extract the WCS
-    derived_wcs = wcs.WCS(hdu_list[0].header)
+        return_code = command_result.returncode
+        solution_found = command_result.stdout.find("Solution found:")
+        if return_code != 0 or solution_found == -1:
+            raise RuntimeError(
+                f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
+                f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"
+                f"The command was:\n{shlex.join(cmd)} \nDetailed error output:\n"
+                f"{style.Bcolors.ENDC}{command_result.stdout}{command_result.stderr}"
+                f"{style.Bcolors.ENDC}{style.Bcolors.FAIL}Exit{style.Bcolors.ENDC}"
+            )
+
+        terminal_output.print_to_terminal(
+            "WCS solution found :)",
+            indent=indent,
+            style_name="OKGREEN",
+        )
+
+        with fits.open(astap_path) as solved_hdul:
+            solved_header = solved_hdul[0].header
+            solved_wcs = wcs.WCS(solved_header)
+
+        derived_wcs = _apply_wcs_to_fits(
+            source_path,
+            solved_wcs,
+            solved_header,
+            image_shape=(nx, ny),
+        )
+    finally:
+        if is_temporary:
+            astap_path.unlink(missing_ok=True)
 
     image.wcs = derived_wcs
+    _sync_image_coordinates_from_wcs(image, derived_wcs)
     return derived_wcs
 
 
@@ -336,24 +632,34 @@ def check_wcs_exists(
     wcs_file
         Path to the image with the WCS
     """
-    from .utilities import get_basename
-
     #   Path to image
     wcs_file = image.path
 
     #   Get WCS of the original image
-    wcs_original = wcs.WCS(fits.open(wcs_file)[0].header)
+    with fits.open(wcs_file) as hdul:
+        wcs_original = wcs.WCS(hdul[0].header)
+        ny, nx = hdul[0].data.shape
 
     #   Determine wcs type of original WCS
     wcs_original_type = wcs_original.get_axis_types()[0]["coordinate_type"]
 
     if wcs_original_type == "celestial":
+        if _wcs_maps_distinct_sky_positions(wcs_original, (nx, ny)):
+            terminal_output.print_to_terminal(
+                "Image contains already a valid WCS.",
+                indent=indent,
+                style_name="OKGREEN",
+            )
+            return True, wcs_file
+
         terminal_output.print_to_terminal(
-            "Image contains already a valid WCS.",
+            "Image header contains celestial WCS keywords, but the solution "
+            "maps the field to a single sky position. A new WCS will be "
+            "determined.",
             indent=indent,
-            style_name="OKGREEN",
+            style_name="WARNING",
         )
-        return True, wcs_file
+        return False, ""
     else:
         #   Check if an image with a WCS in the astronomy.net format exists
         #   in the wcs directory (`wcs_dir`)
@@ -363,22 +669,26 @@ def check_wcs_exists(
             wcs_dir = image.out_path / "wcs_images"
 
         #   Get image base name
-        basename = get_basename(image.path)
+        basename = Path(image.path).stem
 
         #   Compose file name
         filename = f"{basename}.new"
         filepath = Path(wcs_dir / filename)
 
         if filepath.is_file():
-            #   Get WCS
-            wcs_astronomy_net = wcs.WCS(fits.open(filepath)[0].header)
+            with fits.open(filepath) as hdul:
+                wcs_astronomy_net = wcs.WCS(hdul[0].header)
+                ny, nx = hdul[0].data.shape
 
             #   Determine wcs type
             wcs_astronomy_net_type = wcs_astronomy_net.get_axis_types()[0][
                 "coordinate_type"
             ]
 
-            if wcs_astronomy_net_type == "celestial":
+            if (
+                wcs_astronomy_net_type == "celestial"
+                and _wcs_maps_distinct_sky_positions(wcs_astronomy_net, (nx, ny))
+            ):
                 terminal_output.print_to_terminal(
                     "Image found in wcs_dir with a valid WCS.",
                     indent=indent,
