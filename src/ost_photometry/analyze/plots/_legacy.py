@@ -33,7 +33,7 @@ from scipy.spatial import KDTree
 
 from itertools import cycle
 
-from .. import checks, style, terminal_output, calibration_parameters
+from ... import checks, style, terminal_output, calibration_parameters
 from ... import utilities as base_utilities
 
 import matplotlib.colors as mcol
@@ -3848,7 +3848,7 @@ def plot_extinction_fit_value_airmass(
     file_type : str
         Plot file format (pdf, png, etc.). Default is ``pdf``.
     """
-    from .. import checks
+    from ... import checks
 
     out = Path(output_dir) / "extinction_fit"
     checks.check_output_directories(out)
@@ -3909,7 +3909,7 @@ def plot_extinction_fit_comparison_stars(
     file_type : str
         Plot file format (pdf, png, etc.). Default is ``pdf``.
     """
-    from .. import checks
+    from ... import checks
 
     out = Path(output_dir) / "extinction_fit"
     checks.check_output_directories(out)
@@ -3971,7 +3971,7 @@ def plot_calibration_transformation(
     file_type : str
         Plot file format. Default is ``pdf``.
     """
-    from .. import checks
+    from ... import checks
 
     out = Path(output_dir) / "calibration"
     checks.check_output_directories(out)
@@ -4067,7 +4067,7 @@ def plot_calibration_night_summary(
     """
     import warnings
 
-    from .. import checks
+    from ... import checks
     from .warnings_types import OstPhotometryAnalyzeWarning
 
     out = Path(output_dir) / "calibration"
