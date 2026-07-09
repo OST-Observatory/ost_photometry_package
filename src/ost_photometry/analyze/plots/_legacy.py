@@ -4068,7 +4068,7 @@ def plot_calibration_night_summary(
     import warnings
 
     from ... import checks
-    from .warnings_types import OstPhotometryAnalyzeWarning
+    from ..warnings_types import OstPhotometryAnalyzeWarning
 
     out = Path(output_dir) / "calibration"
     checks.check_output_directories(out)
