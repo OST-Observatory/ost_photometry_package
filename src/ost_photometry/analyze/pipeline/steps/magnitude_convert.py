@@ -18,7 +18,7 @@ class PostProcessMagnitudeConvertStep(base.PipelineStep):
     def skip(self, context: AnalysisContext, config: PipelineConfig) -> bool:
         if config.skip_calibration:
             return True
-        if config.resolved_calibration_strategy() == "linear_fit":
+        if config.calibration_strategy == "linear_fit":
             return True
         if config.skip_magnitude_convert_step:
             return True

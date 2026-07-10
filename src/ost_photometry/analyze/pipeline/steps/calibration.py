@@ -1,12 +1,11 @@
 """
 Unified calibration step: CalibrationEngine + epoch bridge.
-
-Replaces CalibrationDataStep, CalibrationApplyStep, and DifferentialCalibrationStep.
 """
 
 from __future__ import annotations
 
 import warnings
+
 import numpy as np
 
 from .... import terminal_output
@@ -14,7 +13,7 @@ from ... import utilities
 from ...calibration import CalibrationEngine, prepare_calibration_check_plots
 from ...calibration.backends.linear import build_calibrator
 from ...calibration_sources import crossmatch_standard_catalog, fetch_standard_calibration_catalog
-from ...differential_photometry import DifferentialPhotometer, PhotometryCalibrator
+from ...differential_photometry import DifferentialPhotometer
 from ...post_processing.adapters import ensure_epoch_native_photometry_table
 from ...post_processing.io import write_epoch_native_magnitudes
 from ...post_processing.light_curve import attach_observation_jd_column
@@ -26,25 +25,75 @@ from ..bridge import (
 )
 from ..config import PipelineConfig
 from ..context import AnalysisContext
-from .calibration_differential import (
-    _attach_jd_from_epoch_meta,
-    _calibration_summary_jd_by_epoch_id,
-    _log_calibration_skips,
-)
 
 
-def _crossmatch_epochs(
-    epochs: dict,
-    context: AnalysisContext,
-    config: PipelineConfig,
-) -> dict:
+def _calibration_summary_jd_by_epoch_id(
+    context: AnalysisContext, config: PipelineConfig
+) -> dict[str, float]:
+    """Map epoch_id -> JD for summary plot (reference filter, else first available)."""
+    meta = context.calibration_epoch_meta or {}
+    fl = context.filter_list
+    if not fl:
+        return {}
+    ref = config.reference_filter or fl[0]
+    out: dict[str, float] = {}
+    for eid, m in meta.items():
+        jdf = m.get("jd_by_filter") or m.get("filter_jds") or {}
+        v = jdf.get(ref)
+        if v is None:
+            for f in fl:
+                if f in jdf and jdf[f] is not None:
+                    v = jdf[f]
+                    break
+        if v is not None:
+            vf = float(v)
+            if np.isfinite(vf):
+                out[str(eid)] = vf
+    return out
+
+
+def _attach_jd_from_epoch_meta(tbl, context: AnalysisContext, config: PipelineConfig, filter_list: list):
+    """Add ``observation_jd`` for standalone ECSV output."""
+    if len(tbl) == 0 or not filter_list or not context.calibration_epoch_meta:
+        return tbl
+    ref = config.reference_filter or filter_list[0]
+    return attach_observation_jd_column(tbl, context.calibration_epoch_meta, ref)
+
+
+def _log_calibration_skips(skipped: list) -> None:
+    for entry in skipped:
+        reason = entry.get("reason", "?")
+        if reason == "index_unequal_lengths":
+            terminal_output.print_to_terminal(
+                entry.get("message", str(entry)),
+                style_name="WARNING",
+            )
+        elif reason in ("jd_no_partner", "jd_exceeds_tolerance"):
+            terminal_output.print_to_terminal(
+                f"Skipped calibration epoch: {reason} — ref_filter={entry.get('reference_filter')!r} "
+                f"image_id={entry.get('reference_exposure_image_id')} jd={entry.get('reference_jd')} "
+                f"failed_filter={entry.get('failed_filter')!r} "
+                f"best_delta_jd={entry.get('best_delta_jd')} "
+                f"tolerance={entry.get('jd_tolerance')}",
+                style_name="WARNING",
+            )
+        else:
+            terminal_output.print_to_terminal(
+                f"Calibration epoch pairing note: {entry}",
+                style_name="INFO",
+            )
+
+
+def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineConfig) -> dict:
     """Attach ``mag_std_*`` from the calibration catalog to each epoch table."""
     from astropy.coordinates import SkyCoord
 
     first_tbl = next(iter(epochs.values()))
-    ra_mean = np.mean(first_tbl["ra"])
-    dec_mean = np.mean(first_tbl["dec"])
-    field_center = SkyCoord(ra_mean, dec_mean, unit="deg")
+    field_center = SkyCoord(
+        np.mean(first_tbl["ra"]),
+        np.mean(first_tbl["dec"]),
+        unit="deg",
+    )
     catalog = fetch_standard_calibration_catalog(
         context.filter_list,
         field_center,
@@ -68,24 +117,16 @@ class CalibrationStep(base.PipelineStep):
 
     name = "calibration"
 
-    def skip(
-        self,
-        context: AnalysisContext,
-        config: PipelineConfig,
-    ) -> bool:
+    def skip(self, context: AnalysisContext, config: PipelineConfig) -> bool:
         return config.skip_calibration
 
-    def run(
-        self,
-        context: AnalysisContext,
-        config: PipelineConfig,
-    ) -> AnalysisContext:
+    def run(self, context: AnalysisContext, config: PipelineConfig) -> AnalysisContext:
         from astropy.time import Time
 
         obs = context.require_observation()
-        strategy = config.resolved_calibration_strategy()
+        strategy = config.calibration_strategy
         terminal_output.print_to_terminal(
-            f"Calibration ({strategy}, grouping={config.resolved_calibration_grouping()})",
+            f"Calibration ({strategy}, grouping={config.calibration_grouping})",
             style_name="HEADER",
         )
 
@@ -101,12 +142,12 @@ class CalibrationStep(base.PipelineStep):
             )
 
         filter_list = list(context.filter_list)
-        color_indices = config.color_indices or config.differential_color_indices
+        color_indices = config.color_indices
         epochs = _crossmatch_epochs(epochs, context, config)
         context.calibration_epochs = epochs
 
         jd_map = _calibration_summary_jd_by_epoch_id(context, config)
-        file_type = getattr(config, "file_type_plots", "pdf")
+        file_type = config.file_type_plots
         calibrator = None
         photometer = DifferentialPhotometer(color_indices=color_indices)
 
@@ -137,7 +178,6 @@ class CalibrationStep(base.PipelineStep):
             calibration_summary_x_jd=jd_map if jd_map else None,
         )
         context.calibration_results = results
-        context.differential_calib_parameters = results
 
         if context.output_dir:
             prepare_calibration_check_plots(
@@ -180,12 +220,8 @@ class CalibrationStep(base.PipelineStep):
                     photometry_extraction_method=config.photometry_extraction_method,
                     rts=rts,
                 )
-                write_legacy = (
-                    config.write_legacy_wide_magnitudes_dat
-                    or config.write_differential_legacy_magnitudes_dat
-                )
-                if write_legacy:
-                    table_legacy = utilities.differential_calibrated_to_legacy_table(
+                if config.write_legacy_wide_magnitudes_dat:
+                    table_legacy = utilities.calibrated_epochs_to_legacy_wide_table(
                         calibrated, filter_list
                     )
                     utilities.save_magnitudes_ascii(
@@ -225,7 +261,7 @@ class CalibrationStep(base.PipelineStep):
             context,
             config,
             "calibration",
-            differential_epochs=epochs,
+            calibration_epochs=epochs,
         )
         return context
 

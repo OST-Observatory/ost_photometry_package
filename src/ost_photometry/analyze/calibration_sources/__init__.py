@@ -4,14 +4,14 @@ Calibration sources: shared download, normalization, and matching for photometry
 This package is the **single implementation** for fetching external calibration
 catalogs used by:
 
-* **Legacy pipeline** — :mod:`ost_photometry.analyze.calibration_data` calls
+* **Legacy wide-table path** — :mod:`ost_photometry.analyze.calibration_data` calls
   :func:`fetch_standard_calibration_catalog`, then :func:`standard_catalog_to_legacy`
-  to produce the ``(Table, column_dict, ra_unit)`` contract expected by
+  for the ``(Table, column_dict, ra_unit)`` contract used by
   :func:`~ost_photometry.analyze.calibration_data.derive_calibration`.
 
-* **Differential pipeline** — :class:`~ost_photometry.analyze.differential_photometry.PhotometryCalibrator`
-  keeps the catalog in **standard schema** and cross-matches via
-  :func:`crossmatch_standard_catalog`.
+* **Epoch-native calibration** — :class:`~ost_photometry.analyze.differential_photometry.PhotometryCalibrator`
+  (via :class:`~ost_photometry.analyze.calibration.CalibrationEngine`) keeps the
+  catalog in **standard schema** and cross-matches via :func:`crossmatch_standard_catalog`.
 
 **Standard schema** (internal, degrees on the sky):
 

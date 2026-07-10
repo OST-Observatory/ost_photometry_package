@@ -33,7 +33,7 @@ class CalibrationEngine:
         file_type: str = "pdf",
         calibration_summary_x_jd: dict[str, float] | None = None,
     ) -> Dict[str, CalibrationResult]:
-        strategy = config.resolved_calibration_strategy()
+        strategy = config.calibration_strategy
         if strategy == "median_zp":
             results = median_backend.fit_epochs(
                 epochs,

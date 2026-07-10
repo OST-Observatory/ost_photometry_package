@@ -40,13 +40,13 @@
 
 - `utilities.region_selection`, `utilities.find_cluster`, and `utilities.proper_motion_selection` take **`plot_context=`** and/or **`image_series=`** (keyword-only); at least one is required. `ImagingPlotContext` holds WCS, reference image array, `filter_name`, output stub, and for Gaia steps `field_center_icrs` / `field_radius_arcmin` (filled by `imaging_context_from_image_series`). They use sky positions from the table when columns `ra`/`dec` or `ra (deg)`/`dec (deg)` exist; otherwise WCS + `x`/`y`.
 - Starmaps go through `post_processing.coords.plot_starmap_from_imaging_context`.
-- Multi-epoch differential tables (`epoch_id` with more than one value): cluster phases run region/Gaia/PM on the **first** `epoch_id`, then expand surviving `id` values to **all epochs**. `apply_magnitude_system_convert_on_observation` runs on the **full** table (all epochs).
+- Multi-epoch tables (`epoch_id` with more than one value): cluster phases run region/Gaia/PM on the **first** `epoch_id`, then expand surviving `id` values to **all epochs**. `apply_magnitude_system_convert_on_observation` runs on the **full** table (all epochs).
 
-## Differential calibration (pipeline)
+## Calibration (pipeline)
 
-- After `DifferentialCalibrationStep`, `observation.table_magnitudes` is the **epoch-native** vstack from `PhotometryCalibrator.get_calibrated_photometry`, normalized with `ensure_epoch_native_photometry_table` (schema metadata).
-- Primary table file: `calibrated_magnitudes_<method>_<filters>.ecsv` under `tables/` (same writer as post-process ECSV). Legacy wide `.dat` is **not** written unless `PipelineConfig.write_differential_legacy_magnitudes_dat` is `True` (then `differential_calibrated_to_legacy_table` + `save_magnitudes_ascii`).
+- After `CalibrationStep`, `observation.table_magnitudes` is the **epoch-native** vstack from `PhotometryCalibrator.get_calibrated_photometry`, normalized with `ensure_epoch_native_photometry_table` (schema metadata).
+- Primary table file: `calibrated_magnitudes_<method>_<filters>.ecsv` under `tables/` (same writer as post-process ECSV). Legacy wide `.dat` is **not** written unless `PipelineConfig.write_legacy_wide_magnitudes_dat` is `True` (then `calibrated_epochs_to_legacy_wide_table` + `save_magnitudes_ascii`).
 
 ## Adapters
 
-- `legacy_wide_table_to_epoch_native` / `ensure_epoch_native_photometry_table`: attach `photometry_schema` to differential vstack tables, or expand legacy **wide** rows (`{filter} (transformed|simple, image=...)`) into long form with `mag_cal_*` / `err_cal_*` and `epoch_id`.
+- `legacy_wide_table_to_epoch_native` / `ensure_epoch_native_photometry_table`: attach `photometry_schema` to epoch-native vstack tables, or expand legacy **wide** rows (`{filter} (transformed|simple, image=...)`) into long form with `mag_cal_*` / `err_cal_*` and `epoch_id`.

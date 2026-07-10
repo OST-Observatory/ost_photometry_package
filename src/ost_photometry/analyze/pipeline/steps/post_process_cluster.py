@@ -35,31 +35,15 @@ def _reference_image_series(context: AnalysisContext, obs) -> object:
 def _usable_filter_combinations(
     context: AnalysisContext, config: PipelineConfig, obs
 ) -> list[list[str]]:
-    is_differential = config.resolved_calibration_strategy() == "linear_fit"
-    if is_differential:
-        tbl = obs.table_magnitudes
-        if tbl is None or len(tbl) == 0:
-            raise RuntimeError(
-                "Post-process steps (differential): observation.table_magnitudes "
-                "is missing or empty; run differential calibration first."
-            )
-        calibration_filters = utilities.transformation_keys_for_table_magnitudes(
-            tbl, context.filter_list
+    tbl = obs.table_magnitudes
+    if tbl is None or len(tbl) == 0:
+        raise RuntimeError(
+            "Post-process steps require observation.table_magnitudes "
+            "after calibration."
         )
-    else:
-        tbl = obs.table_magnitudes
-        if tbl is not None and len(tbl) > 0 and any(
-            n.startswith("mag_cal_") or n.startswith("mag_inst_") for n in tbl.colnames
-        ):
-            calibration_filters = utilities.transformation_keys_for_table_magnitudes(
-                tbl, context.filter_list
-            )
-        elif obs.calib_parameters is not None:
-            calibration_filters = obs.calib_parameters.column_names
-        else:
-            raise RuntimeError(
-                "Post-process steps require calib_parameters or epoch-native mag columns"
-            )
+    calibration_filters = utilities.transformation_keys_for_table_magnitudes(
+        tbl, context.filter_list
+    )
 
     _, usable = utilities.find_filter_for_magnitude_transformation(
         context.filter_list,

@@ -1,8 +1,8 @@
-# Migration: `calibration_epochs` (multi-band differential pipeline)
+# Migration: `calibration_epochs` (multi-band epoch-native calibration)
 
 ## Summary
 
-The differential calibration bridge no longer builds one table per filter per image with keys like `B_0`, `V_0`. It builds **calibration epochs** — one multi-band table per matched set of exposures — with keys `epoch_000`, `epoch_001`, …
+The calibration bridge no longer builds one table per filter per image with keys like `B_0`, `V_0`. It builds **calibration epochs** — one multi-band table per matched set of exposures — with keys `epoch_000`, `epoch_001`, …
 
 ## API changes
 
@@ -13,20 +13,20 @@ The differential calibration bridge no longer builds one table per filter per im
 | Table keys `"{filter}_{pd}"` | `epoch_{nnn}` |
 | Single `airmass` column (typical) | `airmass_<filter>` per band + mean `airmass` |
 
-New `PipelineConfig` fields:
+`PipelineConfig` fields for exposure pairing:
 
-- `differential_exposure_pairing`: `"jd_nearest"` (default) or `"index"`
-- `differential_exposure_jd_tolerance`: JD match tolerance in days
-- `differential_reference_filter`: reference band for pairing / row order (`None` → first filter in `filter_list`)
+- `exposure_pairing`: `"jd_nearest"` (default) or `"index"`
+- `exposure_jd_tolerance`: JD match tolerance in days
+- `reference_filter`: reference band for pairing / row order (`None` → first filter in `filter_list`)
 
-Skipped pairings (no epoch created) are listed in `context.calibration_epochs_skipped` and logged from `DifferentialCalibrationStep`.
+Skipped pairings (no epoch created) are listed in `context.calibration_epochs_skipped` and logged from `CalibrationStep`.
 
 ## `PhotometryCalibrator.add_epoch`
 
 - Tables should contain `mag_<f>` / `err_<f>` for all filters in the epoch (rows aligned by correlated `id`).
 - `airmass_<f>` may be pre-filled by the bridge; otherwise use `filter_obstimes={"B": Time(...), ...}` or legacy `obstime` / `airmass`.
 
-Differential-calibration APIs use **epoch** naming (`add_epoch`, `epochs`, `epoch_metadata`, `fit_transformation_epoch`, `fit_extinction_from_epochs`, table column `epoch_id`). `PhotometryCalibrator.fit_transformation_parameters` fits T/ZP; `get_calibrated_photometry` applies them. Use `observation_to_epoch_tables` (the old `observation_to_frame_tables` alias was removed).
+Epoch-native calibration APIs use **epoch** naming (`add_epoch`, `epochs`, `epoch_metadata`, `fit_transformation_epoch`, `fit_extinction_from_epochs`, table column `epoch_id`). `PhotometryCalibrator.fit_transformation_parameters` fits T/ZP; `get_calibrated_photometry` applies them. Use `observation_to_epoch_tables` (the old `observation_to_frame_tables` alias was removed).
 
 ## Scripts outside the pipeline
 

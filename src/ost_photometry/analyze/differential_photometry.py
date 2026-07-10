@@ -1061,7 +1061,7 @@ class PhotometryCalibrator:
             Plot file format when output_dir is set. Default is ``pdf``.
         sigma_clip : float
             Outlier rejection in :meth:`DifferentialPhotometer.fit_transformation_epoch`
-            (|residual| < ``sigma_clip`` × RMS). Pipeline: ``PipelineConfig.differential_fit_sigma_clip``.
+            (|residual| < ``sigma_clip`` × RMS). Pipeline: ``PipelineConfig.fit_sigma_clip``.
         inverse_variance_min_error : float
             For ``PER_NIGHT`` mode: floor on per-epoch σ when combining T and ZP
             with inverse-variance weights (see :meth:`DifferentialPhotometer.fit_transformation_night`).

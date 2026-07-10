@@ -38,8 +38,8 @@ def build_calibrator(
     observatory_location: "EarthLocation | None" = None,
     color_indices: dict[str, tuple[str, str]] | None = None,
 ) -> PhotometryCalibrator:
-    grouping = config.resolved_calibration_grouping()
-    ext_mode = config.resolved_extinction_mode()
+    grouping = config.calibration_grouping
+    ext_mode = config.extinction_mode
     ext_order = _extinction_order(ext_mode)
     return PhotometryCalibrator(
         mode=_coefficient_mode(grouping),
@@ -63,7 +63,7 @@ def fit_epochs(
     for epoch_id, tbl in epochs.items():
         calibrator.epochs[epoch_id] = tbl
 
-    if config.resolved_extinction_mode() == "fitted" and config.fit_extinction_from_data:
+    if config.extinction_mode == "fitted" and config.fit_extinction_from_data:
         calibrator.fit_extinction_from_epochs(
             output_dir=output_dir,
             file_type=file_type,

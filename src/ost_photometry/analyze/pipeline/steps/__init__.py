@@ -6,9 +6,6 @@ from .correlation_intra import CorrelationIntraStep
 from .correlation_inter import CorrelationInterStep
 from .extinction_fit import ExtinctionFitStep
 from .calibration import CalibrationStep
-from .calibration_data import CalibrationDataStep
-from .calibration_apply import CalibrationApplyStep
-from .calibration_differential import DifferentialCalibrationStep as CalibrationDifferentialStep
 from .post_process_cluster import (
     PostProcessClusterGaiaStep,
     PostProcessProperMotionStep,
@@ -21,9 +18,6 @@ from .hips_reference_subtract import HipsReferenceSubtractStep
 from .light_curve import LightCurveStep
 
 __all__ = [
-    "CalibrationApplyStep",
-    "CalibrationDataStep",
-    "CalibrationDifferentialStep",
     "CalibrationStep",
     "CorrelationInterStep",
     "CorrelationIntraStep",

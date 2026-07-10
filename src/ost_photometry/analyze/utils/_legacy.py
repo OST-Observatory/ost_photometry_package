@@ -252,7 +252,7 @@ def mk_magnitudes_table(
     return tbl
 
 
-def differential_calibrated_to_legacy_table(
+def calibrated_epochs_to_legacy_wide_table(
     calibrated: Table,
     filter_list: list[str],
 ) -> Table:
@@ -333,7 +333,7 @@ def transformation_keys_for_table_magnitudes(
     :func:`find_filter_for_magnitude_transformation`.
 
     Recognizes legacy wide columns ``{filter} (transformed, image=...)`` (as produced
-    by :func:`differential_calibrated_to_legacy_table`) and, as fallback, raw
+    by :func:`calibrated_epochs_to_legacy_wide_table`) and, as fallback, raw
     differential columns ``mag_cal_<filter>`` or instrumental ``mag_inst_<filter>``.
     """
     out: dict[str, str] = {}

@@ -45,7 +45,7 @@ def _image_depth_calibrated_offset(
         m = np.isfinite(a) & np.isfinite(b)
         if np.any(m):
             return float(np.nanmedian(d[m]))
-    dc = context.calibration_results or context.differential_calib_parameters
+    dc = context.calibration_results
     if dc and epoch_id in dc:
         tc = dc[epoch_id].transformation.get(filter_)
         if tc is not None:

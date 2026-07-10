@@ -43,8 +43,8 @@ def _has_long_format_magnitude_columns(tbl: Table) -> bool:
     return False
 
 
-def _is_differential_vstack_native(tbl: Table) -> bool:
-    """True if table looks like vstacked differential / epoch merge output (long form)."""
+def _is_epoch_native_vstack(tbl: Table) -> bool:
+    """True if table looks like vstacked epoch-native calibration output (long form)."""
     if len(tbl) == 0:
         return True
     time_col = "epoch_id" in tbl.colnames or "frame_id" in tbl.colnames
@@ -190,7 +190,7 @@ def legacy_wide_table_to_epoch_native(tbl: Table) -> Table:
     """
     if len(tbl) == 0:
         return _attach_schema_meta(tbl.copy())
-    if _is_differential_vstack_native(tbl):
+    if _is_epoch_native_vstack(tbl):
         return _attach_schema_meta(tbl.copy())
     return _wide_legacy_to_long_table(tbl)
 

@@ -36,7 +36,7 @@ def run_diagnostic_plots_phase(
     config: Any,
     phase: str,
     *,
-    differential_epochs: Mapping[str, Table] | None = None,
+    calibration_epochs: Mapping[str, Table] | None = None,
 ) -> None:
     """Dispatch diagnostic figures by pipeline phase name."""
     dp = config.diagnostic_plots
@@ -312,7 +312,7 @@ def run_diagnostic_plots_phase(
                 _warn(f"Diagnostic plot (calibration_apply): {exc}")
 
         elif phase == "calibration_differential":
-            epochs = differential_epochs or {}
+            epochs = calibration_epochs or {}
             if not epochs:
                 return
             eid = sorted(epochs.keys())[0]

@@ -1,70 +1,59 @@
-# Migration: calibration convergence (legacy + differential → CalibrationEngine)
+# Migration: calibration convergence (breaking release)
 
 ## Summary
 
-Legacy (`calibration.py` + `CalibrationDataStep` / `CalibrationApplyStep`) and differential
-(`PhotometryCalibrator` + `DifferentialCalibrationStep`) paths are converging on a single
-**epoch-native** workflow:
+Legacy (`calibration_module`, `CalibrationDataStep`, …) and differential-specific
+config prefixes are removed. Use **one epoch-native calibration path**:
 
-- **Data:** `context.calibration_epochs` via `observation_to_calibration_epochs`
-- **Fit / apply:** `CalibrationEngine.fit()` / `.apply()` with strategy backends
-- **Pipeline step:** `CalibrationStep` (replaces the three legacy calibration steps)
-- **Configuration:** `calibration_strategy`, `calibration_grouping`, `extinction_mode` + presets
+- **Step:** `CalibrationStep` + `CalibrationEngine`
+- **Config:** `calibration_strategy`, `calibration_grouping`, `extinction_mode`, …
+- **Presets:** `PipelineConfig.from_preset("n2_stack" | "c7_variable" | …)`
+- **Results:** `context.calibration_results`
 
 ## Presets
 
-| Preset | strategy | grouping | extinction_mode | Typical use |
-|--------|----------|----------|-----------------|-------------|
+| Preset | strategy | grouping | extinction_mode | Use case |
+|--------|----------|----------|-----------------|----------|
 | `n2_stack` | `median_zp` | `per_image` | `none` | Stacked B/V, clusters (N2) |
 | `c7_variable` | `linear_fit` | `per_night` | `none` | Multi-epoch light curves (C7) |
 | `c7_variable_extinction` | `linear_fit` | `per_night` | `fitted` | Variables with airmass spread |
 
+## Removed (breaking)
+
+| Removed | Replacement |
+|---------|-------------|
+| `calibration_module` | `calibration_strategy` + `calibration_grouping` + `extinction_mode` |
+| `differential_*` config fields | Neutral names (`fit_sigma_clip`, `exposure_pairing`, …) |
+| `CalibrationDataStep`, `CalibrationApplyStep`, `DifferentialCalibrationStep` | `CalibrationStep` |
+| `context.differential_calib_parameters` | `context.calibration_results` |
+| `derive_transformation_coefficients` | `derive_transform_from_data` |
+| `calculate_zero_point_statistic` | `zp_subsample_statistic` |
+| `write_differential_legacy_magnitudes_dat` | `write_legacy_wide_magnitudes_dat` |
+| `differential_calibrated_to_legacy_table()` | `calibrated_epochs_to_legacy_wide_table()` |
+
+## Script pattern (N2 / C7)
+
+Both supervisor (N2) and student (C7) scripts support `calibration_config_mode`:
+
 ```python
-from ost_photometry.analyze.pipeline import PipelineConfig
+calibration_config_mode = "preset"   # or "custom"
+calibration_preset = "n2_stack"      # or "c7_variable", "c7_variable_extinction"
 
-config = PipelineConfig.from_preset("c7_variable", overrides={"fit_sigma_clip": 3.0})
+# custom mode:
+calibration_strategy = "median_zp"   # or "linear_fit"
+calibration_grouping = "per_image"   # per_image | per_night | ensemble | fixed
+extinction_mode = "none"             # none | tabulated | fitted
+zp_method = "median"                 # median | linear | auto
 ```
-
-## Field mapping
-
-| Old (`PipelineConfig`) | New | Notes |
-|------------------------|-----|-------|
-| `calibration_module="legacy"` | `strategy=median_zp`, `grouping=per_image`, `extinction_mode=none` | Deprecated alias |
-| `calibration_module="differential"` | `strategy=linear_fit`, `grouping=per_night`, `extinction_mode=tabulated` | Until presets override |
-| `differential_coefficient_mode` | `calibration_grouping` | Same values |
-| `differential_extinction_order` | `extinction_mode` | `none`/`first`/`second` → `none`/`tabulated`/`tabulated` |
-| `differential_fit_sigma_clip` | `fit_sigma_clip` | |
-| `differential_exposure_pairing` | `exposure_pairing` | |
-| `differential_exposure_jd_tolerance` | `exposure_jd_tolerance` | |
-| `differential_reference_filter` | `reference_filter` | |
-| `differential_color_indices` | `color_indices` | |
-| `calculate_zero_point_statistic` | `zp_subsample_statistic` | MC subsample QC |
-| `derive_transformation_coefficients` | `derive_transform_from_data` | |
-| `write_differential_legacy_magnitudes_dat` | `write_legacy_wide_magnitudes_dat` | |
-
-## Context
-
-| Before | After |
-|--------|-------|
-| `context.differential_calib_parameters` | `context.calibration_results` (preferred) |
-| `obs.calib_parameters` (legacy `CalibParameters`) | Read-only alias; deprecated |
 
 ## C7 / N2 recommendations
 
-**C7 (variable stars):** start with `from_preset("c7_variable")` — linear T/ZP per night,
-no extinction correction by default. Set `zp_method="median"` if legacy median ZP is closer to
-your reference runs.
+**N2:** `from_preset("n2_stack")` or custom `median_zp` / `per_image` / `none`.
 
-**N2 (stacked cluster):** use `from_preset("n2_stack")` — median zero point per image,
-no extinction, matches classic legacy behaviour on stacked frames.
+**C7:** `from_preset("c7_variable")`; try `zp_method="median"` if comparing to old legacy runs.
 
-## Comparison tests
-
-Run comparison harness:
+## Tests
 
 ```bash
-pytest tests/test_calibration_comparison.py -m comparison
+pytest tests/test_calibration_comparison.py tests/test_pipeline_config.py -m comparison
 ```
-
-Tests cover synthetic T/ZP agreement, median vs linear ZP, and extinction `none` vs constant
-airmass (should be identical when coefficients are unused).

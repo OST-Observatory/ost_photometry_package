@@ -21,7 +21,7 @@ def fit_epochs(
     color_indices: dict[str, tuple[str, str]] | None = None,
 ) -> Dict[str, CalibrationResult]:
     """Fit median ZP per epoch (``grouping=per_image``) or one ZP for all (``ensemble``)."""
-    grouping = config.resolved_calibration_grouping()
+    grouping = config.calibration_grouping
     min_comparisons = 3
 
     if grouping == "ensemble":

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass, field, fields
 from typing import Any, Literal, Optional, Tuple
 
@@ -17,8 +16,6 @@ CalibrationGrouping = Literal["per_image", "per_night", "ensemble", "fixed"]
 ExtinctionMode = Literal["none", "tabulated", "fitted"]
 ZpMethod = Literal["median", "linear", "auto"]
 UncertaintyMode = Literal["fit_errors", "flux_monte_carlo", "both"]
-DifferentialCoefficientMode = Literal["per_image", "per_night", "fixed", "ensemble"]
-DifferentialExtinctionOrder = Literal["none", "first", "second"]
 
 CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
     "n2_stack": {
@@ -45,30 +42,6 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "zp_method": "auto",
     },
 }
-
-# New primary name -> deprecated alias on CalibrationConfig
-_CALIBRATION_FIELD_ALIASES: dict[str, str] = {
-    "calibration_grouping": "differential_coefficient_mode",
-    "fit_sigma_clip": "differential_fit_sigma_clip",
-    "per_image_rolling_median_color_term": "differential_per_image_rolling_median_color_term",
-    "per_image_rolling_median_zero_point": "differential_per_image_rolling_median_zero_point",
-    "per_image_rolling_mean_color_term": "differential_per_image_rolling_mean_color_term",
-    "per_image_rolling_mean_zero_point": "differential_per_image_rolling_mean_zero_point",
-    "per_image_rolling_window": "differential_per_image_rolling_window",
-    "fit_extinction_from_data": "differential_fit_extinction_from_data",
-    "color_indices": "differential_color_indices",
-    "exposure_pairing": "differential_exposure_pairing",
-    "exposure_jd_tolerance": "differential_exposure_jd_tolerance",
-    "debug_exposure_pairing": "differential_debug_exposure_pairing",
-    "reference_filter": "differential_reference_filter",
-    "calibration_summary_use_jd_x": "differential_calibration_summary_use_jd_x",
-    "zp_subsample_statistic": "calculate_zero_point_statistic",
-    "derive_transform_from_data": "derive_transformation_coefficients",
-    "write_legacy_wide_magnitudes_dat": "write_differential_legacy_magnitudes_dat",
-}
-
-_CALIBRATION_ALIAS_TO_PRIMARY = {v: k for k, v in _CALIBRATION_FIELD_ALIASES.items()}
-
 
 @dataclass
 class DiagnosticPlots:
@@ -206,7 +179,6 @@ class CorrelationConfig:
 
 @dataclass
 class CalibrationConfig:
-    # Primary convergence API
     calibration_strategy: CalibrationStrategy = "median_zp"
     calibration_grouping: CalibrationGrouping = "per_image"
     extinction_mode: ExtinctionMode = "none"
@@ -228,25 +200,9 @@ class CalibrationConfig:
     derive_transform_from_data: bool = False
     uncertainty_mode: UncertaintyMode = "fit_errors"
     write_legacy_wide_magnitudes_dat: bool = False
-    # Deprecated aliases (kept for script compatibility; synced from primary fields)
-    differential_coefficient_mode: DifferentialCoefficientMode = "per_image"
-    differential_fit_sigma_clip: float = 2.5
-    differential_per_image_rolling_median_color_term: bool = False
-    differential_per_image_rolling_median_zero_point: bool = False
-    differential_per_image_rolling_mean_color_term: bool = False
-    differential_per_image_rolling_mean_zero_point: bool = False
-    differential_per_image_rolling_window: int = 3
-    differential_extinction_order: DifferentialExtinctionOrder = "none"
-    differential_fit_extinction_from_data: bool = False
     calibration_catalog_radius_arcmin: float = 15.0
     calibration_catalog_mag_range: tuple[float, float] = (2.0, 18.5)
-    differential_color_indices: dict[str, tuple[str, str]] | None = None
-    differential_exposure_pairing: Literal["jd_nearest", "index"] = "jd_nearest"
-    differential_exposure_jd_tolerance: float = 0.02
-    differential_debug_exposure_pairing: bool = False
     debug_verify_ooi_global_ids: bool = False
-    differential_reference_filter: Optional[str] = None
-    differential_calibration_summary_use_jd_x: bool = False
     observatory_location: EarthLocation = field(
         default_factory=lambda: EarthLocation(
             lat=52.409184 * u.deg,
@@ -258,13 +214,9 @@ class CalibrationConfig:
     path_calibration_file: str | None = None
     vizier_dict: dict[str, str] | None = None
     region_to_select_calibration_stars: object = None
-    apply_transformation: bool = True
     transformation_coefficients_dict: dict[str, float | str] | None = None
-    derive_transformation_coefficients: bool = False
-    calculate_zero_point_statistic: bool = True
     distribution_samples: int = 1000
     aperture_radius: float = 4.0
-    write_differential_legacy_magnitudes_dat: bool = False
     skip_calibration: bool = False
 
 
@@ -359,10 +311,7 @@ class PipelineConfig:
         self.hips = HipsConfig()
         self.extinction = ExtinctionConfig()
         self.diagnostic_plots = DiagnosticPlots()
-        self._calibration_explicit: set[str] = set()
-        self._calibration_module_override: str | None = None
         self.apply_overrides(**kwargs)
-        self._sync_calibration_aliases()
 
     @classmethod
     def from_preset(
@@ -379,54 +328,6 @@ class PipelineConfig:
         if overrides:
             kw.update(overrides)
         return cls(**kw)
-
-    def _sync_calibration_aliases(self) -> None:
-        """Keep deprecated ``differential_*`` fields aligned with primary names."""
-        cal = self.calibration
-        for primary, alias in _CALIBRATION_FIELD_ALIASES.items():
-            if hasattr(cal, primary) and hasattr(cal, alias):
-                setattr(cal, alias, getattr(cal, primary))
-        # extinction_order alias from extinction_mode
-        mode = cal.extinction_mode
-        if mode == "none":
-            cal.differential_extinction_order = "none"
-        else:
-            cal.differential_extinction_order = "first"
-
-    def resolved_calibration_strategy(self) -> CalibrationStrategy:
-        if "calibration_strategy" in self._calibration_explicit:
-            return self.calibration.calibration_strategy
-        if self._calibration_module_override is not None:
-            return (
-                "linear_fit"
-                if self._calibration_module_override == "differential"
-                else "median_zp"
-            )
-        return self.calibration.calibration_strategy
-
-    def resolved_calibration_grouping(self) -> CalibrationGrouping:
-        if "calibration_grouping" in self._calibration_explicit:
-            return self.calibration.calibration_grouping
-        if self._calibration_module_override == "differential":
-            return "per_night"
-        if self._calibration_module_override == "legacy":
-            return "per_image"
-        return self.calibration.calibration_grouping
-
-    def resolved_extinction_mode(self) -> ExtinctionMode:
-        if "extinction_mode" in self._calibration_explicit:
-            return self.calibration.extinction_mode
-        if self._calibration_module_override == "differential":
-            order = self.calibration.differential_extinction_order
-            return "none" if order == "none" else "tabulated"
-        return self.calibration.extinction_mode
-
-    def resolved_calibration_module(self) -> Literal["legacy", "differential"]:
-        return (
-            "differential"
-            if self.resolved_calibration_strategy() == "linear_fit"
-            else "legacy"
-        )
 
     def _sections(self) -> tuple[Any, ...]:
         return (
@@ -453,11 +354,6 @@ class PipelineConfig:
     def __getattr__(self, name: str) -> Any:
         if name in _SECTION_NAMES or name == "diagnostic_plots":
             raise AttributeError(name)
-        if name == "calibration_module":
-            return self.resolved_calibration_module()
-        if name in _CALIBRATION_ALIAS_TO_PRIMARY:
-            primary = _CALIBRATION_ALIAS_TO_PRIMARY[name]
-            return getattr(self.calibration, primary)
         section = self._find_section_for(name)
         if section is not None:
             return getattr(section, name)
@@ -467,45 +363,11 @@ class PipelineConfig:
         if name in _SECTION_NAMES or name == "diagnostic_plots":
             super().__setattr__(name, value)
             return
-        if name in ("_calibration_explicit", "_calibration_module_override"):
-            super().__setattr__(name, value)
-            return
-        if name == "calibration_module":
-            warnings.warn(
-                "calibration_module is deprecated; use PipelineConfig.from_preset() "
-                "or calibration_strategy / calibration_grouping / extinction_mode.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            self._calibration_module_override = str(value).strip().lower()
-            self._calibration_explicit.add("calibration_module")
-            return
-        if name in _CALIBRATION_FIELD_ALIASES or name in _CALIBRATION_ALIAS_TO_PRIMARY:
-            primary = _CALIBRATION_FIELD_ALIASES.get(
-                name, _CALIBRATION_ALIAS_TO_PRIMARY[name]
-            )
-            setattr(self.calibration, primary, value)
-            self._calibration_explicit.add(primary)
-            self._sync_calibration_aliases()
-            return
-        if name in (
-            "calibration_strategy",
-            "calibration_grouping",
-            "extinction_mode",
-            "zp_method",
-        ):
-            setattr(self.calibration, name, value)
-            self._calibration_explicit.add(name)
-            self._sync_calibration_aliases()
-            return
         section = None
         if hasattr(self, "wcs"):
             section = self._find_section_for(name)
         if section is not None:
             setattr(section, name, value)
-            if section is self.calibration and name in _CALIBRATION_FIELD_ALIASES:
-                self._calibration_explicit.add(name)
-                self._sync_calibration_aliases()
             return
         super().__setattr__(name, value)
 
@@ -518,29 +380,9 @@ class PipelineConfig:
                 if hasattr(self.diagnostic_plots, sub):
                     setattr(self.diagnostic_plots, sub, val)
                 continue
-            if key == "calibration_module":
-                self.calibration_module = val
-                continue
-            if key in _CALIBRATION_ALIAS_TO_PRIMARY:
-                primary = _CALIBRATION_ALIAS_TO_PRIMARY[key]
-                setattr(self.calibration, primary, val)
-                self._calibration_explicit.add(primary)
-                continue
-            if key in (
-                "calibration_strategy",
-                "calibration_grouping",
-                "extinction_mode",
-                "zp_method",
-            ):
-                setattr(self.calibration, key, val)
-                self._calibration_explicit.add(key)
-                continue
             section = self._find_section_for(key)
             if section is not None:
                 setattr(section, key, val)
-                if section is self.calibration and key in _CALIBRATION_FIELD_ALIASES:
-                    self._calibration_explicit.add(key)
-        self._sync_calibration_aliases()
 
     def as_flat_dict(self) -> dict[str, Any]:
         """Serialize all sub-config fields to a flat dictionary."""

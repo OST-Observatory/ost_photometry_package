@@ -125,8 +125,8 @@ def test_extinction_none_vs_tabulated_constant_airmass(synthetic_calibration_epo
 
 
 @pytest.mark.comparison
-def test_pipeline_config_presets_and_module_alias():
-    """Presets and deprecated calibration_module alias must resolve correctly."""
+def test_pipeline_config_presets():
+    """Named presets must set expected calibration strategy and grouping."""
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",
         _PKG_SRC / "ost_photometry" / "analyze" / "pipeline" / "config.py",
@@ -134,22 +134,14 @@ def test_pipeline_config_presets_and_module_alias():
     PipelineConfig = cfg_mod.PipelineConfig
 
     n2 = PipelineConfig.from_preset("n2_stack")
-    assert n2.resolved_calibration_strategy() == "median_zp"
-    assert n2.resolved_calibration_grouping() == "per_image"
-    assert n2.resolved_extinction_mode() == "none"
+    assert n2.calibration_strategy == "median_zp"
+    assert n2.calibration_grouping == "per_image"
+    assert n2.extinction_mode == "none"
 
     c7 = PipelineConfig.from_preset("c7_variable")
-    assert c7.resolved_calibration_strategy() == "linear_fit"
-    assert c7.resolved_calibration_grouping() == "per_night"
-    assert c7.resolved_extinction_mode() == "none"
-
-    with warnings.catch_warnings(record=True):
-        warnings.simplefilter("always", DeprecationWarning)
-        legacy = PipelineConfig(calibration_module="legacy")
-        diff = PipelineConfig(calibration_module="differential")
-    assert legacy.resolved_calibration_strategy() == "median_zp"
-    assert diff.resolved_calibration_strategy() == "linear_fit"
-    assert diff.resolved_calibration_grouping() == "per_night"
+    assert c7.calibration_strategy == "linear_fit"
+    assert c7.calibration_grouping == "per_night"
+    assert c7.extinction_mode == "none"
 
 
 @pytest.mark.comparison
