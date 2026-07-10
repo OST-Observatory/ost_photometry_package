@@ -45,7 +45,7 @@ def _image_depth_calibrated_offset(
         m = np.isfinite(a) & np.isfinite(b)
         if np.any(m):
             return float(np.nanmedian(d[m]))
-    dc = context.differential_calib_parameters
+    dc = context.calibration_results or context.differential_calib_parameters
     if dc and epoch_id in dc:
         tc = dc[epoch_id].transformation.get(filter_)
         if tc is not None:
@@ -84,30 +84,15 @@ class DeriveLimitingMagnitudeStep(base.PipelineStep):
                 "DeriveLimitingMagnitudeStep requires context._observation"
             )
 
-        if config.resolved_calibration_strategy() == "linear_fit":
-            tbl = context.table_magnitudes
-            if tbl is None or len(tbl) == 0:
-                terminal_output.print_to_terminal(
-                    "DeriveLimitingMagnitudeStep: no table_magnitudes after "
-                    "differential calibration; skipping.",
-                    style_name="WARNING",
-                )
-                return context
-            if "epoch_id" not in tbl.colnames:
-                terminal_output.print_to_terminal(
-                    "DeriveLimitingMagnitudeStep: table_magnitudes has no epoch_id; "
-                    "skipping.",
-                    style_name="WARNING",
-                )
-                return context
-            if not context.calibration_epoch_meta:
-                terminal_output.print_to_terminal(
-                    "DeriveLimitingMagnitudeStep: calibration_epoch_meta is empty "
-                    "(cannot map epochs to images); skipping.",
-                    style_name="WARNING",
-                )
-                return context
+        tbl = context.table_magnitudes
+        has_epoch_native = (
+            tbl is not None
+            and len(tbl) > 0
+            and "epoch_id" in tbl.colnames
+            and bool(context.calibration_epoch_meta)
+        )
 
+        if has_epoch_native:
             eids = np.unique(np.asarray(tbl["epoch_id"]).astype(str))
             for eid in eids:
                 eid_s = str(eid)
@@ -122,7 +107,6 @@ class DeriveLimitingMagnitudeStep(base.PipelineStep):
                     mag_pair = epoch_native_mag_err_columns(tbl, filter_)
                     if mag_pair is None:
                         continue
-                    cal_col = mag_pair[0]
                     epoch_image_id = image_id_by_filter.get(filter_)
                     if epoch_image_id is None:
                         terminal_output.print_to_terminal(
@@ -171,11 +155,20 @@ class DeriveLimitingMagnitudeStep(base.PipelineStep):
                     )
             return context
 
-        if obs.calib_parameters is None:
-            raise RuntimeError(
-                "DeriveLimitingMagnitudeStep requires calib_parameters "
-                "(legacy calibration path)"
+        if tbl is None or len(tbl) == 0:
+            terminal_output.print_to_terminal(
+                "DeriveLimitingMagnitudeStep: no epoch-native table_magnitudes; skipping.",
+                style_name="WARNING",
             )
+            return context
+
+        if obs.calib_parameters is None:
+            terminal_output.print_to_terminal(
+                "DeriveLimitingMagnitudeStep: no legacy calib_parameters and no "
+                "epoch-native calibration table; skipping.",
+                style_name="WARNING",
+            )
+            return context
 
         _, usable_filter_combinations = (
             utilities.find_filter_for_magnitude_transformation(
