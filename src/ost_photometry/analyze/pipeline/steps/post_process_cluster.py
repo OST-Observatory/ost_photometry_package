@@ -35,7 +35,7 @@ def _reference_image_series(context: AnalysisContext, obs) -> object:
 def _usable_filter_combinations(
     context: AnalysisContext, config: PipelineConfig, obs
 ) -> list[list[str]]:
-    is_differential = config.calibration_module == "differential"
+    is_differential = config.resolved_calibration_strategy() == "linear_fit"
     if is_differential:
         tbl = obs.table_magnitudes
         if tbl is None or len(tbl) == 0:

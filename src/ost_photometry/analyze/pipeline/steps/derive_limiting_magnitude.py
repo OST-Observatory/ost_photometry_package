@@ -84,7 +84,7 @@ class DeriveLimitingMagnitudeStep(base.PipelineStep):
                 "DeriveLimitingMagnitudeStep requires context._observation"
             )
 
-        if config.calibration_module == "differential":
+        if config.resolved_calibration_strategy() == "linear_fit":
             tbl = context.table_magnitudes
             if tbl is None or len(tbl) == 0:
                 terminal_output.print_to_terminal(

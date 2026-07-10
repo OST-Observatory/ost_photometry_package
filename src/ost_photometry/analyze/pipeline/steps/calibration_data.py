@@ -16,7 +16,7 @@ class CalibrationDataStep(base.PipelineStep):
         context: AnalysisContext,
         config: PipelineConfig,
     ) -> bool:
-        return config.skip_calibration or config.calibration_module == "differential"
+        return True  # deprecated: use CalibrationStep
 
     def run(
         self,

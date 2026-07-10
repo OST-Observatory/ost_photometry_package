@@ -10,15 +10,14 @@ from astropy.table import Table
 
 from regions import RectanglePixelRegion
 
-from . import calibration_data, correlate, utilities, plots
+from .. import calibration_data, correlate, utilities, plots
 
 import typing
 if typing.TYPE_CHECKING:
-    from . import analyze
-    from .. import utilities
+    from .. import analyze
 
-from .. import style, calibration_parameters, terminal_output
-from ..core.parallel import Executor
+from ... import style, calibration_parameters, terminal_output
+from ...core.parallel import Executor
 
 
 ############################################################################

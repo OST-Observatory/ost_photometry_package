@@ -370,11 +370,15 @@ def observation_to_calibration_epochs(
     if not filter_list:
         return {}
 
-    ref_filter = config.differential_reference_filter or filter_list[0]
+    ref_filter = (
+        config.reference_filter
+        or config.differential_reference_filter
+        or filter_list[0]
+    )
     if ref_filter not in context.image_series_dict:
         ref_filter = filter_list[0]
 
-    pairing = config.differential_exposure_pairing
+    pairing = config.exposure_pairing or config.differential_exposure_pairing
     skipped = context.calibration_epochs_skipped
     debug_pairing = bool(
         getattr(config, "differential_debug_exposure_pairing", False)
@@ -389,7 +393,7 @@ def observation_to_calibration_epochs(
             context,
             filter_list,
             ref_filter,
-            config.differential_exposure_jd_tolerance,
+            config.exposure_jd_tolerance or config.differential_exposure_jd_tolerance,
             skipped,
             debug=debug_pairing,
         )

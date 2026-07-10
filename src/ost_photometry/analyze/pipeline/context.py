@@ -31,6 +31,7 @@ class AnalysisContext:
     table_magnitudes: Table | None = None
     # PhotometryCalibrator.calib_parameters (epoch_id -> CalibrationResult); not legacy CalibParameters
     differential_calib_parameters: dict | None = None
+    calibration_results: dict | None = None
 
     # Optional (new pipeline / bridging)
     # epoch_id (e.g. epoch_000) -> multi-band photometry Table for differential calibration

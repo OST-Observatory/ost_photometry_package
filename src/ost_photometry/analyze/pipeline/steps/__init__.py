@@ -5,6 +5,7 @@ from .extraction import ExtractionStep
 from .correlation_intra import CorrelationIntraStep
 from .correlation_inter import CorrelationInterStep
 from .extinction_fit import ExtinctionFitStep
+from .calibration import CalibrationStep
 from .calibration_data import CalibrationDataStep
 from .calibration_apply import CalibrationApplyStep
 from .calibration_differential import DifferentialCalibrationStep as CalibrationDifferentialStep
@@ -23,6 +24,7 @@ __all__ = [
     "CalibrationApplyStep",
     "CalibrationDataStep",
     "CalibrationDifferentialStep",
+    "CalibrationStep",
     "CorrelationInterStep",
     "CorrelationIntraStep",
     "ExtinctionFitStep",

@@ -29,25 +29,7 @@ from .warnings_types import OstPhotometryAnalyzeWarning
 from .calibration_sources import crossmatch_standard_catalog, fetch_standard_calibration_catalog
 
 
-@dataclass
-class TransformationCoefficients:
-    """Transformation coefficients for one filter."""
-
-    filter_name: str
-    color_term: float
-    color_term_err: float = 0.0
-    zero_point: float = 0.0
-    zero_point_err: float = 0.0
-    color_index_filters: Tuple[str, str] = ("B", "V")
-    n_stars_used: int = 0
-    rms_residual: float = 0.0
-
-    def __repr__(self) -> str:
-        ci = f"({self.color_index_filters[0]}-{self.color_index_filters[1]})"
-        return (
-            f"{self.filter_name}: T={self.color_term:.4f}±{self.color_term_err:.4f}, "
-            f"ZP={self.zero_point:.4f}±{self.zero_point_err:.4f}, CI={ci}"
-        )
+from .calibration.result import CalibrationResult, TransformationCoefficients
 
 
 def _filters_with_instrumental_mags(
@@ -57,19 +39,6 @@ def _filters_with_instrumental_mags(
 ) -> List[str]:
     """Return filters that have an instrumental column ``{mag_col_prefix}{f}`` in ``table``."""
     return [f for f in filters if f"{mag_col_prefix}{f}" in table.colnames]
-
-
-@dataclass
-class CalibrationResult:
-    """Container for calibration results."""
-
-    identifier: str
-    timestamp: Optional[Time] = None
-    extinction: Dict[str, ExtinctionCoefficients] = field(default_factory=dict)
-    transformation: Dict[str, TransformationCoefficients] = field(default_factory=dict)
-    n_comparison_stars: int = 0
-    quality_flag: str = "OK"
-    notes: str = ""
 
 
 def _resolve_per_image_rolling_mode(
@@ -277,6 +246,7 @@ class DifferentialPhotometer:
         sigma_clip: float = 2.5,
         min_comparisons: int = 3,
         determine_color_terms: bool = True,
+        zp_method: Literal["median", "linear", "auto"] = "auto",
         output_dir: Optional[str] = None,
         file_type: str = "pdf",
     ) -> CalibrationResult:
@@ -292,6 +262,10 @@ class DifferentialPhotometer:
 
         Parameters
         ----------
+        zp_method : {"median", "linear", "auto"}
+            ``median`` — median ZP, T=0, no extinction correction before ZP.
+            ``linear`` — always attempt linear T/ZP when color columns exist.
+            ``auto`` — linear when color spread > 0.1 mag, else median ZP (legacy default).
         output_dir : str, optional
             If provided, save transformation fit plots to output_dir/calibration/.
         file_type : str
@@ -311,8 +285,10 @@ class DifferentialPhotometer:
             self.calibrations[epoch_id] = result
             return result
 
-        if self.extinction is not None and extinction_airmass_ready(
-            data, filters_use, fallback_airmass_col
+        if (
+            zp_method != "median"
+            and self.extinction is not None
+            and extinction_airmass_ready(data, filters_use, fallback_airmass_col)
         ):
             data = self.extinction.correct(
                 data,
@@ -383,12 +359,26 @@ class DifferentialPhotometer:
 
             for _ in range(5):
                 c = color_std[mask]
-                if determine_color_terms and has_color and np.std(c) > 0.1:
+                if zp_method == "linear":
+                    use_linear = determine_color_terms and has_color
+                elif zp_method == "median":
+                    use_linear = False
+                else:
+                    use_linear = (
+                        determine_color_terms and has_color and np.std(c) > 0.1
+                    )
+
+                if use_linear:
                     T, ZP, T_err, ZP_err = self._weighted_linear_fit(
                         c, m_std[mask] - m_inst[mask], np.ones(np.sum(mask))
                     )
                 else:
-                    if determine_color_terms and has_color and not warned_color_spread:
+                    if (
+                        zp_method == "auto"
+                        and determine_color_terms
+                        and has_color
+                        and not warned_color_spread
+                    ):
                         warnings.warn(
                             f"[{epoch_id}] Filter {filter_}: color spread std={np.std(c):.3f} mag "
                             f"<= 0.1, using ZP-only fit (no color term)",
@@ -396,8 +386,12 @@ class DifferentialPhotometer:
                             stacklevel=1,
                         )
                         warned_color_spread = True
-                    ZP = np.median((m_std - m_inst)[mask])
-                    ZP_err = np.std((m_std - m_inst)[mask]) / np.sqrt(np.sum(mask))
+                    T = 0.0
+                    T_err = 0.0
+                    ZP = float(np.median((m_std - m_inst)[mask]))
+                    ZP_err = float(
+                        np.std((m_std - m_inst)[mask]) / np.sqrt(np.sum(mask))
+                    )
 
                 all_residuals = (m_std - m_inst) - (T * color_std + ZP)
                 rms = np.nanstd(all_residuals[mask])
@@ -1051,6 +1045,7 @@ class PhotometryCalibrator:
         per_image_rolling_window: int = 3,
         calibration_summary_x_jd: Optional[Dict[str, float]] = None,
         calibration_summary_use_jd_x: bool = False,
+        zp_method: Literal["median", "linear", "auto"] = "auto",
     ) -> Dict[str, CalibrationResult]:
         """
         Fit color terms and zero points (per mode); store results in :attr:`calib_parameters`.
@@ -1111,6 +1106,7 @@ class PhotometryCalibrator:
                     determine_color_terms=determine_color_terms,
                     min_comparisons=min_comparisons,
                     sigma_clip=sigma_clip,
+                    zp_method=zp_method,
                     output_dir=output_dir,
                     file_type=file_type,
                 )
@@ -1179,6 +1175,7 @@ class PhotometryCalibrator:
                 determine_color_terms=determine_color_terms,
                 min_comparisons=min_comparisons,
                 sigma_clip=sigma_clip,
+                zp_method=zp_method,
                 output_dir=output_dir,
                 file_type=file_type,
                 inverse_variance_min_error=inverse_variance_min_error,
@@ -1195,6 +1192,7 @@ class PhotometryCalibrator:
                 determine_color_terms=determine_color_terms,
                 min_comparisons=min_comparisons,
                 sigma_clip=sigma_clip,
+                zp_method=zp_method,
             )
             for epoch_id in self.epochs:
                 results[epoch_id] = result

@@ -1,6 +1,7 @@
 """Modular pipeline for photometry analysis."""
 
 from .config import (
+    CALIBRATION_PRESETS,
     CalibrationConfig,
     CorrelationConfig,
     DiagnosticPlots,
@@ -23,6 +24,7 @@ from .bridge import (
 __all__ = [
     "AnalysisContext",
     "AnalysisPipeline",
+    "CALIBRATION_PRESETS",
     "CalibrationConfig",
     "CorrelationConfig",
     "DiagnosticPlots",

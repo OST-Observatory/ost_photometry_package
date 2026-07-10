@@ -32,6 +32,12 @@ if typing.TYPE_CHECKING:
 
 
 class CalibParameters:
+    """Legacy calibration catalog match container.
+
+    .. deprecated::
+        Prefer epoch-native ``context.calibration_results`` from CalibrationEngine.
+    """
+
     def __init__(
         self,
         index: np.ndarray | None,
@@ -208,81 +214,19 @@ def derive_calibration(
     """
     Find suitable calibration stars
 
-    Parameters
-    ----------
-    observation
-        Container object with image series objects for each filter
-
-    filter_list
-        Filter list
-
-    calibration_source
-        Catalog / lookup key (e.g. ``APASS``, ``simbad``, ``vsp``, or a ``vizier_dict`` key).
-        Default is ``APASS``.
-
-    max_pixel_between_objects
-        Maximal distance between two objects in Pixel
-        Default is ``3``.
-
-    ooi_correlation_strategy
-        Option for the srcor correlation function
-        Default is ``1``.
-
-    vizier_dict
-        Dictionary with identifiers of the Vizier catalogs with valid
-        calibration data
-        Default is ``None``.
-
-    path_calibration_file
-        Path to the calibration file
-        Default is ``None``.
-
-    calibration_catalog_mag_range
-        Inclusive magnitude range for catalog stars.
-        Default is ``(0.,18.5)``.
-
-    coordinates_obj_to_rm
-        Coordinates of an object that should not be used for calibrating
-        the data.
-        Default is ``None``.
-
-    correlation_method
-        Correlation method to be used to find the common objects on
-        the images.
-        Possibilities: ``astropy``, ``own``
-        Default is ``astropy``.
-
-    separation_limit
-        Allowed separation between objects.
-        Default is ``2.*u.arcsec``.
-
-    reference_filter
-        Name of the reference filter
-        Default is ``None`.
-
-    region_to_select_calibration_stars
-        Region in which to select calibration stars. This is a useful
-        feature in instances where not the entire field of view can be
-        utilized for calibration purposes.
-        Default is ``None``.
-
-    correlate_with_observed_objects
-        If ``True`` the downloaded calibration objects will be correlated
-        with the observed objects to get a valid set of calibration objects
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    use_wcs_projection_for_star_maps
-        If ``True`` the starmap will be plotted with sky coordinates instead
-        of pixel coordinates
-        Default is ``True``.
-
-    indent
-        Indentation for the console output lines
-        Default is ``1``.
+    .. deprecated::
+        Prefer the unified :class:`~ost_photometry.analyze.pipeline.steps.calibration.CalibrationStep`
+        and :class:`~ost_photometry.analyze.calibration.CalibrationEngine` via
+        ``observation.run_pipeline``.
     """
+    import warnings
+
+    warnings.warn(
+        "derive_calibration() is deprecated; use Observation.run_pipeline with "
+        "CalibrationStep / CalibrationEngine (epoch-native calibration).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     terminal_output.print_to_terminal(
         f"Get calibration star magnitudes - Filter: {tuple(filter_list)}",
         indent=indent,

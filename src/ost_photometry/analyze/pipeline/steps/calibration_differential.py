@@ -109,11 +109,7 @@ class DifferentialCalibrationStep(base.PipelineStep):
         context: AnalysisContext,
         config: PipelineConfig,
     ) -> bool:
-        if config.skip_calibration:
-            return True
-        if config.calibration_module != "differential":
-            return True
-        return False
+        return True  # deprecated: use CalibrationStep
 
     def run(
         self,
