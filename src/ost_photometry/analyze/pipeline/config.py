@@ -277,6 +277,7 @@ class PostProcessConfig:
     clean_objs_using_pm: bool = False
     max_distance_cluster: float = 6.0
     find_cluster_para_set: int = 1
+    cluster_selection_id: int | None = None
     convert_magnitudes: bool = False
     target_filter_system: str = "SDSS"
     skip_cluster_region_step: bool = False

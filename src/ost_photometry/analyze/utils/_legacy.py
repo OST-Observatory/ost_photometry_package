@@ -1899,6 +1899,7 @@ def find_cluster(
         separation_limit: float = 1., max_distance: float = 6.,
         parameter_set: int = 1, file_type_plots: str = 'pdf',
         use_wcs_projection_for_star_maps: bool = True,
+        cluster_selection_id: int | None = None,
     ) -> tuple[Table, int, np.ndarray, np.ndarray]:
     """
     Identify cluster in data
@@ -2200,16 +2201,42 @@ def find_cluster(
     # )
 
     #   Get user input
-    cluster_id, timed_out = base_utilities.get_input(
-        style.Bcolors.OKBLUE +
-        "\n   Which one is the correct cluster (id)? \n"
-        + style.Bcolors.ENDC,
-        timeout=300,
-    )
-    if timed_out or cluster_id == '' or cluster_id is None:
-        cluster_id = 0
+    if cluster_selection_id is not None:
+        cluster_id = int(cluster_selection_id)
+        terminal_output.print_to_terminal(
+            f"Using configured cluster id: {cluster_id}",
+            indent=2,
+            style_name="INFO",
+        )
     else:
-        cluster_id = int(cluster_id)
+        cluster_id_raw, timed_out = base_utilities.get_input(
+            style.Bcolors.OKBLUE +
+            "\n   Which one is the correct cluster (id)? \n"
+            + style.Bcolors.ENDC,
+            timeout=300,
+        )
+        if timed_out or cluster_id_raw is None or str(cluster_id_raw).strip() == "":
+            cluster_id = 0
+        else:
+            parsed = base_utilities.parse_cluster_selection_id(cluster_id_raw)
+            if parsed is None:
+                terminal_output.print_to_terminal(
+                    f"Could not parse cluster id from {cluster_id_raw!r}; using 0.",
+                    indent=2,
+                    style_name="WARNING",
+                )
+                cluster_id = 0
+            else:
+                cluster_id = parsed
+                available = np.unique(pd_result["cluster"])
+                if cluster_id not in available:
+                    terminal_output.print_to_terminal(
+                        f"Cluster id {cluster_id} not in {sorted(available.tolist())}; "
+                        "using 0.",
+                        indent=2,
+                        style_name="WARNING",
+                    )
+                    cluster_id = 0
 
     #   Calculated mask according to user input
     cluster_mask = pd_result['cluster'] == cluster_id

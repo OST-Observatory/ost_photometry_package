@@ -84,6 +84,7 @@ def apply_cluster_field_phase(
     region_radius: float = 600.0,
     max_distance_cluster: float = 6.0,
     find_cluster_para_set: int = 1,
+    cluster_selection_id: int | None = None,
     use_wcs_projection_for_star_maps: bool = True,
     file_type_plots: str = "pdf",
     input_table: Table | None = None,
@@ -120,6 +121,7 @@ def apply_cluster_field_phase(
             plot_context=plot_context,
             max_distance=max_distance_cluster,
             parameter_set=find_cluster_para_set,
+            cluster_selection_id=cluster_selection_id,
             file_type_plots=file_type_plots,
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         )
@@ -153,6 +155,7 @@ def post_process_cluster_field(
     clean_objects_using_proper_motion: bool = False,
     max_distance_cluster: float = 6.0,
     find_cluster_para_set: int = 1,
+    cluster_selection_id: int | None = None,
     convert_magnitudes: bool = False,
     target_filter_system: str = "SDSS",
     input_table: Table | None = None,
@@ -264,6 +267,7 @@ def post_process_cluster_field(
         region_radius=region_radius,
         max_distance_cluster=max_distance_cluster,
         find_cluster_para_set=find_cluster_para_set,
+        cluster_selection_id=cluster_selection_id,
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )

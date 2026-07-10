@@ -81,6 +81,7 @@ def _phase_kwargs(config: PipelineConfig) -> dict:
         region_radius=config.region_radius,
         max_distance_cluster=config.max_distance_cluster,
         find_cluster_para_set=config.find_cluster_para_set,
+        cluster_selection_id=config.cluster_selection_id,
         use_wcs_projection_for_star_maps=config.use_wcs_projection_for_star_maps,
         file_type_plots=config.file_type_plots,
     )

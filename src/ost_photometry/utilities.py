@@ -540,3 +540,16 @@ def get_input(prompt: str, timeout: int = 30) -> tuple[str | None, bool]:
         return user_input, timed_out
     else:
         return input(prompt), False
+
+
+def parse_cluster_selection_id(raw: str | None) -> int | None:
+    """Extract a non-negative cluster label from terminal input (tolerates control chars)."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if not digits:
+        return None
+    return int(digits)
