@@ -188,3 +188,47 @@ def test_calibration_engine_median_zp(synthetic_calibration_epoch_table):
     assert "epoch_000" in results
     assert "V" in results["epoch_000"].transformation
     assert np.isfinite(results["epoch_000"].transformation["V"].zero_point)
+
+
+@pytest.mark.comparison
+@pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
+def test_prepare_calibration_check_plots_array_shapes(
+    synthetic_calibration_epoch_table, tmp_path
+):
+    """Plot helper must pass color, delta, mask arrays of equal length."""
+    from unittest.mock import patch
+
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        _PKG_SRC / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    engine_mod = load_module_from_path(
+        "ost_photometry.analyze.calibration.engine",
+        _PKG_SRC / "ost_photometry" / "analyze" / "calibration" / "engine.py",
+    )
+    PipelineConfig = cfg_mod.PipelineConfig
+    CalibrationEngine = engine_mod.CalibrationEngine
+
+    cfg = PipelineConfig.from_preset("n2_stack")
+    tbl = synthetic_calibration_epoch_table
+    epochs = {"epoch_000": tbl}
+    results = CalibrationEngine.fit(epochs, cfg, ["B", "V"])
+
+    captured = {}
+
+    def _capture_plot(_out, _eid, plot_data, _coeffs, **_kw):
+        captured["plot_data"] = plot_data
+
+    with patch(
+        "ost_photometry.analyze.plots.plot_calibration_transformation",
+        side_effect=_capture_plot,
+    ):
+        engine_mod.prepare_calibration_check_plots(
+            str(tmp_path), epochs, results, ["B", "V"]
+        )
+
+    n = len(tbl)
+    for color, delta, mask in captured["plot_data"].values():
+        assert len(color) == n
+        assert len(delta) == n
+        assert len(mask) == n

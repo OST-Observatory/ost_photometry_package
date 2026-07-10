@@ -123,14 +123,26 @@ def prepare_calibration_check_plots(
                 continue
             m_inst = np.asarray(tbl[inst_col], dtype=float)
             m_std = np.asarray(tbl[std_col], dtype=float)
-            valid = np.isfinite(m_inst) & np.isfinite(m_std)
-            if not np.any(valid):
+            delta = m_std - m_inst
+            comparison = np.isfinite(m_inst) & np.isfinite(m_std)
+            if not np.any(comparison):
                 continue
-            plot_data[f] = (
-                np.zeros(int(np.sum(valid))),
-                m_std[valid] - m_inst[valid],
-                valid,
-            )
+
+            tc = result.transformation[f]
+            ci_f1, ci_f2 = tc.color_index_filters
+            ci_std_col1 = f"mag_std_{ci_f1}"
+            ci_std_col2 = f"mag_std_{ci_f2}"
+            if ci_std_col1 in tbl.colnames and ci_std_col2 in tbl.colnames:
+                color = (
+                    np.asarray(tbl[ci_std_col1], dtype=float)
+                    - np.asarray(tbl[ci_std_col2], dtype=float)
+                )
+            else:
+                color = np.zeros(len(tbl), dtype=float)
+
+            # mask, color, and delta must share the same length (full table)
+            mask = comparison.copy()
+            plot_data[f] = (color, delta, mask)
         if plot_data:
             plots.plot_calibration_transformation(
                 output_dir,
