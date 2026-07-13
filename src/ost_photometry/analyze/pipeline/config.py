@@ -13,8 +13,13 @@ CorrelationMethod = Literal["astropy", "own"]
 PhotometryExtractionMethod = Literal["PSF", "APER"]
 CalibrationStrategy = Literal["median_zp", "linear_fit"]
 CalibrationGrouping = Literal["per_image", "per_night", "ensemble", "fixed"]
-ExtinctionMode = Literal["none", "tabulated", "fitted"]
-ZpMethod = Literal["median", "linear", "auto"]
+ExtinctionMode = Literal[
+    "none",
+    "tabulated",
+    "from_comparison_stars",
+    "from_value_airmass",
+]
+ColorTermFit = Literal["always", "auto", "never"]
 UncertaintyMode = Literal["fit_errors", "flux_monte_carlo", "both"]
 
 CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
@@ -22,7 +27,7 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "calibration_strategy": "median_zp",
         "calibration_grouping": "per_image",
         "extinction_mode": "none",
-        "zp_method": "median",
+        "color_term_fit": "never",
         "derive_transform_from_data": False,
         "zp_subsample_statistic": True,
     },
@@ -30,16 +35,15 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "calibration_strategy": "linear_fit",
         "calibration_grouping": "per_night",
         "extinction_mode": "none",
-        "zp_method": "auto",
+        "color_term_fit": "auto",
         "derive_transform_from_data": True,
         "zp_subsample_statistic": False,
     },
     "c7_variable_extinction": {
         "calibration_strategy": "linear_fit",
         "calibration_grouping": "per_night",
-        "extinction_mode": "fitted",
-        "fit_extinction_from_data": True,
-        "zp_method": "auto",
+        "extinction_mode": "from_comparison_stars",
+        "color_term_fit": "auto",
     },
 }
 
@@ -182,14 +186,13 @@ class CalibrationConfig:
     calibration_strategy: CalibrationStrategy = "median_zp"
     calibration_grouping: CalibrationGrouping = "per_image"
     extinction_mode: ExtinctionMode = "none"
-    zp_method: ZpMethod = "auto"
+    color_term_fit: ColorTermFit = "auto"
     fit_sigma_clip: float = 2.5
     per_image_rolling_median_color_term: bool = False
     per_image_rolling_median_zero_point: bool = False
     per_image_rolling_mean_color_term: bool = False
     per_image_rolling_mean_zero_point: bool = False
     per_image_rolling_window: int = 3
-    fit_extinction_from_data: bool = False
     color_indices: dict[str, tuple[str, str]] | None = None
     exposure_pairing: Literal["jd_nearest", "index"] = "jd_nearest"
     exposure_jd_tolerance: float = 0.02
@@ -275,7 +278,8 @@ class HipsConfig:
 
 @dataclass
 class ExtinctionConfig:
-    skip_extinction_fit: bool = True
+    """Settings for :class:`~ost_photometry.analyze.pipeline.steps.extinction_fit.ExtinctionFitStep`."""
+
     extinction_fit_mag_col: str = "mags_fit"
     extinction_fit_use_flux: bool = False
     extinction_coefficients_filename: str = "extinction_coefficients.json"

@@ -246,7 +246,7 @@ class DifferentialPhotometer:
         sigma_clip: float = 2.5,
         min_comparisons: int = 3,
         determine_color_terms: bool = True,
-        zp_method: Literal["median", "linear", "auto"] = "auto",
+        color_term_fit: Literal["always", "auto", "never"] = "auto",
         output_dir: Optional[str] = None,
         file_type: str = "pdf",
     ) -> CalibrationResult:
@@ -262,10 +262,10 @@ class DifferentialPhotometer:
 
         Parameters
         ----------
-        zp_method : {"median", "linear", "auto"}
-            ``median`` — median ZP, T=0, no extinction correction before ZP.
-            ``linear`` — always attempt linear T/ZP when color columns exist.
-            ``auto`` — linear when color spread > 0.1 mag, else median ZP (legacy default).
+        color_term_fit : {"always", "auto", "never"}
+            ``never`` — median ZP, T=0, no extinction correction before ZP.
+            ``always`` — always attempt linear T/ZP when color columns exist.
+            ``auto`` — linear when color spread > 0.1 mag, else median ZP (default).
         output_dir : str, optional
             If provided, save transformation fit plots to output_dir/calibration/.
         file_type : str
@@ -286,7 +286,7 @@ class DifferentialPhotometer:
             return result
 
         if (
-            zp_method != "median"
+            color_term_fit != "never"
             and self.extinction is not None
             and extinction_airmass_ready(data, filters_use, fallback_airmass_col)
         ):
@@ -359,9 +359,9 @@ class DifferentialPhotometer:
 
             for _ in range(5):
                 c = color_std[mask]
-                if zp_method == "linear":
+                if color_term_fit == "always":
                     use_linear = determine_color_terms and has_color
-                elif zp_method == "median":
+                elif color_term_fit == "never":
                     use_linear = False
                 else:
                     use_linear = (
@@ -374,7 +374,7 @@ class DifferentialPhotometer:
                     )
                 else:
                     if (
-                        zp_method == "auto"
+                        color_term_fit == "auto"
                         and determine_color_terms
                         and has_color
                         and not warned_color_spread
@@ -1045,7 +1045,7 @@ class PhotometryCalibrator:
         per_image_rolling_window: int = 3,
         calibration_summary_x_jd: Optional[Dict[str, float]] = None,
         calibration_summary_use_jd_x: bool = False,
-        zp_method: Literal["median", "linear", "auto"] = "auto",
+        color_term_fit: Literal["always", "auto", "never"] = "auto",
     ) -> Dict[str, CalibrationResult]:
         """
         Fit color terms and zero points (per mode); store results in :attr:`calib_parameters`.
@@ -1106,7 +1106,7 @@ class PhotometryCalibrator:
                     determine_color_terms=determine_color_terms,
                     min_comparisons=min_comparisons,
                     sigma_clip=sigma_clip,
-                    zp_method=zp_method,
+                    color_term_fit=color_term_fit,
                     output_dir=output_dir,
                     file_type=file_type,
                 )
@@ -1175,7 +1175,7 @@ class PhotometryCalibrator:
                 determine_color_terms=determine_color_terms,
                 min_comparisons=min_comparisons,
                 sigma_clip=sigma_clip,
-                zp_method=zp_method,
+                color_term_fit=color_term_fit,
                 output_dir=output_dir,
                 file_type=file_type,
                 inverse_variance_min_error=inverse_variance_min_error,
@@ -1192,7 +1192,7 @@ class PhotometryCalibrator:
                 determine_color_terms=determine_color_terms,
                 min_comparisons=min_comparisons,
                 sigma_clip=sigma_clip,
-                zp_method=zp_method,
+                color_term_fit=color_term_fit,
             )
             for epoch_id in self.epochs:
                 results[epoch_id] = result

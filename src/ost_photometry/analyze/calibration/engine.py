@@ -42,20 +42,49 @@ class CalibrationEngine:
                 color_indices=color_indices,
             )
         else:
-            cal = calibrator or linear_backend.build_calibrator(
-                config,
-                color_indices=color_indices,
-            )
-            cal.epochs.clear()
-            results = linear_backend.fit_epochs(
-                cal,
-                epochs,
-                filters,
-                config,
-                output_dir=output_dir,
-                file_type=file_type,
-                calibration_summary_x_jd=calibration_summary_x_jd,
-            )
+            if config.derive_transform_from_data:
+                from .backends import derive_transform as derive_transform_backend
+
+                results = derive_transform_backend.fit_epochs(
+                    epochs,
+                    filters,
+                    config,
+                    color_indices=color_indices,
+                    output_dir=output_dir,
+                    file_type=file_type,
+                )
+                if results is None:
+                    cal = calibrator or linear_backend.build_calibrator(
+                        config,
+                        color_indices=color_indices,
+                    )
+                    cal.epochs.clear()
+                    for epoch_id, tbl in epochs.items():
+                        cal.epochs[epoch_id] = tbl
+                    results = linear_backend.fit_epochs(
+                        cal,
+                        epochs,
+                        filters,
+                        config,
+                        output_dir=output_dir,
+                        file_type=file_type,
+                        calibration_summary_x_jd=calibration_summary_x_jd,
+                    )
+            else:
+                cal = calibrator or linear_backend.build_calibrator(
+                    config,
+                    color_indices=color_indices,
+                )
+                cal.epochs.clear()
+                results = linear_backend.fit_epochs(
+                    cal,
+                    epochs,
+                    filters,
+                    config,
+                    output_dir=output_dir,
+                    file_type=file_type,
+                    calibration_summary_x_jd=calibration_summary_x_jd,
+                )
         if config.zp_subsample_statistic and strategy == "median_zp":
             for epoch_id, result in results.items():
                 tbl = epochs.get(epoch_id)
@@ -107,6 +136,7 @@ def prepare_calibration_check_plots(
 ) -> None:
     """Write transformation diagnostic plots under ``output_dir/calibration/``."""
     from .. import plots
+    from .zp import comparison_mask_from_std_columns
 
     for epoch_id, result in results.items():
         if not result.transformation:
@@ -114,6 +144,7 @@ def prepare_calibration_check_plots(
         tbl = epochs.get(epoch_id)
         if tbl is None:
             continue
+        comp_mask = comparison_mask_from_std_columns(tbl, filters)
         plot_data: dict = {}
         for f in filters:
             if f not in result.transformation:
@@ -125,8 +156,6 @@ def prepare_calibration_check_plots(
             m_std = np.asarray(tbl[std_col], dtype=float)
             delta = m_std - m_inst
             comparison = np.isfinite(m_inst) & np.isfinite(m_std)
-            if not np.any(comparison):
-                continue
 
             tc = result.transformation[f]
             ci_f1, ci_f2 = tc.color_index_filters
@@ -137,8 +166,13 @@ def prepare_calibration_check_plots(
                     np.asarray(tbl[ci_std_col1], dtype=float)
                     - np.asarray(tbl[ci_std_col2], dtype=float)
                 )
+                comparison &= np.isfinite(color)
             else:
                 color = np.zeros(len(tbl), dtype=float)
+
+            comparison &= comp_mask
+            if not np.any(comparison):
+                continue
 
             # mask, color, and delta must share the same length (full table)
             mask = comparison.copy()

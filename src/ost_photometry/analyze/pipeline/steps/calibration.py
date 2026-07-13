@@ -151,8 +151,22 @@ class CalibrationStep(base.PipelineStep):
         calibrator = None
         photometer = DifferentialPhotometer(color_indices=color_indices)
 
-        if strategy == "linear_fit":
-            calibrator = build_calibrator(config, color_indices=color_indices)
+        if strategy == "linear_fit" and not config.derive_transform_from_data:
+            ext_coeffs = None
+            if config.extinction_mode == "from_value_airmass":
+                ext_coeffs = context.extinction_coefficients
+                if not ext_coeffs:
+                    warnings.warn(
+                        "extinction_mode='from_value_airmass' but no coefficients "
+                        "from ExtinctionFitStep; using tabulated defaults.",
+                        category=OstPhotometryAnalyzeWarning,
+                        stacklevel=1,
+                    )
+            calibrator = build_calibrator(
+                config,
+                color_indices=color_indices,
+                extinction_coefficients=ext_coeffs,
+            )
             for epoch_id, tbl in epochs.items():
                 meta = context.calibration_epoch_meta.get(epoch_id, {})
                 filter_obstimes = {}
@@ -179,7 +193,8 @@ class CalibrationStep(base.PipelineStep):
         )
         context.calibration_results = results
 
-        if context.output_dir:
+        # linear_fit writes per-epoch plots inside PhotometryCalibrator or derive_transform backend
+        if context.output_dir and strategy != "linear_fit":
             prepare_calibration_check_plots(
                 context.output_dir,
                 epochs,
@@ -188,7 +203,19 @@ class CalibrationStep(base.PipelineStep):
                 file_type=file_type,
             )
 
-        if strategy == "linear_fit" and calibrator is not None:
+        if (
+            strategy == "linear_fit"
+            and config.derive_transform_from_data
+            and len(filter_list) == 2
+        ):
+            from ...calibration.derive_transform import apply_derive_transform_epochs
+
+            calibrated = apply_derive_transform_epochs(
+                epochs,
+                results,
+                filter_list,
+            )
+        elif strategy == "linear_fit" and calibrator is not None:
             photometer = calibrator.photometer
             calibrated = calibrator.get_calibrated_photometry(output_prefix="mag_cal_")
         else:

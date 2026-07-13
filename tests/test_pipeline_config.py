@@ -38,6 +38,23 @@ def test_pipeline_config_from_preset_overrides():
     assert cfg.extinction_mode == "none"
 
 
+def test_c7_variable_extinction_preset():
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    PipelineConfig = cfg_mod.PipelineConfig
+
+    cfg = PipelineConfig.from_preset("c7_variable_extinction")
+    assert cfg.calibration_strategy == "linear_fit"
+    assert cfg.extinction_mode == "from_comparison_stars"
+    assert cfg.color_term_fit == "auto"
+    assert not hasattr(cfg, "fit_extinction_from_data")
+
+    cfg_va = PipelineConfig(extinction_mode="from_value_airmass")
+    assert cfg_va.extinction_mode == "from_value_airmass"
+
+
 def test_calibration_field_names():
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",

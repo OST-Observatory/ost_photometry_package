@@ -3990,8 +3990,10 @@ def plot_calibration_transformation(
         if n_excl > 0:
             ax1.scatter(color[~mask], delta[~mask], alpha=0.4, s=15, c="gray", label="excluded")
         ax1.scatter(color[mask], delta[mask], alpha=0.7, s=25, c="C0", label="used")
-        c_min, c_max = color.min(), color.max()
-        if c_max - c_min > 0.01:
+        c_used = np.asarray(color, dtype=float)[mask]
+        c_finite = c_used[np.isfinite(c_used)]
+        if len(c_finite) > 0 and np.nanmax(c_finite) - np.nanmin(c_finite) > 0.01:
+            c_min, c_max = float(np.nanmin(c_finite)), float(np.nanmax(c_finite))
             c_line = np.linspace(c_min, c_max, 50)
             ax1.plot(c_line, T * c_line + ZP, "C1-", lw=2, label="Fit")
         else:

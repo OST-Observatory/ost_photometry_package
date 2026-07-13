@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, TYPE_CHECKING
+from typing import Dict, List, TYPE_CHECKING, Optional
 
 from ...differential_photometry import PhotometryCalibrator
-from ...extinction import CoefficientMode, ExtinctionOrder
+from ...extinction import CoefficientMode, ExtinctionCoefficients, ExtinctionOrder
 from ..result import CalibrationResult
 
 if TYPE_CHECKING:
@@ -16,11 +16,9 @@ if TYPE_CHECKING:
 
 
 def _extinction_order(mode: str) -> ExtinctionOrder:
-    if mode == "fitted":
-        return ExtinctionOrder.FIRST
-    if mode == "tabulated":
-        return ExtinctionOrder.FIRST
-    return ExtinctionOrder.NONE
+    if mode == "none":
+        return ExtinctionOrder.NONE
+    return ExtinctionOrder.FIRST
 
 
 def _coefficient_mode(grouping: str) -> CoefficientMode:
@@ -37,15 +35,19 @@ def build_calibrator(
     *,
     observatory_location: "EarthLocation | None" = None,
     color_indices: dict[str, tuple[str, str]] | None = None,
+    extinction_coefficients: Optional[Dict[str, ExtinctionCoefficients]] = None,
 ) -> PhotometryCalibrator:
     grouping = config.calibration_grouping
-    ext_mode = config.extinction_mode
-    ext_order = _extinction_order(ext_mode)
+    ext_order = _extinction_order(config.extinction_mode)
+    coeffs = None
+    if config.extinction_mode == "from_value_airmass":
+        coeffs = extinction_coefficients
     return PhotometryCalibrator(
         mode=_coefficient_mode(grouping),
         extinction_order=ext_order,
         observatory_location=observatory_location or config.observatory_location,
         color_indices=color_indices,
+        extinction_coefficients=coeffs,
     )
 
 
@@ -63,7 +65,7 @@ def fit_epochs(
     for epoch_id, tbl in epochs.items():
         calibrator.epochs[epoch_id] = tbl
 
-    if config.extinction_mode == "fitted" and config.fit_extinction_from_data:
+    if config.extinction_mode == "from_comparison_stars":
         calibrator.fit_extinction_from_epochs(
             output_dir=output_dir,
             file_type=file_type,
@@ -83,7 +85,7 @@ def fit_epochs(
         per_image_rolling_window=config.per_image_rolling_window,
         calibration_summary_x_jd=calibration_summary_x_jd,
         calibration_summary_use_jd_x=config.calibration_summary_use_jd_x,
-        zp_method=config.zp_method,
+        color_term_fit=config.color_term_fit,
     )
     return dict(calibrator.calib_parameters)
 

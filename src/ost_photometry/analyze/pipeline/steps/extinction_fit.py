@@ -31,7 +31,7 @@ class ExtinctionFitStep(base.PipelineStep):
         context: AnalysisContext,
         config: PipelineConfig,
     ) -> bool:
-        return getattr(config, "skip_extinction_fit", True)
+        return config.extinction_mode != "from_value_airmass"
 
     def run(
         self,
