@@ -280,6 +280,8 @@ class HipsConfig:
 class ExtinctionConfig:
     """Settings for :class:`~ost_photometry.analyze.pipeline.steps.extinction_fit.ExtinctionFitStep`."""
 
+    path_extinction_coefficients: str | None = None
+    extinction_night_id: str | None = None
     extinction_fit_mag_col: str = "mags_fit"
     extinction_fit_use_flux: bool = False
     extinction_coefficients_filename: str = "extinction_coefficients.json"

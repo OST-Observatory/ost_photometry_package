@@ -6,6 +6,7 @@ from typing import Dict, List, TYPE_CHECKING, Optional
 
 from ...differential_photometry import PhotometryCalibrator
 from ...extinction import CoefficientMode, ExtinctionCoefficients, ExtinctionOrder
+from ...extinction_io import resolve_tabulated_extinction_coefficients
 from ..result import CalibrationResult
 
 if TYPE_CHECKING:
@@ -40,7 +41,11 @@ def build_calibrator(
     grouping = config.calibration_grouping
     ext_order = _extinction_order(config.extinction_mode)
     coeffs = None
-    if config.extinction_mode == "from_value_airmass":
+    if config.extinction_mode == "tabulated":
+        coeffs = resolve_tabulated_extinction_coefficients(
+            config.path_extinction_coefficients
+        )
+    elif config.extinction_mode == "from_value_airmass":
         coeffs = extinction_coefficients
     return PhotometryCalibrator(
         mode=_coefficient_mode(grouping),

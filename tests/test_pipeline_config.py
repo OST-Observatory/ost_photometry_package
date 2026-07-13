@@ -65,3 +65,15 @@ def test_calibration_field_names():
     cfg = PipelineConfig(exposure_pairing="index", exposure_jd_tolerance=0.05)
     assert cfg.exposure_pairing == "index"
     assert cfg.exposure_jd_tolerance == 0.05
+
+
+def test_path_extinction_coefficients_flat_access():
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    PipelineConfig = cfg_mod.PipelineConfig
+
+    cfg = PipelineConfig(path_extinction_coefficients="/tmp/site_extinction.json")
+    assert cfg.path_extinction_coefficients == "/tmp/site_extinction.json"
+    assert cfg.extinction.path_extinction_coefficients == "/tmp/site_extinction.json"

@@ -1,6 +1,5 @@
 """Extinction fit step: determine ExtinctionCoefficients via fit_extinction_from_value_airmass."""
 
-import json
 from pathlib import Path
 
 from .. import base
@@ -11,6 +10,7 @@ from ...extinction import (
     fit_extinction_from_value_airmass,
     observation_to_extinction_fit_table,
 )
+from ...extinction_io import save_extinction_coefficients
 
 
 class ExtinctionFitStep(base.PipelineStep):
@@ -105,22 +105,11 @@ class ExtinctionFitStep(base.PipelineStep):
         # Save to file
         out_name = getattr(config, "extinction_coefficients_filename", "extinction_coefficients.json")
         out_path = output_dir / out_name
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-
-        def _to_dict(ec: ExtinctionCoefficients) -> dict:
-            return {
-                "filter_name": ec.filter_name,
-                "k_prime": ec.k_prime,
-                "k_prime_err": ec.k_prime_err,
-                "k_second": ec.k_second,
-                "k_second_err": ec.k_second_err,
-                "color_filter_1": ec.color_filter_1,
-                "color_filter_2": ec.color_filter_2,
-                "valid": ec.valid,
-            }
-
-        with open(out_path, "w") as f:
-            json.dump({k: _to_dict(v) for k, v in coefficients.items()}, f, indent=2)
+        meta = {"method": "value_airmass", "site": "OST_Potsdam"}
+        night_id = getattr(config, "extinction_night_id", None)
+        if night_id:
+            meta["night_id"] = night_id
+        save_extinction_coefficients(out_path, coefficients, meta=meta)
 
         terminal_output.print_to_terminal(
             f"Extinction coefficients saved to {out_path}",

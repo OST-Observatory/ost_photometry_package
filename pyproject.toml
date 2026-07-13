@@ -52,6 +52,9 @@ dev = [
 "Homepage" = "https://github.com/OST-Observatory/ost_photometry_package"
 "Bug Tracker" = "https://github.com/OST-Observatory/ost_photometry_package/issues"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ost_photometry"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

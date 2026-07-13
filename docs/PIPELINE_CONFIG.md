@@ -96,11 +96,13 @@ Requires a valid WCS. Affects intra-filter tracking (same object across exposure
 | Value | `ExtinctionFitStep` | Coefficients in calibration | When to use |
 |-------|-------------------|----------------------------|-------------|
 | `none` | skipped | no correction | Short runs, low airmass range, or extinction absorbed in ZP drift |
-| `tabulated` | skipped | built-in `DEFAULT_EXTINCTION` | Rough correction without extra observations |
+| `tabulated` | skipped | bundled site JSON (`path_extinction_coefficients` or package default) + builtin fallback for missing filters | Routine science with maintained OST k′ table |
 | `from_comparison_stars` | skipped | fit from catalog stars across epochs | Multi-epoch data with airmass span and enough comparison stars (≥ 3 epochs, spread in X) |
 | `from_value_airmass` | **runs** | fit from mag/flux vs airmass, then passed to calibration | Dedicated extinction fields (same stars over several hours) |
 
 Requires `observatory_location` (or per-epoch airmass columns) for any mode except `none`. `from_comparison_stars` needs `linear_fit` and catalog cross-match (`mag_std_*`). `from_value_airmass` runs before `CalibrationStep` and writes `extinction_coefficients.json`.
+
+**Related config:** `path_extinction_coefficients` — custom site JSON for `tabulated` (default: bundled `ost_potsdam_extinction.json`). See [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) for maintaining the site table.
 
 ### `color_term_fit` (`linear_fit` only)
 
@@ -180,6 +182,7 @@ config = PipelineConfig.from_preset("c7_variable", overrides={"fit_sigma_clip": 
 
 ## Further reading
 
+- [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) — site extinction table and dedicated-night best practices
 - [MIGRATION_calibration_convergence.md](MIGRATION_calibration_convergence.md) — preset and breaking-change reference
 - [MIGRATION_calibration_epochs.md](MIGRATION_calibration_epochs.md) — epoch table layout and API names
 - Source of truth for defaults: [`pipeline/config.py`](../src/ost_photometry/analyze/pipeline/config.py)

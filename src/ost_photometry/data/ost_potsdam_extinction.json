@@ -1,0 +1,60 @@
+{
+  "meta": {
+    "site": "OST_Potsdam",
+    "updated": "2026-07-13",
+    "method": "builtin_seed",
+    "note": "Replace via scripts/aggregate_site_extinction.py after extinction campaigns"
+  },
+  "coefficients": {
+    "U": {
+      "filter_name": "U",
+      "k_prime": 0.6,
+      "k_prime_err": 0.06,
+      "k_second": 0.03,
+      "k_second_err": 0.0,
+      "color_filter_1": "U",
+      "color_filter_2": "B",
+      "valid": true
+    },
+    "B": {
+      "filter_name": "B",
+      "k_prime": 0.33,
+      "k_prime_err": 0.04,
+      "k_second": 0.02,
+      "k_second_err": 0.0,
+      "color_filter_1": "B",
+      "color_filter_2": "V",
+      "valid": true
+    },
+    "V": {
+      "filter_name": "V",
+      "k_prime": 0.2,
+      "k_prime_err": 0.03,
+      "k_second": 0.01,
+      "k_second_err": 0.0,
+      "color_filter_1": "B",
+      "color_filter_2": "V",
+      "valid": true
+    },
+    "R": {
+      "filter_name": "R",
+      "k_prime": 0.13,
+      "k_prime_err": 0.02,
+      "k_second": 0.01,
+      "k_second_err": 0.0,
+      "color_filter_1": "V",
+      "color_filter_2": "R",
+      "valid": true
+    },
+    "I": {
+      "filter_name": "I",
+      "k_prime": 0.08,
+      "k_prime_err": 0.02,
+      "k_second": 0.005,
+      "k_second_err": 0.0,
+      "color_filter_1": "R",
+      "color_filter_2": "I",
+      "valid": true
+    }
+  }
+}

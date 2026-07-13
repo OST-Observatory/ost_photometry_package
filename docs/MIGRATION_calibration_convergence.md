@@ -34,6 +34,7 @@ config prefixes are removed. Use **one epoch-native calibration path**:
 | `extinction_mode="fitted"` | `extinction_mode="from_comparison_stars"` |
 | `fit_extinction_from_data` | Use `extinction_mode` (`from_comparison_stars` or `from_value_airmass`) |
 | `skip_extinction_fit` | `extinction_mode="from_value_airmass"` runs `ExtinctionFitStep`; otherwise skipped |
+| `tabulated` (builtin only) | `tabulated` reads bundled/custom site JSON; see [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) |
 
 ## Script pattern (N2 / C7)
 
@@ -56,7 +57,7 @@ derive_transform_from_data = False   # catalog-color derive-transform (linear_fi
 | Mode | ExtinctionFitStep | Calibration coefficients |
 |------|-------------------|--------------------------|
 | `none` | skipped | no extinction correction |
-| `tabulated` | skipped | `DEFAULT_EXTINCTION` |
+| `tabulated` | skipped | bundled/custom site JSON (`path_extinction_coefficients`) |
 | `from_comparison_stars` | skipped | fit from catalog comparison stars in epochs |
 | `from_value_airmass` | runs | fit from flux/magnitude vs airmass (`context.extinction_coefficients`) |
 
