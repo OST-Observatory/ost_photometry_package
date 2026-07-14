@@ -199,4 +199,4 @@ from ost_photometry.analyze.extinction_io import (
 ## See also
 
 - [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md) — full pipeline option reference
-- [MIGRATION_calibration_convergence.md](MIGRATION_calibration_convergence.md) — preset and breaking changes
+- [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md) — breaking changes and presets

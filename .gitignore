@@ -13,7 +13,6 @@ __pycache__
 .cursor
 
 ost_photometry_package.code-workspace
-migration_reports
 
 # Environments
 .env

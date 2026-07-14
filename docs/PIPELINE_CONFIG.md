@@ -2,7 +2,7 @@
 
 Analysis scripts pass a [`PipelineConfig`](../src/ost_photometry/analyze/pipeline/config.py) to `Observation.run_pipeline()`. The options below are the main **typed choices** that control WCS, extraction, correlation, and calibration. They are independent of the N2/C7 course scripts; use this guide to pick settings for any field, survey, or lab run.
 
-For breaking renames and course presets (`n2_stack`, `c7_variable`, …) see [MIGRATION_calibration_convergence.md](MIGRATION_calibration_convergence.md).
+For breaking renames and course presets (`n2_stack`, `c7_variable`, …) see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
 
 ## Quick start
 
@@ -183,6 +183,6 @@ config = PipelineConfig.from_preset("c7_variable", overrides={"fit_sigma_clip": 
 ## Further reading
 
 - [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) — site extinction table and dedicated-night best practices
-- [MIGRATION_calibration_convergence.md](MIGRATION_calibration_convergence.md) — preset and breaking-change reference
-- [MIGRATION_calibration_epochs.md](MIGRATION_calibration_epochs.md) — epoch table layout and API names
+- [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md) — breaking changes and epoch-native architecture
+- [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) — site extinction table
 - Source of truth for defaults: [`pipeline/config.py`](../src/ost_photometry/analyze/pipeline/config.py)

@@ -81,10 +81,9 @@ For the default WCS method (`astrometry`), a local
 |-------|----------|
 | Pipeline options and decision tables | [docs/PIPELINE_CONFIG.md](docs/PIPELINE_CONFIG.md) |
 | Site extinction table and observation campaigns | [docs/EXTINCTION_COEFFICIENTS.md](docs/EXTINCTION_COEFFICIENTS.md) |
-| Calibration presets and breaking changes | [docs/MIGRATION_calibration_convergence.md](docs/MIGRATION_calibration_convergence.md) |
-| Epoch-native calibration tables | [docs/MIGRATION_calibration_epochs.md](docs/MIGRATION_calibration_epochs.md) |
-| Calibration catalog sources | [docs/MIGRATION_calibration_sources.md](docs/MIGRATION_calibration_sources.md) |
-| Post-processing changes | [docs/MIGRATION_post_processing.md](docs/MIGRATION_post_processing.md) |
+| Breaking changes and architecture (archive) | [docs/ARCHITECTURE_AND_MIGRATION.md](docs/ARCHITECTURE_AND_MIGRATION.md) |
+| Script compatibility matrix | [docs/COMPATIBILITY_REPORT.md](docs/COMPATIBILITY_REPORT.md) |
+| Known follow-ups | [docs/TECHNICAL_DEBT.md](docs/TECHNICAL_DEBT.md) |
 
 Config defaults and all pipeline fields:
 [`src/ost_photometry/analyze/pipeline/config.py`](src/ost_photometry/analyze/pipeline/config.py).
