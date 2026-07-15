@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+from pathlib import Path
 
 import pytest
 
@@ -39,6 +40,23 @@ def test_reduce_workflow_public_api(symbol):
     wf = importlib.import_module("ost_photometry.reduce.workflow")
     assert symbol in wf.__all__
     assert hasattr(wf, symbol)
+
+
+def test_reduce_config_is_dataclass():
+    from helpers import load_module_from_path, pkg_src
+
+    config = load_module_from_path(
+        "ost_photometry.reduce.workflow.config",
+        pkg_src() / "ost_photometry" / "reduce" / "workflow" / "config.py",
+    )
+    cfg = config.ReduceConfig(
+        image_path=Path("/tmp/in"),
+        output_dir=Path("/tmp/out"),
+        image_type_dir={"light": ["LIGHT"]},
+        shift_all=True,
+    )
+    assert cfg.shift_all is True
+    assert cfg.image_path == Path("/tmp/in")
 
 
 def test_redu_facade_reexports_reduce_main():

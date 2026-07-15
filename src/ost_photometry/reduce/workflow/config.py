@@ -5,6 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
+
+@dataclass
 class ReduceConfig:
     """Configuration for the data reduction pipeline."""
 
