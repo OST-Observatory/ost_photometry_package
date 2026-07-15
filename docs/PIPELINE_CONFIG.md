@@ -31,11 +31,14 @@ config = PipelineConfig(
 | `wcs_method` | `astrometry`, `astap`, `twirl` | WCS | Astrometric solution per image |
 | `photometry_extraction_method` | `PSF`, `APER` | Extraction | PSF fitting vs aperture photometry |
 | `correlation_method` | `astropy`, `own` | Correlation (intra/inter) | Match detections across exposures |
+| `protected_object_ids` | list of row indices | Correlation (intra/inter) | Explicit reference-image rows to keep (any object type) |
+| `protect_ooi` | `True`, `False` | Correlation (intra/inter) | Auto-add identified objects of interest to the protected set |
+| `protect_calibration_objects` | `True`, `False` | Correlation (intra/inter) | Auto-add catalog-matched calibration stars to the protected set |
 | `calibration_strategy` | `median_zp`, `linear_fit` | Calibration | ZP-only vs linear T/ZP fit |
 | `calibration_grouping` | `per_image`, `per_night`, `ensemble`, `fixed` | Calibration | How coefficients are shared across epochs |
 | `extinction_mode` | `none`, `tabulated`, `from_comparison_stars`, `from_value_airmass` | Extinction fit + calibration | Whether/how to correct for airmass |
 | `color_term_fit` | `always`, `auto`, `never` | Calibration (`linear_fit` only) | Color-term handling in linear fit |
-| `uncertainty_mode` | `fit_errors`, `flux_monte_carlo`, `both` | *(reserved)* | Defined in config; not yet applied by pipeline steps |
+| `uncertainty_mode` | `fit_errors`, `flux_monte_carlo`, `both` | Calibration | Propagated ``err_cal_*`` after calibration apply |
 
 ### `wcs_method`
 
@@ -64,6 +67,26 @@ Both methods feed the same downstream tables (`mag_<filter>`, `err_<filter>`). C
 | `own` | Legacy / reproducibility with older scripts | Duplicate handling: first match in list |
 
 Requires a valid WCS. Affects intra-filter tracking (same object across exposures) and inter-filter matching (B with V on the same night). Tune `separation_limit`, `max_pixel_between_objects`, and `exposure_pairing` if matches fail.
+
+**Protected objects during correlation** — sources are combined (deduplicated) into one set of reference-image row indices:
+
+1. `protected_object_ids` — explicit list (any science case)
+2. `protect_ooi=True` — objects of interest after identification (C7 variables)
+3. `protect_calibration_objects=True` — catalog-matched comparison stars (mk_calib, extinction fields)
+
+All three can be active at once, e.g. a variable star in a field that also needs calibration stars preserved:
+
+```python
+PipelineConfig(
+    protect_ooi=True,
+    protect_calibration_objects=True,
+    protected_object_ids=[42],  # optional extra row, e.g. a known comparison star
+)
+```
+
+Intra correlation uses `correlate_preserve_objects`; inter correlation resolves IDs on the reference filter before matching across bands.
+
+**Rename (July 2026):** `protect_reference_obj` was renamed to `protect_ooi`. The old name still works as a `PipelineConfig` alias.
 
 ### `calibration_strategy` and `calibration_grouping`
 
@@ -116,7 +139,15 @@ Use `never` for single-filter data or when colors are unreliable. Use `auto` as 
 
 ### `uncertainty_mode`
 
-Values `fit_errors`, `flux_monte_carlo`, and `both` are reserved for propagated calibration uncertainties (`calibration/uncertainty.py`). The default pipeline steps do not branch on this field yet; leave at `fit_errors` unless you call the uncertainty helpers directly.
+Applied by :class:`~ost_photometry.analyze.pipeline.steps.calibration.CalibrationStep` after calibrated magnitudes are written.
+
+| Value | Behaviour |
+|-------|-----------|
+| `fit_errors` | Default. ``err_cal_*`` from the linear fit / derive-transform apply path (instrumental + T/ZP propagation). |
+| `flux_monte_carlo` | Replace ``err_cal_*`` with Monte Carlo spread from ``flux_<filter>`` / ``flux_err_<filter>`` (+ ZP). Falls back to fit errors if flux columns are missing. |
+| `both` | Combine fit and MC errors in quadrature: ``sqrt(err_fit² + err_mc²)``. |
+
+Uses ``distribution_samples`` (default 1000) for the MC draw count. Requires flux columns in epoch tables (populated by the extraction bridge when PSF/aperture flux is available).
 
 ## Decision tables
 
@@ -175,9 +206,15 @@ Values `fit_errors`, `flux_monte_carlo`, and `both` are reserved for propagated 
 | `n2_stack` | `median_zp`, `per_image`, `extinction_mode="none"` | Supervisor cluster exercise (stacked B/V) |
 | `c7_variable` | `linear_fit`, `per_night`, `derive_transform_from_data=True` | Student variable-star light curves |
 | `c7_variable_extinction` | `linear_fit`, `per_night`, `from_comparison_stars` | Variables with significant airmass range |
+| `mk_calib_trans` | `protect_calibration_objects=True`, `skip_calibration`, `skip_correlation_inter` | WCS + extraction + intra correlation for mk_calib (`2_mk_trans*.py` step 1) |
+| `mk_calib_calibrate` | `linear_fit`, `derive_transform_from_data=True`, `calibration_grouping="ensemble"`, `extinction_mode="none"` | Per filter-pair inter correlation + derive-transform fit (`write_field_transformation_table`) |
+| `ost_site` | `extinction_mode="tabulated"`, bundled site JSON when `path_extinction_coefficients=None` | Shortcut for OST Potsdam tabulated extinction |
+
+Field transformation output: legacy ASCII `trans_para_<field>.dat` (unchanged column names) plus JSON sidecar `trans_para_<field>.json` with structured coefficients. Second-order scripts accept either format.
 
 ```python
 config = PipelineConfig.from_preset("c7_variable", overrides={"fit_sigma_clip": 3.0})
+config_mk = PipelineConfig.from_preset("mk_calib_trans", overrides={"calibration_source": "APASS"})
 ```
 
 ## Further reading

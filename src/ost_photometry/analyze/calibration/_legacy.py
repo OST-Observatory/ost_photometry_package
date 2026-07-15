@@ -1758,7 +1758,15 @@ def calculate_trans(
         distribution_samples: int = 1000,
         duplicate_handling_object_identification: dict[str, str] | None = None,
         use_wcs_projection_for_star_maps: bool = True,
-        file_type_plots: str = 'pdf'
+        file_type_plots: str = 'pdf',
+        skip_correlation: bool = False,
+        skip_starmap: bool = False,
+        protect_calibration_objects: bool = False,
+        protect_ooi: bool = True,
+        n_allowed_non_detections_object: int = 1,
+        expected_bad_image_fraction: float = 1.0,
+        cross_identification_limit: int = 1,
+        verbose: bool = False,
         ) -> None:
     """
     Calculate the transformation coefficients
@@ -1838,6 +1846,45 @@ def calculate_trans(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
+
+    skip_correlation
+        If ``True``, skip inter-filter correlation (e.g. when intra correlation
+        was already run by the pipeline).
+        Default is ``False``.
+
+    skip_starmap
+        If ``True``, skip the final starmap plot after correlation.
+        Default is ``False``.
+
+    protect_calibration_objects
+        Passed to :func:`correlate.correlate_image_series` when correlation
+        runs.
+        Default is ``False``.
+
+    protect_ooi
+        Passed to :func:`correlate.correlate_image_series` when correlation
+        runs.
+        Default is ``True``.
+
+    n_allowed_non_detections_object
+        Passed to :func:`correlate.correlate_image_series` when correlation
+        runs.
+        Default is ``1``.
+
+    expected_bad_image_fraction
+        Passed to :func:`correlate.correlate_image_series` when correlation
+        runs.
+        Default is ``1.0``.
+
+    cross_identification_limit
+        Passed to :func:`correlate.correlate_image_series` when correlation
+        runs.
+        Default is ``1``.
+
+    verbose
+        Passed to :func:`correlate.correlate_image_series` when correlation
+        runs.
+        Default is ``False``.
     """
     #   Sanitize dictionary with Vizier catalog information
     if vizier_dict is None:
@@ -1846,23 +1893,60 @@ def calculate_trans(
     #   TODO: Add download of calibration data?
 
     #   Correlate the results from the different filter
-    correlate.correlate_image_series(
-        observation,
-        filter_list,
-        max_pixel_between_objects=max_pixel_between_objects,
-        ooi_correlation_strategy=ooi_correlation_strategy,
-        file_type_plots=file_type_plots,
-        duplicate_handling_object_identification=duplicate_handling_object_identification,
+    from ..correlate.protection import merge_protected_object_ids
+
+    calibration_object_ids = None
+    if protect_calibration_objects:
+        reference_series = observation.image_series_dict[filter_list[0]]
+        calibration_object_ids, _, _ = correlate.resolve_calibration_object_ids(
+            reference_series,
+            filter_list,
+            calibration_source=calibration_source,
+            calibration_catalog_mag_range=calibration_catalog_mag_range,
+            vizier_dict=vizier_dict,
+            path_calibration_file=calibration_file,
+            max_pixel_between_objects=max_pixel_between_objects,
+            ooi_correlation_strategy=ooi_correlation_strategy,
+            verbose=verbose,
+        )
+
+    reference_obj_ids = None
+    if protect_ooi:
+        reference_obj_ids = observation.get_ids_object_of_interest(
+            filter_=filter_list[0],
+        )
+
+    protected_ids = merge_protected_object_ids(
+        reference_object_ids=reference_obj_ids,
+        calibration_object_ids=calibration_object_ids,
+        protect_ooi=protect_ooi,
+        protect_calibration_objects=protect_calibration_objects,
     )
 
-    #   Plot image with the final positions overlaid
-    #   (final version)
-    utilities.prepare_and_plot_starmap_from_observation(
-        observation,
-        filter_list,
-        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-        file_type_plots=file_type_plots
-    )
+    if not skip_correlation:
+        correlate.correlate_image_series(
+            observation,
+            filter_list,
+            max_pixel_between_objects=max_pixel_between_objects,
+            ooi_correlation_strategy=ooi_correlation_strategy,
+            cross_identification_limit=cross_identification_limit,
+            n_allowed_non_detections_object=n_allowed_non_detections_object,
+            expected_bad_image_fraction=expected_bad_image_fraction,
+            protected_object_ids=protected_ids,
+            file_type_plots=file_type_plots,
+            duplicate_handling_object_identification=duplicate_handling_object_identification,
+            verbose=verbose,
+        )
+
+        #   Plot image with the final positions overlaid
+        #   (final version)
+        if not skip_starmap:
+            utilities.prepare_and_plot_starmap_from_observation(
+                observation,
+                filter_list,
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+                file_type_plots=file_type_plots
+            )
 
     #   Calibrate transformation coefficients
     calibration_data.derive_calibration(

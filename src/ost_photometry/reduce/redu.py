@@ -1,3 +1,6 @@
-"""Data reduction main workflow (facade)."""
+"""Data reduction main workflow (facade).
 
-from .workflow._legacy import *  # noqa: F403
+Implementation lives in :mod:`ost_photometry.reduce.workflow`.
+"""
+
+from .workflow import *  # noqa: F403

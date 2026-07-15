@@ -15,7 +15,6 @@ import numpy.ma as ma
 from astropy.modeling.fitting import (
     LevMarLSQFitter,
     LMLSQFitter,
-    NonFiniteValueError,
     TRFLSQFitter,
 )
 from astropy.nddata import NDData
@@ -40,12 +39,16 @@ from photutils.psf import (
     IterativePSFPhotometry,
     SourceGrouper,
     extract_stars,
-    fit_fwhm,
 )
 
 from .. import checks, style, terminal_output
 from ..core.parallel import Executor
 from .. import utilities as base_utilities
+from ..fwhm import (
+    estimate_fwhm_from_positions,
+    select_sources_for_fwhm_fit,
+    source_positions_from_table,
+)
 from ..utilities import Image
 from . import correlate, plots, utilities
 from .models import ImageSeries
@@ -372,36 +375,20 @@ def find_stars(
             f"use either IRAF or DAO {style.Bcolors.ENDC}"
         )
 
-    #   TODO: put the FWHM determination in a function and use it also in reduction
-    #   Determine FWHM
-    #   Sort table first
-    tbl_objects.sort("flux")
+    table_fwhm = select_sources_for_fwhm_fit(tbl_objects)
+    xy_pos = source_positions_from_table(table_fwhm)
 
-    if len(tbl_objects) >= 40:
-        #   Use only 20 bright objects but not the brightest,
-        #   since those might be overexposed
-        table_fwhm = tbl_objects[20:40]
-    else:
-        table_fwhm = tbl_objects
-
-    #   Get positions
-    xy_pos = list(zip(table_fwhm["x_centroid"], table_fwhm["y_centroid"]))
-
-    #   Estimate FWHM
-    try:
-        fwhm = fit_fwhm(
-            ccd.data,
-            xypos=xy_pos,
-            fit_shape=25,
-            mask=ccd.mask,
-            error=ccd.uncertainty.array,
-        )
-        #   Get median
-        median_fwhm = sigma_clipped_stats(fwhm)[1]
-    except (ValueError, NonFiniteValueError) as e:
+    median_fwhm, fwhm_error = estimate_fwhm_from_positions(
+        ccd.data,
+        xy_pos,
+        mask=ccd.mask,
+        error=ccd.uncertainty.array if ccd.uncertainty is not None else None,
+        default_fwhm=default_fwhm,
+    )
+    if fwhm_error is not None:
         terminal_output.print_to_terminal(
-            f"[Info] FWHM determination failed with the following error {e}. "
-            f"Use the default FWHM of {default_fwhm}.",
+            f"[Info] FWHM determination failed with the following error "
+            f"{fwhm_error}. Use the default FWHM of {default_fwhm}.",
             style_name="WARNING",
         )
 
@@ -409,11 +396,6 @@ def find_stars(
         image.positions = tbl_objects["id", "x_centroid", "y_centroid", "flux"]
         image.fwhm = default_fwhm
         return
-
-    #   Check the validity of the FWHM estimate, assuming that FWHM values
-    #   below 2 and above 9 are most likely erroneous.
-    if median_fwhm < 2.0 or median_fwhm > 9.0:
-        median_fwhm = default_fwhm
 
     #   Run finder with new FWHM
     if method == "DAO":

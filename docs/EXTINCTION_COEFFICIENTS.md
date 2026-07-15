@@ -83,8 +83,11 @@ python scripts/aggregate_site_extinction.py \
   --nights output/night1/extinction_coefficients.json \
            output/night2/extinction_coefficients.json \
   --out src/ost_photometry/data/ost_potsdam_extinction.json \
-  --site OST_Potsdam
+  --site OST_Potsdam \
+  --plot
 ```
+
+With `--plot`, QC PDFs are written next to `--out` (or under `--plot-dir`): per-filter night scatter plots (`extinction_nights_<filter>.pdf`) and a site summary bar chart (`extinction_site_summary.pdf`).
 
 Review the printed k′ values and per-filter `n_nights`, then commit the updated
 JSON or point `path_extinction_coefficients` at the output on your server.

@@ -11,11 +11,11 @@ changes see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
 
 | Skript | Status | Kurznotiz |
 |--------|--------|-----------|
-| `c7/1_reduce_images.py` | ✅ | `reduce.redu`, `reduce.utilities`, `style` |
+| `c7/1_reduce_images.py` | ✅ | `reduce.redu.reduce_main`; optional `validate_inputs`, `fail_on_missing_flat` (defaults on) |
 | `c7/2_obtain_flux.py` | ✅ | `run_pipeline`, `PipelineConfig` (`preset`/`custom`), `extraction_mode="multi"` |
 | `c7/3_plot_lightcurve.py` | ✅ | `analyze.plots`, epoch-native ECSV input |
 | `n1_baches/1_masterimages.py` | ✅ | `reduce.utilities`, `reduce.registration`, `checks` |
-| `n2/1_add_images.py` | ✅ | `reduce.redu`, `reduce.utilities` (stacking only) |
+| `n2/1_add_images.py` | ✅ | `reduce.redu.reduce_main` (stacking via MP per filter) |
 | `n2/3_plot_cmd.py` | ✅ | `analyze.plots`, `analyze.utilities`, `style.Bcolors` |
 
 **Hinweis N2:** In `reduction_scripts_students/n2/` gibt es **kein** `2_obtain_flux.py`.
@@ -52,9 +52,9 @@ Legacy `Observation.extract_flux` / `extract_flux_multi` entfallen zugunsten von
 | Skript | Status | Kurznotiz |
 |--------|--------|-----------|
 | `1_reduce_images.py` | ✅ | `reduce.redu`, `reduce.utilities`, `reduce_main(...)` keywords |
-| `2_mk_trans.py`, `2_mk_trans_add.py` | ✅ | `Observation`, `ImageSeries`, WCS, correlate, calibration |
-| `3_second_order_extinction.py`, `3_second_order_extinction_add.py` | ✅ | `analyze.utilities`, `style.Bcolors` |
-| `new_pipeline/determine_extinction_coefficients.py` | ✅ | `extinction_mode="from_value_airmass"`, `skip_calibration=True`; siehe [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) und `scripts/aggregate_site_extinction.py` |
+| `2_mk_trans.py`, `2_mk_trans_add.py` | ✅ | `run_pipeline` (`mk_calib_trans`), `CalibrationEngine` via `mk_calib_pipeline.write_field_transformation_table` → `trans_para_*.dat` + `.json` |
+| `3_second_order_extinction.py`, `3_second_order_extinction_add.py` | ✅ | `run_second_order_campaign` (reads `.dat` or `.json` field tables) |
+| `new_pipeline/determine_extinction_coefficients.py` | ✅ | `extinction_mode="from_value_airmass"`, `protect_calibration_objects=True`, `skip_calibration=True`; siehe [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) |
 
 ### 3.3 Sonstiges
 
@@ -75,5 +75,6 @@ Es gilt **`ost_photometry.style.Bcolors`** (großes „B“). Kein `style.bcolor
 - `calibration_strategy`, `calibration_grouping`, `extinction_mode`, `color_term_fit`
 - `path_extinction_coefficients` für `extinction_mode="tabulated"`
 - `mk_file_list(..., add_path_to_file_names=...)`
-- `reduce_main`-Keyword-Argumente
+- `reduce_main`-Keyword-Argumente (`validate_inputs`, `fail_on_missing_flat`, `sanity_check_sample_size`)
+- Öffentliche Reduktions-API: `reduce.redu.reduce_main` (Implementierung in `ost_photometry.reduce.workflow`, intern modularisiert)
 - Epoch-native ECSV statt legacy wide `.dat` (sofern nicht `write_legacy_wide_magnitudes_dat=True`)

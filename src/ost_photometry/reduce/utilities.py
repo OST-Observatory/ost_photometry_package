@@ -17,11 +17,11 @@ from astropy.time import Time
 from astropy.wcs import WCS
 from photutils.detection import DAOStarFinder
 from photutils.psf import extract_stars
-from scipy.interpolate import UnivariateSpline
 from scipy.ndimage import median_filter
 
 from .. import calibration_parameters, checks, style, terminal_output
 from .. import utilities as base_utilities
+from ..fwhm import estimate_fwhm_from_positions, source_positions_from_table
 from ..terminal_output import print_to_terminal
 from . import plots
 from .exposure import (
@@ -341,71 +341,6 @@ def prepare_reduction(
     return raw_files_path_new
 
 
-def get_star_profiles(cutout_data: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Get star profiles
-
-    Parameters
-    ----------
-    cutout_data
-        Image (square) extracted around the star
-
-    Returns
-    -------
-    profile_x_direction
-        Profile in X direction
-
-    profile_y_direction
-        Profile in Y direction
-    """
-    #   Get image shape
-    shape = cutout_data.shape
-
-    #   Get central row and column
-    if shape[0] % 2 == 0:
-        central_column = shape[0] / 2
-    else:
-        central_column = (shape[0] - 1) / 2 + 1
-
-    if shape[1] % 2 == 0:
-        central_row = shape[1] / 2
-    else:
-        central_row = (shape[1] - 1) / 2 + 1
-
-    #   Get profiles
-    profile_x_direction = np.take(cutout_data, central_row, axis=1)
-    profile_y_direction = np.take(cutout_data, central_column, axis=0)
-
-    return profile_x_direction, profile_y_direction
-
-
-def interpolate_fwhm(profile: np.ndarray) -> float:
-    """
-    Find FWHM by means of interpolation on a stellar profile
-
-    Idea: https://stackoverflow.com/questions/52320873/computing-the-fwhm-of-a-star-profile
-
-    Parameters
-    ----------
-    profile
-        Stellar profile along a specific axis
-
-    Returns
-    -------
-    full_width_half_maximum
-        FWHM of the profile
-    """
-    #   Prepare interpolation
-    half_maximum = 0.5 * np.max(profile)
-    x_data = np.linspace(0, len(profile), len(profile))
-
-    #   Do the interpolation
-    spline = UnivariateSpline(x_data, profile - half_maximum, s=0)
-    r1, r2 = spline.roots()
-
-    return r2 - r1
-
-
 def estimate_fwhm(
     image_path: Path,
     output_dir: Path,
@@ -511,11 +446,12 @@ def estimate_fwhm(
                 id_percentile_99 - n_fwhm_stars : id_percentile_99
             ]
 
-            #   Extract cutouts
-            object_cutouts = extract_stars(img_ccd, objects_tbl_filtered, size=25)
-
-            #   Plot subplots
             if plot_subplots:
+                object_cutouts = extract_stars(
+                    img_ccd,
+                    objects_tbl_filtered,
+                    size=25,
+                )
                 plots.cutouts_fwhm_stars(
                     out_path,
                     len(objects_tbl_filtered),
@@ -524,72 +460,59 @@ def estimate_fwhm(
                     base_utilities.get_basename(file_name),
                 )
 
-            ###
-            #   Loop over all stars and determine the FWHM
-            #
-            fwhm_x_list = []
-            fwhm_y_list = []
+            xy_pos = source_positions_from_table(objects_tbl_filtered)
+            mean_fwhm, fwhm_error = estimate_fwhm_from_positions(
+                img_ccd.data,
+                xy_pos,
+                mask=img_ccd.mask,
+                error=(
+                    img_ccd.uncertainty.array
+                    if img_ccd.uncertainty is not None
+                    else None
+                ),
+                default_fwhm=3.0,
+            )
+            if fwhm_error is None:
+                img_fwhm.append(mean_fwhm)
 
-            for i in range(len(objects_tbl_filtered)):  # can be optimized -> loop stars
-                #   Get star profile
-                horizontal, vertical = get_star_profiles(object_cutouts[i])
-                #   Try to find FWHM, skip if this is not successful
-                try:
-                    fwhm_x = interpolate_fwhm(horizontal)
-                    fwhm_y = interpolate_fwhm(vertical)
-
-                    fwhm_x_list.append(fwhm_x)
-                    fwhm_y_list.append(fwhm_y)
-                except ValueError:
-                    pass
-
-            #   Get median of the FWHMs
-            median_fwhm_x = np.median(fwhm_x_list)
-            median_fwhm_y = np.median(fwhm_y_list)
-
-            #   Average the FWHM from both directions
-            mean_fwhm = np.mean([median_fwhm_x, median_fwhm_y])
-
-            img_fwhm.append(mean_fwhm)
-
-        terminal_output.print_to_terminal(
-            f"FWHM (median) of the stars in Filter {filter_}: {np.median(img_fwhm)}",
-            indent=indent,
-        )
+        if img_fwhm:
+            terminal_output.print_to_terminal(
+                f"FWHM (median) of the stars in Filter {filter_}: {np.median(img_fwhm)}",
+                indent=indent,
+            )
 
 
 def check_master_files_on_disk(
     image_path: str | Path,
     image_type_dict: dict[str, list[str]],
-    dark_exposure_times: list[float],
-    filter_list: list[str] | set[str],
+    required_dark_exposure_times: list[float],
+    science_filters: list[str] | set[str],
     check_bias: bool,
+    *,
+    exposure_time_tolerance: float = 0.5,
 ) -> bool:
     """
-    Check if master files are already prepared
+    Check if master files are already prepared on disk.
 
     Parameters
     ----------
     image_path
-        Path to the images
+        Path to the reduced output directory with combined masters.
 
     image_type_dict
-        Image types of the images.
-        Possibilities: bias, dark, flat, light
+        Image types of the images (bias, dark, flat, light).
 
-    dark_exposure_times
-        Exposure times of the raw dark images
+    required_dark_exposure_times
+        Exposure times needed for science and flat frames.
 
-    filter_list
-        Filter that have been used
+    science_filters
+        Filters used by science images that require master flats.
 
     check_bias
-        If True bias will be checked as well.
+        If True, verify that a combined master bias exists.
 
-    Returns
-    -------
-    master_available
-        Is True, if all required master files were detected.
+    exposure_time_tolerance
+        Tolerance when matching science/flat exptimes to master darks.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -622,11 +545,18 @@ def check_master_files_on_disk(
         )
     }
 
-    #   Check if master darks exists for all exposure times
     master_available = True
-    for key in combined_darks_dict.keys():
-        if key not in dark_exposure_times:
+    #   Check if master darks exist for all required exposure times
+    master_dark_exptimes = list(combined_darks_dict.keys())
+    for req_time in required_dark_exposure_times:
+        valid, _ = find_nearest_exposure_time(
+            req_time,
+            master_dark_exptimes,
+            time_tolerance=exposure_time_tolerance,
+        )
+        if not valid:
             master_available = False
+            break
 
     ###
     #   Get master flats
@@ -650,10 +580,12 @@ def check_master_files_on_disk(
         )
     }
 
-    #   Check if master flats exists for all filters
-    for key in combined_flats_dict.keys():
-        if key not in filter_list:
+    #   Check if master flats exist for all science filters
+    science_filter_set = set(science_filters)
+    for filt in science_filter_set:
+        if filt not in combined_flats_dict:
             master_available = False
+            break
 
     if check_bias:
         ###

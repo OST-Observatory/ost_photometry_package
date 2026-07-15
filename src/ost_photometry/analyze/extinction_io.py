@@ -285,9 +285,117 @@ def aggregate_extinction_coefficients(
     return result, meta
 
 
+def collect_per_night_extinction_samples(
+    paths: list[str | Path],
+) -> dict[str, list[tuple[str, float, float]]]:
+    """Gather per-night ``(label, k_prime, k_prime_err)`` samples per filter."""
+    by_filter: dict[str, list[tuple[str, float, float]]] = {}
+    for path in paths:
+        path = Path(path)
+        coeffs = load_extinction_coefficients(path)
+        for filt, ec in coeffs.items():
+            if not ec.valid or not np.isfinite(ec.k_prime):
+                continue
+            by_filter.setdefault(filt, []).append(
+                (path.stem, float(ec.k_prime), float(ec.k_prime_err))
+            )
+    return by_filter
+
+
+def write_extinction_aggregation_qc_plots(
+    paths: list[str | Path],
+    coeffs: dict[str, ExtinctionCoefficients],
+    meta: dict[str, Any],
+    plot_dir: str | Path,
+    *,
+    site: str = "OST_Potsdam",
+) -> list[Path]:
+    """
+    Write QC PDFs for a site-extinction aggregation run.
+
+    Produces ``extinction_nights_<filter>.pdf`` (per-night scatter) and
+    ``extinction_site_summary.pdf`` (aggregated coefficients).
+    """
+    import matplotlib.pyplot as plt
+
+    plot_dir = Path(plot_dir)
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    samples = collect_per_night_extinction_samples(paths)
+    written: list[Path] = []
+
+    for filt in sorted(samples):
+        nights = samples[filt]
+        if not nights:
+            continue
+        labels = [n[0] for n in nights]
+        k_vals = np.asarray([n[1] for n in nights], dtype=float)
+        k_errs = np.asarray([n[2] for n in nights], dtype=float)
+        agg = coeffs.get(filt)
+        fig, ax = plt.subplots(figsize=(max(8, len(labels) * 0.45), 5))
+        x = np.arange(len(labels))
+        ax.errorbar(
+            x,
+            k_vals,
+            yerr=k_errs,
+            fmt="o",
+            color="steelblue",
+            ecolor="gray",
+            capsize=3,
+            label="per night",
+        )
+        if agg is not None and np.isfinite(agg.k_prime):
+            ax.axhline(
+                agg.k_prime,
+                color="crimson",
+                linestyle="-",
+                linewidth=1.2,
+                label=f"aggregated ({meta.get('statistic', 'median')})",
+            )
+            ax.axhspan(
+                agg.k_prime - agg.k_prime_err,
+                agg.k_prime + agg.k_prime_err,
+                color="crimson",
+                alpha=0.12,
+                label="aggregated ± err",
+            )
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=45, ha="right")
+        ax.set_ylabel("k' [mag/airmass]")
+        ax.set_title(f"{site} — filter {filt} ({len(labels)} nights)")
+        ax.legend(loc="best", fontsize=9)
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        out = plot_dir / f"extinction_nights_{filt}.pdf"
+        fig.savefig(out, format="pdf", bbox_inches="tight")
+        plt.close(fig)
+        written.append(out)
+
+    if coeffs:
+        fig, ax = plt.subplots(figsize=(max(6, len(coeffs) * 0.8), 5))
+        filters = sorted(coeffs)
+        k_out = np.asarray([coeffs[f].k_prime for f in filters], dtype=float)
+        k_err = np.asarray([coeffs[f].k_prime_err for f in filters], dtype=float)
+        x = np.arange(len(filters))
+        ax.bar(x, k_out, yerr=k_err, color="steelblue", capsize=4, alpha=0.85)
+        ax.set_xticks(x)
+        ax.set_xticklabels(filters)
+        ax.set_ylabel("k' [mag/airmass]")
+        n_nights = meta.get("n_input_nights", "?")
+        ax.set_title(f"{site} site table — {n_nights} input nights")
+        ax.grid(True, axis="y", alpha=0.3)
+        fig.tight_layout()
+        out = plot_dir / "extinction_site_summary.pdf"
+        fig.savefig(out, format="pdf", bbox_inches="tight")
+        plt.close(fig)
+        written.append(out)
+
+    return written
+
+
 __all__ = [
     "aggregate_extinction_coefficients",
     "bundled_site_extinction_path",
+    "collect_per_night_extinction_samples",
     "extinction_coefficient_from_dict",
     "extinction_coefficient_to_dict",
     "extinction_coefficients_from_dict",
@@ -296,4 +404,5 @@ __all__ = [
     "merge_extinction_coefficients",
     "resolve_tabulated_extinction_coefficients",
     "save_extinction_coefficients",
+    "write_extinction_aggregation_qc_plots",
 ]

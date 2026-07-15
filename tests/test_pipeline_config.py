@@ -67,6 +67,53 @@ def test_calibration_field_names():
     assert cfg.exposure_jd_tolerance == 0.05
 
 
+def test_protect_calibration_objects_and_mk_calib_preset():
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    PipelineConfig = cfg_mod.PipelineConfig
+
+    cfg = PipelineConfig(protect_calibration_objects=True)
+    assert cfg.protect_calibration_objects is True
+    assert cfg.correlation.protect_calibration_objects is True
+
+    mk = PipelineConfig.from_preset("mk_calib_trans")
+    assert mk.protect_calibration_objects is True
+    assert mk.skip_calibration is True
+    assert mk.skip_correlation_inter is True
+    assert mk.skip_light_curve is True
+    assert mk.extinction_mode == "none"
+
+
+def test_mk_calib_calibrate_preset():
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    PipelineConfig = cfg_mod.PipelineConfig
+
+    cfg = PipelineConfig.from_preset("mk_calib_calibrate")
+    assert cfg.calibration_strategy == "linear_fit"
+    assert cfg.derive_transform_from_data is True
+    assert cfg.calibration_grouping == "ensemble"
+    assert cfg.extinction_mode == "none"
+    assert cfg.color_term_fit == "never"
+    assert cfg.skip_calibration is False
+
+
+def test_ost_site_preset():
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    PipelineConfig = cfg_mod.PipelineConfig
+
+    cfg = PipelineConfig.from_preset("ost_site")
+    assert cfg.extinction_mode == "tabulated"
+    assert cfg.path_extinction_coefficients is None
+
+
 def test_path_extinction_coefficients_flat_access():
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",

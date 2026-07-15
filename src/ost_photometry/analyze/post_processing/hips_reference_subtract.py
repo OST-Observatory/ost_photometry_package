@@ -13,10 +13,10 @@ from astropy.nddata import CCDData
 from astroquery.hips2fits import hips2fitsClass
 
 from ... import checks, terminal_output
-from ...utilities import get_basename
+from ...utilities import Image, get_basename
+from ...wcs import find_wcs_for_image
 from .. import plots, subtraction
 from ..models import ImageSeries
-from ..utilities import find_wcs
 
 DEFAULT_HIPS_SERVER = (
     "https://alaskybis.cds.unistra.fr/hips-image-services/hips2fits"
@@ -44,7 +44,7 @@ def run_hips_reference_subtraction(
     hips_source: str = "CDS/P/DSS2/blue",
     file_type_plots: str = "pdf",
     trim_slice_yx: tuple[int, int, int, int] | None = None,
-    reuse_wcs_image_series: ImageSeries | None = None,
+    reuse_wcs_image_series: ImageSeries | Image | None = None,
     hips_timeout_ms: int = 120_000,
     hips_server: str = DEFAULT_HIPS_SERVER,
     hips_verbose: bool = False,
@@ -64,8 +64,10 @@ def run_hips_reference_subtraction(
         WCS and HiPS. Pipeline default is ``None`` (full frame). Use
         `LEGACY_SUBTRACT_TRIM` for the old fixed crop.
     reuse_wcs_image_series
-        When ``trim_slice_yx`` is ``None`` and this series has ``.wcs`` set (e.g. after
-        the pipeline WCS step), that WCS is reused and ``find_wcs`` is skipped.
+        When ``trim_slice_yx`` is ``None`` and this object has ``.wcs`` set
+        (e.g. an :class:`~ost_photometry.analyze.models.ImageSeries` after the
+        pipeline WCS step, or a single :class:`~ost_photometry.utilities.Image`),
+        that WCS is reused and WCS solving is skipped.
     """
     workdir = Path(work_output_dir)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -93,15 +95,12 @@ def run_hips_reference_subtraction(
     if can_reuse_wcs:
         wcs_obj = reuse_wcs_image_series.wcs
     else:
-        #   TODO: Extend find_wcs function to work with Image objects as well as ImageSeries objects
-        tmp_series = ImageSeries(filter_, path_for_series, str(workdir))
-        find_wcs(
-            tmp_series,
-            reference_image_index=0,
+        image = Image(0, filter_, path_for_series, str(workdir))
+        wcs_obj = find_wcs_for_image(
+            image,
             method=wcs_method,
             indent=2,
         )
-        wcs_obj = tmp_series.wcs
 
     hips_instance = hips2fitsClass()
     hips_instance.timeout = hips_timeout_ms

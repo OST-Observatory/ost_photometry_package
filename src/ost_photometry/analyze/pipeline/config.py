@@ -45,6 +45,24 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "extinction_mode": "from_comparison_stars",
         "color_term_fit": "auto",
     },
+    "mk_calib_trans": {
+        "protect_calibration_objects": True,
+        "skip_calibration": True,
+        "skip_correlation_inter": True,
+        "skip_light_curve": True,
+        "extinction_mode": "none",
+    },
+    "mk_calib_calibrate": {
+        "calibration_strategy": "linear_fit",
+        "derive_transform_from_data": True,
+        "calibration_grouping": "ensemble",
+        "extinction_mode": "none",
+        "color_term_fit": "never",
+    },
+    "ost_site": {
+        "extinction_mode": "tabulated",
+        "path_extinction_coefficients": None,
+    },
 }
 
 @dataclass
@@ -172,7 +190,9 @@ class CorrelationConfig:
     cross_identification_limit: int = 1
     n_allowed_non_detections_object: int = 1
     expected_bad_image_fraction: float = 1.0
-    protect_reference_obj: bool = True
+    protect_ooi: bool = True
+    protect_calibration_objects: bool = False
+    protected_object_ids: list[int] | None = None
     correlation_method: CorrelationMethod = "astropy"
     separation_limit: u.Quantity = 2.0 * u.arcsec
     duplicate_handling_object_identification: dict[str, str] | None = None
@@ -299,6 +319,9 @@ _SECTION_NAMES = (
 )
 
 
+_CONFIG_ALIASES = {"protect_reference_obj": "protect_ooi"}
+
+
 class PipelineConfig:
     """
     Central pipeline configuration composed of step-specific sub-configs.
@@ -360,6 +383,8 @@ class PipelineConfig:
     def __getattr__(self, name: str) -> Any:
         if name in _SECTION_NAMES or name == "diagnostic_plots":
             raise AttributeError(name)
+        if name in _CONFIG_ALIASES:
+            name = _CONFIG_ALIASES[name]
         section = self._find_section_for(name)
         if section is not None:
             return getattr(section, name)
@@ -369,6 +394,8 @@ class PipelineConfig:
         if name in _SECTION_NAMES or name == "diagnostic_plots":
             super().__setattr__(name, value)
             return
+        if name in _CONFIG_ALIASES:
+            name = _CONFIG_ALIASES[name]
         section = None
         if hasattr(self, "wcs"):
             section = self._find_section_for(name)
@@ -387,6 +414,9 @@ class PipelineConfig:
                     setattr(self.diagnostic_plots, sub, val)
                 continue
             section = self._find_section_for(key)
+            if section is None and key in _CONFIG_ALIASES:
+                key = _CONFIG_ALIASES[key]
+                section = self._find_section_for(key)
             if section is not None:
                 setattr(section, key, val)
 

@@ -77,6 +77,17 @@ def main(argv: list[str] | None = None) -> int:
         default="value_airmass",
         help="Label stored in meta.method",
     )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Write QC PDF plots alongside the aggregated site table",
+    )
+    parser.add_argument(
+        "--plot-dir",
+        type=Path,
+        default=None,
+        help="Directory for QC plots (default: parent directory of --out)",
+    )
     args = parser.parse_args(argv)
 
     io = _load_extinction_io()
@@ -97,6 +108,19 @@ def main(argv: list[str] | None = None) -> int:
         pf = meta.get("per_filter", {}).get(filt, {})
         n = pf.get("n_nights", "?")
         print(f"  {filt}: k' = {ec.k_prime:.4f} ± {ec.k_prime_err:.4f}  (n_nights={n})")
+
+    if args.plot:
+        plot_dir = args.plot_dir or args.out.parent
+        plots = io.write_extinction_aggregation_qc_plots(
+            args.nights,
+            coeffs,
+            meta,
+            plot_dir,
+            site=args.site,
+        )
+        for path in plots:
+            print(f"QC plot: {path}")
+
     return 0
 
 

@@ -12,13 +12,42 @@ from astropy.coordinates import SkyCoord, matching
 import astropy.units as u
 from astropy import wcs
 
+
+def _dataset_positions_identical(
+    x_reference: np.ndarray,
+    y_reference: np.ndarray,
+    x_current: np.ndarray,
+    y_current: np.ndarray,
+) -> bool:
+    """Return True when two datasets list the same pixel positions."""
+    return (
+        x_reference.shape == x_current.shape
+        and y_reference.shape == y_current.shape
+        and np.array_equal(x_reference, x_current)
+        and np.array_equal(y_reference, y_current)
+    )
+
+
+def _drop_protected_from_rejected_object_ids(
+    rejected_object_ids: np.ndarray,
+    special_object_ids: np.ndarray | list[int],
+) -> np.ndarray:
+    """Remove protected object column IDs from the rejection list."""
+    rejected = np.asarray(rejected_object_ids, dtype=int).ravel()
+    special = np.asarray(special_object_ids, dtype=int).ravel()
+    if rejected.size == 0 or special.size == 0:
+        return rejected
+    return rejected[~np.isin(rejected, special)]
+
+
 def correlate_datasets(
         x_pixel_positions: list[np.ndarray],
         y_pixel_positions: list[np.ndarray],
         current_wcs: wcs.WCS, n_objects: int, n_images: int,
         dataset_type: str = 'image', reference_dataset_id: int = 0,
+        protected_object_ids: list[int] | None = None,
         reference_object_ids: list[int] | None = None,
-        protect_reference_objects: bool = True,
+        protect_ooi: bool = True,
         calibration_object_ids: list[int] | None = None,
         protect_calibration_objects: bool = False,
         n_allowed_non_detections_object: int = 1,
@@ -59,21 +88,23 @@ def correlate_datasets(
         Default is ``0``.
 
     reference_object_ids
-        IDs of the reference objects.
+        IDs of the reference objects (legacy; merged into ``protected_object_ids``).
         Default is ``None``.
 
-    protect_reference_objects
-        If ``False`` reference objects will be rejected, if they do
-        not fulfill all criteria.
+    protect_ooi
+        If ``True``, include ``reference_object_ids`` in the protected set.
         Default is ``True``.
 
+    protected_object_ids
+        Explicit row indices to protect, independent of object type.
+        Default is ``None``.
+
     calibration_object_ids
-        IDs of the calibration objects.
+        IDs of the calibration objects (legacy; merged into ``protected_object_ids``).
         Default is ``None``.
 
     protect_calibration_objects
-        If ``False`` calibration objects will be rejected, if they do
-        not fulfill all criteria.
+        If ``True``, include ``calibration_object_ids`` in the protected set.
         Default is ``False``.
 
     n_allowed_non_detections_object
@@ -131,15 +162,17 @@ def correlate_datasets(
     n_common_objects
         Number of objects found on all datasets
     """
-    #   Prepare variables necessary to protect calibration objects and
-    #   objects of interest
-    protect_special_objects = protect_reference_objects | protect_calibration_objects
-    special_object_ids = []
-    if (protect_reference_objects and reference_object_ids is not None
-            or reference_object_ids != [None]):
-        special_object_ids += reference_object_ids
-    if protect_calibration_objects and calibration_object_ids is not None:
-        special_object_ids += calibration_object_ids
+    #   Prepare variables necessary to protect selected objects
+    from .protection import merge_protected_object_ids
+
+    special_object_ids = merge_protected_object_ids(
+        protected_object_ids=protected_object_ids,
+        reference_object_ids=reference_object_ids,
+        calibration_object_ids=calibration_object_ids,
+        protect_ooi=protect_ooi,
+        protect_calibration_objects=protect_calibration_objects,
+    )
+    protect_special_objects = bool(special_object_ids)
 
     if correlation_method == 'astropy':
         #   Astropy version: 2x faster than own
@@ -327,46 +360,53 @@ def correlation_astropy(
     for i in range(0, n_datasets):
         #   Do nothing for the reference dataset
         if i != reference_dataset_id:
-            #   Dirty fix: In case of identical positions between the
-            #              reference and the current data set,
-            #              matching.search_around_sky will fail.
-            #              => set reference indexes
-            #   TODO: Check if this can be replaced by a more efficient test, such as with try:
-            if ((len(x_pixel_positions[i]) == len(x_pixel_positions[reference_dataset_id])) and
-                    (np.all(x_pixel_positions[i] == x_pixel_positions[reference_dataset_id]) and
-                     np.all(y_pixel_positions[i] == y_pixel_positions[reference_dataset_id]))):
-                index_array[i, :] = index_array[reference_dataset_id, :]
-            else:
-                #   Create coordinates object
-                x_pixel_positions_current = x_pixel_positions[i].value.ravel()
-                y_pixel_positions_current = y_pixel_positions[i].value.ravel()
+            x_pixel_positions_reference = x_pixel_positions[
+                reference_dataset_id
+            ].value.ravel()
+            y_pixel_positions_reference = y_pixel_positions[
+                reference_dataset_id
+            ].value.ravel()
+            x_pixel_positions_current = x_pixel_positions[i].value.ravel()
+            y_pixel_positions_current = y_pixel_positions[i].value.ravel()
+
+            try:
                 current_coordinates = SkyCoord.from_pixel(
                     x_pixel_positions_current,
                     y_pixel_positions_current,
                     current_wcs,
                 )
-
-                #   Find matches between the datasets
-                index_reference, index_current, distance, _ = matching.search_around_sky(
-                    reference_coordinates,
-                    current_coordinates,
-                    separation_limit,
+                index_reference, index_current, distance, _ = (
+                    matching.search_around_sky(
+                        reference_coordinates,
+                        current_coordinates,
+                        separation_limit,
+                    )
                 )
+            except (ValueError, TypeError, IndexError):
+                if _dataset_positions_identical(
+                    x_pixel_positions_reference,
+                    y_pixel_positions_reference,
+                    x_pixel_positions_current,
+                    y_pixel_positions_current,
+                ):
+                    index_array[i, :] = index_array[reference_dataset_id, :]
+                    continue
+                raise
 
-                #   Identify and remove duplicate indexes
-                index_reference, distance, index_current = utilities.clear_duplicates(
-                    index_reference,
-                    distance,
-                    index_current,
-                )
-                index_current, _, index_reference = utilities.clear_duplicates(
-                    index_current,
-                    distance,
-                    index_reference,
-                )
+            #   Identify and remove duplicate indexes
+            index_reference, distance, index_current = utilities.clear_duplicates(
+                index_reference,
+                distance,
+                index_current,
+            )
+            index_current, _, index_reference = utilities.clear_duplicates(
+                index_current,
+                distance,
+                index_reference,
+            )
 
-                #   Fill ID array
-                index_array[i, index_reference] = index_current
+            #   Fill ID array
+            index_array[i, index_reference] = index_current
 
     #   Cleanup: Remove "bad" objects and datasets
     #
@@ -391,20 +431,12 @@ def correlation_astropy(
         rejected_object_ids = objects_to_rm[ids_rejected_objects]
 
         #   Check if special objects are within the "bad" objects
-        ref_is_in = np.isin(rejected_object_ids, special_object_ids)
-
-        #   If YES remove special objects from the "bad" objects
-        if protect_special_objects and np.any(ref_is_in):
-            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - special_object_ids
-            id_special_objects_in_rejected_objects = np.argwhere(
-                id_difference == 0.
-            )[:, 0]
-            #   TODO: This argwhere might cause a problem, since the shape of return value changed. Check if .ravel()
-            #         needs to be added, when this part of the code can be reliably triggered.
-            print('id_special_objects_in_rejected_objects.shape', id_special_objects_in_rejected_objects.shape)
-            rejected_object_ids = np.delete(
+        if protect_special_objects and np.any(
+            np.isin(rejected_object_ids, special_object_ids)
+        ):
+            rejected_object_ids = _drop_protected_from_rejected_object_ids(
                 rejected_object_ids,
-                id_special_objects_in_rejected_objects
+                special_object_ids,
             )
 
         #   Remove "bad" objects
@@ -461,16 +493,9 @@ def correlation_astropy(
                 )
             rejected_object_ids = rows_to_rm[1]
             rejected_object_ids = np.unique(rejected_object_ids)
-            id_difference = rejected_object_ids.reshape(rejected_object_ids.size, 1) - special_object_ids
-            id_special_objects_in_rejected_objects = np.argwhere(
-                id_difference == 0.
-            )[:, 0]
-            #   TODO: This argwhere might cause a problem, since the shape of return value changed. Check if .ravel()
-            #         needs to be added, when this part of the code can be reliably triggered.
-            print('id_special_objects_in_rejected_objects.shape', id_special_objects_in_rejected_objects.shape)
-            rejected_object_ids = np.delete(
+            rejected_object_ids = _drop_protected_from_rejected_object_ids(
                 rejected_object_ids,
-                id_special_objects_in_rejected_objects
+                special_object_ids,
             )
 
             #   Remove remaining bad objects

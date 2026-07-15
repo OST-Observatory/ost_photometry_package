@@ -99,8 +99,10 @@ def correlate_image_series(
         reference_image_series_id: int = 0,
         n_allowed_non_detections_object: int = 1,
         expected_bad_image_fraction: float = 1.0,
-        protect_reference_obj: bool = True,
+        protect_ooi: bool = True,
         protect_calibration_objects: bool = False,
+        protected_object_ids: list[int] | None = None,
+        calibration_object_ids: list[int] | None = None,
         correlation_method: str = 'astropy',
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
         force_correlation_calibration_objects: bool = False,
@@ -149,15 +151,27 @@ def correlate_image_series(
         reduced number of objects with valid source positions are expected.
         Default is ``1.0``.
 
-    protect_reference_obj
+    protect_ooi
         If ``False`` also reference objects will be rejected, if they do
         not fulfill all criteria.
         Default is ``True``.
 
     protect_calibration_objects
-        If ``False`` calibration objects will be rejected, if they do
-        not fulfill all criteria.
+        If ``True``, include catalog-resolved calibration-star IDs in the
+        protected set.
         Default is ``False``.
+
+    protected_object_ids
+        Explicit row indices on the reference filter to keep during correlation,
+        independent of object type.
+        Default is ``None``.
+
+    calibration_object_ids
+        Legacy alias for calibration-star row indices (merged when
+        ``protect_calibration_objects`` is ``True``).
+        When ``None``, IDs are taken from ``observation.calib_parameters`` if
+        available.
+        Default is ``None``.
 
     correlation_method
         Correlation method to be used to find the common objects on
@@ -241,16 +255,29 @@ def correlate_image_series(
     #   Number of image series
     n_series = len(x_pixel_positions_all_images)
 
-    #   Get calibration star IDs as a list such that it can be later
-    #   easily combined with the object of interest IDs
-    if (observation.calib_parameters is not None and
+    #   Build protected-object set for inter-filter correlation
+    from .protection import merge_protected_object_ids
+
+    if calibration_object_ids is not None:
+        resolved_calibration_object_ids = calibration_object_ids
+    elif (observation.calib_parameters is not None and
             observation.calib_parameters.ids_calibration_objects is not None):
-        calibration_object_ids = observation.calib_parameters.ids_calibration_objects.tolist()
+        resolved_calibration_object_ids = (
+            observation.calib_parameters.ids_calibration_objects.tolist()
+        )
     else:
-        calibration_object_ids = None
+        resolved_calibration_object_ids = None
 
     reference_obj_ids = observation.get_ids_object_of_interest(
         filter_=reference_filter,
+    )
+
+    merged_protected_ids = merge_protected_object_ids(
+        protected_object_ids=protected_object_ids,
+        reference_object_ids=reference_obj_ids,
+        calibration_object_ids=resolved_calibration_object_ids,
+        protect_ooi=protect_ooi,
+        protect_calibration_objects=protect_calibration_objects,
     )
 
     #   Correlate the object positions from the images
@@ -263,10 +290,7 @@ def correlate_image_series(
         n_series,
         dataset_type='series',
         reference_dataset_id=reference_image_series_id,
-        reference_object_ids=reference_obj_ids,
-        protect_reference_objects=protect_reference_obj,
-        calibration_object_ids=calibration_object_ids,
-        protect_calibration_objects=protect_calibration_objects,
+        protected_object_ids=merged_protected_ids,
         n_allowed_non_detections_object=n_allowed_non_detections_object,
         separation_limit=separation_limit,
         advanced_cleanup=False,
@@ -509,8 +533,9 @@ def determine_object_position(
     return indexes, count, x_position_object, y_position_object
 
 
-#   TODO: Make the option to protect claibration objects from beeing eliminated in the correlation process 
-#         available as a generall option
+from .protection import resolve_calibration_object_ids  # noqa: E402
+
+
 def correlate_preserve_calibration_objects(
         image_series: 'analyze.ImageSeries', filter_list: list[str],
         calibration_source: str = 'APASS',
@@ -616,62 +641,20 @@ def correlate_preserve_calibration_objects(
         Default is ``pdf``.
     """
     #   Load calibration data
-    calib_tbl, column_names, ra_unit = calibration_data.load_calibration_data_table(
-        image_series.image_list[reference_image_index],
-        filter_list,
-        calibration_source=calibration_source,
-        calibration_catalog_mag_range=calibration_catalog_mag_range,
-        vizier_dict=vizier_dict,
-        path_calibration_file=calib_file,
-    )
-
-    #   Number of calibration stars
-    n_calib_stars = len(calib_tbl)
-
-    if n_calib_stars == 0:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNo match between calibrations stars and "
-            f"the\n extracted stars detected. -> EXIT {style.Bcolors.ENDC}"
-        )
-
-    #   Find IDs of calibration stars to ensure they are not deleted in
-    #   the correlation process
-    #
-    #   Lists for IDs, and xy coordinates
-    calib_stars_ids = []
-    calib_x_pixel_positions = []
-    calib_y_pixel_positions = []
-
-    #   Loop over all calibration stars
-    #   TODO: The determination of the calibration star IDs should not be
-    #         needed anymore
-    #   TODO: Rewrite this with correlate.correlate_with_calibration_objects
-    for k in range(0, n_calib_stars):
-        #   Find the calibration star
-        id_calib_star, ref_count, x_calib_star, y_calib_star = determine_object_position(
-            image_series.image_list[reference_image_index],
-            calib_tbl[column_names['ra']].data[k],
-            calib_tbl[column_names['dec']].data[k],
-            image_series.wcs,
-            maximal_pixel_between_objects=max_pixel_between_objects,
+    calib_stars_ids, calib_x_pixel_positions, calib_y_pixel_positions = (
+        resolve_calibration_object_ids(
+            image_series,
+            filter_list,
+            calibration_source=calibration_source,
+            calibration_catalog_mag_range=calibration_catalog_mag_range,
+            vizier_dict=vizier_dict,
+            path_calibration_file=calib_file,
+            reference_image_index=reference_image_index,
+            max_pixel_between_objects=max_pixel_between_objects,
             ooi_correlation_strategy=ooi_correlation_strategy,
-            ra_unit=ra_unit,
             verbose=verbose,
         )
-        if verbose:
-            terminal_output.print_to_terminal('')
-
-        #   Add ID and coordinates of the calibration star to the lists
-        if ref_count != 0:
-            calib_stars_ids.append(id_calib_star[1][0])
-            calib_x_pixel_positions.append(x_calib_star)
-            calib_y_pixel_positions.append(y_calib_star)
-    terminal_output.print_to_terminal(
-        f"{len(calib_stars_ids):d} matches",
-        indent=3,
-        style_name='OKBLUE',
     )
-    terminal_output.print_to_terminal('')
 
     #   Correlate the results from all images
     correlate_image_series_images(
@@ -692,7 +675,7 @@ def correlate_preserve_calibration_objects(
         image_series,
         calib_x_pixel_positions,
         calib_y_pixel_positions,
-        plot_reference_only=plot_only_reference_starmap,
+        plots_for_all_images=not plot_only_reference_starmap,
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )

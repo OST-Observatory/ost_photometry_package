@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Literal
+import warnings
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from astropy.table import Table
 
+if TYPE_CHECKING:
+    from .result import CalibrationResult
+
 UncertaintyMode = Literal["fit_errors", "flux_monte_carlo", "both"]
+
+
+def _analysis_warning_category():
+    from ..warnings_types import OstPhotometryAnalyzeWarning
+
+    return OstPhotometryAnalyzeWarning
 
 
 def propagate_fit_errors(
@@ -65,4 +75,145 @@ def propagate_flux_monte_carlo(
     return mag, mag_err
 
 
-__all__ = ["UncertaintyMode", "propagate_fit_errors", "propagate_flux_monte_carlo"]
+def _resolve_calibration_result(
+    results: dict[str, "CalibrationResult"],
+    epoch_id: str,
+) -> "CalibrationResult | None":
+    if epoch_id in results:
+        return results[epoch_id]
+    if "ensemble" in results:
+        return results["ensemble"]
+    if len(results) == 1:
+        return next(iter(results.values()))
+    return None
+
+
+def _apply_uncertainty_mode_slice(
+    table: Table,
+    row_mask: np.ndarray,
+    calibration: "CalibrationResult",
+    filters: list[str],
+    *,
+    uncertainty_mode: UncertaintyMode,
+    distribution_samples: int,
+    random_seed: int | None,
+) -> None:
+    """Update ``err_cal_*`` for one epoch slice in place."""
+    if uncertainty_mode == "fit_errors":
+        return
+
+    for filter_ in filters:
+        tc = calibration.transformation.get(filter_)
+        if tc is None:
+            continue
+        cal_err_col = f"err_cal_{filter_}"
+        if cal_err_col not in table.colnames:
+            continue
+
+        fit_err = np.asarray(table[cal_err_col][row_mask], dtype=float)
+        flux_col = f"flux_{filter_}"
+        ferr_col = f"flux_err_{filter_}"
+
+        if uncertainty_mode in ("flux_monte_carlo", "both"):
+            if flux_col not in table.colnames or ferr_col not in table.colnames:
+                if uncertainty_mode == "flux_monte_carlo":
+                    warnings.warn(
+                        f"uncertainty_mode='flux_monte_carlo' but {flux_col}/{ferr_col} "
+                        f"missing for filter {filter_}; keeping fit_errors.",
+                        category=_analysis_warning_category(),
+                        stacklevel=3,
+                    )
+                continue
+            flux = np.asarray(table[flux_col][row_mask], dtype=float)
+            ferr = np.asarray(table[ferr_col][row_mask], dtype=float)
+            has_flux = np.isfinite(flux) & (flux > 0) & np.isfinite(ferr)
+            if not np.any(has_flux):
+                if uncertainty_mode == "flux_monte_carlo":
+                    warnings.warn(
+                        f"uncertainty_mode='flux_monte_carlo' but no valid flux rows "
+                        f"for filter {filter_}; keeping fit_errors.",
+                        category=_analysis_warning_category(),
+                        stacklevel=3,
+                    )
+                continue
+            _, mc_err = propagate_flux_monte_carlo(
+                flux,
+                ferr,
+                tc.zero_point,
+                n_samples=distribution_samples,
+                seed=random_seed,
+            )
+            if uncertainty_mode == "flux_monte_carlo":
+                new_err = mc_err
+            else:
+                new_err = np.sqrt(np.maximum(fit_err**2 + mc_err**2, 0.0))
+            updated = np.asarray(table[cal_err_col][row_mask], dtype=float)
+            updated[np.isfinite(new_err)] = new_err[np.isfinite(new_err)]
+            table[cal_err_col][row_mask] = updated
+
+
+def apply_uncertainty_mode_to_calibrated_table(
+    calibrated: Table,
+    results: dict[str, "CalibrationResult"],
+    filters: list[str],
+    *,
+    uncertainty_mode: UncertaintyMode = "fit_errors",
+    distribution_samples: int = 1000,
+    random_seed: int | None = None,
+) -> Table:
+    """
+    Refine ``err_cal_*`` on a calibrated epoch-native table.
+
+  ``fit_errors`` leaves errors unchanged (already set by :meth:`apply_transform_to_table`
+    or derive-transform apply). ``flux_monte_carlo`` replaces them with flux MC spread
+    (+ ZP). ``both`` combines fit and MC errors in quadrature.
+    """
+    if uncertainty_mode == "fit_errors" or len(calibrated) == 0:
+        return calibrated
+
+    out = calibrated.copy()
+    if "epoch_id" in out.colnames:
+        for epoch_id in np.unique(out["epoch_id"]):
+            cal = _resolve_calibration_result(results, str(epoch_id))
+            if cal is None:
+                warnings.warn(
+                    f"No calibration result for epoch_id={epoch_id!r}; "
+                    "skipping uncertainty refinement.",
+                    category=_analysis_warning_category(),
+                    stacklevel=2,
+                )
+                continue
+            mask = np.asarray(out["epoch_id"] == epoch_id)
+            _apply_uncertainty_mode_slice(
+                out,
+                mask,
+                cal,
+                filters,
+                uncertainty_mode=uncertainty_mode,
+                distribution_samples=distribution_samples,
+                random_seed=random_seed,
+            )
+    else:
+        cal = _resolve_calibration_result(results, "")
+        if cal is None and results:
+            cal = next(iter(results.values()))
+        if cal is not None:
+            mask = np.ones(len(out), dtype=bool)
+            _apply_uncertainty_mode_slice(
+                out,
+                mask,
+                cal,
+                filters,
+                uncertainty_mode=uncertainty_mode,
+                distribution_samples=distribution_samples,
+                random_seed=random_seed,
+            )
+    return out
+
+
+__all__ = [
+    "UncertaintyMode",
+    "apply_uncertainty_mode_to_calibrated_table",
+    "propagate_fit_errors",
+    "propagate_flux_monte_carlo",
+]

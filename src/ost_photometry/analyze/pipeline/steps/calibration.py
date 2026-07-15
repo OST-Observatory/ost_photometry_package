@@ -226,6 +226,17 @@ class CalibrationStep(base.PipelineStep):
                 photometer=photometer,
             )
 
+        if len(calibrated) > 0 and config.uncertainty_mode != "fit_errors":
+            from ...calibration.uncertainty import apply_uncertainty_mode_to_calibrated_table
+
+            calibrated = apply_uncertainty_mode_to_calibrated_table(
+                calibrated,
+                results,
+                filter_list,
+                uncertainty_mode=config.uncertainty_mode,
+                distribution_samples=config.distribution_samples,
+            )
+
         if len(calibrated) > 0:
             table_native = ensure_epoch_native_photometry_table(calibrated)
             table_native = _attach_jd_from_epoch_meta(

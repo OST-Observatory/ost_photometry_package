@@ -697,3 +697,58 @@ def check_wcs_exists(
                 return True, filepath
 
         return False, ""
+
+
+def _load_wcs_from_fits(path: str | Path) -> wcs.WCS:
+    """Load a celestial WCS from a FITS file."""
+    with fits.open(path) as hdul:
+        return wcs.WCS(hdul[0].header)
+
+
+def find_wcs_for_image(
+    image: Image,
+    *,
+    method: str = "astrometry",
+    cosmics_removed: bool = False,
+    image_path_cosmics_removed: str | None = None,
+    object_x_coordinates: np.ndarray | None = None,
+    object_y_coordinates: np.ndarray | None = None,
+    force_wcs_determination: bool = False,
+    indent: int = 2,
+) -> wcs.WCS:
+    """
+    Determine or load the WCS for a single image.
+
+    This is the image-level counterpart to :func:`analyze.utilities.find_wcs`,
+    which operates on an :class:`~ost_photometry.analyze.models.ImageSeries`.
+    """
+    cal_wcs, wcs_file = check_wcs_exists(image, indent=indent)
+    if not cal_wcs or force_wcs_determination:
+        if method == "astrometry":
+            return find_wcs_astrometry(
+                image,
+                cosmic_rays_removed=cosmics_removed,
+                path_cosmic_cleaned_image=image_path_cosmics_removed,
+                indent=indent,
+            )
+        if method == "astap":
+            return find_wcs_astap(image, indent=indent)
+        if method == "twirl":
+            if object_x_coordinates is None or object_y_coordinates is None:
+                raise RuntimeError(
+                    f"{style.Bcolors.FAIL} \nException in find_wcs_for_image(): "
+                    f"\n'x' or 'y' is None -> Exit {style.Bcolors.ENDC}"
+                )
+            return find_wcs_twirl(
+                image,
+                object_x_coordinates,
+                object_y_coordinates,
+                indent=indent,
+            )
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \nException in find_wcs_for_image(): "
+            f"\nWCS method not known -> Supplied method was {method}"
+            f"{style.Bcolors.ENDC}"
+        )
+
+    return _load_wcs_from_fits(wcs_file)

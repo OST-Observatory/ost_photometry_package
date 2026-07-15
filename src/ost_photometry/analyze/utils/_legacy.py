@@ -455,91 +455,27 @@ def find_wcs(
         Indentation for the console output lines
         Default is ``2``.
     """
+    wcs_kwargs = {
+        "method": method,
+        "cosmics_removed": cosmics_removed,
+        "image_path_cosmics_removed": image_path_cosmics_removed,
+        "object_x_coordinates": object_x_coordinates,
+        "object_y_coordinates": object_y_coordinates,
+        "force_wcs_determination": force_wcs_determination,
+        "indent": indent,
+    }
+
     if reference_image_index is not None:
-        #   Image
         img = image_series.image_list[reference_image_index]
+        image_series.set_wcs(
+            wcs_utilities.find_wcs_for_image(img, **wcs_kwargs)
+        )
+        return
 
-        #   Test if the image contains already a WCS
-        cal_wcs, wcs_file = wcs_utilities.check_wcs_exists(img)
-
-        if not cal_wcs or force_wcs_determination:
-            #   Calculate WCS -> astrometry.net
-            if method == 'astrometry':
-                image_series.set_wcs(
-                    wcs_utilities.find_wcs_astrometry(
-                        img,
-                        cosmic_rays_removed=cosmics_removed,
-                        path_cosmic_cleaned_image=image_path_cosmics_removed,
-                        indent=indent,
-                    )
-                )
-
-            #   Calculate WCS -> ASTAP program
-            elif method == 'astap':
-                image_series.set_wcs(
-                    wcs_utilities.find_wcs_astap(img, indent=indent)
-                )
-
-            #   Calculate WCS -> twirl library
-            elif method == 'twirl':
-                if object_x_coordinates is None or object_y_coordinates is None:
-                    raise RuntimeError(
-                        f"{style.Bcolors.FAIL} \nException in find_wcs(): '"
-                        f"\n'x' or 'y' is None -> Exit {style.Bcolors.ENDC}"
-                    )
-                image_series.set_wcs(
-                    wcs_utilities.find_wcs_twirl(img, object_x_coordinates, object_y_coordinates, indent=indent)
-                )
-            #   Raise exception
-            else:
-                raise RuntimeError(
-                    f"{style.Bcolors.FAIL} \nException in find_wcs(): '"
-                    f"\nWCS method not known -> Supplied method was {method}"
-                    f"{style.Bcolors.ENDC}"
-                )
-        else:
-            image_series.set_wcs(extract_wcs(wcs_file))
-    else:
-        for i, img in enumerate(image_series.image_list):
-            #   Test if the image contains already a WCS
-            cal_wcs, wcs_file = wcs_utilities.check_wcs_exists(img)
-
-            if not cal_wcs or force_wcs_determination:
-                #   Calculate WCS -> astrometry.net
-                if method == 'astrometry':
-                    w = wcs_utilities.find_wcs_astrometry(
-                        img,
-                        cosmic_rays_removed=cosmics_removed,
-                        path_cosmic_cleaned_image=image_path_cosmics_removed,
-                        indent=indent,
-                    )
-
-                #   Calculate WCS -> ASTAP program
-                elif method == 'astap':
-                    w = wcs_utilities.find_wcs_astap(img, indent=indent)
-
-                #   Calculate WCS -> twirl library
-                elif method == 'twirl':
-                    if object_x_coordinates is None or object_y_coordinates is None:
-                        raise RuntimeError(
-                            f"{style.Bcolors.FAIL} \nException in "
-                            "find_wcs(): ' \n'x' or 'y' is None -> Exit"
-                            f"{style.Bcolors.ENDC}"
-                        )
-                    w = wcs_utilities.find_wcs_twirl(img, object_x_coordinates, object_y_coordinates, indent=indent)
-
-                #   Raise exception
-                else:
-                    raise RuntimeError(
-                        f"{style.Bcolors.FAIL} \nException in find_wcs(): '"
-                        "\nWCS method not known -> Supplied method was "
-                        f"{method} {style.Bcolors.ENDC}"
-                    )
-            else:
-                w = extract_wcs(wcs_file)
-
-            if i == 0:
-                image_series.set_wcs(w)
+    for i, img in enumerate(image_series.image_list):
+        resolved_wcs = wcs_utilities.find_wcs_for_image(img, **wcs_kwargs)
+        if i == 0:
+            image_series.set_wcs(resolved_wcs)
 
 
 def extract_wcs(
