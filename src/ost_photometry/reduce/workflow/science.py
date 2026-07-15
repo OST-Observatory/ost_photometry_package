@@ -172,7 +172,10 @@ def reduce_light(
     )
     if not light_image_type:
         return
-    if not image_file_collection.files_filtered(imagetyp=light_image_type):
+    light_files = list(
+        image_file_collection.files_filtered(imagetyp=light_image_type)
+    )
+    if not light_files:
         return
 
     #   Get image collection for the reduced files

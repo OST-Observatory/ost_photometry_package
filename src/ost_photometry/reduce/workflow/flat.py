@@ -108,7 +108,10 @@ def reduce_flat(
     )
     if not flat_image_type:
         return
-    if not image_file_collection.files_filtered(imagetyp=flat_image_type):
+    flat_files = list(
+        image_file_collection.files_filtered(imagetyp=flat_image_type)
+    )
+    if not flat_files:
         return
 
     #   Get image collection for the reduced files

@@ -128,3 +128,18 @@ def test_check_master_files_on_disk_science_flat_subset(tmp_path):
 
     assert _check_master({"B"}, [30.0]) is True
     assert _check_master({"V"}, [30.0]) is False
+
+
+def test_files_filtered_truthiness_uses_list_not_array():
+    """files_filtered may return ndarray; never use ``if not`` on it directly."""
+
+    class _FakeCollection:
+        def files_filtered(self, imagetyp=None, include_path=False):
+            return np.array(["a.fits", "b.fits"])
+
+    files = list(_FakeCollection().files_filtered(imagetyp="FLAT"))
+    assert files == ["a.fits", "b.fits"]
+    assert bool(files) is True
+
+    empty = list(_FakeCollection().files_filtered(imagetyp="MISSING")[:0])
+    assert bool(empty) is False
