@@ -829,7 +829,6 @@ def detect_outlier(
     score = np.sum(np.abs(data - run_median), axis=0)
 
     #   Return outliers
-    print('np.argwhere(score > threshold).shape', np.argwhere(score > threshold).shape)
     return np.argwhere(score > threshold)
 
 
