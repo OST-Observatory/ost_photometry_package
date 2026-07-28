@@ -17,7 +17,7 @@ from astropy.io import fits
 from . import checks, style, terminal_output
 
 if TYPE_CHECKING:
-    from .utilities import Image  # noqa: F401
+    from .image import Image  # noqa: F401
 
 _ASTAP_UINT16_MAX = 60000
 

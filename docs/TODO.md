@@ -124,7 +124,7 @@ reduce/registration/
 
 **Recommendation:** **Low priority.** Incremental only when touching affected areas — e.g. `preprocessing.py` (flip/bin), `masters.py`, `fwhm.py`. No dedicated cleanup PR needed.
 
-**Note:** The “split `Image`” entry in `TECHNICAL_DEBT.md` primarily concerns `ost_photometry.utilities.Image` (reduce + analyze), not `reduce/utilities.py` as a whole.
+**Note:** The former “split `Image`” item (`ost_photometry.utilities.Image`) is **done** — see `ost_photometry/image.py` and `analyze/image.py`. This section is only about `reduce/utilities.py`.
 
 ---
 
@@ -149,7 +149,7 @@ Roughly **~43 `TODO` markers** in `src/` (`rg 'TODO' src/`). Selected items that
 |----------|------|---------|
 | ~~`correlate/core.py`~~ | — | **Done** — see `test_correlation_core.py` |
 | ~~`extraction.py`~~ | — | **Done** | FWHM via `ost_photometry/fwhm.py` |
-| `ost_photometry.utilities` — `Image` | P3 | Architectural split; affects reduce + analyze |
+| ~~`ost_photometry.utilities` — `Image`~~ | — | **Done** — base `image.Image` + `analyze.image.AnalysisImage`; see `test_image_split.py` |
 | `calibration/_legacy.py` | P3 | Filter metadata; relevant only while legacy transformation export remains |
 | `plots/_legacy.py` | P3 | Many TODOs; intentionally the plot backend |
 | ~~`post_processing/hips_reference_subtract.py`~~ | — | **Done** | `find_wcs_for_image` on `Image` |

@@ -11,10 +11,10 @@ from astropy.stats import sigma_clipped_stats
 from regions import RectanglePixelRegion
 
 from .. import style, terminal_output
-from ..utilities import Image
+from .image import AnalysisImage
 
 
-def _air_mass_values(image_list: list[Image]) -> list[float]:
+def _air_mass_values(image_list: list[AnalysisImage]) -> list[float]:
     """Collect finite air-mass values; raise if none are available."""
     values: list[float] = []
     for img in image_list:
@@ -120,7 +120,7 @@ class ImageSeries:
         self.reference_image_index: int = reference_image_index
 
         #   Prepare image list
-        self.image_list: list[Image] = []
+        self.image_list: list[AnalysisImage] = []
 
         #   Set path to output directory
         self.out_path: Path = Path(output_dir)
@@ -132,7 +132,7 @@ class ImageSeries:
         )
         for image_id, file_name in enumerate(file_list):
             self.image_list.append(
-                Image(image_id, filter_, f"{path}/{file_name}", output_dir)
+                AnalysisImage(image_id, filter_, f"{path}/{file_name}", output_dir)
             )
 
         #   Set start time for image series
@@ -228,8 +228,8 @@ class ImageSeries:
             obs_time_list.append(getattr(img, "jd", 0.0))
         return np.median(obs_time_list)
 
-    def get_list_dict(self) -> list[dict[str, Image]]:
-        dict_list: list[dict[str, Image]] = []
+    def get_list_dict(self) -> list[dict[str, AnalysisImage]]:
+        dict_list: list[dict[str, AnalysisImage]] = []
         for img in self.image_list:
             dict_list.append({img.filter_: img})
         return dict_list

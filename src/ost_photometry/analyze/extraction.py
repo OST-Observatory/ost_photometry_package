@@ -49,13 +49,13 @@ from ..fwhm import (
     select_sources_for_fwhm_fit,
     source_positions_from_table,
 )
-from ..utilities import Image
 from . import correlate, plots, utilities
+from .image import AnalysisImage
 from .models import ImageSeries
 
 
 def rm_cosmic_rays(
-    image: Image,
+    image: AnalysisImage,
     limiting_contrast: float = 5.0,
     read_noise: float = 8.0,
     sigma_clipping_value: float = 4.5,
@@ -172,7 +172,7 @@ def rm_cosmic_rays(
 
 
 def determine_background(
-    image: Image,
+    image: AnalysisImage,
     sigma_background: float = 5.0,
     two_d_background: bool = True,
     apply_background: bool = True,
@@ -288,7 +288,7 @@ def determine_background(
 
 
 def find_stars(
-    image: Image,
+    image: AnalysisImage,
     rms_background: float,
     fwhm_object_psf: float | None = None,
     multiplier_background_rms: float = 5.0,
@@ -435,7 +435,7 @@ def find_stars(
 
 
 def check_epsf_stars(
-    image: Image,
+    image: AnalysisImage,
     size_epsf_region: int = 25,
     minimum_n_stars: int = 25,
     fraction_epsf_stars: float = 0.2,
@@ -629,7 +629,7 @@ def check_epsf_stars(
 
 
 def determine_epsf(
-    image: Image,
+    image: AnalysisImage,
     epsf_star_positions: Table,
     size_epsf_region: int = 25,
     oversampling_factor: int = 2,
@@ -767,7 +767,7 @@ def determine_epsf(
 
 
 def extraction_epsf(
-    image: Image,
+    image: AnalysisImage,
     background_rms: float,
     sigma_background: float = 5.0,
     use_initial_positions: bool = True,
@@ -1013,7 +1013,7 @@ def compute_aperture_photometry_uncertainties(
 
 
 def define_apertures(
-    image: Image,
+    image: AnalysisImage,
     aperture_radius: float,
     inner_annulus_radius: float,
     outer_annulus_radius: float,
@@ -1052,7 +1052,7 @@ def define_apertures(
 
 
 def extraction_aperture(
-    image: Image,
+    image: AnalysisImage,
     radius_aperture: float,
     inner_annulus_radius: float,
     outer_annulus_radius: float,
@@ -1292,7 +1292,7 @@ def extract_multiprocessing(
 
 
 def main_extract(
-    image: Image,
+    image: AnalysisImage,
     fwhm_object_psf: float | None = None,
     multiprocessing: bool = False,
     sigma_value_background_clipping: float = 5.0,

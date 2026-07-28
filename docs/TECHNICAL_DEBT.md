@@ -47,7 +47,7 @@ These are **not** short-term removal candidates; the table describes real depend
 | Location | Priority | Still valid? | Notes |
 |----------|----------|--------------|-------|
 | ~~`analyze/analyze.py` OOI IDs~~ | — | **Stale** | Logic lives in `observation.py` and `pipeline/helpers.py`; no open TODO there. |
-| `utilities.py` — split `Image` | P3 | Yes | Architectural; affects reduce + analyze. |
+| ~~`utilities.py` — split `Image`~~ | P3 | **Done** | Base `ost_photometry.image.Image` (metadata/I/O); analysis state on `analyze.image.AnalysisImage`. Re-exported as `utilities.Image`. |
 | `calibration/_legacy.py` — filter metadata | P3 | Yes | Only relevant while legacy transformation export remains. |
 | `extraction.py` — CCDData units, FWHM helper | P3 | **Done** | Shared helpers in `ost_photometry/fwhm.py`; used by extraction and `reduce/utilities.estimate_fwhm`. |
 | `reduce/redu.py` | P2 | **Done** | `reduce/validation.py`: flat coverage, sanity sample, graceful science skips; `check_master_files_on_disk` fixed; MP stacking. Facade → modular `reduce/workflow/` package. |
@@ -91,6 +91,7 @@ Approximate open marker count in `src/`: **~43 `TODO`** across the files above (
 | Shared FWHM helpers (`ost_photometry/fwhm.py`) | Done — `test_fwhm.py`; extraction + reduction |
 | `find_wcs_for_image` + HiPS `Image` WCS reuse | Done — `test_find_wcs_for_image.py` |
 | Registration trim unification (`trim_ccd`) | Done — `test_registration_trim.py` |
+| `Image` / `AnalysisImage` split | Done — `ost_photometry/image.py` + `analyze/image.py`; `test_image_split.py` |
 
 ---
 

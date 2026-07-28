@@ -11,7 +11,7 @@ from skimage.transform import SimilarityTransform
 
 from .. import checks, terminal_output
 from .. import utilities as base_utilities
-from ..utilities import Image
+from .image import AnalysisImage
 from .models import ImageSeries
 from .observation import Observation
 from .pipeline import AnalysisContext, AnalysisPipeline, PipelineConfig
@@ -27,8 +27,8 @@ from .pipeline import AnalysisContext, AnalysisPipeline, PipelineConfig
 
 
 def transform_object_positions(
-    image_series: ImageSeries | list[Image], output_dir: str | None = None
-) -> None | list[Image]:
+    image_series: ImageSeries | list[AnalysisImage], output_dir: str | None = None
+) -> None | list[AnalysisImage]:
     """
     Use the provided similarity transformations to transform the object
     positions in each image to the reference frame.

@@ -10,11 +10,13 @@ from .extinction import (
     calculate_airmass,
 )
 from .differential_photometry import PhotometryCalibrator
+from .image import AnalysisImage
 from .models import ImageSeries, ObjectOfInterest
 from .pipeline import AnalysisContext, AnalysisPipeline, DiagnosticPlots, PipelineConfig
 
 __all__ = [
     "AnalysisContext",
+    "AnalysisImage",
     "AnalysisPipeline",
     "DiagnosticPlots",
     "CoefficientMode",
