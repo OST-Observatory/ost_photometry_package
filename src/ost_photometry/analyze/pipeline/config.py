@@ -23,7 +23,8 @@ ColorTermFit = Literal["always", "auto", "never"]
 UncertaintyMode = Literal["fit_errors", "flux_monte_carlo", "both"]
 
 CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
-    "n2_stack": {
+    # Median zero-point per exposure (e.g. stacked multi-filter fields).
+    "median_zp_per_image": {
         "calibration_strategy": "median_zp",
         "calibration_grouping": "per_image",
         "extinction_mode": "none",
@@ -31,7 +32,8 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "derive_transform_from_data": False,
         "zp_subsample_statistic": True,
     },
-    "c7_variable": {
+    # Nightly linear color term + ZP (e.g. multi-epoch light curves).
+    "linear_fit_per_night": {
         "calibration_strategy": "linear_fit",
         "calibration_grouping": "per_night",
         "extinction_mode": "none",
@@ -39,30 +41,44 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "derive_transform_from_data": True,
         "zp_subsample_statistic": False,
     },
-    "c7_variable_extinction": {
+    # Same as linear_fit_per_night, plus extinction from comparison stars.
+    "linear_fit_per_night_extinction": {
         "calibration_strategy": "linear_fit",
         "calibration_grouping": "per_night",
         "extinction_mode": "from_comparison_stars",
         "color_term_fit": "auto",
     },
-    "mk_calib_trans": {
+    # WCS + extraction + intra-filter correlation; protect calibrators; no apply.
+    "extract_protect_calibrators": {
         "protect_calibration_objects": True,
         "skip_calibration": True,
         "skip_correlation_inter": True,
         "skip_light_curve": True,
         "extinction_mode": "none",
     },
-    "mk_calib_calibrate": {
+    # Ensemble linear transform / derive-transform over all epochs.
+    "linear_fit_ensemble": {
         "calibration_strategy": "linear_fit",
         "derive_transform_from_data": True,
         "calibration_grouping": "ensemble",
         "extinction_mode": "none",
         "color_term_fit": "never",
     },
-    "ost_site": {
+    # Use tabulated site extinction (bundled table when path is None).
+    "tabulated_extinction": {
         "extinction_mode": "tabulated",
         "path_extinction_coefficients": None,
     },
+}
+
+# Deprecated aliases → canonical preset names.
+CALIBRATION_PRESET_ALIASES: dict[str, str] = {
+    "n2_stack": "median_zp_per_image",
+    "c7_variable": "linear_fit_per_night",
+    "c7_variable_extinction": "linear_fit_per_night_extinction",
+    "mk_calib_trans": "extract_protect_calibrators",
+    "mk_calib_calibrate": "linear_fit_ensemble",
+    "ost_site": "tabulated_extinction",
 }
 
 @dataclass
@@ -349,11 +365,27 @@ class PipelineConfig:
         *,
         overrides: dict[str, Any] | None = None,
     ) -> "PipelineConfig":
-        """Build config from a named calibration preset (``n2_stack``, ``c7_variable``, …)."""
-        if preset not in CALIBRATION_PRESETS:
+        """Build config from a named calibration preset.
+
+        Canonical names describe the mode, e.g. ``median_zp_per_image``,
+        ``linear_fit_per_night``, ``extract_protect_calibrators``,
+        ``linear_fit_ensemble``, ``tabulated_extinction``. Deprecated aliases
+        (``n2_stack``, ``c7_variable``, ``mk_calib_trans``, ``ost_site``, …)
+        still work and emit ``DeprecationWarning``.
+        """
+        import warnings
+
+        resolved = CALIBRATION_PRESET_ALIASES.get(preset, preset)
+        if resolved != preset:
+            warnings.warn(
+                f"Calibration preset {preset!r} is deprecated; use {resolved!r}.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if resolved not in CALIBRATION_PRESETS:
             known = ", ".join(sorted(CALIBRATION_PRESETS))
             raise ValueError(f"Unknown calibration preset {preset!r}; known: {known}")
-        kw = dict(CALIBRATION_PRESETS[preset])
+        kw = dict(CALIBRATION_PRESETS[resolved])
         if overrides:
             kw.update(overrides)
         return cls(**kw)

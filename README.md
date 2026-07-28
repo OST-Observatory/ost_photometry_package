@@ -44,7 +44,7 @@ handling hooks, and WCS helpers used by the analysis layer.
 
 **Calibration** — catalog cross-match (APASS, VizieR, custom tables), extinction
 correction, `PhotometryCalibrator` / `CalibrationEngine`, and named presets
-(`n2_stack`, `c7_variable`, …).
+(`median_zp_per_image`, `linear_fit_per_night`, …).
 
 **Libraries usable outside the pipeline** — `main_extract`, `PhotometryCalibrator`,
 `ExtinctionCorrector`, correlation helpers, plotting, image subtraction, and
@@ -56,7 +56,7 @@ Entry point for scripted runs:
 from ost_photometry.analyze import Observation, PipelineConfig
 
 observation = Observation.from_config(...)
-config = PipelineConfig.from_preset("c7_variable")
+config = PipelineConfig.from_preset("linear_fit_per_night")
 observation.run_pipeline(filter_list, image_paths=..., output_dir=..., config=config)
 ```
 

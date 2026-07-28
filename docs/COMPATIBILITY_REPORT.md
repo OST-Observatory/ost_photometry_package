@@ -29,7 +29,7 @@ Legacy `Observation.extract_flux` / `extract_flux_multi` entfallen zugunsten von
 
 | Skript | Status | Kurznotiz |
 |--------|--------|-----------|
-| `n2/2_extract_data_supervisors.py` | ✅ | `run_pipeline`, `PipelineConfig`, Preset `n2_stack` / custom |
+| `n2/2_extract_data_supervisors.py` | ✅ | `run_pipeline`, `PipelineConfig`, Preset `median_zp_per_image` / custom |
 | `n2/2_extract_data_students.py` | ✅ | Wie supervisors; student-facing variant |
 | `n2/3_plot_cmd_supervisors.py` | ✅ | wie `n2/3_plot_cmd` (students) |
 | `n2/2b_post_process.py` | ✅ | `post_processing`, `analyze.utilities`, `checks` |
@@ -52,7 +52,7 @@ Legacy `Observation.extract_flux` / `extract_flux_multi` entfallen zugunsten von
 | Skript | Status | Kurznotiz |
 |--------|--------|-----------|
 | `1_reduce_images.py` | ✅ | `reduce.redu`, `reduce.utilities`, `reduce_main(...)` keywords |
-| `2_mk_trans.py`, `2_mk_trans_add.py` | ✅ | `run_pipeline` (`mk_calib_trans`), `CalibrationEngine` via `mk_calib_pipeline.write_field_transformation_table` → `trans_para_*.dat` + `.json` |
+| `2_mk_trans.py`, `2_mk_trans_add.py` | ✅ | `run_pipeline` (`extract_protect_calibrators`), `CalibrationEngine` via `mk_calib_pipeline.write_field_transformation_table` → `trans_para_*.dat` + `.json` |
 | `3_second_order_extinction.py`, `3_second_order_extinction_add.py` | ✅ | `run_second_order_campaign` (reads `.dat` or `.json` field tables) |
 | `new_pipeline/determine_extinction_coefficients.py` | ✅ | `extinction_mode="from_value_airmass"`, `protect_calibration_objects=True`, `skip_calibration=True`; siehe [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) |
 

@@ -32,20 +32,20 @@ def test_pipeline_config_from_preset_overrides():
     )
     PipelineConfig = cfg_mod.PipelineConfig
 
-    cfg = PipelineConfig.from_preset("c7_variable", overrides={"fit_sigma_clip": 3.5})
+    cfg = PipelineConfig.from_preset("linear_fit_per_night", overrides={"fit_sigma_clip": 3.5})
     assert cfg.fit_sigma_clip == 3.5
     assert cfg.calibration_strategy == "linear_fit"
     assert cfg.extinction_mode == "none"
 
 
-def test_c7_variable_extinction_preset():
+def test_linear_fit_per_night_extinction_preset():
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",
         pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
     )
     PipelineConfig = cfg_mod.PipelineConfig
 
-    cfg = PipelineConfig.from_preset("c7_variable_extinction")
+    cfg = PipelineConfig.from_preset("linear_fit_per_night_extinction")
     assert cfg.calibration_strategy == "linear_fit"
     assert cfg.extinction_mode == "from_comparison_stars"
     assert cfg.color_term_fit == "auto"
@@ -53,6 +53,44 @@ def test_c7_variable_extinction_preset():
 
     cfg_va = PipelineConfig(extinction_mode="from_value_airmass")
     assert cfg_va.extinction_mode == "from_value_airmass"
+
+
+def test_deprecated_preset_aliases_still_resolve():
+    import warnings
+
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    PipelineConfig = cfg_mod.PipelineConfig
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cfg = PipelineConfig.from_preset("c7_variable")
+    assert cfg.calibration_strategy == "linear_fit"
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("ignore", DeprecationWarning)
+        assert (
+            PipelineConfig.from_preset("n2_stack").calibration_strategy == "median_zp"
+        )
+        assert (
+            PipelineConfig.from_preset(
+                "c7_variable_extinction"
+            ).extinction_mode
+            == "from_comparison_stars"
+        )
+        assert PipelineConfig.from_preset(
+            "mk_calib_trans"
+        ).protect_calibration_objects is True
+        assert (
+            PipelineConfig.from_preset("mk_calib_calibrate").calibration_grouping
+            == "ensemble"
+        )
+        assert (
+            PipelineConfig.from_preset("ost_site").extinction_mode == "tabulated"
+        )
 
 
 def test_calibration_field_names():
@@ -67,7 +105,7 @@ def test_calibration_field_names():
     assert cfg.exposure_jd_tolerance == 0.05
 
 
-def test_protect_calibration_objects_and_mk_calib_preset():
+def test_protect_calibration_objects_and_extract_protect_calibrators_preset():
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",
         pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
@@ -78,7 +116,7 @@ def test_protect_calibration_objects_and_mk_calib_preset():
     assert cfg.protect_calibration_objects is True
     assert cfg.correlation.protect_calibration_objects is True
 
-    mk = PipelineConfig.from_preset("mk_calib_trans")
+    mk = PipelineConfig.from_preset("extract_protect_calibrators")
     assert mk.protect_calibration_objects is True
     assert mk.skip_calibration is True
     assert mk.skip_correlation_inter is True
@@ -86,14 +124,14 @@ def test_protect_calibration_objects_and_mk_calib_preset():
     assert mk.extinction_mode == "none"
 
 
-def test_mk_calib_calibrate_preset():
+def test_linear_fit_ensemble_preset():
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",
         pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
     )
     PipelineConfig = cfg_mod.PipelineConfig
 
-    cfg = PipelineConfig.from_preset("mk_calib_calibrate")
+    cfg = PipelineConfig.from_preset("linear_fit_ensemble")
     assert cfg.calibration_strategy == "linear_fit"
     assert cfg.derive_transform_from_data is True
     assert cfg.calibration_grouping == "ensemble"
@@ -102,14 +140,14 @@ def test_mk_calib_calibrate_preset():
     assert cfg.skip_calibration is False
 
 
-def test_ost_site_preset():
+def test_tabulated_extinction_preset():
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",
         pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
     )
     PipelineConfig = cfg_mod.PipelineConfig
 
-    cfg = PipelineConfig.from_preset("ost_site")
+    cfg = PipelineConfig.from_preset("tabulated_extinction")
     assert cfg.extinction_mode == "tabulated"
     assert cfg.path_extinction_coefficients is None
 

@@ -13,7 +13,7 @@ Living docs: [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md), [EXTINCTION_COEFFICIENTS.
 
 | Item | Status | Recommendation |
 |------|--------|----------------|
-| ~~**Protect calibration stars in pipeline correlation**~~ | **Done** | `protect_calibration_objects` in `CorrelationConfig`; wired in `CorrelationIntraStep` / `CorrelationInterStep`; preset `mk_calib_trans`. |
+| ~~**Protect calibration stars in pipeline correlation**~~ | **Done** | `protect_calibration_objects` in `CorrelationConfig`; wired in `CorrelationIntraStep` / `CorrelationInterStep`; preset `extract_protect_calibrators`. |
 | ~~**Migrate `mk_calib_photometry/2_mk_trans*.py` off legacy calibration**~~ | **Done** | `2_mk_trans*.py` use `CalibrationEngine` via `calibrate_mk_calib_filter_pair` / `write_field_transformation_table`; legacy `trans_para_*.dat` plus JSON sidecar. `3_second_order_extinction*.py` use `run_second_order_campaign`. |
 
 ---
@@ -23,7 +23,7 @@ Living docs: [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md), [EXTINCTION_COEFFICIENTS.
 | Item | Priority | Status | Notes |
 |------|----------|--------|-------|
 | `uncertainty_mode` not wired | P2 | **Done** | `CalibrationStep` calls `apply_uncertainty_mode_to_calibrated_table` (`calibration/uncertainty.py`). |
-| ~~`ost_site` preset~~ | P3 | **Done** | `PipelineConfig.from_preset("ost_site")` → `extinction_mode="tabulated"`. |
+| ~~`tabulated_extinction` preset~~ | P3 | **Done** | `PipelineConfig.from_preset("tabulated_extinction")` → `extinction_mode="tabulated"`. |
 | Aggregator `--plot` QC PDFs | P3 | **Done** | `scripts/aggregate_site_extinction.py --plot` writes per-filter night scatter + site summary PDFs. |
 
 ---
@@ -81,10 +81,10 @@ Approximate open marker count in `src/`: **~43 `TODO`** across the files above (
 | `migration_reports/` duplicate folder | Removed |
 | Pipeline `protect_calibration_objects` | Done — unified `protected_object_ids` + independent auto flags; `correlate_preserve_objects` |
 | mk_calib WCS/extraction/correlation | Done — `run_pipeline` via `mk_calib_pipeline.py` |
-| mk_calib CalibrationEngine + second-order extinction | Done — `mk_calib.py`, `second_order_extinction.py`, preset `mk_calib_calibrate` |
+| mk_calib CalibrationEngine + second-order extinction | Done — `mk_calib.py`, `second_order_extinction.py`, preset `linear_fit_ensemble` |
 | `uncertainty_mode` in CalibrationStep | Done — `fit_errors` / `flux_monte_carlo` / `both` |
 | Site extinction aggregator QC plots | Done — `--plot` on `aggregate_site_extinction.py` |
-| `ost_site` pipeline preset | Done |
+| `tabulated_extinction` pipeline preset | Done |
 | Reduction edge cases (`reduce/validation.py`, `reduce_main` checks) | Done |
 | Reduce workflow modularization (`reduce/workflow/` package) | Done — `_legacy.py` removed; `redu.py` facade unchanged |
 | `correlate/core.py` argwhere / protected-object cleanup | Done — `test_correlation_core.py` |

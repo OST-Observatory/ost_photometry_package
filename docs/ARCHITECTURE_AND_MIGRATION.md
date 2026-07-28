@@ -22,16 +22,20 @@ config prefixes are removed. Use **one epoch-native calibration path**:
 
 - **Step:** `CalibrationStep` + `CalibrationEngine`
 - **Config:** `calibration_strategy`, `calibration_grouping`, `extinction_mode`, …
-- **Presets:** `PipelineConfig.from_preset("n2_stack" | "c7_variable" | …)`
+- **Presets:** `PipelineConfig.from_preset("median_zp_per_image" | "linear_fit_per_night" | …)`
 - **Results:** `context.calibration_results`
 
 ### Presets
 
 | Preset | strategy | grouping | extinction_mode | Use case |
 |--------|----------|----------|-----------------|----------|
-| `n2_stack` | `median_zp` | `per_image` | `none` | Stacked B/V, clusters (N2) |
-| `c7_variable` | `linear_fit` | `per_night` | `none` | Multi-epoch light curves (C7) |
-| `c7_variable_extinction` | `linear_fit` | `per_night` | `from_comparison_stars` | Variables with airmass spread |
+| `median_zp_per_image` | `median_zp` | `per_image` | `none` | Stacked multi-filter fields, cluster photometry |
+| `linear_fit_per_night` | `linear_fit` | `per_night` | `none` | Multi-epoch light curves |
+| `linear_fit_per_night_extinction` | `linear_fit` | `per_night` | `from_comparison_stars` | Multi-epoch light curves with significant airmass range |
+
+Deprecated aliases (still accepted): `n2_stack` → `median_zp_per_image`, `c7_variable` → `linear_fit_per_night`, `c7_variable_extinction` → `linear_fit_per_night_extinction`, `mk_calib_trans` → `extract_protect_calibrators`, `mk_calib_calibrate` → `linear_fit_ensemble`, `ost_site` → `tabulated_extinction`.
+
+Additional presets: `extract_protect_calibrators` (extract/intra-correlate, protect calibrators, skip apply), `linear_fit_ensemble` (ensemble derive-transform), `tabulated_extinction` (site extinction table).
 
 ### Removed (breaking)
 
@@ -58,7 +62,7 @@ Both supervisor (N2) and student (C7) flux scripts support `calibration_config_m
 
 ```python
 calibration_config_mode = "preset"   # or "custom"
-calibration_preset = "n2_stack"      # or "c7_variable", "c7_variable_extinction"
+calibration_preset = "median_zp_per_image"      # or "linear_fit_per_night", "linear_fit_per_night_extinction"
 
 # custom mode:
 calibration_strategy = "median_zp"   # or "linear_fit"
@@ -78,7 +82,7 @@ derive_transform_from_data = False   # catalog-color derive-transform (linear_fi
 ### Derive-transform (`derive_transform_from_data`)
 
 Within `linear_fit`, set `derive_transform_from_data=True` for the catalog-color
-derive-transform (two filters only, e.g. B and V). Preset `c7_variable` enables
+derive-transform (two filters only, e.g. B and V). Preset `linear_fit_per_night` enables
 this. Otherwise `color_term_fit` controls the standard `PhotometryCalibrator` fit.
 
 ### Tests

@@ -54,7 +54,7 @@ def fit_epochs(
         )
         return {eid: night_result for eid in epochs}
 
-    # per_image (default for n2_stack) and fixed (same as per_image without preset coeffs)
+    # per_image (default for median_zp_per_image) and fixed (same as per_image without preset coeffs)
     results: Dict[str, CalibrationResult] = {}
     for epoch_id, data in epochs.items():
         mask = comparison_mask_from_std_columns(data, filters)

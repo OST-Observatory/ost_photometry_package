@@ -133,12 +133,12 @@ def test_pipeline_config_presets():
     )
     PipelineConfig = cfg_mod.PipelineConfig
 
-    n2 = PipelineConfig.from_preset("n2_stack")
+    n2 = PipelineConfig.from_preset("median_zp_per_image")
     assert n2.calibration_strategy == "median_zp"
     assert n2.calibration_grouping == "per_image"
     assert n2.extinction_mode == "none"
 
-    c7 = PipelineConfig.from_preset("c7_variable")
+    c7 = PipelineConfig.from_preset("linear_fit_per_night")
     assert c7.calibration_strategy == "linear_fit"
     assert c7.calibration_grouping == "per_night"
     assert c7.extinction_mode == "none"
@@ -173,7 +173,7 @@ def test_calibration_engine_median_zp(synthetic_calibration_epoch_table):
     PipelineConfig = cfg_mod.PipelineConfig
     CalibrationEngine = engine_mod.CalibrationEngine
 
-    cfg = PipelineConfig.from_preset("n2_stack")
+    cfg = PipelineConfig.from_preset("median_zp_per_image")
     tbl = synthetic_calibration_epoch_table
     epochs = {"epoch_000": tbl}
     results = CalibrationEngine.fit(epochs, cfg, ["B", "V"])
@@ -201,7 +201,7 @@ def test_prepare_calibration_check_plots_array_shapes(
     PipelineConfig = cfg_mod.PipelineConfig
     CalibrationEngine = engine_mod.CalibrationEngine
 
-    cfg = PipelineConfig.from_preset("n2_stack")
+    cfg = PipelineConfig.from_preset("median_zp_per_image")
     tbl = synthetic_calibration_epoch_table
     epochs = {"epoch_000": tbl}
     results = CalibrationEngine.fit(epochs, cfg, ["B", "V"])
