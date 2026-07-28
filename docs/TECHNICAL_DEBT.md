@@ -77,6 +77,7 @@ Approximate open marker count in `src/`: **~43 `TODO`** across the files above (
 | Calibration convergence (`CalibrationStep`, presets, `extinction_mode`) | Done — see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md) |
 | Site extinction IO + `tabulated` loading | Done — `extinction_io.py`, bundled JSON, aggregator script |
 | `skip_extinction_fit` / `fit_extinction_from_data` | Removed — replaced by `extinction_mode` |
+| Pipeline `extinction_order` + `k_second` | Done — FIRST/SECOND apply path; tabulated + user overrides |
 | Migration docs sprawl | Consolidated into `ARCHITECTURE_AND_MIGRATION.md` |
 | `migration_reports/` duplicate folder | Removed |
 | Pipeline `protect_calibration_objects` | Done — unified `protected_object_ids` + independent auto flags; `correlate_preserve_objects` |

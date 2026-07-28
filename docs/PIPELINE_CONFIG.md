@@ -40,6 +40,8 @@ config = PipelineConfig(
 | `calibration_strategy`         | `median_zp`, `linear_fit`                                          | Calibration                     | ZP-only vs linear T/ZP fit                                      |
 | `calibration_grouping`         | `per_image`, `per_night`, `ensemble`, `fixed`                      | Calibration                     | How coefficients are shared across epochs                       |
 | `extinction_mode`              | `none`, `tabulated`, `from_comparison_stars`, `from_value_airmass` | Extinction fit + calibration    | Whether/how to correct for airmass                              |
+| `extinction_order`             | `first`, `second`                                                  | Calibration                     | Apply k′ only, or also k″ (tabulated / `k_second`)              |
+| `k_second`                     | `{filter: float}` or `None`                                        | Calibration                     | Optional per-filter k″ overrides                                |
 | `color_term_fit`               | `always`, `auto`, `never`                                          | Calibration (`linear_fit` only) | Color-term handling in linear fit                               |
 | `uncertainty_mode`             | `fit_errors`, `flux_monte_carlo`, `both`                           | Calibration                     | Propagated `err_cal_*` after calibration apply                  |
 
@@ -145,7 +147,33 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 
 Requires `observatory_location` (or per-epoch airmass columns) for any mode except `none`. `from_comparison_stars` needs `linear_fit` and catalog cross-match (`mag_std_*`). `from_value_airmass` runs before `CalibrationStep` and writes `extinction_coefficients.json`.
 
-**Related config:** `path_extinction_coefficients` — custom site JSON for `tabulated` (default: bundled `ost_potsdam_extinction.json`). See [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) for maintaining the site table.
+**Related config:**
+
+| Field | Role |
+|-------|------|
+| `path_extinction_coefficients` | Custom site JSON for `tabulated` (default: bundled `ost_potsdam_extinction.json`) |
+| `extinction_order` | `first` (default) or `second` — whether to apply k″ as well as k′ when extinction is enabled |
+| `k_second` | Optional `{filter: k''}` overrides (mag/airmass/mag_color); applied on top of tabulated / fitted coefficients |
+
+With `extinction_order="second"`, k″ comes from the site table (or builtin defaults) when the night fit only determined k′; user `k_second` always wins. Color indices for the k″ term use `color_indices` when set, otherwise the tabulated / default color pair. See [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md).
+
+### `extinction_order`
+
+
+| Value | Behaviour |
+|-------|-----------|
+| `first` | Correct `m_0 = m − k'·X` only (default) |
+| `second` | Also apply `k''·X·(color)` using tabulated and/or `k_second` overrides |
+
+Ignored when `extinction_mode="none"`. Example:
+
+```python
+PipelineConfig(
+    extinction_mode="tabulated",
+    extinction_order="second",
+    k_second={"B": 0.03, "V": 0.01},  # optional override
+)
+```
 
 ### `color_term_fit` (`linear_fit` only)
 

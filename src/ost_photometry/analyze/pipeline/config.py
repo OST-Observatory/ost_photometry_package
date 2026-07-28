@@ -19,6 +19,7 @@ ExtinctionMode = Literal[
     "from_comparison_stars",
     "from_value_airmass",
 ]
+ExtinctionOrderName = Literal["first", "second"]
 ColorTermFit = Literal["always", "auto", "never"]
 UncertaintyMode = Literal["fit_errors", "flux_monte_carlo", "both"]
 
@@ -222,6 +223,8 @@ class CalibrationConfig:
     calibration_strategy: CalibrationStrategy = "median_zp"
     calibration_grouping: CalibrationGrouping = "per_image"
     extinction_mode: ExtinctionMode = "none"
+    extinction_order: ExtinctionOrderName = "first"
+    k_second: dict[str, float] | None = None
     color_term_fit: ColorTermFit = "auto"
     fit_sigma_clip: float = 2.5
     per_image_rolling_median_color_term: bool = False

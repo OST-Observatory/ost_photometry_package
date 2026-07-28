@@ -1,5 +1,7 @@
 """Tests for PipelineConfig sub-structure, presets, and flat compatibility."""
 
+import pytest
+
 from helpers import load_module_from_path, pkg_src
 
 
@@ -122,6 +124,25 @@ def test_protect_calibration_objects_and_extract_protect_calibrators_preset():
     assert mk.skip_correlation_inter is True
     assert mk.skip_light_curve is True
     assert mk.extinction_mode == "none"
+
+
+def test_extinction_order_and_k_second_config():
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    PipelineConfig = cfg_mod.PipelineConfig
+
+    cfg = PipelineConfig(
+        extinction_mode="tabulated",
+        extinction_order="second",
+        k_second={"B": 0.025, "V": 0.012},
+    )
+    assert cfg.extinction_order == "second"
+    assert cfg.calibration.extinction_order == "second"
+    assert cfg.k_second["B"] == pytest.approx(0.025)
+    assert cfg.as_flat_dict()["extinction_order"] == "second"
+    assert cfg.as_flat_dict()["k_second"]["V"] == pytest.approx(0.012)
 
 
 def test_linear_fit_ensemble_preset():

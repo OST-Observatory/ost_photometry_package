@@ -53,6 +53,7 @@ Additional presets: `extract_protect_calibrators` (extract/intra-correlate, prot
 | `extinction_mode="fitted"` | `extinction_mode="from_comparison_stars"` |
 | `fit_extinction_from_data` | `extinction_mode` (`from_comparison_stars` or `from_value_airmass`) |
 | `skip_extinction_fit` | `extinction_mode="from_value_airmass"` runs `ExtinctionFitStep` |
+| (implicit first-order only) | `extinction_order` (`first` / `second`) + optional `k_second` overrides |
 | `tabulated` (builtin only) | `tabulated` + site JSON; see [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) |
 | `Observation.extract_flux` / `extract_flux_multi` | `Observation.run_pipeline` |
 

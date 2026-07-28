@@ -32,8 +32,23 @@ flowchart LR
 |------|------|--------------|
 | `none` | — | No correction |
 | `tabulated` | — | Site JSON (bundled or `path_extinction_coefficients`) + missing filters from builtin |
-| `from_comparison_stars` | — | Fit from catalog comparison stars across epochs (in calibration) |
-| `from_value_airmass` | `ExtinctionFitStep` | Fit from mag/flux vs airmass; writes night JSON |
+| `from_comparison_stars` | — | Fit **k′** from catalog comparison stars across epochs (in calibration) |
+| `from_value_airmass` | `ExtinctionFitStep` | Fit **k′** from mag/flux vs airmass; writes night JSON |
+
+### Second-order term (`extinction_order` / `k_second`)
+
+Fits above determine **k′ only**. To apply k″ as well:
+
+```python
+PipelineConfig(
+    extinction_mode="tabulated",   # or from_comparison_stars / from_value_airmass
+    extinction_order="second",
+    # optional overrides (mag / airmass / mag_color):
+    k_second={"B": 0.03, "V": 0.01},
+)
+```
+
+With `extinction_order="second"` and no `k_second`, tabulated (or builtin) `k_second` values are used — including to enrich night fits that left `k_second=0`. Determining k″ from data remains the mk_calib campaign (`run_second_order_campaign`); a future star-wise fit is tracked in [TODO.md](TODO.md).
 
 ### Using the site table
 

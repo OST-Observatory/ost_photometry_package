@@ -620,6 +620,10 @@ class ExtinctionCorrector:
                 airmass = np.asarray(data[fallback_airmass_col], dtype=float)
 
             m_obs = np.array(data[mag_col].ravel(), dtype=float)
+            if self.order == ExtinctionOrder.NONE:
+                data[f"{output_prefix}{filter_}"] = m_obs
+                continue
+
             correction = coeff.k_prime * airmass
 
             if self.order == ExtinctionOrder.SECOND and coeff.k_second != 0:

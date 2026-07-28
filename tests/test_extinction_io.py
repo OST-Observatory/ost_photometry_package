@@ -133,3 +133,112 @@ def test_build_calibrator_tabulated(tmp_path):
     )
     cal = linear.build_calibrator(config)
     assert cal.extinction.coefficients["B"].k_prime == pytest.approx(0.31)
+
+
+def test_resolve_pipeline_extinction_order(extinction_io):
+    ExtinctionOrder = sys.modules["ost_photometry.analyze.extinction"].ExtinctionOrder
+
+    class _Cfg:
+        extinction_mode = "none"
+        extinction_order = "second"
+
+    assert (
+        extinction_io.resolve_pipeline_extinction_order(_Cfg())
+        == ExtinctionOrder.NONE
+    )
+
+    class _Cfg2:
+        extinction_mode = "tabulated"
+        extinction_order = "second"
+
+    assert (
+        extinction_io.resolve_pipeline_extinction_order(_Cfg2())
+        == ExtinctionOrder.SECOND
+    )
+
+    class _Cfg3:
+        extinction_mode = "tabulated"
+        extinction_order = "first"
+
+    assert (
+        extinction_io.resolve_pipeline_extinction_order(_Cfg3())
+        == ExtinctionOrder.FIRST
+    )
+
+
+def test_apply_k_second_overrides_and_enrich(extinction_io, sample_coeff):
+    ExtinctionCoefficients = sys.modules[
+        "ost_photometry.analyze.extinction"
+    ].ExtinctionCoefficients
+    ExtinctionOrder = sys.modules["ost_photometry.analyze.extinction"].ExtinctionOrder
+
+    # Fitted k' only
+    fitted = {
+        "B": ExtinctionCoefficients("B", k_prime=0.35, k_prime_err=0.02, k_second=0.0),
+        "V": ExtinctionCoefficients("V", k_prime=0.18, k_prime_err=0.01, k_second=0.0),
+    }
+    enriched = extinction_io.enrich_second_order_from_tabulated(fitted)
+    assert enriched["B"].k_prime == pytest.approx(0.35)
+    assert enriched["B"].k_second != 0.0  # from site/default table
+
+    overridden = extinction_io.apply_k_second_overrides(
+        enriched, {"B": 0.055}, color_indices={"B": ("B", "V")}
+    )
+    assert overridden["B"].k_second == pytest.approx(0.055)
+    assert overridden["B"].color_filter_1 == "B"
+    assert overridden["B"].color_filter_2 == "V"
+
+    class _Cfg:
+        extinction_mode = "from_comparison_stars"
+        extinction_order = "second"
+        k_second = {"V": 0.009}
+        path_extinction_coefficients = None
+        color_indices = None
+
+    finalized = extinction_io.finalize_pipeline_extinction_coefficients(_Cfg(), fitted)
+    assert finalized["V"].k_second == pytest.approx(0.009)
+    assert finalized["B"].k_second != 0.0
+    assert extinction_io.resolve_pipeline_extinction_order(_Cfg()) == ExtinctionOrder.SECOND
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("photutils") is None,
+    reason="photutils required for build_calibrator import chain",
+)
+def test_build_calibrator_second_order_and_k_second_override(tmp_path):
+    extinction_io = _load_extinction_io()
+    ExtinctionCoefficients = sys.modules[
+        "ost_photometry.analyze.extinction"
+    ].ExtinctionCoefficients
+    ExtinctionOrder = sys.modules["ost_photometry.analyze.extinction"].ExtinctionOrder
+    linear = load_module_from_path(
+        "ost_photometry.analyze.calibration.backends.linear",
+        pkg_src() / "ost_photometry" / "analyze" / "calibration" / "backends" / "linear.py",
+    )
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    sample_coeff = {
+        "B": ExtinctionCoefficients(
+            "B",
+            k_prime=0.31,
+            k_prime_err=0.03,
+            k_second=0.02,
+            color_filter_1="B",
+            color_filter_2="V",
+        ),
+    }
+    path = tmp_path / "site.json"
+    extinction_io.save_extinction_coefficients(path, sample_coeff)
+    config = cfg_mod.PipelineConfig(
+        calibration_strategy="linear_fit",
+        extinction_mode="tabulated",
+        extinction_order="second",
+        path_extinction_coefficients=str(path),
+        k_second={"B": 0.04},
+    )
+    cal = linear.build_calibrator(config)
+    assert cal.extinction.order == ExtinctionOrder.SECOND
+    assert cal.extinction.coefficients["B"].k_prime == pytest.approx(0.31)
+    assert cal.extinction.coefficients["B"].k_second == pytest.approx(0.04)

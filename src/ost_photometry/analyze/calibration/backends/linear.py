@@ -6,7 +6,10 @@ from typing import Dict, List, TYPE_CHECKING, Optional
 
 from ...differential_photometry import PhotometryCalibrator
 from ...extinction import CoefficientMode, ExtinctionCoefficients, ExtinctionOrder
-from ...extinction_io import resolve_tabulated_extinction_coefficients
+from ...extinction_io import (
+    finalize_pipeline_extinction_coefficients,
+    resolve_pipeline_extinction_order,
+)
 from ..result import CalibrationResult
 
 if TYPE_CHECKING:
@@ -14,12 +17,6 @@ if TYPE_CHECKING:
     from astropy.coordinates import EarthLocation
 
     from ...pipeline.config import PipelineConfig
-
-
-def _extinction_order(mode: str) -> ExtinctionOrder:
-    if mode == "none":
-        return ExtinctionOrder.NONE
-    return ExtinctionOrder.FIRST
 
 
 def _coefficient_mode(grouping: str) -> CoefficientMode:
@@ -39,14 +36,11 @@ def build_calibrator(
     extinction_coefficients: Optional[Dict[str, ExtinctionCoefficients]] = None,
 ) -> PhotometryCalibrator:
     grouping = config.calibration_grouping
-    ext_order = _extinction_order(config.extinction_mode)
-    coeffs = None
-    if config.extinction_mode == "tabulated":
-        coeffs = resolve_tabulated_extinction_coefficients(
-            config.path_extinction_coefficients
-        )
-    elif config.extinction_mode == "from_value_airmass":
-        coeffs = extinction_coefficients
+    ext_order = resolve_pipeline_extinction_order(config)
+    raw = resolve_pipeline_extinction_coefficients(
+        config, fitted=extinction_coefficients
+    )
+    coeffs = finalize_pipeline_extinction_coefficients(config, raw)
     return PhotometryCalibrator(
         mode=_coefficient_mode(grouping),
         extinction_order=ext_order,
@@ -54,6 +48,23 @@ def build_calibrator(
         color_indices=color_indices,
         extinction_coefficients=coeffs,
     )
+
+
+def _apply_second_order_after_fit(
+    calibrator: PhotometryCalibrator,
+    config: "PipelineConfig",
+) -> None:
+    """Merge tabulated / user k″ onto fitted k′ when ``extinction_order="second"``."""
+    if resolve_pipeline_extinction_order(config) != ExtinctionOrder.SECOND:
+        # Still allow explicit k_second overrides on FIRST-order runs (no-op for correct()).
+        if not getattr(config, "k_second", None):
+            return
+    finalized = finalize_pipeline_extinction_coefficients(
+        config, dict(calibrator.extinction.coefficients)
+    )
+    if finalized:
+        calibrator.extinction.coefficients.update(finalized)
+        calibrator.extinction.order = resolve_pipeline_extinction_order(config)
 
 
 def fit_epochs(
@@ -75,6 +86,7 @@ def fit_epochs(
             output_dir=output_dir,
             file_type=file_type,
         )
+        _apply_second_order_after_fit(calibrator, config)
 
     calibrator.fit_transformation_parameters(
         filters=filters,

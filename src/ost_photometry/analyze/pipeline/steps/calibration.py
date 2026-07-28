@@ -14,6 +14,7 @@ from ...calibration import CalibrationEngine, prepare_calibration_check_plots
 from ...calibration.backends.linear import build_calibrator
 from ...calibration_sources import crossmatch_standard_catalog, fetch_standard_calibration_catalog
 from ...differential_photometry import DifferentialPhotometer
+from ...extinction_io import build_extinction_corrector
 from ...post_processing.adapters import ensure_epoch_native_photometry_table
 from ...post_processing.io import write_epoch_native_magnitudes
 from ...post_processing.light_curve import attach_observation_jd_column
@@ -149,7 +150,14 @@ class CalibrationStep(base.PipelineStep):
         jd_map = _calibration_summary_jd_by_epoch_id(context, config)
         file_type = config.file_type_plots
         calibrator = None
-        photometer = DifferentialPhotometer(color_indices=color_indices)
+        extinction_corrector = build_extinction_corrector(
+            config,
+            fitted=context.extinction_coefficients,
+        )
+        photometer = DifferentialPhotometer(
+            color_indices=color_indices,
+            extinction_corrector=extinction_corrector,
+        )
 
         if strategy == "linear_fit" and not config.derive_transform_from_data:
             ext_coeffs = None
@@ -167,6 +175,7 @@ class CalibrationStep(base.PipelineStep):
                 color_indices=color_indices,
                 extinction_coefficients=ext_coeffs,
             )
+            photometer = calibrator.photometer
             for epoch_id, tbl in epochs.items():
                 meta = context.calibration_epoch_meta.get(epoch_id, {})
                 filter_obstimes = {}

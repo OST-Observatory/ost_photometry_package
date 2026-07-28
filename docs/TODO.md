@@ -14,6 +14,23 @@ Prefer GitHub issues for individual P1/P2 items.
 
 ## Calibration accuracy & photometry systems
 
+### Star-wise fit for second-order extinction k″ (P3)
+
+Today k″ is **not** fitted in the routine pipeline. Options:
+
+| Path | What it does |
+|------|----------------|
+| `extinction_mode` + `extinction_order` | Apply k′ (and optionally tabulated / user k″) |
+| `run_second_order_campaign` (mk_calib) | Field-level `C = T + k'·X`, then `k" = -k'` |
+
+A **star-wise** alternative would fit per star × epoch:
+
+`m_obs − m_std = ZP + k'·X + k''·X·(color)`
+
+That is a **new** method (not the same as `run_second_order_campaign`, which reduces stars to a field `C` first). Needs wide airmass **and** color span, and careful separation from the linear color term `T`.
+
+**Direction (optional):** optional `extinction_mode` / helper that fits star-level residuals; keep mk_calib campaign and tabulated/user k″ as the supported paths for applying SECOND order. Do **not** bolt this onto `fit_extinction_from_comparison_stars` (epoch-mean vs X destroys color information).
+
 ### T/ZP fit covariance in calibrated errors (P2)
 
 `T` and `ZP` come from the same linear fit and are correlated. `weighted_linear_fit` computes the full covariance but only returns diagonal errors; propagation currently assumes uncorrelated terms (explicit note in `differential_photometry.py`: `cov(T,ZP) … is neglected`). `TransformationCoefficients` has no off-diagonal term.
@@ -170,9 +187,10 @@ Roughly **~43 `TODO` markers** in `src/` (`rg 'TODO' src/`). Selected items that
 2. **P2:** `fraction_epsf_stars` → max count / min–max range.
 3. **P2:** T/ZP covariance in calibrated magnitude errors.
 4. **P3:** Vega/AB labeling and magnitude-system conversion consistency.
-5. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs in `align_image_main`.
-6. **On utilities changes:** extract only the affected area.
-7. **Long-term:** gradually shrink remaining `analyze/*/_legacy.py` modules (`calculate_trans` no longer on mk_calib hot path).
+5. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
+6. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs in `align_image_main`.
+7. **On utilities changes:** extract only the affected area.
+8. **Long-term:** gradually shrink remaining `analyze/*/_legacy.py` modules (`calculate_trans` no longer on mk_calib hot path).
 
 ---
 
