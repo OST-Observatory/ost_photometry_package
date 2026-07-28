@@ -1,3 +1,8 @@
-"""Analysis utilities (facade; implementation in ``utils._legacy``)."""
+"""Analysis utilities facade.
 
-from .utils._legacy import *  # noqa: F403
+Prefer importing from here for a stable public surface. Implementations live
+under :mod:`ost_photometry.analyze.utils` (e.g. ``duplicates``, ``errors``) with
+remaining helpers still in ``utils._legacy``.
+"""
+
+from .utils import *  # noqa: F403

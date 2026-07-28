@@ -151,9 +151,9 @@ These modules are **actively in use**; not short-term removal candidates. Shrink
 
 | Module | Notes |
 |--------|-------|
-| `analyze/calibration/_legacy.py` | `calculate_trans` for backward compatibility; mk_calib and variable-star pipeline use `CalibrationEngine`. |
+| `analyze/calibration/_legacy.py` | Flux helpers extracted to `flux_normalize.py`. Remaining Image ZP/transform/`calculate_trans` stack deprecated (no in-repo callers); remove after grace period. |
 | `analyze/plots/_legacy.py` | Plot backend for all course plotting scripts. |
-| `analyze/utils/_legacy.py` | Wide helper surface; many utilities still routed here. |
+| `analyze/utils/_legacy.py` | Mostly extracted. Left: fit helpers + legacy calib check plots (tied to `calibration/_legacy`). |
 | `analyze/calibration_data.py` | Legacy bridge to `derive_calibration`; pipeline prefers `CalibrationStep`. |
 
 ---
@@ -167,7 +167,7 @@ Roughly **~43 `TODO` markers** in `src/` (`rg 'TODO' src/`). Selected items that
 | ~~`correlate/core.py`~~ | — | **Done** — see `test_correlation_core.py` |
 | ~~`extraction.py`~~ | — | **Done** | FWHM via `ost_photometry/fwhm.py` |
 | ~~`ost_photometry.utilities` — `Image`~~ | — | **Done** — base `image.Image` + `analyze.image.AnalysisImage`; see `test_image_split.py` |
-| `calibration/_legacy.py` | P3 | Filter metadata; relevant only while legacy transformation export remains |
+| `calibration/_legacy.py` | P3 | Shrinking — flux → `flux_normalize.py`; rest deprecated for deletion |
 | `plots/_legacy.py` | P3 | Many TODOs; intentionally the plot backend |
 | ~~`post_processing/hips_reference_subtract.py`~~ | — | **Done** | `find_wcs_for_image` on `Image` |
 

@@ -34,11 +34,11 @@ These are **not** short-term removal candidates; the table describes real depend
 
 | Module | Priority | Status | Notes |
 |--------|----------|--------|-------|
-| `analyze/calibration/_legacy.py` | P3 | **Active** | `calculate_trans` retained for backward compatibility; mk_calib now uses `CalibrationEngine` / `mk_calib.py`. Variable-star pipeline uses `CalibrationEngine` only. |
+| `analyze/calibration/_legacy.py` | P3 | **Shrinking** | Flux helpers → `flux_normalize.py`. Image ZP/transform/`calculate_trans` stack has no in-repo callers; public re-exports deprecated. Delete after grace period. |
 | `analyze/plots/_legacy.py` | P3 | **Active** | `plots/__init__.py` is `from ._legacy import *`. All course plotting scripts depend on it. Cleanup is a large refactor, not post-migration housekeeping. |
 | `calibration_parameters.py` | — | **Active infrastructure** | Used for VizieR catalog props, filter systems, chip dimensions, extinction curves, image types — **not** legacy dead code. Do not remove; optional rename/docs only. |
 | `analyze/calibration_data.py` | P3 | **Legacy bridge** | Still documents old `derive_calibration` path; pipeline prefers `CalibrationStep`. mk_calib field tables use `calibrate_mk_calib_filter_pair`. |
-| `analyze/utils/_legacy.py` | P3 | **Active** | Wide helper surface; many utilities still routed here. |
+| `analyze/utils/_legacy.py` | P3 | **Shrinking** (~550 lines left) | Most helpers extracted. Remaining: `distribution_from_table`, fit helpers, `find_transformation_coefficients`, `prepare_calibration_check_plots` (calib-`_legacy` only). |
 
 ---
 
@@ -83,6 +83,10 @@ Approximate open marker count in `src/`: **~43 `TODO`** across the files above (
 | Pipeline `protect_calibration_objects` | Done — unified `protected_object_ids` + independent auto flags; `correlate_preserve_objects` |
 | mk_calib WCS/extraction/correlation | Done — `run_pipeline` via `mk_calib_pipeline.py` |
 | mk_calib CalibrationEngine + second-order extinction | Done — `mk_calib.py`, `second_order_extinction.py`, preset `linear_fit_ensemble` |
+| Calibration flux helpers out of `_legacy` | Done — `calibration/flux_normalize.py`; dead Image apply stack deprecated |
+| Utils: `clear_duplicates` / `err_prop` extraction | Done — `utils/duplicates.py`, `utils/errors.py` |
+| Utils: photometry / series WCS / limiting mag | Done — `utils/photometry.py`, `series_wcs.py`, `limiting_magnitude.py` |
+| Utils: starmaps / cluster / legacy mag / Simbad / CMD | Done — corresponding `utils/*.py` modules; `_legacy` ~550 lines |
 | `uncertainty_mode` in CalibrationStep | Done — `fit_errors` / `flux_monte_carlo` / `both` |
 | Site extinction aggregator QC plots | Done — `--plot` on `aggregate_site_extinction.py` |
 | `tabulated_extinction` pipeline preset | Done |
