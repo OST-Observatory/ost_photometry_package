@@ -93,7 +93,7 @@ Still invoked from `main_extract` when annotating. Belongs with other optional a
 | `reduce/workflow/main.py` | `align_images`, `make_big_images` |
 | `n1_baches/1_masterimages.py` | `trim_image_simple` |
 
-**Open in-code TODOs (5):** including merge of `trim_image` / `trim_image_simple`; loop optimizations in `align_image_main`; footprint/mask for background.
+**Open in-code TODOs (4):** loop optimizations in `align_image_main`; footprint/mask for background. Trim helpers unified via `trim_ccd` / `ccd_trim_slices` (`trim_image` + `trim_image_simple`).
 
 **Recommendation:** No separate large refactor. Worth doing **only when actively working** on alignment/trim. Before a larger split, add small regression tests with synthetic `CCDData` arrays (shifts, trim edges) — the workflow split was a pure move; risk is higher here.
 
@@ -103,10 +103,10 @@ Still invoked from `main_extract` when annotating. Belongs with other optional a
 reduce/registration/
   align.py    # align_images, align_image_main
   shifts.py   # calculate_xy_image_shifts*, astro_align, optical_flow_*
-  trim.py     # trim_image, trim_image_simple
+  trim.py     # trim_ccd, trim_image, trim_image_simple
 ```
 
-**First sensible step:** unify `trim_image` and `trim_image_simple` (existing TODO in code), without splitting everything at once.
+**Done (first step):** unify trim paths on `trim_ccd` / `ccd_trim_slices` (see `tests/test_registration_trim.py`). Full package split still optional.
 
 ---
 
@@ -170,7 +170,7 @@ Roughly **~43 `TODO` markers** in `src/` (`rg 'TODO' src/`). Selected items that
 2. **P2:** `fraction_epsf_stars` → max count / min–max range.
 3. **P2:** T/ZP covariance in calibrated magnitude errors.
 4. **P3:** Vega/AB labeling and magnitude-system conversion consistency.
-5. **On registration changes:** merge `trim_image` / `trim_image_simple`; optionally extract `trim.py`.
+5. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs in `align_image_main`.
 6. **On utilities changes:** extract only the affected area.
 7. **Long-term:** gradually shrink remaining `analyze/*/_legacy.py` modules (`calculate_trans` no longer on mk_calib hot path).
 

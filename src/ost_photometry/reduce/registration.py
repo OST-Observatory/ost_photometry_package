@@ -31,6 +31,7 @@ from skimage.registration import (
 from skimage.transform import warp, SimilarityTransform
 
 from . import utilities, plots
+from .trim_slices import ccd_trim_slices
 from .. import checks, style, terminal_output
 from ..core.parallel import Executor
 from .. import utilities as base_utilities
@@ -1560,6 +1561,32 @@ def calculate_index_from_shifts(
             int(np.around(y_end, decimals=0)))
 
 
+def trim_ccd(
+        image: CCDData,
+        *,
+        x_start: int = 0,
+        x_end: int = 0,
+        y_start: int = 0,
+        y_end: int = 0,
+        end_as_positive_margin: bool = True,
+        ) -> CCDData:
+    """
+    Trim a single ``CCDData`` image by pixel margins.
+
+    Shared by :func:`trim_image` (alignment) and :func:`trim_image_simple`
+    (fixed margins on a file collection).
+    """
+    y_slice, x_slice = ccd_trim_slices(
+        image.shape,
+        x_start=x_start,
+        x_end=x_end,
+        y_start=y_start,
+        y_end=y_end,
+        end_as_positive_margin=end_as_positive_margin,
+    )
+    return ccdp.trim_image(image[y_slice, x_slice])
+
+
 def trim_image(
         image: CCDData, image_id: int, image_shift: np.ndarray,
         correlation_method: str = 'skimage', verbose: bool = False) -> CCDData:
@@ -1655,20 +1682,26 @@ def trim_image(
             f'"{correlation_method}" {style.Bcolors.ENDC}'
         )
 
-    #   Trim the image
-    return ccdp.trim_image(
-        image[y_start:image.shape[0] + y_end, x_start:image.shape[1] + x_end]
+    return trim_ccd(
+        image,
+        x_start=x_start,
+        x_end=x_end,
+        y_start=y_start,
+        y_end=y_end,
+        end_as_positive_margin=False,
     )
 
 
-#   TODO: Check if this function can be merged with `trim_image` -> Used by N1 script
 def trim_image_simple(
         image_file_collection: ccdp.ImageFileCollection, output_path: Path,
         redundant_pixel_x_start: int = 100, redundant_pixel_x_end: int = 100,
         redundant_pixel_y_start: int = 100, redundant_pixel_y_end: int = 100
         ) -> ccdp.ImageFileCollection:
     """
-    Trim images in X and Y direction
+    Trim all images in a collection by fixed pixel margins.
+
+    Used e.g. by the N1 BACHES master-image script. Single-image trimming
+    goes through :func:`trim_ccd`.
 
     Parameters
     ----------
@@ -1710,11 +1743,14 @@ def trim_image_simple(
             ccd_kwargs={'unit': 'adu'},
             return_fname=True,
     ):
-        #   Trim image
-        trimmed_image = ccdp.trim_image(image[
-            redundant_pixel_y_start:-redundant_pixel_y_end,
-            redundant_pixel_x_start:-redundant_pixel_x_end
-            ])
+        trimmed_image = trim_ccd(
+            image,
+            x_start=redundant_pixel_x_start,
+            x_end=redundant_pixel_x_end,
+            y_start=redundant_pixel_y_start,
+            y_end=redundant_pixel_y_end,
+            end_as_positive_margin=True,
+        )
 
         #   Save the result
         trimmed_image.write(output_path_trimmed / file_name, overwrite=True)
