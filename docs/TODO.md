@@ -94,7 +94,7 @@ Still invoked from `main_extract` when annotating. Belongs with other optional a
 
 | Item | Prio | Notes |
 |------|------|-------|
-| ASCII `formats` key `{'i'}` vs column `id` | P2 | Epoch-native schema uses `id`; some writers still pass format key `i` → Astropy warning. Align keys in `post_processing/io.py` / `save_magnitudes_ascii`. |
+| ASCII `formats` key `{'i'}` vs column `id` | — | **Done.** `schema.ascii_write_formats_for_columns` filters format keys to columns present on the table (`post_processing/io.py`, `utils/legacy_magnitudes.py`). |
 | `FITSFixedWarning` (`datfix` / `MJD-OBS` from `DATE-OBS`) | P3 | Harmless but noisy; filter or set MJD-OBS explicitly when building WCS/Time from FITS. |
 | NaNs clipped in `ImageDepth` / limiting magnitude | P3 | `_derive_limiting_magnitude_one_epoch` → `ImageDepth`; pre-clean non-finite pixels or acknowledge warning. |
 
@@ -154,6 +154,16 @@ reduce/registration/
 |--------|-------|
 | `analyze/calibration_data.py` | Deprecated `derive_calibration` path; pipeline prefers `CalibrationStep`. Optional cleanup when no external callers remain. |
 
+### Drop legacy wide magnitude tables / column `i` (P3)
+
+When the optional wide `.dat` path (`write_legacy_wide_magnitudes_dat`, `calibrated_epochs_to_legacy_wide_table`, `save_magnitudes_ascii` with column `i`) is retired in favour of epoch-native tables only (`id`):
+
+- Remove column `i` and the `"i"` entry from `_ASCII_COLUMN_FORMATS` / `ascii_write_formats_for_columns`.
+- Drop dual-read branches such as `"i" if "i" in colnames else "id"` (e.g. adapters).
+- Remove or gate the wide-table builders and the `write_legacy_wide_magnitudes_dat` config flag.
+
+Until then, keeping `"i"` in the filtered formats helper is correct.
+
 ---
 
 ## In-code TODOs
@@ -172,13 +182,15 @@ Roughly **~14 `TODO` markers** in `src/` (`rg 'TODO' src`). Hotspots: `reduce/re
 
 ## Suggested order
 
-1. **P2:** ASCII `formats` key `i` vs `id` (small, visible warning).
-2. **P2:** `fraction_epsf_stars` → max count / min–max range.
-3. **P2:** T/ZP covariance in calibrated magnitude errors.
-4. **P3:** Vega/AB labeling and magnitude-system conversion consistency.
-5. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
+1. **P2:** `fraction_epsf_stars` → max count / min–max range.
+2. **P2:** T/ZP covariance in calibrated magnitude errors.
+3. **P3:** Vega/AB labeling and magnitude-system conversion consistency.
+4. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
+5. **P3 (when ready):** Drop legacy wide tables / column `i` — see section above.
 6. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs in `align_image_main`.
 7. **On utilities changes:** extract only the affected area.
+
+**Recently done:** ASCII `formats` key `i` vs `id` (`ascii_write_formats_for_columns`).
 
 ---
 
