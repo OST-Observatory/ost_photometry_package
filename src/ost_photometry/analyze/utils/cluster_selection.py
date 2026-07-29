@@ -15,6 +15,7 @@ from sklearn.cluster import SpectralClustering
 from ... import style, terminal_output
 from ... import utilities as base_utilities
 from .. import plots
+from ..post_processing.coords import table_object_sky_coords
 from ..post_processing.imaging import ImagingPlotContext, imaging_context_from_image_series
 from .duplicates import clear_duplicates
 from .starmaps import prepare_and_plot_starmap

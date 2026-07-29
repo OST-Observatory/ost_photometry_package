@@ -5,6 +5,7 @@ import os
 
 import numpy as np
 from astropy.stats import sigma_clip as sigma_clipping
+from astropy.time import Time
 from astropy.timeseries import TimeSeries, aggregate_downsample
 import astropy.units as u
 import matplotlib.pyplot as plt
