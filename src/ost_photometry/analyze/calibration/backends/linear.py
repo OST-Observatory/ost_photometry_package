@@ -8,6 +8,7 @@ from ...differential_photometry import PhotometryCalibrator
 from ...extinction import CoefficientMode, ExtinctionCoefficients, ExtinctionOrder
 from ...extinction_io import (
     finalize_pipeline_extinction_coefficients,
+    resolve_pipeline_extinction_coefficients,
     resolve_pipeline_extinction_order,
 )
 from ..result import CalibrationResult

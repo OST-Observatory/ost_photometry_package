@@ -5,6 +5,7 @@ from __future__ import annotations
 import multiprocessing as mp
 from typing import TYPE_CHECKING
 
+import numpy as np
 from astropy.table import Table
 
 from ... import utilities as base_utilities
