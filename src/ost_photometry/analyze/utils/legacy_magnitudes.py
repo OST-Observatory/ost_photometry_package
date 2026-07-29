@@ -11,6 +11,7 @@ from ... import calibration_parameters, checks, terminal_output
 from ..post_processing.adapters import ensure_epoch_native_photometry_table
 from ..post_processing.io import write_epoch_native_magnitudes
 from ..post_processing.light_curve import attach_observation_jd_column
+from ..post_processing.schema import ascii_write_formats_for_columns
 
 if TYPE_CHECKING:
     from ..observation import Observation
@@ -275,12 +276,8 @@ def save_magnitudes_ascii(
             continue
         col.info.format = '{:12.3f}'
 
-    #   Reset for x and y column
-    formats = {
-        'i': '{:5.0f}',
-        'x': '{:12.2f}',
-        'y': '{:12.2f}',
-    }
+    #   Reset for id/i and x/y columns (only keys present on the table)
+    formats = ascii_write_formats_for_columns(column_names)
 
     #   Write file
     tbl.write(

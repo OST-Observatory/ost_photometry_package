@@ -1,0 +1,138 @@
+"""Tests for epoch-native ASCII / ECSV format helpers."""
+
+from __future__ import annotations
+
+import sys
+import unittest
+import warnings
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+from astropy.table import Table
+from astropy.utils.exceptions import AstropyUserWarning
+
+_PKG_SRC = Path(__file__).resolve().parents[1] / "src"
+if str(_PKG_SRC) not in sys.path:
+    sys.path.insert(0, str(_PKG_SRC))
+
+from helpers import load_module_from_path, pkg_src  # noqa: E402
+
+
+class TestAsciiFormatsId(unittest.TestCase):
+    def test_ascii_write_formats_for_columns_filters_missing_keys(self):
+        schema = load_module_from_path(
+            "ost_photometry.analyze.post_processing.schema",
+            pkg_src() / "ost_photometry" / "analyze" / "post_processing" / "schema.py",
+        )
+        self.assertEqual(
+            schema.ascii_write_formats_for_columns(["id", "x", "y", "ra"]),
+            {"id": "{:5.0f}", "x": "{:12.2f}", "y": "{:12.2f}"},
+        )
+        self.assertEqual(
+            schema.ascii_write_formats_for_columns(["i", "x", "y"]),
+            {"i": "{:5.0f}", "x": "{:12.2f}", "y": "{:12.2f}"},
+        )
+        self.assertNotIn("i", schema.ascii_write_formats_for_columns(["id", "x"]))
+        self.assertNotIn("id", schema.ascii_write_formats_for_columns(["i", "x"]))
+
+    def test_write_epoch_native_no_formats_key_warning(self):
+        import tempfile
+        from unittest.mock import patch
+
+        io_mod = load_module_from_path(
+            "ost_photometry.analyze.post_processing.io",
+            pkg_src() / "ost_photometry" / "analyze" / "post_processing" / "io.py",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+
+            class _OutPath:
+                def __truediv__(self, other):
+                    return tmp_path / other
+
+                @property
+                def name(self):
+                    return str(tmp_path)
+
+            obs = SimpleNamespace(image_series_dict={"V": SimpleNamespace(out_path=_OutPath())})
+            tbl = Table(
+                {
+                    "id": np.arange(3, dtype=int),
+                    "x": np.array([1.0, 2.0, 3.0]),
+                    "y": np.array([4.0, 5.0, 6.0]),
+                    "ra": np.zeros(3),
+                    "dec": np.zeros(3),
+                    "epoch_id": np.array(["epoch_000"] * 3),
+                }
+            )
+            (tmp_path / "tables").mkdir(parents=True, exist_ok=True)
+            with patch(
+                "ost_photometry.checks.check_output_directories",
+                lambda *a, **k: None,
+            ):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    path = io_mod.write_epoch_native_magnitudes(obs, tbl)
+                    format_warnings = [
+                        w
+                        for w in caught
+                        if issubclass(w.category, AstropyUserWarning)
+                        and "formats" in str(w.message).lower()
+                    ]
+            self.assertTrue(path.is_file())
+            self.assertEqual(format_warnings, [])
+
+    def test_save_magnitudes_ascii_legacy_i_column(self):
+        import tempfile
+        from unittest.mock import patch
+
+        # Prefer full package import when photutils is available.
+        try:
+            from ost_photometry.analyze.utils import legacy_magnitudes as lm
+        except ImportError:
+            self.skipTest("requires photutils (ost_photometry.analyze import)")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+
+            class _OutPath:
+                def __truediv__(self, other):
+                    return tmp_path / other
+
+                @property
+                def name(self):
+                    return str(tmp_path)
+
+            obs = SimpleNamespace(image_series_dict={"V": SimpleNamespace(out_path=_OutPath())})
+            tbl = Table(
+                {
+                    "i": np.arange(2, dtype=int),
+                    "x": np.array([1.0, 2.0]),
+                    "y": np.array([3.0, 4.0]),
+                    "ra (deg)": np.zeros(2),
+                    "dec (deg)": np.zeros(2),
+                    "V (transformed, image=0)": np.array([12.0, 13.0]),
+                }
+            )
+            (tmp_path / "tables").mkdir(parents=True, exist_ok=True)
+            with patch(
+                "ost_photometry.analyze.utils.legacy_magnitudes.checks.check_output_directories",
+                lambda *a, **k: None,
+            ):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    lm.save_magnitudes_ascii(obs, tbl)
+                    format_warnings = [
+                        w
+                        for w in caught
+                        if issubclass(w.category, AstropyUserWarning)
+                        and "formats" in str(w.message).lower()
+                    ]
+            self.assertTrue(any(tmp_path.rglob("*.dat")))
+            self.assertEqual(format_warnings, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

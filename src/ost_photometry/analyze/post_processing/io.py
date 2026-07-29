@@ -71,12 +71,7 @@ def write_epoch_native_magnitudes(
             continue
         col.info.format = "{:12.3f}"
 
-    formats = {
-        "i": "{:5.0f}",
-        "id": "{:5.0f}",
-        "x": "{:12.2f}",
-        "y": "{:12.2f}",
-    }
+    formats = schema.ascii_write_formats_for_columns(out_tbl.colnames)
 
     out_tbl.write(
         str(out_path),
