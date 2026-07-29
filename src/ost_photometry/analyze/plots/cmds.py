@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 import numpy as np
+from astropy.stats import sigma_clipped_stats
 from matplotlib import gridspec
 import matplotlib.pyplot as plt
 from scipy.spatial import KDTree
