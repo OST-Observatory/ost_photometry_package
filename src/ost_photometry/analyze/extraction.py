@@ -1508,12 +1508,17 @@ def main_extract(
     image.photometry["mags_fit"] = magnitudes
     image.photometry["mags_unc"] = magnitudes_error
 
+    method_label = {
+        "APER": "aperture photometry",
+        "PSF": "PSF photometry",
+    }.get(str(photometry_extraction_method).upper(), str(photometry_extraction_method))
+
     if plots_for_all_images or image.image_id == id_reference_image:
         utilities.prepare_and_plot_starmap(
             image,
             terminal_logger=terminal_logger,
             file_type_plots=file_type_plots,
-            label=f"Stars with photometric extractions ({photometry_extraction_method})",
+            label=f"Stars with photometric extractions ({method_label})",
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         )
 
