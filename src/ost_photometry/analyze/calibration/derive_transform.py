@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import numpy as np
-from astropy.stats import sigma_clip
+from astropy.stats import sigma_clip as astropy_sigma_clip
 from astropy.table import Table, vstack
 
 from .result import CalibrationResult, TransformationCoefficients
@@ -97,7 +97,7 @@ def fit_color_corrections_epoch(
     diff_1 = m_std_1 - m_inst_1
     zp_sum = (m_inst_1 - m_std_1) + (m_inst_0 - m_std_0)
 
-    clipped = sigma_clip(zp_sum, sigma=sigma_clip, masked=True)
+    clipped = astropy_sigma_clip(zp_sum, sigma=sigma_clip, masked=True)
     keep = ~np.asarray(clipped.mask, dtype=bool)
     keep &= np.isfinite(zp_sum) & np.isfinite(color_literature)
     keep &= np.isfinite(diff_0) & np.isfinite(diff_1)
