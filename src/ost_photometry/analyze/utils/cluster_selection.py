@@ -610,12 +610,14 @@ def find_cluster(
         )
 
     #   3D plot of the proper motion and the distance
-    #   -> select the star cluster by eye
+    #   -> select the star cluster by eye (interactive pick when display=True)
     groups = pd_result.groupby('cluster')
     pm_ra_group = []
     pm_de_group = []
     distance_group = []
+    cluster_ids_ordered: list[int] = []
     for name, group in groups:
+        cluster_ids_ordered.append(int(name))
         pm_ra_group.append(group.pmRA.values)
         pm_de_group.append(group.pmDE.values)
         distance_group.append(group.distance.values)
@@ -624,45 +626,17 @@ def find_cluster(
         pm_de_group,
         distance_group,
         plot_stub,
-        # color=np.unique(pd_result['cluster']),
         name_x='pm_RA * cos(DEC) (mas/yr)',
         name_y='pm_DEC (mas/yr)',
         name_z='d (kpc)',
-        # string='_3D_cluster_',
         pm_ra=pm_ra_object,
         pm_dec=pm_de_object,
         file_type=file_type_plots,
-    )
-    plots.d3_scatter(
-        pm_ra_group,
-        pm_de_group,
-        distance_group,
-        plot_stub,
-        # color=np.unique(pd_result['cluster']),
-        name_x='pm_RA * cos(DEC) (mas/yr)',
-        name_y='pm_DEC (mas/yr)',
-        name_z='d (kpc)',
-        # string='_3D_cluster_',
-        pm_ra=pm_ra_object,
-        pm_dec=pm_de_object,
-        display=True,
-        file_type=file_type_plots,
+        cluster_ids=cluster_ids_ordered,
     )
 
-    #   Get user input
-    # plots.D3_scatter(
-    # [pd_result['pmRA']],
-    # [pd_result['pmDE']],
-    # [pd_result['distance']],
-    # image.outpath.name,
-    # color=[pd_result['cluster']],
-    # name_x='pm_RA * cos(DEC) (mas/yr)',
-    # name_y='pm_DEC (mas/yr)',
-    # name_z='d (kpc)',
-    # string='_3D_cluster_',
-    # )
+    available = np.unique(pd_result["cluster"])
 
-    #   Get user input
     if cluster_selection_id is not None:
         cluster_id = int(cluster_selection_id)
         terminal_output.print_to_terminal(
@@ -671,34 +645,63 @@ def find_cluster(
             style_name="INFO",
         )
     else:
-        cluster_id_raw, timed_out = base_utilities.get_input(
-            style.Bcolors.OKBLUE +
-            "\n   Which one is the correct cluster (id)? \n"
-            + style.Bcolors.ENDC,
-            timeout=300,
+        selected_id = plots.d3_scatter(
+            pm_ra_group,
+            pm_de_group,
+            distance_group,
+            plot_stub,
+            name_x='pm_RA * cos(DEC) (mas/yr)',
+            name_y='pm_DEC (mas/yr)',
+            name_z='d (kpc)',
+            pm_ra=pm_ra_object,
+            pm_dec=pm_de_object,
+            display=True,
+            file_type=file_type_plots,
+            cluster_ids=cluster_ids_ordered,
         )
-        if timed_out or cluster_id_raw is None or str(cluster_id_raw).strip() == "":
-            cluster_id = 0
+        if selected_id is not None and selected_id in available:
+            cluster_id = int(selected_id)
+            terminal_output.print_to_terminal(
+                f"Using cluster id {cluster_id} from interactive 3D plot.",
+                indent=2,
+                style_name="INFO",
+            )
         else:
-            parsed = base_utilities.parse_cluster_selection_id(cluster_id_raw)
-            if parsed is None:
+            if selected_id is not None:
                 terminal_output.print_to_terminal(
-                    f"Could not parse cluster id from {cluster_id_raw!r}; using 0.",
+                    f"Clicked cluster id {selected_id} not in "
+                    f"{sorted(available.tolist())}; asking on the terminal.",
                     indent=2,
                     style_name="WARNING",
                 )
+            cluster_id_raw, timed_out = base_utilities.get_input(
+                style.Bcolors.OKBLUE +
+                "\n   Which one is the correct cluster (id)? \n"
+                + style.Bcolors.ENDC,
+                timeout=300,
+            )
+            if timed_out or cluster_id_raw is None or str(cluster_id_raw).strip() == "":
                 cluster_id = 0
             else:
-                cluster_id = parsed
-                available = np.unique(pd_result["cluster"])
-                if cluster_id not in available:
+                parsed = base_utilities.parse_cluster_selection_id(cluster_id_raw)
+                if parsed is None:
                     terminal_output.print_to_terminal(
-                        f"Cluster id {cluster_id} not in {sorted(available.tolist())}; "
-                        "using 0.",
+                        f"Could not parse cluster id from {cluster_id_raw!r}; using 0.",
                         indent=2,
                         style_name="WARNING",
                     )
                     cluster_id = 0
+                else:
+                    cluster_id = parsed
+
+    if cluster_id not in available:
+        terminal_output.print_to_terminal(
+            f"Cluster id {cluster_id} not in {sorted(available.tolist())}; "
+            "using 0.",
+            indent=2,
+            style_name="WARNING",
+        )
+        cluster_id = 0
 
     #   Calculated mask according to user input
     cluster_mask = pd_result['cluster'] == cluster_id

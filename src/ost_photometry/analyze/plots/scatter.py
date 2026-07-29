@@ -23,9 +23,14 @@ def d3_scatter(
         output_dir: str, color: list[str] | None = None, name_x: str = '',
         name_y: str = '', name_z: str = '', pm_ra: float | None = None,
         pm_dec: float | None = None, display: bool = False,
-        file_type: str = 'pdf') -> None:
+        file_type: str = 'pdf',
+        cluster_ids: list[int] | None = None) -> int | None:
     """
-    Make a 3D scatter plot
+    Make a 3D scatter plot.
+
+    When ``display=True``, an interactive window is shown. Click a cluster
+    (scatter points or legend entry) to select it, then close the window.
+    The selected cluster id is returned (or ``None`` if nothing was chosen).
 
     Parameters
     ----------
@@ -75,10 +80,37 @@ def d3_scatter(
     file_type
         Type of plot file to be created
         Default is ``pdf``.
+
+    cluster_ids
+        Optional ids for each series in ``xs``/``ys``/``zs`` (length must
+        match). Defaults to ``0 .. n-1``. Used for labels and the return value
+        of interactive selection.
+
+    Returns
+    -------
+    int or None
+        Selected cluster id when ``display=True`` and the user clicked a
+        group; otherwise ``None``.
     """
+    n_series = len(xs)
+    ids = (
+        [int(c) for c in cluster_ids]
+        if cluster_ids is not None
+        else list(range(n_series))
+    )
+    if len(ids) != n_series:
+        raise ValueError(
+            f"cluster_ids length ({len(ids)}) must match number of series ({n_series})"
+        )
+
     #   Switch backend to allow direct display of the plot
+    previous_backend = plt.get_backend()
     if display:
-        plt.switch_backend('TkAgg')
+        try:
+            plt.switch_backend('TkAgg')
+        except Exception:
+            # Headless / no Tk: keep non-interactive behaviour
+            display = False
 
     #   Check output directories
     checks.check_output_directories(
@@ -94,14 +126,12 @@ def d3_scatter(
         if pm_ra is not None and pm_dec is not None:
             fig.suptitle(
                 f'Proper motion vs. distance: Literature proper motion: '
-                f'{pm_ra:.1f}, {pm_dec:.1f} - Choose a cluster then close the '
-                f'plot',
+                f'{pm_ra:.1f}, {pm_dec:.1f} — click a cluster, then close',
                 fontsize=17,
             )
         else:
             fig.suptitle(
-                'Proper motion vs. distance: Literature proper motion: '
-                '- Choose a cluster then close the plot',
+                'Proper motion vs. distance — click a cluster, then close',
                 fontsize=17,
             )
     else:
@@ -122,6 +152,23 @@ def d3_scatter(
         n_subplots = 1
     else:
         n_subplots = 4
+
+    selected: dict[str, int | None] = {"id": None}
+
+    def _set_selection(cluster_id: int) -> None:
+        selected["id"] = int(cluster_id)
+        fig.suptitle(
+            f'Selected cluster {cluster_id} — close the window to confirm',
+            fontsize=17,
+            color='darkgreen',
+        )
+        fig.canvas.draw_idle()
+
+    def _on_pick(event) -> None:
+        artist = event.artist
+        cid = getattr(artist, "_cluster_id", None)
+        if cid is not None:
+            _set_selection(int(cid))
 
     #   Loop over all subplots
     for i in range(0, n_subplots):
@@ -189,50 +236,61 @@ def d3_scatter(
         ax.set_ylim([y_min, y_max])
         ax.set_zlim([z_min, z_max])
 
+        scatter_artists = []
         #   Plot data
         if color is None:
             for j, x in enumerate(xs):
-                ax.scatter3D(
+                art = ax.scatter3D(
                     x,
                     ys[j],
                     zs[j],
-                    # c=zs[i],
-                    # cmap='cividis',
-                    # cmap='tab20',
-                    label=f'Cluster {j}',
-                    # picker=True,
-                    picker=5,
+                    label=f'Cluster {ids[j]}',
+                    picker=5 if display else False,
                 )
-                ax.legend()
+                art._cluster_id = ids[j]
+                scatter_artists.append(art)
         else:
             for j, x in enumerate(xs):
-                ax.scatter3D(
+                art = ax.scatter3D(
                     x,
                     ys[j],
                     zs[j],
                     c=color[j],
                     cmap='cividis',
-                    # cmap='tab20',
-                    label=f'Cluster {j}',
+                    label=f'Cluster {ids[j]}',
+                    picker=5 if display else False,
                 )
-                ax.legend()
+                art._cluster_id = ids[j]
+                scatter_artists.append(art)
+
+        legend = ax.legend(title='Click cluster' if display else None)
+        if display and legend is not None:
+            # Legend handles are more reliable to pick than 3D PathCollections.
+            for handle, cid in zip(legend.legend_handles, ids):
+                handle.set_picker(5)
+                handle._cluster_id = int(cid)
 
     #   Display plot and switch backend back to default
     if display:
-        plt.show()
-        # plt.show(block=False)
-        # time.sleep(300)
-        # print('after sleep')
-        plt.close()
-        plt.switch_backend('Agg')
-    else:
-        #   Save image if it is not displayed directly
-        plt.savefig(
-            f'{output_dir}/compare/pm_vs_distance.{file_type}',
-            bbox_inches='tight',
-            format=file_type,
-        )
-        plt.close()
+        fig.canvas.mpl_connect('pick_event', _on_pick)
+        try:
+            plt.show()
+        finally:
+            plt.close(fig)
+            try:
+                plt.switch_backend(previous_backend)
+            except Exception:
+                plt.switch_backend('Agg')
+        return selected["id"]
+
+    #   Save image if it is not displayed directly
+    plt.savefig(
+        f'{output_dir}/compare/pm_vs_distance.{file_type}',
+        bbox_inches='tight',
+        format=file_type,
+    )
+    plt.close(fig)
+    return None
 
 
 def scatter(
