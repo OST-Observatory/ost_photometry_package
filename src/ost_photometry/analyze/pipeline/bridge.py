@@ -447,6 +447,39 @@ def observation_to_calibration_epochs(
     return context.calibration_epochs
 
 
+def list_exposure_image_groups(
+    context: AnalysisContext,
+    config: PipelineConfig,
+) -> list[dict[str, Any]]:
+    """
+    Paired multi-filter image groups (same logic as calibration epochs).
+
+    Returns a list of ``{filter_name: Image}`` dicts using
+    ``config.exposure_pairing`` (``index`` or ``jd_nearest``). Does **not**
+    mutate ``context.calibration_epochs``.
+    """
+    filter_list = list(context.filter_list)
+    if len(filter_list) < 2:
+        return []
+
+    ref_filter = config.reference_filter or filter_list[0]
+    if ref_filter not in context.image_series_dict:
+        ref_filter = filter_list[0]
+
+    skipped: list[dict] = []
+    pairing = config.exposure_pairing
+    if pairing == "index":
+        return _pairing_index(context, filter_list, skipped, debug=False)
+    return _pairing_jd_nearest(
+        context,
+        filter_list,
+        ref_filter,
+        config.exposure_jd_tolerance,
+        skipped,
+        debug=False,
+    )
+
+
 def instrumental_epoch_native_from_calibration_epochs(
     epochs: Dict[str, Table],
     filter_list: List[str],

@@ -14,6 +14,9 @@ from .inter import (
     correlate_with_calibration_objects,
     determine_object_position,
     inter_filter_correlation_separations_arcsec,
+    inter_filter_correlation_separations_for_images,
+    inter_filter_pair_image_label,
+    inter_filter_pair_title_suffix,
     select_calibration_objects,
 )
 from .protection import (
@@ -46,6 +49,9 @@ __all__ = [
     "find_objects_of_interest_srcor",
     "identify_object_of_interest_in_dataset",
     "inter_filter_correlation_separations_arcsec",
+    "inter_filter_correlation_separations_for_images",
+    "inter_filter_pair_image_label",
+    "inter_filter_pair_title_suffix",
     "merge_protected_object_ids",
     "resolve_calibration_object_ids",
     "resolve_protected_object_ids_for_intra",

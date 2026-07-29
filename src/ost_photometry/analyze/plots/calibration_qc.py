@@ -1052,6 +1052,7 @@ def plot_inter_filter_correlation_separations(
     reference_filter: str = "",
     other_filters: list[str] | None = None,
     filename_stem: str = "inter_filter_correlation_separations",
+    title_suffix: str = "",
 ) -> Path:
     """Histogram of inter-filter position separations with summary statistics."""
     x = np.asarray(separations_arcsec, dtype=float)
@@ -1067,7 +1068,9 @@ def plot_inter_filter_correlation_separations(
         if other_filters:
             title += f", vs {','.join(other_filters)}"
         title += ")"
-    ax.set_title(title)
+    if title_suffix:
+        title += f"\n{title_suffix}"
+    ax.set_title(title, fontsize=11)
     ax.text(
         0.97,
         0.97,
@@ -1078,6 +1081,79 @@ def plot_inter_filter_correlation_separations(
         horizontalalignment="right",
         bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
     )
+    path = _diagnostic_plot_path(output_dir, filename_stem, file_type)
+    plt.tight_layout()
+    fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
+    plt.close(fig)
+    return path
+
+
+def plot_inter_filter_correlation_separations_overview(
+    separations_by_pair: list[np.ndarray],
+    pair_labels: list[str],
+    output_dir: str | Path,
+    file_type: str = "pdf",
+    *,
+    reference_filter: str = "",
+    other_filters: list[str] | None = None,
+    filename_stem: str = "inter_filter_correlation_separations_overview",
+    pairing_mode: str = "",
+) -> Path:
+    """
+    Overview for many exposure pairs: pooled histogram + median separation vs pair.
+    """
+    medians: list[float] = []
+    pooled: list[float] = []
+    for sep in separations_by_pair:
+        x = np.asarray(sep, dtype=float)
+        x = x[np.isfinite(x)]
+        pooled.extend(x.tolist())
+        medians.append(float(np.nanmedian(x)) if x.size else np.nan)
+
+    fig, (ax0, ax1) = plt.subplots(
+        nrows=2, ncols=1, figsize=(7.5, 7.0), gridspec_kw={"height_ratios": [1.2, 1.0]}
+    )
+    pooled_arr = np.asarray(pooled, dtype=float)
+    if pooled_arr.size:
+        ax0.hist(
+            pooled_arr,
+            bins="auto",
+            color="C1",
+            alpha=0.85,
+            edgecolor="k",
+            linewidth=0.3,
+        )
+    ax0.set_xlabel("Separation [arcsec]")
+    ax0.set_ylabel("Count")
+    title = "Inter-filter separations (all exposure pairs)"
+    if reference_filter:
+        title += f" (ref={reference_filter}"
+        if other_filters:
+            title += f", vs {','.join(other_filters)}"
+        title += ")"
+    if pairing_mode:
+        title += f"\npairing={pairing_mode}, n_pairs={len(separations_by_pair)}"
+    ax0.set_title(title, fontsize=11)
+    ax0.text(
+        0.97,
+        0.97,
+        _stats_text(pooled_arr),
+        transform=ax0.transAxes,
+        fontsize=9,
+        verticalalignment="top",
+        horizontalalignment="right",
+        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+    )
+
+    xi = np.arange(len(medians))
+    ax1.plot(xi, medians, "o-", ms=3, lw=1.0, color="C0")
+    ax1.set_xlabel("Exposure pair index")
+    ax1.set_ylabel("Median separation [arcsec]")
+    ax1.set_title("Median separation per exposure pair")
+    ax1.grid(True, alpha=0.3)
+    if len(pair_labels) <= 20 and pair_labels:
+        ax1.set_xticks(xi)
+        ax1.set_xticklabels(pair_labels, rotation=90, fontsize=7)
     path = _diagnostic_plot_path(output_dir, filename_stem, file_type)
     plt.tight_layout()
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))

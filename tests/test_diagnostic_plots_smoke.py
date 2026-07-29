@@ -56,7 +56,10 @@ class TestDiagnosticPlotsSmoke(unittest.TestCase):
 
         matplotlib.use("Agg")
 
-        from ost_photometry.analyze.plots import plot_inter_filter_correlation_separations
+        from ost_photometry.analyze.plots import (
+            plot_inter_filter_correlation_separations,
+            plot_inter_filter_correlation_separations_overview,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             path = plot_inter_filter_correlation_separations(
@@ -65,8 +68,19 @@ class TestDiagnosticPlotsSmoke(unittest.TestCase):
                 "pdf",
                 reference_filter="V",
                 other_filters=["B"],
+                title_suffix="reference images — V: id=0",
             )
             self.assertTrue(path.is_file())
+            path2 = plot_inter_filter_correlation_separations_overview(
+                [np.array([0.05, 0.12]), np.array([0.08, 0.2, 0.1])],
+                ["000", "001"],
+                tmp,
+                "pdf",
+                reference_filter="V",
+                other_filters=["B"],
+                pairing_mode="jd_nearest",
+            )
+            self.assertTrue(path2.is_file())
 
 
 if __name__ == "__main__":

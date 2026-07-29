@@ -136,19 +136,96 @@ def run_diagnostic_plots_phase(
             if obs is None or len(context.filter_list) < 2:
                 return
             try:
-                sep, ref_name, others = correlate.inter_filter_correlation_separations_arcsec(
-                    obs,
-                    context.filter_list,
-                    0,
+                # Cap individual pair PDFs for long light curves.
+                max_pair_plots = 25
+                ref_name = context.filter_list[0]
+                others: list[str] = []
+
+                # Reference-image pair (series.reference_image_index per filter)
+                ref_images = {}
+                for f in context.filter_list:
+                    ser = obs.image_series_dict.get(f)
+                    if ser is None:
+                        continue
+                    ref_images[f] = ser.image_list[ser.reference_image_index]
+                sep_ref, ref_name, others = (
+                    correlate.inter_filter_correlation_separations_for_images(
+                        obs,
+                        context.filter_list,
+                        ref_images,
+                        reference_filter=ref_name,
+                    )
                 )
-                if sep.size:
+                if sep_ref.size:
                     plots.plot_inter_filter_correlation_separations(
-                        sep,
+                        sep_ref,
                         out_d,
                         ft,
                         reference_filter=ref_name,
                         other_filters=others,
+                        filename_stem="inter_filter_correlation_separations_reference",
+                        title_suffix=(
+                            "reference images — "
+                            + correlate.inter_filter_pair_title_suffix(ref_images)
+                        ),
                     )
+
+                # Exposure pairs (same pairing as calibration: index / jd_nearest)
+                from .pipeline.bridge import list_exposure_image_groups
+
+                groups = list_exposure_image_groups(context, config)
+                seps_by_pair: list[np.ndarray] = []
+                pair_labels: list[str] = []
+                n_written = 0
+                for i, group in enumerate(groups):
+                    sep_i, ref_i, others_i = (
+                        correlate.inter_filter_correlation_separations_for_images(
+                            obs,
+                            context.filter_list,
+                            group,
+                            reference_filter=ref_name,
+                        )
+                    )
+                    if not sep_i.size:
+                        continue
+                    if not others:
+                        others = others_i
+                    label = correlate.inter_filter_pair_image_label(group)
+                    seps_by_pair.append(sep_i)
+                    pair_labels.append(f"{i:03d}")
+                    if n_written < max_pair_plots:
+                        plots.plot_inter_filter_correlation_separations(
+                            sep_i,
+                            out_d,
+                            ft,
+                            reference_filter=ref_i,
+                            other_filters=others_i,
+                            filename_stem=(
+                                f"inter_filter_correlation_separations_pair_{i:03d}_{label}"
+                            ),
+                            title_suffix=(
+                                f"pair {i:03d} — "
+                                + correlate.inter_filter_pair_title_suffix(group)
+                            ),
+                        )
+                        n_written += 1
+
+                if seps_by_pair:
+                    plots.plot_inter_filter_correlation_separations_overview(
+                        seps_by_pair,
+                        pair_labels,
+                        out_d,
+                        ft,
+                        reference_filter=ref_name,
+                        other_filters=others,
+                        pairing_mode=str(getattr(config, "exposure_pairing", "")),
+                    )
+                    if len(seps_by_pair) > max_pair_plots:
+                        _warn(
+                            f"Inter-filter separation: wrote per-pair plots for the "
+                            f"first {max_pair_plots} of {len(seps_by_pair)} pairs; "
+                            f"see inter_filter_correlation_separations_overview for all."
+                        )
             except Exception as exc:
                 _warn(f"Diagnostic plot (correlation_inter): {exc}")
 

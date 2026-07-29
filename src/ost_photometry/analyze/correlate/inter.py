@@ -379,30 +379,30 @@ def correlate_image_series(
         )
 
 
-def inter_filter_correlation_separations_arcsec(
+def inter_filter_correlation_separations_for_images(
     observation: "analyze.Observation",
     filter_list: list[str] | set[str],
-    reference_filter_index: int = 0,
+    images_by_filter: dict[str, base_utilities.Image],
+    *,
+    reference_filter: str | None = None,
 ) -> tuple[np.ndarray, str, list[str]]:
     """
-    On-sky separations (arcsec) between reference-filter positions and other
-    filters' positions for the same row after inter-filter correlation.
+    On-sky separations (arcsec) between a specific image per filter.
 
-    Rows are assumed aligned (same length per series reference image), as after
+    Rows are assumed aligned (same length / correlated object order) as after
     :func:`correlate_image_series`.
     """
     fl = list(filter_list)
     if len(fl) < 2:
         return np.array([]), "", []
-    if reference_filter_index < 0 or reference_filter_index >= len(fl):
-        reference_filter_index = 0
-    ref = fl[reference_filter_index]
-    isd = observation.image_series_dict
-    if ref not in isd:
+    ref = reference_filter or fl[0]
+    if ref not in images_by_filter or ref not in observation.image_series_dict:
         return np.array([]), ref, []
-    sref = isd[ref]
-    ref_img = sref.image_list[sref.reference_image_index]
+    ref_img = images_by_filter[ref]
+    sref = observation.image_series_dict[ref]
     if ref_img.photometry is None or len(ref_img.photometry) == 0:
+        return np.array([]), ref, []
+    if sref.wcs is None:
         return np.array([]), ref, []
     n = len(ref_img.photometry)
     c_ref = SkyCoord.from_pixel(
@@ -415,11 +415,11 @@ def inter_filter_correlation_separations_arcsec(
     for f in fl:
         if f == ref:
             continue
-        if f not in isd:
+        img = images_by_filter.get(f)
+        if img is None or f not in observation.image_series_dict:
             continue
-        ser = isd[f]
-        img = ser.image_list[ser.reference_image_index]
-        if img.photometry is None or len(img.photometry) != n:
+        ser = observation.image_series_dict[f]
+        if img.photometry is None or len(img.photometry) != n or ser.wcs is None:
             continue
         c_f = SkyCoord.from_pixel(
             img.photometry["x_fit"],
@@ -431,6 +431,62 @@ def inter_filter_correlation_separations_arcsec(
     if not chunks:
         return np.array([]), ref, []
     return np.concatenate(chunks), ref, others
+
+
+def inter_filter_correlation_separations_arcsec(
+    observation: "analyze.Observation",
+    filter_list: list[str] | set[str],
+    reference_filter_index: int = 0,
+) -> tuple[np.ndarray, str, list[str]]:
+    """
+    Separations for the **reference image** of each filter series.
+
+    For light curves with many exposures, this is only one pair (the series
+    ``reference_image_index`` frames). Use
+    :func:`inter_filter_correlation_separations_for_images` for other pairs.
+    """
+    fl = list(filter_list)
+    if len(fl) < 2:
+        return np.array([]), "", []
+    if reference_filter_index < 0 or reference_filter_index >= len(fl):
+        reference_filter_index = 0
+    ref = fl[reference_filter_index]
+    isd = observation.image_series_dict
+    images: dict[str, base_utilities.Image] = {}
+    for f in fl:
+        if f not in isd:
+            continue
+        ser = isd[f]
+        images[f] = ser.image_list[ser.reference_image_index]
+    return inter_filter_correlation_separations_for_images(
+        observation,
+        fl,
+        images,
+        reference_filter=ref,
+    )
+
+
+def inter_filter_pair_image_label(images_by_filter: dict[str, base_utilities.Image]) -> str:
+    """Short label like ``B0_V3`` from filter + ``image_id``."""
+    parts: list[str] = []
+    for f in sorted(images_by_filter.keys()):
+        img = images_by_filter[f]
+        iid = getattr(img, "image_id", None)
+        parts.append(f"{f}{iid}" if iid is not None else str(f))
+    return "_".join(parts)
+
+
+def inter_filter_pair_title_suffix(images_by_filter: dict[str, base_utilities.Image]) -> str:
+    """Human-readable pair description for plot titles."""
+    bits: list[str] = []
+    for f, img in images_by_filter.items():
+        iid = getattr(img, "image_id", "?")
+        name = getattr(img, "filename", None) or ""
+        if name:
+            bits.append(f"{f}: id={iid} ({name})")
+        else:
+            bits.append(f"{f}: id={iid}")
+    return "; ".join(bits)
 
 def determine_object_position(
         image: base_utilities.Image, ra_obj: float, dec_obj: float, w: wcs.WCS,

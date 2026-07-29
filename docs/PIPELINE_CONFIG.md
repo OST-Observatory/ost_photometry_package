@@ -145,7 +145,7 @@ Most QC figures under `<output>/diagnostics/` are **on by default** (growth curv
 | `combined_separation_histograms` | Combined separation panels |
 | `photometry_mag_vs_error_scatter` | Mag vs photometric error (reference image) |
 | `photometry_radial_growth_curve` | Aperture growth for brightest star (off by default) |
-| `correlation_inter_filter_separation_plot` | Inter-filter match separations |
+| `correlation_inter_filter_separation_plot` | Inter-filter match separations: reference-image pair, up to 25 exposure pairs (same `exposure_pairing` as calibration), plus overview (all pairs) |
 | `calibration_instrumental_vs_catalog` | Instrumental vs catalog magnitudes |
 | `calibration_zeropoint_residual_histogram` | ZP residual distribution |
 | `calibration_zeropoint_residual_vs_color` | ZP residuals vs color |
