@@ -9,6 +9,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord, matching
 from astropy.stats import sigma_clip
 from astropy.table import Column, Table
+from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
 from sklearn.cluster import SpectralClustering
 
