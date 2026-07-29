@@ -1170,6 +1170,7 @@ def extraction_aperture(
             annulus_aperture,
             f"{filter_}_{image.image_id}",
             file_type=file_type_plots,
+            pixel_scale=image.pixel_scale,
         )
 
     n_objects = len(flux)
@@ -1213,7 +1214,7 @@ def extract_multiprocessing(
     plots_for_all_images: bool = False,
     use_wcs_projection_for_star_maps: bool = True,
     file_type_plots: str = "pdf",
-    annotate_reference_image: bool = False,
+    annotate_reference_image: bool = True,
     magnitude_limit_image_annotation: float | None = None,
     filter_magnitude_limit_image_annotation: str | None = None,
 ) -> None:
@@ -1325,7 +1326,7 @@ def main_extract(
     plots_for_all_images: bool = False,
     file_type_plots: str = "pdf",
     use_wcs_projection_for_star_maps: bool = True,
-    annotate_image: bool = False,
+    annotate_image: bool = True,
     magnitude_limit_image_annotation: float | None = None,
     filter_magnitude_limit_image_annotation: str | None = None,
 ) -> None | tuple[int, Table]:
@@ -1370,15 +1371,36 @@ def main_extract(
     )
 
     if annotate_image and image.image_id == id_reference_image:
-        utilities.mark_simbad_objects_on_image(
-            image.get_data(),
-            image.wcs,
-            image.out_path,
-            image.filter_,
-            file_type=file_type_plots,
-            filter_mag=filter_magnitude_limit_image_annotation,
-            mag_limit=magnitude_limit_image_annotation,
-        )
+        if image.wcs is None:
+            msg = (
+                "Skipping Simbad annotated starmap: no WCS on the reference image."
+            )
+            if terminal_logger is not None:
+                terminal_logger.add_to_cache(msg, indent=2)
+            else:
+                terminal_output.print_to_terminal(msg, indent=2, style_name="WARNING")
+        else:
+            try:
+                utilities.mark_simbad_objects_on_image(
+                    image.get_data(),
+                    image.wcs,
+                    image.out_path,
+                    image.filter_,
+                    file_type=file_type_plots,
+                    filter_mag=filter_magnitude_limit_image_annotation,
+                    mag_limit=magnitude_limit_image_annotation,
+                )
+            except Exception as exc:
+                msg = (
+                    f"Simbad annotated starmap failed "
+                    f"(network / query issue?): {exc}"
+                )
+                if terminal_logger is not None:
+                    terminal_logger.add_to_cache(msg, indent=2)
+                else:
+                    terminal_output.print_to_terminal(
+                        msg, indent=2, style_name="WARNING"
+                    )
 
     if photometry_extraction_method == "PSF":
         if size_epsf_region % 2 == 0:

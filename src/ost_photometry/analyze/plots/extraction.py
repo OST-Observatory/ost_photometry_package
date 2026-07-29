@@ -18,7 +18,8 @@ plt.switch_backend("Agg")
 def plot_apertures(
         output_dir: str, image: base_utilities.Image,
         aperture: CircularAperture, annulus_aperture: CircularAnnulus,
-        filename_string: str, file_type: str = 'pdf') -> None:
+        filename_string: str, file_type: str = 'pdf',
+        pixel_scale: float | None = None) -> None:
     """
     Plot the apertures used for extracting the stellar fluxes
            (star map plot for aperture photometry)
@@ -43,12 +44,26 @@ def plot_apertures(
     file_type
         Type of plot file to be created
         Default is ``pdf``.
+
+    pixel_scale
+        Arcsec per pixel; if set, legend also shows radii in arcsec.
+        Default is ``None``.
     """
     #   Check output directories
     checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'aperture'),
     )
+
+    def _radius_label(r_pix: float) -> str:
+        r_pix = float(r_pix)
+        if pixel_scale is not None and np.isfinite(pixel_scale) and pixel_scale > 0:
+            return f"{r_pix:.2f} px ({r_pix * float(pixel_scale):.2f}\")"
+        return f"{r_pix:.2f} px"
+
+    r_ap = float(np.atleast_1d(aperture.r)[0])
+    r_in = float(np.atleast_1d(annulus_aperture.r_in)[0])
+    r_out = float(np.atleast_1d(annulus_aperture.r_out)[0])
 
     #   Make plot
     plt.figure(figsize=(20, 9))
@@ -69,14 +84,17 @@ def plot_apertures(
     ap_patches = aperture.plot(
         color='lightcyan',
         lw=0.2,
-        label='Object aperture',
+        label=f'Object aperture (r={_radius_label(r_ap)})',
     )
 
     #   Plot background apertures
     ann_patches = annulus_aperture.plot(
         color='darkred',
         lw=0.2,
-        label='Background annulus',
+        label=(
+            f'Background annulus '
+            f'(r_in={_radius_label(r_in)}, r_out={_radius_label(r_out)})'
+        ),
     )
 
     #
@@ -85,6 +103,11 @@ def plot_apertures(
     #   Set labels
     plt.xlabel("[pixel]", fontsize=16)
     plt.ylabel("[pixel]", fontsize=16)
+    plt.title(
+        f"Aperture photometry: r={_radius_label(r_ap)}, "
+        f"annulus {_radius_label(r_in)}–{_radius_label(r_out)}",
+        fontsize=14,
+    )
 
     #   Plot legend
     plt.legend(
@@ -101,10 +124,6 @@ def plot_apertures(
         bbox_inches='tight',
         format=file_type,
     )
-
-    #   Set labels
-    plt.xlabel("[pixel]", fontsize=16)
-    plt.ylabel("[pixel]", fontsize=16)
 
     plt.close()
 

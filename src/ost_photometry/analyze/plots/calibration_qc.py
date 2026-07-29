@@ -237,6 +237,11 @@ def plot_calibration_night_summary(
     One column of subplots: per filter, color term (T) above zero point (ZP);
     epoch index or Julian Date on the shared x-axis (better on narrow displays).
 
+    Filters without any finite fitted zero point across epochs are omitted. If
+    none remain (e.g. Clear-only without catalog standards), no file is written.
+    Remaining filters share **one** figure (stacked panels); the filename includes
+    the filter names (e.g. ``calibration_per_image_summary_B_V.pdf``).
+
     Parameters
     ----------
     output_dir : str or Path
@@ -255,7 +260,7 @@ def plot_calibration_night_summary(
         line ±1σ band on each panel.
     output_basename : str
         Filename stem (without extension). Use ``calibration_per_image_summary``
-        for :class:`CoefficientMode.PER_IMAGE` runs.
+        for :class:`CoefficientMode.PER_IMAGE` runs. Filter names are appended.
     x_jd : list of float, optional
         If given, same length as ``epoch_ids`` and all finite: x-axis is these
         Julian Dates. Otherwise x is 0..N-1 with thinned / shortened epoch labels.
@@ -265,12 +270,23 @@ def plot_calibration_night_summary(
     from ... import checks
     from ..warnings_types import OstPhotometryAnalyzeWarning
 
-    out = Path(output_dir) / "calibration"
-    checks.check_output_directories(out)
+    def _filter_has_finite_zp(filter_name: str) -> bool:
+        for cf in coefficients_per_epoch:
+            tc = cf.get(filter_name)
+            if tc is None:
+                continue
+            if np.isfinite(float(tc.zero_point)):
+                return True
+        return False
 
+    filters = [f for f in filters if _filter_has_finite_zp(f)]
     n_filt = len(filters)
     if n_filt == 0:
         return
+
+    out = Path(output_dir) / "calibration"
+    checks.check_output_directories(out)
+
     n_ep = len(epoch_ids)
     use_jd_axis = False
     if x_jd is not None and len(x_jd) == n_ep:
@@ -408,8 +424,13 @@ def plot_calibration_night_summary(
     fig.align_xlabels()
     plt.tight_layout(rect=[0, 0.06, 1, 0.99])
 
+    filt_tag = "_".join(str(f) for f in filters)
+    stem = output_basename
+    if filt_tag and not stem.endswith(filt_tag):
+        stem = f"{output_basename}_{filt_tag}"
+
     plt.savefig(
-        out / f"{output_basename}.{file_type}",
+        out / f"{stem}.{file_type}",
         bbox_inches="tight",
         format=file_type,
     )

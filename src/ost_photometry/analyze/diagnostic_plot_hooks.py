@@ -25,6 +25,38 @@ def diagnostics_subdirectory(output_dir: str | Path) -> Path:
     return d
 
 
+def _phase_requests_plots(dp: Any, phase: str) -> bool:
+    """True if any diagnostic toggle for ``phase`` is enabled."""
+    if phase == "extraction":
+        return bool(
+            dp.photometry_mag_vs_error_scatter or dp.photometry_radial_growth_curve
+        )
+    if phase == "correlation_inter":
+        return bool(dp.correlation_inter_filter_separation_plot)
+    if phase == "calibration_data":
+        return bool(
+            dp.calibration_crossmatch_separation_histogram
+            or dp.combined_separation_histograms
+        )
+    if phase == "calibration_apply":
+        return bool(
+            dp.calibration_instrumental_vs_catalog
+            or dp.calibration_zeropoint_residual_histogram
+            or dp.calibration_zeropoint_residual_vs_color
+            or dp.calibration_color_check_cal_stars
+        )
+    if phase == "calibration_differential":
+        return bool(
+            dp.calibration_crossmatch_separation_histogram
+            or dp.photometry_mag_vs_error_scatter
+            or dp.calibration_instrumental_vs_catalog
+            or dp.calibration_zeropoint_residual_histogram
+            or dp.calibration_zeropoint_residual_vs_color
+            or dp.calibration_color_check_cal_stars
+        )
+    return False
+
+
 def _photometry_col_float(column) -> np.ndarray:
     if hasattr(column, "value"):
         return np.asarray(column.value, dtype=float)
@@ -43,7 +75,10 @@ def run_diagnostic_plots_phase(
     out_root = getattr(context, "output_dir", None)
     if out_root is None:
         return
+    if not _phase_requests_plots(dp, phase):
+        return
 
+    # Create diagnostics/ only when at least one toggle for this phase is on.
     out_d = diagnostics_subdirectory(out_root)
     ft = getattr(config, "file_type_plots", "pdf")
     obs = getattr(context, "_observation", None)
@@ -53,10 +88,6 @@ def run_diagnostic_plots_phase(
 
     try:
         if phase == "extraction":
-            if not (
-                dp.photometry_mag_vs_error_scatter or dp.photometry_radial_growth_curve
-            ):
-                return
             ref_id = int(getattr(config, "reference_image_index", 0))
             for filter_ in context.filter_list:
                 series = context.image_series_dict.get(filter_)
@@ -102,8 +133,6 @@ def run_diagnostic_plots_phase(
                     _warn(f"Diagnostic plot (extraction, {filter_}): {exc}")
 
         elif phase == "correlation_inter":
-            if not dp.correlation_inter_filter_separation_plot:
-                return
             if obs is None or len(context.filter_list) < 2:
                 return
             try:
@@ -124,11 +153,6 @@ def run_diagnostic_plots_phase(
                 _warn(f"Diagnostic plot (correlation_inter): {exc}")
 
         elif phase == "calibration_data":
-            if not (
-                dp.calibration_crossmatch_separation_histogram
-                or dp.combined_separation_histograms
-            ):
-                return
             if obs is None or obs.calib_parameters is None:
                 return
             cp = obs.calib_parameters
@@ -185,13 +209,6 @@ def run_diagnostic_plots_phase(
                 _warn(f"Diagnostic plot (calibration_data): {exc}")
 
         elif phase == "calibration_apply":
-            if not (
-                dp.calibration_instrumental_vs_catalog
-                or dp.calibration_zeropoint_residual_histogram
-                or dp.calibration_zeropoint_residual_vs_color
-                or dp.calibration_color_check_cal_stars
-            ):
-                return
             if obs is None or obs.calib_parameters is None:
                 return
             cp = obs.calib_parameters

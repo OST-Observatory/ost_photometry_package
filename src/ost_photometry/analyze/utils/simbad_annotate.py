@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import astropy.units as u
+import numpy as np
 from astropy import wcs
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
@@ -126,6 +129,12 @@ def mark_simbad_objects_on_image(
         image_data.shape,
         filter_mag=filter_mag,
     )
+    if simbad_objects is None or len(simbad_objects) == 0:
+        terminal_output.print_to_terminal(
+            "Simbad returned no objects for this field; skipping annotated starmap.",
+            style_name="WARNING",
+        )
+        return
 
     #   Marks all known objects in the image
     plots.plot_annotated_image(

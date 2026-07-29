@@ -1,6 +1,7 @@
 """2D / 3D scatter plotting helpers."""
 from __future__ import annotations
 
+import itertools
 import os
 
 import numpy as np

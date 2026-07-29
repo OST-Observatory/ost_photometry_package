@@ -118,8 +118,8 @@ class ExtractionConfig:
     plots_for_all_images: bool = False
     file_type_plots: str = "pdf"
     use_wcs_projection_for_star_maps: bool = True
-    annotate_image: bool = False
-    annotate_reference_image: bool = False
+    annotate_image: bool = True
+    annotate_reference_image: bool = True
     magnitude_limit_image_annotation: float | None = None
     filter_magnitude_limit_image_annotation: str | None = None
     sigma_value_background_clipping: float = 5.0
