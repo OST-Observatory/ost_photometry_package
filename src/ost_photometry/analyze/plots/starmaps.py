@@ -408,18 +408,27 @@ def plot_limiting_mag_sky_apertures(
         Type of plot file to be created
         Default is ``pdf``.
     """
+    from scipy.ndimage import binary_dilation
+
     #   Check output directories
     checks.check_output_directories(
         output_dir,
         os.path.join(output_dir, 'limiting_mag'),
     )
 
+    # ImageDepth places apertures on the *dilated* mask; show that for QC.
+    mask_bool = np.asarray(mask, dtype=bool)
+    if np.any(mask_bool) and getattr(image_depth, "dilate_footprint", None) is not None:
+        mask_show = binary_dilation(mask_bool, structure=image_depth.dilate_footprint)
+    else:
+        mask_show = mask_bool
+
     #   Plot magnitudes
     fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(9, 3))
 
     #   Set title
     ax[0].set_title('Data with blank apertures')
-    ax[1].set_title('Mask with blank apertures')
+    ax[1].set_title('Dilated source mask + blank apertures')
 
     #   Normalize the image data and plot
     norm = ImageNormalize(img_data, interval=ZScaleInterval(contrast=0.15, ))
@@ -431,16 +440,17 @@ def plot_limiting_mag_sky_apertures(
         origin='lower',
     )
 
-    #   Plot mask with object positions
+    #   Plot mask with object positions (as used for aperture placement)
     ax[1].imshow(
-        mask,
+        mask_show,
         interpolation='none',
         origin='lower',
     )
 
     #   Plot apertures used to derive limiting magnitude
-    image_depth.apertures[0].plot(ax[0], color='purple', lw=0.2)
-    image_depth.apertures[0].plot(ax[1], color='orange', lw=0.2)
+    if getattr(image_depth, "apertures", None):
+        image_depth.apertures[0].plot(ax[0], color='purple', lw=0.2)
+        image_depth.apertures[0].plot(ax[1], color='orange', lw=0.2)
 
     plt.subplots_adjust(
         left=0.05,

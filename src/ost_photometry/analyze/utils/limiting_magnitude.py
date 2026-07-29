@@ -84,6 +84,66 @@ def _pixel_indices_for_depth_mask(tbl: Table) -> tuple[np.ndarray, np.ndarray]:
     return np.rint(np.asarray(xs)).astype(int), np.rint(np.asarray(ys)).astype(int)
 
 
+def _blank_sky_source_mask(
+    image_data: np.ndarray,
+    index_x: np.ndarray,
+    index_y: np.ndarray,
+    *,
+    catalog_stamp_radius: float = 3.0,
+    detect_nsigma: float = 3.0,
+    detect_npixels: int = 5,
+) -> np.ndarray:
+    """
+    Boolean source mask for :class:`~photutils.utils.ImageDepth` (True = avoid).
+
+    Combines circular stamps at known photometry positions with a segmentation
+    mask of sources detected on the image. Single centroid pixels alone are not
+    enough: blank apertures would otherwise land on PSF wings and on objects
+    missing from the photometry table.
+    """
+    from astropy.convolution import convolve
+    from astropy.stats import sigma_clipped_stats
+    from photutils.segmentation import SourceFinder, make_2dgaussian_kernel
+    from photutils.utils.footprints import circular_footprint
+    from scipy.ndimage import binary_dilation
+
+    data = np.asarray(image_data, dtype=float)
+    mask = np.zeros(data.shape, dtype=bool)
+
+    xs = np.asarray(index_x, dtype=int).ravel()
+    ys = np.asarray(index_y, dtype=int).ravel()
+    if xs.size:
+        seed = np.zeros(data.shape, dtype=bool)
+        inside = (
+            (ys >= 0)
+            & (ys < data.shape[0])
+            & (xs >= 0)
+            & (xs < data.shape[1])
+        )
+        seed[ys[inside], xs[inside]] = True
+        r_stamp = max(1, int(np.ceil(float(catalog_stamp_radius))))
+        mask |= binary_dilation(seed, structure=circular_footprint(radius=r_stamp))
+
+    try:
+        _mean, median, std = sigma_clipped_stats(data, sigma=3.0, maxiters=5)
+        if np.isfinite(std) and std > 0.0:
+            kernel = make_2dgaussian_kernel(3.0, size=5)
+            convolved = convolve(data - median, kernel, normalize_kernel=True)
+            finder = SourceFinder(n_pixels=detect_npixels, progress_bar=False)
+            segm = finder(convolved, float(detect_nsigma) * float(std))
+            if segm is not None:
+                mask |= segm.make_source_mask()
+    except Exception as exc:  # noqa: BLE001 — fall back to catalog stamps only
+        terminal_output.print_to_terminal(
+            f"Limiting-mag source detection for blank-sky mask failed ({exc}); "
+            "using photometry positions only.",
+            style_name="WARNING",
+            indent=3,
+        )
+
+    return mask
+
+
 def _median_zeropoint(zp) -> float:
     if zp is None:
         raise ValueError("Zero point (image.zp or zeropoint=...) is required.")
@@ -168,16 +228,9 @@ def _derive_limiting_magnitude_one_epoch(
             style_name="OKBLUE",
         )
 
-    index_x, index_y = _pixel_indices_for_depth_mask(tbl_mag)
-    mask = np.zeros(image_data.shape, dtype=bool)
-    inside = (
-        (index_y >= 0)
-        & (index_y < image_data.shape[0])
-        & (index_x >= 0)
-        & (index_x < image_data.shape[1])
-    )
-    mask[index_y[inside], index_x[inside]] = True
-
+    # Mask all known photometry positions (not only mag < 30), then add a
+    # segmentation mask so blank apertures avoid objects missing from the table.
+    index_x, index_y = _pixel_indices_for_depth_mask(photo)
     radius = aperture_radius
     if radii_unit == "arcsec":
         if pixel_scale is None:
@@ -186,12 +239,22 @@ def _derive_limiting_magnitude_one_epoch(
             )
         radius = radius / pixel_scale
 
+    stamp_r = max(3.0, 0.5 * float(radius))
+    mask = _blank_sky_source_mask(
+        image_data,
+        index_x,
+        index_y,
+        catalog_stamp_radius=stamp_r,
+    )
+    mask_pad = max(5.0, 0.5 * float(radius))
+
     depth = ImageDepth(
         radius,
-        nsigma=5.0,
-        napers=500,
-        niters=2,
+        n_sigma=5.0,
+        n_apertures=500,
+        n_iters=2,
         overlap=False,
+        mask_pad=mask_pad,
         zeropoint=zeropoint,
         progress_bar=False,
     )
