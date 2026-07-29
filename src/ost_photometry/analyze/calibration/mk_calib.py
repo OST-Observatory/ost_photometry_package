@@ -1,8 +1,7 @@
 """
 mk_calib field transformation via :class:`CalibrationEngine` (derive-transform path).
 
-Replaces legacy ``calculate_trans`` / ``trans_para_*.dat`` production for
-second-order extinction campaigns.
+Produces ``trans_para_*.dat`` (and JSON sidecar) for second-order extinction campaigns.
 """
 
 from __future__ import annotations
@@ -36,7 +35,7 @@ LEGACY_C_ERR_COLUMNS: dict[str, list[str]] = {
 
 @dataclass
 class TransformCoefficient:
-    """One magnitude-transform coefficient (legacy ``C*`` equivalent)."""
+    """One magnitude-transform coefficient (mk_calib ``C*`` column equivalent)."""
 
     column: str
     filter: str
@@ -318,7 +317,7 @@ def write_trans_para_table(
     record: FieldTransformationRecord,
     path: str | Path,
 ) -> Path:
-    """Write legacy ``trans_para_*.dat`` ASCII table (backward compatible)."""
+    """Write ``trans_para_*.dat`` ASCII table (mk_calib-compatible columns)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tbl = Table()

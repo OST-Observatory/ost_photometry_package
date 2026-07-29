@@ -20,8 +20,8 @@ main layers:
 | **`ost_photometry.analyze`** | Science analysis: WCS, extraction, correlation, calibration, post-processing, light curves |
 
 Supporting code includes `terminal_output` and `style` (console output),
-`checks`, `calibration_parameters` (legacy parameter files), and `core` (shared
-utilities such as parallel execution).
+`checks`, `calibration_parameters` (catalogs, filters, chips, extinction curves),
+and `core` (shared utilities such as parallel execution).
 
 Typical workflow: reduce raw FITS with **`reduce`**, then run **`analyze`** on
 the calibrated image series via an `Observation` object and `run_pipeline()`.

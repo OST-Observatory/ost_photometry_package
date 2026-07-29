@@ -34,7 +34,7 @@ def unweighted_linear_fit(
     color: np.ndarray,
     delta: np.ndarray,
 ) -> tuple[float, float]:
-    """Simple legacy-style fit: delta = T * color + ZP."""
+    """Unweighted least-squares fit: delta = T * color + ZP."""
     a = np.column_stack([color, np.ones_like(color)])
     coeffs, _, _, _ = np.linalg.lstsq(a, delta, rcond=None)
     return float(coeffs[0]), float(coeffs[1])

@@ -1,4 +1,4 @@
-"""Median zero-point fitting (legacy-style)."""
+"""Median zero-point fitting."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def fit_median_zero_point_epoch(
     """
     Fit zero points as median(m_std - m_inst) per filter; color term fixed at 0.
 
-    Mirrors legacy ``prepare_zero_point`` / median ZP without iterative sigma-clip.
+    No iterative sigma-clip (unlike some older ZP helpers).
     """
     color_indices = color_index_filters or {}
     result = CalibrationResult(identifier=epoch_id)

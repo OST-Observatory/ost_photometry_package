@@ -32,6 +32,8 @@ def _load_pipeline_config_module():
     )
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    # dataclasses looks up the class module in sys.modules during decoration
+    sys.modules[spec.name] = mod
     spec.loader.exec_module(mod)
     return mod
 

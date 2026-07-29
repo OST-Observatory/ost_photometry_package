@@ -48,7 +48,7 @@ def propagate_flux_monte_carlo(
     seed: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Monte Carlo magnitude errors from flux uncertainties (legacy ``distribution_from_table``).
+    Monte Carlo magnitude errors from flux uncertainties.
 
     Returns (mag_cal, mag_cal_err) arrays.
     """

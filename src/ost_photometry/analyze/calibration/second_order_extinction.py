@@ -1,7 +1,7 @@
 """
 Second-order extinction analysis from mk_calib field transformation records.
 
-Fits legacy-style ``C`` coefficients vs airmass: ``C = T + k' * X`` with
+Fits field ``C`` coefficients vs airmass: ``C = T + k' * X`` with
 second-order coefficient ``k" = -k'``.
 """
 
@@ -117,7 +117,7 @@ def fit_second_order_extinction(
     """
     Fit ``C = T + k' * X`` and return ``T, T_err, k', k'_err``.
 
-    ``k" = -k'`` (legacy mk_calib convention).
+    ``k" = -k'`` (mk_calib convention).
     """
     if len(airmass) < 2:
         raise ValueError("Need at least two fields for a second-order extinction fit")
@@ -218,13 +218,13 @@ def run_second_order_campaign(
     """
     Run the full second-order extinction analysis for all filters and C columns.
 
-    Parameters mirror the legacy ``3_second_order_extinction*.py`` scripts.
+    Parameters match the ``mk_calib_photometry/3_second_order_extinction*.py`` scripts.
     ``table_paths`` may point to ``trans_para_*.dat`` or ``trans_para_*.json``.
     """
     records = load_field_transformation_records(table_paths)
     c_columns = c_columns or LEGACY_C_COLUMNS
     c_err_columns = c_err_columns or LEGACY_C_ERR_COLUMNS
-  # c_err_columns kept for API symmetry; errors come from records
+    # c_err_columns kept for API symmetry; errors come from records
     _ = c_err_columns
 
     results: list[SecondOrderFitResult] = []

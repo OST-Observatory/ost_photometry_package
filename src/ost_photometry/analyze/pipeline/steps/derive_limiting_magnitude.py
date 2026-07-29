@@ -1,4 +1,4 @@
-"""Derive limiting magnitude after calibration (legacy or differential)."""
+"""Derive limiting magnitude after calibration (Image path or epoch-native tables)."""
 
 import numpy as np
 
@@ -164,7 +164,7 @@ class DeriveLimitingMagnitudeStep(base.PipelineStep):
 
         if obs.calib_parameters is None:
             terminal_output.print_to_terminal(
-                "DeriveLimitingMagnitudeStep: no legacy calib_parameters and no "
+                "DeriveLimitingMagnitudeStep: no calib_parameters and no "
                 "epoch-native calibration table; skipping.",
                 style_name="WARNING",
             )

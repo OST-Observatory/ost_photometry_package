@@ -1,4 +1,4 @@
-"""Limiting-magnitude determination (legacy Image path + epoch-native table path)."""
+"""Limiting-magnitude determination (Image path and epoch-native table path)."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _subset_photometry_by_epoch(tbl: Table, epoch_id: str | None) -> Table:
 
 
 def _resolve_limiting_mag_column(tbl: Table, filter_: str) -> str:
-    """Pick magnitude column (epoch-native ``mag_cal_*``, ``mag_inst_*``, or legacy)."""
+    """Pick magnitude column (``mag_cal_*``, ``mag_inst_*``, or wide-table names)."""
     mc = f"mag_cal_{filter_}"
     mi = f"mag_inst_{filter_}"
     if mc in tbl.colnames:

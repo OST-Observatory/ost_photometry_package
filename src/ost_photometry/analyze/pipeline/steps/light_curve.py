@@ -271,7 +271,7 @@ class LightCurveStep(base.PipelineStep):
         terminal_output.print_to_terminal(
             "No ``mag_cal_*`` light-curve path for this filter (instrumental-only "
             "``mag_inst_*`` or no epoch-native table). Using normalized flux for "
-            "light curves (same approach as legacy ``Observation.plot_light_curve``).",
+            "light curves.",
             indent=2,
             style_name="WARNING",
         )

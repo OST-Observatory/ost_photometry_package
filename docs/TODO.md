@@ -2,9 +2,12 @@
 
 Open, prioritized work on the `ost_photometry` package.
 
-This document is intended to **replace** [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) once the backlog documented there is largely cleared. Completed items and history remain in `TECHNICAL_DEBT.md` for now. For ongoing architecture and API references, see also [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md), [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md), and [COMPATIBILITY_REPORT.md](COMPATIBILITY_REPORT.md).
+This document is the **forward-looking backlog**. Closed migration notes live in
+[ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md); a short open-debt
+summary remains in [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md). Also see
+[PIPELINE_CONFIG.md](PIPELINE_CONFIG.md) and [COMPATIBILITY_REPORT.md](COMPATIBILITY_REPORT.md).
 
-**As of:** July 2026 (after workflow modularization, reduction edge cases, and review of an older numbered backlog)
+**As of:** July 2026 (after `_legacy` bag removal, workflow modularization, and backlog review)
 
 **Priorities:** P1 = next sprint · P2 = track, no urgency · P3 = optional / long-term · — = operational, not code debt
 
@@ -91,7 +94,7 @@ Still invoked from `main_extract` when annotating. Belongs with other optional a
 
 | Item | Prio | Notes |
 |------|------|-------|
-| ASCII `formats` key `{'i'}` vs column `id` | P2 | Epoch-native schema uses `id`; some writers still pass format key `i` → Astropy warning. Align keys in `post_processing/io.py` / legacy `save_magnitudes`. |
+| ASCII `formats` key `{'i'}` vs column `id` | P2 | Epoch-native schema uses `id`; some writers still pass format key `i` → Astropy warning. Align keys in `post_processing/io.py` / `save_magnitudes_ascii`. |
 | `FITSFixedWarning` (`datfix` / `MJD-OBS` from `DATE-OBS`) | P3 | Harmless but noisy; filter or set MJD-OBS explicitly when building WCS/Time from FITS. |
 | NaNs clipped in `ImageDepth` / limiting magnitude | P3 | `_derive_limiting_magnitude_one_epoch` → `ImageDepth`; pre-clean non-finite pixels or acknowledge warning. |
 
@@ -145,31 +148,17 @@ reduce/registration/
 
 ---
 
-## Analyze — legacy modules (P3, long-term)
-
-These modules are **actively in use**; not short-term removal candidates. Shrink gradually as respective code paths are migrated.
+## Remaining analyze bridge
 
 | Module | Notes |
 |--------|-------|
-| `analyze/calibration/_legacy.py` | Flux helpers extracted to `flux_normalize.py`. Remaining Image ZP/transform/`calculate_trans` stack deprecated (no in-repo callers); remove after grace period. |
-| `analyze/plots/_legacy.py` | Plot backend for all course plotting scripts. |
-| `analyze/utils/_legacy.py` | Mostly extracted. Left: fit helpers + legacy calib check plots (tied to `calibration/_legacy`). |
-| `analyze/calibration_data.py` | Legacy bridge to `derive_calibration`; pipeline prefers `CalibrationStep`. |
+| `analyze/calibration_data.py` | Deprecated `derive_calibration` path; pipeline prefers `CalibrationStep`. Optional cleanup when no external callers remain. |
 
 ---
 
-## In-code TODOs (still open)
+## In-code TODOs
 
-Roughly **~43 `TODO` markers** in `src/` (`rg 'TODO' src/`). Selected items that remain valid:
-
-| Location | Prio | Content |
-|----------|------|---------|
-| ~~`correlate/core.py`~~ | — | **Done** — see `test_correlation_core.py` |
-| ~~`extraction.py`~~ | — | **Done** | FWHM via `ost_photometry/fwhm.py` |
-| ~~`ost_photometry.utilities` — `Image`~~ | — | **Done** — base `image.Image` + `analyze.image.AnalysisImage`; see `test_image_split.py` |
-| `calibration/_legacy.py` | P3 | Shrinking — flux → `flux_normalize.py`; rest deprecated for deletion |
-| `plots/_legacy.py` | P3 | Many TODOs; intentionally the plot backend |
-| ~~`post_processing/hips_reference_subtract.py`~~ | — | **Done** | `find_wcs_for_image` on `Image` |
+Roughly **~14 `TODO` markers** in `src/` (`rg 'TODO' src`). Hotspots: `reduce/registration.py`, `analyze/plots/cmds.py`, `analyze/calibration_data.py`.
 
 ---
 
@@ -190,7 +179,6 @@ Roughly **~43 `TODO` markers** in `src/` (`rg 'TODO' src/`). Selected items that
 5. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
 6. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs in `align_image_main`.
 7. **On utilities changes:** extract only the affected area.
-8. **Long-term:** gradually shrink remaining `analyze/*/_legacy.py` modules (`calculate_trans` no longer on mk_calib hot path).
 
 ---
 
@@ -215,6 +203,7 @@ These came from an earlier numbered list; they are **obsolete, vague, or already
 
 ## Out of scope (intentionally not listed)
 
-- `calibration_parameters.py` — active infrastructure (catalogs, filters, chips, extinction), not dead legacy code.
-- `reduce/workflow/` — modularized; `_legacy.py` removed.
+- `calibration_parameters.py` — active infrastructure (catalogs, filters, chips, extinction).
+- Modular packages already in place: `reduce/workflow/`, `analyze/utils/`, `analyze/plots/`, `analyze/calibration/` (no `_legacy` bags).
 - Course scripts — API via `reduce.redu.reduce_main` unchanged; see [COMPATIBILITY_REPORT.md](COMPATIBILITY_REPORT.md).
+- Optional wide `.dat` export (`write_legacy_wide_magnitudes_dat`) — compatibility flag, not tech debt.

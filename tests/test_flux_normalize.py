@@ -61,16 +61,4 @@ def test_calibration_package_exports_array_helpers():
     assert callable(calibration.flux_normalization_flux_distribution)
     assert callable(calibration.quasi_flux_calibration_image_series)
     assert callable(calibration.flux_normalization_image_series)
-
-
-def test_deprecated_legacy_entry_points_warn():
-    pytest.importorskip("photutils")
-    pytest.importorskip("regions")
-    from ost_photometry.analyze import calibration
-
-    with pytest.warns(DeprecationWarning, match="apply_calibration is deprecated"):
-        # Call will fail on bad args after the warning — that is fine.
-        try:
-            calibration.apply_calibration()
-        except TypeError:
-            pass
+    assert not hasattr(calibration, "apply_calibration")

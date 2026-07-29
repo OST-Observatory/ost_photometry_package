@@ -273,17 +273,13 @@ def test_engine_derive_transform_from_data(synthetic_calibration_epoch_table):
 def test_plot_calibration_transformation_fit_line_ignores_nan_colors(tmp_path):
     """Fit line x-range must use finite masked colors only (cluster tables have NaN elsewhere)."""
     pytest.importorskip("photutils")
+    pytest.importorskip("matplotlib")
     from unittest.mock import patch
 
-    plots_mod = load_module_from_path(
-        "ost_photometry.analyze.plots._legacy",
-        _PKG_SRC / "ost_photometry" / "analyze" / "plots" / "_legacy.py",
+    from ost_photometry.analyze.plots.calibration_qc import (
+        plot_calibration_transformation,
     )
-    result_mod = load_module_from_path(
-        "ost_photometry.analyze.calibration.result",
-        _PKG_SRC / "ost_photometry" / "analyze" / "calibration" / "result.py",
-    )
-    TransformationCoefficients = result_mod.TransformationCoefficients
+    from ost_photometry.analyze.calibration.result import TransformationCoefficients
 
     n = 20
     color = np.full(n, np.nan)
@@ -313,7 +309,7 @@ def test_plot_calibration_transformation_fit_line_ignores_nan_colors(tmp_path):
     ), patch("matplotlib.pyplot.scatter"), patch(
         "matplotlib.pyplot.axhline"
     ), patch("matplotlib.pyplot.plot", side_effect=_fake_plot):
-        plots_mod.plot_calibration_transformation(
+        plot_calibration_transformation(
             tmp_path,
             "epoch_000",
             {"B": (color, delta, mask)},

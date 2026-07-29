@@ -61,7 +61,7 @@ def _wide_legacy_to_long_table(tbl: Table) -> Table:
     and extracted ``flux_inst_*`` / ``flux_err_inst_*`` when wide columns
     ``{F} (flux, image=TAG)`` exist.
 
-    Expects legacy-style columns ``i`` or ``id``, ``x``, ``y``, ``ra (deg)``/``ra``,
+    Expects wide-table columns ``i`` or ``id``, ``x``, ``y``, ``ra (deg)``/``ra``,
     ``dec (deg)``/``dec``, and magnitude columns
     ``{F} (transformed|simple, image=TAG)`` plus matching ``{F}_err (...)``.
 

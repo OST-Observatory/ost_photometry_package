@@ -1,4 +1,4 @@
-"""Convert calibrated magnitudes to another photometric system (legacy tables)."""
+"""Convert calibrated magnitudes to another photometric system."""
 
 from __future__ import annotations
 
