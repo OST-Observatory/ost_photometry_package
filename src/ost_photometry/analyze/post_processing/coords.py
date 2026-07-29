@@ -56,20 +56,23 @@ def plot_starmap_from_imaging_context(
         data=[np.arange(n_stars, dtype=int), tbl[x_name], tbl[y_name]],
     )
     
-    rts = rts_pre
+    title_rts = rts_pre
+    filename_suffix = rts_pre
     if add_image_id and ctx.plot_reference_image_id is not None:
+        filename_suffix = f"{rts_pre}: {ctx.plot_reference_image_id}"
         fname = getattr(ctx, "plot_reference_filename", None)
         if fname:
-            rts += f": {ctx.plot_reference_image_id} ({fname})"
+            title_rts = f"{rts_pre}: {ctx.plot_reference_image_id} ({fname})"
         else:
-            rts += f": {ctx.plot_reference_image_id}"
+            title_rts = filename_suffix
     plots.starmap(
         str(ctx.out_path_stub),
         data,
         filter_,
         tbl_xy,
         label=label,
-        rts=rts,
+        rts=title_rts,
+        filename_suffix=filename_suffix,
         wcs_image=ctx.wcs,
         use_wcs_projection=use_wcs_projection_for_star_maps,
         file_type=file_type_plots,

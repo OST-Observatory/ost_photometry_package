@@ -64,6 +64,16 @@ def compare_images(
     )
     plt.close()
 
+def _sanitize_starmap_filename_part(text: str) -> str:
+    replace_dict = {
+        ',': '', '.': '', '\\': '', '[': '', '&': '', ' ': '_',
+        ':': '', ']': '', '{': '', '}': '', '(': '', ')': '',
+    }
+    for key, value in replace_dict.items():
+        text = text.replace(key, value)
+    return text.lower()
+
+
 def starmap(
         output_dir: str, image: np.ndarray, filter_: str, tbl: Table,
         tbl_2: Table = None, label: str = 'Identified stars',
@@ -72,7 +82,8 @@ def starmap(
         name_object: str | None = None,
         wcs_image: wcs.WCS = None, use_wcs_projection: bool = True,
         terminal_logger: terminal_output.TerminalLog | None = None,
-        file_type: str = 'pdf', indent: int = 2) -> None:
+        file_type: str = 'pdf', indent: int = 2,
+        filename_suffix: str | None = None) -> None:
     """
     Plot star maps  -> overlays of the determined star positions on FITS
                     -> supports different versions
@@ -104,8 +115,13 @@ def starmap(
         Default is ``Identified stars (set 2)``
 
     rts
-        Expression characterizing the plot
+        Expression characterizing the plot (used in the title / log message).
         Default is ``None``
+
+    filename_suffix
+        Optional stem used in the output filename instead of ``rts``.
+        Prefer this when the title should include an image basename that must
+        not appear in the path. Default is ``None`` (fall back to ``rts``).
 
     mode
         String used to switch between different plot modes
@@ -348,21 +364,18 @@ def starmap(
         borderaxespad=0.,
     )
 
-    #   Write the plot to disk
-    if rts is None:
+    #   Write the plot to disk (title may include image basename; filename must not)
+    stem_source = filename_suffix if filename_suffix is not None else rts
+    if stem_source is None:
         plt.savefig(
             f'{output_dir}/starmaps/starmap_{filter_}.{file_type}',
             bbox_inches='tight',
             format=file_type,
         )
     else:
-        replace_dict = {',': '', '.': '', '\\': '', '[': '', '&': '', ' ': '_',
-                        ':': '', ']': '', '{': '', '}': ''}
-        for key, value in replace_dict.items():
-            rts = rts.replace(key, value)
-        rts = rts.lower()
+        stem = _sanitize_starmap_filename_part(stem_source)
         plt.savefig(
-            f"{output_dir}/starmaps/starmap_{filter_}_{rts}.{file_type}",
+            f"{output_dir}/starmaps/starmap_{filter_}_{stem}.{file_type}",
             bbox_inches='tight',
             format=file_type,
         )

@@ -52,15 +52,16 @@ def prepare_and_plot_starmap(
         Default is ``y_fit``.
 
     rts_pre
-        Expression used in the file name to characterizing the plot
+        Expression used in the plot title / filename stem (image basename may
+        be added to the title only when ``add_image_id`` is True).
 
     label
         String that characterizes the star map.
         Default is ``Stars with photometric extractions``.
 
     add_image_id
-        If ``True`` the image ID and file name will be added to the plot title
-        / file name stem.
+        If ``True`` the image ID (and file name) are added to the plot title;
+        only the image ID is used in the output filename stem.
         Default is ``True``.
 
     use_wcs_projection_for_star_maps
@@ -85,13 +86,16 @@ def prepare_and_plot_starmap(
         data=[np.arange(0, n_stars), tbl[x_name], tbl[y_name]],
     )
 
-    #   Prepare string for file name / plot title
+    #   Title may include image basename; filename stem must not.
+    title_rts = rts_pre
+    filename_suffix = rts_pre
     if add_image_id:
         name = getattr(image, "filename", None) or Path(getattr(image, "path", "")).name
+        filename_suffix = f"{rts_pre}: {image.image_id}"
         if name:
-            rts_pre += f": {image.image_id} ({name})"
+            title_rts = f"{rts_pre}: {image.image_id} ({name})"
         else:
-            rts_pre += f": {image.image_id}"
+            title_rts = filename_suffix
 
     #   Plot star map
     plots.starmap(
@@ -100,7 +104,8 @@ def prepare_and_plot_starmap(
         filter_,
         tbl_xy,
         label=label,
-        rts=rts_pre,
+        rts=title_rts,
+        filename_suffix=filename_suffix,
         wcs_image=image.wcs,
         use_wcs_projection=use_wcs_projection_for_star_maps,
         terminal_logger=terminal_logger,
@@ -222,10 +227,11 @@ def prepare_and_plot_starmap_from_image_series(
             continue
         img = image_series.image_list[j]
         fname = getattr(img, "filename", None) or ""
+        filename_suffix = f"image: {image_id}, final version"
         rts = (
             f"image: {image_id} ({fname}), final version"
             if fname
-            else f"image: {image_id}, final version"
+            else filename_suffix
         )
         p = mp.Process(
             target=plots.starmap,
@@ -238,6 +244,7 @@ def prepare_and_plot_starmap_from_image_series(
             kwargs={
                 'tbl_2': tbl_xy_calib,
                 'rts': rts,
+                'filename_suffix': filename_suffix,
                 'label': 'Stars identified in all images',
                 # 'label_2': 'Calibration stars',
                 'label_2': 'Objects of interest',
