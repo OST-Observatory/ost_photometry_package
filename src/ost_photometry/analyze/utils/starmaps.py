@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import multiprocessing as mp
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -58,7 +59,8 @@ def prepare_and_plot_starmap(
         Default is ``Stars with photometric extractions``.
 
     add_image_id
-        If ``True`` the image ID will be added to the file name.
+        If ``True`` the image ID and file name will be added to the plot title
+        / file name stem.
         Default is ``True``.
 
     use_wcs_projection_for_star_maps
@@ -83,9 +85,13 @@ def prepare_and_plot_starmap(
         data=[np.arange(0, n_stars), tbl[x_name], tbl[y_name]],
     )
 
-    #   Prepare string for file name
+    #   Prepare string for file name / plot title
     if add_image_id:
-        rts_pre += f': {image.image_id}'
+        name = getattr(image, "filename", None) or Path(getattr(image, "path", "")).name
+        if name:
+            rts_pre += f": {image.image_id} ({name})"
+        else:
+            rts_pre += f": {image.image_id}"
 
     #   Plot star map
     plots.starmap(
@@ -214,17 +220,24 @@ def prepare_and_plot_starmap_from_image_series(
     for j, image_id in enumerate(img_ids):
         if not plots_for_all_images and j != image_series.reference_image_index:
             continue
+        img = image_series.image_list[j]
+        fname = getattr(img, "filename", None) or ""
+        rts = (
+            f"image: {image_id} ({fname}), final version"
+            if fname
+            else f"image: {image_id}, final version"
+        )
         p = mp.Process(
             target=plots.starmap,
             args=(
                 image_series.out_path.name,
-                image_series.image_list[j].get_data(),
+                img.get_data(),
                 image_series.filter_,
-                image_series.image_list[j].photometry,
+                img.photometry,
             ),
             kwargs={
                 'tbl_2': tbl_xy_calib,
-                'rts': f'image: {image_id}, final version',
+                'rts': rts,
                 'label': 'Stars identified in all images',
                 # 'label_2': 'Calibration stars',
                 'label_2': 'Objects of interest',

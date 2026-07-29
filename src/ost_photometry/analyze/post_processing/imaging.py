@@ -31,6 +31,8 @@ class ImagingPlotContext:
     image_shape: tuple[int, int] | None = None
     #: ``Image.image_id`` of the reference exposure for starmap filename suffix; optional.
     plot_reference_image_id: int | None = None
+    #: Basename of the reference FITS file (for starmap titles); optional.
+    plot_reference_filename: str | None = None
     #: Field center for Vizier cone queries; optional if only plotting / region cuts.
     field_center_icrs: SkyCoord | None = None
     #: Cone radius in **arcminutes** (same convention as ``ImageSeries.field_of_view_x``).
@@ -55,6 +57,7 @@ def imaging_context_from_image_series(image_series: object) -> ImagingPlotContex
         filter_name=image_series.filter_,
         image_shape=tuple(arr.shape),
         plot_reference_image_id=ref.image_id,
+        plot_reference_filename=getattr(ref, "filename", None),
         field_center_icrs=getattr(image_series, "coordinates_image_center", None),
         field_radius_arcmin=getattr(image_series, "field_of_view_x", None),
     )

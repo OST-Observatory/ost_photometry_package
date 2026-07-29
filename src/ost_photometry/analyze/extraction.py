@@ -1424,7 +1424,8 @@ def main_extract(
                 tbl_2=epsf_stars,
                 label="identified stars",
                 label_2="stars used to determine the ePSF",
-                rts=f"Initial object identification [Image: {image.image_id}]",
+                rts=f"Initial object identification [Image: {image.image_id}"
+                f" ({image.filename})]",
                 wcs_image=image.wcs,
                 use_wcs_projection=use_wcs_projection_for_star_maps,
                 terminal_logger=terminal_logger,

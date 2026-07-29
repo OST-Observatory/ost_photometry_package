@@ -58,7 +58,11 @@ def plot_starmap_from_imaging_context(
     
     rts = rts_pre
     if add_image_id and ctx.plot_reference_image_id is not None:
-        rts += f": {ctx.plot_reference_image_id}"
+        fname = getattr(ctx, "plot_reference_filename", None)
+        if fname:
+            rts += f": {ctx.plot_reference_image_id} ({fname})"
+        else:
+            rts += f": {ctx.plot_reference_image_id}"
     plots.starmap(
         str(ctx.out_path_stub),
         data,
