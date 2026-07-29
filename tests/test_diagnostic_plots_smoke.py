@@ -44,9 +44,11 @@ class TestDiagnosticPlotsSmoke(unittest.TestCase):
         DiagnosticPlots = cfg_mod.DiagnosticPlots
         PipelineConfig = cfg_mod.PipelineConfig
 
-        self.assertFalse(DiagnosticPlots().photometry_mag_vs_error_scatter)
+        self.assertTrue(DiagnosticPlots().photometry_mag_vs_error_scatter)
+        self.assertFalse(DiagnosticPlots().photometry_radial_growth_curve)
         cfg = PipelineConfig()
         self.assertIsInstance(cfg.diagnostic_plots, DiagnosticPlots)
+        self.assertTrue(cfg.diagnostic_plots.calibration_instrumental_vs_catalog)
 
     @unittest.skipUnless(_plotting_stack_available(), "requires matplotlib and photutils")
     def test_synthetic_inter_filter_separation_plot(self):

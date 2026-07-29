@@ -74,8 +74,10 @@ def fit_epochs(
         return None
 
     if output_dir:
+        from ... import plots
         from ..engine import prepare_calibration_check_plots
 
+        # Per-epoch fit QC: catalog-color slopes (not applied c factors).
         for epoch_id, coeffs in plot_coeffs.items():
             prepare_calibration_check_plots(
                 output_dir,
@@ -88,6 +90,20 @@ def fit_epochs(
                 },
                 filters,
                 file_type=file_type,
+                filename_prefix="derive_transform",
+                title_prefix="Derive-transform fit (catalog color)",
+            )
+
+        # Stability of applied c factors + median ZPs across epochs.
+        ordered_ids = list(results.keys())
+        if len(ordered_ids) >= 1:
+            plots.plot_calibration_night_summary(
+                output_dir,
+                ordered_ids,
+                [results[k].transformation for k in ordered_ids],
+                filters,
+                file_type=file_type,
+                output_basename="derive_transform_summary",
             )
 
     return results

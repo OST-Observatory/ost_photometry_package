@@ -143,6 +143,9 @@ def plot_calibration_transformation(
     data_by_filter: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]],
     coefficients: dict[str, object],
     file_type: str = "pdf",
+    *,
+    filename_prefix: str = "calibration",
+    title_prefix: str | None = None,
 ) -> None:
     """
     Plot calibration transformation fit: m_std - m_inst vs color.
@@ -163,6 +166,10 @@ def plot_calibration_transformation(
         {filter: TransformationCoefficients} with T, ZP, color_index_filters.
     file_type : str
         Plot file format. Default is ``pdf``.
+    filename_prefix : str
+        Filename stem before ``_{epoch}_{filter}`` (e.g. ``derive_transform``).
+    title_prefix : str, optional
+        Prepended to the left-panel title (e.g. ``Derive-transform fit``).
     """
     from ... import checks
 
@@ -193,7 +200,8 @@ def plot_calibration_transformation(
             ax1.axhline(ZP, color="C1", ls="-", lw=2, label="Fit (ZP only)")
         ax1.set_xlabel(f"Color {ci} [mag]")
         ax1.set_ylabel(r"$m_{\mathrm{std}} - m_{\mathrm{inst}}$ [mag]")
-        ax1.set_title(f"{epoch_id} {filter_}: T={T:.4f}, ZP={ZP:.4f}")
+        head = f"{title_prefix}: " if title_prefix else ""
+        ax1.set_title(f"{head}{epoch_id} {filter_}: T={T:.4f}, ZP={ZP:.4f}")
         ax1.legend(loc="best", fontsize=8)
         ax1.grid(True, alpha=0.3)
 
@@ -206,13 +214,15 @@ def plot_calibration_transformation(
         ax2.set_xlabel(f"Color {ci} [mag]")
         ax2.set_ylabel("Residual [mag]")
         rms_val = np.nanstd(residuals[mask]) if np.sum(mask) > 0 else 0.0
-        ax2.set_title(f"RMS = {rms_val:.4f} mag")
+        n_used = int(np.sum(mask))
+        ax2.set_title(f"RMS = {rms_val:.4f} mag (n={n_used})")
         ax2.grid(True, alpha=0.3)
 
         plt.tight_layout()
         safe_id = str(epoch_id).replace("/", "_").replace(":", "_")
+        stem = str(filename_prefix).strip() or "calibration"
         plt.savefig(
-            out / f"calibration_{safe_id}_{filter_}.{file_type}",
+            out / f"{stem}_{safe_id}_{filter_}.{file_type}",
             bbox_inches="tight",
             format=file_type,
         )

@@ -86,6 +86,12 @@ Within `linear_fit`, set `derive_transform_from_data=True` for the catalog-color
 derive-transform (two filters only, e.g. B and V). Preset `linear_fit_per_night` enables
 this. Otherwise `color_term_fit` controls the standard `PhotometryCalibrator` fit.
 
+QC plots (when `output_dir` is set) go under `<output>/calibration/`:
+
+- `derive_transform_<epoch>_<filter>.pdf` — fit of `m_std−m_inst` vs catalog color
+  (slopes used to build applied `c` factors), with residuals
+- `derive_transform_summary_<filters>.pdf` — applied `c` and median ZP across epochs
+
 ### Tests
 
 ```bash

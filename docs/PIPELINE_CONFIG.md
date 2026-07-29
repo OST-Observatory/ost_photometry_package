@@ -128,10 +128,30 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 
 **Related (not in the Literal list but coupled):**
 
-- `derive_transform_from_data` — only with `linear_fit`, exactly **two** filters; alternative to `PhotometryCalibrator` linear fit (catalog-color slopes + median ZP). Preset `linear_fit_per_night` enables this. Incompatible with using `color_term_fit` on the standard calibrator path (derive path bypasses it).
+- `derive_transform_from_data` — only with `linear_fit`, exactly **two** filters; alternative to `PhotometryCalibrator` linear fit (catalog-color slopes + median ZP). Preset `linear_fit_per_night` enables this. Incompatible with using `color_term_fit` on the standard calibrator path (derive path bypasses it). Writes QC under `<output>/calibration/`: `derive_transform_<epoch>_<filter>.*` (catalog-color slope fits) and `derive_transform_summary_*.*` (applied `c`/ZP vs epoch).
 - `exposure_pairing` (`jd_nearest` / `index`) and `reference_filter` — build multi-band epochs before calibration; use `jd_nearest` when B and V exposures are not strictly paired by index.
 - `zp_subsample_statistic` — extra ZP stability reporting for `median_zp` only.
 
+
+
+### `diagnostic_plots`
+
+
+Most QC figures under `<output>/diagnostics/` are **on by default** (growth curves stay off). Toggle via nested overrides, e.g. `diagnostic_plots__photometry_mag_vs_error_scatter=False`.
+
+| Flag | What it checks |
+|------|----------------|
+| `calibration_crossmatch_separation_histogram` | Catalog match separations |
+| `combined_separation_histograms` | Combined separation panels |
+| `photometry_mag_vs_error_scatter` | Mag vs photometric error (reference image) |
+| `photometry_radial_growth_curve` | Aperture growth for brightest star (off by default) |
+| `correlation_inter_filter_separation_plot` | Inter-filter match separations |
+| `calibration_instrumental_vs_catalog` | Instrumental vs catalog magnitudes |
+| `calibration_zeropoint_residual_histogram` | ZP residual distribution |
+| `calibration_zeropoint_residual_vs_color` | ZP residuals vs color |
+| `calibration_color_check_cal_stars` | Color–color check of comparison stars |
+
+Standard `linear_fit` (non-derive) also writes transformation panels under `<output>/calibration/` (`calibration_<epoch>_<filter>.*`, night/per-image summaries). Those are separate from `diagnostic_plots`.
 
 
 ### `extinction_mode`

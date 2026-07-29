@@ -133,6 +133,8 @@ def prepare_calibration_check_plots(
     filters: List[str],
     *,
     file_type: str = "pdf",
+    filename_prefix: str = "calibration",
+    title_prefix: str | None = None,
 ) -> None:
     """Write transformation diagnostic plots under ``output_dir/calibration/``."""
     from .. import plots
@@ -184,6 +186,8 @@ def prepare_calibration_check_plots(
                 plot_data,
                 result.transformation,
                 file_type=file_type,
+                filename_prefix=filename_prefix,
+                title_prefix=title_prefix,
             )
 
 
