@@ -68,10 +68,14 @@ def _sanitize_starmap_filename_part(text: str) -> str:
     replace_dict = {
         ',': '', '.': '', '\\': '', '[': '', '&': '', ' ': '_',
         ':': '', ']': '', '{': '', '}': '', '(': '', ')': '',
+        '=': '_',
     }
     for key, value in replace_dict.items():
         text = text.replace(key, value)
-    return text.lower()
+    # Collapse runs of underscores from removed punctuation
+    while '__' in text:
+        text = text.replace('__', '_')
+    return text.strip('_').lower()
 
 
 def starmap(

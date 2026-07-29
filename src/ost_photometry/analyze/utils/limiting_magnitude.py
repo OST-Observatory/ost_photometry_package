@@ -338,7 +338,7 @@ def derive_limiting_magnitude(
         for filter_ in filter_list:
             magnitude_col = _resolve_limiting_mag_column(photo_epoch, filter_)
             rts = (
-                f"faintest objects, epoch={epoch_id}"
+                f"faintest objects, {epoch_id}"
                 if epoch_id is not None
                 else "faintest objects"
             )
