@@ -68,13 +68,19 @@ def fit_color_corrections_epoch(
     filter_f1: str,
     comparison_mask: np.ndarray,
     *,
-    sigma_clip_zp: float = 1.5,
+    sigma_clip: float = 2.5,
     min_comparisons: int = 5,
+    max_clip_iterations: int = 5,
 ) -> Optional[DeriveTransformFit]:
     """
     Fit catalog-color slopes for a two-filter epoch table.
 
-    Sigma-clipped ``zp_sum``, then linear fit of ``m_std - m_inst`` vs catalog color.
+    1. Sigma-clip on ``zp_sum = (m_inst−m_std)_0 + (m_inst−m_std)_1``.
+    2. Iterative linear fits of ``m_std−m_inst`` vs catalog color; reject stars
+       whose residual in either filter exceeds ``sigma_clip`` × RMS.
+
+    ``sigma_clip`` is typically :attr:`PipelineConfig.fit_sigma_clip` (lower =
+    more aggressive outlier rejection).
     """
     filters = [filter_f0, filter_f1]
     mask = _comparison_mask_with_instrumental(table, filters, comparison_mask)
@@ -87,19 +93,41 @@ def fit_color_corrections_epoch(
     m_inst_1 = np.asarray(table[f"mag_{filter_f1}"], dtype=float)[mask]
 
     color_literature = m_std_0 - m_std_1
+    diff_0 = m_std_0 - m_inst_0
+    diff_1 = m_std_1 - m_inst_1
     zp_sum = (m_inst_1 - m_std_1) + (m_inst_0 - m_std_0)
-    clipped = sigma_clip(zp_sum, sigma=sigma_clip_zp, masked=True)
+
+    clipped = sigma_clip(zp_sum, sigma=sigma_clip, masked=True)
     keep = ~np.asarray(clipped.mask, dtype=bool)
-    keep &= np.isfinite(zp_sum)
+    keep &= np.isfinite(zp_sum) & np.isfinite(color_literature)
+    keep &= np.isfinite(diff_0) & np.isfinite(diff_1)
     if np.sum(keep) < min_comparisons:
         return None
 
-    color_plot = color_literature[keep]
-    diff_0 = (m_std_0 - m_inst_0)[keep]
-    diff_1 = (m_std_1 - m_inst_1)[keep]
+    c0 = c1 = z0 = z1 = 0.0
+    for _ in range(max_clip_iterations):
+        if np.sum(keep) < min_comparisons:
+            return None
+        c0, z0 = unweighted_linear_fit(color_literature[keep], diff_0[keep])
+        c1, z1 = unweighted_linear_fit(color_literature[keep], diff_1[keep])
+        res0 = diff_0 - (c0 * color_literature + z0)
+        res1 = diff_1 - (c1 * color_literature + z1)
+        rms0 = float(np.nanstd(res0[keep]))
+        rms1 = float(np.nanstd(res1[keep]))
+        if rms0 <= 0.0 and rms1 <= 0.0:
+            break
+        new_keep = keep.copy()
+        if rms0 > 0.0:
+            new_keep &= np.abs(res0) < sigma_clip * rms0
+        if rms1 > 0.0:
+            new_keep &= np.abs(res1) < sigma_clip * rms1
+        if int(np.sum(new_keep)) == int(np.sum(keep)) or int(np.sum(new_keep)) < min_comparisons:
+            break
+        keep = new_keep
 
-    c0, z0 = unweighted_linear_fit(color_plot, diff_0)
-    c1, z1 = unweighted_linear_fit(color_plot, diff_1)
+    # Final coefficients on the retained set
+    c0, z0 = unweighted_linear_fit(color_literature[keep], diff_0[keep])
+    c1, z1 = unweighted_linear_fit(color_literature[keep], diff_1[keep])
 
     full_mask = np.zeros(len(table), dtype=bool)
     idx = np.nonzero(mask)[0][keep]
@@ -261,6 +289,7 @@ def fit_epoch_derive_transform(
     *,
     color_indices: dict[str, tuple[str, str]] | None = None,
     min_comparisons: int = 5,
+    sigma_clip: float = 2.5,
     zp_subsample_statistic: bool = False,
     distribution_samples: int = 1000,
 ) -> Optional[tuple[CalibrationResult, DeriveTransformFit]]:
@@ -274,6 +303,7 @@ def fit_epoch_derive_transform(
         f0,
         f1,
         comp_mask,
+        sigma_clip=sigma_clip,
         min_comparisons=min_comparisons,
     )
     if derive_fit is None:

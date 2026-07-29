@@ -89,7 +89,8 @@ this. Otherwise `color_term_fit` controls the standard `PhotometryCalibrator` fi
 QC plots (when `output_dir` is set) go under `<output>/calibration/`:
 
 - `derive_transform_<epoch>_<filter>.pdf` — fit of `m_std−m_inst` vs catalog color
-  (slopes used to build applied `c` factors), with residuals
+  (slopes used to build applied `c` factors), with residuals; gray = outliers rejected
+  via `fit_sigma_clip`
 - `derive_transform_summary_<filters>.pdf` — applied `c` and median ZP across epochs
 
 ### Tests

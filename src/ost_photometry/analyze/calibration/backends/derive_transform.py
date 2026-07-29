@@ -45,6 +45,7 @@ def fit_epochs(
     results: Dict[str, CalibrationResult] = {}
     plot_epochs: dict = {}
     plot_coeffs: dict = {}
+    plot_masks: dict = {}
 
     for epoch_id, table in epochs.items():
         fitted = fit_epoch_derive_transform(
@@ -53,6 +54,7 @@ def fit_epochs(
             filters,
             color_indices=color_indices,
             min_comparisons=5,
+            sigma_clip=config.fit_sigma_clip,
             zp_subsample_statistic=config.zp_subsample_statistic,
             distribution_samples=config.distribution_samples,
         )
@@ -69,6 +71,7 @@ def fit_epochs(
         plot_coeffs[epoch_id] = diagnostic_transformation_for_plots(
             result, filters, derive_fit
         )
+        plot_masks[epoch_id] = derive_fit.comparison_mask
 
     if not results:
         return None
@@ -92,6 +95,7 @@ def fit_epochs(
                 file_type=file_type,
                 filename_prefix="derive_transform",
                 title_prefix="Derive-transform fit (catalog color)",
+                fit_masks={epoch_id: plot_masks[epoch_id]},
             )
 
         # Stability of applied c factors + median ZPs across epochs.

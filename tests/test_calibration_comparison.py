@@ -247,6 +247,30 @@ def test_derive_transform_fit_on_synthetic(synthetic_calibration_epoch_table):
 
 @pytest.mark.comparison
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
+def test_derive_transform_sigma_clip_rejects_outlier(synthetic_calibration_epoch_table):
+    """Tight fit_sigma_clip should drop a large residual outlier from the used mask."""
+    derive_mod = load_module_from_path(
+        "ost_photometry.analyze.calibration.derive_transform",
+        _PKG_SRC / "ost_photometry" / "analyze" / "calibration" / "derive_transform.py",
+    )
+    tbl = synthetic_calibration_epoch_table.copy()
+    # Corrupt one comparison star far from the color-fit locus.
+    tbl["mag_B"][0] = float(tbl["mag_B"][0]) + 2.5
+    fitted_loose = derive_mod.fit_epoch_derive_transform(
+        tbl, "epoch_000", ["B", "V"], sigma_clip=10.0
+    )
+    fitted_tight = derive_mod.fit_epoch_derive_transform(
+        tbl, "epoch_000", ["B", "V"], sigma_clip=2.0
+    )
+    assert fitted_loose is not None and fitted_tight is not None
+    _, fit_loose = fitted_loose
+    _, fit_tight = fitted_tight
+    assert fit_tight.n_stars_used < fit_loose.n_stars_used
+    assert not fit_tight.comparison_mask[0]
+
+
+@pytest.mark.comparison
+@pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_engine_derive_transform_from_data(synthetic_calibration_epoch_table):
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",

@@ -186,11 +186,14 @@ def plot_calibration_transformation(
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 
         # Left: m_std - m_inst vs color with fit
-        n_excl = np.sum(~mask)
+        used = np.asarray(mask, dtype=bool)
+        finite = np.isfinite(color) & np.isfinite(delta)
+        excl = (~used) & finite
+        n_excl = int(np.sum(excl))
         if n_excl > 0:
-            ax1.scatter(color[~mask], delta[~mask], alpha=0.4, s=15, c="gray", label="excluded")
-        ax1.scatter(color[mask], delta[mask], alpha=0.7, s=25, c="C0", label="used")
-        c_used = np.asarray(color, dtype=float)[mask]
+            ax1.scatter(color[excl], delta[excl], alpha=0.4, s=15, c="gray", label="excluded")
+        ax1.scatter(color[used], delta[used], alpha=0.7, s=25, c="C0", label="used")
+        c_used = np.asarray(color, dtype=float)[used]
         c_finite = c_used[np.isfinite(c_used)]
         if len(c_finite) > 0 and np.nanmax(c_finite) - np.nanmin(c_finite) > 0.01:
             c_min, c_max = float(np.nanmin(c_finite)), float(np.nanmax(c_finite))
@@ -208,13 +211,13 @@ def plot_calibration_transformation(
         # Right: residuals
         residuals = delta - (T * color + ZP)
         if n_excl > 0:
-            ax2.scatter(color[~mask], residuals[~mask], alpha=0.4, s=15, c="gray")
-        ax2.scatter(color[mask], residuals[mask], alpha=0.7, s=25, c="C0")
+            ax2.scatter(color[excl], residuals[excl], alpha=0.4, s=15, c="gray")
+        ax2.scatter(color[used], residuals[used], alpha=0.7, s=25, c="C0")
         ax2.axhline(0, color="C1", ls="--", lw=1)
         ax2.set_xlabel(f"Color {ci} [mag]")
         ax2.set_ylabel("Residual [mag]")
-        rms_val = np.nanstd(residuals[mask]) if np.sum(mask) > 0 else 0.0
-        n_used = int(np.sum(mask))
+        rms_val = np.nanstd(residuals[used]) if np.sum(used) > 0 else 0.0
+        n_used = int(np.sum(used))
         ax2.set_title(f"RMS = {rms_val:.4f} mag (n={n_used})")
         ax2.grid(True, alpha=0.3)
 

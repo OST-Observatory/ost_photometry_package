@@ -220,6 +220,7 @@ def calibrate_mk_calib_filter_pair(
         filter_pair,
         color_indices=config.color_indices,
         min_comparisons=5,
+        sigma_clip=config.fit_sigma_clip,
         zp_subsample_statistic=config.zp_subsample_statistic,
         distribution_samples=config.distribution_samples,
     )

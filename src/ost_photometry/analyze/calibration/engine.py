@@ -135,8 +135,18 @@ def prepare_calibration_check_plots(
     file_type: str = "pdf",
     filename_prefix: str = "calibration",
     title_prefix: str | None = None,
+    fit_masks: Dict[str, np.ndarray] | None = None,
 ) -> None:
-    """Write transformation diagnostic plots under ``output_dir/calibration/``."""
+    """Write transformation diagnostic plots under ``output_dir/calibration/``.
+
+    Parameters
+    ----------
+    fit_masks
+        Optional ``{epoch_id: bool array}`` of stars actually used in the fit.
+        When given, gray vs blue points reflect that mask (clipped outliers
+        appear as excluded). Otherwise all finite comparison stars are shown
+        as used.
+    """
     from .. import plots
     from .zp import comparison_mask_from_std_columns
 
@@ -176,9 +186,22 @@ def prepare_calibration_check_plots(
             if not np.any(comparison):
                 continue
 
-            # mask, color, and delta must share the same length (full table)
-            mask = comparison.copy()
-            plot_data[f] = (color, delta, mask)
+            if fit_masks is not None and epoch_id in fit_masks:
+                used = np.asarray(fit_masks[epoch_id], dtype=bool)
+                if used.shape != comparison.shape:
+                    used = comparison.copy()
+                else:
+                    # Show all comparison candidates; mark only fit survivors as used.
+                    used = used & comparison
+            else:
+                used = comparison.copy()
+
+            # Hide non-candidates in the scatter (NaN); clipped comps stay visible as gray.
+            color_plot = np.asarray(color, dtype=float).copy()
+            delta_plot = np.asarray(delta, dtype=float).copy()
+            color_plot[~comparison] = np.nan
+            delta_plot[~comparison] = np.nan
+            plot_data[f] = (color_plot, delta_plot, used)
         if plot_data:
             plots.plot_calibration_transformation(
                 output_dir,
