@@ -91,6 +91,8 @@ QC plots (when `output_dir` is set) go under `<output>/calibration/`:
 - `derive_transform_<epoch>_<filter>.pdf` — fit of `m_std−m_inst` vs catalog color
   (slopes used to build applied `c` factors), with residuals; gray = outliers rejected
   via `fit_sigma_clip`
+- `derive_transform_fit_overview_<filters>.pdf` — catalog-color T/ZP, fit RMS, and
+  n_stars vs epoch
 - `derive_transform_summary_<filters>.pdf` — applied `c` and median ZP across epochs
 
 ### Tests

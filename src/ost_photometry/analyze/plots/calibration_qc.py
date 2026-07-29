@@ -232,6 +232,108 @@ def plot_calibration_transformation(
         plt.close()
 
 
+def plot_derive_transform_fit_overview(
+    output_dir: str | Path,
+    epoch_ids: list[str],
+    diagnostic_coeffs_per_epoch: list[dict],
+    fit_metrics_per_epoch: list[dict[str, dict[str, float]]],
+    filters: list[str],
+    file_type: str = "pdf",
+    *,
+    output_basename: str = "derive_transform_fit_overview",
+) -> None:
+    """
+    Overview of catalog-color derive-transform fits across epochs.
+
+    Panels per filter: fitted slope T and intercept ZP, residual RMS, and
+    number of stars used. Complements ``derive_transform_summary`` (applied
+    ``c`` / median ZP) and the per-epoch scatter plots.
+    """
+    from ... import checks
+
+    if not epoch_ids or not filters:
+        return
+
+    out = Path(output_dir) / "calibration"
+    checks.check_output_directories(out)
+
+    n_ep = len(epoch_ids)
+    n_filt = len(filters)
+    x = np.arange(n_ep, dtype=float)
+
+    fig, axes = plt.subplots(
+        nrows=4,
+        ncols=n_filt,
+        figsize=(4.2 * n_filt, 9.0),
+        sharex=True,
+        squeeze=False,
+    )
+    fig.suptitle(
+        "Derive-transform fit overview (catalog-color slopes)",
+        fontsize=13,
+    )
+
+    for j, filter_ in enumerate(filters):
+        T = np.full(n_ep, np.nan)
+        ZP = np.full(n_ep, np.nan)
+        rms = np.full(n_ep, np.nan)
+        n_used = np.full(n_ep, np.nan)
+        for i, coeffs in enumerate(diagnostic_coeffs_per_epoch):
+            tc = coeffs.get(filter_)
+            if tc is not None:
+                T[i] = float(tc.color_term)
+                ZP[i] = float(tc.zero_point)
+            met = fit_metrics_per_epoch[i].get(filter_) if i < len(fit_metrics_per_epoch) else None
+            if met:
+                rms[i] = float(met.get("rms", np.nan))
+                n_used[i] = float(met.get("n_used", np.nan))
+
+        ax_t, ax_zp, ax_rms, ax_n = (axes[0, j], axes[1, j], axes[2, j], axes[3, j])
+        ax_t.plot(x, T, "o-", ms=3, lw=1.0, color="C0")
+        ax_t.set_ylabel("Slope T")
+        ax_t.set_title(f"{filter_}")
+        ax_t.grid(True, alpha=0.3)
+
+        ax_zp.plot(x, ZP, "o-", ms=3, lw=1.0, color="C1")
+        ax_zp.set_ylabel("Intercept ZP [mag]")
+        ax_zp.grid(True, alpha=0.3)
+
+        ax_rms.plot(x, rms, "o-", ms=3, lw=1.0, color="C2")
+        ax_rms.set_ylabel("RMS residual [mag]")
+        ax_rms.grid(True, alpha=0.3)
+
+        ax_n.plot(x, n_used, "o-", ms=3, lw=1.0, color="C3")
+        ax_n.set_ylabel("n stars used")
+        ax_n.grid(True, alpha=0.3)
+
+    ax_bottom_row = axes[-1, :]
+    max_ticks = 22
+    if n_ep > max_ticks:
+        tick_idx = np.unique(np.linspace(0, n_ep - 1, num=max_ticks, dtype=int))
+    else:
+        tick_idx = np.arange(n_ep, dtype=int)
+
+    def _short_epoch_label(s: str) -> str:
+        s = str(s)
+        if s.startswith("epoch_"):
+            s = s[6:]
+        return s if len(s) <= 16 else s[:13] + "…"
+
+    labels = [_short_epoch_label(epoch_ids[k]) for k in tick_idx]
+    for ax in ax_bottom_row:
+        ax.set_xticks(x[tick_idx])
+        ax.set_xticklabels(labels, rotation=68, ha="right", fontsize=7)
+        ax.set_xlabel("Epoch")
+
+    plt.tight_layout(rect=[0, 0.02, 1, 0.97])
+    filt_tag = "_".join(str(f) for f in filters)
+    stem = output_basename
+    if filt_tag and not stem.endswith(filt_tag):
+        stem = f"{output_basename}_{filt_tag}"
+    fig.savefig(out / f"{stem}.{file_type}", bbox_inches="tight", format=file_type)
+    plt.close(fig)
+
+
 def plot_calibration_night_summary(
     output_dir: str | Path,
     epoch_ids: list[str],

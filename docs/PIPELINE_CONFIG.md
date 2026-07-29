@@ -128,7 +128,7 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 
 **Related (not in the Literal list but coupled):**
 
-- `derive_transform_from_data` — only with `linear_fit`, exactly **two** filters; alternative to `PhotometryCalibrator` linear fit (catalog-color slopes + median ZP). Preset `linear_fit_per_night` enables this. Incompatible with using `color_term_fit` on the standard calibrator path (derive path bypasses it). Writes QC under `<output>/calibration/`: `derive_transform_<epoch>_<filter>.*` (catalog-color slope fits) and `derive_transform_summary_*.*` (applied `c`/ZP vs epoch). Outlier rejection uses `fit_sigma_clip` (default `2.5`; lower = stricter) on both `zp_sum` and fit residuals — gray points on the QC plots are excluded stars.
+- `derive_transform_from_data` — only with `linear_fit`, exactly **two** filters; alternative to `PhotometryCalibrator` linear fit (catalog-color slopes + median ZP). Preset `linear_fit_per_night` enables this. Incompatible with using `color_term_fit` on the standard calibrator path (derive path bypasses it). Writes QC under `<output>/calibration/`: `derive_transform_<epoch>_<filter>.*` (catalog-color slope fits), `derive_transform_fit_overview_*.*` (T/ZP/RMS/n vs epoch), and `derive_transform_summary_*.*` (applied `c`/ZP vs epoch). Outlier rejection uses `fit_sigma_clip` (default `2.5`; lower = stricter) on both `zp_sum` and fit residuals — gray points on the QC plots are excluded stars.
 - `exposure_pairing` (`jd_nearest` / `index`) and `reference_filter` — build multi-band epochs before calibration; use `jd_nearest` when B and V exposures are not strictly paired by index.
 - `zp_subsample_statistic` — extra ZP stability reporting for `median_zp` only.
 
