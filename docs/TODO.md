@@ -74,9 +74,9 @@ After correlation, table `id` is typically the row index (`assign_global_correla
 
 ### `fraction_epsf_stars` can select too-faint stars (P2)
 
-With many detections, `int(n_stars * fraction_epsf_stars)` still pulls in faint stars for the ePSF (crash / poor ePSF risk). Only a `minimum_n_stars` floor exists today.
-
-**Direction:** prefer a **max count** and/or an explicit **min–max range** of stars for ePSF construction (config on `PipelineConfig` / `main_extract`).
+**Done.** Selection uses ``n_epsf_stars_to_select``:
+``clamp(int(n_stars * fraction_epsf_stars), minimum_n_eps_stars, maximum_n_eps_stars)``.
+Config: ``minimum_n_eps_stars`` (default 15), ``maximum_n_eps_stars`` (default 50; ``None`` = no upper cap), ``fraction_epsf_stars`` (default 0.2).
 
 ### Finite-value checks around `extract_stars` (P3)
 
@@ -182,15 +182,14 @@ Roughly **~14 `TODO` markers** in `src/` (`rg 'TODO' src`). Hotspots: `reduce/re
 
 ## Suggested order
 
-1. **P2:** `fraction_epsf_stars` → max count / min–max range.
-2. **P2:** T/ZP covariance in calibrated magnitude errors.
-3. **P3:** Vega/AB labeling and magnitude-system conversion consistency.
-4. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
-5. **P3 (when ready):** Drop legacy wide tables / column `i` — see section above.
-6. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs in `align_image_main`.
-7. **On utilities changes:** extract only the affected area.
+1. **P2:** T/ZP covariance in calibrated magnitude errors.
+2. **P3:** Vega/AB labeling and magnitude-system conversion consistency.
+3. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
+4. **P3 (when ready):** Drop legacy wide tables / column `i` — see section above.
+5. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs in `align_image_main`.
+6. **On utilities changes:** extract only the affected area.
 
-**Recently done:** ASCII `formats` key `i` vs `id` (`ascii_write_formats_for_columns`).
+**Recently done:** ASCII `formats` key `i` vs `id`; `fraction_epsf_stars` + `maximum_n_eps_stars` clamp.
 
 ---
 

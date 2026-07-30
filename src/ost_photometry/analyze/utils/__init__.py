@@ -3,6 +3,7 @@
 from .cluster_selection import find_cluster, proper_motion_selection, region_selection
 from .cmd_defaults import check_variable_absolute_cmd, check_variable_apparent_cmd
 from .duplicates import clear_duplicates
+from .epsf_selection import n_epsf_stars_to_select
 from .errors import err_prop
 from .legacy_magnitudes import (
     calibrated_epochs_to_legacy_wide_table,
@@ -35,6 +36,7 @@ __all__ = [
     "flux_to_magnitudes",
     "mark_simbad_objects_on_image",
     "mk_magnitudes_table",
+    "n_epsf_stars_to_select",
     "prepare_and_plot_starmap",
     "prepare_and_plot_starmap_from_image_series",
     "prepare_and_plot_starmap_from_observation",

@@ -52,6 +52,7 @@ from ..fwhm import (
 from . import correlate, plots, utilities
 from .image import AnalysisImage
 from .models import ImageSeries
+from .utils.epsf_selection import n_epsf_stars_to_select
 
 
 def rm_cosmic_rays(
@@ -439,6 +440,7 @@ def check_epsf_stars(
     size_epsf_region: int = 25,
     minimum_n_stars: int = 25,
     fraction_epsf_stars: float = 0.2,
+    maximum_n_stars: int | None = 50,
     terminal_logger: terminal_output.TerminalLog | None = None,
     strict_epsf_checks: bool = True,
     indent: int = 2,
@@ -462,6 +464,10 @@ def check_epsf_stars(
     fraction_epsf_stars
         Fraction of all stars that should be used to calculate the ePSF
         Default is ``0.2``.
+
+    maximum_n_stars
+        Upper cap on the number of ePSF stars after applying the fraction
+        (and the minimum). ``None`` disables the cap. Default is ``50``.
 
     terminal_logger
         Logger object. If provided, the terminal output will be directed
@@ -516,14 +522,12 @@ def check_epsf_stars(
         np.absolute(tbl_positions_sort["flux"] - percentile_99)
     )
 
-    #   Check that the minimum number of ePSF stars can be achieved
-    available_epsf_stars = int(n_stars * fraction_epsf_stars)
-    #   If the available number of stars is less than required (the default is
-    #   25 as required by the cutout plots, 25 also seems reasonable for a
-    #   good ePSF), use the required number anyway. The following check will
-    #   catch any problems.
-    if available_epsf_stars < minimum_n_stars:
-        available_epsf_stars = minimum_n_stars
+    available_epsf_stars = n_epsf_stars_to_select(
+        n_stars,
+        fraction_epsf_stars=fraction_epsf_stars,
+        minimum_n_stars=minimum_n_stars,
+        maximum_n_stars=maximum_n_stars,
+    )
 
     #   Check if enough stars have been identified
     if (
@@ -569,9 +573,9 @@ def check_epsf_stars(
             "image. Too many potential ePSF stars have been removed, because "
             "they are too close to the image border. Check first that enough "
             "stars have been identified, using the starmap_?.pdf files.\n If "
-            "that is the case, shrink extraction region or allow for higher "
-            "fraction of ePSF stars (size_epsf) from all identified stars "
-            f"(frac_epsf_stars). {style.Bcolors.ENDC}"
+            "that is the case, shrink extraction region or raise "
+            "fraction_epsf_stars / maximum_n_eps_stars "
+            f"(size_epsf_region). {style.Bcolors.ENDC}"
         )
 
     #   Find all potential ePSF stars with close neighbors
@@ -619,9 +623,9 @@ def check_epsf_stars(
             "image. Too many potential ePSF stars have been removed, because "
             "other stars are in the extraction region. Check first that enough"
             " stars have been identified, using the starmap_?.pdf files.\n"
-            "If that is the case, shrink extraction region or allow for "
-            "higher fraction of ePSF stars (size_epsf) from all identified "
-            f"stars (frac_epsf_stars). {style.Bcolors.ENDC}"
+            "If that is the case, shrink extraction region or raise "
+            "fraction_epsf_stars / maximum_n_eps_stars "
+            f"(size_epsf_region). {style.Bcolors.ENDC}"
         )
 
     #   Return ePSF stars
@@ -1197,6 +1201,7 @@ def extract_multiprocessing(
     epsf_fitter: str = "TRFLSQFitter",
     n_iterations_eps_extraction: int = 1,
     fraction_epsf_stars: float = 0.2,
+    maximum_n_eps_stars: int | None = 50,
     oversampling_factor_epsf: int = 4,
     max_n_iterations_epsf_determination: int = 7,
     use_initial_positions_epsf: bool = True,
@@ -1249,6 +1254,7 @@ def extract_multiprocessing(
                 "epsf_fitter": epsf_fitter,
                 "n_iterations_eps_extraction": n_iterations_eps_extraction,
                 "fraction_epsf_stars": fraction_epsf_stars,
+                "maximum_n_eps_stars": maximum_n_eps_stars,
                 "oversampling_factor_epsf": oversampling_factor_epsf,
                 "max_n_iterations_epsf_determination": max_n_iterations_epsf_determination,
                 "use_initial_positions_epsf": use_initial_positions_epsf,
@@ -1303,6 +1309,7 @@ def main_extract(
     epsf_fitter: str = "TRFLSQFitter",
     n_iterations_eps_extraction: int = 1,
     fraction_epsf_stars: float = 0.2,
+    maximum_n_eps_stars: int | None = 50,
     oversampling_factor_epsf: int = 4,
     max_n_iterations_epsf_determination: int = 7,
     use_initial_positions_epsf: bool = True,
@@ -1411,6 +1418,7 @@ def main_extract(
             size_epsf_region=size_epsf_region,
             minimum_n_stars=minimum_n_eps_stars,
             fraction_epsf_stars=fraction_epsf_stars,
+            maximum_n_stars=maximum_n_eps_stars,
             terminal_logger=terminal_logger,
             strict_epsf_checks=strict_epsf_checks,
         )

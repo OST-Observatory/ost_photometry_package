@@ -65,7 +65,7 @@ WCS must succeed (or be copied from another filter) before extraction and correl
 
 | Value  | When to use                                        | Notes                                                                          |
 | ------ | -------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `PSF`  | Crowded fields, variable seeing, course default    | Needs enough PSF stars (`minimum_n_eps_stars`); ePSF path in single-image mode |
+| `PSF`  | Crowded fields, variable seeing, course default    | Needs enough PSF stars (`minimum_n_eps_stars`–`maximum_n_eps_stars`); ePSF path in single-image mode |
 | `APER` | Very sparse fields, quick checks, extended sources | Set `radius_aperture`, annulus radii; no ePSF build                            |
 
 
@@ -269,7 +269,7 @@ Uses `distribution_samples` (default 1000) for the MC draw count. Requires flux 
 
 | Condition                           | `photometry_extraction_method` | `correlation_method` | Other                                                   |
 | ----------------------------------- | ------------------------------ | -------------------- | ------------------------------------------------------- |
-| Stellar PSF, course / OST default   | `PSF`                          | `astropy`            | Ensure `minimum_n_eps_stars` met                        |
+| Stellar PSF, course / OST default   | `PSF`                          | `astropy`            | Ensure `minimum_n_eps_stars` met; dense fields capped by `maximum_n_eps_stars` (default 50; `None` = no cap) |
 | Quick test, very sparse field       | `APER`                         | `astropy`            | Widen aperture if SNR low                               |
 | Reproduce pre-2024 script behaviour | `PSF`                          | `own`                | Check `duplicate_handling_object_identification`        |
 | B/V not aligned by index            | either                         | `astropy`            | `exposure_pairing="jd_nearest"`, set `reference_filter` |

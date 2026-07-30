@@ -12,7 +12,6 @@
 
 | Item | Priority | Notes |
 |------|----------|-------|
-| `fraction_epsf_stars` max / min–max | P2 | See [TODO.md](TODO.md) |
 | T/ZP covariance in calibrated errors | P2 | See [TODO.md](TODO.md) |
 | Vega/AB labeling & magnitude-system convert | P3 | See [TODO.md](TODO.md) |
 | Star-wise k″ fit (optional) | P3 | See [TODO.md](TODO.md) |
@@ -35,6 +34,6 @@
 
 ## Recently closed (pointer)
 
-ASCII `formats` `i` vs `id` (`ascii_write_formats_for_columns`); calibration convergence, extinction modes/`extinction_order`, mk_calib engine path, reduce workflow modularization, utils/plots/calibration splits, `Image`/`AnalysisImage`, FWHM helpers, registration trim unification, protect-calibrators, diagnostic plot hooks — details in git history and [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
+`maximum_n_eps_stars` / ePSF count clamp; ASCII `formats` `i` vs `id`; calibration convergence, extinction modes/`extinction_order`, mk_calib engine path, reduce workflow modularization, utils/plots/calibration splits, `Image`/`AnalysisImage`, FWHM helpers, registration trim unification, protect-calibrators, diagnostic plot hooks — details in git history and [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
 
 GitHub issues are preferred for tracking individual P1/P2 items.

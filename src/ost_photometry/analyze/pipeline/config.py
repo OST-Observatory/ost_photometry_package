@@ -135,6 +135,7 @@ class ExtractionConfig:
     epsf_fitter: str = "TRFLSQFitter"
     n_iterations_eps_extraction: int = 1
     fraction_epsf_stars: float = 0.2
+    maximum_n_eps_stars: int | None = 100
     oversampling_factor_epsf: int = 4
     max_n_iterations_epsf_determination: int = 7
     use_initial_positions_epsf: bool = True
@@ -163,6 +164,7 @@ class ExtractionConfig:
             "epsf_fitter": self.epsf_fitter,
             "n_iterations_eps_extraction": self.n_iterations_eps_extraction,
             "fraction_epsf_stars": self.fraction_epsf_stars,
+            "maximum_n_eps_stars": self.maximum_n_eps_stars,
             "oversampling_factor_epsf": self.oversampling_factor_epsf,
             "max_n_iterations_epsf_determination": self.max_n_iterations_epsf_determination,
             "use_initial_positions_epsf": self.use_initial_positions_epsf,
