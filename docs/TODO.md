@@ -38,11 +38,23 @@ That is a **new** method (not the same as `run_second_order_campaign`, which red
 
 `TransformationCoefficients.cov_tz` stores `Cov(T, ZP)` from `weighted_linear_fit`. Apply-transform / `calibrated_magnitude_variance` include `2·color·cov(T, ZP)`. Rolling/IV-combined T/ZP set `cov_tz=0` (independent mixing).
 
-### Vega vs AB / magnitude-system transforms (P3)
+### Vega vs AB / magnitude-system transforms — done
 
-Plots often hardcode “(Vega)”. `convert_magnitudes_to_other_system` implements SDSS/Jordi paths; `AB` / `BESSELL` still warn “not implemented”. The photometric system is primarily that of the **calibration catalog** (via `filter_systems`), not a free pipeline switch — but conversion and labeling should be consistent and explicit.
+Two axes: **filter set** (`bessell` / `sdss`) and **magnitude system** (`vega` / `ab`). Config: `output_filter_set`, `output_magnitude_system` (`auto` = catalog/calibrated), `convert_magnitudes`. Early abort on SDSS+Vega. Conversions: Vega↔AB offsets, Bessell→SDSS (Jordi), SDSS→Bessell (Lupton). Table meta + light-curve labels. See [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
 
-**Direction:** document catalog→system mapping; finish or clearly gate AB/Bessell conversion; optionally unify calibration-side and post-processing transforms (`PostProcessMagnitudeConvertStep`).
+### OST filter throughput → Vega↔AB offsets via synphot (P3)
+
+Published Bessell/SDSS per-filter constants (`m_AB = m_Vega + Δ`) are correct for same-bandpass ZP conversion. If OST/instrument **throughput curves** are added later, recompute `Δ` with `synphot`/`speclite` instead of literature defaults.
+
+**Advantages:**
+
+- Offsets match **actual OST bandpasses**, so Vega↔AB on `mag_cal_*` matches how the site observes.
+- Can cover **filter variants / chip × filter** combinations when curves differ.
+- Same stack can check whether literature Jordi/Lupton colour terms fit OST throughputs (synthetic colours).
+- Transparent provenance: regenerate from curves + CALSPEC Vega + AB definition.
+- Method unchanged (still per-filter constants); only the numerical `Δ` become instrument-specific.
+
+Optional until curves exist in-repo and a lightweight synphot/speclite dependency is accepted.
 
 ---
 
@@ -180,14 +192,13 @@ Roughly **~14 `TODO` markers** in `src/` (`rg 'TODO' src`). Hotspots: `reduce/re
 
 ## Suggested order
 
-1. **P2:** T/ZP covariance in calibrated magnitude errors.
-2. **P3:** Vega/AB labeling and magnitude-system conversion consistency.
-3. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
-4. **P3 (when ready):** Drop legacy wide tables / column `i` — see section above.
-5. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs in `align_image_main`.
-6. **On utilities changes:** extract only the affected area.
+1. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
+2. **P3:** OST filter throughput → synphot Vega↔AB offsets — see section above.
+3. **P3 (when ready):** Drop legacy wide tables / column `i` — see section above.
+4. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs in `align_image_main`.
+5. **On utilities changes:** extract only the affected area.
 
-**Recently done:** ASCII `formats` key `i` vs `id`; `fraction_epsf_stars` + `maximum_n_eps_stars` clamp.
+**Recently done:** Vega/AB + filter-set conversion model; T/ZP `cov_tz`; ASCII `formats` key `i` vs `id`; `fraction_epsf_stars` + `maximum_n_eps_stars` clamp.
 
 ---
 

@@ -221,6 +221,22 @@ Applied by :class:`~ost_photometry.analyze.pipeline.steps.calibration.Calibratio
 
 Uses `distribution_samples` (default 1000) for the MC draw count. Requires flux columns in epoch tables (populated by the extraction bridge when PSF/aperture flux is available).
 
+### Magnitude output (`output_filter_set` / `output_magnitude_system`)
+
+Calibrated `mag_cal_*` inherit the **calibration catalog** zero-point system and the observation **filter set**. After calibration you may convert:
+
+| Config | Values | Default |
+|--------|--------|---------|
+| `output_filter_set` | `auto`, `bessell`, `sdss` | `auto` (keep calibrated set) |
+| `output_magnitude_system` | `auto`, `vega`, `ab` | `auto` (catalog system; SDSS forces AB) |
+| `convert_magnitudes` | `bool` | `False` (annotate/label only unless True) |
+
+**Consistency:** `output_filter_set="sdss"` with `output_magnitude_system="vega"` aborts at pipeline start. Missing catalog `mag_std_<filter>` for an instrumental filter aborts at calibration crossmatch.
+
+**Conversions when `convert_magnitudes=True`:** same-set Vega↔AB (literature Δ); Bessell→SDSS (Jordi); SDSS→Bessell (Lupton). Deprecated alias: `target_filter_system` in `{SDSS, AB, BESSELL}`.
+
+Catalog systems (examples): APASS/Stetson → Vega; SDSS DR → AB. See `CATALOG_MAGNITUDE_SYSTEMS` in `post_processing.magnitude_systems`.
+
 ## Decision tables
 
 

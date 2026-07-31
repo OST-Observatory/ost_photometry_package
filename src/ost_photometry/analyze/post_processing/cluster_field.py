@@ -157,7 +157,9 @@ def post_process_cluster_field(
     find_cluster_para_set: int = 1,
     cluster_selection_id: int | None = None,
     convert_magnitudes: bool = False,
-    target_filter_system: str = "SDSS",
+    target_filter_system: str | None = None,
+    output_filter_set: str = "auto",
+    output_magnitude_system: str = "auto",
     input_table: Table | None = None,
     distribution_samples: int = 1000,
     use_wcs_projection_for_star_maps: bool = True,
@@ -169,6 +171,7 @@ def post_process_cluster_field(
     skip_cluster_pm_step: bool = False,
     skip_magnitude_convert_step: bool = False,
     skip_save_post_processed_magnitudes: bool = False,
+    calibration_source: str | None = None,
 ) -> None:
     """
     Restrict results to specific areas of the image and filter by means
@@ -227,8 +230,11 @@ def post_process_cluster_field(
         magnitude table (all epochs). Default is ``False``.
 
     target_filter_system
-        Photometric system the magnitudes should be converted to
-        Default is ``SDSS``.
+        Deprecated alias (``SDSS`` / ``AB`` / ``BESSELL``). Prefer
+        ``output_filter_set`` / ``output_magnitude_system``.
+
+    output_filter_set, output_magnitude_system
+        Preferred output filter family and Vega/AB system (``auto`` follows catalog).
 
     input_table
         Table containing magnitudes etc. If None are provided,
@@ -294,7 +300,11 @@ def post_process_cluster_field(
         apply_magnitude_system_convert_on_observation(
             observation,
             target_filter_system=target_filter_system,
+            output_filter_set=output_filter_set,
+            output_magnitude_system=output_magnitude_system,
+            convert_magnitudes=True,
             distribution_samples=distribution_samples,
+            calibration_source=calibration_source,
             input_table=pending_input,
         )
 

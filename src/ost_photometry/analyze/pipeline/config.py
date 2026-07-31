@@ -281,7 +281,12 @@ class PostProcessConfig:
     find_cluster_para_set: int = 1
     cluster_selection_id: int | None = None
     convert_magnitudes: bool = False
-    target_filter_system: str = "SDSS"
+    #: Preferred output filter family after calibration (``auto`` = calibrated set).
+    output_filter_set: Literal["auto", "bessell", "sdss"] = "auto"
+    #: Preferred Vega/AB system (``auto`` = catalog system; SDSS forces AB).
+    output_magnitude_system: Literal["auto", "vega", "ab"] = "auto"
+    #: Deprecated alias for output preferences (``SDSS`` / ``AB`` / ``BESSELL``).
+    target_filter_system: str | None = None
     skip_cluster_region_step: bool = False
     skip_cluster_gaia_step: bool = False
     skip_cluster_pm_step: bool = False

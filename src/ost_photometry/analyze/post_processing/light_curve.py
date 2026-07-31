@@ -503,6 +503,7 @@ def prepare_plot_time_series(
         epoch_meta: dict | None = None,
         light_curve_quantity: LightCurveQuantity = "magnitude",
         light_curve_calibration_rows: LightCurveCalibrationRows = "auto",
+        magnitude_system: str | None = None,
         ) -> None:
     """
     Prepares, plot, and saves a time series for the object with the
@@ -654,6 +655,14 @@ def prepare_plot_time_series(
         )
 
     #   Plot light curve over JD
+    from .magnitude_systems import table_magnitude_system
+
+    mag_sys = magnitude_system
+    if mag_sys is None and isinstance(data, Table):
+        mag_sys = table_magnitude_system(data)
+    if mag_sys is None:
+        mag_sys = "vega"
+
     plots.light_curve_jd(
         time_series,
         ts_data_col,
@@ -664,6 +673,7 @@ def prepare_plot_time_series(
         subdirectory=subdirectory,
         file_type=file_type_plots,
         y_axis_style=y_style,
+        magnitude_system=mag_sys,
     )
 
     #   Plot the light curve folded on the period
@@ -682,6 +692,7 @@ def prepare_plot_time_series(
             subdirectory=subdirectory,
             file_type=file_type_plots,
             y_axis_style=y_style,
+            magnitude_system=mag_sys,
         )
 
 

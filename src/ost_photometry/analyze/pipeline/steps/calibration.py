@@ -89,6 +89,8 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
     """Attach ``mag_std_*`` from the calibration catalog to each epoch table."""
     from astropy.coordinates import SkyCoord
 
+    from ...post_processing.magnitude_systems import require_catalog_bands_for_filters
+
     first_tbl = next(iter(epochs.values()))
     field_center = SkyCoord(
         np.mean(first_tbl["ra"]),
@@ -104,6 +106,8 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
         vizier_dict=config.vizier_dict,
         path_calibration_file=config.path_calibration_file,
     )
+    if catalog is not None and len(catalog) > 0 and context.filter_list:
+        require_catalog_bands_for_filters(catalog, context.filter_list)
     out = {}
     for epoch_id, tbl in epochs.items():
         if catalog is not None and len(catalog) > 0:
@@ -251,6 +255,40 @@ class CalibrationStep(base.PipelineStep):
             table_native = _attach_jd_from_epoch_meta(
                 table_native, context, config, filter_list
             )
+            from ...post_processing.magnitude_systems import (
+                annotate_table_magnitude_meta,
+                infer_filter_set,
+                log_magnitude_output,
+                resolve_catalog_magnitude_system,
+                resolve_effective_output,
+            )
+
+            cal_fs = infer_filter_set(filter_list)
+            cat_ms = resolve_catalog_magnitude_system(config.calibration_source)
+            if cat_ms == "unknown":
+                cat_ms = (
+                    "ab"
+                    if cal_fs == "sdss"
+                    else "vega"
+                    if cal_fs == "bessell"
+                    else "unknown"
+                )
+            effective = resolve_effective_output(
+                output_filter_set=config.output_filter_set,
+                output_magnitude_system=config.output_magnitude_system,
+                calibrated_filter_set=cal_fs,
+                catalog_magnitude_system=cat_ms,
+                convert_magnitudes=False,
+            )
+            annotate_table_magnitude_meta(
+                table_native,
+                filter_set=cal_fs,
+                magnitude_system=cat_ms,
+                catalog_magnitude_system=cat_ms,
+                calibration_source=config.calibration_source,
+                conversion_note="calibrated",
+            )
+            log_magnitude_output(effective, config.calibration_source)
             obs.table_magnitudes = table_native
             context.table_magnitudes = table_native
             if filter_list:

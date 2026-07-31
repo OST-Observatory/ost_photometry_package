@@ -26,16 +26,20 @@ def _safe_ylim_from_series(
     own_scaling: bool,
     invert_axis: bool,
     mag_like_threshold: tuple[float, float] = (0.9, 1.1),
+    magnitude_system: str = "vega",
 ) -> str:
     """
     Choose y-axis label suffix; set ``plt.ylim`` only when limits are finite.
 
     Skips ``plt.ylim`` when stats are non-finite (e.g. NaN magnitudes left in series).
     """
+    from ..post_processing.magnitude_systems import magnitude_system_axis_suffix
+
+    mag_suffix = magnitude_system_axis_suffix(magnitude_system)
     y = np.asarray(y_values, dtype=float)
     fin = np.isfinite(y)
     if not np.any(fin):
-        return " [mag] (Vega)"
+        return mag_suffix
 
     median_data = float(np.nanmedian(y))
     min_data = float(np.nanmin(y))
@@ -55,7 +59,7 @@ def _safe_ylim_from_series(
         y_lim = max(float(np.nanmax(np.array([max_err * 1.5, 0.1]))), 0.05)
         if own_scaling and np.isfinite(median_data):
             plt.ylim([median_data + y_lim, median_data - y_lim])
-        return " [mag] (Vega)"
+        return mag_suffix
 
     y_lim = max(max_err * 1.2, 0.05)
     if own_scaling and np.isfinite(min_data) and np.isfinite(max_data):
@@ -72,11 +76,12 @@ def _light_curve_set_ylabel_and_ylim(
     own_scaling: bool = True,
     invert_axis: bool = True,
     fontsize: int = 15,
+    magnitude_system: str = "vega",
 ) -> None:
     """
     Y-axis label and limits for :func:`light_curve_jd` / :func:`light_curve_fold`.
 
-    ``y_axis_style`` is ``"magnitude"`` (default Vega mag scaling) or ``"flux"``
+    ``y_axis_style`` is ``"magnitude"`` (default mag scaling) or ``"flux"``
     (linear flux / ADU-style, no inverted axis).
     """
     if y_axis_style == "flux":
@@ -96,6 +101,7 @@ def _light_curve_set_ylabel_and_ylim(
         err_values,
         own_scaling=own_scaling,
         invert_axis=invert_axis,
+        magnitude_system=magnitude_system,
     )
     plt.ylabel(data_column + y_label_text, fontsize=fontsize)
 
@@ -107,7 +113,8 @@ def light_curve_jd(
         file_name_suffix: str = '', subdirectory: str = '',
         file_type: str = 'pdf', own_scaling: bool = True,
         invert_axis: bool = True,
-        y_axis_style: str = "magnitude") -> None:
+        y_axis_style: str = "magnitude",
+        magnitude_system: str = "vega") -> None:
     """
     Plot the light curve over Julian Date
 
@@ -156,6 +163,9 @@ def light_curve_jd(
     y_axis_style
         ``"magnitude"`` (default) or ``"flux"`` for extracted flux light curves
         (linear scale, ``[flux]`` label).
+
+    magnitude_system
+        ``vega`` / ``ab`` / … for the magnitude y-axis suffix (ignored for flux).
     """
     #   Check output directories
     if subdirectory != '':
@@ -211,6 +221,7 @@ def light_curve_jd(
         own_scaling=own_scaling,
         invert_axis=invert_axis,
         fontsize=15,
+        magnitude_system=magnitude_system,
     )
 
     #   Save plot
@@ -229,7 +240,8 @@ def light_curve_fold(
         binning_factor: float | None = None, error_bars: bool = True,
         name_object: str | None = None, file_name_suffix: str = '',
         subdirectory: str = '', file_type: str = 'pdf',
-        y_axis_style: str = "magnitude") -> None:
+        y_axis_style: str = "magnitude",
+        magnitude_system: str = "vega") -> None:
     """
     Plot a folded light curve
 
@@ -379,6 +391,7 @@ def light_curve_fold(
         own_scaling=True,
         invert_axis=True,
         fontsize=16,
+        magnitude_system=magnitude_system,
     )
 
     #   Save plot

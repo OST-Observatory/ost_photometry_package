@@ -172,6 +172,16 @@ Calibration catalog download and normalization live in
 
 ## 4. Post-processing
 
+### Magnitude systems (filter set + Vega/AB)
+
+- Module: `post_processing.magnitude_systems` — catalog→system map, validation, meta keys
+  (`ost_photometry.magnitude_system`, `ost_photometry.filter_set`, …).
+- Config: `output_filter_set` (`auto`|`bessell`|`sdss`), `output_magnitude_system` (`auto`|`vega`|`ab`),
+  `convert_magnitudes`. Deprecated: `target_filter_system` (`SDSS`|`AB`|`BESSELL`).
+- Early validation in `AnalysisPipeline.run`; SDSS+Vega aborts. Calibration requires matching
+  `mag_std_*` bands. Conversion: Vega↔AB offsets; Bessell→SDSS (Jordi); SDSS→Bessell (Lupton).
+- Light-curve axis labels use table meta (no hardcoded “(Vega)”).
+
 ### API renames
 
 - `utilities.post_process_results` → `post_process_cluster_field` (`post_processing`)

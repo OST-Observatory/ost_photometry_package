@@ -23,6 +23,12 @@ from .io import (
     write_epoch_native_magnitudes,
 )
 from .magnitude_convert import apply_magnitude_system_convert_on_observation
+from .magnitude_systems import (
+    infer_filter_set,
+    magnitude_system_axis_suffix,
+    resolve_catalog_magnitude_system,
+    validate_magnitude_output_request,
+)
 from .light_curve import (
     attach_observation_jd_column,
     epoch_native_mag_err_columns,
@@ -57,8 +63,10 @@ __all__ = [
     "legacy_wide_table_to_epoch_native",
     "apply_magnitude_system_convert_on_observation",
     "attach_observation_jd_column",
+    "infer_filter_set",
     "is_epoch_native_photometry_table",
     "load_calibration_epoch_meta_json",
+    "magnitude_system_axis_suffix",
     "mk_time_series",
     "mk_time_series_flux",
     "object_id_from_epoch_native_sky",
@@ -67,9 +75,11 @@ __all__ = [
     "prepare_plot_time_series",
     "prepare_time_series_data",
     "prepare_time_series_epoch_native",
+    "resolve_catalog_magnitude_system",
     "save_calibration_epoch_meta_json",
     "read_epoch_native_magnitudes",
     "validate_epoch_native_table",
+    "validate_magnitude_output_request",
     "write_epoch_native_magnitudes",
     "write_post_processed_cluster_field_table",
 ]

@@ -32,7 +32,10 @@ from .legacy_adapter import standard_catalog_to_legacy
 from .transforms import (
     add_johnson_ri_from_sloan,
     add_johnson_ri_to_standard_table,
+    johnson_bv_from_sloan_gr,
     johnson_ri_from_sloan_ri,
+    johnson_u_from_sloan_ug_and_b,
+    johnson_ubvri_from_sloan_arrays,
 )
 from .vizier_query import get_vizier_catalog
 
@@ -42,7 +45,10 @@ __all__ = [
     "crossmatch_standard_catalog",
     "fetch_standard_calibration_catalog",
     "get_vizier_catalog",
+    "johnson_bv_from_sloan_gr",
     "johnson_ri_from_sloan_ri",
+    "johnson_u_from_sloan_ug_and_b",
+    "johnson_ubvri_from_sloan_arrays",
     "standard_catalog_to_legacy",
     "vizier_result_to_standard_table",
 ]
