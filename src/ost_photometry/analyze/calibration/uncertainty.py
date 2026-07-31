@@ -28,14 +28,38 @@ def propagate_fit_errors(
     cal_err_col: str | None = None,
     zp_err: float = 0.0,
     color_term_err: float = 0.0,
+    color_term: float = 0.0,
+    cov_tz: float = 0.0,
+    color: np.ndarray | None = None,
+    sigma_color_sq: np.ndarray | float = 0.0,
 ) -> None:
-    """Set calibrated magnitude errors from instrumental errors + fit parameter errors."""
+    """
+    Set calibrated magnitude errors from instrumental errors + fit parameter errors.
+
+    When ``color`` is given, uses the full first-order variance including
+    ``2·color·cov(T, ZP)``. Without ``color``, falls back to
+    ``√(σ_inst² + σ_ZP² + σ_T²)`` (no color dependence; ``cov_tz`` ignored).
+    """
+    from .transform import calibrated_magnitude_variance
+
     inst_err_col = inst_err_col or f"err_{filter_}"
     cal_err_col = cal_err_col or f"err_cal_{filter_}"
     if inst_err_col not in table.colnames:
         return
     inst_err = np.asarray(table[inst_err_col], dtype=float)
-    total = np.sqrt(inst_err**2 + zp_err**2 + color_term_err**2)
+    if color is None:
+        total = np.sqrt(inst_err**2 + zp_err**2 + color_term_err**2)
+    else:
+        var = calibrated_magnitude_variance(
+            inst_err,
+            color,
+            color_term=color_term,
+            color_term_err=color_term_err,
+            zero_point_err=zp_err,
+            cov_tz=cov_tz,
+            sigma_color_sq=sigma_color_sq,
+        )
+        total = np.sqrt(np.maximum(var, 0.0))
     table[cal_err_col] = total
 
 

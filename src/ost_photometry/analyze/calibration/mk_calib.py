@@ -103,7 +103,7 @@ def _slopes_with_errors(
             weights = 1.0 / np.maximum(sigma**2, 1e-12)
         else:
             weights = np.ones(len(color), dtype=float)
-        slope, _zp, slope_err, _ = weighted_linear_fit(color, delta, weights)
+        slope, _zp, slope_err, _, _ = weighted_linear_fit(color, delta, weights)
         out[filt] = (float(slope), float(slope_err))
     return out
 

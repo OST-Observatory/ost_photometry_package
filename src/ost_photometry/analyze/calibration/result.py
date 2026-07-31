@@ -19,6 +19,8 @@ class TransformationCoefficients:
     color_term_err: float = 0.0
     zero_point: float = 0.0
     zero_point_err: float = 0.0
+    #: Off-diagonal covariance ``Cov(T, ZP)`` from the same linear fit (mag²).
+    cov_tz: float = 0.0
     color_index_filters: Tuple[str, str] = ("B", "V")
     n_stars_used: int = 0
     rms_residual: float = 0.0
@@ -27,7 +29,8 @@ class TransformationCoefficients:
         ci = f"({self.color_index_filters[0]}-{self.color_index_filters[1]})"
         return (
             f"{self.filter_name}: T={self.color_term:.4f}±{self.color_term_err:.4f}, "
-            f"ZP={self.zero_point:.4f}±{self.zero_point_err:.4f}, CI={ci}"
+            f"ZP={self.zero_point:.4f}±{self.zero_point_err:.4f}, "
+            f"cov(T,ZP)={self.cov_tz:.4g}, CI={ci}"
         )
 
 

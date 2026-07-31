@@ -139,12 +139,19 @@ def _apply_rolling_smooth_to_per_image_results(
                 if zero_point_mode != "none"
                 else tc.zero_point_err
             )
+            # Rolling mixes epochs independently for T and ZP → drop fit covariance.
+            new_cov = (
+                0.0
+                if color_term_mode != "none" or zero_point_mode != "none"
+                else tc.cov_tz
+            )
             r.transformation[filter_] = TransformationCoefficients(
                 filter_name=filter_,
                 color_term=new_t,
                 color_term_err=new_te,
                 zero_point=new_zp,
                 zero_point_err=new_ze,
+                cov_tz=new_cov,
                 color_index_filters=tc.color_index_filters,
                 n_stars_used=tc.n_stars_used,
                 rms_residual=tc.rms_residual,
@@ -353,7 +360,7 @@ class DifferentialPhotometer:
 
             # --- Iterative sigma-clip fit: T (color term), ZP (zero point) ---
             mask = valid.copy()
-            T, ZP, T_err, ZP_err = 0.0, 0.0, 0.0, 0.0
+            T, ZP, T_err, ZP_err, cov_tz = 0.0, 0.0, 0.0, 0.0, 0.0
             rms = 0.0
             warned_color_spread = False
 
@@ -369,7 +376,7 @@ class DifferentialPhotometer:
                     )
 
                 if use_linear:
-                    T, ZP, T_err, ZP_err = self._weighted_linear_fit(
+                    T, ZP, T_err, ZP_err, cov_tz = self._weighted_linear_fit(
                         c, m_std[mask] - m_inst[mask], np.ones(np.sum(mask))
                     )
                 else:
@@ -388,6 +395,7 @@ class DifferentialPhotometer:
                         warned_color_spread = True
                     T = 0.0
                     T_err = 0.0
+                    cov_tz = 0.0
                     ZP = float(np.median((m_std - m_inst)[mask]))
                     ZP_err = float(
                         np.std((m_std - m_inst)[mask]) / np.sqrt(np.sum(mask))
@@ -406,6 +414,7 @@ class DifferentialPhotometer:
                 color_term_err=T_err,
                 zero_point=ZP,
                 zero_point_err=ZP_err,
+                cov_tz=cov_tz,
                 color_index_filters=ci_filters,
                 n_stars_used=int(np.sum(mask)),
                 rms_residual=rms,
@@ -470,6 +479,8 @@ class DifferentialPhotometer:
                 color_term_err=T_err,
                 zero_point=ZP_mean,
                 zero_point_err=ZP_err,
+                # Independent IV means for T and ZP — no joint covariance.
+                cov_tz=0.0,
                 color_index_filters=results_for_filter_[0].transformation[filter_].color_index_filters,
                 n_stars_used=sum(
                     fr.transformation[filter_].n_stars_used for fr in results_for_filter_
@@ -756,21 +767,22 @@ class DifferentialPhotometer:
                             )
                         else:
                             sigma_color_sq = np.zeros(n, dtype=float)
-                        T, sT, sZP = (
-                            tc.color_term,
-                            tc.color_term_err,
-                            tc.zero_point_err,
+                        from .calibration.transform import calibrated_magnitude_variance
+
+                        # m_cal = m_inst + T*color + ZP → first-order variance including
+                        # 2·color·cov(T, ZP) from the joint linear fit.
+                        var = calibrated_magnitude_variance(
+                            inst_err,
+                            color,
+                            color_term=tc.color_term,
+                            color_term_err=tc.color_term_err,
+                            zero_point_err=tc.zero_point_err,
+                            cov_tz=tc.cov_tz,
+                            sigma_color_sq=sigma_color_sq,
                         )
-                        # m_cal = m_inst + T*color + ZP  →  first-order, uncorrelated:
-                        # σ² ≈ σ_inst² + σ_ZP² + (color·σ_T)² + T²·σ_color²
-                        # (cov(T,ZP) from the same fit is neglected)
-                        var = (
-                            inst_err**2
-                            + sZP**2
-                            + (color * sT) ** 2
-                            + (T**2) * sigma_color_sq
+                        data[f"{output_err_prefix}{filter_}"] = np.sqrt(
+                            np.maximum(var, 0.0)
                         )
-                        data[f"{output_err_prefix}{filter_}"] = np.sqrt(np.maximum(var, 0.0))
                     elif filter_ not in warned_no_err:
                         warnings.warn(
                             f"apply_transform_to_table: no column '{err_col}' for filter {filter_}; "
@@ -808,24 +820,18 @@ class DifferentialPhotometer:
     @staticmethod
     def _weighted_linear_fit(x, y, weights):
         """
-        Weighted least-squares fit y = a*x + b.
+        Weighted least-squares fit y = T*x + ZP.
 
-        Returns (a, b, a_err, b_err). Used for m_std - m_inst vs color to get
-        T (slope) and ZP (intercept). Errors from residual variance.
+        Returns ``(T, ZP, T_err, ZP_err, cov_tz)``. Delegates to
+        :func:`ost_photometry.analyze.calibration.transform.weighted_linear_fit`.
         """
-        W, Wx, Wy = np.sum(weights), np.sum(weights * x), np.sum(weights * y)
-        Wxx, Wxy = np.sum(weights * x**2), np.sum(weights * x * y)
-        denom = W * Wxx - Wx**2
-        if abs(denom) < 1e-10:
-            return 0.0, np.mean(y), 0.0, np.std(y)
-        a = (W * Wxy - Wx * Wy) / denom
-        b = (Wxx * Wy - Wx * Wxy) / denom
-        residuals = y - (a * x + b)
-        n = len(x)
-        var = np.sum(weights * residuals**2) / (n - 2) if n > 2 else 0
-        a_err = np.sqrt(var * W / denom) if denom > 0 else 0
-        b_err = np.sqrt(var * Wxx / denom) if denom > 0 else 0
-        return a, b, a_err, b_err
+        from .calibration.transform import weighted_linear_fit
+
+        return weighted_linear_fit(
+            np.asarray(x, dtype=float),
+            np.asarray(y, dtype=float),
+            np.asarray(weights, dtype=float),
+        )
 
 
 class PhotometryCalibrator:

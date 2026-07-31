@@ -34,11 +34,9 @@ That is a **new** method (not the same as `run_second_order_campaign`, which red
 
 **Direction (optional):** optional `extinction_mode` / helper that fits star-level residuals; keep mk_calib campaign and tabulated/user k″ as the supported paths for applying SECOND order. Do **not** bolt this onto `fit_extinction_from_comparison_stars` (epoch-mean vs X destroys color information).
 
-### T/ZP fit covariance in calibrated errors (P2)
+### T/ZP fit covariance in calibrated errors — done
 
-`T` and `ZP` come from the same linear fit and are correlated. `weighted_linear_fit` computes the full covariance but only returns diagonal errors; propagation currently assumes uncorrelated terms (explicit note in `differential_photometry.py`: `cov(T,ZP) … is neglected`). `TransformationCoefficients` has no off-diagonal term.
-
-**Direction:** carry `cov_tz` (or full 2×2) on `TransformationCoefficients` and include `2·color·cov(T,ZP)` in error propagation (`uncertainty.py` / apply-transform paths).
+`TransformationCoefficients.cov_tz` stores `Cov(T, ZP)` from `weighted_linear_fit`. Apply-transform / `calibrated_magnitude_variance` include `2·color·cov(T, ZP)`. Rolling/IV-combined T/ZP set `cov_tz=0` (independent mixing).
 
 ### Vega vs AB / magnitude-system transforms (P3)
 
