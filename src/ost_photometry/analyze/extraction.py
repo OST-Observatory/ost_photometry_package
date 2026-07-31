@@ -1233,6 +1233,8 @@ def extract_multiprocessing(
     annotate_reference_image: bool = True,
     magnitude_limit_image_annotation: float | None = None,
     filter_magnitude_limit_image_annotation: str | None = None,
+    fwhm_estimate_min: float = 2.0,
+    fwhm_estimate_max: float = 15.0,
 ) -> None:
     """
     Extract flux and object positions using multiprocessing
@@ -1287,6 +1289,8 @@ def extract_multiprocessing(
                 "annotate_image": annotate_image,
                 "magnitude_limit_image_annotation": magnitude_limit_image_annotation,
                 "filter_magnitude_limit_image_annotation": filter_magnitude_limit_image_annotation,
+                "fwhm_estimate_min": fwhm_estimate_min,
+                "fwhm_estimate_max": fwhm_estimate_max,
             },
         )
 
