@@ -29,10 +29,15 @@ def _phase_requests_plots(dp: Any, phase: str) -> bool:
     """True if any diagnostic toggle for ``phase`` is enabled."""
     if phase == "extraction":
         return bool(
-            dp.photometry_mag_vs_error_scatter or dp.photometry_radial_growth_curve
+            dp.photometry_mag_vs_error_scatter
+            or getattr(dp, "photometry_mag_vs_error_overview", False)
+            or dp.photometry_radial_growth_curve
         )
     if phase == "correlation_inter":
-        return bool(dp.correlation_inter_filter_separation_plot)
+        return bool(
+            dp.correlation_inter_filter_separation_plot
+            or getattr(dp, "exposure_pairing_overview", False)
+        )
     if phase == "calibration_data":
         return bool(
             dp.calibration_crossmatch_separation_histogram
@@ -106,6 +111,32 @@ def run_diagnostic_plots_phase(
                             ft,
                             band_label=filter_,
                         )
+                    if getattr(dp, "photometry_mag_vs_error_overview", False):
+                        mags: list[np.ndarray] = []
+                        errs: list[np.ndarray] = []
+                        labels: list[str] = []
+                        for j, im in enumerate(series.image_list):
+                            if im.photometry is None:
+                                continue
+                            ph = im.photometry
+                            if (
+                                "mags_fit" not in ph.colnames
+                                or "mags_unc" not in ph.colnames
+                            ):
+                                continue
+                            mags.append(_photometry_col_float(ph["mags_fit"]))
+                            errs.append(_photometry_col_float(ph["mags_unc"]))
+                            iid = getattr(im, "image_id", j)
+                            labels.append(str(iid))
+                        if len(mags) > 1:
+                            plots.plot_photometry_mag_vs_error_overview(
+                                mags,
+                                errs,
+                                out_d,
+                                ft,
+                                band_label=filter_,
+                                image_labels=labels,
+                            )
                     if dp.photometry_radial_growth_curve and "flux_fit" in (
                         img.photometry.colnames
                     ):
@@ -136,10 +167,50 @@ def run_diagnostic_plots_phase(
             if obs is None or len(context.filter_list) < 2:
                 return
             try:
-                # Cap individual pair PDFs for long light curves.
-                max_pair_plots = 25
+                max_pair_raw = getattr(
+                    dp, "correlation_inter_filter_max_pair_plots", 25
+                )
+                # None → all pairs; negative treated as all
+                if max_pair_raw is None or (
+                    isinstance(max_pair_raw, int) and max_pair_raw < 0
+                ):
+                    max_pair_plots = None
+                else:
+                    max_pair_plots = int(max_pair_raw)
+
                 ref_name = context.filter_list[0]
                 others: list[str] = []
+
+                from .pipeline.bridge import (
+                    exposure_pairing_records_table,
+                    list_exposure_image_groups,
+                )
+
+                groups = list_exposure_image_groups(context, config)
+                pairing_mode = str(getattr(config, "exposure_pairing", ""))
+                cfg_ref = getattr(config, "reference_filter", None) or ref_name
+                if groups and cfg_ref in groups[0]:
+                    ref_name = cfg_ref
+
+                if getattr(dp, "exposure_pairing_overview", False) and groups:
+                    pair_tbl = exposure_pairing_records_table(
+                        groups,
+                        reference_filter=ref_name,
+                        pairing_mode=pairing_mode,
+                    )
+                    if len(pair_tbl) > 0:
+                        ecsv_path = out_d / "exposure_pairing_pairs.ecsv"
+                        pair_tbl.write(ecsv_path, format="ascii.ecsv", overwrite=True)
+                        plots.plot_exposure_pairing_overview(
+                            pair_tbl,
+                            out_d,
+                            ft,
+                            reference_filter=ref_name,
+                            pairing_mode=pairing_mode,
+                        )
+
+                if not dp.correlation_inter_filter_separation_plot:
+                    return
 
                 # Reference-image pair (series.reference_image_index per filter)
                 ref_images = {}
@@ -170,10 +241,6 @@ def run_diagnostic_plots_phase(
                         ),
                     )
 
-                # Exposure pairs (same pairing as calibration: index / jd_nearest)
-                from .pipeline.bridge import list_exposure_image_groups
-
-                groups = list_exposure_image_groups(context, config)
                 seps_by_pair: list[np.ndarray] = []
                 pair_labels: list[str] = []
                 n_written = 0
@@ -193,7 +260,8 @@ def run_diagnostic_plots_phase(
                     label = correlate.inter_filter_pair_image_label(group)
                     seps_by_pair.append(sep_i)
                     pair_labels.append(f"{i:03d}")
-                    if n_written < max_pair_plots:
+                    write_pair = max_pair_plots is None or n_written < max_pair_plots
+                    if write_pair and max_pair_plots != 0:
                         plots.plot_inter_filter_correlation_separations(
                             sep_i,
                             out_d,
@@ -218,17 +286,17 @@ def run_diagnostic_plots_phase(
                         ft,
                         reference_filter=ref_name,
                         other_filters=others,
-                        pairing_mode=str(getattr(config, "exposure_pairing", "")),
+                        pairing_mode=pairing_mode,
                     )
-                    if len(seps_by_pair) > max_pair_plots:
+                    if max_pair_plots is not None and len(seps_by_pair) > max_pair_plots:
                         _warn(
                             f"Inter-filter separation: wrote per-pair plots for the "
                             f"first {max_pair_plots} of {len(seps_by_pair)} pairs; "
-                            f"see inter_filter_correlation_separations_overview for all."
+                            f"see inter_filter_correlation_separations_overview for all. "
+                            f"(correlation_inter_filter_max_pair_plots={max_pair_plots})"
                         )
             except Exception as exc:
                 _warn(f"Diagnostic plot (correlation_inter): {exc}")
-
         elif phase == "calibration_data":
             if obs is None or obs.calib_parameters is None:
                 return

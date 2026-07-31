@@ -139,17 +139,22 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 
 Most QC figures under `<output>/diagnostics/` are **on by default** (growth curves stay off). Toggle via nested overrides, e.g. `diagnostic_plots__photometry_mag_vs_error_scatter=False`.
 
-| Flag | What it checks |
-|------|----------------|
+| Flag / option | What it checks |
+|---------------|----------------|
 | `calibration_crossmatch_separation_histogram` | Catalog match separations |
 | `combined_separation_histograms` | Combined separation panels |
-| `photometry_mag_vs_error_scatter` | Mag vs photometric error (reference image) |
+| `photometry_mag_vs_error_scatter` | Mag vs photometric error (**reference image** only) |
+| `photometry_mag_vs_error_overview` | Mag–err hexbin over **all** images + median err vs image index (per filter) |
 | `photometry_radial_growth_curve` | Aperture growth for brightest star (off by default) |
-| `correlation_inter_filter_separation_plot` | Inter-filter match separations: reference-image pair, up to 25 exposure pairs (same `exposure_pairing` as calibration), plus overview (all pairs) |
+| `correlation_inter_filter_separation_plot` | Inter-filter match separations: reference pair, per-pair PDFs, plus overview (all pairs) |
+| `correlation_inter_filter_max_pair_plots` | Cap on individual pair PDFs (default `25`; `None` = all; `0` = overview only) |
+| `exposure_pairing_overview` | Pairing table `diagnostics/exposure_pairing_pairs.ecsv` + ΔJD plot (same groups as `exposure_pairing`) |
 | `calibration_instrumental_vs_catalog` | Instrumental vs catalog magnitudes |
 | `calibration_zeropoint_residual_histogram` | ZP residual distribution |
 | `calibration_zeropoint_residual_vs_color` | ZP residuals vs color |
 | `calibration_color_check_cal_stars` | Color–color check of comparison stars |
+
+**Exposure pairing:** after calibration, `context.calibration_epoch_meta[epoch_id]` also lists `image_id_by_filter` and `jd_by_filter`. Set `debug_exposure_pairing=True` for a terminal dump of each epoch’s pairing. The diagnostics ECSV/plot make the same pairing inspectable without re-running.
 
 Standard `linear_fit` (non-derive) also writes transformation panels under `<output>/calibration/` (`calibration_<epoch>_<filter>.*`, night/per-image summaries). Those are separate from `diagnostic_plots`.
 

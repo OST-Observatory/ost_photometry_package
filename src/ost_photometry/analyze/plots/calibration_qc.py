@@ -731,7 +731,6 @@ def plot_photometry_mag_vs_error(
     _mf, _mu = photometry["mags_fit"], photometry["mags_unc"]
     mag = np.asarray(_mf.value if hasattr(_mf, "value") else _mf, dtype=float)
     err = np.asarray(_mu.value if hasattr(_mu, "value") else _mu, dtype=float)
-    # ok = np.isfinite(mag) & np.isfinite(err) & (err > 0)
     ok = np.isfinite(mag) & np.isfinite(err)
     if not np.any(ok):
         return None
@@ -747,6 +746,131 @@ def plot_photometry_mag_vs_error(
         ttl += f" ({band_label})"
     ax.set_title(ttl)
     path = _diagnostic_plot_path(output_dir, stem, file_type)
+    plt.tight_layout()
+    fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
+    plt.close(fig)
+    return path
+
+
+def plot_photometry_mag_vs_error_overview(
+    mag_by_image: list[np.ndarray],
+    err_by_image: list[np.ndarray],
+    output_dir: str | Path,
+    file_type: str = "pdf",
+    *,
+    band_label: str = "",
+    image_labels: list[str] | None = None,
+    filename_stem: str | None = None,
+) -> Path | None:
+    """
+    Overview across many exposures: pooled mag–err density + median err vs image index.
+
+    ``mag_by_image`` / ``err_by_image`` are parallel lists (one array per image).
+    """
+    if not mag_by_image or len(mag_by_image) != len(err_by_image):
+        return None
+    pooled_m: list[float] = []
+    pooled_e: list[float] = []
+    med_err: list[float] = []
+    for mag, err in zip(mag_by_image, err_by_image):
+        m = np.asarray(mag, dtype=float)
+        e = np.asarray(err, dtype=float)
+        ok = np.isfinite(m) & np.isfinite(e)
+        if np.any(ok):
+            pooled_m.extend(m[ok].tolist())
+            pooled_e.extend(e[ok].tolist())
+            # Bright-end median (more stable than all stars)
+            bright = ok & (m < np.nanpercentile(m[ok], 40))
+            med_err.append(
+                float(np.nanmedian(e[bright])) if np.any(bright) else float(np.nanmedian(e[ok]))
+            )
+        else:
+            med_err.append(np.nan)
+
+    if not pooled_m:
+        return None
+
+    stem = filename_stem or (
+        f"photometry_mag_vs_error_overview_{band_label}"
+        if band_label
+        else "photometry_mag_vs_error_overview"
+    )
+    fig, (ax0, ax1) = plt.subplots(
+        nrows=2, ncols=1, figsize=(7.0, 7.0), gridspec_kw={"height_ratios": [1.3, 1.0]}
+    )
+    hb = ax0.hexbin(
+        pooled_m,
+        pooled_e,
+        gridsize=40,
+        mincnt=1,
+        cmap="viridis",
+        bins="log",
+    )
+    fig.colorbar(hb, ax=ax0, label="log10(N)")
+    ax0.set_xlabel("mags_fit [mag]")
+    ax0.set_ylabel("mags_unc [mag]")
+    ttl = "Magnitude vs. uncertainty (all images)"
+    if band_label:
+        ttl += f" ({band_label})"
+    ttl += f"\nn_images={len(mag_by_image)}"
+    ax0.set_title(ttl, fontsize=11)
+
+    xi = np.arange(len(med_err))
+    ax1.plot(xi, med_err, "o-", ms=3, lw=1.0, color="C0")
+    ax1.set_xlabel("Image index")
+    ax1.set_ylabel("Median mags_unc (bright 40%) [mag]")
+    ax1.set_title("Per-image photometric error level")
+    ax1.grid(True, alpha=0.3)
+    if image_labels is not None and len(image_labels) == len(med_err) and len(med_err) <= 25:
+        ax1.set_xticks(xi)
+        ax1.set_xticklabels(image_labels, rotation=90, fontsize=7)
+
+    path = _diagnostic_plot_path(output_dir, stem, file_type)
+    plt.tight_layout()
+    fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
+    plt.close(fig)
+    return path
+
+
+def plot_exposure_pairing_overview(
+    pair_records: Table,
+    output_dir: str | Path,
+    file_type: str = "pdf",
+    *,
+    reference_filter: str = "",
+    pairing_mode: str = "",
+    filename_stem: str = "exposure_pairing_overview",
+) -> Path | None:
+    """
+    Plot max |ΔJD| vs exposure-pair index and annotate image ids.
+
+    Expects columns: ``pair_index``, ``max_abs_delta_jd_day``, and optionally
+    ``image_ids`` (string) / ``ref_jd``.
+    """
+    if len(pair_records) == 0 or "pair_index" not in pair_records.colnames:
+        return None
+    idx = np.asarray(pair_records["pair_index"], dtype=float)
+    if "max_abs_delta_jd_day" in pair_records.colnames:
+        dj = np.asarray(pair_records["max_abs_delta_jd_day"], dtype=float)
+    else:
+        return None
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.2))
+    ax.plot(idx, dj * 1440.0, "o-", ms=3, lw=1.0, color="C0")
+    ax.set_xlabel("Exposure pair index")
+    ax.set_ylabel(r"max $|\Delta\mathrm{JD}|$ [minutes]")
+    title = "Exposure pairing time offsets"
+    if pairing_mode:
+        title += f" ({pairing_mode}"
+        if reference_filter:
+            title += f", ref={reference_filter}"
+        title += ")"
+    elif reference_filter:
+        title += f" (ref={reference_filter})"
+    title += f"\nn_pairs={len(pair_records)}"
+    ax.set_title(title, fontsize=11)
+    ax.grid(True, alpha=0.3)
+    path = _diagnostic_plot_path(output_dir, filename_stem, file_type)
     plt.tight_layout()
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
     plt.close(fig)

@@ -480,6 +480,54 @@ def list_exposure_image_groups(
     )
 
 
+def exposure_pairing_records_table(
+    groups: list[dict[str, Any]],
+    *,
+    reference_filter: str,
+    pairing_mode: str,
+) -> Table:
+    """
+    Tabulate exposure pairs: image ids, JDs, and max |ΔJD| vs the reference filter.
+
+    Columns: ``pair_index``, ``reference_filter``, ``pairing_mode``, ``ref_jd``,
+    ``max_abs_delta_jd_day``, ``image_ids``, plus ``jd_<F>`` / ``image_id_<F>``
+    per filter present in any group.
+    """
+    if not groups:
+        return Table()
+    filters: list[str] = []
+    for g in groups:
+        for f in g:
+            if f not in filters:
+                filters.append(f)
+    rows: list[dict[str, Any]] = []
+    for i, group in enumerate(groups):
+        ref_im = group.get(reference_filter)
+        jd0 = _jd_for_image(ref_im) if ref_im is not None else None
+        max_dj = 0.0
+        id_bits: list[str] = []
+        row: dict[str, Any] = {
+            "pair_index": i,
+            "reference_filter": reference_filter,
+            "pairing_mode": pairing_mode,
+            "ref_jd": jd0 if jd0 is not None else np.nan,
+        }
+        for f in filters:
+            im = group.get(f)
+            jdi = _jd_for_image(im) if im is not None else None
+            iid = getattr(im, "image_id", None) if im is not None else None
+            row[f"jd_{f}"] = jdi if jdi is not None else np.nan
+            row[f"image_id_{f}"] = iid if iid is not None else -1
+            if iid is not None:
+                id_bits.append(f"{f}{iid}")
+            if jd0 is not None and jdi is not None:
+                max_dj = max(max_dj, abs(jdi - jd0))
+        row["max_abs_delta_jd_day"] = max_dj
+        row["image_ids"] = "_".join(id_bits)
+        rows.append(row)
+    return Table(rows)
+
+
 def instrumental_epoch_native_from_calibration_epochs(
     epochs: Dict[str, Table],
     filter_list: List[str],

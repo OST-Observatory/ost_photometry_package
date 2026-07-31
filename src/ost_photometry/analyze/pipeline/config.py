@@ -94,12 +94,18 @@ class DiagnosticPlots:
 
     calibration_crossmatch_separation_histogram: bool = True
     photometry_mag_vs_error_scatter: bool = True
+    #: Also write per-filter overview across all images when series length > 1.
+    photometry_mag_vs_error_overview: bool = True
     photometry_radial_growth_curve: bool = False
     calibration_instrumental_vs_catalog: bool = True
     calibration_zeropoint_residual_histogram: bool = True
     calibration_zeropoint_residual_vs_color: bool = True
     calibration_color_check_cal_stars: bool = True
     correlation_inter_filter_separation_plot: bool = True
+    #: Max individual inter-filter pair PDFs (``None`` = all; ``0`` = overview only).
+    correlation_inter_filter_max_pair_plots: int | None = 25
+    #: ΔJD / image-id pairing table + plot (same groups as ``exposure_pairing``).
+    exposure_pairing_overview: bool = True
     combined_separation_histograms: bool = True
 
 
