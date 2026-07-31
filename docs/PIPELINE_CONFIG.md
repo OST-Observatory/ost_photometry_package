@@ -290,7 +290,7 @@ Catalog systems (examples): APASS/Stetson → Vega; SDSS DR → AB. See `CATALOG
 
 | Condition                           | `photometry_extraction_method` | `correlation_method` | Other                                                   |
 | ----------------------------------- | ------------------------------ | -------------------- | ------------------------------------------------------- |
-| Stellar PSF, course / OST default   | `PSF`                          | `astropy`            | Ensure `minimum_n_eps_stars` met; dense fields capped by `maximum_n_eps_stars` (default 50; `None` = no cap) |
+| Stellar PSF, course / OST default   | `PSF`                          | `astropy`            | Ensure `minimum_n_eps_stars` met; dense fields capped by `maximum_n_eps_stars` (default 50; `None` = no cap). Auto-FWHM uses `fwhm_estimate_min`/`fwhm_estimate_max` (default 2–15 px). |
 | Quick test, very sparse field       | `APER`                         | `astropy`            | Widen aperture if SNR low                               |
 | Reproduce pre-2024 script behaviour | `PSF`                          | `own`                | Check `duplicate_handling_object_identification`        |
 | B/V not aligned by index            | either                         | `astropy`            | `exposure_pairing="jd_nearest"`, set `reference_filter` |

@@ -45,9 +45,7 @@ from .. import checks, style, terminal_output
 from ..core.parallel import Executor
 from .. import utilities as base_utilities
 from ..fwhm import (
-    estimate_fwhm_from_positions,
-    select_sources_for_fwhm_fit,
-    source_positions_from_table,
+    estimate_image_fwhm,
 )
 from . import correlate, plots, utilities
 from .image import AnalysisImage
@@ -296,6 +294,8 @@ def find_stars(
     method: str = "IRAF",
     terminal_logger: terminal_output.TerminalLog | None = None,
     indent: int = 2,
+    fwhm_estimate_min: float = 2.0,
+    fwhm_estimate_max: float = 15.0,
 ) -> None:
     """
     Find the stars on the images, using photutils and search and select
@@ -330,6 +330,9 @@ def find_stars(
     indent
         Indentation for the console output lines
         Default is ``2``.
+
+    fwhm_estimate_min, fwhm_estimate_max
+        Accepted per-star FWHM range (pixels) for automatic estimation.
     """
     if terminal_logger is not None:
         terminal_logger.add_to_cache("Identify stars", indent=indent)
@@ -376,15 +379,23 @@ def find_stars(
             f"use either IRAF or DAO {style.Bcolors.ENDC}"
         )
 
-    table_fwhm = select_sources_for_fwhm_fit(tbl_objects)
-    xy_pos = source_positions_from_table(table_fwhm)
+    if tbl_objects is None or len(tbl_objects) == 0:
+        terminal_output.print_to_terminal(
+            f"[Info] FWHM determination skipped: no sources found. "
+            f"Use the default FWHM of {default_fwhm}.",
+            style_name="WARNING",
+        )
+        image.fwhm = default_fwhm
+        return
 
-    median_fwhm, fwhm_error = estimate_fwhm_from_positions(
+    median_fwhm, fwhm_error = estimate_image_fwhm(
         ccd.data,
-        xy_pos,
+        tbl_objects,
         mask=ccd.mask,
         error=ccd.uncertainty.array if ccd.uncertainty is not None else None,
         default_fwhm=default_fwhm,
+        min_fwhm=fwhm_estimate_min,
+        max_fwhm=fwhm_estimate_max,
     )
     if fwhm_error is not None:
         terminal_output.print_to_terminal(
@@ -1336,6 +1347,8 @@ def main_extract(
     annotate_image: bool = True,
     magnitude_limit_image_annotation: float | None = None,
     filter_magnitude_limit_image_annotation: str | None = None,
+    fwhm_estimate_min: float = 2.0,
+    fwhm_estimate_max: float = 15.0,
 ) -> None | tuple[int, Table]:
     """
     Main function to extract the information from the individual images
@@ -1375,6 +1388,8 @@ def main_extract(
         multiplier_background_rms=multiplier_background_rms,
         method=object_finder_method,
         terminal_logger=terminal_logger,
+        fwhm_estimate_min=fwhm_estimate_min,
+        fwhm_estimate_max=fwhm_estimate_max,
     )
 
     if annotate_image and image.image_id == id_reference_image:

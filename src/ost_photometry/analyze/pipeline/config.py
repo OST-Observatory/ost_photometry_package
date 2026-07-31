@@ -122,6 +122,9 @@ class ExtractionConfig:
     n_cores_multiprocessing: int = 6
     reference_image_index: int = 0
     fwhm_object_psf: dict[str, float] | None = None
+    #: Accepted FWHM range in pixels for automatic estimation (per-star filter).
+    fwhm_estimate_min: float = 2.0
+    fwhm_estimate_max: float = 15.0
     cosmic_ray_removal: bool = False
     limiting_contrast_rm_cosmics: float = 5.0
     read_noise: float = 8.0
@@ -163,6 +166,8 @@ class ExtractionConfig:
         """Keyword arguments for ``main_extract`` (single-image path)."""
         return {
             "fwhm_object_psf": fwhm,
+            "fwhm_estimate_min": self.fwhm_estimate_min,
+            "fwhm_estimate_max": self.fwhm_estimate_max,
             "sigma_value_background_clipping": self.sigma_value_background_clipping,
             "multiplier_background_rms": self.multiplier_background_rms,
             "size_epsf_region": self.size_epsf_region,
