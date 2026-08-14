@@ -11,7 +11,6 @@ from astropy.table import Table
 from photutils.psf import ImagePSF
 
 from .. import terminal_output
-from .calibration_data import CalibParameters
 from .models import ImageSeries, ObjectOfInterest
 
 if TYPE_CHECKING:
@@ -24,23 +23,20 @@ class Observation:
     objects_of_interest: list[ObjectOfInterest]
     image_series_dict: dict[str, ImageSeries]
     objects_of_interest_coordinates: SkyCoord | None
-    calib_parameters: CalibParameters | None
     table_magnitudes: Table | None
 
     def __init__(self, **kwargs):
-        """Backward-compatible constructor delegating to :meth:`from_config`."""
+        """ Backward-compatible constructor delegating to :meth:`from_config`."""
         if kwargs:
             built = self.from_config(**kwargs)
             self.objects_of_interest = built.objects_of_interest
             self.image_series_dict = built.image_series_dict
             self.objects_of_interest_coordinates = built.objects_of_interest_coordinates
-            self.calib_parameters = built.calib_parameters
             self.table_magnitudes = built.table_magnitudes
         else:
             self.objects_of_interest = []
             self.image_series_dict = {}
             self.objects_of_interest_coordinates = None
-            self.calib_parameters = None
             self.table_magnitudes = None
 
     @classmethod
@@ -93,7 +89,6 @@ class Observation:
 
         obs.objects_of_interest = objects
         obs.image_series_dict = dict(kwargs.get("image_series_dict") or {})
-        obs.calib_parameters = kwargs.get("calib_parameters")
         obs.table_magnitudes = kwargs.get("table_magnitudes")
         if objects:
             ra_list = [o.ra for o in objects]

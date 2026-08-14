@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import multiprocessing as mp
 import warnings
 
 import numpy as np
@@ -11,14 +10,13 @@ import typing
 if typing.TYPE_CHECKING:
     from .. import analyze
 
-from astropy.coordinates import SkyCoord, matching
+from astropy.coordinates import SkyCoord
 import astropy.units as u
-from astropy.table import Table, Column
 from astropy import wcs
 
-from .. import calibration_data, plots, utilities
+from .. import utilities
 from ..warnings_types import OstPhotometryAnalyzeWarning
-from ... import style, terminal_output
+from ... import terminal_output
 from ... import utilities as base_utilities
 
 from .core import correlate_datasets, correlation_own
@@ -27,6 +25,7 @@ from .ooi import (
     identify_object_of_interest_in_dataset,
     verify_objects_of_interest_global_correlated_ids,
 )
+from .protection import resolve_calibration_object_ids
 
 def assign_global_correlated_object_ids(
     observation: "analyze.Observation",
@@ -105,7 +104,6 @@ def correlate_image_series(
         calibration_object_ids: list[int] | None = None,
         correlation_method: str = 'astropy',
         separation_limit: u.quantity.Quantity = 2. * u.arcsec,
-        force_correlation_calibration_objects: bool = False,
         verbose: bool = False, file_type_plots: str = 'pdf',
         duplicate_handling_object_identification: dict[str, str] | None = None,
         indent: int = 1,
@@ -167,10 +165,8 @@ def correlate_image_series(
         Default is ``None``.
 
     calibration_object_ids
-        Legacy alias for calibration-star row indices (merged when
+        Calibration-star row indices (merged when
         ``protect_calibration_objects`` is ``True``).
-        When ``None``, IDs are taken from ``observation.calib_parameters`` if
-        available.
         Default is ``None``.
 
     correlation_method
@@ -182,11 +178,6 @@ def correlate_image_series(
     separation_limit
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
-
-    force_correlation_calibration_objects
-        If ``True`` the correlation between the already correlated
-        series and the calibration data will be enforced.
-        Default is ``False``
 
     verbose
         If True additional output will be printed to the command line.
@@ -258,16 +249,6 @@ def correlate_image_series(
     #   Build protected-object set for inter-filter correlation
     from .protection import merge_protected_object_ids
 
-    if calibration_object_ids is not None:
-        resolved_calibration_object_ids = calibration_object_ids
-    elif (observation.calib_parameters is not None and
-            observation.calib_parameters.ids_calibration_objects is not None):
-        resolved_calibration_object_ids = (
-            observation.calib_parameters.ids_calibration_objects.tolist()
-        )
-    else:
-        resolved_calibration_object_ids = None
-
     reference_obj_ids = observation.get_ids_object_of_interest(
         filter_=reference_filter,
     )
@@ -275,7 +256,7 @@ def correlate_image_series(
     merged_protected_ids = merge_protected_object_ids(
         protected_object_ids=protected_object_ids,
         reference_object_ids=reference_obj_ids,
-        calibration_object_ids=resolved_calibration_object_ids,
+        calibration_object_ids=calibration_object_ids,
         protect_ooi=protect_ooi,
         protect_calibration_objects=protect_calibration_objects,
     )
@@ -346,22 +327,6 @@ def correlate_image_series(
                     object_.id_in_image_series[filter_] = object_id
 
     terminal_output.print_to_terminal('')
-
-    #   Correlate with calibration data if necessary
-    calibration_parameters = observation.calib_parameters
-
-    if calibration_parameters is not None and (calibration_parameters.ids_calibration_objects is None
-                                               or force_correlation_calibration_objects):
-        select_calibration_objects(
-            observation,
-            filter_list,
-            correlation_method=correlation_method,
-            separation_limit=separation_limit,
-            max_pixel_between_objects=max_pixel_between_objects,
-            ooi_correlation_strategy=ooi_correlation_strategy,
-            file_type_plots=file_type_plots,
-            indent=2,
-        )
 
     # Global object id = row index after correlation (for cross-filter pipelines)
     assign_global_correlated_object_ids(observation, list(image_series_dict.keys()))
@@ -589,9 +554,6 @@ def determine_object_position(
     return indexes, count, x_position_object, y_position_object
 
 
-from .protection import resolve_calibration_object_ids  # noqa: E402
-
-
 def correlate_preserve_calibration_objects(
         image_series: 'analyze.ImageSeries', filter_list: list[str],
         calibration_source: str = 'APASS',
@@ -736,332 +698,3 @@ def correlate_preserve_calibration_objects(
         file_type_plots=file_type_plots,
     )
 
-
-def correlate_with_calibration_objects(
-        image_series: 'analyze.ImageSeries',
-        calibration_object_coordinates: SkyCoord,
-        calibration_tbl: Table, filter_list: list[str],
-        column_names: dict[str, str], correlation_method: str = 'astropy',
-        separation_limit: u.Quantity = 2. * u.arcsec,
-        max_pixel_between_objects: int = 3, ooi_correlation_strategy: int = 1,
-        indent: int = 1, file_type_plots: str = 'pdf',
-        use_wcs_projection_for_star_maps: bool = True,
-        ) -> tuple[Table, np.ndarray]:
-    """
-    Correlate observed objects with calibration stars
-
-    Parameters
-    ----------
-    image_series
-        Class with all images of a specific image series
-
-    calibration_object_coordinates
-        Coordinates of the calibration objects
-
-    calibration_tbl
-        Table with calibration data
-
-    filter_list
-        Filter list
-
-    column_names
-        Actual names of the columns in calibration_tbl versus
-        the internal default names
-
-    correlation_method
-        Correlation method to be used to find the common objects on
-        the images.
-        Possibilities: ``astropy``, ``own``
-        Default is ``astropy``.
-
-    separation_limit
-        Allowed separation between objects.
-        Default is ``2.*u.arcsec``.
-
-    max_pixel_between_objects
-        Maximal distance between two objects in Pixel
-        Default is ``3``.
-
-    ooi_correlation_strategy
-        Option for the srcor correlation function
-        Default is ``1``.
-
-    indent
-        Indentation for the console output lines
-        Default is ``1``.
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    use_wcs_projection_for_star_maps
-        If ``True`` the starmap will be plotted with sky coordinates instead
-        of pixel coordinates
-        Default is ``True``.
-
-    Returns
-    -------
-    calibration_tbl_sort
-        Sorted table with calibration data
-
-    index_obj_instrument
-        Index of the observed stars that correspond to the calibration stars
-    """
-    terminal_output.print_to_terminal(
-        "Correlate observed objects with calibration stars",
-        indent=indent,
-    )
-
-    #   Pixel positions of the observed object
-    reference_image_index = image_series.reference_image_index
-    pixel_position_obj_x = image_series.image_list[reference_image_index].photometry['x_fit'].value.ravel()
-    pixel_position_obj_y = image_series.image_list[reference_image_index].photometry['y_fit'].value.ravel()
-
-    #   Pixel positions of calibration object
-    pixel_position_cali_x, pixel_position_cali_y = calibration_object_coordinates.to_pixel(image_series.wcs)
-
-    if correlation_method == 'astropy':
-        #   Create coordinates object
-        object_coordinates = SkyCoord.from_pixel(
-            pixel_position_obj_x,
-            pixel_position_obj_y,
-            image_series.wcs,
-        )
-
-        #   Find matches between the datasets
-        index_obj_instrument, index_obj_literature, separation, _ = matching.search_around_sky(
-            object_coordinates,
-            calibration_object_coordinates,
-            separation_limit,
-        )
-        separation_arcsec = np.asarray(separation.arcsec, dtype=float)
-
-        index_obj_instrument, separation_arcsec, index_obj_literature = (
-            utilities.clear_duplicates(
-                index_obj_instrument,
-                separation_arcsec,
-                index_obj_literature,
-            )
-        )
-        index_obj_literature, separation_arcsec, index_obj_instrument = (
-            utilities.clear_duplicates(
-                index_obj_literature,
-                separation_arcsec,
-                index_obj_instrument,
-            )
-        )
-
-        n_identified_literature_objs = len(index_obj_literature)
-
-    elif correlation_method == 'own':
-        #   Max. number of objects
-        n_obj_max = np.max(len(pixel_position_obj_x), len(pixel_position_cali_x))
-
-        #   Define and fill new arrays
-        pixel_position_all_x = np.zeros((n_obj_max, 2))
-        pixel_position_all_y = np.zeros((n_obj_max, 2))
-        pixel_position_all_x[0:len(pixel_position_obj_x), 0] = pixel_position_obj_x
-        pixel_position_all_x[0:len(pixel_position_cali_x), 1] = pixel_position_cali_x
-        pixel_position_all_y[0:len(pixel_position_obj_y), 0] = pixel_position_obj_y
-        pixel_position_all_y[0:len(pixel_position_cali_y), 1] = pixel_position_cali_y
-
-        #   Correlate calibration stars with stars on the image
-        correlated_indexes, rejected_images, n_identified_literature_objs, rejected_obj = correlation_own(
-            pixel_position_all_x,
-            pixel_position_all_y,
-            max_pixel_between_objects=max_pixel_between_objects,
-            ooi_correlation_strategy=ooi_correlation_strategy,
-        )
-        index_obj_instrument = correlated_indexes[0]
-        index_obj_literature = correlated_indexes[1]
-
-    else:
-        raise ValueError(
-            f'The correlation method needs to either "astropy" or "own". Got '
-            f'{correlation_method} instead.'
-        )
-
-    if n_identified_literature_objs == 0:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNo calibration star was identified "
-            f"-> EXIT {style.Bcolors.ENDC}"
-        )
-    if n_identified_literature_objs == 1:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL}\nOnly one calibration star was identified\n"
-            "Unfortunately, that is not enough at the moment\n"
-            f"-> EXIT {style.Bcolors.ENDC}"
-        )
-
-    #   Limit calibration table to common objects
-    calibration_tbl_sort = calibration_tbl[index_obj_literature]
-
-    terminal_output.print_to_terminal(
-        f"{len(calibration_tbl_sort)} calibration stars have been matched to"
-        f" observed stars",
-        indent=indent,
-        style_name='OKBLUE',
-    )
-
-    #   Add calibration star indexes to the calibration table
-    calibration_tbl_sort['index_instrument'] = index_obj_instrument
-
-    #   Limit number of calibration stars to the 100 brightest
-    if len(calibration_tbl_sort) > 100:
-        #   Sort calibration table
-        magnitude_name = None
-        for column_name in column_names:
-            if 'mag' in column_name:
-                magnitude_name = column_name
-                break
-
-        calibration_tbl_sort.sort(column_names[magnitude_name])
-
-        #   Limit to brightest 100 objects
-        calibration_tbl_sort = calibration_tbl_sort[0:100]
-        index_obj_instrument = calibration_tbl_sort['index_instrument']
-
-        terminal_output.print_to_terminal(
-            f"Number of calibration stars limited to 100 brightest objects"
-            f" in filter {magnitude_name[3:]}",
-            indent=indent,
-            style_name='OKBLUE',
-        )
-
-    #   Plots
-    #
-    #   Make new arrays based on the correlation results
-    pixel_position_common_objs_x = pixel_position_obj_x[list(index_obj_instrument)]
-    pixel_position_common_objs_y = pixel_position_obj_y[list(index_obj_instrument)]
-    index_common_new = np.arange(len(calibration_tbl_sort))
-
-    #   Add pixel positions and object ids to the calibration table
-    calibration_tbl_sort.add_columns(
-        [np.intc(index_common_new), pixel_position_common_objs_x, pixel_position_common_objs_y],
-        names=['id', 'x_centroid', 'y_centroid']
-    )
-
-    calibration_tbl.add_columns(
-        [np.arange(0, len(pixel_position_cali_y)), pixel_position_cali_x, pixel_position_cali_y],
-        names=['id', 'x_centroid', 'y_centroid']
-    )
-
-    #   Plot star map with calibration stars
-    for filter_ in filter_list:
-        if 'mag' + filter_ in column_names:
-            p = mp.Process(
-                target=plots.starmap,
-                args=(
-                    image_series.out_path.name,
-                    image_series.image_list[image_series.reference_image_index].get_data(),
-                    filter_,
-                    calibration_tbl,
-                ),
-                kwargs={
-                    'tbl_2': calibration_tbl_sort,
-                    'label': 'downloaded calibration stars',
-                    'label_2': 'matched calibration stars',
-                    'rts': 'calibration',
-                    # 'name_object': image_series.object_name,
-                    'wcs_image': image_series.wcs,
-                    'use_wcs_projection': use_wcs_projection_for_star_maps,
-                    'file_type': file_type_plots,
-                }
-            )
-            p.start()
-
-    terminal_output.print_to_terminal('')
-
-    if index_obj_instrument is Column:
-        return calibration_tbl_sort, index_obj_instrument.value
-    else:
-        return calibration_tbl_sort, index_obj_instrument
-
-
-def select_calibration_objects(
-    observation: 'analyze.Observation',
-    filter_list: list[str] | set[str],
-    reference_image_series_id: int = 0,
-    correlation_method: str = 'astropy',
-    separation_limit: u.Quantity = 2. * u.arcsec,
-    max_pixel_between_objects: int = 3,
-    ooi_correlation_strategy: int = 1,
-    file_type_plots: str = 'pdf',
-    indent: int = 1
-    ):
-    """
-    Select observations that have a counterpart identified in the calibration data
-
-    Parameters
-    ----------
-    observation
-        Container object with image series objects for each filter
-
-    filter_list
-        List with filter identifiers.
-
-    reference_image_series_id
-        ID of the reference image
-        Default is ``0``.
-
-    correlation_method
-        Correlation method to be used to find the common objects on
-        the images.
-        Possibilities: ``astropy``, ``own``
-        Default is ``astropy``.
-
-    separation_limit
-        Allowed separation between objects.
-        Default is ``2.*u.arcsec``.
-
-    max_pixel_between_objects
-        Maximal distance between two objects in Pixel
-        Default is ``3``.
-
-    ooi_correlation_strategy
-        Option for the srcor correlation function
-        Default is ``1``.
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    indent
-        Indentation for the console output lines
-        Default is ``1``.
-    """
-    #   Get calibration data
-    calibration_parameters = observation.calib_parameters
-
-    calibration_tbl = calibration_parameters.calib_tbl
-    column_names = calibration_parameters.column_names
-    ra_unit_calibration = calibration_parameters.ra_unit
-    dec_unit_calibration = calibration_parameters.dec_unit
-
-    #   Convert coordinates of the calibration stars to SkyCoord object
-    calibration_object_coordinates = SkyCoord(
-        calibration_tbl[column_names['ra']].data,
-        calibration_tbl[column_names['dec']].data,
-        unit=(ra_unit_calibration, dec_unit_calibration),
-        frame="icrs"
-    )
-
-    #   Correlate with calibration stars
-    #   -> assumes that calibration stars are already cleared of any reference objects
-    #      or variable stars
-    calibration_tbl, index_obj_instrument = correlate_with_calibration_objects(
-        list(observation.image_series_dict.values())[0],
-        calibration_object_coordinates,
-        calibration_tbl,
-        filter_list,
-        column_names,
-        correlation_method=correlation_method,
-        separation_limit=separation_limit,
-        max_pixel_between_objects=max_pixel_between_objects,
-        ooi_correlation_strategy=ooi_correlation_strategy,
-        file_type_plots=file_type_plots,
-        indent=indent+1,
-    )
-
-    observation.calib_parameters.calib_tbl = calibration_tbl
-    observation.calib_parameters.ids_calibration_objects = index_obj_instrument

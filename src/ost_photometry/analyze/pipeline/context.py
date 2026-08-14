@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 from astropy.table import Table
 
 if TYPE_CHECKING:
-    from ..calibration_data import CalibParameters
     from ..models import ImageSeries, ObjectOfInterest
 
 
@@ -27,7 +26,6 @@ class AnalysisContext:
 
     # Optional (Legacy)
     objects_of_interest: list = field(default_factory=list)
-    calib_parameters: object = None
     table_magnitudes: Table | None = None
     calibration_results: dict | None = None
 

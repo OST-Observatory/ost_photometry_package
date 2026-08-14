@@ -27,6 +27,32 @@ def _any_image_series_ready(obs) -> bool:
     return False
 
 
+def _calibration_object_ids_from_table(
+    tbl: Table | None,
+    filter_: str | None = None,
+) -> list[int] | None:
+    """Object ``id``s with finite catalog ``mag_std_*`` (epoch-native tables)."""
+    if tbl is None or len(tbl) == 0 or "id" not in tbl.colnames:
+        return None
+    mag_cols: list[str] = []
+    if filter_ is not None:
+        col = f"mag_std_{filter_}"
+        if col in tbl.colnames:
+            mag_cols = [col]
+    if not mag_cols:
+        mag_cols = [c for c in tbl.colnames if c.startswith("mag_std_")]
+    if not mag_cols:
+        return None
+    mask = np.zeros(len(tbl), dtype=bool)
+    for col in mag_cols:
+        arr = np.asarray(tbl[col], dtype=float)
+        mask |= np.isfinite(arr)
+    if not np.any(mask):
+        return None
+    ids = np.asarray(tbl["id"][mask], dtype=int)
+    return sorted({int(i) for i in ids})
+
+
 class LightCurveStep(base.PipelineStep):
     """
     After calibration, plot JD light curves per filter.
@@ -111,10 +137,6 @@ class LightCurveStep(base.PipelineStep):
         binning = config.light_curve_binning_factor
         dist_samples = config.distribution_samples
 
-        ids_cal = None
-        if obs.calib_parameters is not None:
-            ids_cal = getattr(obs.calib_parameters, "ids_calibration_objects", None)
-
         terminal_output.print_to_terminal("Light curves", style_name="HEADER")
 
         objects_of_interest = context.objects_of_interest or []
@@ -135,6 +157,7 @@ class LightCurveStep(base.PipelineStep):
                 and getattr(image_series, "image_list", None)
                 and len(image_series.image_list) > 0
             )
+            ids_cal = _calibration_object_ids_from_table(tbl, filter_) if has_tbl else None
 
             if use_table:
                 self._run_table_path_for_filter(

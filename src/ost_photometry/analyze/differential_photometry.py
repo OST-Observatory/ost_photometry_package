@@ -899,7 +899,8 @@ class PhotometryCalibrator:
           or any key present in ``vizier_dict`` (e.g. ``"GSC2.3"``, ``"SDSS_Release_16"``).
         * ``radius_arcmin`` — cone radius in arcminutes (pipeline: ``calibration_catalog_radius_arcmin``).
         * ``calibration_catalog_mag_range`` — inclusive bright/faint limits on the catalog’s reference band(s).
-        * ``vizier_dict`` / ``path_calibration_file`` — same semantics as legacy ``load_calibration_data_table``.
+        * ``vizier_dict`` / ``path_calibration_file`` — same semantics as
+          :func:`~ost_photometry.analyze.calibration_sources.fetch_standard_calibration_catalog`.
 
         Lupton Johnson R/I from Sloan bands is applied inside ``fetch`` when appropriate;
         set ``apply_sloan_to_johnson_ri=False`` to disable the optional Vizier heuristic only.

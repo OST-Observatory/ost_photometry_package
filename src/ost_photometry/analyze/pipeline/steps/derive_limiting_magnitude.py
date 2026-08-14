@@ -155,39 +155,9 @@ class DeriveLimitingMagnitudeStep(base.PipelineStep):
                     )
             return context
 
-        if tbl is None or len(tbl) == 0:
-            terminal_output.print_to_terminal(
-                "DeriveLimitingMagnitudeStep: no epoch-native table_magnitudes; skipping.",
-                style_name="WARNING",
-            )
-            return context
-
-        if obs.calib_parameters is None:
-            terminal_output.print_to_terminal(
-                "DeriveLimitingMagnitudeStep: no calib_parameters and no "
-                "epoch-native calibration table; skipping.",
-                style_name="WARNING",
-            )
-            return context
-
-        _, usable_filter_combinations = (
-            utilities.find_filter_for_magnitude_transformation(
-                context.filter_list,
-                obs.calib_parameters.column_names,
-            )
+        terminal_output.print_to_terminal(
+            "DeriveLimitingMagnitudeStep: no usable epoch-native "
+            "table_magnitudes path; skipping.",
+            style_name="WARNING",
         )
-
-        for filter_combination in usable_filter_combinations:
-            utilities.derive_limiting_magnitude(
-                obs,
-                filter_combination,
-                config.reference_image_index,
-                aperture_radius=config.aperture_radius,
-                radii_unit=config.radii_unit,
-                file_type_plots=config.file_type_plots,
-                use_wcs_projection_for_star_maps=(
-                    config.use_wcs_projection_for_star_maps
-                ),
-            )
-
         return context

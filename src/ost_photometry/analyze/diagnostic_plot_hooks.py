@@ -38,18 +38,6 @@ def _phase_requests_plots(dp: Any, phase: str) -> bool:
             dp.correlation_inter_filter_separation_plot
             or getattr(dp, "exposure_pairing_overview", False)
         )
-    if phase == "calibration_data":
-        return bool(
-            dp.calibration_crossmatch_separation_histogram
-            or dp.combined_separation_histograms
-        )
-    if phase == "calibration_apply":
-        return bool(
-            dp.calibration_instrumental_vs_catalog
-            or dp.calibration_zeropoint_residual_histogram
-            or dp.calibration_zeropoint_residual_vs_color
-            or dp.calibration_color_check_cal_stars
-        )
     if phase == "calibration_differential":
         return bool(
             dp.calibration_crossmatch_separation_histogram
@@ -58,6 +46,7 @@ def _phase_requests_plots(dp: Any, phase: str) -> bool:
             or dp.calibration_zeropoint_residual_histogram
             or dp.calibration_zeropoint_residual_vs_color
             or dp.calibration_color_check_cal_stars
+            or dp.combined_separation_histograms
         )
     return False
 
@@ -297,41 +286,26 @@ def run_diagnostic_plots_phase(
                         )
             except Exception as exc:
                 _warn(f"Diagnostic plot (correlation_inter): {exc}")
-        elif phase == "calibration_data":
-            if obs is None or obs.calib_parameters is None:
+        elif phase == "calibration_differential":
+            epochs = calibration_epochs or {}
+            if not epochs:
                 return
-            cp = obs.calib_parameters
-            idx = cp.ids_calibration_objects
-            if idx is None or len(idx) == 0:
-                return
-            ref = context.filter_list[0]
-            if ref not in obs.image_series_dict:
-                return
+            eid = sorted(epochs.keys())[0]
+            t = epochs[eid]
             try:
-                series = obs.image_series_dict[ref]
-                img = series.image_list[series.reference_image_index]
-                phot = img.photometry
-                if phot is None:
-                    return
-                idx = np.asarray(idx, dtype=int)
-                obs_c = SkyCoord.from_pixel(
-                    phot["x_fit"][idx],
-                    phot["y_fit"][idx],
-                    series.wcs,
-                )
-                cn = cp.column_names
-                ra_k, dec_k = cn["ra"], cn["dec"]
-                cat_c = SkyCoord(
-                    cp.calib_tbl[ra_k].data,
-                    cp.calib_tbl[dec_k].data,
-                    unit=(cp.ra_unit, cp.dec_unit),
-                    frame="icrs",
-                )
-                n = min(len(obs_c), len(cat_c))
-                sep = np.asarray(obs_c[:n].separation(cat_c[:n]).arcsec, dtype=float)
-                if dp.calibration_crossmatch_separation_histogram:
-                    plots.plot_calibration_crossmatch_separations(sep, out_d, ft)
-                if dp.combined_separation_histograms:
+                sep_cal = np.array([])
+                if "match_sep_arcsec" in t.colnames:
+                    sep_cal = np.asarray(t["match_sep_arcsec"], dtype=float)
+                    sep_cal = sep_cal[np.isfinite(sep_cal)]
+                if dp.calibration_crossmatch_separation_histogram and sep_cal.size:
+                    plots.plot_calibration_crossmatch_separations(
+                        sep_cal,
+                        out_d,
+                        ft,
+                        title=f"Catalog cross-match separations ({eid})",
+                        filename_stem="differential_catalog_crossmatch_separations",
+                    )
+                if dp.combined_separation_histograms and obs is not None and sep_cal.size:
                     sep_inter = np.array([])
                     ref_name, others = "", []
                     if len(context.filter_list) >= 2:
@@ -344,155 +318,12 @@ def run_diagnostic_plots_phase(
                         )
                     plots.plot_combined_separation_histograms(
                         sep_inter,
-                        sep,
+                        sep_cal,
                         out_d,
                         ft,
                         reference_filter=ref_name,
                         other_filters=others,
                     )
-            except Exception as exc:
-                _warn(f"Diagnostic plot (calibration_data): {exc}")
-
-        elif phase == "calibration_apply":
-            if obs is None or obs.calib_parameters is None:
-                return
-            cp = obs.calib_parameters
-            idx = cp.ids_calibration_objects
-            if idx is None or len(idx) == 0:
-                return
-            idx = np.asarray(idx, dtype=int)
-            cn = cp.column_names
-            try:
-                zp_residuals_by_band: dict[str, np.ndarray] = {}
-                for f in context.filter_list:
-                    mk = f"mag{f}"
-                    if mk not in cn or cn[mk] not in cp.calib_tbl.colnames:
-                        continue
-                    if f not in obs.image_series_dict:
-                        continue
-                    series = obs.image_series_dict[f]
-                    img = series.image_list[series.reference_image_index]
-                    phot = img.photometry
-                    if phot is None or "mags_fit" not in phot.colnames:
-                        continue
-                    mi_all = _photometry_col_float(phot["mags_fit"])
-                    m_inst = mi_all[idx]
-                    m_cat = np.asarray(cp.calib_tbl[cn[mk]], dtype=float)
-                    k = min(m_inst.size, m_cat.size)
-                    if k == 0:
-                        continue
-                    m_inst = m_inst[:k]
-                    m_cat = m_cat[:k]
-                    ok = np.isfinite(m_inst) & np.isfinite(m_cat)
-                    if not np.any(ok):
-                        continue
-                    m_inst = m_inst[ok]
-                    m_cat = m_cat[ok]
-                    if dp.calibration_instrumental_vs_catalog:
-                        plots.plot_instrumental_vs_catalog_magnitudes(
-                            m_inst,
-                            m_cat,
-                            out_d,
-                            ft,
-                            band_label=f,
-                        )
-                    if dp.calibration_zeropoint_residual_histogram:
-                        zp = float(np.nanmedian(m_cat - m_inst))
-                        zp_residuals_by_band[f] = m_cat - m_inst - zp
-                if dp.calibration_zeropoint_residual_histogram and zp_residuals_by_band:
-                    plots.plot_zeropoint_residual_distribution(
-                        None,
-                        out_d,
-                        ft,
-                        residuals_by_band=zp_residuals_by_band,
-                    )
-
-                if (
-                    dp.calibration_color_check_cal_stars
-                    or dp.calibration_zeropoint_residual_vs_color
-                ) and {"B", "V"}.issubset(set(context.filter_list)):
-                    fB, fV = "B", "V"
-                    need = [fB, fV]
-                    if not all(f in obs.image_series_dict for f in need):
-                        pass
-                    elif not all(f"mag{f}" in cn for f in need):
-                        pass
-                    elif not all(cn[f"mag{f}"] in cp.calib_tbl.colnames for f in need):
-                        pass
-                    else:
-                        miB = _photometry_col_float(
-                            obs.image_series_dict[fB]
-                            .image_list[
-                                obs.image_series_dict[fB].reference_image_index
-                            ]
-                            .photometry["mags_fit"]
-                        )[idx]
-                        miV = _photometry_col_float(
-                            obs.image_series_dict[fV]
-                            .image_list[
-                                obs.image_series_dict[fV].reference_image_index
-                            ]
-                            .photometry["mags_fit"]
-                        )[idx]
-                        cB = np.asarray(cp.calib_tbl[cn["magB"]], dtype=float)
-                        cV = np.asarray(cp.calib_tbl[cn["magV"]], dtype=float)
-                        kk = min(miB.size, miV.size, cB.size, cV.size)
-                        miB, miV = miB[:kk], miV[:kk]
-                        cB, cV = cB[:kk], cV[:kk]
-                        cl = cB - cV
-                        co = miB - miV
-                        okc = np.isfinite(cl) & np.isfinite(co)
-                        if dp.calibration_color_check_cal_stars and np.any(okc):
-                            plots.plot_calibration_color_color_cal_stars(
-                                cl[okc], co[okc], out_d, ft
-                            )
-
-                        if dp.calibration_zeropoint_residual_vs_color:
-                            zp_b = float(np.nanmedian(cB - miB))
-                            zp_v = float(np.nanmedian(cV - miV))
-                            res_b = cB - miB - zp_b
-                            res_v = cV - miV - zp_v
-                            okr = (
-                                np.isfinite(cl)
-                                & np.isfinite(res_b)
-                                & np.isfinite(res_v)
-                            )
-                            if np.any(okr):
-                                plots.plot_zeropoint_residual_vs_color(
-                                    cl[okr],
-                                    None,
-                                    out_d,
-                                    ft,
-                                    residuals_by_band={
-                                        "V": res_v[okr],
-                                        "B": res_b[okr],
-                                    },
-                                    color_label=r"$(B-V)_\mathrm{lit}$ [mag]",
-                                    filename_stem="zeropoint_residual_vs_color_B_V",
-                                )
-            except Exception as exc:
-                _warn(f"Diagnostic plot (calibration_apply): {exc}")
-
-        elif phase == "calibration_differential":
-            epochs = calibration_epochs or {}
-            if not epochs:
-                return
-            eid = sorted(epochs.keys())[0]
-            t = epochs[eid]
-            try:
-                if dp.calibration_crossmatch_separation_histogram and (
-                    "match_sep_arcsec" in t.colnames
-                ):
-                    sep = np.asarray(t["match_sep_arcsec"], dtype=float)
-                    sep = sep[np.isfinite(sep)]
-                    if sep.size:
-                        plots.plot_calibration_crossmatch_separations(
-                            sep,
-                            out_d,
-                            ft,
-                            title=f"Catalog cross-match separations ({eid})",
-                            filename_stem="differential_catalog_crossmatch_separations",
-                        )
 
                 if dp.photometry_mag_vs_error_scatter:
                     for f in context.filter_list:

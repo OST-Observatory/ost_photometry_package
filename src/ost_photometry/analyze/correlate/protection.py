@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import typing
 
+import numpy as np
+import astropy.units as u
+from astropy.table import Table
+
 if typing.TYPE_CHECKING:
     from .. import analyze
     from ..pipeline.config import PipelineConfig
@@ -48,6 +52,27 @@ def merge_protected_object_ids(
     return merged
 
 
+def _drop_rows_without_standard_mags(std_tbl: Table, filter_list: list[str]) -> Table:
+    """Remove catalog rows that lack finite ``mag_std_*`` / ``err_std_*`` for requested filters."""
+    if len(std_tbl) == 0:
+        return std_tbl
+    keep = np.ones(len(std_tbl), dtype=bool)
+    for filter_ in filter_list:
+        mag_col = f"mag_std_{filter_}"
+        err_col = f"err_std_{filter_}"
+        if mag_col in std_tbl.colnames:
+            mag = np.asarray(std_tbl[mag_col], dtype=float)
+            keep &= np.isfinite(mag)
+            if hasattr(std_tbl[mag_col], "mask"):
+                keep &= ~np.asarray(std_tbl[mag_col].mask, dtype=bool)
+        if err_col in std_tbl.colnames:
+            err = np.asarray(std_tbl[err_col], dtype=float)
+            keep &= np.isfinite(err)
+            if hasattr(std_tbl[err_col], "mask"):
+                keep &= ~np.asarray(std_tbl[err_col].mask, dtype=bool)
+    return std_tbl[keep]
+
+
 def resolve_calibration_object_ids(
     image_series: "analyze.ImageSeries",
     filter_list: list[str],
@@ -68,22 +93,33 @@ def resolve_calibration_object_ids(
     Returns IDs (row indices in correlated photometry) and reference-image pixel
     positions for plotting.
     """
-    from .. import calibration_data
+    from ..calibration_sources import fetch_standard_calibration_catalog
     from .inter import determine_object_position
 
     if reference_image_index is None:
         reference_image_index = image_series.reference_image_index
 
-    calib_tbl, column_names, ra_unit = calibration_data.load_calibration_data_table(
-        image_series.image_list[reference_image_index],
+    image = image_series.image_list[reference_image_index]
+    center = image.coordinates_image_center
+    fov_x = image.field_of_view_x
+    if calibration_source in ("vsp", "simbad"):
+        field_of_view_arcmin = 1.5 * fov_x
+    else:
+        field_of_view_arcmin = fov_x
+
+    std_tbl = fetch_standard_calibration_catalog(
         filter_list,
+        center,
         calibration_source=calibration_source,
+        field_of_view_arcmin=field_of_view_arcmin,
         calibration_catalog_mag_range=calibration_catalog_mag_range,
         vizier_dict=vizier_dict,
         path_calibration_file=path_calibration_file,
+        indent=indent + 1,
     )
+    std_tbl = _drop_rows_without_standard_mags(std_tbl, filter_list)
 
-    n_calib_stars = len(calib_tbl)
+    n_calib_stars = len(std_tbl)
     if n_calib_stars == 0:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nNo match between calibrations stars and "
@@ -94,15 +130,18 @@ def resolve_calibration_object_ids(
     calib_x_pixel_positions: list[float] = []
     calib_y_pixel_positions: list[float] = []
 
+    ra = np.asarray(std_tbl["ra"], dtype=float)
+    dec = np.asarray(std_tbl["dec"], dtype=float)
+
     for k in range(n_calib_stars):
         id_calib_star, ref_count, x_calib_star, y_calib_star = determine_object_position(
-            image_series.image_list[reference_image_index],
-            calib_tbl[column_names["ra"]].data[k],
-            calib_tbl[column_names["dec"]].data[k],
+            image,
+            ra[k],
+            dec[k],
             image_series.wcs,
             maximal_pixel_between_objects=max_pixel_between_objects,
             ooi_correlation_strategy=ooi_correlation_strategy,
-            ra_unit=ra_unit,
+            ra_unit=u.deg,
             verbose=verbose,
         )
         if verbose:

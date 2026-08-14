@@ -56,6 +56,9 @@ Additional presets: `extract_protect_calibrators` (extract/intra-correlate, prot
 | (implicit first-order only) | `extinction_order` (`first` / `second`) + optional `k_second` overrides |
 | `tabulated` (builtin only) | `tabulated` + site JSON; see [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) |
 | `Observation.extract_flux` / `extract_flux_multi` | `Observation.run_pipeline` |
+| `analyze.calibration_data` / `derive_calibration` / `CalibParameters` | `CalibrationStep` + `calibration_sources`; protect via `correlate.protection` |
+| `standard_catalog_to_legacy` / `legacy_adapter` | Standard schema only (`ra`/`dec`/`mag_std_*`) |
+| `select_calibration_objects` / `correlate_with_calibration_objects` | Catalog match in `CalibrationStep` / `crossmatch_standard_catalog` |
 
 ### Script pattern (N2 / C7)
 
@@ -167,6 +170,10 @@ Calibration catalog download and normalization live in
 
 `get_vizier_catalog` takes `center: SkyCoord` and `field_of_view_arcmin` (no
 `image_like_object`). Lupton Sloan → Johnson R/I is in `calibration_sources.transforms`.
+
+Consumers of the standard schema: `CalibrationStep` (cross-match),
+`correlate.protection.resolve_calibration_object_ids` (protect calibrators),
+and `PhotometryCalibrator.setup_calibration_source`.
 
 ---
 

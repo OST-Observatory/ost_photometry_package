@@ -4,11 +4,8 @@ Calibration sources: shared download, normalization, and matching for photometry
 This package is the **single implementation** for fetching external calibration
 catalogs used by:
 
-* **Legacy wide-table path** — :mod:`ost_photometry.analyze.calibration_data` calls
-  :func:`fetch_standard_calibration_catalog`, then :func:`standard_catalog_to_legacy`
-  for the ``(Table, column_dict, ra_unit)`` contract used by
-  :func:`~ost_photometry.analyze.calibration_data.derive_calibration`.
-
+* **Protect-calibrators / correlation** — :func:`fetch_standard_calibration_catalog`
+  (standard schema) via :mod:`ost_photometry.analyze.correlate.protection`.
 * **Epoch-native calibration** — :class:`~ost_photometry.analyze.differential_photometry.PhotometryCalibrator`
   (via :class:`~ost_photometry.analyze.calibration.CalibrationEngine`) keeps the
   catalog in **standard schema** and cross-matches via :func:`crossmatch_standard_catalog`.
@@ -28,7 +25,6 @@ Public re-exports below; see each submodule for details.
 
 from .crossmatch import crossmatch_standard_catalog
 from .fetch import fetch_standard_calibration_catalog, vizier_result_to_standard_table
-from .legacy_adapter import standard_catalog_to_legacy
 from .transforms import (
     add_johnson_ri_from_sloan,
     add_johnson_ri_to_standard_table,
@@ -49,6 +45,5 @@ __all__ = [
     "johnson_ri_from_sloan_ri",
     "johnson_u_from_sloan_ug_and_b",
     "johnson_ubvri_from_sloan_arrays",
-    "standard_catalog_to_legacy",
     "vizier_result_to_standard_table",
 ]

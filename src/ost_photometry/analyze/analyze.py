@@ -209,7 +209,6 @@ def _to_context(
         filter_list=filter_list,
         output_dir=output_dir,
         objects_of_interest=observation.objects_of_interest,
-        calib_parameters=observation.calib_parameters,
         table_magnitudes=observation.table_magnitudes,
         observation=observation,
     )
@@ -228,14 +227,12 @@ def _to_context_from_observation(
         filter_list=filter_list,
         output_dir=output_dir,
         objects_of_interest=observation.objects_of_interest,
-        calib_parameters=observation.calib_parameters,
         table_magnitudes=observation.table_magnitudes,
         observation=observation,
     )
 
 
 def _from_context(observation: Observation, context: AnalysisContext) -> None:
-    observation.calib_parameters = context.calib_parameters
     observation.table_magnitudes = context.table_magnitudes
     if context.observation is not None:
         observation.image_series_dict = context.observation.image_series_dict

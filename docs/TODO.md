@@ -123,7 +123,15 @@ Still invoked from `main_extract` when annotating. Belongs with other optional a
 | `reduce/workflow/main.py` | `align_images`, `make_big_images` |
 | `n1_baches/1_masterimages.py` | `trim_image_simple` |
 
-**Open in-code TODOs (4):** loop optimizations in `align_image_main`; footprint/mask for background. Trim helpers unified via `trim_ccd` / `ccd_trim_slices` (`trim_image` + `trim_image_simple`).
+**Open in-code TODOs (4 markers → 3 actions):**
+
+| Marker | Action |
+|--------|--------|
+| Commented-out `shift_stack_astroalign` (“combine / can this be removed?”) | Delete the dead block (or restore only if a course path still needs stack-vs-stack AA). |
+| Astroalign `footprint` after `apply_transform` | Decide whether to keep as `coverage_mask` for 2D background / trim. |
+| Min/max shift + trim margins inside `align_image_main` AA branch | Hoist out of the per-image loop (same for all images). |
+
+Trim helpers already unified via `trim_ccd` / `ccd_trim_slices` (`trim_image` + `trim_image_simple`).
 
 **Recommendation:** No separate large refactor. Worth doing **only when actively working** on alignment/trim. Before a larger split, add small regression tests with synthetic `CCDData` arrays (shifts, trim edges) — the workflow split was a pure move; risk is higher here.
 
@@ -160,10 +168,6 @@ reduce/registration/
 
 ## Remaining analyze bridge
 
-| Module | Notes |
-|--------|-------|
-| `analyze/calibration_data.py` | Deprecated `derive_calibration` path; pipeline prefers `CalibrationStep`. Optional cleanup when no external callers remain. |
-
 ### Drop legacy wide magnitude tables / column `i` (P3)
 
 When the optional wide `.dat` path (`write_legacy_wide_magnitudes_dat`, `calibrated_epochs_to_legacy_wide_table`, `save_magnitudes_ascii` with column `i`) is retired in favour of epoch-native tables only (`id`):
@@ -178,7 +182,41 @@ Until then, keeping `"i"` in the filtered formats helper is correct.
 
 ## In-code TODOs
 
-Roughly **~14 `TODO` markers** in `src/` (`rg 'TODO' src`). Hotspots: `reduce/registration.py`, `analyze/plots/cmds.py`, `analyze/calibration_data.py`.
+**Verified August 2026:** exactly **11** `TODO` markers under `src/` (`rg 'TODO' src --glob '*.py'`). Inventory and promoted backlog below; registration items are also listed under [Reduce](#reduce).
+
+### Inventory
+
+| File | Markers | Topic |
+|------|---------|--------|
+| `reduce/registration.py` | 4 | Dead `shift_stack_astroalign` block; AA footprint mask; hoist trim margins |
+| `analyze/plots/cmds.py` | 3 | Extinction error propagation; fiduciary binning readability; isochrone trailing block |
+| `analyze/plots/starmaps.py` | 1 | Galaxy ellipse position angle from SIMBAD |
+| `analyze/plots/lightcurves.py` | 1 | Orphan “fix type hints for `fit_function`” (no `fit_function` left in file) |
+| `utilities.py` | 2 | Validate JSON/YAML load result type |
+
+### Absolute CMD: propagate extinction-parameter errors (P3)
+
+In `MakeCMDs` absolute-CMD path (`cmds.py`), extinction uses Fitzpatrick + user `rv` / `e_b_v` but does **not** propagate uncertainties on those parameters into corrected magnitude/color errors.
+
+**Direction:** decide whether course CMDs need formal errors on \(R_V\) / \(E(B-V)\); if yes, add a simple propagation (or document that plotted errors stay photometric-only).
+
+### CMD plot maintainability (P3)
+
+Two readability TODOs in the isochrone / fiduciary-point path: (1) magnitude–color binning loop after `np.digitize`; (2) trailing “flush last isochrone” block that should fold into the parse loop.
+
+**Direction:** small refactor when next touching CMD isochrone fitting — no behaviour change required.
+
+### Starmap: SIMBAD galaxy ellipse orientation (P3)
+
+`plot_annotated_image` draws galaxies from SIMBAD `DIMENSIONS` (`a x b`) with **angle fixed to 0**. Check whether PA / orientation is available in the queried columns and use it when present.
+
+### Config loaders: validate JSON/YAML payload type (P3)
+
+`read_params_from_json` / `read_params_from_yaml` return whatever was decoded (or `{}`). Optionally assert `isinstance(data, dict)` (and reject non-mappings) so callers never get a bare list/scalar.
+
+### Hygiene: remove stale lightcurve TODO (—)
+
+Delete the orphan `# TODO: Fix type hints for fit_function` at the end of `plots/lightcurves.py` (symbol no longer exists), or restore typed helpers if a fit overlay is reintroduced.
 
 ---
 
@@ -195,10 +233,12 @@ Roughly **~14 `TODO` markers** in `src/` (`rg 'TODO' src`). Hotspots: `reduce/re
 1. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
 2. **P3:** OST filter throughput → synphot Vega↔AB offsets — see section above.
 3. **P3 (when ready):** Drop legacy wide tables / column `i` — see section above.
-4. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs in `align_image_main`.
-5. **On utilities changes:** extract only the affected area.
+4. **On further registration work:** optionally extract `trim.py` / split align+shifts; clear the three registration TODO actions (dead AA stack helper, footprint mask, hoist trim margins).
+5. **On CMD / annotation work:** absolute-CMD extinction errors; SIMBAD galaxy PA; isochrone readability.
+6. **Hygiene:** drop orphan lightcurve `fit_function` TODO; optional JSON/YAML dict checks.
+7. **On utilities changes:** extract only the affected area.
 
-**Recently done:** Vega/AB + filter-set conversion model; T/ZP `cov_tz`; ASCII `formats` key `i` vs `id`; `fraction_epsf_stars` + `maximum_n_eps_stars` clamp.
+**Recently done:** Removed `calibration_data` / `derive_calibration` / `legacy_adapter` / `CalibParameters` (protect uses `calibration_sources`); Vega/AB + filter-set conversion; T/ZP `cov_tz`; ASCII `formats` key `i` vs `id`; `fraction_epsf_stars` + `maximum_n_eps_stars` clamp; FWHM estimate wired through multi-extract.
 
 ---
 

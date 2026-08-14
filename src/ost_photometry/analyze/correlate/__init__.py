@@ -11,13 +11,11 @@ from .inter import (
     assign_global_correlated_object_ids,
     correlate_image_series,
     correlate_preserve_calibration_objects,
-    correlate_with_calibration_objects,
     determine_object_position,
     inter_filter_correlation_separations_arcsec,
     inter_filter_correlation_separations_for_images,
     inter_filter_pair_image_label,
     inter_filter_pair_title_suffix,
-    select_calibration_objects,
 )
 from .protection import (
     merge_protected_object_ids,
@@ -41,7 +39,6 @@ __all__ = [
     "correlate_preserve_calibration_objects",
     "correlate_preserve_objects",
     "correlate_preserve_variable",
-    "correlate_with_calibration_objects",
     "correlation_astropy",
     "correlation_own",
     "determine_object_position",
@@ -56,6 +53,5 @@ __all__ = [
     "resolve_calibration_object_ids",
     "resolve_protected_object_ids_for_intra",
     "resolve_protected_object_ids_for_inter",
-    "select_calibration_objects",
     "verify_objects_of_interest_global_correlated_ids",
 ]

@@ -1878,3 +1878,173 @@ def calculate_trans(
         file_type_plots=file_type_plots,
     )
     terminal_output.print_to_terminal('')
+
+
+
+#   TODO: Rename to 'downloading_calibration_data' after 'correlate_calibrate'
+#         of 'Observation' in analysis.py changed the order of correlation and
+#         downloading of calibration data.
+def derive_calibration(
+        observation: 'analyze.Observation', filter_list: list[str],
+        calibration_source: str = 'APASS', max_pixel_between_objects: int = 3,
+        ooi_correlation_strategy: int = 1,
+        vizier_dict: dict[str, str] | None = None,
+        path_calibration_file: str | None = None,
+        calibration_catalog_mag_range: tuple[float, float] = (0., 18.5),
+        coordinates_obj_to_rm: SkyCoord | None = None,
+        correlation_method: str = 'astropy',
+        separation_limit: u.quantity.Quantity = 2. * u.arcsec,
+        reference_filter: str | None = None,
+        region_to_select_calibration_stars: RectanglePixelRegion | None = None,
+        correlate_with_observed_objects: bool = True,
+        file_type_plots: str = 'pdf',
+        use_wcs_projection_for_star_maps: bool = True,
+        indent: int = 1
+    ) -> None:
+    """
+    Find suitable calibration stars
+
+    .. deprecated::
+        Prefer the unified :class:`~ost_photometry.analyze.pipeline.steps.calibration.CalibrationStep`
+        and :class:`~ost_photometry.analyze.calibration.CalibrationEngine` via
+        ``observation.run_pipeline``.
+    """
+    import warnings
+
+    warnings.warn(
+        "derive_calibration() is deprecated; use Observation.run_pipeline with "
+        "CalibrationStep / CalibrationEngine (epoch-native calibration).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    terminal_output.print_to_terminal(
+        f"Get calibration star magnitudes - Filter: {tuple(filter_list)}",
+        indent=indent,
+    )
+
+    #   Get one of image series to extract wcs, positions, ect.
+    if reference_filter is None:
+        reference_filter = filter_list[0]
+    image_series = observation.image_series_dict[reference_filter]
+
+    #   Get wcs
+    wcs = image_series.wcs
+
+    #   Load calibration data
+    calibration_tbl, column_names, ra_unit_calibration = load_calibration_data_table(
+        image_series,
+        filter_list,
+        calibration_source=calibration_source,
+        calibration_catalog_mag_range=calibration_catalog_mag_range,
+        vizier_dict=vizier_dict,
+        path_calibration_file=path_calibration_file,
+        indent=indent,
+    )
+
+    #   Convert coordinates of the calibration stars to SkyCoord object
+    calibration_object_coordinates = SkyCoord(
+        calibration_tbl[column_names['ra']].data,
+        calibration_tbl[column_names['dec']].data,
+        unit=(ra_unit_calibration, u.deg),
+        frame="icrs"
+    )
+
+    #   Get PixelRegion of the field of view and convert it SkyRegion
+    fov_pixel_region = image_series.fov_pixel_region
+    region_sky = fov_pixel_region.to_sky(wcs)
+
+    #   Remove calibration stars that are not within the field of view
+    mask = region_sky.contains(calibration_object_coordinates, wcs)
+    calibration_object_coordinates = calibration_object_coordinates[mask]
+    calibration_tbl = calibration_tbl[mask]
+
+    #   Remove calibration stars that are not within the selection region
+    if region_to_select_calibration_stars:
+        if hasattr(region_to_select_calibration_stars, 'to_sky'):
+            region_to_select_calibration_stars = region_to_select_calibration_stars.to_sky(wcs)
+        mask = region_to_select_calibration_stars.contains(calibration_object_coordinates, wcs)
+        calibration_object_coordinates = calibration_object_coordinates[mask]
+        calibration_tbl = calibration_tbl[mask]
+
+    #   Remove a specific star from the loaded calibration stars
+    if coordinates_obj_to_rm is not None:
+        mask = np.ones(len(calibration_object_coordinates), dtype=bool)
+        for coordinate_object in coordinates_obj_to_rm:
+            separation = calibration_object_coordinates.separation(coordinate_object)
+
+            #   Calculate mask of all object closer than ``radius``
+            mask = mask & np.invert(separation < 1 * u.arcsec)
+
+        calibration_object_coordinates = calibration_object_coordinates[mask]
+        calibration_tbl = calibration_tbl[mask]
+
+    #   Calculate object positions in pixel coordinates
+    pixel_position_cali_x, pixel_position_cali_y = calibration_object_coordinates.to_pixel(wcs)
+
+    #   Remove nans that are caused by missing ra/dec entries
+    # pixel_position_cali_x = pixel_position_cali_x[~np.isnan(pixel_position_cali_x)]
+    pixel_position_cali_y = pixel_position_cali_y[~np.isnan(pixel_position_cali_y)]
+    calibration_tbl = calibration_tbl[~np.isnan(pixel_position_cali_y)]
+
+    #   VSX (Vizier): drop calibration stars that coincide with known variables
+    #   (same shared get_vizier_catalog as catalog fetch; empty filter_list = positions only).
+    variable_stars_tbl, column_dict_variable, ra_unit_variable = get_vizier_catalog(
+        [],
+        image_series.coordinates_image_center,
+        field_of_view_arcmin=image_series.field_of_view_x,
+        catalog_identifier='B/vsx/vsx',
+        cleanup_magnitudes=False,
+        print_infos=False,
+    )
+    variable_stars_coordinates = SkyCoord(
+        variable_stars_tbl[column_dict_variable['ra']].data,
+        variable_stars_tbl[column_dict_variable['dec']].data,
+        unit=(ra_unit_variable, u.deg),
+        frame="icrs"
+    )
+
+    mask = np.ones(len(calibration_object_coordinates), dtype=bool)
+    for coordinate_object in variable_stars_coordinates:
+        separation = calibration_object_coordinates.separation(coordinate_object)
+
+        #   Calculate mask of all object closer than ``radius``
+        mask = mask & np.invert(separation < 1 * u.arcsec)
+
+    calibration_object_coordinates = calibration_object_coordinates[mask]
+    calibration_tbl = calibration_tbl[mask]
+
+    terminal_output.print_to_terminal(
+        f"{len(calibration_tbl)} calibration stars remain after cleanup",
+        indent=indent + 2,
+        style_name='GOOD',
+    )
+
+    #   TODO: Remove the following after changing the order of correlation and
+    #          download of calibration data in 'correlate_calibrate' of
+    #          'observation' in analysis.py
+    if correlate_with_observed_objects and len(column_names) > 2:
+        calibration_tbl, index_obj_instrument = correlate.correlate_with_calibration_objects(
+            image_series,
+            calibration_object_coordinates,
+            calibration_tbl,
+            filter_list,
+            column_names,
+            correlation_method=correlation_method,
+            separation_limit=separation_limit,
+            max_pixel_between_objects=max_pixel_between_objects,
+            ooi_correlation_strategy=ooi_correlation_strategy,
+            indent=indent + 1,
+            file_type_plots=file_type_plots,
+            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+        )
+    else:
+        index_obj_instrument = None
+
+    #   Add calibration data to observation container
+    observation.calib_parameters = CalibParameters(
+        index_obj_instrument,
+        # None,
+        column_names,
+        calibration_tbl,
+        ra_unit=ra_unit_calibration,
+    )
