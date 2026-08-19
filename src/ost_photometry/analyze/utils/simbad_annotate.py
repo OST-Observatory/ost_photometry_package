@@ -82,7 +82,7 @@ def query_simbad_objects(
         )
         custom_simbad = Simbad()
         custom_simbad.TIMEOUT = 120
-        custom_simbad.add_votable_fields('otype')
+        custom_simbad.add_votable_fields('otype', 'dimensions')
         result = custom_simbad.query_region(center_coord, radius=radius_deg * u.deg)
 
     return result

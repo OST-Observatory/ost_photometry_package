@@ -108,3 +108,20 @@ def test_trim_ccd_alignment_convention_matches_legacy_slice():
     expected = data[y_start : 10 + y_end, x_start : 10 + x_end]
     assert trimmed.shape == expected.shape
     np.testing.assert_array_equal(trimmed.data, expected)
+
+
+def test_aa_common_trim_margins_mixed_and_one_sided_shifts():
+    mod = _trim_slices_mod()
+    mixed = np.array(
+        [
+            [-1.2, 0.0, 2.4],
+            [-3.1, 1.0, 4.7],
+        ]
+    )
+    assert mod.aa_common_trim_margins(mixed) == (5, -4, 3, -2)
+
+    positive = np.array([[0.2, 1.1], [0.4, 2.2]])
+    assert mod.aa_common_trim_margins(positive) == (3, 0, 2, 0)
+
+    negative = np.array([[-2.2, -0.1], [-3.3, -0.4]])
+    assert mod.aa_common_trim_margins(negative) == (0, -4, 0, -3)

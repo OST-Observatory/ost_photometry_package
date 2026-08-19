@@ -122,12 +122,12 @@ Still invoked from `main_extract` when annotating. Belongs with other optional a
 | `reduce/workflow/main.py` | `align_images`, `make_big_images` |
 | `n1_baches/1_masterimages.py` | `trim_image_simple` |
 
-**Open in-code TODOs (2 remaining):**
+**In-code TODOs — done (August 2026):**
 
 | Marker | Action |
 |--------|--------|
-| Astroalign `footprint` after `apply_transform` | Decide whether to keep as `coverage_mask` for 2D background / trim. |
-| Min/max shift + trim margins inside `align_image_main` AA branch | Hoist out of the per-image loop (same for all images). |
+| Astroalign `footprint` after `apply_transform` | Coverage + warped source mask stay on `CCDData.mask` (`propagate_mask=True`). |
+| Min/max shift + trim margins inside the AA branch | Hoisted to `aa_common_trim_margins` (`trim_slices.py`) and passed into the per-image trim. |
 
 **Done:** commented-out `shift_stack_astroalign` block removed.
 
@@ -182,31 +182,25 @@ Until then, keeping `"i"` in the filtered formats helper is correct.
 
 ## In-code TODOs
 
-**Verified August 2026:** **6** `TODO` markers under `src/` (`rg 'TODO' src --glob '*.py'`). Inventory and promoted backlog below; registration items are also listed under [Reduce](#reduce).
+**Verified August 2026:** **0** `TODO` markers under `src/` (`rg 'TODO' src --glob '*.py'`). The former six markers are done:
 
-### Inventory
+| File | What was done |
+|------|----------------|
+| `reduce/registration.py` | AA footprint kept on `CCDData.mask`; AA trim margins hoisted out of the per-image loop |
+| `analyze/plots/cmds.py` | Absolute-CMD optional `rv_err`/`e_b_v_err`; fiduciary binning and isochrone flush readability |
+| `analyze/plots/starmaps.py` | Galaxy ellipses use SIMBAD `galdim_angle` (TAP `dimensions`) when present |
 
-| File | Markers | Topic |
-|------|---------|--------|
-| `reduce/registration.py` | 2 | AA footprint mask; hoist trim margins |
-| `analyze/plots/cmds.py` | 3 | Extinction error propagation; fiduciary binning readability; isochrone trailing block |
-| `analyze/plots/starmaps.py` | 1 | Galaxy ellipse position angle from SIMBAD |
+### Absolute CMD: extinction-parameter errors — optional
 
-### Absolute CMD: propagate extinction-parameter errors (P3)
+Course absolute CMDs apply Fitzpatrick + user `rv` / `e_b_v`. Optional `rv_err` / `e_b_v_err` are combined in quadrature with the photometric error bars (independent, no covariance). The supervisor CMD script exposes `eB_V_err` / `RV_err`. Leave them `None` when the uncertainties are unknown. Isochrone χ² still uses the binned scatter, not these systematic terms.
 
-In `MakeCMDs` absolute-CMD path (`cmds.py`), extinction uses Fitzpatrick + user `rv` / `e_b_v` but does **not** propagate uncertainties on those parameters into corrected magnitude/color errors.
+### CMD plot maintainability — done
 
-**Direction:** decide whether course CMDs need formal errors on \(R_V\) / \(E(B-V)\); if yes, add a simple propagation (or document that plotted errors stay photometric-only).
+Fiduciary magnitude–color binning after `np.digitize` uses a pair of list comprehensions; the isochrone file parser flushes via one `_flush_current_isochrone` on keyword boundaries and at end-of-file.
 
-### CMD plot maintainability (P3)
+### Starmap: SIMBAD galaxy ellipse orientation — done
 
-Two readability TODOs in the isochrone / fiduciary-point path: (1) magnitude–color binning loop after `np.digitize`; (2) trailing “flush last isochrone” block that should fold into the parse loop.
-
-**Direction:** small refactor when next touching CMD isochrone fitting — no behaviour change required.
-
-### Starmap: SIMBAD galaxy ellipse orientation (P3)
-
-`plot_annotated_image` draws galaxies from SIMBAD `DIMENSIONS` (`a x b`) with **angle fixed to 0**. Check whether PA / orientation is available in the queried columns and use it when present.
+`plot_annotated_image` reads TAP `galdim_majaxis` / `galdim_minaxis` / `galdim_angle` (fallback: `DIMENSIONS` string `a x b`, PA `0`). The sky ellipse is converted to pixels with `EllipseSkyRegion` so the PA is East of North.
 
 ---
 
@@ -223,11 +217,10 @@ Two readability TODOs in the isochrone / fiduciary-point path: (1) magnitude–c
 1. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
 2. **P3:** OST filter throughput → synphot Vega↔AB offsets — see section above.
 3. **P3 (when ready):** Drop legacy wide tables / column `i` — see section above.
-4. **On further registration work:** optionally extract `trim.py` / split align+shifts; remaining TODOs are AA footprint mask and hoist trim margins.
-5. **On CMD / annotation work:** absolute-CMD extinction errors; SIMBAD galaxy PA; isochrone readability.
-6. **On utilities changes:** extract only the affected area.
+4. **On further registration work:** optionally extract `trim.py` / split align+shifts (footprint mask and AA trim hoist are done).
+5. **On utilities changes:** extract only the affected area.
 
-**Recently done:** JSON/YAML loaders reject non-mappings; removed dead `shift_stack_astroalign` block and orphan lightcurve `fit_function` TODO; removed `calibration_data` / `derive_calibration` / `legacy_adapter` / `CalibParameters`; Vega/AB + filter-set conversion; T/ZP `cov_tz`; ASCII `formats` key `i` vs `id`; `fraction_epsf_stars` + `maximum_n_eps_stars` clamp; FWHM estimate wired through multi-extract.
+**Recently done:** remaining in-code `TODO` markers (AA footprint + trim hoist, CMD extinction-error docs / binning / isochrone flush, SIMBAD galaxy PA); JSON/YAML loaders reject non-mappings; removed dead `shift_stack_astroalign` block and orphan lightcurve `fit_function` TODO; removed `calibration_data` / `derive_calibration` / `legacy_adapter` / `CalibParameters`; Vega/AB + filter-set conversion; T/ZP `cov_tz`; ASCII `formats` key `i` vs `id`; `fraction_epsf_stars` + `maximum_n_eps_stars` clamp; FWHM estimate wired through multi-extract.
 
 ---
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import astropy.units as u
 import numpy as np
 from astropy import wcs
 from astropy.coordinates import SkyCoord
@@ -13,8 +14,10 @@ from matplotlib.patches import Ellipse
 import matplotlib.pyplot as plt
 from photutils.aperture import CircularAperture
 from photutils.utils import ImageDepth
+from regions import EllipseSkyRegion
 
 from ... import checks, style, terminal_output
+from .simbad_galaxy import simbad_galaxy_axes_arcmin
 
 plt.switch_backend("Agg")
 
@@ -480,6 +483,30 @@ def plot_limiting_mag_sky_apertures(
     plt.close()
 
 
+def _galaxy_ellipse_from_simbad(
+        center: SkyCoord, wcs_image: wcs.WCS,
+        major_arcmin: float, minor_arcmin: float, pa_deg: float,
+        ) -> Ellipse | None:
+    """Sky ellipse in SIMBAD PA (East of North) converted to pixel coordinates."""
+    if major_arcmin <= 0 or minor_arcmin <= 0:
+        return None
+    pixel_ellipse = EllipseSkyRegion(
+        center=center,
+        width=major_arcmin * u.arcmin,
+        height=minor_arcmin * u.arcmin,
+        angle=pa_deg * u.deg,
+    ).to_pixel(wcs_image)
+    angle = pixel_ellipse.angle
+    angle_deg = (
+        float(angle.to(u.deg).value) if hasattr(angle, "to") else float(angle)
+    )
+    return Ellipse(
+        (pixel_ellipse.center.x, pixel_ellipse.center.y),
+        width=float(pixel_ellipse.width),
+        height=float(pixel_ellipse.height),
+        angle=angle_deg,
+    )
+
 
 def plot_annotated_image(
         image_data: np.ndarray, wcs_image: wcs.WCS, simbad_objects: Table,
@@ -610,36 +637,23 @@ def plot_annotated_image(
 
             elif obj_type in ['Galaxy', 'Seyfert1', 'Seyfert2', 'AGN_Candidate', 'QSO']:
                 color = 'lightsalmon'
-                #   Test if object dimension is available
-                if 'DIMENSIONS' in obj.colnames and obj['DIMENSIONS'] is not None:
-                    dimensions = obj['DIMENSIONS']
-                    # print(dimensions)
+                marker = 's'
+                axes = simbad_galaxy_axes_arcmin(obj)
+                ellipse = None
+                if axes is not None:
                     try:
-                        major_axis, minor_axis = [float(dim) for dim in dimensions.split('x')]
-                        #   TODO: Check if rotation information is available
-                        angle = 0
-
-                        #   Convert arc minute to pixel
-                        major_axis_px = (major_axis / 60.0) / wcs.wcs.cdelt[0]
-                        minor_axis_px = (minor_axis / 60.0) / wcs.wcs.cdelt[1]
-
-                        #   Draw ellipse
-                        ellipse = Ellipse(
-                            (x, y),
-                            width=major_axis_px,
-                            height=minor_axis_px,
-                            angle=angle,
-                            edgecolor=color,
-                            facecolor='none',
-                            lw=1.5,
-                            alpha=0.7,
+                        ellipse = _galaxy_ellipse_from_simbad(
+                            coord, wcs_image, *axes
                         )
-                        ax.add_patch(ellipse)
-                    except ValueError:
-                        pass
+                    except (AttributeError, TypeError, ValueError):
+                        ellipse = None
+                if ellipse is not None:
+                    ellipse.set_edgecolor(color)
+                    ellipse.set_facecolor('none')
+                    ellipse.set_linewidth(1.5)
+                    ellipse.set_alpha(0.7)
+                    ax.add_patch(ellipse)
                 else:
-                    #   No dimension tag -> set default marker
-                    marker = 's'
                     plot_marker = True
 
                 if not any(e.get_label() == 'Galaxy' for e in legend_elements):

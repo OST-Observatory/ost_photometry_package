@@ -10,8 +10,9 @@ from matplotlib import gridspec
 import matplotlib.pyplot as plt
 from scipy.spatial import KDTree
 
-from ... import calibration_parameters, checks, terminal_output
+from ... import checks, terminal_output
 
+from .cmd_reddening import combine_cmd_error_bars, reddening_for_absolute_cmd
 from .style import (
     MaxRecursionError,
     initialize_plot,
@@ -519,7 +520,8 @@ class MakeCMDs:
             figure_size_x: str = '', figure_size_y: str = '',
             y_plot_range_max: str = '', y_plot_range_min: str = '',
             x_plot_range_max: str = '', x_plot_range_min: str = '',
-            rv: float = 3.1, fit_isochrone: bool = False,
+            rv: float = 3.1, e_b_v_err: float | None = None,
+            rv_err: float | None = None, fit_isochrone: bool = False,
             magnitude_fit_range: tuple[float | None, float | None] = (None, None),
             n_bin_observation: int = 40,
             fiduciary_points_observation: bool | None = None,
@@ -533,7 +535,13 @@ class MakeCMDs:
         Parameters
         ----------
         e_b_v                       : `float`
-            Relative extinction between B and V band
+            Relative extinction between B and V band.
+
+        e_b_v_err                   : `float` or `None`, optional
+            1-sigma uncertainty on ``e_b_v``. Propagated into both plotted
+            axes and combined in quadrature with the photometric errors
+            (independent of ``rv_err``; no covariance).
+            Default is ``None`` (photometric errors only).
 
         m_m                         : `float`
             Distance modulus
@@ -563,8 +571,14 @@ class MakeCMDs:
             If True plot legend for isochrones.
 
         rv                          : `float`, optional
-            Ration between absolute and relative extinction
+            Ratio between absolute and relative extinction.
             Default is ``3.1``.
+
+        rv_err                      : `float` or `None`, optional
+            1-sigma uncertainty on ``rv``. Propagated into the extinction
+            correction (and, except for B-V, into the colour excess) and
+            combined in quadrature with the photometric errors.
+            Default is ``None`` (photometric errors only).
 
         figure_size_x               : `float`, optional
             Figure size in cm (x direction)
@@ -630,30 +644,28 @@ class MakeCMDs:
             Default is ``None``.
         """
         #   Correct for reddening and distance
-        if self.filter_1 == 'B' and self.filter_2 == 'V':
-            a_filter_2 = rv * e_b_v
-            relative_extinction = e_b_v
-        else:
-            #   Get effective filter wavelengths
-            filter_1_effective_wavelength = calibration_parameters.filter_effective_wavelength[self.filter_1]
-            filter_2_effective_wavelength = calibration_parameters.filter_effective_wavelength[self.filter_2]
-
-            #   Get Fitzpatrick's extinction curve
-            extinction_curve = calibration_parameters.fitzpatrick_extinction_curve(rv)
-
-            #   Get absolute extinction in the filter
-            a_filter_1 = extinction_curve(10000. / filter_1_effective_wavelength) * e_b_v
-            a_filter_2 = extinction_curve(10000. / filter_2_effective_wavelength) * e_b_v
-
-            #   Calculate relative extinction
-            relative_extinction = a_filter_1 - a_filter_2
-
-        #   TODO: Add error propagation. What is the error of rv and e_b_v?
-        #   Apply extinction correction (and distance) to magnitudes and color
+        a_filter_2, relative_extinction, a_filter_2_err, relative_extinction_err = (
+            reddening_for_absolute_cmd(
+                self.filter_1,
+                self.filter_2,
+                rv,
+                e_b_v,
+                e_b_v_err=e_b_v_err,
+                rv_err=rv_err,
+            )
+        )
         magnitude_filter_2 = self.magnitude_filter_2 - a_filter_2 - m_m
         magnitude_color = self.magnitude_color - relative_extinction
         self.magnitude_filter_2_absolute = magnitude_filter_2
         self.magnitude_color_absolute = magnitude_color
+        magnitude_filter_2_err = combine_cmd_error_bars(
+            self.magnitude_filter_2_err,
+            a_filter_2_err,
+        )
+        magnitude_color_err = combine_cmd_error_bars(
+            self.magnitude_color_err,
+            relative_extinction_err,
+        )
 
         #   Plot fiduciary points if isochrone fit is performed
         if fiduciary_points_observation is None and fit_isochrone:
@@ -696,8 +708,8 @@ class MakeCMDs:
         ax0.errorbar(
             magnitude_color,
             magnitude_filter_2,
-            yerr=self.magnitude_filter_2_err,
-            xerr=self.magnitude_color_err,
+            yerr=magnitude_filter_2_err,
+            xerr=magnitude_color_err,
             marker='o',
             ls='none',
             elinewidth=0.5,
@@ -730,21 +742,19 @@ class MakeCMDs:
 
             #   Perform binning
             digitized = np.digitize(magnitude_filter_2, bins)
-            #   TODO: Rewrite to make it easier to read
-            magnitude_filter_2_binned = []
-            magnitude_color_binned = []
-            for i in range(1, len(bins)):
-                if len(magnitude_filter_2[digitized == i]) != 0:
-                    magnitude_filter_2_binned.append(
-                        sigma_clipped_stats(magnitude_filter_2[digitized == i])
-                    )
-                if len(magnitude_color[digitized == i]) != 0:
-                    magnitude_color_binned.append(
-                        sigma_clipped_stats(magnitude_color[digitized == i])
-                    )
-            magnitude_filter_2_binned = np.array(magnitude_filter_2_binned)
-            magnitude_color_binned = np.array(magnitude_color_binned)
-            magnitude_binned_array = np.array([magnitude_filter_2_binned[:, 1], magnitude_color_binned[:, 1]]).T
+            magnitude_filter_2_binned = np.array([
+                sigma_clipped_stats(magnitude_filter_2[digitized == i])
+                for i in range(1, len(bins))
+                if np.any(digitized == i)
+            ])
+            magnitude_color_binned = np.array([
+                sigma_clipped_stats(magnitude_color[digitized == i])
+                for i in range(1, len(bins))
+                if np.any(digitized == i)
+            ])
+            magnitude_binned_array = np.column_stack(
+                (magnitude_filter_2_binned[:, 1], magnitude_color_binned[:, 1])
+            )
 
             if fiduciary_points_observation:
                 ax0.errorbar(
@@ -979,9 +989,27 @@ class MakeCMDs:
 
                 #   Overall lists for the isochrones
                 nearst_neighbour_indexes_list = []
+                isochrone_magnitude_2: list[float] = []
+                isochrone_color: list[float] = []
+                age: float | str | None = None
 
-                #   Number of detected isochrones
-                n_isochrones = 0
+                def _flush_current_isochrone() -> None:
+                    if not isochrone_magnitude_2:
+                        return
+                    age_list.append(float(age))
+                    isochrone_array = np.column_stack(
+                        (isochrone_magnitude_2, isochrone_color)
+                    )
+                    isochrones_list.append(isochrone_array)
+                    if fit_isochrone:
+                        isochrone_tree = KDTree(isochrone_array, leafsize=100)
+                        _, nearst_neighbour_indexes = isochrone_tree.query(
+                            magnitude_binned_array,
+                            k=1,
+                        )
+                        nearst_neighbour_indexes_list.append(
+                            nearst_neighbour_indexes
+                        )
 
                 #   Loop over all lines in the file
                 for line in isochrone_data:
@@ -990,41 +1018,15 @@ class MakeCMDs:
                     #   Check for a key word to distinguish the isochrones
                     try:
                         if line[0:len(isochrone_keyword)] == isochrone_keyword:
-                            #   Add data from the last isochrone to the overall
-                            #   lists for the isochrones.
-                            if n_isochrones:
-                                #   This part is only active after an isochrone has
-                                #   been detected. The variables are then assigned.
-                                age_list.append(float(age))
-                                isochrone_array = np.array(
-                                    [isochrone_magnitude_2, isochrone_color]
-                                ).T
-                                isochrones_list.append(isochrone_array)
-
-                                #   Find points to compare with binned observations
-                                if fit_isochrone:
-                                    isochrone_tree = KDTree(
-                                        isochrone_array,
-                                        leafsize=100,
-                                    )
-                                    _, nearst_neighbour_indexes = isochrone_tree.query(
-                                        magnitude_binned_array,
-                                        k=1,
-                                    )
-                                    nearst_neighbour_indexes_list.append(
-                                        nearst_neighbour_indexes
-                                    )
+                            _flush_current_isochrone()
 
                             #   Save age for the case where age is given as a
                             #   keyword and not as a column
                             if isochrone_column['AGE'] == 0:
                                 age = line.split('=')[1].split()[0]
 
-                            #   Prepare/reset lists for the single isochrones
                             isochrone_magnitude_2 = []
                             isochrone_color = []
-
-                            n_isochrones += 1
                             continue
                     except RuntimeError:
                         continue
@@ -1038,7 +1040,6 @@ class MakeCMDs:
                     if isochrone_column['AGE'] != 0:
                         age = float(line_elements[isochrone_column['AGE'] - 1])
 
-                    #   Fill lists
                     isochrone_magnitude_2, isochrone_color = self.fill_lists_with_isochrone_magnitudes(
                         line_elements,
                         isochrone_magnitude_relation_filter_1,
@@ -1047,20 +1048,7 @@ class MakeCMDs:
                         isochrone_color,
                     )
 
-                #   Add last isochrone to overall lists
-                #   TODO: Rearrange code so that the following block is not necessary
-                age_list.append(float(age))
-                isochrone_array = np.array(
-                    [isochrone_magnitude_2, isochrone_color]
-                ).T
-                isochrones_list.append(isochrone_array)
-                if fit_isochrone:
-                    isochrone_tree = KDTree(isochrone_array, leafsize=100)
-                    _, nearst_neighbour_indexes = isochrone_tree.query(
-                        magnitude_binned_array,
-                        k=1,
-                    )
-                    nearst_neighbour_indexes_list.append(nearst_neighbour_indexes)
+                _flush_current_isochrone()
 
                 #   Close isochrone file
                 isochrone_data.close()

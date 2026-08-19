@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import math
+
+import numpy as np
+
 
 def ccd_trim_slices(
     shape: tuple[int, int],
@@ -50,3 +54,38 @@ def ccd_trim_slices(
         )
 
     return slice(y0, y1), slice(x0, x1)
+
+
+def aa_common_trim_margins(
+        image_shift: np.ndarray,
+) -> tuple[int, int, int, int]:
+    """Pixel trim margins shared by all images after astroalign xy-shift.
+
+    ``image_shift`` uses python/image axis order: row 0 is Y, row 1 is X.
+    """
+    min_shift_x = float(np.nanmin(image_shift[1, :]))
+    max_shift_x = float(np.nanmax(image_shift[1, :]))
+    min_shift_y = float(np.nanmin(image_shift[0, :]))
+    max_shift_y = float(np.nanmax(image_shift[0, :]))
+
+    if min_shift_x > 0:
+        x_start = int(math.ceil(max_shift_x))
+        x_end = 0
+    elif min_shift_x < 0 and max_shift_x < 0:
+        x_start = 0
+        x_end = int(math.ceil(np.abs(min_shift_x))) * -1
+    else:
+        x_start = int(math.ceil(max_shift_x))
+        x_end = int(math.ceil(np.abs(min_shift_x))) * -1
+
+    if min_shift_y > 0:
+        y_start = int(math.ceil(max_shift_y))
+        y_end = 0
+    elif min_shift_y < 0 and max_shift_y < 0:
+        y_start = 0
+        y_end = int(math.ceil(np.abs(min_shift_y))) * -1
+    else:
+        y_start = int(math.ceil(max_shift_y))
+        y_end = int(math.ceil(np.abs(min_shift_y))) * -1
+
+    return x_start, x_end, y_start, y_end

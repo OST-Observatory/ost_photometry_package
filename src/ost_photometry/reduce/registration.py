@@ -16,8 +16,6 @@ import ccdproc as ccdp
 
 import astroalign as aa
 
-import math
-
 from scipy.ndimage import shift as shift_scipy
 
 from astropy.stats import mad_std
@@ -31,7 +29,7 @@ from skimage.registration import (
 from skimage.transform import warp, SimilarityTransform
 
 from . import utilities, plots
-from .trim_slices import ccd_trim_slices
+from .trim_slices import aa_common_trim_margins, ccd_trim_slices
 from .. import checks, style, terminal_output
 from ..core.parallel import Executor
 from .. import utilities as base_utilities
@@ -403,6 +401,11 @@ def align_image_main(
         )
 
         #   Trim all images
+        aa_trim_margins = (
+            aa_common_trim_margins(image_shifts)
+            if shift_method == 'aa'
+            else None
+        )
         for current_image_id, current_image_name in enumerate(image_file_collection.files):
             #   Check for outliers and those images where the shift determination failed
             if not np.isnan(image_shifts[1, current_image_id]):
@@ -421,6 +424,7 @@ def align_image_main(
                         'rm_enlarged_keyword': rm_enlarged_keyword,
                         'instrument': instrument,
                         'verbose': verbose,
+                        'aa_trim_margins': aa_trim_margins,
                     }
                 )
 
@@ -627,7 +631,9 @@ def apply_xy_image_shift(
         image_flips: np.ndarray, image_id: int, output_path: Path,
         shift_method: str = 'skimage', modify_file_name: bool = False,
         rm_enlarged_keyword: bool = False, instrument: str | None = None,
-        verbose: bool = False) -> None:
+        verbose: bool = False,
+        aa_trim_margins: tuple[int, int, int, int] | None = None,
+        ) -> None:
     """
     Apply shift to an individual image
 
@@ -695,6 +701,7 @@ def apply_xy_image_shift(
             image_shifts,
             correlation_method=shift_method,
             verbose=verbose,
+            aa_trim_margins=aa_trim_margins,
         )
     else:
         raise RuntimeError(
@@ -1330,10 +1337,10 @@ def astro_align(
         detection_sigma=3,
     )
 
-    #   Transform image data
-    #   TODO: Check whether 'footprint' should be saved in an extra mask,
-    #         so that it can be used as 'coverage_mask' in 2D background
-    #         extraction, for example.
+    #   Transform image data. ``footprint_mask`` is True where the warped frame
+    #   has no coverage; ``propagate_mask=True`` also warps ``current_ccd.mask``
+    #   into that footprint so both stay excluded from later 2D background /
+    #   photometry (no separate extra mask).
     image_data, footprint_mask = aa.apply_transform(
         transformation_coefficients,
         current_ccd,
@@ -1502,7 +1509,9 @@ def trim_ccd(
 
 def trim_image(
         image: CCDData, image_id: int, image_shift: np.ndarray,
-        correlation_method: str = 'skimage', verbose: bool = False) -> CCDData:
+        correlation_method: str = 'skimage', verbose: bool = False,
+        aa_trim_margins: tuple[int, int, int, int] | None = None,
+        ) -> CCDData:
     """
     Trim image based on a shift compared to a reference image
 
@@ -1533,6 +1542,10 @@ def trim_image(
         If True additional output will be printed to the command line.
         Default is ``False``.
 
+    aa_trim_margins
+        Precomputed ``(x_start, x_end, y_start, y_end)`` for ``correlation_method='aa'``.
+        If omitted, margins are computed from ``image_shift`` (same for every image).
+
     Returns
     -------
     trimmed_image
@@ -1558,35 +1571,9 @@ def trim_image(
             shift=image_shift[:, image_id],
             order=1,
         )
-
-        #   TODO: The following calculations do not need to be repeated for
-        #    every image. Move it out of the loop.
-        #   Calculate maximum and minimum shifts
-        min_shift_x, max_shift_x, min_shift_y, max_shift_y = calculate_min_max_image_shifts(
-            image_shift,
-            python_format=True,
-        )
-
-        #   Set trim margins
-        if min_shift_x > 0:
-            x_start = int(math.ceil(max_shift_x))
-            x_end = 0
-        elif min_shift_x < 0 and max_shift_x < 0:
-            x_start = 0
-            x_end = int(math.ceil(np.abs(min_shift_x))) * -1
-        else:
-            x_start = int(math.ceil(max_shift_x))
-            x_end = int(math.ceil(np.abs(min_shift_x))) * -1
-
-        if min_shift_y > 0:
-            y_start = int(math.ceil(max_shift_y))
-            y_end = 0
-        elif min_shift_y < 0 and max_shift_y < 0:
-            y_start = 0
-            y_end = int(math.ceil(np.abs(min_shift_y))) * -1
-        else:
-            y_start = int(math.ceil(max_shift_y))
-            y_end = int(math.ceil(np.abs(min_shift_y))) * -1
+        if aa_trim_margins is None:
+            aa_trim_margins = aa_common_trim_margins(image_shift)
+        x_start, x_end, y_start, y_end = aa_trim_margins
 
     else:
         raise ValueError(
