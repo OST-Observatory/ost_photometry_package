@@ -238,6 +238,11 @@ def link_files(output_path: Path, file_list: list[str]) -> None:
         target_path.symlink_to(p.absolute())
 
 
+def _mapping_or_empty(data: object) -> dict:
+    """Return ``data`` if it is a mapping, otherwise an empty dict."""
+    return data if isinstance(data, dict) else {}
+
+
 def read_params_from_json(json_file: str) -> dict:
     """
     Read data from JSON file
@@ -250,16 +255,16 @@ def read_params_from_json(json_file: str) -> dict:
     Returns
     -------
 
-        Dictionary with the data from the JSON file
+        Dictionary with the data from the JSON file. Missing, invalid, or
+        non-mapping payloads yield ``{}``.
     """
     try:
         with open(json_file) as file:
             data = json.load(file)
-            #   TODO: Check data datatype
-    except (json.JSONDecodeError, FileNotFoundError):
-        data = {}
+    except (json.JSONDecodeError, FileNotFoundError, OSError):
+        return {}
 
-    return data
+    return _mapping_or_empty(data)
 
 
 def read_params_from_yaml(yaml_file: str) -> dict:
@@ -274,16 +279,16 @@ def read_params_from_yaml(yaml_file: str) -> dict:
     Returns
     -------
 
-        Dictionary with the data from the YAML file
+        Dictionary with the data from the YAML file. Missing, invalid, empty,
+        or non-mapping payloads yield ``{}``.
     """
     try:
         with open(yaml_file, "r") as file:
             data = yaml.safe_load(file)
-            #   TODO: Check data datatype
-    except (yaml.YAMLError, FileNotFoundError):
-        data = {}
+    except (yaml.YAMLError, FileNotFoundError, OSError):
+        return {}
 
-    return data
+    return _mapping_or_empty(data)
 
 
 def get_input(prompt: str, timeout: int = 30) -> tuple[str | None, bool]:

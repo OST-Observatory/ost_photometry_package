@@ -402,6 +402,3 @@ def light_curve_fold(
         format=file_type,
     )
     plt.close()
-
-
-#   TODO: Fix type hints for fit_function
