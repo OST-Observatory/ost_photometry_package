@@ -21,6 +21,7 @@ from scipy.ndimage import median_filter
 
 from .. import calibration_parameters, checks, style, terminal_output
 from .. import utilities as base_utilities
+from ..fits_headers import ensure_mjd_obs_in_header
 from ..fwhm import estimate_fwhm_from_positions, source_positions_from_table
 from ..terminal_output import print_to_terminal
 from . import plots
@@ -755,6 +756,7 @@ def update_header_information(
             f"MJD could not be added to the header:\n {e}",
             style_name="WARNING",
         )
+    ensure_mjd_obs_in_header(image.meta)
 
     #   Add observation date using a second keyword (GRANDMA)
     try:

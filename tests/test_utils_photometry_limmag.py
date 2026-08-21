@@ -100,3 +100,27 @@ def test_subset_photometry_by_epoch():
     sub = mod._subset_photometry_by_epoch(tbl, "a")
     assert len(sub) == 2
     np.testing.assert_array_equal(sub["mag_cal_V"], [1.0, 3.0])
+
+
+def test_image_and_mask_for_depth_masks_nonfinite():
+    mod = _limmag_helpers()
+    data = np.ones((4, 4), dtype=float)
+    data[0, 0] = np.nan
+    data[1, 2] = np.inf
+    mask = np.zeros((4, 4), dtype=bool)
+    mask[3, 3] = True
+    cleaned, out_mask = mod._image_and_mask_for_depth(data, mask)
+    assert cleaned[0, 0] == 0.0
+    assert cleaned[1, 2] == 0.0
+    assert out_mask[0, 0] and out_mask[1, 2] and out_mask[3, 3]
+    assert not out_mask[2, 2]
+    np.testing.assert_allclose(cleaned[2, 2], 1.0)
+
+
+def test_image_and_mask_for_depth_passthrough_when_finite():
+    mod = _limmag_helpers()
+    data = np.arange(9, dtype=float).reshape(3, 3)
+    mask = np.zeros((3, 3), dtype=bool)
+    cleaned, out_mask = mod._image_and_mask_for_depth(data, mask)
+    np.testing.assert_array_equal(cleaned, data)
+    np.testing.assert_array_equal(out_mask, mask)

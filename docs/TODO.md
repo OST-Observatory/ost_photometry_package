@@ -83,12 +83,12 @@ Still invoked from `main_extract` when annotating. Belongs with other optional a
 
 ---
 
-## Warnings & small fixes
+## Warnings & small fixes — done
 
-| Item | Prio | Notes |
-|------|------|-------|
-| `FITSFixedWarning` (`datfix` / `MJD-OBS` from `DATE-OBS`) | P3 | Harmless but noisy; filter or set MJD-OBS explicitly when building WCS/Time from FITS. |
-| NaNs clipped in `ImageDepth` / limiting magnitude | P3 | `_derive_limiting_magnitude_one_epoch` → `ImageDepth`; pre-clean non-finite pixels or acknowledge warning. |
+``MJD-OBS`` is filled from ``DATE-OBS`` or ``JD`` before WCS construction
+(``fits_headers.wcs_from_header`` / header enrichment). Informational
+``datfix`` ``FITSFixedWarning`` messages are filtered. Non-finite pixels are
+masked and zeroed before ``ImageDepth`` in limiting-magnitude derivation.
 
 ---
 

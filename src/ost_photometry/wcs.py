@@ -15,6 +15,7 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 
 from . import checks, style, terminal_output
+from .fits_headers import wcs_from_header
 
 if TYPE_CHECKING:
     from .image import Image  # noqa: F401
@@ -218,7 +219,7 @@ def _apply_wcs_to_fits(
         hdul.flush()
 
     with fits.open(target_path) as hdul:
-        reloaded_wcs = wcs.WCS(hdul[0].header)
+        reloaded_wcs = wcs_from_header(hdul[0].header)
         if image_shape is None and hdul[0].data is not None:
             ny, nx = hdul[0].data.shape
             image_shape = (nx, ny)
@@ -414,7 +415,7 @@ def find_wcs_astrometry(
     hdu_list = fits.open(filepath)
 
     #   Extract the WCS
-    derived_wcs = wcs.WCS(hdu_list[0].header)
+    derived_wcs = wcs_from_header(hdu_list[0].header)
 
     image.wcs = derived_wcs
     _sync_image_coordinates_from_wcs(image, derived_wcs)
@@ -586,7 +587,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
 
         with fits.open(astap_path) as solved_hdul:
             solved_header = solved_hdul[0].header
-            solved_wcs = wcs.WCS(solved_header)
+            solved_wcs = wcs_from_header(solved_header)
 
         derived_wcs = _apply_wcs_to_fits(
             source_path,
@@ -637,7 +638,7 @@ def check_wcs_exists(
 
     #   Get WCS of the original image
     with fits.open(wcs_file) as hdul:
-        wcs_original = wcs.WCS(hdul[0].header)
+        wcs_original = wcs_from_header(hdul[0].header)
         ny, nx = hdul[0].data.shape
 
     #   Determine wcs type of original WCS
@@ -677,7 +678,7 @@ def check_wcs_exists(
 
         if filepath.is_file():
             with fits.open(filepath) as hdul:
-                wcs_astronomy_net = wcs.WCS(hdul[0].header)
+                wcs_astronomy_net = wcs_from_header(hdul[0].header)
                 ny, nx = hdul[0].data.shape
 
             #   Determine wcs type
@@ -702,7 +703,7 @@ def check_wcs_exists(
 def _load_wcs_from_fits(path: str | Path) -> wcs.WCS:
     """Load a celestial WCS from a FITS file."""
     with fits.open(path) as hdul:
-        return wcs.WCS(hdul[0].header)
+        return wcs_from_header(hdul[0].header)
 
 
 def find_wcs_for_image(

@@ -108,6 +108,8 @@ def _blank_sky_source_mask(
     from scipy.ndimage import binary_dilation
 
     data = np.asarray(image_data, dtype=float)
+    finite = np.isfinite(data)
+    stats_mask = ~finite if not np.all(finite) else None
     mask = np.zeros(data.shape, dtype=bool)
 
     xs = np.asarray(index_x, dtype=int).ravel()
@@ -124,11 +126,16 @@ def _blank_sky_source_mask(
         r_stamp = max(1, int(np.ceil(float(catalog_stamp_radius))))
         mask |= binary_dilation(seed, structure=circular_footprint(radius=r_stamp))
 
+    mask |= ~finite
+
     try:
-        _mean, median, std = sigma_clipped_stats(data, sigma=3.0, maxiters=5)
+        _mean, median, std = sigma_clipped_stats(
+            data, mask=stats_mask, sigma=3.0, maxiters=5
+        )
         if np.isfinite(std) and std > 0.0:
             kernel = make_2dgaussian_kernel(3.0, size=5)
-            convolved = convolve(data - median, kernel, normalize_kernel=True)
+            working = np.where(finite, data - median, 0.0)
+            convolved = convolve(working, kernel, normalize_kernel=True)
             finder = SourceFinder(n_pixels=detect_npixels, progress_bar=False)
             segm = finder(convolved, float(detect_nsigma) * float(std))
             if segm is not None:
@@ -142,6 +149,26 @@ def _blank_sky_source_mask(
         )
 
     return mask
+
+
+def _image_and_mask_for_depth(
+    image_data: np.ndarray,
+    mask: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Zero non-finite pixels and mask them so ImageDepth does not clip NaNs."""
+    data = np.asarray(image_data, dtype=float)
+    mask_out = np.asarray(mask, dtype=bool)
+    if mask_out.shape != data.shape:
+        raise ValueError(
+            f"ImageDepth mask shape {mask_out.shape} does not match "
+            f"image shape {data.shape}."
+        )
+    finite = np.isfinite(data)
+    if np.all(finite):
+        return data, mask_out
+    data = data.copy()
+    data[~finite] = 0.0
+    return data, mask_out | ~finite
 
 
 def _median_zeropoint(zp) -> float:
@@ -248,6 +275,15 @@ def _derive_limiting_magnitude_one_epoch(
     )
     mask_pad = max(5.0, 0.5 * float(radius))
 
+    depth_data, depth_mask = _image_and_mask_for_depth(image_data, mask)
+    n_nonfinite = int(np.count_nonzero(~np.isfinite(np.asarray(image_data, dtype=float))))
+    if n_nonfinite > 0:
+        terminal_output.print_to_terminal(
+            f"Masked {n_nonfinite} non-finite pixels before ImageDepth.",
+            style_name="WARNING",
+            indent=indent * 2,
+        )
+
     depth = ImageDepth(
         radius,
         n_sigma=5.0,
@@ -259,12 +295,12 @@ def _derive_limiting_magnitude_one_epoch(
         progress_bar=False,
     )
 
-    _flux_limit, mag_limit = depth(image_data, mask)
+    _flux_limit, mag_limit = depth(depth_data, depth_mask)
 
     plots.plot_limiting_mag_sky_apertures(
         out_path_stub,
-        image_data,
-        mask,
+        depth_data,
+        depth_mask,
         depth,
         file_type=file_type_plots,
     )

@@ -15,6 +15,7 @@ from astropy.time import Time
 from regions import PixCoord, RectanglePixelRegion
 
 from . import calibration_parameters, style, terminal_output
+from .fits_headers import ensure_mjd_obs_in_header
 
 
 class Image:
@@ -225,6 +226,7 @@ class Image:
 
         self.jd = jd
         self.air_mass = header.get("AIRMASS", 1.0)
+        ensure_mjd_obs_in_header(header)
 
         #  Add instrument to image class
         self.instrument = instrument
