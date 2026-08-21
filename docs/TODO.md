@@ -6,7 +6,7 @@ This document is the **forward-looking backlog**. Closed migration notes live in
 [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md). Also see
 [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md) and [COMPATIBILITY_REPORT.md](COMPATIBILITY_REPORT.md).
 
-**As of:** July 2026 (after `_legacy` bag removal, workflow modularization, and backlog review)
+**As of:** August 2026
 
 **Priorities:** P1 = next sprint · P2 = track, no urgency · P3 = optional / long-term · — = operational, not code debt
 
@@ -32,14 +32,6 @@ A **star-wise** alternative would fit per star × epoch:
 That is a **new** method (not the same as `run_second_order_campaign`, which reduces stars to a field `C` first). Needs wide airmass **and** color span, and careful separation from the linear color term `T`.
 
 **Direction (optional):** optional `extinction_mode` / helper that fits star-level residuals; keep mk_calib campaign and tabulated/user k″ as the supported paths for applying SECOND order. Do **not** bolt this onto `fit_extinction_from_comparison_stars` (epoch-mean vs X destroys color information).
-
-### T/ZP fit covariance in calibrated errors — done
-
-`TransformationCoefficients.cov_tz` stores `Cov(T, ZP)` from `weighted_linear_fit`. Apply-transform / `calibrated_magnitude_variance` include `2·color·cov(T, ZP)`. Rolling/IV-combined T/ZP set `cov_tz=0` (independent mixing).
-
-### Vega vs AB / magnitude-system transforms — done
-
-Two axes: **filter set** (`bessell` / `sdss`) and **magnitude system** (`vega` / `ab`). Config: `output_filter_set`, `output_magnitude_system` (`auto` = catalog/calibrated), `convert_magnitudes`. Early abort on SDSS+Vega. Conversions: Vega↔AB offsets, Bessell→SDSS (Jordi), SDSS→Bessell (Lupton). Table meta + light-curve labels. See [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
 
 ### OST filter throughput → Vega↔AB offsets via synphot (P3)
 
@@ -71,21 +63,13 @@ Steps are already modular via config. What is missing is **persist and continue 
 
 **Direction:** only if course/supervisor workflows need “extract+correlate → stop → calibrate later”. Otherwise leave as soft `skip_*` usage.
 
-### Unified correlated object index (P3)
+### Unified correlated object index — done
 
-After correlation, table `id` is typically the row index (`assign_global_correlated_object_ids`). OOI still uses `id_in_image_series: dict[str, int]`; calibration objects keep a separate ID list. A third parallel index is unnecessary — prefer one correlated `id` everywhere.
-
-**Direction:** audit `ObjectOfInterest.id_in_image_series`, `get_ids_object_of_interest` / `reference_obj_ids`, and `ids_calibration_objects`; migrate callers to the correlated `id` where safe.
+After correlation, photometry table ``id`` is the aligned row index. Objects of interest store that as ``correlated_id`` (see `ooi_photometry_id`). ``id_in_image_series`` remains the pre-alignment per-filter row map for intra-filter protection. Calibration stars are matched to the same table ``id`` (no separate stored index).
 
 ---
 
 ## Extraction / ePSF
-
-### `fraction_epsf_stars` can select too-faint stars (P2)
-
-**Done.** Selection uses ``n_epsf_stars_to_select``:
-``clamp(int(n_stars * fraction_epsf_stars), minimum_n_eps_stars, maximum_n_eps_stars)``.
-Config: ``minimum_n_eps_stars`` (default 15), ``maximum_n_eps_stars`` (default 50; ``None`` = no upper cap), ``fraction_epsf_stars`` (default 0.2).
 
 ### Finite-value checks around `extract_stars` (P3)
 
@@ -103,7 +87,6 @@ Still invoked from `main_extract` when annotating. Belongs with other optional a
 
 | Item | Prio | Notes |
 |------|------|-------|
-| ASCII `formats` key `{'i'}` vs column `id` | — | **Done.** `schema.ascii_write_formats_for_columns` filters format keys to columns present on the table (`post_processing/io.py`, `utils/legacy_magnitudes.py`). |
 | `FITSFixedWarning` (`datfix` / `MJD-OBS` from `DATE-OBS`) | P3 | Harmless but noisy; filter or set MJD-OBS explicitly when building WCS/Time from FITS. |
 | NaNs clipped in `ImageDepth` / limiting magnitude | P3 | `_derive_limiting_magnitude_one_epoch` → `ImageDepth`; pre-clean non-finite pixels or acknowledge warning. |
 
@@ -113,7 +96,7 @@ Still invoked from `main_extract` when annotating. Belongs with other optional a
 
 ### `reduce/registration.py` — modularize (P3, as needed)
 
-**~1720 lines**, 15 functions. Contains orchestration (`align_images`), shift algorithms (phase correlation, optical flow, astroalign), and trim logic in a single file.
+**~1700 lines**, 15 functions. Orchestration (`align_images`), shift algorithms, and trim logic in one file.
 
 **External API (keep stable):**
 
@@ -122,20 +105,9 @@ Still invoked from `main_extract` when annotating. Belongs with other optional a
 | `reduce/workflow/main.py` | `align_images`, `make_big_images` |
 | `n1_baches/1_masterimages.py` | `trim_image_simple` |
 
-**In-code TODOs — done (August 2026):**
+Trim helpers are already unified (`trim_ccd` / `ccd_trim_slices` / `aa_common_trim_margins`). AA footprint stays on `CCDData.mask`.
 
-| Marker | Action |
-|--------|--------|
-| Astroalign `footprint` after `apply_transform` | Coverage + warped source mask stay on `CCDData.mask` (`propagate_mask=True`). |
-| Min/max shift + trim margins inside the AA branch | Hoisted to `aa_common_trim_margins` (`trim_slices.py`) and passed into the per-image trim. |
-
-**Done:** commented-out `shift_stack_astroalign` block removed.
-
-Trim helpers already unified via `trim_ccd` / `ccd_trim_slices` (`trim_image` + `trim_image_simple`).
-
-**Recommendation:** No separate large refactor. Worth doing **only when actively working** on alignment/trim. Before a larger split, add small regression tests with synthetic `CCDData` arrays (shifts, trim edges) — the workflow split was a pure move; risk is higher here.
-
-**Possible target structure (if undertaken):**
+**Recommendation:** no dedicated split. If touching alignment/trim, optionally:
 
 ```
 reduce/registration/
@@ -144,25 +116,9 @@ reduce/registration/
   trim.py     # trim_ccd, trim_image, trim_image_simple
 ```
 
-**Done (first step):** unify trim paths on `trim_ccd` / `ccd_trim_slices` (see `tests/test_registration_trim.py`). Full package split still optional.
-
----
-
 ### `reduce/utilities.py` — optional further split (P3)
 
-**~940 lines**, 14 functions. Already delegates to submodules (`exposure`, `instrument`, `masks`, `wcs_reduce`, …); the file is a facade plus reduction-specific helpers.
-
-**External API (keep stable):**
-
-| Consumer | Symbols |
-|----------|---------|
-| Course `c7`, `n2` | `prepare_reduction` |
-| Course `n1` | `flip_image`, `bin_image`, `inverse_median` |
-| Workflow modules | Master checks, exposure times, WCS, FWHM |
-
-**Recommendation:** **Low priority.** Incremental only when touching affected areas — e.g. `preprocessing.py` (flip/bin), `masters.py`, `fwhm.py`. No dedicated cleanup PR needed.
-
-**Note:** The former “split `Image`” item (`ost_photometry.utilities.Image`) is **done** — see `ost_photometry/image.py` and `analyze/image.py`. This section is only about `reduce/utilities.py`.
+Facade plus reduction-specific helpers; already delegates to `exposure`, `instrument`, `masks`, `wcs_reduce`, …. Incremental only when touching the affected area.
 
 ---
 
@@ -180,30 +136,6 @@ Until then, keeping `"i"` in the filtered formats helper is correct.
 
 ---
 
-## In-code TODOs
-
-**Verified August 2026:** **0** `TODO` markers under `src/` (`rg 'TODO' src --glob '*.py'`). The former six markers are done:
-
-| File | What was done |
-|------|----------------|
-| `reduce/registration.py` | AA footprint kept on `CCDData.mask`; AA trim margins hoisted out of the per-image loop |
-| `analyze/plots/cmds.py` | Absolute-CMD optional `rv_err`/`e_b_v_err`; fiduciary binning and isochrone flush readability |
-| `analyze/plots/starmaps.py` | Galaxy ellipses use SIMBAD `galdim_angle` (TAP `dimensions`) when present |
-
-### Absolute CMD: extinction-parameter errors — optional
-
-Course absolute CMDs apply Fitzpatrick + user `rv` / `e_b_v`. Optional `rv_err` / `e_b_v_err` are combined in quadrature with the photometric error bars (independent, no covariance). The supervisor CMD script exposes `eB_V_err` / `RV_err`. Leave them `None` when the uncertainties are unknown. Isochrone χ² still uses the binned scatter, not these systematic terms.
-
-### CMD plot maintainability — done
-
-Fiduciary magnitude–color binning after `np.digitize` uses a pair of list comprehensions; the isochrone file parser flushes via one `_flush_current_isochrone` on keyword boundaries and at end-of-file.
-
-### Starmap: SIMBAD galaxy ellipse orientation — done
-
-`plot_annotated_image` reads TAP `galdim_majaxis` / `galdim_minaxis` / `galdim_angle` (fallback: `DIMENSIONS` string `a x b`, PA `0`). The sky ellipse is converted to pixels with `EllipseSkyRegion` so the PA is East of North.
-
----
-
 ## Operational (not code debt)
 
 | Item | Notes |
@@ -214,32 +146,11 @@ Fiduciary magnitude–color binning after `np.digitize` uses a pair of list comp
 
 ## Suggested order
 
-1. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign) — see section above.
-2. **P3:** OST filter throughput → synphot Vega↔AB offsets — see section above.
-3. **P3 (when ready):** Drop legacy wide tables / column `i` — see section above.
-4. **On further registration work:** optionally extract `trim.py` / split align+shifts (footprint mask and AA trim hoist are done).
+1. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
+2. **P3:** OST filter throughput → synphot Vega↔AB offsets.
+3. **P3 (when ready):** Drop legacy wide tables / column `i`.
+4. **On further registration work:** optionally extract `trim.py` / split align+shifts.
 5. **On utilities changes:** extract only the affected area.
-
-**Recently done:** remaining in-code `TODO` markers (AA footprint + trim hoist, CMD extinction-error docs / binning / isochrone flush, SIMBAD galaxy PA); JSON/YAML loaders reject non-mappings; removed dead `shift_stack_astroalign` block and orphan lightcurve `fit_function` TODO; removed `calibration_data` / `derive_calibration` / `legacy_adapter` / `CalibParameters`; Vega/AB + filter-set conversion; T/ZP `cov_tz`; ASCII `formats` key `i` vs `id`; `fraction_epsf_stars` + `maximum_n_eps_stars` clamp; FWHM estimate wired through multi-extract.
-
----
-
-## Reviewed older backlog — not added
-
-These came from an earlier numbered list; they are **obsolete, vague, or already addressed** and were intentionally not promoted:
-
-| Old # | Verdict |
-|-------|---------|
-| 7 Warning formatting | Soft polish only; `OstPhotometryAnalyzeWarning` + terminal styles already exist. |
-| 8 Everything English? | `src/` mostly English; leftover German is mainly in some docs. |
-| 12 Comments / rename for readability | Do when touching code; not a discrete backlog item. |
-| 18 Rework LimitingMagnitudeStep | Largely done (`DeriveLimitingMagnitudeStep` / epoch-native path); only small polish remains (see NaN warning above). |
-| 25 Remove unused imports | Hygiene via `ruff`, not tracked debt. |
-| 28 Improve extinction fit? | Too vague; site seed is operational (above). Re-open only with a concrete defect. |
-| 29 Clear filter / legacy vs differential in `2_obtain_flux` | Course path uses `run_pipeline`; Clear uses flux fallback in `LightCurveStep`. Obsolete as worded. |
-| 31 EPSFBuilder → `EPSFBuildResult` | Tuple unpack still supported under `photutils>=3`; optional modernization only. |
-| 36 `kground_clipping` typo | Fixed as `sigma_value_background_clipping`. |
-| 39 Global `np.argwhere` / `.ravel()` audit | `correlate/core.py` done; remaining uses are local — fix when editing. |
 
 ---
 
@@ -249,3 +160,4 @@ These came from an earlier numbered list; they are **obsolete, vague, or already
 - Modular packages already in place: `reduce/workflow/`, `analyze/utils/`, `analyze/plots/`, `analyze/calibration/` (no `_legacy` bags).
 - Course scripts — API via `reduce.redu.reduce_main` unchanged; see [COMPATIBILITY_REPORT.md](COMPATIBILITY_REPORT.md).
 - Optional wide `.dat` export (`write_legacy_wide_magnitudes_dat`) — compatibility flag, not tech debt.
+- In-code `TODO` markers under `src/` — none remaining (August 2026).

@@ -12,6 +12,7 @@ from photutils.psf import ImagePSF
 
 from .. import terminal_output
 from .models import ImageSeries, ObjectOfInterest
+from .ooi_ids import ooi_photometry_ids
 
 if TYPE_CHECKING:
     pass
@@ -148,19 +149,11 @@ class Observation:
             )
             reference_image_series_id = 0
 
-        object_of_interest_ids: list[int] = []
-        for object_ in self.objects_of_interest:
-            ids_object_of_interest = object_.id_in_image_series
-            if not ids_object_of_interest:
-                continue
-            if filter_ is not None:
-                object_of_interest_ids.append(ids_object_of_interest[filter_])
-            else:
-                keys = list(ids_object_of_interest.keys())
-                object_of_interest_ids.append(
-                    ids_object_of_interest[keys[reference_image_series_id]]
-                )
-        return object_of_interest_ids
+        return ooi_photometry_ids(
+            self.objects_of_interest,
+            filter_=filter_,
+            reference_image_series_id=reference_image_series_id,
+        )
 
     def get_object_of_interest_names(self) -> list[str]:
         return [object_.name for object_ in self.objects_of_interest]

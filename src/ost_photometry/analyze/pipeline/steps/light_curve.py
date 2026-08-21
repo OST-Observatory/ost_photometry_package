@@ -14,6 +14,7 @@ from ...post_processing.light_curve import (
     is_epoch_native_photometry_table,
     prepare_plot_time_series,
 )
+from ...ooi_ids import ooi_photometry_id
 from .. import base
 from ..config import PipelineConfig
 from ..context import AnalysisContext
@@ -211,7 +212,7 @@ class LightCurveStep(base.PipelineStep):
         ids_ooi: set[int] = set()
         if config.plot_light_curve_objects_of_interest:
             for object_ in objects_of_interest:
-                oid = object_.id_in_image_series.get(filter_)
+                oid = ooi_photometry_id(object_, filter_=filter_)
                 if oid is None:
                     continue
                 oid = int(oid)
@@ -317,7 +318,7 @@ class LightCurveStep(base.PipelineStep):
         ids_ooi: set[int] = set()
         if config.plot_light_curve_objects_of_interest:
             for object_ in objects_of_interest:
-                oid = object_.id_in_image_series.get(filter_)
+                oid = ooi_photometry_id(object_, filter_=filter_)
                 if oid is None:
                     continue
                 oid = int(oid)

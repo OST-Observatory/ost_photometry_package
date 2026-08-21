@@ -26,6 +26,7 @@ from .ooi import (
     verify_objects_of_interest_global_correlated_ids,
 )
 from .protection import resolve_calibration_object_ids
+from ..ooi_ids import set_ooi_correlated_ids_from_filter
 
 def assign_global_correlated_object_ids(
     observation: "analyze.Observation",
@@ -40,8 +41,9 @@ def assign_global_correlated_object_ids(
     (e.g. differential calibration on epoch-native vstack tables)
     can match objects by ``id``.
 
-    Object-of-interest ``id_in_image_series`` values are row indices in these
-    tables; they stay valid when ``id`` equals the row index.
+    Objects of interest store the same index as ``correlated_id`` after
+    alignment. Per-filter ``id_in_image_series`` is only the pre-alignment
+    row map.
 
     Parameters
     ----------
@@ -208,7 +210,7 @@ def correlate_image_series(
     debug_verify_ooi_global_ids
         If True, after :func:`assign_global_correlated_object_ids` run
         :func:`verify_objects_of_interest_global_correlated_ids` (re-match sky
-        positions per image vs. stored ``id_in_image_series``).
+        positions per image vs. stored ``correlated_id``).
     """
     terminal_output.print_to_terminal(
         "Correlate image series",
@@ -317,14 +319,7 @@ def correlate_image_series(
             indent=indent + 1,
         )
 
-        #   Replicate IDs for the objects of interest
-        #   -> This is required, since the identification above is only for the
-        #      reference filter / image series
-        for object_ in objects_of_interest:
-            object_id = object_.id_in_image_series[reference_filter]
-            for filter_ in filter_list:
-                if filter_ != reference_filter:
-                    object_.id_in_image_series[filter_] = object_id
+        set_ooi_correlated_ids_from_filter(objects_of_interest, reference_filter)
 
     terminal_output.print_to_terminal('')
 

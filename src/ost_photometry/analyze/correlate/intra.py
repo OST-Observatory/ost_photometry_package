@@ -18,6 +18,7 @@ from ... import terminal_output
 
 from .core import correlate_datasets
 from .ooi import identify_object_of_interest_in_dataset
+from ..ooi_ids import set_ooi_correlated_ids_from_filter
 
 def assign_correlated_object_ids_single_series(
     image_series: "analyze.ImageSeries",
@@ -292,6 +293,8 @@ def correlate_preserve_objects(
             duplicate_handling=duplicate_handling_object_identification,
             verbose=verbose,
         )
+        if len(observation.image_series_dict) == 1:
+            set_ooi_correlated_ids_from_filter(objects_of_interest, filter_)
 
     overlay_x: list[float] = []
     overlay_y: list[float] = []

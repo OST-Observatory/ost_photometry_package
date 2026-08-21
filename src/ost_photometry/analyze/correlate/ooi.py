@@ -12,6 +12,7 @@ if typing.TYPE_CHECKING:
 
 from .core import correlation_own
 from ... import style, terminal_output
+from ..ooi_ids import ooi_photometry_id
 
 from astropy.coordinates import SkyCoord
 import astropy.units as u
@@ -489,7 +490,8 @@ def verify_objects_of_interest_global_correlated_ids(
 ) -> None:
     """
     After :func:`assign_global_correlated_object_ids`, re-run sky / srcor matching
-    on every image and compare to ``ObjectOfInterest.id_in_image_series``.
+    on every image and compare to ``ObjectOfInterest.correlated_id`` (falling
+    back to ``id_in_image_series``).
 
     Prints mismatches and a short summary to ``terminal_output``.
     """
@@ -540,7 +542,7 @@ def verify_objects_of_interest_global_correlated_ids(
             im_label = _debug_image_label_for_verify(image)
 
             for object_ in ooi_list:
-                stored = object_.id_in_image_series.get(filter_)
+                stored = ooi_photometry_id(object_, filter_=filter_)
                 if stored is None:
                     continue
                 try:

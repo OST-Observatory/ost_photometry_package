@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .. import terminal_output
+from ..ooi_ids import ooi_photometry_ids
 
 if TYPE_CHECKING:
     from .context import AnalysisContext
@@ -15,7 +16,7 @@ def get_ids_object_of_interest(
     filter_: str | None = None,
     reference_image_series_id: int | None = None,
 ) -> list[int]:
-    """Resolve OOI indices from context without requiring Observation methods."""
+    """Resolve OOI photometry IDs from context (correlated ``id`` when set)."""
     if filter_ is None and reference_image_series_id is None:
         terminal_output.print_to_terminal(
             "Neither a filter nor an image series ID was provided to "
@@ -25,14 +26,8 @@ def get_ids_object_of_interest(
         )
         reference_image_series_id = 0
 
-    ids: list[int] = []
-    for object_ in context.objects_of_interest:
-        id_map = object_.id_in_image_series
-        if not id_map:
-            continue
-        if filter_ is not None:
-            ids.append(id_map[filter_])
-        else:
-            keys = list(id_map.keys())
-            ids.append(id_map[keys[reference_image_series_id]])
-    return ids
+    return ooi_photometry_ids(
+        context.objects_of_interest,
+        filter_=filter_,
+        reference_image_series_id=reference_image_series_id,
+    )
