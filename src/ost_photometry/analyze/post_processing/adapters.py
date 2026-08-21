@@ -43,16 +43,24 @@ def _has_long_format_magnitude_columns(tbl: Table) -> bool:
     return False
 
 
+def _looks_like_legacy_wide(tbl: Table) -> bool:
+    return any(_MAG_COL_RE.match(name) for name in tbl.colnames)
+
+
 def _is_epoch_native_vstack(tbl: Table) -> bool:
-    """True if table looks like vstacked epoch-native calibration output (long form)."""
+    """True if table looks like vstacked or single-epoch long-form photometry."""
     if len(tbl) == 0:
         return True
-    time_col = "epoch_id" in tbl.colnames or "frame_id" in tbl.colnames
     has_star_id = "id" in tbl.colnames or "i" in tbl.colnames
     has_positions = ("x" in tbl.colnames and "y" in tbl.colnames) or (
         "ra" in tbl.colnames and "dec" in tbl.colnames
     )
-    return bool(time_col and has_star_id and has_positions and _has_long_format_magnitude_columns(tbl))
+    if not (has_star_id and has_positions and _has_long_format_magnitude_columns(tbl)):
+        return False
+    if "epoch_id" in tbl.colnames or "frame_id" in tbl.colnames:
+        return True
+    # Single-epoch calibration tables (dict values) often omit epoch_id.
+    return not _looks_like_legacy_wide(tbl)
 
 
 def _wide_legacy_to_long_table(tbl: Table) -> Table:
@@ -181,9 +189,10 @@ def legacy_wide_table_to_epoch_native(tbl: Table) -> Table:
     """
     Normalize a photometry table to epoch-native long form and attach schema metadata.
 
-    - If the table already looks like long-form epoch data (``epoch_id``/``frame_id``,
-      star id, positions, and ``mag_cal_*``, ``mag_inst_*``, or instrumental ``mag_<filter>``
-      from the differential / bridge pipeline), returns a copy with ``photometry_schema`` meta.
+    - If the table already looks like long-form epoch data (star id, positions,
+      and ``mag_cal_*`` / ``mag_inst_*`` / ``mag_<filter>``), returns a copy with
+      ``photometry_schema`` meta. ``epoch_id`` / ``frame_id`` is typical for a
+      vstack but optional for single-epoch calibration tables.
     - If it looks like a legacy **wide** table (one row per star, magnitudes in
       ``{filter} (transformed|simple, image=...)`` columns), expands to one row per
       star and epoch.

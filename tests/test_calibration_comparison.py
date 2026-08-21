@@ -156,10 +156,17 @@ def test_calibration_epochs_schema_roundtrip(synthetic_calibration_epoch_table):
     ensure_epoch_native = adapters_mod.ensure_epoch_native_photometry_table
 
     tbl = synthetic_calibration_epoch_table
-    required = {"id", "ra", "dec", "mag_B", "mag_V"}
+    required = {"id", "epoch_id", "ra", "dec", "mag_B", "mag_V"}
     assert required.issubset(set(tbl.colnames))
     native = ensure_epoch_native(tbl)
     assert len(native) == len(tbl)
+    assert native.meta.get("photometry_schema")
+
+    single = tbl.copy()
+    single.remove_column("epoch_id")
+    native_single = ensure_epoch_native(single)
+    assert len(native_single) == len(single)
+    assert native_single.meta.get("photometry_schema")
 
 
 @pytest.mark.comparison

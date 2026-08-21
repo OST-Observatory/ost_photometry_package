@@ -38,6 +38,7 @@ def synthetic_calibration_epoch_table() -> Table:
     mag_v_std = mag_v_inst + 0.10
     tbl = Table()
     tbl["id"] = np.arange(n)
+    tbl["epoch_id"] = np.full(n, "epoch_000")
     tbl["ra"] = np.linspace(120.0, 120.01, n)
     tbl["dec"] = np.linspace(45.0, 45.01, n)
     tbl["mag_B"] = mag_b_inst
