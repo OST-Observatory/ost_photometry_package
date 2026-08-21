@@ -70,7 +70,7 @@ def test_check_master_files_on_disk_science_flat_subset(tmp_path):
             "ost_photometry.reduce.exposure",
             pkg_src() / "ost_photometry" / "reduce" / "exposure.py",
         )
-    except ModuleNotFoundError:
+    except (ModuleNotFoundError, AttributeError):
         pytest.skip("ccdproc not available")
 
     class _FakeCCD:

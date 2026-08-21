@@ -112,7 +112,7 @@ def test_never_vs_always_color_term_fit_on_synthetic(synthetic_calibration_epoch
 @pytest.mark.comparison
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_extinction_none_vs_tabulated_constant_airmass(synthetic_calibration_epoch_table):
-    """With constant airmass, none vs tabulated extinction should give similar ZP."""
+    """At constant airmass, first-order extinction is absorbed into ZP (shift k'·X)."""
     tbl = synthetic_calibration_epoch_table
     _, zp_none = _differential_fit_zp_t(
         tbl, "V", ("B", "V"), extinction_order="none"
@@ -120,7 +120,10 @@ def test_extinction_none_vs_tabulated_constant_airmass(synthetic_calibration_epo
     _, zp_tab = _differential_fit_zp_t(
         tbl, "V", ("B", "V"), extinction_order="first"
     )
-    assert abs(zp_none - zp_tab) < 0.05
+    ext_mod = _import_submodule("ost_photometry.analyze.extinction")
+    k_v = ext_mod.DEFAULT_EXTINCTION["V"].k_prime
+    x = float(np.median(tbl["airmass"]))
+    assert abs((zp_tab - zp_none) - k_v * x) < 0.05
 
 
 @pytest.mark.comparison
@@ -147,8 +150,10 @@ def test_pipeline_config_presets():
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_calibration_epochs_schema_roundtrip(synthetic_calibration_epoch_table):
     """Bridge-style epoch tables keep required columns for both paths."""
-    schema_mod = _import_submodule("ost_photometry.analyze.post_processing.schema")
-    ensure_epoch_native = schema_mod.ensure_epoch_native_photometry_table
+    adapters_mod = _import_submodule(
+        "ost_photometry.analyze.post_processing.adapters"
+    )
+    ensure_epoch_native = adapters_mod.ensure_epoch_native_photometry_table
 
     tbl = synthetic_calibration_epoch_table
     required = {"id", "ra", "dec", "mag_B", "mag_V"}
@@ -295,9 +300,8 @@ def test_engine_derive_transform_from_data(synthetic_calibration_epoch_table):
 
 def test_plot_calibration_transformation_fit_line_ignores_nan_colors(tmp_path):
     """Fit line x-range must use finite masked colors only (cluster tables have NaN elsewhere)."""
-    pytest.importorskip("photutils")
     pytest.importorskip("matplotlib")
-    from unittest.mock import patch
+    from unittest.mock import MagicMock, patch
 
     from ost_photometry.analyze.calibration.result import TransformationCoefficients
     from ost_photometry.analyze.plots.calibration_qc import (
@@ -324,14 +328,19 @@ def test_plot_calibration_transformation_fit_line_ignores_nan_colors(tmp_path):
 
     def _fake_plot(x, y, *args, **kwargs):
         plot_calls.append((np.asarray(x), np.asarray(y)))
+        return MagicMock()
 
-    with patch("matplotlib.pyplot.subplots"), patch(
-        "matplotlib.pyplot.savefig"
-    ), patch("matplotlib.pyplot.close"), patch(
-        "ost_photometry.checks.check_output_directories"
-    ), patch("matplotlib.pyplot.scatter"), patch(
-        "matplotlib.pyplot.axhline"
-    ), patch("matplotlib.pyplot.plot", side_effect=_fake_plot):
+    fig = MagicMock()
+    ax1 = MagicMock()
+    ax2 = MagicMock()
+    ax1.plot.side_effect = _fake_plot
+    qc = "ost_photometry.analyze.plots.calibration_qc"
+
+    with patch(f"{qc}.plt.subplots", return_value=(fig, (ax1, ax2))), patch(
+        f"{qc}.plt.savefig"
+    ), patch(f"{qc}.plt.close"), patch(f"{qc}.plt.tight_layout"), patch(
+        f"{qc}.checks.check_output_directories"
+    ):
         plot_calibration_transformation(
             tmp_path,
             "epoch_000",

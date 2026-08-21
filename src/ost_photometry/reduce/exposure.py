@@ -1,5 +1,7 @@
 """Exposure time utilities for data reduction."""
 
+from __future__ import annotations
+
 import ccdproc as ccdp
 import numpy as np
 from astropy.nddata import CCDData

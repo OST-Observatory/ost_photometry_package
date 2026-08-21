@@ -52,7 +52,7 @@ def test_find_wcs_for_image_reuses_header_wcs(tmp_path: Path):
     assert resolved.wcs.crval[1] == expected.wcs.crval[1]
 
 
-def _hips_module():
+def _hips_module(monkeypatch):
     src = pkg_src()
     load_module_from_path("ost_photometry.style", src / "ost_photometry" / "style.py")
     load_module_from_path(
@@ -98,7 +98,7 @@ def _hips_module():
 
     ccdproc_mod = types.ModuleType("ccdproc")
     ccdproc_mod.trim_image = lambda ccd: ccd
-    sys.modules["ccdproc"] = ccdproc_mod
+    monkeypatch.setitem(sys.modules, "ccdproc", ccdproc_mod)
 
     return load_module_from_path(
         "ost_photometry.analyze.post_processing.hips_reference_subtract",
@@ -114,7 +114,7 @@ def test_run_hips_reference_subtraction_reuses_image_wcs(
     monkeypatch,
     tmp_path: Path,
 ):
-    hips_mod = _hips_module()
+    hips_mod = _hips_module(monkeypatch)
     run_hips = hips_mod.run_hips_reference_subtraction
 
     science_path = tmp_path / "science.fit"
@@ -169,7 +169,7 @@ def test_run_hips_reference_subtraction_solves_wcs_for_single_image(
     monkeypatch,
     tmp_path: Path,
 ):
-    hips_mod = _hips_module()
+    hips_mod = _hips_module(monkeypatch)
     run_hips = hips_mod.run_hips_reference_subtraction
 
     science_path = tmp_path / "science.fit"

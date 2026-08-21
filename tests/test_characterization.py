@@ -62,7 +62,9 @@ def test_extinction_corrector_first_order():
     )
     out = corr.correct(tbl, mag_col_prefix="mag_", filters=["V"], inplace=False)
     assert float(out["mag_V"][0]) == pytest.approx(12.0)
-    assert float(out["mag_V"][1]) == pytest.approx(12.7)
+    assert float(out["mag_V"][1]) == pytest.approx(13.0)
+    assert float(out["mag_ext_V"][0]) == pytest.approx(12.0 - 0.15 * 1.0)
+    assert float(out["mag_ext_V"][1]) == pytest.approx(13.0 - 0.15 * 2.0)
 
 
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
