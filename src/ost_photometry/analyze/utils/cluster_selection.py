@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import numpy as np
 import astropy.units as u
+import numpy as np
 from astropy.coordinates import SkyCoord, matching
 from astropy.stats import sigma_clip
 from astropy.table import Column, Table
@@ -22,14 +22,14 @@ from ..post_processing.coords import (
 )
 from ..post_processing.imaging import ImagingPlotContext, imaging_context_from_image_series
 from .duplicates import clear_duplicates
-from .starmaps import prepare_and_plot_starmap
 
 if TYPE_CHECKING:
-    from ..models import ImageSeries
+    from .. import analyze
+
 
 def _resolve_imaging_plot_context(
     *,
-    image_series: "analyze.ImageSeries | None" = None,
+    image_series: analyze.ImageSeries | None = None,
     plot_context: ImagingPlotContext | None = None,
 ) -> ImagingPlotContext:
     if plot_context is not None:
@@ -44,7 +44,7 @@ def _resolve_imaging_plot_context(
 
 def _vizier_field_cone(
     ctx: ImagingPlotContext,
-    image_series: "analyze.ImageSeries | None",
+    image_series: analyze.ImageSeries | None,
 ) -> tuple[SkyCoord, u.Quantity]:
     """Center and radius for ``Vizier.query_region`` (Gaia cone)."""
     if ctx.field_center_icrs is not None and ctx.field_radius_arcmin is not None:
@@ -63,7 +63,7 @@ def _vizier_field_cone(
 def proper_motion_selection(
         tbl: Table,
         *,
-        image_series: 'analyze.ImageSeries | None' = None,
+        image_series: analyze.ImageSeries | None = None,
         plot_context: ImagingPlotContext | None = None,
         catalog: str = "I/355/gaiadr3", g_mag_limit: int = 20,
         separation_limit: float = 1., sigma: float = 3.,
@@ -268,7 +268,7 @@ def proper_motion_selection(
 def region_selection(
         coordinates_target: SkyCoord | list[SkyCoord], tbl: Table,
         *,
-        image_series: 'analyze.ImageSeries | None' = None,
+        image_series: analyze.ImageSeries | None = None,
         plot_context: ImagingPlotContext | None = None,
         radius: float = 600., file_type_plots: str = 'pdf',
         use_wcs_projection_for_star_maps: bool = True,
@@ -355,7 +355,7 @@ def region_selection(
 def find_cluster(
         tbl: Table, object_names: list[str],
         *,
-        image_series: 'analyze.ImageSeries | None' = None,
+        image_series: analyze.ImageSeries | None = None,
         plot_context: ImagingPlotContext | None = None,
         catalog: str = "I/355/gaiadr3", g_mag_limit: float = 20.,
         separation_limit: float = 1., max_distance: float = 6.,

@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
-
-import numpy as np
 from astropy.table import Table
 
 from ..differential_photometry import DifferentialPhotometer
@@ -14,8 +11,8 @@ from .result import CalibrationResult
 def apply_calibration_to_table(
     data: Table,
     calibration: CalibrationResult,
-    filters: List[str],
-    photometer: Optional[DifferentialPhotometer] = None,
+    filters: list[str],
+    photometer: DifferentialPhotometer | None = None,
     *,
     mag_col_prefix: str = "mag_",
     std_col_prefix: str = "mag_std_",
@@ -42,10 +39,10 @@ def apply_calibration_to_table(
 
 
 def apply_calibration_epochs(
-    epochs: Dict[str, Table],
-    results: Dict[str, CalibrationResult],
-    filters: List[str],
-    photometer: Optional[DifferentialPhotometer] = None,
+    epochs: dict[str, Table],
+    results: dict[str, CalibrationResult],
+    filters: list[str],
+    photometer: DifferentialPhotometer | None = None,
     *,
     output_prefix: str = "mag_cal_",
 ) -> Table:

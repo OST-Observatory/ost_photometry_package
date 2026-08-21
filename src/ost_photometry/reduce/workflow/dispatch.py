@@ -7,6 +7,7 @@ from .dark import master_dark
 from .flat import master_flat
 from .science import reduce_light
 
+
 def master_image_list(*args, **kwargs):
     """
     Wrapper function to create a master calibration image for the files

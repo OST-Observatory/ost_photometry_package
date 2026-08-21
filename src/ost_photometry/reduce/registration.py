@@ -2,38 +2,29 @@
 #                               Libraries                                  #
 ############################################################################
 
-import sys
 
 import shutil
-
 from pathlib import Path
 
-import yaml
-
-import numpy as np
-
-import ccdproc as ccdp
-
 import astroalign as aa
-
-from scipy.ndimage import shift as shift_scipy
-
-from astropy.stats import mad_std
+import ccdproc as ccdp
+import numpy as np
+import yaml
 from astropy.nddata import CCDData, StdDevUncertainty
-
+from scipy.ndimage import shift as shift_scipy
 from skimage.registration import (
-    phase_cross_correlation,
     optical_flow_tvl1,
     # optical_flow_ilk,
+    phase_cross_correlation,
 )
-from skimage.transform import warp, SimilarityTransform
+from skimage.transform import SimilarityTransform, warp
 
-from . import utilities, plots
-from .trim_slices import aa_common_trim_margins, ccd_trim_slices
 from .. import checks, style, terminal_output
-from ..core.parallel import Executor
 from .. import utilities as base_utilities
+from ..core.parallel import Executor
 from ..terminal_output import print_to_terminal
+from . import plots, utilities
+from .trim_slices import aa_common_trim_margins, ccd_trim_slices
 
 ############################################################################
 #                           Routines & definitions                         #
@@ -450,7 +441,7 @@ def align_image_main(
         )
 
         #   Trim all images
-        for current_image_id, current_image_name in enumerate(image_file_collection.files):
+        for current_image_name in image_file_collection.files:
             executor.schedule(
                 apply_optical_flow,
                 args=(
@@ -487,7 +478,7 @@ def align_image_main(
         )
 
         #   Trim all images
-        for current_image_id, current_image_name in enumerate(image_file_collection.files):
+        for current_image_name in image_file_collection.files:
             executor.schedule(
                 apply_astro_align,
                 args=(
@@ -719,17 +710,14 @@ def apply_xy_image_shift(
     if rm_enlarged_keyword:
         output_image.meta.remove('enlarged')
 
+    file_name = current_image_name.split('/')[-1]
     if modify_file_name:
-        #   Get filter
         filter_ = output_image.meta['filter']
-
-        #   Define name and write trimmed image to disk
-        image_name = 'combined_trimmed_filter_{}.fit'.format(
+        file_name = 'combined_trimmed_filter_{}.fit'.format(
             filter_.replace("''", "p")
         )
 
     #   Write trimmed image to disk
-    file_name = current_image_name.split('/')[-1]
     output_image.write(output_path / file_name, overwrite=True)
 
 

@@ -14,10 +14,11 @@ from ..post_processing.light_curve import attach_observation_jd_column
 from ..post_processing.schema import ascii_write_formats_for_columns
 
 if TYPE_CHECKING:
-    from ..observation import Observation
+    from .. import analyze
+
 
 def mk_magnitudes_table(
-        observation: 'analyze.Observation', filter_list: list[str]
+        observation: analyze.Observation, filter_list: list[str]
         ) -> Table:
     """
     Create and export astropy table with object positions and magnitudes
@@ -74,7 +75,7 @@ def mk_magnitudes_table(
                         f'{photometry_column_keyword}_unc'
                     ]
                 except KeyError:
-                    magnitudes = np.ones((len(index_objects))) * 999.
+                    magnitudes = np.ones(len(index_objects)) * 999.
                     magnitude_errors = magnitudes
 
                 if photometry_column_keyword == 'mag_cali_no-trans':
@@ -210,7 +211,7 @@ def transformation_keys_for_table_magnitudes(
 
 
 def save_magnitudes_ascii(
-        observation: 'analyze.Observation', tbl: Table,
+        observation: analyze.Observation, tbl: Table,
         object_id: int | None = None,
         rts: str = '', photometry_extraction_method: str = '') -> None:
     """
@@ -357,7 +358,7 @@ def find_filter_for_magnitude_transformation(
 
 
 def save_calibration(
-        observation: 'analyze.Observation', filter_list: list[str],
+        observation: analyze.Observation, filter_list: list[str],
         object_id: int | None = None,
         photometry_extraction_method: str = '', rts: str = ''
         ) -> None:

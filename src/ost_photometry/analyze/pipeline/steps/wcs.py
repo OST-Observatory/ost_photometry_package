@@ -1,8 +1,8 @@
 """WCS determination step."""
 
 from .. import base
-from ..context import AnalysisContext
 from ..config import PipelineConfig
+from ..context import AnalysisContext
 
 
 class WcsStep(base.PipelineStep):

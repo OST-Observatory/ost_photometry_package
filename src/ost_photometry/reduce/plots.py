@@ -4,20 +4,14 @@
 
 from pathlib import Path
 
+import ccdproc as ccdp
 import numpy as np
-
+from astropy.visualization import hist, simple_norm
+from matplotlib import pyplot as plt
+from photutils.psf import EPSFStars
 from scipy import stats
 
-from matplotlib import pyplot as plt
-
-from astropy.visualization import hist, simple_norm
-
-from photutils.psf import EPSFStars
-
-import ccdproc as ccdp
-
 from .. import checks, terminal_output
-
 
 ############################################################################
 #                           Routines & definitions                         #
@@ -320,8 +314,8 @@ def plot_median_of_flat_fields(
                     mean_count.append(np.mean(data))
     elif image_type is None:
         terminal_output.print_to_terminal(
-            f"PLot of the median flat field not possible, because image_type "
-            f"is None.",
+            "PLot of the median flat field not possible, because image_type "
+            "is None.",
             style_name='WARNING',
         )
         return

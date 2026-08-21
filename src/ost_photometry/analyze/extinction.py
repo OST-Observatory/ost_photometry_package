@@ -10,10 +10,9 @@ it lives here because the differential pipeline imports extinction and catalog c
 together.
 """
 
+import warnings
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional
-import warnings
 
 import numpy as np
 from astropy.coordinates import AltAz, EarthLocation, SkyCoord
@@ -521,7 +520,7 @@ class ExtinctionCorrector:
 
     def __init__(
         self,
-        coefficients: Optional[dict[str, ExtinctionCoefficients]] = None,
+        coefficients: dict[str, ExtinctionCoefficients] | None = None,
         order: ExtinctionOrder = ExtinctionOrder.FIRST,
     ):
         """
@@ -544,10 +543,10 @@ class ExtinctionCorrector:
         fallback_airmass_col: str = "airmass",
         mag_col_prefix: str = "mag_",
         output_prefix: str = "mag_ext_",
-        filters: Optional[list[str]] = None,
+        filters: list[str] | None = None,
         inplace: bool = False,
-        std_col_prefix: Optional[str] = "mag_std_",
-        catalog_color_prefix: Optional[str] = "mag_std_",
+        std_col_prefix: str | None = "mag_std_",
+        catalog_color_prefix: str | None = "mag_std_",
     ) -> Table:
         """
         Apply extinction correction to magnitudes.

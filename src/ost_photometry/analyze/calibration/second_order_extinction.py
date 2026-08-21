@@ -14,9 +14,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from .mk_calib import (
-    FieldTransformationRecord,
     LEGACY_C_COLUMNS,
     LEGACY_C_ERR_COLUMNS,
+    FieldTransformationRecord,
     load_field_transformation_records,
 )
 
@@ -93,7 +93,6 @@ def collect_points_for_fit(
     c_vals: list[float] = []
     c_errs: list[float] = []
     names: list[str] = []
-    am_col = f"airmass_{filt}"
     for rec in records:
         coeff = rec.coefficient_by_column(coefficient_column)
         if coeff is None:

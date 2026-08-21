@@ -1,9 +1,9 @@
 """Intra-filter correlation step (correlate_preserve_objects)."""
 
-from .. import base
-from ..context import AnalysisContext
-from ..config import PipelineConfig
 from ... import correlate
+from .. import base
+from ..config import PipelineConfig
+from ..context import AnalysisContext
 
 
 class CorrelationIntraStep(base.PipelineStep):

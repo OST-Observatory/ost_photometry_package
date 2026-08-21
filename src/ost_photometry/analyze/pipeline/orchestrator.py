@@ -1,23 +1,23 @@
 """Pipeline orchestrator."""
 
+from .base import PipelineStep
 from .config import PipelineConfig
 from .context import AnalysisContext
-from .base import PipelineStep
 from .steps import (
-    WcsStep,
-    ExtractionStep,
-    CorrelationIntraStep,
-    CorrelationInterStep,
-    ExtinctionFitStep,
     CalibrationStep,
-    PostProcessClusterGaiaStep,
-    PostProcessProperMotionStep,
-    PostProcessRegionStep,
-    PostProcessMagnitudeConvertStep,
-    PostProcessSaveMagnitudesStep,
+    CorrelationInterStep,
+    CorrelationIntraStep,
     DeriveLimitingMagnitudeStep,
+    ExtinctionFitStep,
+    ExtractionStep,
     HipsReferenceSubtractStep,
     LightCurveStep,
+    PostProcessClusterGaiaStep,
+    PostProcessMagnitudeConvertStep,
+    PostProcessProperMotionStep,
+    PostProcessRegionStep,
+    PostProcessSaveMagnitudesStep,
+    WcsStep,
 )
 
 

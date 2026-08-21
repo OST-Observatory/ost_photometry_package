@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import typing
 
-import numpy as np
 import astropy.units as u
+import numpy as np
 from astropy.table import Table
 
 if typing.TYPE_CHECKING:
@@ -74,7 +74,7 @@ def _drop_rows_without_standard_mags(std_tbl: Table, filter_list: list[str]) -> 
 
 
 def resolve_calibration_object_ids(
-    image_series: "analyze.ImageSeries",
+    image_series: analyze.ImageSeries,
     filter_list: list[str],
     *,
     calibration_source: str = "APASS",
@@ -163,8 +163,8 @@ def resolve_calibration_object_ids(
 
 
 def resolve_protected_object_ids_for_intra(
-    observation: "analyze.Observation",
-    image_series: "analyze.ImageSeries",
+    observation: analyze.Observation,
+    image_series: analyze.ImageSeries,
     filter_: str,
     filter_list: list[str],
     *,
@@ -218,10 +218,10 @@ def resolve_protected_object_ids_for_intra(
 
 
 def resolve_protected_object_ids_for_inter(
-    observation: "analyze.Observation",
+    observation: analyze.Observation,
     filter_list: list[str],
-    image_series_dict: dict[str, "analyze.ImageSeries"],
-    config: "PipelineConfig",
+    image_series_dict: dict[str, analyze.ImageSeries],
+    config: PipelineConfig,
 ) -> list[int]:
     """Collect protected row indices on the reference filter for inter-filter correlation."""
     reference_filter = filter_list[0]

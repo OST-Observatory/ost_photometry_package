@@ -13,6 +13,7 @@ from ... import checks, style, terminal_output
 from ...core.parallel import Executor
 from .. import plots, utilities
 
+
 def reduce_flat(
     image_path: str | Path,
     output_dir: str | Path,

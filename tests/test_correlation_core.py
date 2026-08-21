@@ -5,9 +5,9 @@ from __future__ import annotations
 import sys
 import types
 
+import astropy.units as u
 import numpy as np
 import pytest
-import astropy.units as u
 from astropy import wcs
 
 from helpers import load_module_from_path, pkg_src

@@ -2,26 +2,27 @@
 
 from __future__ import annotations
 
+import typing
 from pathlib import Path
 
 import numpy as np
-import typing
 
 if typing.TYPE_CHECKING:
     from .. import analyze
 
-from .core import correlation_own
-from ... import style, terminal_output
-from ..ooi_ids import ooi_photometry_id
-
-from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy import wcs
+from astropy.coordinates import SkyCoord
+
+from ... import terminal_output
+from ..ooi_ids import ooi_photometry_id
+from .core import correlation_own
+
 
 def find_objects_of_interest_astropy(
         x_pixel_position_dataset: np.ndarray,
         y_pixel_position_dataset: np.ndarray, flux: np.ndarray,
-        objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
+        objects_of_interest: list[analyze.ObjectOfInterest], filter_: str,
         current_wcs: wcs.WCS, duplicate_handling: str = 'distance',
         separation_limit: u.Quantity = 2. * u.arcsec,
         indent: int = 1
@@ -104,7 +105,7 @@ def find_objects_of_interest_astropy(
             if duplicate_handling == 'distance':
                 photometry_row_index = int(np.argmin(separation))
                 terminal_output.print_to_terminal(
-                    f"Use the object that is the closest.",
+                    "Use the object that is the closest.",
                     style_name='WARNING',
                     indent=indent,
                 )
@@ -116,7 +117,7 @@ def find_objects_of_interest_astropy(
                     candidate_rows[np.argmax(flux[candidate_rows])]
                 )
                 terminal_output.print_to_terminal(
-                    f"Use the object that is the brightest.",
+                    "Use the object that is the brightest.",
                     style_name='WARNING',
                     indent=indent,
                 )
@@ -140,7 +141,7 @@ def find_objects_of_interest_astropy(
 def find_objects_of_interest_srcor(
         x_pixel_position_dataset: np.ndarray,
         y_pixel_position_dataset: np.ndarray, flux: np.ndarray,
-        objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
+        objects_of_interest: list[analyze.ObjectOfInterest], filter_: str,
         current_wcs: wcs.WCS, max_pixel_between_objects: int = 3,
         ooi_correlation_strategy: int = 1, duplicate_handling: str = 'first_in_list',
         verbose: bool = False, indent: int = 1) -> None:
@@ -244,7 +245,7 @@ def find_objects_of_interest_srcor(
             if duplicate_handling == 'first_in_list':
                 #   message would be feasible
                 terminal_output.print_to_terminal(
-                    f"Take the first one in the list.",
+                    "Take the first one in the list.",
                     style_name='WARNING',
                     indent=indent,
                 )
@@ -257,7 +258,7 @@ def find_objects_of_interest_srcor(
                     np.argmax(flux[srcor_matches])
                 ]
                 terminal_output.print_to_terminal(
-                    f"Use the object that is the brightest.",
+                    "Use the object that is the brightest.",
                     style_name='WARNING',
                     indent=indent,
                 )
@@ -281,7 +282,7 @@ def find_objects_of_interest_srcor(
 def identify_object_of_interest_in_dataset(
         x_pixel_positions: np.ndarray, y_pixel_positions: np.ndarray,
         flux: np.ndarray,
-        objects_of_interest: list['analyze.ObjectOfInterest'], filter_: str,
+        objects_of_interest: list[analyze.ObjectOfInterest], filter_: str,
         current_wcs: wcs.WCS, separation_limit: u.Quantity = 2. * u.arcsec,
         max_pixel_between_objects: int = 3, ooi_correlation_strategy: int = 1,
         verbose: bool = False, correlation_method: str = 'astropy',
@@ -478,7 +479,7 @@ def _reidentify_ooi_row_index_srcor(
 
 
 def verify_objects_of_interest_global_correlated_ids(
-    observation: "analyze.Observation",
+    observation: analyze.Observation,
     filter_list: list[str],
     *,
     separation_limit: u.Quantity = 2.0 * u.arcsec,

@@ -8,7 +8,6 @@ from astropy.wcs import WCS
 
 from .. import checks, style, terminal_output
 from .. import utilities as base_utilities
-
 from .image_types import get_image_type
 
 

@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 from astropy.table import Table
 
-from ... import utilities as base_utilities
 from ... import terminal_output
+from ... import utilities as base_utilities
 from .. import plots
 
 if TYPE_CHECKING:
-    from ..models import ImageSeries
-    from ..observation import Observation
+    from .. import analyze
+
 
 def prepare_and_plot_starmap(
         image: base_utilities.Image,
@@ -114,7 +114,7 @@ def prepare_and_plot_starmap(
 
 
 def prepare_and_plot_starmap_from_observation(
-        observation: 'analyze.Observation', filter_list: list[str],
+        observation: analyze.Observation, filter_list: list[str],
         use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf') -> None:
     """
@@ -172,7 +172,7 @@ def prepare_and_plot_starmap_from_observation(
 
 
 def prepare_and_plot_starmap_from_image_series(
-        image_series: 'analyze.ImageSeries',
+        image_series: analyze.ImageSeries,
         calib_xs: np.ndarray | list[float], calib_ys: np.ndarray | list[float],
         plots_for_all_images: bool = False,
         use_wcs_projection_for_star_maps: bool = True,

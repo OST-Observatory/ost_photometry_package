@@ -100,9 +100,9 @@ def propagate_flux_monte_carlo(
 
 
 def _resolve_calibration_result(
-    results: dict[str, "CalibrationResult"],
+    results: dict[str, CalibrationResult],
     epoch_id: str,
-) -> "CalibrationResult | None":
+) -> CalibrationResult | None:
     if epoch_id in results:
         return results[epoch_id]
     if "ensemble" in results:
@@ -115,7 +115,7 @@ def _resolve_calibration_result(
 def _apply_uncertainty_mode_slice(
     table: Table,
     row_mask: np.ndarray,
-    calibration: "CalibrationResult",
+    calibration: CalibrationResult,
     filters: list[str],
     *,
     uncertainty_mode: UncertaintyMode,
@@ -178,7 +178,7 @@ def _apply_uncertainty_mode_slice(
 
 def apply_uncertainty_mode_to_calibrated_table(
     calibrated: Table,
-    results: dict[str, "CalibrationResult"],
+    results: dict[str, CalibrationResult],
     filters: list[str],
     *,
     uncertainty_mode: UncertaintyMode = "fit_errors",

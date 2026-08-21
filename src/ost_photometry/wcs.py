@@ -8,8 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import numpy as np
 import astropy.units as u
+import numpy as np
 from astropy import wcs
 from astropy.coordinates import SkyCoord
 from astropy.io import fits

@@ -7,17 +7,17 @@ related result types.
 """
 
 import warnings
-from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Tuple, Union
+from typing import Literal
 
 import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy.table import Table, vstack
 from astropy.time import Time
 
+from .calibration.result import CalibrationResult, TransformationCoefficients
+from .calibration_sources import crossmatch_standard_catalog, fetch_standard_calibration_catalog
 from .extinction import (
     CoefficientMode,
-    DEFAULT_EXTINCTION,
     ExtinctionCoefficients,
     ExtinctionCorrector,
     ExtinctionOrder,
@@ -26,17 +26,13 @@ from .extinction import (
     fit_extinction_from_comparison_stars,
 )
 from .warnings_types import OstPhotometryAnalyzeWarning
-from .calibration_sources import crossmatch_standard_catalog, fetch_standard_calibration_catalog
-
-
-from .calibration.result import CalibrationResult, TransformationCoefficients
 
 
 def _filters_with_instrumental_mags(
     table: Table,
-    filters: List[str],
+    filters: list[str],
     mag_col_prefix: str = "mag_",
-) -> List[str]:
+) -> list[str]:
     """Return filters that have an instrumental column ``{mag_col_prefix}{f}`` in ``table``."""
     return [f for f in filters if f"{mag_col_prefix}{f}" in table.colnames]
 
@@ -62,9 +58,9 @@ def _resolve_per_image_rolling_mode(
 
 
 def _apply_rolling_smooth_to_per_image_results(
-    ordered_epoch_ids: List[str],
-    results: Dict[str, CalibrationResult],
-    filters: List[str],
+    ordered_epoch_ids: list[str],
+    results: dict[str, CalibrationResult],
+    filters: list[str],
     *,
     window: int,
     color_term_mode: Literal["none", "median", "mean"] = "none",
@@ -159,9 +155,9 @@ def _apply_rolling_smooth_to_per_image_results(
 
 
 def _apply_rolling_median_to_per_image_results(
-    ordered_epoch_ids: List[str],
-    results: Dict[str, CalibrationResult],
-    filters: List[str],
+    ordered_epoch_ids: list[str],
+    results: dict[str, CalibrationResult],
+    filters: list[str],
     *,
     window: int,
     smooth_color_term: bool,
@@ -179,9 +175,9 @@ def _apply_rolling_median_to_per_image_results(
 
 
 def _apply_rolling_mean_to_per_image_results(
-    ordered_epoch_ids: List[str],
-    results: Dict[str, CalibrationResult],
-    filters: List[str],
+    ordered_epoch_ids: list[str],
+    results: dict[str, CalibrationResult],
+    filters: list[str],
     *,
     window: int,
     smooth_color_term: bool,
@@ -223,8 +219,8 @@ class DifferentialPhotometer:
 
     def __init__(
         self,
-        color_indices: Optional[Dict] = None,
-        extinction_corrector: Optional[ExtinctionCorrector] = None,
+        color_indices: dict | None = None,
+        extinction_corrector: ExtinctionCorrector | None = None,
     ):
         """
         Parameters
@@ -239,13 +235,13 @@ class DifferentialPhotometer:
         if color_indices:
             self.color_indices.update(color_indices)
         self.extinction = extinction_corrector
-        self.calibrations: Dict[str, CalibrationResult] = {}
+        self.calibrations: dict[str, CalibrationResult] = {}
 
     def fit_transformation_epoch(
         self,
         data: Table,
         epoch_id: str,
-        filters: List[str],
+        filters: list[str],
         comparison_mask: np.ndarray,
         mag_col_prefix: str = "mag_",
         std_col_prefix: str = "mag_std_",
@@ -254,7 +250,7 @@ class DifferentialPhotometer:
         min_comparisons: int = 3,
         determine_color_terms: bool = True,
         color_term_fit: Literal["always", "auto", "never"] = "auto",
-        output_dir: Optional[str] = None,
+        output_dir: str | None = None,
         file_type: str = "pdf",
     ) -> CalibrationResult:
         """
@@ -279,7 +275,7 @@ class DifferentialPhotometer:
             Plot file format when output_dir is set. Default is ``pdf``.
         """
         result = CalibrationResult(identifier=epoch_id)
-        plot_data: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+        plot_data: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
 
         filters_use = _filters_with_instrumental_mags(data, filters, mag_col_prefix)
         if not filters_use:
@@ -438,15 +434,15 @@ class DifferentialPhotometer:
 
     def combine_epoch_calibration_results(
         self,
-        epoch_results: List[CalibrationResult],
-        filters: List[str],
+        epoch_results: list[CalibrationResult],
+        filters: list[str],
         inverse_variance_min_error: float = 1e-10,
-    ) -> Dict[str, TransformationCoefficients]:
+    ) -> dict[str, TransformationCoefficients]:
         """
         Combine per-epoch T and ZP per filter with inverse-variance weights
         (same recipe as :meth:`fit_transformation_night` night result).
         """
-        out: Dict[str, TransformationCoefficients] = {}
+        out: dict[str, TransformationCoefficients] = {}
         for filter_ in filters:
             results_for_filter_ = [fr for fr in epoch_results if filter_ in fr.transformation]
             if not results_for_filter_:
@@ -498,14 +494,14 @@ class DifferentialPhotometer:
 
     def fit_transformation_night(
         self,
-        epochs: Dict[str, Table],
-        filters: List[str],
+        epochs: dict[str, Table],
+        filters: list[str],
         comparison_mask_func,
         night_id: str = "night",
-        output_dir: Optional[str] = None,
+        output_dir: str | None = None,
         file_type: str = "pdf",
         inverse_variance_min_error: float = 1e-10,
-        calibration_summary_x_jd: Optional[Dict[str, float]] = None,
+        calibration_summary_x_jd: dict[str, float] | None = None,
         calibration_summary_use_jd_x: bool = False,
         **kwargs,
     ) -> CalibrationResult:
@@ -541,6 +537,7 @@ class DifferentialPhotometer:
                 warnings.warn(
                     f"Epoch {epoch_id} failed: {e}",
                     category=OstPhotometryAnalyzeWarning,
+                    stacklevel=2,
                 )
 
         if not epoch_results:
@@ -558,7 +555,7 @@ class DifferentialPhotometer:
         if output_dir and len(epoch_results_sorted) > 1:
             from . import plots
 
-            x_jd_plot: Optional[List[float]] = None
+            x_jd_plot: list[float] | None = None
             if calibration_summary_use_jd_x and calibration_summary_x_jd:
                 ids = [str(fr.identifier) for fr in epoch_results_sorted]
                 seq = [calibration_summary_x_jd.get(eid, np.nan) for eid in ids]
@@ -591,8 +588,8 @@ class DifferentialPhotometer:
     def apply_transform_to_table(
         self,
         data: Table,
-        calibration: Union[str, CalibrationResult],
-        filters: Optional[List[str]] = None,
+        calibration: str | CalibrationResult,
+        filters: list[str] | None = None,
         mag_col_prefix: str = "mag_",
         std_col_prefix: str = "mag_std_",
         output_prefix: str = "mag_cal_",
@@ -642,7 +639,7 @@ class DifferentialPhotometer:
                 catalog_color_prefix=std_col_prefix,
             )
         # Running calibrated mags per filter (starts as instrumental, not APASS)
-        iter_cal_mags: Dict[str, np.ndarray] = {}
+        iter_cal_mags: dict[str, np.ndarray] = {}
         for filter_ in filters:
             col = f"{mag_col_prefix}{filter_}"
             if col in data.colnames:
@@ -798,7 +795,7 @@ class DifferentialPhotometer:
         values: np.ndarray,
         errors: np.ndarray,
         min_error: float = 1e-10,
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """
         Combine measurements with inverse-variance weights.
 
@@ -858,9 +855,9 @@ class PhotometryCalibrator:
         self,
         mode: CoefficientMode = CoefficientMode.PER_NIGHT,
         extinction_order: ExtinctionOrder = ExtinctionOrder.FIRST,
-        extinction_coefficients: Optional[Dict[str, ExtinctionCoefficients]] = None,
-        observatory_location: Optional[object] = None,
-        color_indices: Optional[Dict] = None,
+        extinction_coefficients: dict[str, ExtinctionCoefficients] | None = None,
+        observatory_location: object | None = None,
+        color_indices: dict | None = None,
     ):
         self.mode = mode
         self.location = observatory_location
@@ -868,25 +865,25 @@ class PhotometryCalibrator:
             coefficients=extinction_coefficients, order=extinction_order
         )
         # Standard-schema table from fetch; None until setup_calibration_source()
-        self.reference_catalog: Optional[Table] = None
+        self.reference_catalog: Table | None = None
         self.photometer = DifferentialPhotometer(
             color_indices=color_indices,
             extinction_corrector=self.extinction,
         )
-        self.epochs: Dict[str, Table] = {}
-        self.epoch_metadata: Dict[str, dict] = {}
-        self.fixed_calibration: Optional[CalibrationResult] = None
+        self.epochs: dict[str, Table] = {}
+        self.epoch_metadata: dict[str, dict] = {}
+        self.fixed_calibration: CalibrationResult | None = None
 
     def setup_calibration_source(
         self,
         center: SkyCoord,
-        filters: List[str],
+        filters: list[str],
         *,
         calibration_source: str = "APASS",
         radius_arcmin: float = 15.0,
-        calibration_catalog_mag_range: Tuple[float, float] = (0.0, 18.5),
-        vizier_dict: Optional[Dict[str, str]] = None,
-        path_calibration_file: Optional[str] = None,
+        calibration_catalog_mag_range: tuple[float, float] = (0.0, 18.5),
+        vizier_dict: dict[str, str] | None = None,
+        path_calibration_file: str | None = None,
         apply_sloan_to_johnson_ri: bool = True,
         indent: int = 0,
     ) -> None:
@@ -921,9 +918,9 @@ class PhotometryCalibrator:
         self,
         epoch_id: str,
         data: Table,
-        obstime: Optional[Time] = None,
-        airmass: Optional[float] = None,
-        filter_obstimes: Optional[Dict[str, Time]] = None,
+        obstime: Time | None = None,
+        airmass: float | None = None,
+        filter_obstimes: dict[str, Time] | None = None,
         ra_col: str = "ra",
         dec_col: str = "dec",
     ):
@@ -947,7 +944,7 @@ class PhotometryCalibrator:
             col_a = f"airmass_{f}"
             if col_a in data.colnames:
                 continue
-            t_use: Optional[Time] = None
+            t_use: Time | None = None
             if filter_obstimes is not None and f in filter_obstimes:
                 t_use = filter_obstimes[f]
             elif obstime is not None:
@@ -999,9 +996,9 @@ class PhotometryCalibrator:
         mag_col_prefix: str = "mag_",
         std_col_prefix: str = "mag_std_",
         fallback_airmass_col: str = "airmass",
-        output_dir: Optional[str] = None,
+        output_dir: str | None = None,
         file_type: str = "pdf",
-    ) -> Dict[str, ExtinctionCoefficients]:
+    ) -> dict[str, ExtinctionCoefficients]:
         """
         Fit extinction coefficients from catalog-matched comparison stars in epochs.
 
@@ -1028,7 +1025,7 @@ class PhotometryCalibrator:
         return fitted
 
     def set_fixed_coefficients(
-        self, coefficients: Dict[str, TransformationCoefficients]
+        self, coefficients: dict[str, TransformationCoefficients]
     ):
         """Set fixed coefficients for FIXED mode."""
         self.fixed_calibration = CalibrationResult(
@@ -1037,12 +1034,12 @@ class PhotometryCalibrator:
 
     def fit_transformation_parameters(
         self,
-        filters: List[str],
+        filters: list[str],
         comparison_selector=None,
         determine_color_terms: bool = True,
         min_comparisons: int = 5,
         sigma_clip: float = 2.5,
-        output_dir: Optional[str] = None,
+        output_dir: str | None = None,
         file_type: str = "pdf",
         inverse_variance_min_error: float = 1e-10,
         per_image_rolling_median_color_term: bool = False,
@@ -1050,10 +1047,10 @@ class PhotometryCalibrator:
         per_image_rolling_mean_color_term: bool = False,
         per_image_rolling_mean_zero_point: bool = False,
         per_image_rolling_window: int = 3,
-        calibration_summary_x_jd: Optional[Dict[str, float]] = None,
+        calibration_summary_x_jd: dict[str, float] | None = None,
         calibration_summary_use_jd_x: bool = False,
         color_term_fit: Literal["always", "auto", "never"] = "auto",
-    ) -> Dict[str, CalibrationResult]:
+    ) -> dict[str, CalibrationResult]:
         """
         Fit color terms and zero points (per mode); store results in :attr:`calib_parameters`.
 
@@ -1149,7 +1146,7 @@ class PhotometryCalibrator:
                     filters,
                     inverse_variance_min_error=inverse_variance_min_error,
                 )
-                x_jd_plot: Optional[List[float]] = None
+                x_jd_plot: list[float] | None = None
                 if calibration_summary_use_jd_x and calibration_summary_x_jd:
                     seq = [
                         float(calibration_summary_x_jd.get(str(k), np.nan))

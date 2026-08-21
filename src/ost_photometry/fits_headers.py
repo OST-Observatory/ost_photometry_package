@@ -7,7 +7,7 @@ import warnings
 
 from astropy.io import fits
 from astropy.time import Time
-from astropy.wcs import FITSFixedWarning, WCS
+from astropy.wcs import WCS, FITSFixedWarning
 
 _DATFIX_FILTER_INSTALLED = False
 

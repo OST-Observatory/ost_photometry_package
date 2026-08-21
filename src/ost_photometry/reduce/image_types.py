@@ -1,7 +1,7 @@
 """Image type utilities for data reduction."""
 
-import numpy as np
 import ccdproc as ccdp
+import numpy as np
 
 
 def get_image_type(

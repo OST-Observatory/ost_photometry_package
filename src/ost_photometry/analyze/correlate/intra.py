@@ -2,26 +2,26 @@
 
 from __future__ import annotations
 
+import typing
 import warnings
 
 import numpy as np
-import typing
 
 if typing.TYPE_CHECKING:
     from .. import analyze
 
 import astropy.units as u
 
-from .. import utilities
-from ..warnings_types import OstPhotometryAnalyzeWarning
 from ... import terminal_output
-
+from .. import utilities
+from ..ooi_ids import set_ooi_correlated_ids_from_filter
+from ..warnings_types import OstPhotometryAnalyzeWarning
 from .core import correlate_datasets
 from .ooi import identify_object_of_interest_in_dataset
-from ..ooi_ids import set_ooi_correlated_ids_from_filter
+
 
 def assign_correlated_object_ids_single_series(
-    image_series: "analyze.ImageSeries",
+    image_series: analyze.ImageSeries,
 ) -> None:
     """Same as :func:`assign_global_correlated_object_ids` for one ImageSeries (intra only)."""
     if not image_series.image_list:
@@ -49,7 +49,7 @@ def assign_correlated_object_ids_single_series(
 
 
 def correlate_image_series_images(
-        image_series: 'analyze.ImageSeries',
+        image_series: analyze.ImageSeries,
         max_pixel_between_objects: float = 3.,
         ooi_correlation_strategy: int = 1,
         cross_identification_limit: int = 1,
@@ -187,7 +187,7 @@ def correlate_image_series_images(
 
 
 def correlate_preserve_objects(
-        observation: 'analyze.Observation',
+        observation: analyze.Observation,
         filter_: str,
         filter_list: list[str],
         max_pixel_between_objects: int = 3,
@@ -323,7 +323,7 @@ def correlate_preserve_objects(
 
 
 def correlate_preserve_variable(
-        observation: 'analyze.Observation', filter_: str,
+        observation: analyze.Observation, filter_: str,
         max_pixel_between_objects: int = 3, ooi_correlation_strategy: int = 1,
         cross_identification_limit: int = 1, reference_image_index: int = 0,
         n_allowed_non_detections_object: int = 1,

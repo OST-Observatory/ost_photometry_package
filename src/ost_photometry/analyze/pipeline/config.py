@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
-from typing import Any, Literal, Optional, Tuple
+from typing import Any, Literal
 
 import astropy.units as u
 from astropy.coordinates import EarthLocation
@@ -255,7 +255,7 @@ class CalibrationConfig:
     exposure_pairing: Literal["jd_nearest", "index"] = "jd_nearest"
     exposure_jd_tolerance: float = 0.02
     debug_exposure_pairing: bool = False
-    reference_filter: Optional[str] = None
+    reference_filter: str | None = None
     calibration_summary_use_jd_x: bool = False
     zp_subsample_statistic: bool = True
     derive_transform_from_data: bool = False
@@ -320,20 +320,20 @@ class LightCurveConfig:
 @dataclass
 class HipsConfig:
     skip_hips_reference_subtraction: bool = True
-    hips_reference_subtraction_filter: Optional[str] = None
+    hips_reference_subtraction_filter: str | None = None
     hips_reference_subtraction_image_index: int = 0
-    hips_reference_subtraction_wcs_method: Optional[WcsMethod] = None
+    hips_reference_subtraction_wcs_method: WcsMethod | None = None
     hips_reference_subtraction_plot_comp: bool = True
     hips_reference_subtraction_hips_source: str = "CDS/P/DSS2/blue"
-    hips_reference_subtraction_trim: Optional[Tuple[int, int, int, int]] = None
+    hips_reference_subtraction_trim: tuple[int, int, int, int] | None = None
     hips_reference_subtraction_reuse_pipeline_wcs: bool = True
     hips_reference_subtraction_timeout_ms: int = 120_000
     hips_reference_subtraction_server: str = (
         "https://alaskybis.cds.unistra.fr/hips-image-services/hips2fits"
     )
     hips_reference_subtraction_verbose: bool = False
-    hips_reference_subtraction_hotpants_executable: Optional[str] = None
-    hips_reference_subtraction_hotpants_extra_args: Tuple[str, ...] = field(
+    hips_reference_subtraction_hotpants_executable: str | None = None
+    hips_reference_subtraction_hotpants_extra_args: tuple[str, ...] = field(
         default_factory=tuple
     )
     hips_reference_subtraction_output_filename: str = "hotpants_diff.fits"
@@ -391,7 +391,7 @@ class PipelineConfig:
         preset: str,
         *,
         overrides: dict[str, Any] | None = None,
-    ) -> "PipelineConfig":
+    ) -> PipelineConfig:
         """Build config from a named calibration preset.
 
         Canonical names describe the mode, e.g. ``median_zp_per_image``,

@@ -87,3 +87,17 @@ For the default WCS method (`astrometry`), a local
 
 Config defaults and all pipeline fields:
 [`src/ost_photometry/analyze/pipeline/config.py`](src/ost_photometry/analyze/pipeline/config.py).
+
+## Development
+
+Install the package with lint/test tools, then enable the git hook so
+[Ruff](https://docs.astral.sh/ruff/) runs (and auto-fixes) before each commit —
+the same check as CI (`ruff check src tests`):
+
+```bash
+python -m pip install -e ".[dev]"
+pre-commit install
+```
+
+Run the linter on demand with `ruff check src tests` (add `--fix` to apply
+safe fixes). Tests: `pytest tests -m "not slow"`.

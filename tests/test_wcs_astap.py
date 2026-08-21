@@ -4,9 +4,9 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
+from astropy import wcs as astropy_wcs
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
-from astropy import wcs as astropy_wcs
 
 from ost_photometry.wcs import (
     _apply_wcs_to_fits,
@@ -14,7 +14,6 @@ from ost_photometry.wcs import (
     _needs_astap_preprocessing,
     _prepare_astap_fits,
     _scale_image_for_astap,
-    _strip_wcs_keywords,
     _wcs_maps_distinct_sky_positions,
 )
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 from astropy.table import Table
@@ -23,16 +23,16 @@ class CalibrationEngine:
 
     @staticmethod
     def fit(
-        epochs: Dict[str, Table],
-        config: "PipelineConfig",
-        filters: List[str],
+        epochs: dict[str, Table],
+        config: PipelineConfig,
+        filters: list[str],
         *,
-        calibrator: Optional[PhotometryCalibrator] = None,
+        calibrator: PhotometryCalibrator | None = None,
         color_indices: dict[str, tuple[str, str]] | None = None,
         output_dir: str | None = None,
         file_type: str = "pdf",
         calibration_summary_x_jd: dict[str, float] | None = None,
-    ) -> Dict[str, CalibrationResult]:
+    ) -> dict[str, CalibrationResult]:
         strategy = config.calibration_strategy
         if strategy == "median_zp":
             results = median_backend.fit_epochs(
@@ -110,10 +110,10 @@ class CalibrationEngine:
 
     @staticmethod
     def apply(
-        epochs: Dict[str, Table],
-        results: Dict[str, CalibrationResult],
-        filters: List[str],
-        photometer: Optional[DifferentialPhotometer] = None,
+        epochs: dict[str, Table],
+        results: dict[str, CalibrationResult],
+        filters: list[str],
+        photometer: DifferentialPhotometer | None = None,
         *,
         output_prefix: str = "mag_cal_",
     ) -> Table:
@@ -128,14 +128,14 @@ class CalibrationEngine:
 
 def prepare_calibration_check_plots(
     output_dir: str,
-    epochs: Dict[str, Table],
-    results: Dict[str, CalibrationResult],
-    filters: List[str],
+    epochs: dict[str, Table],
+    results: dict[str, CalibrationResult],
+    filters: list[str],
     *,
     file_type: str = "pdf",
     filename_prefix: str = "calibration",
     title_prefix: str | None = None,
-    fit_masks: Dict[str, np.ndarray] | None = None,
+    fit_masks: dict[str, np.ndarray] | None = None,
 ) -> None:
     """Write transformation diagnostic plots under ``output_dir/calibration/``.
 

@@ -16,6 +16,7 @@ from .flat import master_flat, reduce_flat
 from .science import reduce_light
 from .stack import stack_image
 
+
 def reduce_main(
     image_path: str,
     output_dir: str,

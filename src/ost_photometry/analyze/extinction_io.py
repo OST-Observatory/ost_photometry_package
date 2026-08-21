@@ -8,10 +8,12 @@ from copy import deepcopy
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
+
 import numpy as np
 
 from .extinction import DEFAULT_EXTINCTION, ExtinctionCoefficients, ExtinctionOrder
 from .warnings_types import OstPhotometryAnalyzeWarning
+
 
 def bundled_site_extinction_path() -> Path:
     """Path to the packaged OST site extinction table."""

@@ -4,14 +4,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 from astropy.stats import sigma_clipped_stats
 from matplotlib import gridspec
-import matplotlib.pyplot as plt
 from scipy.spatial import KDTree
 
 from ... import checks, terminal_output
-
 from .cmd_reddening import combine_cmd_error_bars, reddening_for_absolute_cmd
 from .style import (
     MaxRecursionError,
@@ -268,9 +267,9 @@ class MakeCMDs:
         #   Exit if recursion is two high
         if recursion_number > 10:
             raise MaxRecursionError(
-                f'Could not decode magnitudes from isochrone file '
-                f'because maximum number of recursions reached during '
-                f'color calculation'
+                'Could not decode magnitudes from isochrone file '
+                'because maximum number of recursions reached during '
+                'color calculation'
             )
 
         #   Distinguish between color and 'single' magnitude entries
@@ -1192,11 +1191,11 @@ class MakeCMDs:
                 )
                 mk_ticks_labels(
                     f'Age [{age_unit}]',
-                    rf'$\chi^2$ ',
+                    r'$\chi^2$ ',
                     ax1,
                 )
                 mk_ticks_labels(
-                    rf'$\chi^2$ ',
+                    r'$\chi^2$ ',
                     f'Age [{age_unit}]',
                     ax2,
                 )
@@ -1209,7 +1208,7 @@ class MakeCMDs:
                     alpha=1.0,
                 )
                 mk_ticks_labels(
-                    rf'$\chi^2$ ',
+                    r'$\chi^2$ ',
                     f'Age [{age_unit}]',
                     ax2,
                 )

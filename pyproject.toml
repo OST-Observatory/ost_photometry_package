@@ -43,6 +43,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.8",
+    "pre-commit>=4.0",
     "mypy>=1.13",
     "types-PyYAML>=6.0",
 ]
@@ -70,6 +71,13 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Johnson/Cousins I-band magnitudes (not a loop index).
+"src/ost_photometry/calibration_parameters.py" = ["E741"]
+"src/ost_photometry/analyze/calibration_sources/transforms.py" = ["E741"]
+# sys.path is adjusted before the local helper import.
+"tests/test_characterization.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.11"

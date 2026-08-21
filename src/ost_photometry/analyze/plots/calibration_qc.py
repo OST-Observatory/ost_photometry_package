@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import Table
 from matplotlib.ticker import MaxNLocator
-import matplotlib.pyplot as plt
 
 from ... import checks
 
@@ -41,7 +41,6 @@ def plot_extinction_fit_value_airmass(
     file_type : str
         Plot file format (pdf, png, etc.). Default is ``pdf``.
     """
-    from ... import checks
 
     out = Path(output_dir) / "extinction_fit"
     checks.check_output_directories(out)
@@ -102,7 +101,6 @@ def plot_extinction_fit_comparison_stars(
     file_type : str
         Plot file format (pdf, png, etc.). Default is ``pdf``.
     """
-    from ... import checks
 
     out = Path(output_dir) / "extinction_fit"
     checks.check_output_directories(out)
@@ -171,7 +169,6 @@ def plot_calibration_transformation(
     title_prefix : str, optional
         Prepended to the left-panel title (e.g. ``Derive-transform fit``).
     """
-    from ... import checks
 
     out = Path(output_dir) / "calibration"
     checks.check_output_directories(out)
@@ -249,7 +246,6 @@ def plot_derive_transform_fit_overview(
     number of stars used. Complements ``derive_transform_summary`` (applied
     ``c`` / median ZP) and the per-epoch scatter plots.
     """
-    from ... import checks
 
     if not epoch_ids or not filters:
         return
@@ -382,7 +378,6 @@ def plot_calibration_night_summary(
     """
     import warnings
 
-    from ... import checks
     from ..warnings_types import OstPhotometryAnalyzeWarning
 
     def _filter_has_finite_zp(filter_name: str) -> bool:
@@ -772,7 +767,7 @@ def plot_photometry_mag_vs_error_overview(
     pooled_m: list[float] = []
     pooled_e: list[float] = []
     med_err: list[float] = []
-    for mag, err in zip(mag_by_image, err_by_image):
+    for mag, err in zip(mag_by_image, err_by_image, strict=True):
         m = np.asarray(mag, dtype=float)
         e = np.asarray(err, dtype=float)
         ok = np.isfinite(m) & np.isfinite(e)

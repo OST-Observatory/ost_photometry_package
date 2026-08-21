@@ -17,6 +17,7 @@ from .constants import (
     REDUCE_STATUS_SKIP_NO_MASTER_FLAT,
 )
 
+
 def reduce_light(
     image_path: str | Path,
     output_dir: str | Path,
@@ -541,7 +542,7 @@ def reduce_light_image(
         #   Sanitize saturation level
         if saturation_level is None:
             terminal_output.print_to_terminal(
-                f"Saturation level not specified. Assume 16bit == 65535",
+                "Saturation level not specified. Assume 16bit == 65535",
                 indent=1,
                 style_name="WARNING",
             )

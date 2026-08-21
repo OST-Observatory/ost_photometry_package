@@ -2,11 +2,10 @@
 #                               Libraries                                  #
 ############################################################################
 
-from astropy.time import Time
 import astropy.units as u
-from astropy import uncertainty as unc
-
 import scipy.interpolate as interpolate
+from astropy import uncertainty as unc
+from astropy.time import Time
 
 from . import terminal_output
 

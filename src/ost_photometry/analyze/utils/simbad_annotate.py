@@ -11,10 +11,10 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astroquery.exceptions import TableParseError
 from astroquery.simbad import Simbad
-from regions import CirclePixelRegion, PixCoord, Regions
 
 from ... import terminal_output
 from .. import plots
+
 
 def query_simbad_objects(
         wcs_image: wcs.WCS, image_shape: tuple[int, int],
@@ -68,8 +68,8 @@ def query_simbad_objects(
         result = custom_simbad.query_region(center_coord, radius=radius_deg * u.deg)
     except TimeoutError:
         terminal_output.print_to_terminal(
-            f"The connection to the Simbad database for retrieving object "
-            f"information has timed out. Return an empty table.",
+            "The connection to the Simbad database for retrieving object "
+            "information has timed out. Return an empty table.",
             style_name='WARNING',
         )
         return Table()

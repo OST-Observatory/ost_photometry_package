@@ -23,8 +23,8 @@ class ImagingPlotContext:
     when present.
     """
 
-    wcs: "WCS"
-    reference_image: "np.ndarray"
+    wcs: WCS
+    reference_image: np.ndarray
     out_path_stub: Path | str
     #: Band / filter name (e.g. for plot labels); mirrors ``ImageSeries.filter_``.
     filter_name: str

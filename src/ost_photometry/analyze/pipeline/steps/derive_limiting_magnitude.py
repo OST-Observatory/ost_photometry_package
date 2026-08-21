@@ -4,11 +4,11 @@ import numpy as np
 
 from .... import terminal_output
 from ... import utilities
-from ...post_processing.light_curve import epoch_native_mag_err_columns
 from ...post_processing.imaging import ImagingPlotContext
+from ...post_processing.light_curve import epoch_native_mag_err_columns
 from .. import base
-from ..context import AnalysisContext
 from ..config import PipelineConfig
+from ..context import AnalysisContext
 
 
 def _find_image_by_image_id(image_series, image_id):

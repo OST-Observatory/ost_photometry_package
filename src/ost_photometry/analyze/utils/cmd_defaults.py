@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import sys
+
 from ... import terminal_output
+
 
 def check_variable_apparent_cmd(
         filename: str, filetype: str) -> tuple[str, str]:

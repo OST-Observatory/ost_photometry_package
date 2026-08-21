@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import astropy.units as u
 import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
-import astropy.units as u
 
 if TYPE_CHECKING:
     from astropy.wcs import WCS
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from .imaging import ImagingPlotContext
 
 
-def table_object_sky_coords(tbl: Table, wcs_fallback: "WCS") -> SkyCoord:
+def table_object_sky_coords(tbl: Table, wcs_fallback: WCS) -> SkyCoord:
     """
     ICRS coordinates for each row: prefer ``ra``/``dec`` or ``ra (deg)``/``dec (deg)``,
     otherwise ``wcs_fallback.all_pix2world(tbl['x'], tbl['y'], 0)``.
@@ -34,7 +34,7 @@ def table_object_sky_coords(tbl: Table, wcs_fallback: "WCS") -> SkyCoord:
 
 
 def plot_starmap_from_imaging_context(
-    ctx: "ImagingPlotContext",
+    ctx: ImagingPlotContext,
     tbl: Table,
     *,
     filter_: str,

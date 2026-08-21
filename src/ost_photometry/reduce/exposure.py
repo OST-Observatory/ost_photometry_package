@@ -1,10 +1,10 @@
 """Exposure time utilities for data reduction."""
 
-import numpy as np
 import ccdproc as ccdp
+import numpy as np
 from astropy.nddata import CCDData
 
-from .. import style, terminal_output
+from .. import style
 
 
 def get_exposure_times(

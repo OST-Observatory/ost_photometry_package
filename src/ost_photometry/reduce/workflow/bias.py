@@ -4,11 +4,11 @@ from pathlib import Path
 
 import ccdproc as ccdp
 import numpy as np
-from astropy.nddata import CCDData
 from astropy.stats import mad_std
 
-from ... import checks, style, terminal_output
+from ... import checks
 from .. import utilities
+
 
 def master_bias(
     bias_path: str | Path,

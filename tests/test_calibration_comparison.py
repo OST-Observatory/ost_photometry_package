@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import warnings
 
 import numpy as np
 import pytest
@@ -300,10 +299,10 @@ def test_plot_calibration_transformation_fit_line_ignores_nan_colors(tmp_path):
     pytest.importorskip("matplotlib")
     from unittest.mock import patch
 
+    from ost_photometry.analyze.calibration.result import TransformationCoefficients
     from ost_photometry.analyze.plots.calibration_qc import (
         plot_calibration_transformation,
     )
-    from ost_photometry.analyze.calibration.result import TransformationCoefficients
 
     n = 20
     color = np.full(n, np.nan)

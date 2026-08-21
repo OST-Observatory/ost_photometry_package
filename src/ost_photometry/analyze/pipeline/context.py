@@ -1,12 +1,14 @@
 """Analysis context - shared data container for the pipeline."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from astropy.table import Table
 
 if TYPE_CHECKING:
-    from ..models import ImageSeries, ObjectOfInterest
+    from .config import PipelineConfig
 
 
 @dataclass
@@ -72,7 +74,7 @@ class AnalysisContext:
                 return True
         return False
 
-    def get_extraction_mode(self, config: "PipelineConfig") -> str:
+    def get_extraction_mode(self, config: PipelineConfig) -> str:
         """
         Determine extraction mode from config or context.
 

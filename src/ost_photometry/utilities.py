@@ -6,7 +6,6 @@ import json
 import os
 import random
 import string
-import subprocess
 import time
 from pathlib import Path
 
@@ -101,7 +100,7 @@ def mk_file_list(
     #   Remove not TIFF entries
     temp_list = []
     for file_i in file_list:
-        for j, format_ in enumerate(formats):
+        for format_ in formats:
             if file_i.find(format_) != -1:
                 if add_path_to_file_names:
                     temp_list.append(os.path.join(file_path, file_i))
@@ -283,7 +282,7 @@ def read_params_from_yaml(yaml_file: str) -> dict:
         or non-mapping payloads yield ``{}``.
     """
     try:
-        with open(yaml_file, "r") as file:
+        with open(yaml_file) as file:
             data = yaml.safe_load(file)
     except (yaml.YAMLError, FileNotFoundError, OSError):
         return {}

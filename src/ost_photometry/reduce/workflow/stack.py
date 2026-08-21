@@ -5,12 +5,12 @@ from pathlib import Path
 
 import ccdproc as ccdp
 import numpy as np
-from astropy.nddata import CCDData
 from astropy.stats import mad_std
 
 from ... import checks, style, terminal_output
 from ...core.parallel import Executor
 from .. import utilities
+
 
 def stack_filter_images(
     images_to_combine: list[str],

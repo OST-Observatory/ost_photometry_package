@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import numpy as np
-import typing
-
-from .. import utilities
-from ... import style, terminal_output
-
-from astropy.coordinates import SkyCoord, matching
 import astropy.units as u
+import numpy as np
 from astropy import wcs
+from astropy.coordinates import SkyCoord, matching
+
+from ... import style, terminal_output
+from .. import utilities
 
 
 def _dataset_positions_identical(
@@ -331,7 +329,7 @@ def correlation_astropy(
         IDs of the images that were rejected because of insufficient quality
     """
     #   Sanitize special object
-    if special_object_ids is None or special_object_ids is [None]:
+    if special_object_ids is None or special_object_ids == [None]:
         special_object_ids = []
 
     #   Number of datasets/images

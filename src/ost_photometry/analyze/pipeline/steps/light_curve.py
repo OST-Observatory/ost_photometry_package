@@ -10,11 +10,11 @@ from astropy.time import Time
 
 from .... import checks, terminal_output
 from ... import calibration
+from ...ooi_ids import ooi_photometry_id
 from ...post_processing.light_curve import (
     is_epoch_native_photometry_table,
     prepare_plot_time_series,
 )
-from ...ooi_ids import ooi_photometry_id
 from .. import base
 from ..config import PipelineConfig
 from ..context import AnalysisContext

@@ -14,13 +14,13 @@ zeropoint tables). Filter-set changes use Jordi / Lupton colour terms.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Literal, Sequence
+from typing import Literal
 
 from astropy.table import Table
 
-from ... import terminal_output
-from ... import calibration_parameters
+from ... import calibration_parameters, terminal_output
 from ..warnings_types import OstPhotometryAnalyzeWarning
 
 FilterSet = Literal["bessell", "sdss", "mixed", "unknown"]

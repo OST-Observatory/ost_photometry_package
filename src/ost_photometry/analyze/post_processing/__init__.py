@@ -13,21 +13,14 @@ from .cluster_field import (
     post_process_cluster_field,
     write_post_processed_cluster_field_table,
 )
-from .coords import plot_starmap_from_imaging_context, table_object_sky_coords
 from .convert import (
     convert_magnitudes_to_other_system,
 )
+from .coords import plot_starmap_from_imaging_context, table_object_sky_coords
 from .imaging import ImagingPlotContext, imaging_context_from_image_series
 from .io import (
     read_epoch_native_magnitudes,
     write_epoch_native_magnitudes,
-)
-from .magnitude_convert import apply_magnitude_system_convert_on_observation
-from .magnitude_systems import (
-    infer_filter_set,
-    magnitude_system_axis_suffix,
-    resolve_catalog_magnitude_system,
-    validate_magnitude_output_request,
 )
 from .light_curve import (
     attach_observation_jd_column,
@@ -42,6 +35,13 @@ from .light_curve import (
     prepare_time_series_data,
     prepare_time_series_epoch_native,
     save_calibration_epoch_meta_json,
+)
+from .magnitude_convert import apply_magnitude_system_convert_on_observation
+from .magnitude_systems import (
+    infer_filter_set,
+    magnitude_system_axis_suffix,
+    resolve_catalog_magnitude_system,
+    validate_magnitude_output_request,
 )
 from .schema import (
     PHOTOMETRY_TABLE_SCHEMA_ID,

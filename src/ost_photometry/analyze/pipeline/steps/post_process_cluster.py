@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import warnings
 
-from .. import base
-from ..context import AnalysisContext
-from ..config import PipelineConfig
 from ... import utilities
 from ...post_processing.cluster_field import (
     apply_cluster_field_phase,
     write_post_processed_cluster_field_table,
 )
 from ...post_processing.imaging import imaging_context_from_image_series
+from .. import base
+from ..config import PipelineConfig
+from ..context import AnalysisContext
 
 
 def _sync_table_to_context(context: AnalysisContext, obs) -> None:

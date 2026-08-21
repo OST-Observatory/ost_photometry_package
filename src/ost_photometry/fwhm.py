@@ -139,7 +139,7 @@ def source_positions_from_table(source_table: Table) -> list[tuple[float, float]
         raise ValueError(
             "Source table must contain x/y or x_centroid/y_centroid columns."
         )
-    return list(zip(source_table[x_column], source_table[y_column]))
+    return list(zip(source_table[x_column], source_table[y_column], strict=True))
 
 
 def _odd_fit_shape(fwhm_guess: float, base: int = 25) -> int:

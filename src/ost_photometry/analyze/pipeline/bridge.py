@@ -7,24 +7,22 @@ context.calibration_epoch_meta, and context.calibration_epochs_skipped.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
 from astropy.table import Table
 
 from ... import terminal_output
+from ..post_processing import schema
 from .config import PipelineConfig
 from .context import AnalysisContext
-
-import logging
-
-from ..post_processing import schema
 
 _log = logging.getLogger(__name__)
 
 
-def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Optional[Table]:
+def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Table | None:
     """One band: id, ra, dec, x, y, mag_<f>, err_<f>, flux_<f>, flux_err_<f>. Returns None if unusable."""
     if image.photometry is None:
         return None
@@ -81,7 +79,7 @@ def _airmass_for_image(image) -> float:
     return float(am)
 
 
-def _jd_for_image(image) -> Optional[float]:
+def _jd_for_image(image) -> float | None:
     jd = getattr(image, "jd", None)
     if jd is None:
         return None
@@ -100,10 +98,10 @@ def _image_pairing_label(image) -> str:
 
 
 def _merge_epoch_on_id(
-    tables: Dict[str, Table],
+    tables: dict[str, Table],
     ref_filter: str,
-    filter_order: List[str],
-    airmasses: Dict[str, float],
+    filter_order: list[str],
+    airmasses: dict[str, float],
 ) -> Table:
     """Left-join magnitudes onto reference filter row order by ``id``."""
     base = tables[ref_filter].copy()
@@ -151,11 +149,11 @@ def _merge_epoch_on_id(
 
 def _pairing_index(
     context: AnalysisContext,
-    filter_list: List[str],
-    skipped: List[dict],
+    filter_list: list[str],
+    skipped: list[dict],
     *,
     debug: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Build list of pair dicts: {filter: image} per epoch.
     Uses same list index in each series.
@@ -181,15 +179,15 @@ def _pairing_index(
             {
                 "reason": "index_unequal_lengths",
                 "message": (
-                    f"Image counts differ across filters {filter_list}: {dict(zip(filter_list, lengths))}. "
+                    f"Image counts differ across filters {filter_list}: {dict(zip(filter_list, lengths, strict=True))}. "
                     f"Using first {n_epoch} index slots only."
                 ),
             }
         )
 
-    pairs: List[Dict[str, Any]] = []
+    pairs: list[dict[str, Any]] = []
     for i in range(n_epoch):
-        group: Dict[str, Any] = {}
+        group: dict[str, Any] = {}
         ok = True
         for f in filter_list:
             s = series_by_f[f]
@@ -212,7 +210,7 @@ def _pairing_index(
         if ok and len(group) == len(filter_list):
             pairs.append(group)
             if debug:
-                parts: List[str] = []
+                parts: list[str] = []
                 for f in filter_list:
                     im = group[f]
                     jd = _jd_for_image(im)
@@ -227,13 +225,13 @@ def _pairing_index(
 
 def _pairing_jd_nearest(
     context: AnalysisContext,
-    filter_list: List[str],
+    filter_list: list[str],
     ref_filter: str,
     jd_tolerance: float,
-    skipped: List[dict],
+    skipped: list[dict],
     *,
     debug: bool = False,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     series_by_f = {
         f: context.image_series_dict[f]
         for f in filter_list
@@ -259,7 +257,7 @@ def _pairing_jd_nearest(
     other_filters = [f for f in filter_list if f != ref_filter]
 
     # Pool of candidates per filter (jd known, photometry ok)
-    pool: Dict[str, List] = {}
+    pool: dict[str, list] = {}
     for f in other_filters:
         pool[f] = [
             im
@@ -269,13 +267,13 @@ def _pairing_jd_nearest(
         pool[f].sort(key=lambda im: _jd_for_image(im) or 0.0)
 
     used_idx = {f: set() for f in other_filters}
-    pairs: List[Dict[str, Any]] = []
+    pairs: list[dict[str, Any]] = []
 
     for ref_im in ref_images:
         jd0 = _jd_for_image(ref_im)
         if jd0 is None:
             continue
-        group: Dict[str, Any] = {ref_filter: ref_im}
+        group: dict[str, Any] = {ref_filter: ref_im}
         ok = True
         for f in other_filters:
             best_im = None
@@ -312,7 +310,7 @@ def _pairing_jd_nearest(
             pairs.append(group)
             if debug:
                 ep_n = len(pairs) - 1
-                bits: List[str] = [
+                bits: list[str] = [
                     f"{ref_filter}={_image_pairing_label(ref_im)} jd={jd0:.6f}"
                 ]
                 for f in other_filters:
@@ -336,7 +334,7 @@ def _pairing_jd_nearest(
 def observation_to_calibration_epochs(
     context: AnalysisContext,
     config: PipelineConfig,
-) -> Dict[str, Table]:
+) -> dict[str, Table]:
     """
     Build multi-band calibration epoch tables and store them on ``context``.
 
@@ -393,11 +391,11 @@ def observation_to_calibration_epochs(
 
     epoch_idx = 0
     for group in image_groups:
-        tables: Dict[str, Table] = {}
-        airmasses: Dict[str, float] = {}
+        tables: dict[str, Table] = {}
+        airmasses: dict[str, float] = {}
         # Per paired epoch: exposure time (JD) and pipeline image id per band
-        jd_by_filter: Dict[str, Optional[float]] = {}
-        image_id_by_filter: Dict[str, Any] = {}
+        jd_by_filter: dict[str, float | None] = {}
+        image_id_by_filter: dict[str, Any] = {}
 
         failed = False
         for f in filter_list:
@@ -529,8 +527,8 @@ def exposure_pairing_records_table(
 
 
 def instrumental_epoch_native_from_calibration_epochs(
-    epochs: Dict[str, Table],
-    filter_list: List[str],
+    epochs: dict[str, Table],
+    filter_list: list[str],
 ) -> Table:
     """
     Vstack per-epoch tables from :func:`observation_to_calibration_epochs` into one
@@ -545,7 +543,7 @@ def instrumental_epoch_native_from_calibration_epochs(
 
     if not epochs:
         return Table()
-    pieces: List[Table] = []
+    pieces: list[Table] = []
     for eid in sorted(epochs.keys()):
         t = epochs[eid].copy()
         n = len(t)
@@ -576,7 +574,7 @@ def instrumental_epoch_native_from_calibration_epochs(
     return out
 
 
-def observation_to_epoch_tables(context: AnalysisContext) -> Dict[str, Table]:
+def observation_to_epoch_tables(context: AnalysisContext) -> dict[str, Table]:
     """
     Return ``context.calibration_epochs`` (copy as dict).
 

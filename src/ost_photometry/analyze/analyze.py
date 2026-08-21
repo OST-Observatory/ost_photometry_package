@@ -136,7 +136,9 @@ def transform_object_positions(
 
         #   Transform coordinates
         transformed_coordinates = reference_trans(
-            current_trans.inverse(list(zip(x_pixel_coordinates, y_pixel_coordinates)))
+            current_trans.inverse(
+                list(zip(x_pixel_coordinates, y_pixel_coordinates, strict=True))
+            )
         )
 
         #   Write object positions back to image object

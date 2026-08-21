@@ -1,12 +1,17 @@
 """Modular pipeline for photometry analysis."""
 
+from .base import PipelineStep
+from .bridge import (
+    observation_to_calibration_epochs,
+    observation_to_epoch_tables,
+)
 from .config import (
     CALIBRATION_PRESETS,
     CalibrationConfig,
     CorrelationConfig,
     DiagnosticPlots,
-    ExtractionConfig,
     ExtinctionConfig,
+    ExtractionConfig,
     HipsConfig,
     LightCurveConfig,
     PipelineConfig,
@@ -14,12 +19,7 @@ from .config import (
     WcsConfig,
 )
 from .context import AnalysisContext
-from .base import PipelineStep
 from .orchestrator import AnalysisPipeline
-from .bridge import (
-    observation_to_calibration_epochs,
-    observation_to_epoch_tables,
-)
 
 __all__ = [
     "AnalysisContext",

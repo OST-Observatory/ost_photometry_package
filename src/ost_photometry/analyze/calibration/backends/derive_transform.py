@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import Dict, List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 
 
 def _fit_qc_metrics_for_epoch(
-    table: "Table",
-    filters: List[str],
+    table: Table,
+    filters: list[str],
     diagnostic_coeffs: dict,
     used_mask: np.ndarray,
 ) -> dict[str, dict[str, float]]:
@@ -61,14 +61,14 @@ def _fit_qc_metrics_for_epoch(
 
 
 def fit_epochs(
-    epochs: Dict[str, "Table"],
-    filters: List[str],
-    config: "PipelineConfig",
+    epochs: dict[str, Table],
+    filters: list[str],
+    config: PipelineConfig,
     *,
     color_indices: dict[str, tuple[str, str]] | None = None,
     output_dir: str | None = None,
     file_type: str = "pdf",
-) -> Dict[str, CalibrationResult] | None:
+) -> dict[str, CalibrationResult] | None:
     """
     Fit catalog-color derive-transform per epoch.
 
@@ -84,7 +84,7 @@ def fit_epochs(
         )
         return None
 
-    results: Dict[str, CalibrationResult] = {}
+    results: dict[str, CalibrationResult] = {}
     plot_epochs: dict = {}
     plot_coeffs: dict = {}
     plot_masks: dict = {}

@@ -8,8 +8,8 @@ matched rows. Non-numeric columns (e.g. string IDs) are skipped to avoid dtype i
 
 from __future__ import annotations
 
-import numpy as np
 import astropy.units as u
+import numpy as np
 from astropy.coordinates import SkyCoord, matching
 from astropy.table import Table
 

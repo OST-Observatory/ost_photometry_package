@@ -1,12 +1,6 @@
 """Cross-image and cross-filter source correlation."""
 
 from .core import correlate_datasets, correlation_astropy, correlation_own
-from .intra import (
-    assign_correlated_object_ids_single_series,
-    correlate_image_series_images,
-    correlate_preserve_objects,
-    correlate_preserve_variable,
-)
 from .inter import (
     assign_global_correlated_object_ids,
     correlate_image_series,
@@ -17,17 +11,23 @@ from .inter import (
     inter_filter_pair_image_label,
     inter_filter_pair_title_suffix,
 )
-from .protection import (
-    merge_protected_object_ids,
-    resolve_calibration_object_ids,
-    resolve_protected_object_ids_for_intra,
-    resolve_protected_object_ids_for_inter,
+from .intra import (
+    assign_correlated_object_ids_single_series,
+    correlate_image_series_images,
+    correlate_preserve_objects,
+    correlate_preserve_variable,
 )
 from .ooi import (
     find_objects_of_interest_astropy,
     find_objects_of_interest_srcor,
     identify_object_of_interest_in_dataset,
     verify_objects_of_interest_global_correlated_ids,
+)
+from .protection import (
+    merge_protected_object_ids,
+    resolve_calibration_object_ids,
+    resolve_protected_object_ids_for_inter,
+    resolve_protected_object_ids_for_intra,
 )
 
 __all__ = [

@@ -1,17 +1,17 @@
 """Photometry analysis module: extraction, calibration, light curves."""
 
-from .observation import Observation
 from . import analyze as _analyze_module  # noqa: F401 — registers Observation.run_pipeline
-from .extraction import main_extract
+from .differential_photometry import PhotometryCalibrator
 from .extinction import (
     CoefficientMode,
     ExtinctionCorrector,
     ExtinctionOrder,
     calculate_airmass,
 )
-from .differential_photometry import PhotometryCalibrator
+from .extraction import main_extract
 from .image import AnalysisImage
 from .models import ImageSeries, ObjectOfInterest
+from .observation import Observation
 from .pipeline import AnalysisContext, AnalysisPipeline, DiagnosticPlots, PipelineConfig
 
 __all__ = [

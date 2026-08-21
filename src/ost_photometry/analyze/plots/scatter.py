@@ -4,12 +4,11 @@ from __future__ import annotations
 import itertools
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 from astropy.modeling import fitting
-import matplotlib.pyplot as plt
 
 from ... import checks
-
 from .style import (
     mk_color_cycler_error_bars,
     mk_color_cycler_symbols,
@@ -266,7 +265,7 @@ def d3_scatter(
         legend = ax.legend(title='Click cluster' if display else None)
         if display and legend is not None:
             # Legend handles are more reliable to pick than 3D PathCollections.
-            for handle, cid in zip(legend.legend_handles, ids):
+            for handle, cid in zip(legend.legend_handles, ids, strict=True):
                 handle.set_picker(5)
                 handle._cluster_id = int(cid)
 
@@ -296,8 +295,8 @@ def d3_scatter(
 def scatter(
         x_values: list[np.ndarray], name_x: str, y_values: list[np.ndarray],
         name_y: str, rts: str, output_dir: str,
-        x_errors: list[np.ndarray | None] = [None],
-        y_errors: list[np.ndarray | None] = [None],
+        x_errors: list[np.ndarray | None] | None = None,
+        y_errors: list[np.ndarray | None] | None = None,
         dataset_label: list[str] | None = None, name_object: str | None = None,
         fits: list[fitting] | None = None, one_to_one: bool = False,
         file_type: str = 'pdf') -> None:
@@ -357,6 +356,11 @@ def scatter(
         output_dir,
         os.path.join(output_dir, 'scatter'),
     )
+
+    if x_errors is None:
+        x_errors = [None] * len(x_values)
+    if y_errors is None:
+        y_errors = [None] * len(y_values)
 
     #   Plot magnitudes
     fig = plt.figure(figsize=(8, 8))

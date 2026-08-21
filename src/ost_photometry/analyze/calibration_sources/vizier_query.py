@@ -12,11 +12,10 @@ The query uses a circular region: ``center`` and radius ``field_of_view_arcmin``
 
 from __future__ import annotations
 
-import numpy as np
-from astroquery.vizier import Vizier
-from astropy.table import Table
 import astropy.units as u
 from astropy.coordinates import SkyCoord
+from astropy.table import Table
+from astroquery.vizier import Vizier
 
 from ... import calibration_parameters, terminal_output
 

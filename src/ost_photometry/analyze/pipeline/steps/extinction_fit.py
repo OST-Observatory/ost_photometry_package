@@ -2,15 +2,14 @@
 
 from pathlib import Path
 
-from .. import base
-from ..context import AnalysisContext
-from ..config import PipelineConfig
 from ...extinction import (
-    ExtinctionCoefficients,
     fit_extinction_from_value_airmass,
     observation_to_extinction_fit_table,
 )
 from ...extinction_io import save_extinction_coefficients
+from .. import base
+from ..config import PipelineConfig
+from ..context import AnalysisContext
 
 
 class ExtinctionFitStep(base.PipelineStep):
@@ -115,7 +114,7 @@ class ExtinctionFitStep(base.PipelineStep):
             f"Extinction coefficients saved to {out_path}",
             style_name="INFO",
         )
-        for k, ec in coefficients.items():
+        for ec in coefficients.values():
             terminal_output.print_to_terminal(f"  {ec}", style_name="INFO")
 
         return context

@@ -7,15 +7,15 @@ Failures are logged and do not abort the pipeline.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
-from astropy.coordinates import SkyCoord
 from astropy.table import Table
 
-from . import correlate, plots
 from .. import checks, terminal_output
+from . import correlate, plots
 
 
 def diagnostics_subdirectory(output_dir: str | Path) -> Path:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from ..result import CalibrationResult
 from ..zp import comparison_mask_from_std_columns, fit_median_zero_point_epoch
@@ -14,12 +14,12 @@ if TYPE_CHECKING:
 
 
 def fit_epochs(
-    epochs: Dict[str, "Table"],
-    filters: List[str],
-    config: "PipelineConfig",
+    epochs: dict[str, Table],
+    filters: list[str],
+    config: PipelineConfig,
     *,
     color_indices: dict[str, tuple[str, str]] | None = None,
-) -> Dict[str, CalibrationResult]:
+) -> dict[str, CalibrationResult]:
     """Fit median ZP per epoch (``grouping=per_image``) or one ZP for all (``ensemble``)."""
     grouping = config.calibration_grouping
     min_comparisons = 3
@@ -55,7 +55,7 @@ def fit_epochs(
         return {eid: night_result for eid in epochs}
 
     # per_image (default for median_zp_per_image) and fixed (same as per_image without preset coeffs)
-    results: Dict[str, CalibrationResult] = {}
+    results: dict[str, CalibrationResult] = {}
     for epoch_id, data in epochs.items():
         mask = comparison_mask_from_std_columns(data, filters)
         results[epoch_id] = fit_median_zero_point_epoch(

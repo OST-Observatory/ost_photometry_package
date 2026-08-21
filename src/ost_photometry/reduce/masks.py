@@ -70,7 +70,7 @@ def get_pixel_mask(out_path: Path, shape: np.ndarray) -> tuple[bool, CCDData]:
             ifc_hot_pixel = image_file_collection.filter(imagetyp="dark mask")
 
             #   Get correct mask in terms of binning
-            for mask_data, file_name in ifc_hot_pixel.data(return_fname=True):
+            for mask_data, _file_name in ifc_hot_pixel.data(return_fname=True):
                 if mask_data.shape == shape:
                     mask_hot_pixel = mask_data.astype("bool")
 
@@ -78,7 +78,7 @@ def get_pixel_mask(out_path: Path, shape: np.ndarray) -> tuple[bool, CCDData]:
             ifc_bad_pixel = image_file_collection.filter(imagetyp="flat mask")
 
             #   Get correct mask in terms of binning
-            for mask_data, file_name in ifc_bad_pixel.data(return_fname=True):
+            for mask_data, _file_name in ifc_bad_pixel.data(return_fname=True):
                 if mask_data.shape == shape:
                     mask_bad_pixel = mask_data.astype("bool")
 
@@ -144,7 +144,7 @@ def make_hot_pixel_mask(
     threshold_hot_pixel = 2
     hot_pixel_sum = 0
     hot_pixels = np.zeros(dark_image.shape)
-    for i in range(0, 100):
+    for _ in range(0, 100):
         hot_pixels = dark_image.data > threshold_hot_pixel
         hot_pixel_sum = hot_pixels.sum()
         #   Check if number of hot pixel is realistic
@@ -153,8 +153,8 @@ def make_hot_pixel_mask(
         threshold_hot_pixel += 1
 
     if verbose:
-        sys.stdout.write("\r\tNumber of hot pixels: {}\n".format(hot_pixel_sum))
-        sys.stdout.write("\r\tLimit (e-/s/pix) used: {}\n".format(threshold_hot_pixel))
+        sys.stdout.write(f"\r\tNumber of hot pixels: {hot_pixel_sum}\n")
+        sys.stdout.write(f"\r\tLimit (e-/s/pix) used: {threshold_hot_pixel}\n")
         sys.stdout.flush()
 
     #   Save mask with hot pixels

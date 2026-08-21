@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from astropy.table import Table
 
+from ... import style
+from .. import utilities
 from . import io
 from .imaging import ImagingPlotContext
-from .. import utilities
-from ... import style
 
 if TYPE_CHECKING:
     from .. import analyze
@@ -45,7 +45,7 @@ def _expand_star_ids_to_all_epochs(full: Table, ids: np.ndarray) -> Table:
 
 
 def write_post_processed_cluster_field_table(
-    observation: "analyze.Observation",
+    observation: analyze.Observation,
     filter_list: list[str],
     *,
     object_id: int | None = None,
@@ -77,7 +77,7 @@ def write_post_processed_cluster_field_table(
 
 
 def apply_cluster_field_phase(
-    observation: "analyze.Observation",
+    observation: analyze.Observation,
     phase: PostProcessClusterPhase,
     *,
     plot_context: ImagingPlotContext,
@@ -145,7 +145,7 @@ def apply_cluster_field_phase(
 
 
 def post_process_cluster_field(
-    observation: "analyze.Observation",
+    observation: analyze.Observation,
     filter_list: list[str],
     object_id: int | None = None,
     extraction_method: str = "",

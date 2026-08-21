@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import List
-
 import numpy as np
 from astropy.table import Table
 
 from .result import CalibrationResult, TransformationCoefficients
 
 
-def comparison_mask_from_std_columns(table: Table, filters: List[str]) -> np.ndarray:
+def comparison_mask_from_std_columns(table: Table, filters: list[str]) -> np.ndarray:
     """True rows with finite ``mag_std_<filter>`` for all requested filters."""
     mask = np.ones(len(table), dtype=bool)
     for filter_ in filters:
@@ -25,7 +23,7 @@ def comparison_mask_from_std_columns(table: Table, filters: List[str]) -> np.nda
 def fit_median_zero_point_epoch(
     data: Table,
     epoch_id: str,
-    filters: List[str],
+    filters: list[str],
     comparison_mask: np.ndarray,
     *,
     mag_col_prefix: str = "mag_",

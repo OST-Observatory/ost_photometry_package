@@ -1,9 +1,9 @@
 """Inter-filter correlation step (correlate_image_series)."""
 
-from .. import base
-from ..context import AnalysisContext
-from ..config import PipelineConfig
 from ... import correlate
+from .. import base
+from ..config import PipelineConfig
+from ..context import AnalysisContext
 
 
 class CorrelationInterStep(base.PipelineStep):

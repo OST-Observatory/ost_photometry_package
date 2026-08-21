@@ -20,16 +20,15 @@ Design
 
 from __future__ import annotations
 
+import astropy.units as u
 import numpy as np
 import requests
-from astroquery.simbad import Simbad
-from astroquery.vizier import Vizier
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
-import astropy.units as u
+from astroquery.simbad import Simbad
+from astroquery.vizier import Vizier
 
 from ... import calibration_parameters, style, terminal_output
-
 from .transforms import add_johnson_ri_to_standard_table
 from .vizier_query import get_vizier_catalog
 

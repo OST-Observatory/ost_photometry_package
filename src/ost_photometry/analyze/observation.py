@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import astropy.units as u
 import numpy as np
 from astropy.coordinates import SkyCoord, name_resolve
@@ -13,9 +11,6 @@ from photutils.psf import ImagePSF
 from .. import terminal_output
 from .models import ImageSeries, ObjectOfInterest
 from .ooi_ids import ooi_photometry_ids
-
-if TYPE_CHECKING:
-    pass
 
 
 class Observation:
@@ -60,7 +55,7 @@ class Observation:
             len_names = len(object_names)
             if len_names == len(ra_objects) and len_names == len(dec_objects):
                 for i, (name, ra, dec) in enumerate(
-                    zip(object_names, ra_objects, dec_objects)
+                    zip(object_names, ra_objects, dec_objects, strict=True)
                 ):
                     ooi = ObjectOfInterest(ra, dec, ra_unit, dec_unit, name)
                     if add_periods:

@@ -7,14 +7,12 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-import astropy.units as u
 import ccdproc as ccdp
 import numpy as np
 from astropy.nddata import CCDData, StdDevUncertainty
-from astropy.stats import sigma_clip, sigma_clipped_stats
+from astropy.stats import sigma_clipped_stats
 from astropy.table import Table
 from astropy.time import Time
-from astropy.wcs import WCS
 from photutils.detection import DAOStarFinder
 from photutils.psf import extract_stars
 from scipy.ndimage import median_filter
@@ -23,26 +21,11 @@ from .. import calibration_parameters, checks, style, terminal_output
 from .. import utilities as base_utilities
 from ..fits_headers import ensure_mjd_obs_in_header
 from ..fwhm import estimate_fwhm_from_positions, source_positions_from_table
-from ..terminal_output import print_to_terminal
 from . import plots
 from .exposure import (
-    check_dark_scaling_possible,
-    check_exposure_times,
     find_nearest_exposure_time,
-    find_nearest_exposure_time_to_reference_image,
-    get_exposure_times,
 )
 from .image_types import get_image_type
-from .instrument import (
-    get_egain_from_collection,
-    get_imaging_software,
-    get_instrument_info,
-    get_instruments,
-    resolve_readout_mode,
-    resolve_system_gain,
-)
-from .masks import get_pixel_mask, make_bad_pixel_mask, make_hot_pixel_mask
-from .wcs_reduce import determine_wcs, determine_wcs_all_images, determine_wcs_core
 
 ############################################################################
 #                           Routines & definitions                         #

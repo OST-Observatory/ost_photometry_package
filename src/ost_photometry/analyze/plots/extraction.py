@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 from astropy.visualization import ImageNormalize, ZScaleInterval, simple_norm
 from matplotlib import rcParams
-import matplotlib.pyplot as plt
 from photutils.aperture import CircularAnnulus, CircularAperture
 from photutils.psf import EPSFStars, ImagePSF
 

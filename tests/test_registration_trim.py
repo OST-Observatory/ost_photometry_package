@@ -73,6 +73,7 @@ def test_ccd_trim_slices_rejects_empty_window():
 def test_trim_ccd_positive_margins():
     pytest.importorskip("ccdproc")
     from astropy.nddata import CCDData
+
     from ost_photometry.reduce.registration import trim_ccd
 
     data = np.arange(100, dtype=float).reshape(10, 10)
@@ -92,6 +93,7 @@ def test_trim_ccd_positive_margins():
 def test_trim_ccd_alignment_convention_matches_legacy_slice():
     pytest.importorskip("ccdproc")
     from astropy.nddata import CCDData
+
     from ost_photometry.reduce.registration import trim_ccd
 
     data = np.arange(100, dtype=float).reshape(10, 10)

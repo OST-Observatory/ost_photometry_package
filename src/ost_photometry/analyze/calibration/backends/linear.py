@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from ...differential_photometry import PhotometryCalibrator
 from ...extinction import CoefficientMode, ExtinctionCoefficients, ExtinctionOrder
@@ -14,8 +14,8 @@ from ...extinction_io import (
 from ..result import CalibrationResult
 
 if TYPE_CHECKING:
-    from astropy.table import Table
     from astropy.coordinates import EarthLocation
+    from astropy.table import Table
 
     from ...pipeline.config import PipelineConfig
 
@@ -30,11 +30,11 @@ def _coefficient_mode(grouping: str) -> CoefficientMode:
 
 
 def build_calibrator(
-    config: "PipelineConfig",
+    config: PipelineConfig,
     *,
-    observatory_location: "EarthLocation | None" = None,
+    observatory_location: EarthLocation | None = None,
     color_indices: dict[str, tuple[str, str]] | None = None,
-    extinction_coefficients: Optional[Dict[str, ExtinctionCoefficients]] = None,
+    extinction_coefficients: dict[str, ExtinctionCoefficients] | None = None,
 ) -> PhotometryCalibrator:
     grouping = config.calibration_grouping
     ext_order = resolve_pipeline_extinction_order(config)
@@ -53,7 +53,7 @@ def build_calibrator(
 
 def _apply_second_order_after_fit(
     calibrator: PhotometryCalibrator,
-    config: "PipelineConfig",
+    config: PipelineConfig,
 ) -> None:
     """Merge tabulated / user k″ onto fitted k′ when ``extinction_order="second"``."""
     if resolve_pipeline_extinction_order(config) != ExtinctionOrder.SECOND:
@@ -70,14 +70,14 @@ def _apply_second_order_after_fit(
 
 def fit_epochs(
     calibrator: PhotometryCalibrator,
-    epochs: Dict[str, "Table"],
-    filters: List[str],
-    config: "PipelineConfig",
+    epochs: dict[str, Table],
+    filters: list[str],
+    config: PipelineConfig,
     *,
     output_dir: str | None = None,
     file_type: str = "pdf",
     calibration_summary_x_jd: dict[str, float] | None = None,
-) -> Dict[str, CalibrationResult]:
+) -> dict[str, CalibrationResult]:
     """Populate calibrator epochs and fit T/ZP via PhotometryCalibrator."""
     for epoch_id, tbl in epochs.items():
         calibrator.epochs[epoch_id] = tbl

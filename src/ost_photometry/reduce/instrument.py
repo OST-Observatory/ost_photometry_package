@@ -1,7 +1,7 @@
 """Instrument and camera-related utilities for data reduction."""
 
-import numpy as np
 import ccdproc as ccdp
+import numpy as np
 from astropy.stats import sigma_clip
 from astropy.table import Table
 

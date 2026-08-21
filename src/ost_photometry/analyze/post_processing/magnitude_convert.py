@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 def apply_magnitude_system_convert_on_observation(
-    observation: "analyze.Observation",
+    observation: analyze.Observation,
     *,
     target_filter_system: str | None = None,
     output_filter_set: str = "auto",

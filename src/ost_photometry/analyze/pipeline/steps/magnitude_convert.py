@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from .. import base
-from ..config import PipelineConfig
-from ..context import AnalysisContext
 from ...post_processing.magnitude_convert import (
     apply_magnitude_system_convert_on_observation,
 )
 from ...post_processing.magnitude_systems import validate_magnitude_output_request
+from .. import base
+from ..config import PipelineConfig
+from ..context import AnalysisContext
 
 
 class PostProcessMagnitudeConvertStep(base.PipelineStep):

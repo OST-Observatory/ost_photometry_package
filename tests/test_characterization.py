@@ -14,7 +14,7 @@ _PKG_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_PKG_SRC) not in sys.path:
     sys.path.insert(0, str(_PKG_SRC))
 
-from helpers import load_module_from_path, pkg_src
+from helpers import load_module_from_path, pkg_src  # noqa: E402
 
 
 def _deps_available() -> bool:

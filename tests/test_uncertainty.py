@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 from astropy.table import Table
 
 from helpers import load_module_from_path, pkg_src

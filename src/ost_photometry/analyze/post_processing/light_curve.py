@@ -6,16 +6,15 @@ import json
 from pathlib import Path
 from typing import Literal
 
-import numpy as np
-from astropy.table import Table, vstack
-from astropy import uncertainty as unc
 import astropy.units as u
+import numpy as np
+from astropy import uncertainty as unc
 from astropy.coordinates import SkyCoord, match_coordinates_sky
+from astropy.table import Table, vstack
 from astropy.time import Time
 from astropy.timeseries import TimeSeries
 
 from ... import terminal_output
-
 
 LightCurveQuantity = Literal["magnitude", "flux"]
 LightCurveCalibrationRows = Literal["auto", "transformed", "simple"]
@@ -739,10 +738,9 @@ def plot_light_curve_from_epoch_native_ecsv(
     Requires ``quantity="flux"`` and a rectangular epoch×source matrix fillable
     from the table (see :func:`epoch_native_flux_matrix_for_pipeline_normalization`).
     """
-    from .io import read_epoch_native_magnitudes
-
-    from .. import calibration
     from ... import checks
+    from .. import calibration
+    from .io import read_epoch_native_magnitudes
 
     tbl = read_epoch_native_magnitudes(ecsv_path)
     meta = epoch_meta

@@ -5,14 +5,13 @@ import os
 from pathlib import Path
 
 import astropy.units as u
+import matplotlib.pyplot as plt
 import numpy as np
 from astropy import wcs
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astropy.visualization import ImageNormalize, ZScaleInterval, simple_norm
 from matplotlib.patches import Ellipse
-import matplotlib.pyplot as plt
-from photutils.aperture import CircularAperture
 from photutils.utils import ImageDepth
 from regions import EllipseSkyRegion
 
@@ -230,8 +229,8 @@ def starmap(
             ax = plt.subplot(projection=wcs_image)
         else:
             terminal_output.print_to_terminal(
-                f"Sky projection for master plot not possible, since no WCS "
-                f"was provided. Use Pixel coordinates instead.",
+                "Sky projection for master plot not possible, since no WCS "
+                "was provided. Use Pixel coordinates instead.",
                 style_name='WARNING',
                 indent=indent,
             )

@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
+import typing
 import warnings
 
 import numpy as np
-import typing
 
 if typing.TYPE_CHECKING:
     from .. import analyze
 
-from astropy.coordinates import SkyCoord
 import astropy.units as u
 from astropy import wcs
+from astropy.coordinates import SkyCoord
 
-from .. import utilities
-from ..warnings_types import OstPhotometryAnalyzeWarning
 from ... import terminal_output
 from ... import utilities as base_utilities
-
+from .. import utilities
+from ..ooi_ids import set_ooi_correlated_ids_from_filter
+from ..warnings_types import OstPhotometryAnalyzeWarning
 from .core import correlate_datasets, correlation_own
 from .intra import correlate_image_series_images
 from .ooi import (
@@ -26,10 +26,10 @@ from .ooi import (
     verify_objects_of_interest_global_correlated_ids,
 )
 from .protection import resolve_calibration_object_ids
-from ..ooi_ids import set_ooi_correlated_ids_from_filter
+
 
 def assign_global_correlated_object_ids(
-    observation: "analyze.Observation",
+    observation: analyze.Observation,
     filter_list: list[str],
 ) -> None:
     """
@@ -94,7 +94,7 @@ def assign_global_correlated_object_ids(
 
 
 def correlate_image_series(
-        observation: 'analyze.Observation', filter_list: list[str] | set[str],
+        observation: analyze.Observation, filter_list: list[str] | set[str],
         max_pixel_between_objects: int = 3,
         ooi_correlation_strategy: int = 1, cross_identification_limit: int = 1,
         reference_image_series_id: int = 0,
@@ -230,7 +230,7 @@ def correlate_image_series(
     y_pixel_positions_all_images = []
     wcs_list_image_series = []
 
-    for id_series, series in enumerate(image_series_dict.values()):
+    for series in image_series_dict.values():
         #   Get number of objects in each table/image
         wcs_list_image_series.append(series.wcs)
 
@@ -340,7 +340,7 @@ def correlate_image_series(
 
 
 def inter_filter_correlation_separations_for_images(
-    observation: "analyze.Observation",
+    observation: analyze.Observation,
     filter_list: list[str] | set[str],
     images_by_filter: dict[str, base_utilities.Image],
     *,
@@ -394,7 +394,7 @@ def inter_filter_correlation_separations_for_images(
 
 
 def inter_filter_correlation_separations_arcsec(
-    observation: "analyze.Observation",
+    observation: analyze.Observation,
     filter_list: list[str] | set[str],
     reference_filter_index: int = 0,
 ) -> tuple[np.ndarray, str, list[str]]:
@@ -550,7 +550,7 @@ def determine_object_position(
 
 
 def correlate_preserve_calibration_objects(
-        image_series: 'analyze.ImageSeries', filter_list: list[str],
+        image_series: analyze.ImageSeries, filter_list: list[str],
         calibration_source: str = 'APASS',
         calibration_catalog_mag_range: tuple[float, float] = (0., 18.5),
         vizier_dict: dict[str, str] | None = None, calib_file=None,

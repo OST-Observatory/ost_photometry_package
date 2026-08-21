@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import os
 
+import astropy.units as u
+import matplotlib.pyplot as plt
 import numpy as np
 from astropy.stats import sigma_clip as sigma_clipping
 from astropy.time import Time
 from astropy.timeseries import TimeSeries, aggregate_downsample
-import astropy.units as u
-import matplotlib.pyplot as plt
 
 from ... import checks
 
@@ -191,7 +191,7 @@ def light_curve_jd(
 
     #   Set title
     if name_object is None:
-        fig.suptitle(f'Light curve', fontsize=30)
+        fig.suptitle('Light curve', fontsize=30)
     else:
         fig.suptitle(f'Light curve - {name_object}', fontsize=30)
 

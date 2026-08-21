@@ -18,7 +18,7 @@ from astropy.modeling.fitting import (
     TRFLSQFitter,
 )
 from astropy.nddata import NDData
-from astropy.stats import SigmaClip, sigma_clipped_stats
+from astropy.stats import SigmaClip
 from astropy.table import Table
 from photutils.aperture import (
     ApertureStats,
@@ -42,8 +42,8 @@ from photutils.psf import (
 )
 
 from .. import checks, style, terminal_output
-from ..core.parallel import Executor
 from .. import utilities as base_utilities
+from ..core.parallel import Executor
 from ..fwhm import (
     estimate_image_fwhm,
 )
@@ -928,11 +928,11 @@ def extraction_epsf(
     try:
         uncertainty_mask = np.invert(np.isnan(result_tbl["flux_err"].value))
         result_tbl = result_tbl[uncertainty_mask]
-    except KeyError:
+    except KeyError as err:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nProblem with cleanup of NANs in "
             f"uncertainties... {style.Bcolors.ENDC}"
-        )
+        ) from err
 
     n_bad_objects = 0
     try:
@@ -943,11 +943,11 @@ def extraction_epsf(
             bad_results = np.where(result_tbl["flux_err"].data < 0.0)
             n_bad_objects += len(bad_results)
             result_tbl.remove_rows(bad_results)
-    except KeyError:
+    except KeyError as err:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nProblem with cleanup of negative "
             f"uncertainties... {style.Bcolors.ENDC}"
-        )
+        ) from err
 
     try:
         bad_results = np.where(result_tbl["x_fit"].data < 0.0)
@@ -956,11 +956,11 @@ def extraction_epsf(
         bad_results = np.where(result_tbl["y_fit"].data < 0.0)
         n_bad_objects += np.size(bad_results)
         result_tbl.remove_rows(bad_results)
-    except KeyError:
+    except KeyError as err:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nProblem with cleanup of negative pixel "
             f"coordinates... {style.Bcolors.ENDC}"
-        )
+        ) from err
 
     if n_bad_objects != 0:
         out_str = f"{n_bad_objects} objects removed because of poor quality"
@@ -971,13 +971,13 @@ def extraction_epsf(
 
     try:
         n_stars = len(result_tbl["flux_fit"].data)
-    except KeyError:
+    except KeyError as err:
         raise RuntimeError(
             f"{style.Bcolors.FAIL} \nTable produced by "
             "IterativePSFPhotometry is empty after cleaning up "
             "of objects with negative pixel coordinates and negative "
             f"uncertainties {style.Bcolors.ENDC}"
-        )
+        ) from err
 
     out_str = f"{n_stars} good stars extracted from the image"
     if terminal_logger is not None:
@@ -996,7 +996,7 @@ def extraction_epsf(
         terminal_logger=terminal_logger,
     )
 
-    filename = "table_photometry_{}_PSF.dat".format(identification_str)
+    filename = f"table_photometry_{identification_str}_PSF.dat"
     result_tbl.write(
         output_path / "tables" / filename,
         format="ascii",
@@ -1042,7 +1042,7 @@ def define_apertures(
     except KeyError:
         x_positions = tbl["x_centroid"]
         y_positions = tbl["y_centroid"]
-    positions = list(zip(x_positions, y_positions))
+    positions = list(zip(x_positions, y_positions, strict=True))
 
     if unit_radii not in ["pixel", "arcsec"]:
         raise RuntimeError(

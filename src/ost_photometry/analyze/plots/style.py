@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 
 from ... import terminal_output
 
+
 def initialize_plot(size_x: str, size_y: str) -> plt.figure:
     """
     Check the plot dimensions and set defaults

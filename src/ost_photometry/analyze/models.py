@@ -82,7 +82,7 @@ class ImageSeries:
             #   Remove not FITS entries
             temp_list: list[str] = []
             for file_i in file_list:
-                for j, form in enumerate(formats):
+                for form in formats:
                     if file_i.find(form) != -1:
                         temp_list.append(file_i)
             file_list = temp_list
@@ -196,7 +196,6 @@ class ImageSeries:
             sync_image_coordinates_from_wcs(img, w)
 
     def get_photometry(self) -> dict[str, object]:
-        from astropy.table import Table
 
         photo_dict: dict[str, object] = {}
         for img in self.image_list:

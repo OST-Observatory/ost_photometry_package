@@ -13,6 +13,7 @@ from ... import checks, style, terminal_output
 from ...core.parallel import Executor
 from .. import plots, utilities
 
+
 def reduce_dark(
     image_path: str | Path,
     output_dir: str | Path,
@@ -338,7 +339,7 @@ def master_dark(
     #   Sanitize dark rate
     if dark_rate is None:
         terminal_output.print_to_terminal(
-            f"Dark current not specified. Assume 0.1 e-/pix/s.",
+            "Dark current not specified. Assume 0.1 e-/pix/s.",
             indent=1,
             style_name="WARNING",
         )
@@ -372,6 +373,7 @@ def master_dark(
                 image_file_collection.summary["naxis1"][dark_mask],
                 image_file_collection.summary["naxis2"][dark_mask],
                 image_file_collection.summary["exptime"][dark_mask],
+                strict=True,
             )
         )
     )
@@ -382,6 +384,7 @@ def master_dark(
             zip(
                 image_file_collection.summary["naxis1"][dark_mask],
                 image_file_collection.summary["naxis2"][dark_mask],
+                strict=True,
             )
         )
     )

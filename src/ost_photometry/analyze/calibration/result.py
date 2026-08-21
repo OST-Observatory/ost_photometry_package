@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
 
 from astropy.time import Time
 
@@ -21,7 +20,7 @@ class TransformationCoefficients:
     zero_point_err: float = 0.0
     #: Off-diagonal covariance ``Cov(T, ZP)`` from the same linear fit (mag²).
     cov_tz: float = 0.0
-    color_index_filters: Tuple[str, str] = ("B", "V")
+    color_index_filters: tuple[str, str] = ("B", "V")
     n_stars_used: int = 0
     rms_residual: float = 0.0
 
@@ -39,9 +38,9 @@ class CalibrationResult:
     """Container for calibration results."""
 
     identifier: str
-    timestamp: Optional[Time] = None
-    extinction: Dict[str, ExtinctionCoefficients] = field(default_factory=dict)
-    transformation: Dict[str, TransformationCoefficients] = field(default_factory=dict)
+    timestamp: Time | None = None
+    extinction: dict[str, ExtinctionCoefficients] = field(default_factory=dict)
+    transformation: dict[str, TransformationCoefficients] = field(default_factory=dict)
     n_comparison_stars: int = 0
     quality_flag: str = "OK"
     notes: str = ""

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import astropy.units as u
 import numpy as np
 from astropy import uncertainty as unc
-import astropy.units as u
 from astropy.table import Table
 
 from ... import calibration_parameters, terminal_output

@@ -9,7 +9,6 @@ color-term transformation row-wise on multi-band epoch tables.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 
 import numpy as np
 from astropy.stats import sigma_clip as astropy_sigma_clip
@@ -48,7 +47,7 @@ def derive_transform_c_factor(
 
 def _comparison_mask_with_instrumental(
     table: Table,
-    filters: List[str],
+    filters: list[str],
     comparison_mask: np.ndarray,
 ) -> np.ndarray:
     mask = np.asarray(comparison_mask, dtype=bool).copy()
@@ -71,7 +70,7 @@ def fit_color_corrections_epoch(
     sigma_clip: float = 2.5,
     min_comparisons: int = 5,
     max_clip_iterations: int = 5,
-) -> Optional[DeriveTransformFit]:
+) -> DeriveTransformFit | None:
     """
     Fit catalog-color slopes for a two-filter epoch table.
 
@@ -145,7 +144,7 @@ def fit_color_corrections_epoch(
 
 def calibration_result_from_derive_transform_fit(
     epoch_id: str,
-    filters: List[str],
+    filters: list[str],
     derive_fit: DeriveTransformFit,
     zp_result: CalibrationResult,
     *,
@@ -186,13 +185,13 @@ def calibration_result_from_derive_transform_fit(
 
 def diagnostic_transformation_for_plots(
     result: CalibrationResult,
-    filters: List[str],
+    filters: list[str],
     derive_fit: DeriveTransformFit,
-) -> Dict[str, TransformationCoefficients]:
+) -> dict[str, TransformationCoefficients]:
     """T/ZP for diagnostic plots (linear ``m_std-m_inst`` vs catalog color)."""
     intercepts = (derive_fit.z_intercept_f0, derive_fit.z_intercept_f1)
     slopes = (derive_fit.c_slope_f0, derive_fit.c_slope_f1)
-    out: Dict[str, TransformationCoefficients] = {}
+    out: dict[str, TransformationCoefficients] = {}
     for idx, f in enumerate(filters):
         base = result.transformation.get(f)
         if base is None:
@@ -213,7 +212,7 @@ def diagnostic_transformation_for_plots(
 def apply_derive_transform_to_table(
     data: Table,
     calibration: CalibrationResult,
-    filters: List[str],
+    filters: list[str],
     comparison_mask: np.ndarray,
     *,
     mag_col_prefix: str = "mag_",
@@ -257,9 +256,9 @@ def apply_derive_transform_to_table(
 
 
 def apply_derive_transform_epochs(
-    epochs: Dict[str, Table],
-    results: Dict[str, CalibrationResult],
-    filters: List[str],
+    epochs: dict[str, Table],
+    results: dict[str, CalibrationResult],
+    filters: list[str],
     *,
     output_prefix: str = "mag_cal_",
 ) -> Table:
@@ -285,14 +284,14 @@ def apply_derive_transform_epochs(
 def fit_epoch_derive_transform(
     table: Table,
     epoch_id: str,
-    filters: List[str],
+    filters: list[str],
     *,
     color_indices: dict[str, tuple[str, str]] | None = None,
     min_comparisons: int = 5,
     sigma_clip: float = 2.5,
     zp_subsample_statistic: bool = False,
     distribution_samples: int = 1000,
-) -> Optional[tuple[CalibrationResult, DeriveTransformFit]]:
+) -> tuple[CalibrationResult, DeriveTransformFit] | None:
     """Fit one epoch; returns calibration result and raw derive-transform fit for plots."""
     if len(filters) != 2:
         return None

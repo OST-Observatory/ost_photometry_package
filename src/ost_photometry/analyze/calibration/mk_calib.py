@@ -114,7 +114,7 @@ def record_from_derive_fit(
     filter_pair: list[str],
     jd: float,
     airmass: dict[str, float],
-    derive_fit: "DeriveTransformFit",
+    derive_fit: DeriveTransformFit,
     slope_err: dict[str, tuple[float, float]],
 ) -> FieldTransformationRecord:
     f0, f1 = filter_pair[0], filter_pair[1]
@@ -153,9 +153,9 @@ def record_from_derive_fit(
 
 
 def calibrate_mk_calib_filter_pair(
-    observation: "analyze.Observation",
+    observation: analyze.Observation,
     filter_pair: list[str],
-    config: "PipelineConfig",
+    config: PipelineConfig,
     *,
     apply_weights: bool = True,
 ) -> FieldTransformationRecord:
