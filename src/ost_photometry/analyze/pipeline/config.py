@@ -255,7 +255,6 @@ class CalibrationConfig:
     zp_subsample_statistic: bool = True
     derive_transform_from_data: bool = False
     uncertainty_mode: UncertaintyMode = "fit_errors"
-    write_legacy_wide_magnitudes_dat: bool = False
     calibration_catalog_radius_arcmin: float = 15.0
     calibration_catalog_mag_range: tuple[float, float] = (2.0, 18.5)
     debug_verify_ooi_global_ids: bool = False

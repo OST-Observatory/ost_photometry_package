@@ -64,11 +64,7 @@ from .cmd_defaults import (  # noqa: F401
 from .duplicates import clear_duplicates  # noqa: F401
 from .errors import err_prop  # noqa: F401
 from .legacy_magnitudes import (  # noqa: F401
-    calibrated_epochs_to_legacy_wide_table,
     find_filter_for_magnitude_transformation,
-    mk_magnitudes_table,
-    save_calibration,
-    save_magnitudes_ascii,
     transformation_keys_for_table_magnitudes,
 )
 from .limiting_magnitude import derive_limiting_magnitude  # noqa: F401

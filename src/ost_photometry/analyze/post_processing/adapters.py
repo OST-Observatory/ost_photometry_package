@@ -14,7 +14,7 @@ _MAG_COL_RE = re.compile(r"^(.+) \((transformed|simple), image=([^)]+)\)$")
 _ERR_COL_RE = re.compile(r"^(.+)_err \((transformed|simple), image=([^)]+)\)$")
 _FLUX_COL_RE = re.compile(r"^(.+) \(flux, image=([^)]+)\)$")
 
-# Legacy wide tables fill missing ``mag_cali_trans`` with this in :func:`mk_magnitudes_table`.
+# Legacy wide tables fill missing transformed magnitudes with this placeholder.
 _LEGACY_WIDE_MISSING_MAG: float = 999.0
 
 

@@ -6,11 +6,7 @@ from .duplicates import clear_duplicates
 from .epsf_selection import n_epsf_stars_to_select
 from .errors import err_prop
 from .legacy_magnitudes import (
-    calibrated_epochs_to_legacy_wide_table,
     find_filter_for_magnitude_transformation,
-    mk_magnitudes_table,
-    save_calibration,
-    save_magnitudes_ascii,
     transformation_keys_for_table_magnitudes,
 )
 from .limiting_magnitude import derive_limiting_magnitude
@@ -30,7 +26,6 @@ _SIMBAD_EXPORTS = (
 )
 
 __all__ = [
-    "calibrated_epochs_to_legacy_wide_table",
     "check_variable_absolute_cmd",
     "check_variable_apparent_cmd",
     "clear_duplicates",
@@ -40,7 +35,6 @@ __all__ = [
     "find_filter_for_magnitude_transformation",
     "find_wcs",
     "flux_to_magnitudes",
-    "mk_magnitudes_table",
     "n_epsf_stars_to_select",
     "prepare_and_plot_starmap",
     "prepare_and_plot_starmap_from_image_series",
@@ -48,8 +42,6 @@ __all__ = [
     "proper_motion_selection",
     "region_selection",
     "rm_edge_objects",
-    "save_calibration",
-    "save_magnitudes_ascii",
     "transformation_keys_for_table_magnitudes",
 ]
 

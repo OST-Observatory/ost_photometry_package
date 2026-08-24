@@ -47,8 +47,9 @@ Additional presets: `extract_protect_calibrators` (extract/intra-correlate, prot
 | `context.differential_calib_parameters` | `context.calibration_results` |
 | `derive_transformation_coefficients` | `derive_transform_from_data` (within `linear_fit`, 2 filters) |
 | `calculate_zero_point_statistic` | `zp_subsample_statistic` |
-| `write_differential_legacy_magnitudes_dat` | `write_legacy_wide_magnitudes_dat` |
-| `differential_calibrated_to_legacy_table()` | `calibrated_epochs_to_legacy_wide_table()` |
+| `write_differential_legacy_magnitudes_dat` | `write_legacy_wide_magnitudes_dat` (later removed; ECSV only) |
+| `differential_calibrated_to_legacy_table()` | `calibrated_epochs_to_legacy_wide_table()` (later removed) |
+| `mk_magnitudes_table` / `save_calibration` / `save_magnitudes_ascii` | `write_epoch_native_magnitudes` |
 | `zp_method` (`linear` / `median` / `auto`) | `color_term_fit` (`always` / `never` / `auto`) |
 | `extinction_mode="fitted"` | `extinction_mode="from_comparison_stars"` |
 | `fit_extinction_from_data` | `extinction_mode` (`from_comparison_stars` or `from_value_airmass`) |
@@ -199,7 +200,7 @@ and `PhotometryCalibrator.setup_calibration_source`.
 ### Output format
 
 - Primary output: **ECSV** (`*.ecsv`), schema `ost_photometry.epoch_native.v1`
-- Legacy wide `.dat` only if `write_legacy_wide_magnitudes_dat=True`
+- Old legacy wide `.dat` files can still be **read** via `legacy_wide_table_to_epoch_native`
 
 ### Pipeline configuration
 

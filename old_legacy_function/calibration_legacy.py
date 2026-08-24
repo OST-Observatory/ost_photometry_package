@@ -1382,13 +1382,18 @@ def apply_calibration(
             f" supported => ABORT {style.Bcolors.ENDC}"
         )
 
-    utilities.save_calibration(
-        observation,
-        filter_list,
-        object_id,
-        photometry_extraction_method=photometry_extraction_method,
-        rts=rts,
-    )
+    from ..post_processing.adapters import ensure_epoch_native_photometry_table
+    from ..post_processing.io import write_epoch_native_magnitudes
+
+    tbl = getattr(observation, "table_magnitudes", None)
+    if tbl is not None and len(tbl) > 0:
+        write_epoch_native_magnitudes(
+            observation,
+            ensure_epoch_native_photometry_table(tbl),
+            object_id=object_id,
+            photometry_extraction_method=photometry_extraction_method,
+            rts=rts,
+        )
 
 
 #   TODO: Test and cleanup

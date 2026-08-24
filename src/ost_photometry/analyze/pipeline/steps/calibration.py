@@ -9,7 +9,6 @@ import warnings
 import numpy as np
 
 from .... import terminal_output
-from ... import utilities
 from ...calibration import CalibrationEngine, prepare_calibration_check_plots
 from ...calibration.backends.linear import build_calibrator
 from ...calibration_sources import crossmatch_standard_catalog, fetch_standard_calibration_catalog
@@ -305,17 +304,6 @@ class CalibrationStep(base.PipelineStep):
                     photometry_extraction_method=config.photometry_extraction_method,
                     rts=rts,
                 )
-                if config.write_legacy_wide_magnitudes_dat:
-                    table_legacy = utilities.calibrated_epochs_to_legacy_wide_table(
-                        calibrated, filter_list
-                    )
-                    utilities.save_magnitudes_ascii(
-                        obs,
-                        table_legacy,
-                        object_id=config.object_id,
-                        photometry_extraction_method=config.photometry_extraction_method,
-                        rts=rts,
-                    )
         else:
             inst = instrumental_epoch_native_from_calibration_epochs(epochs, filter_list)
             if len(inst) > 0:

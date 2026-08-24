@@ -62,17 +62,6 @@ Steps are already modular via config. What is missing is **persist and continue 
 
 ---
 
-## Extraction / ePSF
-
-### Move `mark_simbad_objects_on_image` to post-processing — done
-
-``SimbadAnnotateStep`` overlays Simbad objects on each filter's reference
-image after extraction (``annotate_image`` / ``annotate_reference_image``).
-Implementation: ``post_processing.simbad_annotate`` (still re-exported from
-``analyze.utilities``).
-
----
-
 ## Reduce
 
 ### `reduce/registration.py` — modularize (P3, as needed)
@@ -105,15 +94,17 @@ Facade plus reduction-specific helpers; already delegates to `exposure`, `instru
 
 ## Remaining analyze bridge
 
-### Drop legacy wide magnitude tables / column `i` (P3)
+### Drop legacy wide magnitude tables / column `i` — write path done
 
-When the optional wide `.dat` path (`write_legacy_wide_magnitudes_dat`, `calibrated_epochs_to_legacy_wide_table`, `save_magnitudes_ascii` with column `i`) is retired in favour of epoch-native tables only (`id`):
+Pipeline and post-process **write** only epoch-native ECSV (``id``).
+``write_legacy_wide_magnitudes_dat``, ``calibrated_epochs_to_legacy_wide_table``,
+``mk_magnitudes_table``, ``save_calibration``, and ``save_magnitudes_ascii``
+are removed.
 
-- Remove column `i` and the `"i"` entry from `_ASCII_COLUMN_FORMATS` / `ascii_write_formats_for_columns`.
-- Drop dual-read branches such as `"i" if "i" in colnames else "id"` (e.g. adapters).
-- Remove or gate the wide-table builders and the `write_legacy_wide_magnitudes_dat` config flag.
-
-Until then, keeping `"i"` in the filtered formats helper is correct.
+**Still kept (read old files):** ``legacy_wide_table_to_epoch_native`` /
+``ensure_epoch_native_photometry_table`` accept wide tables with column ``i``.
+N2 ``2b_post_process.py`` prefers ECSV and converts a leftover ``.dat`` on
+input; it does not write wide tables.
 
 ---
 
@@ -129,6 +120,6 @@ Until then, keeping `"i"` in the filtered formats helper is correct.
 
 1. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
 2. **P3:** OST filter throughput → synphot Vega↔AB offsets.
-3. **P3 (when ready):** Drop legacy wide tables / column `i`.
+3. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter.
 4. **On further registration work:** optionally extract `trim.py` / split align+shifts.
 5. **On utilities changes:** extract only the affected area.

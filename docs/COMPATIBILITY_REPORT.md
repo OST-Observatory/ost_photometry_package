@@ -77,4 +77,4 @@ Es gilt **`ost_photometry.style.Bcolors`** (großes „B“). Kein `style.bcolor
 - `mk_file_list(..., add_path_to_file_names=...)`
 - `reduce_main`-Keyword-Argumente (`validate_inputs`, `fail_on_missing_flat`, `sanity_check_sample_size`)
 - Öffentliche Reduktions-API: `reduce.redu.reduce_main` (Implementierung in `ost_photometry.reduce.workflow`, intern modularisiert)
-- Epoch-native ECSV statt legacy wide `.dat` (sofern nicht `write_legacy_wide_magnitudes_dat=True`)
+- Epoch-native ECSV (legacy wide `.dat` is read-only via `legacy_wide_table_to_epoch_native`)
