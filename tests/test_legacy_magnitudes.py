@@ -3,38 +3,37 @@
 from __future__ import annotations
 
 import sys
-import types
 
 import pytest
 from astropy.table import Table
 
-from helpers import load_module_from_path, pkg_src
+from helpers import ensure_stub_package, isolated_sys_modules, load_module_from_path, pkg_src
 
 
 @pytest.fixture(autouse=True)
 def _restore_sys_modules():
-    before = sys.modules.copy()
-    yield
-    sys.modules.clear()
-    sys.modules.update(before)
+    with isolated_sys_modules():
+        yield
 
 
 def _legacy_magnitudes():
-    for name in (
-        "ost_photometry",
-        "ost_photometry.calibration_parameters",
-        "ost_photometry.terminal_output",
-        "ost_photometry.analyze",
+    root = pkg_src() / "ost_photometry"
+    analyze = root / "analyze"
+    ensure_stub_package("ost_photometry", path=root)
+    ensure_stub_package("ost_photometry.calibration_parameters")
+    ensure_stub_package("ost_photometry.terminal_output")
+    ensure_stub_package("ost_photometry.analyze", path=analyze)
+    ensure_stub_package(
         "ost_photometry.analyze.post_processing",
-    ):
-        sys.modules.setdefault(name, types.ModuleType(name))
-
-    sys.modules["ost_photometry.terminal_output"].print_to_terminal = (
-        lambda *a, **k: None
+        path=analyze / "post_processing",
     )
-    sys.modules[
-        "ost_photometry.calibration_parameters"
-    ].valid_filter_combinations_for_transformation = [["B", "V"], ["V", "R"]]
+
+    term = sys.modules["ost_photometry.terminal_output"]
+    if getattr(term, "__file__", None) is None:
+        term.print_to_terminal = lambda *a, **k: None
+    calib = sys.modules["ost_photometry.calibration_parameters"]
+    if getattr(calib, "__file__", None) is None:
+        calib.valid_filter_combinations_for_transformation = [["B", "V"], ["V", "R"]]
 
     return load_module_from_path(
         "ost_photometry.analyze.utils.legacy_magnitudes",

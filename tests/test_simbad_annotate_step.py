@@ -3,52 +3,63 @@
 from __future__ import annotations
 
 import sys
-import types
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
-from helpers import load_module_from_path, pkg_src
+from helpers import ensure_stub_package, isolated_sys_modules, load_module_from_path, pkg_src
 
 _PRESENT_WCS = object()
 _SRC = pkg_src() / "ost_photometry"
 
 
-def _ensure_pkg(name: str) -> types.ModuleType:
-    mod = sys.modules.get(name)
-    if mod is None:
-        mod = types.ModuleType(name)
-        mod.__path__ = []  # type: ignore[attr-defined]
-        sys.modules[name] = mod
-    return mod
+@pytest.fixture(autouse=True)
+def _restore_sys_modules():
+    with isolated_sys_modules():
+        yield
+
+
+def _stub_if_dummy(mod, **attrs) -> None:
+    if getattr(mod, "__file__", None) is None:
+        for key, val in attrs.items():
+            setattr(mod, key, val)
 
 
 def _stub_simbad_deps(*, annotate=None) -> None:
-    for name in (
-        "ost_photometry",
-        "ost_photometry.analyze",
-        "ost_photometry.analyze.pipeline",
+    analyze = _SRC / "analyze"
+    ensure_stub_package("ost_photometry", path=_SRC)
+    ensure_stub_package("ost_photometry.analyze", path=analyze)
+    ensure_stub_package("ost_photometry.analyze.pipeline", path=analyze / "pipeline")
+    ensure_stub_package(
         "ost_photometry.analyze.pipeline.steps",
+        path=analyze / "pipeline" / "steps",
+    )
+    ensure_stub_package(
         "ost_photometry.analyze.post_processing",
-        "ost_photometry.analyze.plots",
-        "ost_photometry.terminal_output",
-        "astroquery",
-        "astroquery.exceptions",
-        "astroquery.simbad",
-    ):
-        _ensure_pkg(name)
+        path=analyze / "post_processing",
+    )
+    ensure_stub_package("ost_photometry.analyze.plots")
+    ensure_stub_package("ost_photometry.terminal_output")
+    ensure_stub_package("astroquery")
+    ensure_stub_package("astroquery.exceptions")
+    ensure_stub_package("astroquery.simbad")
 
-    sys.modules["ost_photometry.terminal_output"].print_to_terminal = (
-        lambda *a, **k: None
+    _stub_if_dummy(
+        sys.modules["ost_photometry.terminal_output"],
+        print_to_terminal=lambda *a, **k: None,
     )
-    sys.modules["astroquery.exceptions"].TableParseError = type(
-        "TableParseError", (Exception,), {}
+    _stub_if_dummy(
+        sys.modules["astroquery.exceptions"],
+        TableParseError=type("TableParseError", (Exception,), {}),
     )
-    sys.modules["astroquery.simbad"].Simbad = MagicMock()
+    _stub_if_dummy(sys.modules["astroquery.simbad"], Simbad=MagicMock())
     if annotate is not None:
-        helper = _ensure_pkg("ost_photometry.analyze.post_processing.simbad_annotate")
+        helper = ensure_stub_package(
+            "ost_photometry.analyze.post_processing.simbad_annotate"
+        )
         helper.annotate_reference_image_with_simbad = annotate
 
 

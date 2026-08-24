@@ -10,7 +10,13 @@ import numpy as np
 import pytest
 from astropy.io import fits
 
-from helpers import load_module_from_path, pkg_src
+from helpers import ensure_stub_package, isolated_sys_modules, load_module_from_path, pkg_src
+
+
+@pytest.fixture(autouse=True)
+def _restore_sys_modules():
+    with isolated_sys_modules():
+        yield
 
 
 def _ensure_regions_stub() -> None:
@@ -50,8 +56,8 @@ def _load_image_modules():
         "ost_photometry.image",
         src / "ost_photometry" / "image.py",
     )
-    analyze_pkg = types.ModuleType("ost_photometry.analyze")
-    sys.modules.setdefault("ost_photometry.analyze", analyze_pkg)
+    analyze_dir = src / "ost_photometry" / "analyze"
+    ensure_stub_package("ost_photometry.analyze", path=analyze_dir)
     analysis_mod = load_module_from_path(
         "ost_photometry.analyze.image",
         src / "ost_photometry" / "analyze" / "image.py",

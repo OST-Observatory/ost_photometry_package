@@ -10,7 +10,13 @@ import numpy as np
 import pytest
 from astropy import wcs
 
-from helpers import load_module_from_path, pkg_src
+from helpers import ensure_stub_package, isolated_sys_modules, load_module_from_path, pkg_src
+
+
+@pytest.fixture(autouse=True)
+def _restore_sys_modules():
+    with isolated_sys_modules():
+        yield
 
 
 def _clear_duplicates(
@@ -58,8 +64,9 @@ def _core_module():
         src / "ost_photometry" / "terminal_output.py",
     )
 
-    analyze_pkg = types.ModuleType("ost_photometry.analyze")
-    sys.modules.setdefault("ost_photometry.analyze", analyze_pkg)
+    analyze_dir = src / "ost_photometry" / "analyze"
+    ensure_stub_package("ost_photometry.analyze", path=analyze_dir)
+    ensure_stub_package("ost_photometry.analyze.correlate", path=analyze_dir / "correlate")
 
     utilities_mod = types.ModuleType("ost_photometry.analyze.utilities")
     utilities_mod.clear_duplicates = _clear_duplicates

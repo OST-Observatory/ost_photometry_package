@@ -5,30 +5,58 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
-import types
 
 import pytest
 
-from helpers import load_module_from_path, pkg_src
+from helpers import (
+    ensure_stub_package,
+    isolated_sys_modules,
+    load_module_from_path,
+    pkg_src,
+)
+
+
+@pytest.fixture(autouse=True)
+def _restore_sys_modules():
+    with isolated_sys_modules():
+        yield
 
 
 def _load_extinction_io():
     pkg = pkg_src()
+    analyze_dir = pkg / "ost_photometry" / "analyze"
+    analyze_mod = ensure_stub_package("ost_photometry.analyze", path=analyze_dir)
     load_module_from_path(
         "ost_photometry.analyze.warnings_types",
-        pkg / "ost_photometry" / "analyze" / "warnings_types.py",
+        analyze_dir / "warnings_types.py",
     )
     load_module_from_path(
         "ost_photometry.analyze.extinction",
-        pkg / "ost_photometry" / "analyze" / "extinction.py",
+        analyze_dir / "extinction.py",
     )
-    analyze_stub = types.ModuleType("ost_photometry.analyze")
-    analyze_stub.extinction = sys.modules["ost_photometry.analyze.extinction"]
-    analyze_stub.warnings_types = sys.modules["ost_photometry.analyze.warnings_types"]
-    sys.modules["ost_photometry.analyze"] = analyze_stub
+    if getattr(analyze_mod, "__file__", None) is None:
+        analyze_mod.extinction = sys.modules["ost_photometry.analyze.extinction"]
+        analyze_mod.warnings_types = sys.modules["ost_photometry.analyze.warnings_types"]
     return load_module_from_path(
         "ost_photometry.analyze.extinction_io",
-        pkg / "ost_photometry" / "analyze" / "extinction_io.py",
+        analyze_dir / "extinction_io.py",
+    )
+
+
+def _load_linear_backend():
+    analyze_dir = pkg_src() / "ost_photometry" / "analyze"
+    ensure_stub_package("ost_photometry.analyze", path=analyze_dir)
+    ensure_stub_package(
+        "ost_photometry.analyze.calibration",
+        path=analyze_dir / "calibration",
+    )
+    ensure_stub_package(
+        "ost_photometry.analyze.calibration.backends",
+        path=analyze_dir / "calibration" / "backends",
+    )
+    return load_module_from_path(
+        "ost_photometry.analyze.calibration.backends.linear",
+        analyze_dir / "calibration" / "backends" / "linear.py",
     )
 
 
@@ -112,10 +140,7 @@ def test_aggregate_median(extinction_io, tmp_path):
 def test_build_calibrator_tabulated(tmp_path):
     extinction_io = _load_extinction_io()
     ExtinctionCoefficients = sys.modules["ost_photometry.analyze.extinction"].ExtinctionCoefficients
-    linear = load_module_from_path(
-        "ost_photometry.analyze.calibration.backends.linear",
-        pkg_src() / "ost_photometry" / "analyze" / "calibration" / "backends" / "linear.py",
-    )
+    linear = _load_linear_backend()
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",
         pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
@@ -210,10 +235,7 @@ def test_build_calibrator_second_order_and_k_second_override(tmp_path):
         "ost_photometry.analyze.extinction"
     ].ExtinctionCoefficients
     ExtinctionOrder = sys.modules["ost_photometry.analyze.extinction"].ExtinctionOrder
-    linear = load_module_from_path(
-        "ost_photometry.analyze.calibration.backends.linear",
-        pkg_src() / "ost_photometry" / "analyze" / "calibration" / "backends" / "linear.py",
-    )
+    linear = _load_linear_backend()
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",
         pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",

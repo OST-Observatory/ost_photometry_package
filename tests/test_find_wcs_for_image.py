@@ -8,14 +8,21 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 from astropy import wcs as astropy_wcs
 from astropy.io import fits
 
-from helpers import load_module_from_path, pkg_src
+from helpers import ensure_stub_package, isolated_sys_modules, load_module_from_path, pkg_src
 from ost_photometry.wcs import (
     _wcs_maps_distinct_sky_positions,
     find_wcs_for_image,
 )
+
+
+@pytest.fixture(autouse=True)
+def _restore_sys_modules():
+    with isolated_sys_modules():
+        yield
 
 
 def _write_science_fits(path: Path) -> astropy_wcs.WCS:
@@ -75,8 +82,12 @@ def _hips_module(monkeypatch):
     utilities_mod.get_basename = lambda path: Path(path).name
     sys.modules["ost_photometry.utilities"] = utilities_mod
 
-    analyze_pkg = types.ModuleType("ost_photometry.analyze")
-    sys.modules.setdefault("ost_photometry.analyze", analyze_pkg)
+    analyze_dir = src / "ost_photometry" / "analyze"
+    ensure_stub_package("ost_photometry.analyze", path=analyze_dir)
+    ensure_stub_package(
+        "ost_photometry.analyze.post_processing",
+        path=analyze_dir / "post_processing",
+    )
 
     plots_mod = types.ModuleType("ost_photometry.analyze.plots")
     plots_mod.compare_images = MagicMock()

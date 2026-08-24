@@ -10,11 +10,17 @@ import numpy as np
 import pytest
 from astropy.table import Table
 
-from helpers import load_module_from_path, pkg_src
+from helpers import ensure_stub_package, isolated_sys_modules, load_module_from_path, pkg_src
 
 _PKG_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_PKG_SRC) not in sys.path:
     sys.path.insert(0, str(_PKG_SRC))
+
+
+@pytest.fixture(autouse=True)
+def _restore_sys_modules():
+    with isolated_sys_modules():
+        yield
 
 
 def _deps_available() -> bool:
@@ -29,21 +35,16 @@ def _deps_available() -> bool:
 def _ensure_namespace() -> None:
     """Register package namespaces without executing analyze.__init__."""
     root = pkg_src() / "ost_photometry"
-    pairs = [
-        ("ost_photometry", root),
-        ("ost_photometry.analyze", root / "analyze"),
-        ("ost_photometry.analyze.post_processing", root / "analyze" / "post_processing"),
-        ("ost_photometry.analyze.calibration_sources", root / "analyze" / "calibration_sources"),
-    ]
-    for name, path in pairs:
-        if name not in sys.modules:
-            mod = ModuleType(name)
-            mod.__path__ = [str(path)]  # type: ignore[attr-defined]
-            sys.modules[name] = mod
-        else:
-            existing = sys.modules[name]
-            if not hasattr(existing, "__path__"):
-                existing.__path__ = [str(path)]  # type: ignore[attr-defined]
+    ensure_stub_package("ost_photometry", path=root)
+    ensure_stub_package("ost_photometry.analyze", path=root / "analyze")
+    ensure_stub_package(
+        "ost_photometry.analyze.post_processing",
+        path=root / "analyze" / "post_processing",
+    )
+    ensure_stub_package(
+        "ost_photometry.analyze.calibration_sources",
+        path=root / "analyze" / "calibration_sources",
+    )
 
 
 def _ms_mod():

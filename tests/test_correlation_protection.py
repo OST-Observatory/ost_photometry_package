@@ -5,9 +5,16 @@ import types
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 from astropy.table import Table
 
-from helpers import load_module_from_path, pkg_src
+from helpers import isolated_sys_modules, load_module_from_path, pkg_src
+
+
+@pytest.fixture(autouse=True)
+def _restore_sys_modules():
+    with isolated_sys_modules():
+        yield
 
 
 def _protection_module():

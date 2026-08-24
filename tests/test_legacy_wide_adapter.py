@@ -2,31 +2,27 @@
 
 from __future__ import annotations
 
-import sys
-import types
-
 import pytest
 from astropy.table import Table
 
-from helpers import load_module_from_path, pkg_src
+from helpers import ensure_stub_package, isolated_sys_modules, load_module_from_path, pkg_src
 
 
 @pytest.fixture(autouse=True)
 def _restore_sys_modules():
-    before = sys.modules.copy()
-    yield
-    sys.modules.clear()
-    sys.modules.update(before)
+    with isolated_sys_modules():
+        yield
 
 
 def _adapters():
-    for name in (
-        "ost_photometry",
-        "ost_photometry.analyze",
+    root = pkg_src() / "ost_photometry"
+    analyze = root / "analyze"
+    ensure_stub_package("ost_photometry", path=root)
+    ensure_stub_package("ost_photometry.analyze", path=analyze)
+    ensure_stub_package(
         "ost_photometry.analyze.post_processing",
-    ):
-        sys.modules.setdefault(name, types.ModuleType(name))
-        sys.modules[name].__path__ = []  # type: ignore[attr-defined]
+        path=analyze / "post_processing",
+    )
 
     load_module_from_path(
         "ost_photometry.analyze.post_processing.schema",

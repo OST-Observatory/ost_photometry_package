@@ -8,11 +8,22 @@ import numpy as np
 import pytest
 from astropy.table import Table
 
-from helpers import load_module_from_path, pkg_src
+from helpers import (
+    ensure_stub_package,
+    isolated_sys_modules,
+    load_module_from_path,
+    pkg_src,
+)
 
 _PKG_SRC = pkg_src()
 
 pytestmark = pytest.mark.comparison
+
+
+@pytest.fixture(autouse=True)
+def _restore_sys_modules():
+    with isolated_sys_modules():
+        yield
 
 
 def _import_submodule(dotted: str):
@@ -310,10 +321,33 @@ def test_plot_calibration_transformation_fit_line_ignores_nan_colors(tmp_path):
     pytest.importorskip("matplotlib")
     from unittest.mock import MagicMock, patch
 
-    from ost_photometry.analyze.calibration.result import TransformationCoefficients
-    from ost_photometry.analyze.plots.calibration_qc import (
-        plot_calibration_transformation,
+    root = pkg_src() / "ost_photometry"
+    analyze = root / "analyze"
+    ensure_stub_package("ost_photometry", path=root)
+    ensure_stub_package("ost_photometry.analyze", path=analyze)
+    ensure_stub_package(
+        "ost_photometry.analyze.calibration",
+        path=analyze / "calibration",
     )
+    ensure_stub_package("ost_photometry.analyze.plots", path=analyze / "plots")
+    load_module_from_path(
+        "ost_photometry.analyze.warnings_types",
+        analyze / "warnings_types.py",
+    )
+    load_module_from_path(
+        "ost_photometry.analyze.extinction",
+        analyze / "extinction.py",
+    )
+    result_mod = load_module_from_path(
+        "ost_photometry.analyze.calibration.result",
+        analyze / "calibration" / "result.py",
+    )
+    qc_mod = load_module_from_path(
+        "ost_photometry.analyze.plots.calibration_qc",
+        analyze / "plots" / "calibration_qc.py",
+    )
+    TransformationCoefficients = result_mod.TransformationCoefficients
+    plot_calibration_transformation = qc_mod.plot_calibration_transformation
 
     n = 20
     color = np.full(n, np.nan)

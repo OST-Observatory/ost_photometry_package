@@ -2,23 +2,33 @@
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
+import pytest
 from astropy.table import Table
 
-from helpers import load_module_from_path, pkg_src
+from helpers import (
+    ensure_stub_package,
+    isolated_sys_modules,
+    load_module_from_path,
+    pkg_src,
+)
+
+
+@pytest.fixture(autouse=True)
+def _restore_sys_modules():
+    with isolated_sys_modules():
+        yield
 
 
 def _photometry():
-    # Stub terminal_output for rm_edge_objects without package init.
-    import sys
-    import types
-
-    if "ost_photometry.terminal_output" not in sys.modules:
-        term = types.ModuleType("ost_photometry.terminal_output")
+    root = pkg_src() / "ost_photometry"
+    ensure_stub_package("ost_photometry", path=root)
+    term = ensure_stub_package("ost_photometry.terminal_output")
+    if getattr(term, "__file__", None) is None:
         term.print_to_terminal = lambda *a, **k: None
         term.TerminalLog = object
-        sys.modules["ost_photometry"] = types.ModuleType("ost_photometry")
-        sys.modules["ost_photometry.terminal_output"] = term
     return load_module_from_path(
         "ost_photometry.analyze.utils.photometry",
         pkg_src() / "ost_photometry" / "analyze" / "utils" / "photometry.py",
@@ -27,43 +37,49 @@ def _photometry():
 
 def _limmag_helpers():
     """Load limiting_magnitude with stubs so pure helpers need no photutils."""
-    import sys
-    import types
-
-    for name in (
-        "ost_photometry",
-        "ost_photometry.terminal_output",
-        "ost_photometry.analyze",
-        "ost_photometry.analyze.plots",
+    root = pkg_src() / "ost_photometry"
+    analyze = root / "analyze"
+    ensure_stub_package("ost_photometry", path=root)
+    ensure_stub_package("ost_photometry.terminal_output")
+    ensure_stub_package("ost_photometry.analyze", path=analyze)
+    ensure_stub_package("ost_photometry.analyze.plots")
+    ensure_stub_package(
         "ost_photometry.analyze.post_processing",
-        "ost_photometry.analyze.post_processing.adapters",
-        "ost_photometry.analyze.post_processing.imaging",
-        "photutils",
-        "photutils.utils",
-    ):
-        sys.modules.setdefault(name, types.ModuleType(name))
+        path=analyze / "post_processing",
+    )
+    ensure_stub_package("ost_photometry.analyze.post_processing.adapters")
+    ensure_stub_package("ost_photometry.analyze.post_processing.imaging")
+    ensure_stub_package("photutils")
+    ensure_stub_package("photutils.utils")
 
     term = sys.modules["ost_photometry.terminal_output"]
-    term.print_to_terminal = lambda *a, **k: None
+    if getattr(term, "__file__", None) is None:
+        term.print_to_terminal = lambda *a, **k: None
 
     plots = sys.modules["ost_photometry.analyze.plots"]
-    plots.starmap = object
-    plots.plot_limiting_mag_sky_apertures = object
+    if getattr(plots, "__file__", None) is None:
+        plots.starmap = object
+        plots.plot_limiting_mag_sky_apertures = object
 
     adapters = sys.modules["ost_photometry.analyze.post_processing.adapters"]
-    adapters.ensure_epoch_native_photometry_table = lambda t: t
+    if getattr(adapters, "__file__", None) is None:
+        adapters.ensure_epoch_native_photometry_table = lambda t: t
 
     imaging = sys.modules["ost_photometry.analyze.post_processing.imaging"]
+    if getattr(imaging, "__file__", None) is None:
 
-    class ImagingPlotContext:
-        pass
+        class ImagingPlotContext:
+            pass
 
-    imaging.ImagingPlotContext = ImagingPlotContext
-    sys.modules["photutils.utils"].ImageDepth = object
+        imaging.ImagingPlotContext = ImagingPlotContext
+
+    photutils_utils = sys.modules["photutils.utils"]
+    if getattr(photutils_utils, "__file__", None) is None:
+        photutils_utils.ImageDepth = object
 
     return load_module_from_path(
         "ost_photometry.analyze.utils.limiting_magnitude",
-        pkg_src() / "ost_photometry" / "analyze" / "utils" / "limiting_magnitude.py",
+        analyze / "utils" / "limiting_magnitude.py",
     )
 
 
