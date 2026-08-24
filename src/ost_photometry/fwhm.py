@@ -131,15 +131,97 @@ def select_sources_for_fwhm_fit(
 
 def source_positions_from_table(source_table: Table) -> list[tuple[float, float]]:
     """Return ``(x, y)`` positions from a photutils source table."""
-    if "x_centroid" in source_table.colnames:
-        x_column, y_column = "x_centroid", "y_centroid"
-    elif "x" in source_table.colnames:
-        x_column, y_column = "x", "y"
-    else:
-        raise ValueError(
-            "Source table must contain x/y or x_centroid/y_centroid columns."
-        )
+    x_column, y_column = _table_xy_columns(source_table)
     return list(zip(source_table[x_column], source_table[y_column], strict=True))
+
+
+def _table_xy_columns(source_table: Table) -> tuple[str, str]:
+    if "x_centroid" in source_table.colnames:
+        return "x_centroid", "y_centroid"
+    if "x" in source_table.colnames:
+        return "x", "y"
+    raise ValueError(
+        "Source table must contain x/y or x_centroid/y_centroid columns."
+    )
+
+
+def finite_cutout_star_mask(
+    data: np.ndarray,
+    x: np.ndarray,
+    y: np.ndarray,
+    size: int,
+    *,
+    extra_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    """
+    True where a ``size``×``size`` stamp around ``(x, y)`` is on-image and finite.
+
+    Matches photutils ``extract_stars`` / ``Cutout2D`` windows (rounded center).
+    Non-finite centroids, incomplete stamps, non-finite pixels, or ``True`` in
+    ``extra_mask`` are rejected.
+    """
+    size = int(size)
+    if size < 1:
+        raise ValueError(f"cutout size must be >= 1, got {size}")
+
+    xs = np.asarray(x, dtype=float).ravel()
+    ys = np.asarray(y, dtype=float).ravel()
+    if xs.size != ys.size:
+        raise ValueError("x and y must have the same length.")
+
+    data_f = np.asarray(data, dtype=float)
+    ny, nx = data_f.shape[:2]
+    bad = None if extra_mask is None else np.asarray(extra_mask, dtype=bool)
+    if bad is not None and bad.shape != data_f.shape[:2]:
+        raise ValueError(
+            f"extra_mask shape {bad.shape} does not match data shape {data_f.shape[:2]}."
+        )
+
+    ok = np.zeros(xs.size, dtype=bool)
+    half = size // 2
+    for i in range(xs.size):
+        if not (np.isfinite(xs[i]) and np.isfinite(ys[i])):
+            continue
+        x0 = int(np.round(xs[i])) - half
+        y0 = int(np.round(ys[i])) - half
+        x1 = x0 + size
+        y1 = y0 + size
+        if x0 < 0 or y0 < 0 or x1 > nx or y1 > ny:
+            continue
+        stamp = data_f[y0:y1, x0:x1]
+        if stamp.shape != (size, size) or not np.all(np.isfinite(stamp)):
+            continue
+        if bad is not None and np.any(bad[y0:y1, x0:x1]):
+            continue
+        ok[i] = True
+    return ok
+
+
+def filter_table_finite_cutouts(
+    source_table: Table,
+    data: np.ndarray,
+    size: int,
+    *,
+    extra_mask: np.ndarray | None = None,
+) -> tuple[Table, int]:
+    """Drop stars whose ``extract_stars`` stamps would contain non-finite pixels.
+
+    Returns ``(filtered_table, n_rejected)``.
+    """
+    if source_table is None or len(source_table) == 0:
+        return source_table, 0
+    x_column, y_column = _table_xy_columns(source_table)
+    ok = finite_cutout_star_mask(
+        data,
+        source_table[x_column],
+        source_table[y_column],
+        size,
+        extra_mask=extra_mask,
+    )
+    n_rejected = int(np.size(ok) - np.count_nonzero(ok))
+    if n_rejected == 0:
+        return source_table, 0
+    return source_table[ok], n_rejected
 
 
 def _odd_fit_shape(fwhm_guess: float, base: int = 25) -> int:

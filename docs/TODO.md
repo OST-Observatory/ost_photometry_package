@@ -2,15 +2,12 @@
 
 Open, prioritized work on the `ost_photometry` package.
 
-This document is the **forward-looking backlog**. Closed migration notes live in
-[ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md). Also see
+Closed migration notes live in [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md). Also see
 [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md) and [COMPATIBILITY_REPORT.md](COMPATIBILITY_REPORT.md).
 
 **As of:** August 2026
 
 **Priorities:** P1 = next sprint · P2 = track, no urgency · P3 = optional / long-term · — = operational, not code debt
-
-Prefer GitHub issues for individual P1/P2 items.
 
 ---
 
@@ -63,32 +60,13 @@ Steps are already modular via config. What is missing is **persist and continue 
 
 **Direction:** only if course/supervisor workflows need “extract+correlate → stop → calibrate later”. Otherwise leave as soft `skip_*` usage.
 
-### Unified correlated object index — done
-
-After correlation, photometry table ``id`` is the aligned row index. Objects of interest store that as ``correlated_id`` (see `ooi_photometry_id`). ``id_in_image_series`` remains the pre-alignment per-filter row map for intra-filter protection. Calibration stars are matched to the same table ``id`` (no separate stored index).
-
 ---
 
 ## Extraction / ePSF
 
-### Finite-value checks around `extract_stars` (P3)
-
-Cutouts / inputs are not systematically checked for non-finite values before ePSF building; finite checks appear later mainly for `error` arrays.
-
-**Direction:** reject or mask non-finite pixels/stars early with a clear warning.
-
 ### Move `mark_simbad_objects_on_image` to post-processing (P3)
 
 Still invoked from `main_extract` when annotating. Belongs with other optional annotation / post-process tasks, not in the extraction hot path.
-
----
-
-## Warnings & small fixes — done
-
-``MJD-OBS`` is filled from ``DATE-OBS`` or ``JD`` before WCS construction
-(``fits_headers.wcs_from_header`` / header enrichment). Informational
-``datfix`` ``FITSFixedWarning`` messages are filtered. Non-finite pixels are
-masked and zeroed before ``ImageDepth`` in limiting-magnitude derivation.
 
 ---
 
@@ -151,13 +129,3 @@ Until then, keeping `"i"` in the filtered formats helper is correct.
 3. **P3 (when ready):** Drop legacy wide tables / column `i`.
 4. **On further registration work:** optionally extract `trim.py` / split align+shifts.
 5. **On utilities changes:** extract only the affected area.
-
----
-
-## Out of scope (intentionally not listed)
-
-- `calibration_parameters.py` — active infrastructure (catalogs, filters, chips, extinction).
-- Modular packages already in place: `reduce/workflow/`, `analyze/utils/`, `analyze/plots/`, `analyze/calibration/` (no `_legacy` bags).
-- Course scripts — API via `reduce.redu.reduce_main` unchanged; see [COMPATIBILITY_REPORT.md](COMPATIBILITY_REPORT.md).
-- Optional wide `.dat` export (`write_legacy_wide_magnitudes_dat`) — compatibility flag, not tech debt.
-- In-code `TODO` markers under `src/` — none remaining (August 2026).

@@ -10,6 +10,8 @@ from ost_photometry.fwhm import (
     estimate_fwhm_from_finder_table,
     estimate_fwhm_from_positions,
     estimate_image_fwhm,
+    filter_table_finite_cutouts,
+    finite_cutout_star_mask,
     select_sources_for_fwhm_fit,
     source_positions_from_table,
 )
@@ -170,3 +172,38 @@ def test_estimate_image_fwhm_prefers_finder_column():
     fwhm, err = estimate_image_fwhm(data, table, default_fwhm=4.0, min_valid=5)
     assert err is None
     assert fwhm == pytest.approx(5.0, abs=0.2)
+
+
+def test_finite_cutout_star_mask_rejects_nan_and_masked_stamps():
+    data = np.ones((40, 40), dtype=float)
+    data[18:23, 18:23] = np.nan
+    extra = np.zeros((40, 40), dtype=bool)
+    extra[8:12, 8:12] = True
+    x = np.array([10.0, 20.0, 30.0])
+    y = np.array([10.0, 20.0, 30.0])
+    ok = finite_cutout_star_mask(data, x, y, size=5, extra_mask=extra)
+    np.testing.assert_array_equal(ok, [False, False, True])
+
+
+def test_filter_table_finite_cutouts_drops_bad_stars():
+    data = np.ones((40, 40), dtype=float)
+    data[18, 20] = np.inf
+    tbl = Table(
+        {
+            "x": np.array([10.0, 20.0, np.nan]),
+            "y": np.array([10.0, 20.0, 30.0]),
+        }
+    )
+    filtered, n_rejected = filter_table_finite_cutouts(tbl, data, size=5)
+    assert n_rejected == 2
+    assert len(filtered) == 1
+    assert filtered["x"][0] == 10.0
+
+
+def test_filter_table_finite_cutouts_passthrough_when_clean():
+    data = np.ones((30, 30), dtype=float)
+    tbl = Table({"x_centroid": [15.0], "y_centroid": [15.0]})
+    filtered, n_rejected = filter_table_finite_cutouts(tbl, data, size=7)
+    assert n_rejected == 0
+    assert len(filtered) == 1
+    np.testing.assert_array_equal(filtered["x_centroid"], [15.0])

@@ -46,6 +46,7 @@ from .. import utilities as base_utilities
 from ..core.parallel import Executor
 from ..fwhm import (
     estimate_image_fwhm,
+    filter_table_finite_cutouts,
 )
 from . import correlate, plots, utilities
 from .image import AnalysisImage
@@ -589,6 +590,35 @@ def check_epsf_stars(
             f"(size_epsf_region). {style.Bcolors.ENDC}"
         )
 
+    image_mask = image.get_mask()
+    tbl_epsf_stars, n_nonfinite = filter_table_finite_cutouts(
+        tbl_epsf_stars,
+        image_data,
+        size_epsf_region,
+        extra_mask=image_mask,
+    )
+    if n_nonfinite:
+        msg = (
+            f"Rejected {n_nonfinite} ePSF star(s) with non-finite cutout pixels "
+            f"in the {identification_string} band image."
+        )
+        if terminal_logger is not None:
+            terminal_logger.add_to_cache(msg, indent=indent + 1, style_name="WARNING")
+        else:
+            terminal_output.print_to_terminal(
+                msg, indent=indent + 1, style_name="WARNING"
+            )
+    n_useful_epsf_stars = len(tbl_epsf_stars)
+    if (n_useful_epsf_stars < minimum_n_stars and strict_epsf_checks) or (
+        n_useful_epsf_stars < 1 and not strict_epsf_checks
+    ):
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \nNot enough stars ({n_useful_epsf_stars}) "
+            f"for the ePSF determination in the {identification_string} band "
+            "image. Too many potential ePSF stars have been removed because "
+            "their cutouts contain non-finite pixels. {style.Bcolors.ENDC}"
+        )
+
     #   Find all potential ePSF stars with close neighbors
     x1 = tbl_positions_sort["x_centroid"]
     y1 = tbl_positions_sort["y_centroid"]
@@ -701,6 +731,27 @@ def determine_epsf(
     """
     #   Get image data
     data = image.get_data()
+    epsf_star_positions, n_nonfinite = filter_table_finite_cutouts(
+        epsf_star_positions,
+        data,
+        size_epsf_region,
+        extra_mask=image.get_mask(),
+    )
+    if n_nonfinite:
+        msg = (
+            f"Rejected {n_nonfinite} ePSF star(s) with non-finite cutout pixels "
+            "before extract_stars."
+        )
+        if terminal_logger is not None:
+            terminal_logger.add_to_cache(msg, indent=indent, style_name="WARNING")
+        else:
+            terminal_output.print_to_terminal(msg, indent=indent, style_name="WARNING")
+    if len(epsf_star_positions) < 1:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}No ePSF stars remain after rejecting "
+            f"non-finite cutouts (image {image.image_id}, filter "
+            f"{image.filter_}). {style.Bcolors.ENDC}"
+        )
 
     #   Number of ePSF stars
     n_epsf = len(epsf_star_positions)

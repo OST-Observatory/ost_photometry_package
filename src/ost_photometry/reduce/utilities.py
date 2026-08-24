@@ -20,7 +20,11 @@ from scipy.ndimage import median_filter
 from .. import calibration_parameters, checks, style, terminal_output
 from .. import utilities as base_utilities
 from ..fits_headers import ensure_mjd_obs_in_header
-from ..fwhm import estimate_fwhm_from_positions, source_positions_from_table
+from ..fwhm import (
+    estimate_fwhm_from_positions,
+    filter_table_finite_cutouts,
+    source_positions_from_table,
+)
 from . import plots
 from .exposure import (
     find_nearest_exposure_time,
@@ -430,7 +434,20 @@ def estimate_fwhm(
                 id_percentile_99 - n_fwhm_stars : id_percentile_99
             ]
 
-            if plot_subplots:
+            objects_tbl_filtered, n_nonfinite = filter_table_finite_cutouts(
+                objects_tbl_filtered,
+                img_ccd.data,
+                25,
+                extra_mask=img_ccd.mask,
+            )
+            if n_nonfinite:
+                terminal_output.print_to_terminal(
+                    f"Skipped {n_nonfinite} FWHM-plot star(s) with non-finite "
+                    "cutouts.",
+                    style_name="WARNING",
+                    indent=indent,
+                )
+            if plot_subplots and len(objects_tbl_filtered) > 0:
                 object_cutouts = extract_stars(
                     img_ccd,
                     objects_tbl_filtered,
