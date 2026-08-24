@@ -22,6 +22,8 @@ def test_pipeline_config_flat_and_nested_access():
     kw = ext.main_extract_kwargs(fwhm=3.5)
     assert kw["fwhm_object_psf"] == 3.5
     assert "sigma_value_background_clipping" in kw
+    assert "annotate_image" not in kw
+    assert "annotate_reference_image" not in ext.extract_multiprocessing_kwargs()
 
     cfg.apply_overrides(diagnostic_plots__photometry_mag_vs_error_scatter=True)
     assert cfg.diagnostic_plots.photometry_mag_vs_error_scatter is True

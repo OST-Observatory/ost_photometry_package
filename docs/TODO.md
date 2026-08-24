@@ -64,9 +64,12 @@ Steps are already modular via config. What is missing is **persist and continue 
 
 ## Extraction / ePSF
 
-### Move `mark_simbad_objects_on_image` to post-processing (P3)
+### Move `mark_simbad_objects_on_image` to post-processing — done
 
-Still invoked from `main_extract` when annotating. Belongs with other optional annotation / post-process tasks, not in the extraction hot path.
+``SimbadAnnotateStep`` overlays Simbad objects on each filter's reference
+image after extraction (``annotate_image`` / ``annotate_reference_image``).
+Implementation: ``post_processing.simbad_annotate`` (still re-exported from
+``analyze.utilities``).
 
 ---
 

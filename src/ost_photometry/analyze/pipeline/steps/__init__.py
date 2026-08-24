@@ -15,6 +15,7 @@ from .post_process_cluster import (
     PostProcessRegionStep,
     PostProcessSaveMagnitudesStep,
 )
+from .simbad_annotate import SimbadAnnotateStep
 from .wcs import WcsStep
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "PostProcessProperMotionStep",
     "PostProcessRegionStep",
     "PostProcessSaveMagnitudesStep",
+    "SimbadAnnotateStep",
     "DeriveLimitingMagnitudeStep",
     "HipsReferenceSubtractStep",
     "LightCurveStep",

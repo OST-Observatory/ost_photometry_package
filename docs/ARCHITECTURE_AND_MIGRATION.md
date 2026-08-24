@@ -210,7 +210,9 @@ and `PhotometryCalibrator.setup_calibration_source`.
 
 `PostProcessStep` was split into: `PostProcessRegionStep`, `PostProcessClusterGaiaStep`,
 `PostProcessProperMotionStep`, `PostProcessMagnitudeConvertStep`, `PostProcessSaveMagnitudesStep`,
-`DeriveLimitingMagnitudeStep`, `LightCurveStep`.
+`DeriveLimitingMagnitudeStep`, `LightCurveStep`. Optional Simbad overlay on reference
+images is `SimbadAnnotateStep` (after extraction; `annotate_image` /
+`annotate_reference_image`).
 
 Cluster helpers require `plot_context=` (`ImagingPlotContext`). Multi-epoch tables:
 region/Gaia/PM on first `epoch_id`, then expand surviving `id` to all epochs.

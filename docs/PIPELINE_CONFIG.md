@@ -33,6 +33,7 @@ config = PipelineConfig(
 | ------------------------------ | ------------------------------------------------------------------ | ------------------------------- | --------------------------------------------------------------- |
 | `wcs_method`                   | `astrometry`, `astap`, `twirl`                                     | WCS                             | Astrometric solution per image                                  |
 | `photometry_extraction_method` | `PSF`, `APER`                                                      | Extraction                      | PSF fitting vs aperture photometry                              |
+| `annotate_image` / `annotate_reference_image` | `True`, `False` (default `True`)                          | Simbad annotate                 | Overlay Simbad objects on each filter's reference image (after extraction) |
 | `correlation_method`           | `astropy`, `own`                                                   | Correlation (intra/inter)       | Match detections across exposures                               |
 | `protected_object_ids`         | list of row indices                                                | Correlation (intra/inter)       | Explicit reference-image rows to keep (any object type)         |
 | `protect_ooi`                  | `True`, `False`                                                    | Correlation (intra/inter)       | Auto-add identified objects of interest to the protected set    |

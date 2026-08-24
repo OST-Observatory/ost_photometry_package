@@ -17,6 +17,7 @@ from .steps import (
     PostProcessProperMotionStep,
     PostProcessRegionStep,
     PostProcessSaveMagnitudesStep,
+    SimbadAnnotateStep,
     WcsStep,
 )
 
@@ -36,6 +37,7 @@ class AnalysisPipeline:
         return [
             WcsStep(),
             ExtractionStep(),
+            SimbadAnnotateStep(),
             CorrelationIntraStep(),
             CorrelationInterStep(),
             ExtinctionFitStep(),

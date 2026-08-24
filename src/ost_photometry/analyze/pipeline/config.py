@@ -133,7 +133,9 @@ class ExtractionConfig:
     plots_for_all_images: bool = False
     file_type_plots: str = "pdf"
     use_wcs_projection_for_star_maps: bool = True
+    #: Simbad overlay on the reference image (``SimbadAnnotateStep``, not extraction).
     annotate_image: bool = True
+    #: Same overlay in multi-image extraction mode (``SimbadAnnotateStep``).
     annotate_reference_image: bool = True
     magnitude_limit_image_annotation: float | None = None
     filter_magnitude_limit_image_annotation: str | None = None
@@ -198,11 +200,6 @@ class ExtractionConfig:
             "plots_for_all_images": self.plots_for_all_images,
             "file_type_plots": self.file_type_plots,
             "use_wcs_projection_for_star_maps": self.use_wcs_projection_for_star_maps,
-            "annotate_image": self.annotate_image,
-            "magnitude_limit_image_annotation": self.magnitude_limit_image_annotation,
-            "filter_magnitude_limit_image_annotation": (
-                self.filter_magnitude_limit_image_annotation
-            ),
         }
 
     def extract_multiprocessing_kwargs(self) -> dict[str, Any]:
@@ -214,8 +211,6 @@ class ExtractionConfig:
         kw.pop("read_noise", None)
         kw.pop("sigma_clipping_value", None)
         kw.pop("saturation_level", None)
-        kw.pop("annotate_image", None)
-        kw["annotate_reference_image"] = self.annotate_reference_image
         return kw
 
 
