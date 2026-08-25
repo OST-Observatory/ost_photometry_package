@@ -85,9 +85,11 @@ def _limmag_helpers():
 
 def test_flux_to_magnitudes():
     mod = _photometry()
-    m, e = mod.flux_to_magnitudes(np.array([100.0]), np.array([1.0]))
-    np.testing.assert_allclose(m, [-5.0], rtol=1e-12)
-    np.testing.assert_allclose(e, [-0.025], rtol=1e-12)
+    m, e = mod.flux_to_magnitudes(np.array([100.0, 25.0]), np.array([-1.0, 2.0]))
+    np.testing.assert_allclose(m, -2.5 * np.log10([100.0, 25.0]), rtol=1e-12)
+    expected = (2.5 / np.log(10)) * np.array([0.01, 0.08])
+    np.testing.assert_allclose(e, expected, rtol=1e-12)
+    assert np.all(np.asarray(e) > 0)
 
 
 def test_rm_edge_objects_drops_border_sources():

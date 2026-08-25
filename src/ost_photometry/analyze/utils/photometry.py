@@ -25,10 +25,12 @@ def flux_to_magnitudes(
     Returns
     -------
     magnitudes, magnitudes_error
-        Object magnitudes and uncertainties (``-2.5 log10`` convention).
+        Object magnitudes (``-2.5 log10``) and **positive** 1σ uncertainties
+        ``(2.5 / ln(10)) · σ(F)/|F|``.
     """
     magnitudes = -2.5 * np.log10(flux)
-    magnitudes_error = -2.5 * flux_error / flux
+    # Pogson: σ(m) = (2.5 / ln(10)) · σ(F)/|F|.
+    magnitudes_error = (2.5 / np.log(10)) * np.abs(flux_error / flux)
     return magnitudes, magnitudes_error
 
 

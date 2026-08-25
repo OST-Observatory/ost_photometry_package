@@ -138,14 +138,14 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 ### `diagnostic_plots`
 
 
-Most QC figures under `<output>/diagnostics/` are **on by default** (growth curves stay off). Toggle via nested overrides, e.g. `diagnostic_plots__photometry_mag_vs_error_scatter=False`.
+Most QC figures under `<output>/diagnostics/` are **on by default** (growth curves stay off). Toggle via nested overrides, e.g. `diagnostic_plots__photometry_mag_vs_error_scatter=False`. How to read the mag–error figures: [DIAGNOSTICS.md](DIAGNOSTICS.md).
 
 | Flag / option | What it checks |
 |---------------|----------------|
 | `calibration_crossmatch_separation_histogram` | Catalog match separations |
 | `combined_separation_histograms` | Combined separation panels |
-| `photometry_mag_vs_error_scatter` | Mag vs photometric error (**reference image** only) |
-| `photometry_mag_vs_error_overview` | Mag–err hexbin over **all** images + median err vs image index (per filter) |
+| `photometry_mag_vs_error_scatter` | Mag vs photometric error (density, binned median, photon-noise model, SNR guides; comparison/quality panel when available) |
+| `photometry_mag_vs_error_overview` | Same density over **all** images + median err vs JD and/or airmass (image index as fallback) |
 | `photometry_radial_growth_curve` | Aperture growth for brightest star (off by default) |
 | `correlation_inter_filter_separation_plot` | Inter-filter match separations: reference pair, per-pair PDFs, plus overview (all pairs) |
 | `correlation_inter_filter_max_pair_plots` | Cap on individual pair PDFs (default `25`; `None` = all; `0` = overview only) |

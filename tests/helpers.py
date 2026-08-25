@@ -12,6 +12,42 @@ from pathlib import Path
 _PKG_SRC = Path(__file__).resolve().parents[1] / "src"
 
 
+_KEEP_MODULE_PREFIXES = (
+    "matplotlib",
+    "numpy",
+    "scipy",
+    "astropy",
+    "pandas",
+    "PIL",
+    "cycler",
+    "kiwisolver",
+    "dateutil",
+    "pyparsing",
+    "fontTools",
+    "mpl_toolkits",
+)
+
+
+def _keep_imported_runtime_module(name: str) -> bool:
+    return any(name == prefix or name.startswith(prefix + ".") for prefix in _KEEP_MODULE_PREFIXES)
+
+
+def restore_sys_modules(before: dict) -> None:
+    """Drop test stubs added since ``before`` and put back replaced entries.
+
+    Does not ``sys.modules.clear()`` and does not unload matplotlib/numpy/… :
+    tearing those down mid-session breaks later tests in the same process.
+    """
+    before_keys = set(before)
+    for name in list(sys.modules):
+        if name in before_keys or _keep_imported_runtime_module(name):
+            continue
+        del sys.modules[name]
+    for name, mod in before.items():
+        if sys.modules.get(name) is not mod:
+            sys.modules[name] = mod
+
+
 @contextmanager
 def isolated_sys_modules() -> Iterator[None]:
     """Restore ``sys.modules`` after a test that registers import stubs."""
@@ -19,8 +55,7 @@ def isolated_sys_modules() -> Iterator[None]:
     try:
         yield
     finally:
-        sys.modules.clear()
-        sys.modules.update(before)
+        restore_sys_modules(before)
 
 
 def ensure_stub_package(name: str, path: Path | str | None = None) -> types.ModuleType:

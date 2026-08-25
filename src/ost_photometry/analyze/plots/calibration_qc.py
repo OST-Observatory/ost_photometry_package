@@ -6,6 +6,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import Table
+from matplotlib.colors import LogNorm
 from matplotlib.ticker import MaxNLocator
 
 from ... import checks
@@ -564,6 +565,266 @@ def _diagnostic_plot_path(
     return base / f"{stem}.{ft}"
 
 
+_POGSON = 2.5 / np.log(10)
+_SNR_GUIDES = (10.0, 5.0)
+_QUALITY_COLUMNS = ("qfit", "cfit", "sharpness")
+
+
+def _positive_magnitude_uncertainty(err) -> np.ndarray:
+    """Absolute 1σ magnitude error; non-finite and non-positive values → NaN."""
+    e = np.abs(np.asarray(err, dtype=float))
+    e[~np.isfinite(e) | (e <= 0.0)] = np.nan
+    return e
+
+
+def _finite_mag_and_positive_err(
+    mag,
+    err,
+) -> tuple[np.ndarray, np.ndarray]:
+    m = np.asarray(mag, dtype=float)
+    e = _positive_magnitude_uncertainty(err)
+    ok = np.isfinite(m) & np.isfinite(e)
+    return m[ok], e[ok]
+
+
+def _mag_err_valid_mask(mag, err) -> np.ndarray:
+    m = np.asarray(mag, dtype=float)
+    e = _positive_magnitude_uncertainty(err)
+    return np.isfinite(m) & np.isfinite(e)
+
+
+def _column_float(table: Table, name: str) -> np.ndarray:
+    col = table[name]
+    return np.asarray(col.value if hasattr(col, "value") else col, dtype=float)
+
+
+def _binned_error_percentiles(
+    mag: np.ndarray,
+    err: np.ndarray,
+    *,
+    percentiles: tuple[float, float, float] = (16.0, 50.0, 84.0),
+    min_per_bin: int = 8,
+    n_bins: int = 12,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Equal-count magnitude bins → centers and (p16, p50, p84) of σ."""
+    mag = np.asarray(mag, dtype=float)
+    err = np.asarray(err, dtype=float)
+    if mag.size < min_per_bin * 2:
+        return (
+            np.array([]),
+            np.array([]),
+            np.array([]),
+            np.array([]),
+        )
+    order = np.argsort(mag)
+    mag_s = mag[order]
+    err_s = err[order]
+    n_bins = int(min(n_bins, mag.size // min_per_bin))
+    n_bins = max(n_bins, 2)
+    edges = np.linspace(0, mag.size, n_bins + 1, dtype=int)
+    centers: list[float] = []
+    p_lo: list[float] = []
+    p_mid: list[float] = []
+    p_hi: list[float] = []
+    lo_p, mid_p, hi_p = percentiles
+    for i0, i1 in zip(edges[:-1], edges[1:], strict=True):
+        if i1 - i0 < min_per_bin:
+            continue
+        chunk = err_s[i0:i1]
+        centers.append(float(np.median(mag_s[i0:i1])))
+        p_lo.append(float(np.percentile(chunk, lo_p)))
+        p_mid.append(float(np.percentile(chunk, mid_p)))
+        p_hi.append(float(np.percentile(chunk, hi_p)))
+    return (
+        np.asarray(centers),
+        np.asarray(p_lo),
+        np.asarray(p_mid),
+        np.asarray(p_hi),
+    )
+
+
+def _photon_noise_sigma(mag: np.ndarray, floor: float, faint_scale: float) -> np.ndarray:
+    """Photon + additive-noise envelope: σ(m) = √(σ₀² + (c · 10^{0.4 m})²).
+
+    Valid for CCD and CMOS: Poisson photon statistics plus a flux-independent
+    term (sky in the aperture, read noise, residual floor).
+    """
+    return np.sqrt(floor**2 + (faint_scale * 10.0 ** (0.4 * mag)) ** 2)
+
+
+def _fit_photon_noise_envelope(
+    mag: np.ndarray,
+    err: np.ndarray,
+) -> tuple[float, float] | None:
+    """Fit a constant floor plus background/read term (∝ 10^{0.4 m}) to the binned median."""
+    centers, _lo, mid, _hi = _binned_error_percentiles(mag, err)
+    if centers.size < 3:
+        return None
+    positive = (mid > 0) & np.isfinite(mid) & np.isfinite(centers)
+    if np.count_nonzero(positive) < 3:
+        return None
+    m_fit = centers[positive]
+    s_fit = mid[positive]
+
+    def _model(m, floor, faint_scale):
+        return _photon_noise_sigma(m, floor, faint_scale)
+
+    p0 = (
+        float(np.nanmin(s_fit)),
+        float(np.median(s_fit) / max(np.median(10.0 ** (0.4 * m_fit)), 1e-12)),
+    )
+    try:
+        from scipy.optimize import curve_fit
+
+        popt, _cov = curve_fit(
+            _model,
+            m_fit,
+            s_fit,
+            p0=p0,
+            bounds=(0.0, np.inf),
+            maxfev=4000,
+        )
+    except (ImportError, RuntimeError, ValueError, TypeError):
+        return None
+    floor, faint_scale = float(popt[0]), float(popt[1])
+    if not np.isfinite(floor) or not np.isfinite(faint_scale):
+        return None
+    if floor <= 0.0 and faint_scale <= 0.0:
+        return None
+    return floor, faint_scale
+
+
+def _quality_for_plot(
+    photometry: Table,
+    ok: np.ndarray,
+    image_shape: tuple[int, int] | None = None,
+) -> tuple[np.ndarray | None, str]:
+    for col in _QUALITY_COLUMNS:
+        if col not in photometry.colnames:
+            continue
+        values = _column_float(photometry, col)[ok]
+        if np.any(np.isfinite(values)):
+            return values, col
+    if "x_fit" not in photometry.colnames or "y_fit" not in photometry.colnames:
+        return None, ""
+    x = _column_float(photometry, "x_fit")[ok]
+    y = _column_float(photometry, "y_fit")[ok]
+    if image_shape is not None and image_shape[0] > 1 and image_shape[1] > 1:
+        naxis1, naxis2 = image_shape
+        dist = np.minimum.reduce([x, y, naxis1 - 1.0 - x, naxis2 - 1.0 - y])
+        return dist, "edge distance [pix]"
+    r = np.hypot(x - np.nanmedian(x), y - np.nanmedian(y))
+    return r, "offset from field centre [pix]"
+
+
+def _comparison_mask(photometry: Table, ok: np.ndarray) -> np.ndarray | None:
+    if "is_comparison" not in photometry.colnames:
+        return None
+    flag = np.asarray(photometry["is_comparison"])[ok]
+    return np.asarray(flag, dtype=bool)
+
+
+def _snr_sigma(snr: float) -> float:
+    return _POGSON / float(snr)
+
+
+def _draw_mag_err_density(ax, mag: np.ndarray, err: np.ndarray):
+    """2D histogram in (mag, σ) with log-spaced σ bins and log y-axis."""
+    mag = np.asarray(mag, dtype=float)
+    err = np.asarray(err, dtype=float)
+    e_min = float(np.min(err))
+    e_max = float(np.max(err))
+    if not np.isfinite(e_min) or e_max <= e_min:
+        e_max = e_min * 3.0 if e_min > 0 else 1.0
+        e_min = e_min / 3.0 if e_min > 0 else 1e-3
+    e_min = max(e_min * 0.8, 1e-5)
+    e_max = max(e_max * 1.25, e_min * 1.01)
+    n = mag.size
+    n_x = int(np.clip(np.sqrt(n), 12, 40))
+    n_y = int(np.clip(np.sqrt(n), 12, 36))
+    xbins = np.linspace(float(np.min(mag)), float(np.max(mag)), n_x + 1)
+    ybins = np.logspace(np.log10(e_min), np.log10(e_max), n_y + 1)
+    counts, xedges, yedges = np.histogram2d(mag, err, bins=[xbins, ybins])
+    mesh = np.ma.masked_less_equal(counts.T, 0)
+    positive = counts[counts > 0]
+    vmin = float(np.min(positive)) if positive.size else 1.0
+    pcm = ax.pcolormesh(
+        xedges,
+        yedges,
+        mesh,
+        norm=LogNorm(vmin=max(vmin, 1.0)),
+        cmap="viridis",
+        shading="auto",
+    )
+    ax.set_yscale("log")
+    ax.set_ylim(e_min, e_max)
+    return pcm
+
+
+def _draw_snr_guides(ax) -> None:
+    for snr in _SNR_GUIDES:
+        sigma = _snr_sigma(snr)
+        ax.axhline(
+            sigma,
+            color="0.35",
+            ls=":",
+            lw=0.9,
+            zorder=3,
+            label=rf"{snr:.0f}$\sigma$  ($\sigma_m$={sigma:.2f})",
+        )
+
+
+def _draw_trend_and_photon_model(ax, mag: np.ndarray, err: np.ndarray) -> None:
+    centers, p16, p50, p84 = _binned_error_percentiles(mag, err)
+    if centers.size:
+        ax.fill_between(centers, p16, p84, color="w", alpha=0.35, zorder=4, linewidth=0)
+        ax.plot(
+            centers,
+            p50,
+            color="w",
+            lw=2.4,
+            zorder=5,
+            solid_capstyle="round",
+        )
+        ax.plot(
+            centers,
+            p50,
+            color="k",
+            lw=1.3,
+            zorder=6,
+            label="binned median (16–84%)",
+        )
+    params = _fit_photon_noise_envelope(mag, err)
+    if params is None:
+        return
+    floor, faint_scale = params
+    m_line = np.linspace(float(np.min(mag)), float(np.max(mag)), 120)
+    ax.plot(
+        m_line,
+        _photon_noise_sigma(m_line, floor, faint_scale),
+        color="C3",
+        lw=1.4,
+        ls="--",
+        zorder=7,
+        label=r"photon+sky/read  $\sqrt{\sigma_0^2+(c\,10^{0.4m})^2}$",
+    )
+
+
+def _mag_err_stats_text(
+    mag: np.ndarray,
+    err: np.ndarray,
+    n_comparison: int = 0,
+) -> str:
+    lines = [
+        f"N = {mag.size}",
+        f"median σ = {np.median(err):.3f} mag",
+        f"p90 σ = {np.percentile(err, 90):.3f} mag",
+    ]
+    if n_comparison:
+        lines.append(f"comparison = {n_comparison}")
+    return "\n".join(lines)
+
+
 def _stats_text(sep: np.ndarray) -> str:
     x = np.asarray(sep, dtype=float)
     x = x[np.isfinite(x)]
@@ -719,29 +980,117 @@ def plot_photometry_mag_vs_error(
     *,
     band_label: str = "",
     filename_stem: str | None = None,
+    image_shape: tuple[int, int] | None = None,
+    x_label: str = "Instrumental magnitude [mag]",
 ) -> Path | None:
-    """Scatter of instrumental magnitude vs. uncertainty from a photometry table."""
+    """
+    QC figure: density of mag vs σ (log y), trend, photon-noise model, SNR guides.
+
+    A second panel is added when comparison-star flags or a quality column
+    (``qfit`` / sharpness / edge distance) is available.
+    """
     if "mags_fit" not in photometry.colnames or "mags_unc" not in photometry.colnames:
         return None
-    _mf, _mu = photometry["mags_fit"], photometry["mags_unc"]
-    mag = np.asarray(_mf.value if hasattr(_mf, "value") else _mf, dtype=float)
-    err = np.asarray(_mu.value if hasattr(_mu, "value") else _mu, dtype=float)
-    ok = np.isfinite(mag) & np.isfinite(err)
-    if not np.any(ok):
+    mag_all = _column_float(photometry, "mags_fit")
+    err_all = _column_float(photometry, "mags_unc")
+    ok = _mag_err_valid_mask(mag_all, err_all)
+    mag, err = mag_all[ok], _positive_magnitude_uncertainty(err_all)[ok]
+    if mag.size == 0:
         return None
+
+    comparison = _comparison_mask(photometry, ok)
+    quality, quality_label = _quality_for_plot(photometry, ok, image_shape=image_shape)
+    n_comp = int(np.count_nonzero(comparison)) if comparison is not None else 0
+    extra_panel = comparison is not None or quality is not None
+
     stem = filename_stem or (
         f"photometry_mag_vs_error_{band_label}" if band_label else "photometry_mag_vs_error"
     )
-    fig, ax = plt.subplots(figsize=(5.5, 4.5))
-    ax.scatter(mag[ok], err[ok], s=8, alpha=0.35, c="C0", edgecolors="none")
-    ax.set_xlabel("mags_fit [mag]")
-    ax.set_ylabel("mags_unc [mag]")
+    if extra_panel:
+        fig, (ax0, ax1) = plt.subplots(
+            nrows=2,
+            ncols=1,
+            figsize=(6.6, 8.6),
+            sharex=True,
+            gridspec_kw={"height_ratios": [1.35, 1.0], "hspace": 0.08},
+        )
+    else:
+        fig, ax0 = plt.subplots(figsize=(6.4, 4.8))
+        ax1 = None
+
+    pcm = _draw_mag_err_density(ax0, mag, err)
+    fig.colorbar(pcm, ax=ax0, label="N per bin")
+    _draw_trend_and_photon_model(ax0, mag, err)
+    _draw_snr_guides(ax0)
+    if comparison is not None and n_comp:
+        ax0.scatter(
+            mag[comparison],
+            err[comparison],
+            s=28,
+            marker="*",
+            facecolors="none",
+            edgecolors="C1",
+            linewidths=0.8,
+            zorder=8,
+            label=f"comparison stars ({n_comp})",
+        )
+    ax0.set_ylabel(r"$\sigma_m$ [mag]")
+    ax0.grid(True, which="both", alpha=0.3)
+    ax0.legend(loc="upper left", fontsize=8, framealpha=0.92)
+    ax0.text(
+        0.97,
+        0.03,
+        _mag_err_stats_text(mag, err, n_comparison=n_comp),
+        transform=ax0.transAxes,
+        fontsize=8,
+        va="bottom",
+        ha="right",
+        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.55),
+    )
     ttl = "Magnitude vs. uncertainty"
     if band_label:
         ttl += f" ({band_label})"
-    ax.set_title(ttl)
+    ax0.set_title(ttl)
+
+    if ax1 is not None:
+        if quality is not None:
+            finite_q = np.isfinite(quality)
+            sc = ax1.scatter(
+                mag[finite_q],
+                err[finite_q],
+                c=quality[finite_q],
+                s=10,
+                cmap="plasma",
+                alpha=0.75,
+                edgecolors="none",
+                zorder=2,
+            )
+            fig.colorbar(sc, ax=ax1, label=quality_label)
+        else:
+            ax1.scatter(mag, err, s=8, alpha=0.35, c="C0", edgecolors="none", zorder=2)
+        if comparison is not None and n_comp:
+            ax1.scatter(
+                mag[comparison],
+                err[comparison],
+                s=36,
+                marker="*",
+                facecolors="none",
+                edgecolors="k",
+                linewidths=0.9,
+                zorder=4,
+                label="comparison",
+            )
+            ax1.legend(loc="upper left", fontsize=8)
+        ax1.set_yscale("log")
+        ax1.set_ylim(ax0.get_ylim())
+        ax1.set_ylabel(r"$\sigma_m$ [mag]")
+        ax1.set_xlabel(x_label)
+        ax1.grid(True, which="both", alpha=0.3)
+        ax1.set_title("Quality / comparison stars", fontsize=10)
+    else:
+        ax0.set_xlabel(x_label)
+
     path = _diagnostic_plot_path(output_dir, stem, file_type)
-    plt.tight_layout()
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
     plt.close(fig)
     return path
@@ -755,12 +1104,13 @@ def plot_photometry_mag_vs_error_overview(
     *,
     band_label: str = "",
     image_labels: list[str] | None = None,
+    image_jd: list[float] | None = None,
+    image_airmass: list[float] | None = None,
     filename_stem: str | None = None,
 ) -> Path | None:
     """
-    Overview across many exposures: pooled mag–err density + median err vs image index.
-
-    ``mag_by_image`` / ``err_by_image`` are parallel lists (one array per image).
+    Overview: pooled mag–σ density (log y) plus per-image error level vs JD
+    and/or airmass (image index if neither is available).
     """
     if not mag_by_image or len(mag_by_image) != len(err_by_image):
         return None
@@ -768,16 +1118,13 @@ def plot_photometry_mag_vs_error_overview(
     pooled_e: list[float] = []
     med_err: list[float] = []
     for mag, err in zip(mag_by_image, err_by_image, strict=True):
-        m = np.asarray(mag, dtype=float)
-        e = np.asarray(err, dtype=float)
-        ok = np.isfinite(m) & np.isfinite(e)
-        if np.any(ok):
-            pooled_m.extend(m[ok].tolist())
-            pooled_e.extend(e[ok].tolist())
-            # Bright-end median (more stable than all stars)
-            bright = ok & (m < np.nanpercentile(m[ok], 40))
+        m, e = _finite_mag_and_positive_err(mag, err)
+        if m.size:
+            pooled_m.extend(m.tolist())
+            pooled_e.extend(e.tolist())
+            bright = m < np.nanpercentile(m, 40)
             med_err.append(
-                float(np.nanmedian(e[bright])) if np.any(bright) else float(np.nanmedian(e[ok]))
+                float(np.median(e[bright])) if np.any(bright) else float(np.median(e))
             )
         else:
             med_err.append(np.nan)
@@ -785,43 +1132,100 @@ def plot_photometry_mag_vs_error_overview(
     if not pooled_m:
         return None
 
+    mag = np.asarray(pooled_m, dtype=float)
+    err = np.asarray(pooled_e, dtype=float)
+    med = np.asarray(med_err, dtype=float)
+    n_img = len(mag_by_image)
+
+    jd = None if image_jd is None else np.asarray(image_jd, dtype=float)
+    airmass = None if image_airmass is None else np.asarray(image_airmass, dtype=float)
+    has_jd = jd is not None and jd.size == n_img and np.any(np.isfinite(jd))
+    has_am = (
+        airmass is not None and airmass.size == n_img and np.any(np.isfinite(airmass))
+    )
+    extra_axes: list[tuple[str, np.ndarray | None]] = []
+    if has_jd:
+        extra_axes.append(("jd", jd))
+    if has_am:
+        extra_axes.append(("airmass", airmass))
+    if not extra_axes:
+        extra_axes.append(("index", np.arange(n_img, dtype=float)))
+
+    n_rows = 1 + len(extra_axes)
+    height = 4.6 + 3.1 * len(extra_axes)
+    ratios = [1.45] + [1.0] * len(extra_axes)
+    fig, axes = plt.subplots(
+        nrows=n_rows,
+        ncols=1,
+        figsize=(7.0, height),
+        gridspec_kw={"height_ratios": ratios, "hspace": 0.28},
+    )
+    if n_rows == 1:
+        axes = [axes]
+    ax0 = axes[0]
+
+    pcm = _draw_mag_err_density(ax0, mag, err)
+    fig.colorbar(pcm, ax=ax0, label="N per bin")
+    _draw_trend_and_photon_model(ax0, mag, err)
+    _draw_snr_guides(ax0)
+    ax0.set_xlabel("Instrumental magnitude [mag]")
+    ax0.set_ylabel(r"$\sigma_m$ [mag]")
+    ax0.grid(True, which="both", alpha=0.3)
+    ax0.legend(loc="upper left", fontsize=8, framealpha=0.92)
+    ax0.text(
+        0.97,
+        0.03,
+        _mag_err_stats_text(mag, err) + f"\nimages = {n_img}",
+        transform=ax0.transAxes,
+        fontsize=8,
+        va="bottom",
+        ha="right",
+        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.55),
+    )
+    ttl = "Magnitude vs. uncertainty (all images)"
+    if band_label:
+        ttl += f" ({band_label})"
+    ax0.set_title(ttl, fontsize=11)
+
+    for ax, (kind, xvals) in zip(axes[1:], extra_axes, strict=True):
+        y = med
+        finite = np.isfinite(y)
+        if xvals is not None:
+            finite &= np.isfinite(xvals)
+        if kind == "jd" and xvals is not None:
+            jd0 = float(np.nanmin(xvals[finite])) if np.any(finite) else 0.0
+            x = xvals - jd0
+            xlabel = f"JD − {jd0:.5f}"
+            title = "Per-image photometric error vs time"
+        elif kind == "airmass" and xvals is not None:
+            x = xvals
+            xlabel = "Airmass"
+            title = "Per-image photometric error vs airmass"
+        else:
+            x = np.arange(n_img, dtype=float) if xvals is None else xvals
+            xlabel = "Image index"
+            title = "Per-image photometric error level"
+            if (
+                image_labels is not None
+                and len(image_labels) == n_img
+                and n_img <= 25
+            ):
+                ax.set_xticks(x)
+                ax.set_xticklabels(image_labels, rotation=90, fontsize=7)
+        ax.plot(x[finite], y[finite], "o-", ms=4, lw=1.0, color="C0")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(r"Median $\sigma_m$ (bright 40%) [mag]")
+        ax.set_title(title, fontsize=10)
+        if np.any(np.isfinite(y) & (y > 0)):
+            ax.set_yscale("log")
+        ax.grid(True, which="both", alpha=0.3)
+
     stem = filename_stem or (
         f"photometry_mag_vs_error_overview_{band_label}"
         if band_label
         else "photometry_mag_vs_error_overview"
     )
-    fig, (ax0, ax1) = plt.subplots(
-        nrows=2, ncols=1, figsize=(7.0, 7.0), gridspec_kw={"height_ratios": [1.3, 1.0]}
-    )
-    hb = ax0.hexbin(
-        pooled_m,
-        pooled_e,
-        gridsize=40,
-        mincnt=1,
-        cmap="viridis",
-        bins="log",
-    )
-    fig.colorbar(hb, ax=ax0, label="log10(N)")
-    ax0.set_xlabel("mags_fit [mag]")
-    ax0.set_ylabel("mags_unc [mag]")
-    ttl = "Magnitude vs. uncertainty (all images)"
-    if band_label:
-        ttl += f" ({band_label})"
-    ttl += f"\nn_images={len(mag_by_image)}"
-    ax0.set_title(ttl, fontsize=11)
-
-    xi = np.arange(len(med_err))
-    ax1.plot(xi, med_err, "o-", ms=3, lw=1.0, color="C0")
-    ax1.set_xlabel("Image index")
-    ax1.set_ylabel("Median mags_unc (bright 40%) [mag]")
-    ax1.set_title("Per-image photometric error level")
-    ax1.grid(True, alpha=0.3)
-    if image_labels is not None and len(image_labels) == len(med_err) and len(med_err) <= 25:
-        ax1.set_xticks(xi)
-        ax1.set_xticklabels(image_labels, rotation=90, fontsize=7)
-
     path = _diagnostic_plot_path(output_dir, stem, file_type)
-    plt.tight_layout()
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
     plt.close(fig)
     return path

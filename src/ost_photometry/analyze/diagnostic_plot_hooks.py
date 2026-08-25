@@ -99,11 +99,14 @@ def run_diagnostic_plots_phase(
                             out_d,
                             ft,
                             band_label=filter_,
+                            image_shape=img.get_shape(),
                         )
                     if getattr(dp, "photometry_mag_vs_error_overview", False):
                         mags: list[np.ndarray] = []
                         errs: list[np.ndarray] = []
                         labels: list[str] = []
+                        jds: list[float] = []
+                        airmasses: list[float] = []
                         for j, im in enumerate(series.image_list):
                             if im.photometry is None:
                                 continue
@@ -117,6 +120,10 @@ def run_diagnostic_plots_phase(
                             errs.append(_photometry_col_float(ph["mags_unc"]))
                             iid = getattr(im, "image_id", j)
                             labels.append(str(iid))
+                            jd = getattr(im, "jd", None)
+                            jds.append(float(jd) if jd is not None else np.nan)
+                            am = getattr(im, "air_mass", None)
+                            airmasses.append(float(am) if am is not None else np.nan)
                         if len(mags) > 1:
                             plots.plot_photometry_mag_vs_error_overview(
                                 mags,
@@ -125,6 +132,8 @@ def run_diagnostic_plots_phase(
                                 ft,
                                 band_label=filter_,
                                 image_labels=labels,
+                                image_jd=jds,
+                                image_airmass=airmasses,
                             )
                     if dp.photometry_radial_growth_curve and "flux_fit" in (
                         img.photometry.colnames
@@ -333,6 +342,16 @@ def run_diagnostic_plots_phase(
                         sub = Table()
                         sub["mags_fit"] = t[mc]
                         sub["mags_unc"] = t[ec]
+                        if "is_comparison" in t.colnames:
+                            sub["is_comparison"] = t["is_comparison"]
+                        if "x" in t.colnames:
+                            sub["x_fit"] = t["x"]
+                        elif "x_fit" in t.colnames:
+                            sub["x_fit"] = t["x_fit"]
+                        if "y" in t.colnames:
+                            sub["y_fit"] = t["y"]
+                        elif "y_fit" in t.colnames:
+                            sub["y_fit"] = t["y_fit"]
                         plots.plot_photometry_mag_vs_error(
                             sub,
                             out_d,

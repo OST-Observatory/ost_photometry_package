@@ -16,7 +16,12 @@ _PKG_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_PKG_SRC) not in sys.path:
     sys.path.insert(0, str(_PKG_SRC))
 
-from helpers import ensure_stub_package, load_module_from_path, pkg_src  # noqa: E402
+from helpers import (  # noqa: E402
+    ensure_stub_package,
+    load_module_from_path,
+    pkg_src,
+    restore_sys_modules,
+)
 
 
 class TestAsciiFormatsId(unittest.TestCase):
@@ -24,8 +29,7 @@ class TestAsciiFormatsId(unittest.TestCase):
         self._modules = sys.modules.copy()
 
     def tearDown(self):
-        sys.modules.clear()
-        sys.modules.update(self._modules)
+        restore_sys_modules(self._modules)
 
     def test_ascii_write_formats_for_columns_filters_missing_keys(self):
         schema = load_module_from_path(

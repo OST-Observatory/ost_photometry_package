@@ -3,7 +3,8 @@
 Open, prioritized work on the `ost_photometry` package.
 
 Closed migration notes live in [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md). Also see
-[PIPELINE_CONFIG.md](PIPELINE_CONFIG.md) and [COMPATIBILITY_REPORT.md](COMPATIBILITY_REPORT.md).
+[PIPELINE_CONFIG.md](PIPELINE_CONFIG.md), [DIAGNOSTICS.md](DIAGNOSTICS.md), and
+[COMPATIBILITY_REPORT.md](COMPATIBILITY_REPORT.md).
 
 **As of:** August 2026
 
@@ -92,6 +93,23 @@ Facade plus reduction-specific helpers; already delegates to `exposure`, `instru
 
 ---
 
+## Diagnostic plots
+
+### Mag vs. uncertainty — optional polish (P3)
+
+The current figure already uses a log \(\sigma_m\) axis, a binned median,
+a photon+sky/read envelope, SNR guides, and JD/airmass panels. See
+[DIAGNOSTICS.md](DIAGNOSTICS.md). Left as optional:
+
+| Item | Why it might still help |
+|------|-------------------------|
+| Hard y-limit | Clip the axis at e.g. the 99.5th percentile or \(\sigma < 1\) mag so a handful of non-detections cannot stretch the log range. |
+| Source-Poisson term | Add a \(\propto 10^{0.2 m}\) component to the envelope (currently only floor \(+\) additive \(\propto 10^{0.4 m}\)). |
+
+Do **not** add a third linear y-axis on the same panel or overlay every epoch in one scatter colour (the overview density already pools images).
+
+---
+
 ## Remaining analyze bridge
 
 ### Drop legacy wide magnitude tables / column `i` — write path done
@@ -121,5 +139,6 @@ input; it does not write wide tables.
 1. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
 2. **P3:** OST filter throughput → synphot Vega↔AB offsets.
 3. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter.
-4. **On further registration work:** optionally extract `trim.py` / split align+shifts.
-5. **On utilities changes:** extract only the affected area.
+4. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
+5. **On further registration work:** optionally extract `trim.py` / split align+shifts.
+6. **On utilities changes:** extract only the affected area.
