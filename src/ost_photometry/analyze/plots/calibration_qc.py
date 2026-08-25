@@ -2051,9 +2051,15 @@ def plot_inter_filter_correlation_geometry_overview(
     rms_t = np.array(
         [float(s["rms_tangential_pix"]) for s in pair_summaries], dtype=float
     )
-    fig, (ax0, ax1) = plt.subplots(
-        2, 1, figsize=(7.2, 7.4), gridspec_kw={"height_ratios": [1.15, 1.0]}
+    fig = plt.figure(figsize=(7.2, 9.6))
+    gs = fig.add_gridspec(
+        3,
+        1,
+        height_ratios=[1.25, 0.32, 1.0],
+        hspace=0.12,
     )
+    ax0 = fig.add_subplot(gs[0])
+    ax1 = fig.add_subplot(gs[2])
     ax0.scatter(rms_r, rms_t, s=28, c="C1", edgecolors="k", linewidths=0.3)
     hi = float(np.nanmax([np.nanmax(rms_r), np.nanmax(rms_t), 0.05]))
     ax0.plot([0, hi], [0, hi], "k--", lw=1, alpha=0.55)
@@ -2077,7 +2083,7 @@ def plot_inter_filter_correlation_geometry_overview(
     ax1.plot(xi, rms_t, "s-", ms=4, lw=1.0, color="C2", label="rms tangential")
     ax1.set_xlabel("Exposure pair")
     ax1.set_ylabel("RMS residual [pix]")
-    ax1.set_title("Field pattern vs pair (translation removed)", fontsize=10)
+    ax1.set_title("Field pattern vs pair (translation removed)", fontsize=10, pad=12)
     ax1.legend(fontsize=8)
     ax1.grid(True, alpha=0.3)
     if pair_labels is not None and len(pair_labels) == len(xi) and len(xi) <= 25:
@@ -2087,7 +2093,8 @@ def plot_inter_filter_correlation_geometry_overview(
     title = "Inter-filter residual geometry (all pairs)"
     if title_suffix:
         title += f"\n{title_suffix}"
-    fig.suptitle(title, fontsize=12)
+    fig.suptitle(title, fontsize=12, y=0.98)
+    fig.subplots_adjust(top=0.92, bottom=0.12)
     path = _diagnostic_plot_path(output_dir, filename_stem, file_type)
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
     plt.close(fig)
