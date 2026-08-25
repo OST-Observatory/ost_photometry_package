@@ -7,8 +7,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from astropy.table import Table
 from astropy import wcs
+from astropy.table import Table
 
 _PKG_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_PKG_SRC) not in sys.path:
