@@ -64,3 +64,24 @@ def test_redu_facade_reexports_reduce_main():
     redu = importlib.import_module("ost_photometry.reduce.redu")
     assert hasattr(redu, "reduce_main")
     assert hasattr(redu, "ReduceConfig")
+
+
+@pytest.mark.parametrize(
+    "symbol",
+    [
+        "get_exposure_times",
+        "check_exposure_times",
+        "find_nearest_exposure_time_to_reference_image",
+        "get_instrument_info",
+        "determine_wcs_all_images",
+        "get_pixel_mask",
+        "make_bad_pixel_mask",
+        "make_hot_pixel_mask",
+        "get_image_type",
+        "check_master_files_on_disk",
+    ],
+)
+def test_reduce_utilities_reexports_workflow_helpers(symbol):
+    pytest.importorskip("ccdproc")
+    utilities = importlib.import_module("ost_photometry.reduce.utilities")
+    assert hasattr(utilities, symbol)
