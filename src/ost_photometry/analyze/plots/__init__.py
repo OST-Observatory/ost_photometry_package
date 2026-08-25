@@ -12,12 +12,15 @@ from .calibration_qc import (
     plot_extinction_fit_comparison_stars,
     plot_extinction_fit_value_airmass,
     plot_instrumental_vs_catalog_magnitudes,
+    plot_inter_filter_correlation_geometry,
+    plot_inter_filter_correlation_geometry_overview,
     plot_inter_filter_correlation_separations,
     plot_inter_filter_correlation_separations_overview,
     plot_photometry_mag_vs_error,
     plot_photometry_mag_vs_error_overview,
     plot_zeropoint_residual_distribution,
     plot_zeropoint_residual_vs_color,
+    residual_geometry_summary,
 )
 from .cmds import MakeCMDs
 from .extraction import plot_apertures, plot_cutouts, plot_epsf, plot_residual
@@ -67,6 +70,8 @@ __all__ = [
     "plot_extinction_fit_value_airmass",
     "plot_instrumental_vs_catalog_magnitudes",
     "plot_exposure_pairing_overview",
+    "plot_inter_filter_correlation_geometry",
+    "plot_inter_filter_correlation_geometry_overview",
     "plot_inter_filter_correlation_separations",
     "plot_inter_filter_correlation_separations_overview",
     "plot_limiting_mag_sky_apertures",
@@ -75,6 +80,7 @@ __all__ = [
     "plot_residual",
     "plot_zeropoint_residual_distribution",
     "plot_zeropoint_residual_vs_color",
+    "residual_geometry_summary",
     "scatter",
     "starmap",
 ]

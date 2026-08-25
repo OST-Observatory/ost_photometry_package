@@ -6,6 +6,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import Table
+from astropy.visualization import ImageNormalize, ZScaleInterval
 from matplotlib.colors import LogNorm
 from matplotlib.ticker import MaxNLocator
 
@@ -1664,6 +1665,346 @@ def plot_calibration_color_color_cal_stars(
 
     path = _diagnostic_plot_path(output_dir, filename_stem, file_type)
     plt.tight_layout()
+    fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
+    plt.close(fig)
+    return path
+
+
+def _pixel_radial_tangential(
+    x: np.ndarray,
+    y: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    x0: float,
+    y0: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Radius and residual components parallel / perpendicular to the radius vector.
+
+    ``d_radial`` > 0 is outward (plate-scale / pincushion-like).
+    ``d_tangential`` > 0 is counterclockwise (rotation).
+    """
+    vx = np.asarray(x, dtype=float) - x0
+    vy = np.asarray(y, dtype=float) - y0
+    radius = np.hypot(vx, vy)
+    dx = np.asarray(dx, dtype=float)
+    dy = np.asarray(dy, dtype=float)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        urx = np.where(radius > 0, vx / radius, 0.0)
+        ury = np.where(radius > 0, vy / radius, 0.0)
+    d_radial = dx * urx + dy * ury
+    d_tangential = dx * (-ury) + dy * urx
+    return radius, d_radial, d_tangential
+
+
+def _geometry_field_center(
+    x: np.ndarray,
+    y: np.ndarray,
+    image_data: np.ndarray | None,
+) -> tuple[float, float]:
+    if image_data is not None and image_data.ndim >= 2:
+        ny, nx = image_data.shape[-2], image_data.shape[-1]
+        return (nx - 1) / 2.0, (ny - 1) / 2.0
+    return float(np.nanmedian(x)), float(np.nanmedian(y))
+
+
+def residual_geometry_summary(
+    x: np.ndarray,
+    y: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    *,
+    x0: float | None = None,
+    y0: float | None = None,
+    min_radius_pix: float = 5.0,
+) -> dict[str, float]:
+    """Rotation (arcmin) and scale (fraction) implied by median d/r.
+
+    A median ``(dx, dy)`` translation is removed before the radial/tangential
+    split so a bulk WCS offset is not mistaken for rotation or plate-scale.
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    dx = np.asarray(dx, dtype=float)
+    dy = np.asarray(dy, dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(dx) & np.isfinite(dy)
+    nan = float("nan")
+    summary = {
+        "n": 0.0,
+        "median_dx_pix": nan,
+        "median_dy_pix": nan,
+        "median_abs_pix": nan,
+        "rms_radial_pix": nan,
+        "rms_tangential_pix": nan,
+        "rotation_arcmin": nan,
+        "scale_fraction": nan,
+    }
+    if not np.any(ok):
+        return summary
+    if x0 is None or y0 is None:
+        x0, y0 = _geometry_field_center(x[ok], y[ok], None)
+    summary["median_dx_pix"] = float(np.median(dx[ok]))
+    summary["median_dy_pix"] = float(np.median(dy[ok]))
+    dx_c = dx - summary["median_dx_pix"]
+    dy_c = dy - summary["median_dy_pix"]
+    radius, d_rad, d_tan = _pixel_radial_tangential(x, y, dx_c, dy_c, x0, y0)
+    ok = ok & np.isfinite(radius) & (radius >= min_radius_pix)
+    summary["n"] = float(np.count_nonzero(ok))
+    if not np.any(ok):
+        return summary
+    abs_res = np.hypot(dx, dy)
+    summary["median_abs_pix"] = float(np.median(abs_res[ok]))
+    summary["rms_radial_pix"] = float(np.sqrt(np.mean(d_rad[ok] ** 2)))
+    summary["rms_tangential_pix"] = float(np.sqrt(np.mean(d_tan[ok] ** 2)))
+    summary["rotation_arcmin"] = float(
+        np.degrees(np.median(d_tan[ok] / radius[ok])) * 60.0
+    )
+    summary["scale_fraction"] = float(np.median(d_rad[ok] / radius[ok]))
+    return summary
+
+
+def plot_inter_filter_correlation_geometry(
+    x: np.ndarray,
+    y: np.ndarray,
+    dx: np.ndarray,
+    dy: np.ndarray,
+    output_dir: str | Path,
+    file_type: str = "pdf",
+    *,
+    image_data: np.ndarray | None = None,
+    sep_arcsec: np.ndarray | None = None,
+    reference_filter: str = "",
+    other_filter: str = "",
+    filename_stem: str = "inter_filter_correlation_geometry",
+    title_suffix: str = "",
+) -> Path | None:
+    """
+    Diagnose inter-filter tails: quiver on the reference frame plus radial vs
+    tangential residuals (scale/distortion vs rotation).
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    dx = np.asarray(dx, dtype=float)
+    dy = np.asarray(dy, dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(dx) & np.isfinite(dy)
+    if sep_arcsec is not None:
+        sep = np.asarray(sep_arcsec, dtype=float)
+        ok &= np.isfinite(sep)
+    else:
+        sep = np.hypot(dx, dy)
+    if not np.any(ok):
+        return None
+    x, y, dx, dy, sep = x[ok], y[ok], dx[ok], dy[ok], sep[ok]
+    if image_data is not None:
+        image_data = np.asarray(image_data, dtype=float)
+        while image_data.ndim > 2:
+            image_data = image_data[0]
+        if image_data.ndim != 2:
+            image_data = None
+    x0, y0 = _geometry_field_center(x, y, image_data)
+    stats = residual_geometry_summary(x, y, dx, dy, x0=x0, y0=y0)
+    dx_c = dx - stats["median_dx_pix"]
+    dy_c = dy - stats["median_dy_pix"]
+    radius, d_rad, d_tan = _pixel_radial_tangential(x, y, dx_c, dy_c, x0, y0)
+
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(10.5, 9.2),
+        gridspec_kw={"wspace": 0.28, "hspace": 0.32},
+    )
+    ax_img, ax_r = axes[0]
+    ax_rad, ax_tan = axes[1]
+
+    if image_data is not None and np.isfinite(image_data).any():
+        finite = image_data[np.isfinite(image_data)]
+        try:
+            norm = ImageNormalize(image_data, interval=ZScaleInterval())
+        except Exception:
+            lo, hi = np.percentile(finite, (1.0, 99.5))
+            norm = ImageNormalize(vmin=lo, vmax=max(hi, lo + 1e-6))
+        ax_img.imshow(
+            image_data,
+            origin="lower",
+            cmap="gray",
+            norm=norm,
+            interpolation="nearest",
+        )
+    ax_img.set_aspect("equal")
+
+    n_show = min(x.size, 400)
+    if x.size > n_show:
+        rng = np.random.default_rng(0)
+        show = rng.choice(x.size, n_show, replace=False)
+    else:
+        show = np.arange(x.size)
+    abs_res = np.hypot(dx, dy)
+    med_len = float(np.median(abs_res[abs_res > 0])) if np.any(abs_res > 0) else 1.0
+    span = max(float(np.ptp(x)), float(np.ptp(y)), 1.0)
+    magnify = (0.06 * span) / max(med_len, 1e-6)
+    q = ax_img.quiver(
+        x[show],
+        y[show],
+        dx[show] * magnify,
+        dy[show] * magnify,
+        sep[show],
+        angles="xy",
+        scale_units="xy",
+        scale=1.0,
+        width=0.003,
+        cmap="plasma",
+        pivot="tail",
+    )
+    fig.colorbar(q, ax=ax_img, label="Separation [arcsec]")
+    ax_img.plot(x0, y0, "c+", ms=10, mew=1.2)
+    ax_img.set_xlabel("x [pix]")
+    ax_img.set_ylabel("y [pix]")
+    ax_img.set_title("Residual vectors on reference image", fontsize=10)
+    ax_img.text(
+        0.02,
+        0.02,
+        f"arrows ×{magnify:.1f}",
+        transform=ax_img.transAxes,
+        fontsize=8,
+        color="w" if image_data is not None else "k",
+        bbox=dict(boxstyle="round", facecolor="k", alpha=0.35),
+    )
+
+    ax_r.scatter(radius, sep, s=8, alpha=0.4, c="C1", edgecolors="none")
+    ax_r.set_xlabel("Radius from centre [pix]")
+    ax_r.set_ylabel("Separation [arcsec]")
+    ax_r.set_title("|offset| vs radius", fontsize=10)
+    ax_r.grid(True, alpha=0.3)
+
+    r_line = np.array(
+        [float(np.nanmin(radius)), float(np.nanmax(radius))], dtype=float
+    )
+    if not np.all(np.isfinite(r_line)) or r_line[1] <= r_line[0]:
+        r_line = np.array([0.0, float(np.nanmax(radius)) if np.any(radius) else 1.0])
+
+    ax_rad.axhline(0.0, color="k", lw=0.8, alpha=0.5)
+    ax_rad.scatter(radius, d_rad, s=8, alpha=0.4, c="C0", edgecolors="none")
+    if np.isfinite(stats["scale_fraction"]) and abs(stats["scale_fraction"]) > 1e-12:
+        ax_rad.plot(
+            r_line,
+            stats["scale_fraction"] * r_line,
+            "k--",
+            lw=1.0,
+            alpha=0.75,
+            label="median d/r",
+        )
+        ax_rad.legend(fontsize=7, loc="upper left")
+    ax_rad.set_xlabel("Radius from centre [pix]")
+    ax_rad.set_ylabel(r"Radial residual [pix]")
+    ax_rad.set_title("Scale / distortion (radial, translation removed)", fontsize=10)
+    ax_rad.grid(True, alpha=0.3)
+
+    theta_rad = np.radians(stats["rotation_arcmin"] / 60.0)
+    ax_tan.axhline(0.0, color="k", lw=0.8, alpha=0.5)
+    ax_tan.scatter(radius, d_tan, s=8, alpha=0.4, c="C2", edgecolors="none")
+    if np.isfinite(theta_rad) and abs(theta_rad) > 1e-12:
+        ax_tan.plot(
+            r_line,
+            theta_rad * r_line,
+            "k--",
+            lw=1.0,
+            alpha=0.75,
+            label="median d/r",
+        )
+        ax_tan.legend(fontsize=7, loc="upper left")
+    ax_tan.set_xlabel("Radius from centre [pix]")
+    ax_tan.set_ylabel(r"Tangential residual [pix]")
+    ax_tan.set_title("Rotation (tangential, translation removed)", fontsize=10)
+    ax_tan.grid(True, alpha=0.3)
+
+    box = (
+        f"N = {int(stats['n'])}\n"
+        f"median (dx, dy) = ({stats['median_dx_pix']:.3f}, "
+        f"{stats['median_dy_pix']:.3f}) pix\n"
+        f"median |res| = {stats['median_abs_pix']:.3f} pix\n"
+        f"rms radial = {stats['rms_radial_pix']:.3f} pix\n"
+        f"rms tangential = {stats['rms_tangential_pix']:.3f} pix\n"
+        f"implied rotation = {stats['rotation_arcmin']:.2f}'\n"
+        f"implied scale = {100.0 * stats['scale_fraction']:.3f} %"
+    )
+    ax_r.text(
+        0.97,
+        0.97,
+        box,
+        transform=ax_r.transAxes,
+        fontsize=8,
+        va="top",
+        ha="right",
+        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.55),
+    )
+
+    title = "Inter-filter residual geometry"
+    if reference_filter or other_filter:
+        title += f" ({reference_filter} → {other_filter})"
+    if title_suffix:
+        title += f"\n{title_suffix}"
+    fig.suptitle(title, fontsize=12)
+    fig.subplots_adjust(top=0.90)
+
+    path = _diagnostic_plot_path(output_dir, filename_stem, file_type)
+    fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
+    plt.close(fig)
+    return path
+
+
+def plot_inter_filter_correlation_geometry_overview(
+    pair_summaries: list[dict],
+    output_dir: str | Path,
+    file_type: str = "pdf",
+    *,
+    pair_labels: list[str] | None = None,
+    filename_stem: str = "inter_filter_correlation_geometry_overview",
+    title_suffix: str = "",
+) -> Path | None:
+    """Per-pair rms radial vs tangential: distortion-like vs rotation-like."""
+    if not pair_summaries:
+        return None
+    rms_r = np.array([float(s["rms_radial_pix"]) for s in pair_summaries], dtype=float)
+    rms_t = np.array(
+        [float(s["rms_tangential_pix"]) for s in pair_summaries], dtype=float
+    )
+    fig, (ax0, ax1) = plt.subplots(
+        2, 1, figsize=(7.2, 7.4), gridspec_kw={"height_ratios": [1.15, 1.0]}
+    )
+    ax0.scatter(rms_r, rms_t, s=28, c="C1", edgecolors="k", linewidths=0.3)
+    hi = float(np.nanmax([np.nanmax(rms_r), np.nanmax(rms_t), 0.05]))
+    ax0.plot([0, hi], [0, hi], "k--", lw=1, alpha=0.55)
+    ax0.set_xlabel("RMS radial residual [pix]")
+    ax0.set_ylabel("RMS tangential residual [pix]")
+    ax0.set_title("Per pair: distortion-like vs rotation-like", fontsize=10)
+    ax0.set_aspect("equal", adjustable="box")
+    ax0.grid(True, alpha=0.3)
+    ax0.text(
+        0.03,
+        0.97,
+        "above 1:1 → rotation\nbelow 1:1 → scale/distortion",
+        transform=ax0.transAxes,
+        va="top",
+        fontsize=8,
+        bbox=dict(boxstyle="round", facecolor="w", alpha=0.7),
+    )
+
+    xi = np.arange(len(pair_summaries))
+    ax1.plot(xi, rms_r, "o-", ms=4, lw=1.0, color="C0", label="rms radial")
+    ax1.plot(xi, rms_t, "s-", ms=4, lw=1.0, color="C2", label="rms tangential")
+    ax1.set_xlabel("Exposure pair")
+    ax1.set_ylabel("RMS residual [pix]")
+    ax1.set_title("Field pattern vs pair (translation removed)", fontsize=10)
+    ax1.legend(fontsize=8)
+    ax1.grid(True, alpha=0.3)
+    if pair_labels is not None and len(pair_labels) == len(xi) and len(xi) <= 25:
+        ax1.set_xticks(xi)
+        ax1.set_xticklabels(pair_labels, rotation=90, fontsize=7)
+
+    title = "Inter-filter residual geometry (all pairs)"
+    if title_suffix:
+        title += f"\n{title_suffix}"
+    fig.suptitle(title, fontsize=12)
+    path = _diagnostic_plot_path(output_dir, filename_stem, file_type)
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
     plt.close(fig)
     return path

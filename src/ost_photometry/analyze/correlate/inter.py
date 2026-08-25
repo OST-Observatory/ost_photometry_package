@@ -26,6 +26,7 @@ from .ooi import (
     verify_objects_of_interest_global_correlated_ids,
 )
 from .protection import resolve_calibration_object_ids
+from .wcs_residuals import residual_vectors_on_reference_wcs
 
 
 def assign_global_correlated_object_ids(
@@ -391,6 +392,67 @@ def inter_filter_correlation_separations_for_images(
     if not chunks:
         return np.array([]), ref, []
     return np.concatenate(chunks), ref, others
+
+
+def inter_filter_correlation_residual_frames(
+    observation: analyze.Observation,
+    filter_list: list[str] | set[str],
+    images_by_filter: dict[str, base_utilities.Image],
+    *,
+    reference_filter: str | None = None,
+) -> list[dict]:
+    """
+    Per-(ref, other) residual vectors for aligned photometry rows.
+
+    Each dict has ``reference_filter``, ``other_filter``, pixel positions on
+    the reference image (``x``, ``y``), residuals ``dx``/``dy`` (reference
+    pixels), and ``sep_arcsec``.
+    """
+    fl = list(filter_list)
+    if len(fl) < 2:
+        return []
+    ref = reference_filter or fl[0]
+    if ref not in images_by_filter or ref not in observation.image_series_dict:
+        return []
+    ref_img = images_by_filter[ref]
+    sref = observation.image_series_dict[ref]
+    if ref_img.photometry is None or len(ref_img.photometry) == 0:
+        return []
+    if sref.wcs is None:
+        return []
+    n = len(ref_img.photometry)
+    x_ref = np.asarray(ref_img.photometry["x_fit"], dtype=float)
+    y_ref = np.asarray(ref_img.photometry["y_fit"], dtype=float)
+    frames: list[dict] = []
+    for f in fl:
+        if f == ref:
+            continue
+        img = images_by_filter.get(f)
+        if img is None or f not in observation.image_series_dict:
+            continue
+        ser = observation.image_series_dict[f]
+        if img.photometry is None or len(img.photometry) != n or ser.wcs is None:
+            continue
+        dx, dy, sep = residual_vectors_on_reference_wcs(
+            x_ref,
+            y_ref,
+            sref.wcs,
+            img.photometry["x_fit"],
+            img.photometry["y_fit"],
+            ser.wcs,
+        )
+        frames.append(
+            {
+                "reference_filter": ref,
+                "other_filter": f,
+                "x": x_ref,
+                "y": y_ref,
+                "dx": dx,
+                "dy": dy,
+                "sep_arcsec": sep,
+            }
+        )
+    return frames
 
 
 def inter_filter_correlation_separations_arcsec(

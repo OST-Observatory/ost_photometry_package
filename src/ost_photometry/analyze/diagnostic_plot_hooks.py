@@ -57,6 +57,66 @@ def _photometry_col_float(column) -> np.ndarray:
     return np.asarray(column, dtype=float)
 
 
+def _image_array_for_plot(image) -> np.ndarray | None:
+    if image is None:
+        return None
+    try:
+        data = image.get_data()
+    except Exception:
+        return None
+    if data is None:
+        return None
+    arr = np.asarray(data, dtype=float)
+    while arr.ndim > 2:
+        arr = arr[0]
+    return arr if arr.ndim == 2 else None
+
+
+def _write_inter_filter_geometry(
+    obs: Any,
+    filter_list: list,
+    images_by_filter: dict,
+    *,
+    reference_filter: str,
+    output_dir: Path,
+    file_type: str,
+    filename_stem: str,
+    title_suffix: str,
+    write_figure: bool,
+) -> list[dict]:
+    frames = correlate.inter_filter_correlation_residual_frames(
+        obs,
+        filter_list,
+        images_by_filter,
+        reference_filter=reference_filter,
+    )
+    image_data = _image_array_for_plot(images_by_filter.get(reference_filter))
+    summaries: list[dict] = []
+    for fr in frames:
+        summary = plots.residual_geometry_summary(
+            fr["x"], fr["y"], fr["dx"], fr["dy"]
+        )
+        summary["other_filter"] = fr["other_filter"]
+        summaries.append(summary)
+        if not write_figure:
+            continue
+        plots.plot_inter_filter_correlation_geometry(
+            fr["x"],
+            fr["y"],
+            fr["dx"],
+            fr["dy"],
+            output_dir,
+            file_type,
+            image_data=image_data,
+            sep_arcsec=fr["sep_arcsec"],
+            reference_filter=fr["reference_filter"],
+            other_filter=fr["other_filter"],
+            filename_stem=f"{filename_stem}_{fr['other_filter']}",
+            title_suffix=title_suffix,
+        )
+    return summaries
+
+
 def run_diagnostic_plots_phase(
     context: Any,
     config: Any,
@@ -238,9 +298,25 @@ def run_diagnostic_plots_phase(
                             + correlate.inter_filter_pair_title_suffix(ref_images)
                         ),
                     )
+                    _write_inter_filter_geometry(
+                        obs,
+                        context.filter_list,
+                        ref_images,
+                        reference_filter=ref_name,
+                        output_dir=out_d,
+                        file_type=ft,
+                        filename_stem="inter_filter_correlation_geometry_reference",
+                        title_suffix=(
+                            "reference images — "
+                            + correlate.inter_filter_pair_title_suffix(ref_images)
+                        ),
+                        write_figure=True,
+                    )
 
                 seps_by_pair: list[np.ndarray] = []
                 pair_labels: list[str] = []
+                geometry_summaries: list[dict] = []
+                geometry_labels: list[str] = []
                 n_written = 0
                 for i, group in enumerate(groups):
                     sep_i, ref_i, others_i = (
@@ -275,6 +351,28 @@ def run_diagnostic_plots_phase(
                             ),
                         )
                         n_written += 1
+                    geom = _write_inter_filter_geometry(
+                        obs,
+                        context.filter_list,
+                        group,
+                        reference_filter=ref_name,
+                        output_dir=out_d,
+                        file_type=ft,
+                        filename_stem=(
+                            f"inter_filter_correlation_geometry_pair_{i:03d}_{label}"
+                        ),
+                        title_suffix=(
+                            f"pair {i:03d} — "
+                            + correlate.inter_filter_pair_title_suffix(group)
+                        ),
+                        write_figure=bool(write_pair and max_pair_plots != 0),
+                    )
+                    for g in geom:
+                        geometry_summaries.append(g)
+                        other = g.get("other_filter", "")
+                        geometry_labels.append(
+                            f"{i:03d}_{other}" if other else f"{i:03d}"
+                        )
 
                 if seps_by_pair:
                     plots.plot_inter_filter_correlation_separations_overview(
@@ -286,11 +384,19 @@ def run_diagnostic_plots_phase(
                         other_filters=others,
                         pairing_mode=pairing_mode,
                     )
+                    if geometry_summaries:
+                        plots.plot_inter_filter_correlation_geometry_overview(
+                            geometry_summaries,
+                            out_d,
+                            ft,
+                            pair_labels=geometry_labels,
+                            title_suffix=f"pairing={pairing_mode}",
+                        )
                     if max_pair_plots is not None and len(seps_by_pair) > max_pair_plots:
                         _warn(
-                            f"Inter-filter separation: wrote per-pair plots for the "
-                            f"first {max_pair_plots} of {len(seps_by_pair)} pairs; "
-                            f"see inter_filter_correlation_separations_overview for all. "
+                            f"Inter-filter separation/geometry: wrote per-pair plots "
+                            f"for the first {max_pair_plots} of {len(seps_by_pair)} "
+                            f"pairs; see *_overview for all. "
                             f"(correlation_inter_filter_max_pair_plots={max_pair_plots})"
                         )
             except Exception as exc:

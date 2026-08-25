@@ -138,7 +138,7 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 ### `diagnostic_plots`
 
 
-Most QC figures under `<output>/diagnostics/` are **on by default** (growth curves stay off). Toggle via nested overrides, e.g. `diagnostic_plots__photometry_mag_vs_error_scatter=False`. How to read the mag–error figures: [DIAGNOSTICS.md](DIAGNOSTICS.md).
+Most QC figures under `<output>/diagnostics/` are **on by default** (growth curves stay off). Toggle via nested overrides, e.g. `diagnostic_plots__photometry_mag_vs_error_scatter=False`. How to read the mag–error figures and the inter-filter geometry plots: [DIAGNOSTICS.md](DIAGNOSTICS.md).
 
 | Flag / option | What it checks |
 |---------------|----------------|
@@ -147,8 +147,8 @@ Most QC figures under `<output>/diagnostics/` are **on by default** (growth curv
 | `photometry_mag_vs_error_scatter` | Mag vs photometric error (density, binned median, photon-noise model, SNR guides; comparison/quality panel when available) |
 | `photometry_mag_vs_error_overview` | Same density over **all** images + median err vs JD and/or airmass (image index as fallback) |
 | `photometry_radial_growth_curve` | Aperture growth for brightest star (off by default) |
-| `correlation_inter_filter_separation_plot` | Inter-filter match separations: reference pair, per-pair PDFs, plus overview (all pairs) |
-| `correlation_inter_filter_max_pair_plots` | Cap on individual pair PDFs (default `25`; `None` = all; `0` = overview only) |
+| `correlation_inter_filter_separation_plot` | Inter-filter match separations **and** residual geometry (quiver on the reference image, radial vs tangential vs radius, plus overview). See [DIAGNOSTICS.md](DIAGNOSTICS.md). |
+| `correlation_inter_filter_max_pair_plots` | Cap on individual pair PDFs **and** geometry figures (default `25`; `None` = all; `0` = overview only) |
 | `exposure_pairing_overview` | Pairing table `diagnostics/exposure_pairing_pairs.ecsv` + ΔJD plot (same groups as `exposure_pairing`) |
 | `calibration_instrumental_vs_catalog` | Instrumental vs catalog magnitudes |
 | `calibration_zeropoint_residual_histogram` | ZP residual distribution |

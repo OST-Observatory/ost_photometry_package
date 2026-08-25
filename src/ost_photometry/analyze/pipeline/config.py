@@ -102,7 +102,8 @@ class DiagnosticPlots:
     calibration_zeropoint_residual_vs_color: bool = True
     calibration_color_check_cal_stars: bool = True
     correlation_inter_filter_separation_plot: bool = True
-    #: Max individual inter-filter pair PDFs (``None`` = all; ``0`` = overview only).
+    #: Max individual inter-filter pair PDFs / geometry figures
+    #: (``None`` = all; ``0`` = overview only). Geometry quiver plots share this cap.
     correlation_inter_filter_max_pair_plots: int | None = 25
     #: ΔJD / image-id pairing table + plot (same groups as ``exposure_pairing``).
     exposure_pairing_overview: bool = True
