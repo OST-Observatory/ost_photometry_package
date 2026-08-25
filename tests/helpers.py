@@ -17,6 +17,7 @@ _KEEP_MODULE_PREFIXES = (
     "numpy",
     "scipy",
     "astropy",
+    "astroquery",
     "pandas",
     "PIL",
     "cycler",
@@ -29,14 +30,28 @@ _KEEP_MODULE_PREFIXES = (
 
 
 def _keep_imported_runtime_module(name: str) -> bool:
-    return any(name == prefix or name.startswith(prefix + ".") for prefix in _KEEP_MODULE_PREFIXES)
+    if not any(
+        name == prefix or name.startswith(prefix + ".") for prefix in _KEEP_MODULE_PREFIXES
+    ):
+        return False
+    # Drop test stubs (ensure_stub_package) so the next restore can put the
+    # real module back. Unloading *real* astroquery is fatal: its logger stays
+    # in logging.Logger.manager, and a re-import then raises
+    # astropy.logger.LoggingError because pytest has replaced
+    # warnings.showwarning.
+    if name == "astroquery" or name.startswith("astroquery."):
+        mod = sys.modules.get(name)
+        return mod is not None and getattr(mod, "__file__", None) is not None
+    return True
 
 
 def restore_sys_modules(before: dict) -> None:
     """Drop test stubs added since ``before`` and put back replaced entries.
 
-    Does not ``sys.modules.clear()`` and does not unload matplotlib/numpy/… :
-    tearing those down mid-session breaks later tests in the same process.
+    Does not ``sys.modules.clear()`` and does not unload matplotlib/numpy/
+    astroquery/… : tearing those down mid-session breaks later tests in the
+    same process (astroquery re-import in particular hits an astropy logger
+    error once pytest has wrapped ``warnings.showwarning``).
     """
     before_keys = set(before)
     for name in list(sys.modules):

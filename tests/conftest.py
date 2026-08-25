@@ -1,4 +1,9 @@
-"""Shared pytest fixtures for ost_photometry."""
+"""Shared pytest fixtures for ost_photometry.
+
+When astroquery is installed, import it at collection time so its logger is
+initialized before pytest replaces ``warnings.showwarning``. Re-importing
+astroquery later raises ``astropy.logger.LoggingError``.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,11 @@ import sys
 import numpy as np
 import pytest
 from astropy.table import Table
+
+try:
+    import astroquery  # noqa: F401
+except ImportError:
+    pass
 
 from helpers import pkg_src
 
