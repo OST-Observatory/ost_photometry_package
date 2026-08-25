@@ -21,6 +21,34 @@ from .context import AnalysisContext
 
 _log = logging.getLogger(__name__)
 
+_QC_COLUMNS = (
+    "is_comparison",
+    "qfit",
+    "cfit",
+    "sharpness",
+    "roundness",
+    "roundness1",
+    "roundness2",
+    "flags",
+    "fwhm",
+    "match_sep_arcsec",
+)
+
+
+def _copy_qc_columns(src: Table, dest: Table) -> None:
+    """Copy extraction quality / comparison flags onto an epoch-native table."""
+    n = len(dest)
+    for name in _QC_COLUMNS:
+        if name not in src.colnames or name in dest.colnames:
+            continue
+        vals = src[name]
+        if hasattr(vals, "value"):
+            vals = vals.value
+        arr = np.asarray(vals)
+        if arr.shape[0] != n:
+            continue
+        dest[name] = arr
+
 
 def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Table | None:
     """One band: id, ra, dec, x, y, mag_<f>, err_<f>, flux_<f>, flux_err_<f>. Returns None if unusable."""
@@ -69,6 +97,7 @@ def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Table | None:
     else:
         tbl[flux_col] = np.full(n, np.nan, dtype=float)
         tbl[ferr_col] = np.full(n, np.nan, dtype=float)
+    _copy_qc_columns(phot, tbl)
     return tbl
 
 

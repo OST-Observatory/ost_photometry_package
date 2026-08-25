@@ -144,7 +144,7 @@ Most QC figures under `<output>/diagnostics/` are **on by default** (growth curv
 |---------------|----------------|
 | `calibration_crossmatch_separation_histogram` | Catalog match separations |
 | `combined_separation_histograms` | Combined separation panels |
-| `photometry_mag_vs_error_scatter` | Mag vs photometric error (density, binned median, photon-noise model, SNR guides; comparison/quality panel when available) |
+| `photometry_mag_vs_error_scatter` | Mag vs photometric error. After extraction: all detections + quality panel. After calibration: same density with stars **used in the fit** (and unused catalog matches). See [DIAGNOSTICS.md](DIAGNOSTICS.md). |
 | `photometry_mag_vs_error_overview` | Same density over **all** images + median err vs JD and/or airmass (image index as fallback) |
 | `photometry_radial_growth_curve` | Aperture growth for brightest star (off by default) |
 | `correlation_inter_filter_separation_plot` | Inter-filter match separations **and** residual geometry (quiver on the reference image, radial vs tangential vs radius, plus overview). See [DIAGNOSTICS.md](DIAGNOSTICS.md). |

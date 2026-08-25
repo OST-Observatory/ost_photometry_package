@@ -39,6 +39,8 @@ class AnalysisContext:
         default_factory=list
     )  # skipped pairing attempts (for terminal logging)
     extinction_coefficients: dict | None = None  # from ExtinctionFitStep
+    # Cached standard-schema catalog (extraction flagging and/or calibration)
+    calibration_catalog: Table | None = None
 
     # Optional link to the live Observation while a pipeline run is active.
     # Prefer context data fields; use :meth:`require_observation` only for legacy APIs.

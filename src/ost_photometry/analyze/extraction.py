@@ -405,8 +405,8 @@ def find_stars(
             style_name="WARNING",
         )
 
-        #   Add positions to image class
-        image.positions = tbl_objects["id", "x_centroid", "y_centroid", "flux"]
+        #   Keep the full finder table (sharpness, roundness, …) for later merge.
+        image.positions = tbl_objects.copy()
         image.fwhm = default_fwhm
         return
 
@@ -442,8 +442,9 @@ def find_stars(
             )
             tbl_objects = iraf_finder(ccd.data, mask=ccd.mask)
 
-    #   Add positions to image class
-    image.positions = tbl_objects["id", "x_centroid", "y_centroid", "flux"]
+    #   Keep the full finder table so quality columns can be copied onto photometry.
+    if tbl_objects is not None and len(tbl_objects) > 0:
+        image.positions = tbl_objects.copy()
     image.fwhm = median_fwhm
 
 
@@ -1545,6 +1546,14 @@ def main_extract(
 
     image.photometry["mags_fit"] = magnitudes
     image.photometry["mags_unc"] = magnitudes_error
+    image.photometry = utilities.attach_finder_quality(
+        image.photometry,
+        image.positions,
+    )
+    image.photometry = utilities.attach_sky_coords_from_wcs(
+        image.photometry,
+        getattr(image, "wcs", None),
+    )
 
     method_label = {
         "APER": "aperture photometry",

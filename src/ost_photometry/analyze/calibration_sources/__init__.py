@@ -25,6 +25,7 @@ Public re-exports below; see each submodule for details.
 
 from .crossmatch import crossmatch_standard_catalog
 from .fetch import fetch_standard_calibration_catalog, vizier_result_to_standard_table
+from .flags import flag_comparison_stars, mark_used_calibrators
 from .transforms import (
     add_johnson_ri_from_sloan,
     add_johnson_ri_to_standard_table,
@@ -40,6 +41,8 @@ __all__ = [
     "add_johnson_ri_to_standard_table",
     "crossmatch_standard_catalog",
     "fetch_standard_calibration_catalog",
+    "flag_comparison_stars",
+    "mark_used_calibrators",
     "get_vizier_catalog",
     "johnson_bv_from_sloan_gr",
     "johnson_ri_from_sloan_ri",

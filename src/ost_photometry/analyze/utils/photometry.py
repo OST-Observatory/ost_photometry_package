@@ -88,4 +88,109 @@ def rm_edge_objects(
     return table[mask]
 
 
-__all__ = ["flux_to_magnitudes", "rm_edge_objects"]
+_XY_CANDIDATES = (
+    ("x_fit", "y_fit"),
+    ("x_centroid", "y_centroid"),
+    ("xcentroid", "ycentroid"),
+)
+_FINDER_QUALITY_COLUMNS = (
+    "sharpness",
+    "roundness",
+    "roundness1",
+    "roundness2",
+    "fwhm",
+    "npix",
+    "peak",
+    "sky",
+)
+
+
+def xy_column_names(table: Table) -> tuple[str, str] | None:
+    """Return the first available pixel-coordinate column pair."""
+    for xname, yname in _XY_CANDIDATES:
+        if xname in table.colnames and yname in table.colnames:
+            return xname, yname
+    return None
+
+
+def attach_finder_quality(
+    photometry: Table,
+    finder_table: Table | None,
+    *,
+    max_sep_pix: float = 3.0,
+) -> Table:
+    """Copy finder quality columns onto photometry rows by nearest (x, y).
+
+    Photutils PSF tables already carry ``qfit`` / ``cfit`` when the fitter
+    provides them; this adds DAO/IRAF sharpness (and related columns) that
+    would otherwise stay only on ``image.positions``.
+    """
+    if finder_table is None or len(photometry) == 0 or len(finder_table) == 0:
+        return photometry
+    phot_xy = xy_column_names(photometry)
+    find_xy = xy_column_names(finder_table)
+    if phot_xy is None or find_xy is None:
+        return photometry
+    quality_cols = [
+        c
+        for c in _FINDER_QUALITY_COLUMNS
+        if c in finder_table.colnames and c not in photometry.colnames
+    ]
+    if not quality_cols:
+        return photometry
+
+    px = np.asarray(photometry[phot_xy[0]], dtype=float)
+    py = np.asarray(photometry[phot_xy[1]], dtype=float)
+    fx = np.asarray(finder_table[find_xy[0]], dtype=float)
+    fy = np.asarray(finder_table[find_xy[1]], dtype=float)
+    phot_ok = np.isfinite(px) & np.isfinite(py)
+    find_ok = np.isfinite(fx) & np.isfinite(fy)
+    if not np.any(phot_ok) or not np.any(find_ok):
+        return photometry
+    try:
+        from scipy.spatial import cKDTree
+    except ImportError:
+        return photometry
+
+    find_idx = np.flatnonzero(find_ok)
+    tree = cKDTree(np.column_stack([fx[find_ok], fy[find_ok]]))
+    dist, local = tree.query(np.column_stack([px[phot_ok], py[phot_ok]]), k=1)
+    matched = np.zeros(len(photometry), dtype=bool)
+    idx = np.zeros(len(photometry), dtype=int)
+    matched[phot_ok] = np.isfinite(dist) & (dist <= float(max_sep_pix))
+    idx[phot_ok] = find_idx[np.asarray(local, dtype=int)]
+    out = photometry.copy()
+    for col in quality_cols:
+        src = np.asarray(finder_table[col], dtype=float)
+        dest = np.full(len(out), np.nan, dtype=float)
+        dest[matched] = src[idx[matched]]
+        out[col] = dest
+    return out
+
+
+def attach_sky_coords_from_wcs(photometry: Table, wcs) -> Table:
+    """Add ``ra`` / ``dec`` (deg) from a WCS if they are not already present."""
+    if wcs is None or "ra" in photometry.colnames:
+        return photometry
+    xy = xy_column_names(photometry)
+    if xy is None:
+        return photometry
+    x = np.asarray(photometry[xy[0]], dtype=float)
+    y = np.asarray(photometry[xy[1]], dtype=float)
+    try:
+        sky = wcs.pixel_to_world(x, y)
+    except (ValueError, TypeError, AttributeError):
+        return photometry
+    out = photometry.copy()
+    out["ra"] = np.asarray(sky.ra.deg, dtype=float)
+    out["dec"] = np.asarray(sky.dec.deg, dtype=float)
+    return out
+
+
+__all__ = [
+    "attach_finder_quality",
+    "attach_sky_coords_from_wcs",
+    "flux_to_magnitudes",
+    "rm_edge_objects",
+    "xy_column_names",
+]

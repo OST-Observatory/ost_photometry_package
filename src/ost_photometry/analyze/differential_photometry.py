@@ -415,6 +415,12 @@ class DifferentialPhotometer:
                 n_stars_used=int(np.sum(mask)),
                 rms_residual=rms,
             )
+            used_full = np.zeros(len(data), dtype=bool)
+            comp_idx = np.flatnonzero(np.asarray(comparison_mask, dtype=bool).ravel())
+            keep = np.asarray(mask, dtype=bool).ravel()
+            if keep.size == comp_idx.size:
+                used_full[comp_idx[keep]] = True
+            result.calibrator_mask_by_filter[filter_] = used_full
             if output_dir:
                 plot_data[filter_] = (color_std, m_std - m_inst, mask)
 

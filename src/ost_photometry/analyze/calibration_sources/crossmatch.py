@@ -14,6 +14,7 @@ from astropy.coordinates import SkyCoord, matching
 from astropy.table import Table
 
 from .. import utilities
+from .flags import flag_comparison_stars
 
 
 def crossmatch_standard_catalog(
@@ -34,7 +35,8 @@ def crossmatch_standard_catalog(
        This yields a **one-to-one** assignment when possible.
 
     Copies all **numeric** catalog columns onto ``sources`` (except duplicate ``ra``/``dec``).
-    Adds ``match_sep_arcsec`` (NaN = no match).
+    Adds ``match_sep_arcsec`` (NaN = no match) and ``is_comparison`` (True if the
+    source matched a catalog star or has a finite ``mag_std_*`` value).
 
     Parameters
     ----------
@@ -49,7 +51,7 @@ def crossmatch_standard_catalog(
     if len(catalog) == 0:
         result = sources.copy()
         result["match_sep_arcsec"] = np.full(len(result), np.nan)
-        return result
+        return flag_comparison_stars(result)
 
     source_coords = SkyCoord(sources[ra_col].ravel(), sources[dec_col].ravel(), unit="deg")
     cat_coords = SkyCoord(catalog["ra"].ravel(), catalog["dec"].ravel(), unit="deg")
@@ -69,7 +71,7 @@ def crossmatch_standard_catalog(
             ):
                 continue
             result[col] = np.full(len(result), np.nan, dtype=float)
-        return result
+        return flag_comparison_stars(result)
 
     # Enforce one-to-one: closest catalog star per source, then closest source per star
     idx_src, sep_arcsec, idx_cat = utilities.clear_duplicates(
@@ -102,4 +104,4 @@ def crossmatch_standard_catalog(
         new_col = np.full(len(result), np.nan, dtype=float)
         new_col[good_match] = matched_vals
         result[col] = new_col
-    return result
+    return flag_comparison_stars(result)

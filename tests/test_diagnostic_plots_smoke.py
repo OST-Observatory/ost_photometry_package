@@ -151,6 +151,25 @@ def test_mag_vs_error_qc_plots(tmp_path):
         )
         assert path_q is not None and path_q.is_file()
 
+        calib = Table(
+            {
+                "mags_fit": mag,
+                "mags_unc": err_p,
+                "is_comparison": np.arange(80) < 18,
+                "is_calibrator": np.arange(80) < 10,
+                "x_fit": np.linspace(20.0, 180.0, 80),
+                "y_fit": np.linspace(15.0, 140.0, 80),
+                "qfit": np.linspace(0.02, 0.4, 80),
+            }
+        )
+        path_c = qc.plot_photometry_mag_vs_error(
+            calib,
+            tmp_path,
+            "pdf",
+            filename_stem="photometry_mag_vs_error_calibrators",
+        )
+        assert path_c is not None and path_c.is_file()
+
         overview = qc.plot_photometry_mag_vs_error_overview(
             [mag, mag + 0.1, mag - 0.05],
             [-err_p, -err_p * 1.1, err_p * 0.9],

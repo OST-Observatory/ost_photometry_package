@@ -10,17 +10,24 @@ figures that sit next to the correlation separation histograms.
 
 ## Magnitude vs. uncertainty
 
-Two figures:
+Two kinds of figure, on purpose:
 
 | File (stem) | When | Content |
 |-------------|------|---------|
-| `photometry_mag_vs_error_<filter>` | After extraction (reference image) and again per calibration epoch | Density of instrumental mag vs \(\sigma_m\) |
+| `photometry_mag_vs_error_<filter>` | After **extraction** (reference image) | Density of instrumental mag vs \(\sigma_m\) for **all** detections. Quality panel (`qfit` / `sharpness` / …) when those columns exist. **No** comparison-star overlay — the later fit still rejects stars. |
 | `photometry_mag_vs_error_overview_<filter>` | After extraction, if more than one image | Same density for **all** images, plus median \(\sigma\) vs time and/or airmass |
+| `photometry_mag_vs_error_<filter>_<epoch>` | After **calibration** | Same density for that epoch, with stars **used in the fit** (open stars) and catalog matches that were clipped or otherwise unused (grey crosses) |
 
 \(\sigma_m\) is the **1σ magnitude uncertainty** (always plotted positive, log
 y-axis). After a new extraction it is
 \((2.5 / \ln 10)\,\sigma_F / |F|\). Older tables that still stored the signed
 derivative are shown with \(|\sigma|\).
+
+Finder quality (`sharpness`, `roundness*`) and PSF-fit quality (`qfit`, `cfit`,
+`flags`) are copied onto the photometry table at extraction so both figures can
+use them. Comparison / calibrator flags are written only after the calibration
+step (`is_comparison` = catalog match; `is_calibrator_<filter>` = survived the
+fit cuts for that band).
 
 ### How to read the top panel
 
@@ -29,8 +36,9 @@ derivative are shown with \(|\sigma|\).
   while faint non-detections at \(\sigma \sim 1\) mag do not squash the plot.
 - **Colour:** number of stars per bin (log). The dense ridge is the typical
   photometric error at that magnitude.
-- **White/black line + band:** binned **median** and 16–84% range. Compare nights
-  with this curve, not with individual faint outliers.
+- **Magenta line + white band:** binned **median** and 16–84% range (high contrast
+  on the viridis density). Compare nights with this curve, not with individual
+  faint outliers.
 - **Dashed red curve:** two-component noise envelope (see below). The data ridge
   should follow it. A high floor at the bright end often means saturation or a
   poor PSF; a ridge well above the curve at all mags often means extra sky/read
@@ -39,14 +47,16 @@ derivative are shown with \(|\sigma|\).
   (≈ 0.22 mag). Stars above the 5σ line are barely detections.
 
 The stats box (N, median \(\sigma\), 90th percentile) summarises the same sample.
-Comparison-star counts appear when `is_comparison` is in the table.
+After calibration it also counts stars used in the fit and catalog matches that
+were not used.
 
 ### Second panel (single-image figure)
 
-Drawn when comparison flags or a quality column exist (`qfit` / `cfit` /
-`sharpness`, otherwise distance to the image edge or offset from the field
-centre). Comparison stars are marked with open stars. If those stars sit in the
-high-\(\sigma\) tail, they are a poor ensemble for calibration.
+Drawn when comparison/calibrator flags or a quality column exist (`qfit` /
+`cfit` / `sharpness` / `roundness*`, otherwise distance to the image edge or
+offset from the field centre). After calibration, stars used in the fit are
+open stars; catalog matches rejected by the quality cuts are grey crosses. If
+the used stars sit in the high-\(\sigma\) tail, they are a poor ensemble.
 
 ### Overview extra panels
 
@@ -68,11 +78,10 @@ to magnitudes: \(\sigma_m \propto \sigma_F / F\) and \(F \propto 10^{-0.4 m}\),
 so a flux-independent \(\sigma_F\) becomes \(\propto 10^{0.4 m}\).
 
 **This is not CCD-specific.** Photon arrival is Poisson for any silicon
-detector. CMOS (including the QHY cameras used at OST) has per-pixel amplifiers
-instead of a CCD serial register, so the **read-noise number** can differ and
-may have a slightly non-Gaussian tail, but the same two-component shape is the
-right first-order QC model. Use the curve as a **guide to the ridge**, not as a
-fitted camera characterisation.
+detector. CMOS has per-pixel amplifiers instead of a CCD serial register, so the 
+**read-noise number** can differ and may have a slightly non-Gaussian tail, but 
+the same two-component shape is the right first-order QC model. Use the curve 
+as a **guide to the ridge**, not as a fitted camera characterisation.
 
 A source-Poisson term \(\propto 10^{0.2 m}\) is **not** fitted separately; it is
 only loosely absorbed into \(\sigma_0\) and \(c\).

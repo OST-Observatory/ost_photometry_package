@@ -180,6 +180,8 @@ def calibration_result_from_derive_transform_fit(
             f"{derive_transform_c_factor(1, *slopes):.5f})"
         )
     result.n_comparison_stars = int(np.sum(derive_fit.comparison_mask))
+    used = np.asarray(derive_fit.comparison_mask, dtype=bool)
+    result.calibrator_mask_by_filter = {f: used for f in result.transformation}
     return result
 
 

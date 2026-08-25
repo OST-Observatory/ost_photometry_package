@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from astropy.time import Time
 
 from ..extinction import ExtinctionCoefficients
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 @dataclass
@@ -44,6 +48,8 @@ class CalibrationResult:
     n_comparison_stars: int = 0
     quality_flag: str = "OK"
     notes: str = ""
+    #: Per-filter boolean mask of stars used in the fit (aligned to the epoch table).
+    calibrator_mask_by_filter: dict[str, np.ndarray] = field(default_factory=dict)
 
 
 __all__ = ["CalibrationResult", "TransformationCoefficients"]

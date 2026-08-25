@@ -83,6 +83,13 @@ def _limmag_helpers():
     )
 
 
+def _flag_comparison():
+    return load_module_from_path(
+        "ost_photometry.analyze.calibration_sources.flags",
+        pkg_src() / "ost_photometry" / "analyze" / "calibration_sources" / "flags.py",
+    )
+
+
 def test_flux_to_magnitudes():
     mod = _photometry()
     m, e = mod.flux_to_magnitudes(np.array([100.0, 25.0]), np.array([-1.0, 2.0]))
@@ -90,6 +97,103 @@ def test_flux_to_magnitudes():
     expected = (2.5 / np.log(10)) * np.array([0.01, 0.08])
     np.testing.assert_allclose(e, expected, rtol=1e-12)
     assert np.all(np.asarray(e) > 0)
+
+
+def test_attach_finder_quality_by_nearest_xy():
+    pytest.importorskip("scipy")
+    mod = _photometry()
+    photometry = Table(
+        {
+            "x_fit": np.array([10.0, 20.0, 50.0]),
+            "y_fit": np.array([10.0, 20.0, 50.0]),
+            "qfit": np.array([0.11, 0.22, 0.33]),
+        }
+    )
+    finder = Table(
+        {
+            "x_centroid": np.array([10.2, 20.1]),
+            "y_centroid": np.array([10.1, 19.9]),
+            "sharpness": np.array([0.4, 0.8]),
+            "roundness": np.array([0.1, -0.2]),
+        }
+    )
+    out = mod.attach_finder_quality(photometry, finder, max_sep_pix=3.0)
+    np.testing.assert_allclose(out["qfit"], [0.11, 0.22, 0.33])
+    np.testing.assert_allclose(out["sharpness"][:2], [0.4, 0.8])
+    np.testing.assert_allclose(out["roundness"][:2], [0.1, -0.2])
+    assert np.isnan(out["sharpness"][2])
+
+
+def test_attach_finder_quality_skips_when_column_already_present():
+    mod = _photometry()
+    photometry = Table(
+        {
+            "x_fit": np.array([1.0, 2.0]),
+            "y_fit": np.array([1.0, 2.0]),
+            "sharpness": np.array([9.0, 8.0]),
+        }
+    )
+    finder = Table(
+        {
+            "x_centroid": np.array([1.0, 2.0]),
+            "y_centroid": np.array([1.0, 2.0]),
+            "sharpness": np.array([0.1, 0.2]),
+        }
+    )
+    out = mod.attach_finder_quality(photometry, finder)
+    np.testing.assert_allclose(out["sharpness"], [9.0, 8.0])
+
+
+def test_flag_comparison_stars_from_std_and_separation():
+    mod = _flag_comparison()
+    tbl = Table(
+        {
+            "mag_std_V": np.array([12.0, np.nan, 13.0]),
+            "match_sep_arcsec": np.array([np.nan, 0.4, np.nan]),
+        }
+    )
+    out = mod.flag_comparison_stars(tbl)
+    np.testing.assert_array_equal(out["is_comparison"], [True, True, True])
+
+    empty = Table({"id": np.array([1, 2])})
+    flagged = mod.flag_comparison_stars(empty)
+    np.testing.assert_array_equal(flagged["is_comparison"], [False, False])
+
+
+def test_mark_used_calibrators_prefers_exact_mask_and_clip():
+    mod = _flag_comparison()
+
+    class _TC:
+        color_term = 0.0
+        zero_point = 1.0
+        rms_residual = 0.05
+        color_index_filters = ("B", "V")
+
+    tbl = Table(
+        {
+            "mag_V": np.array([11.0, 12.0, 13.0]),
+            "mag_std_V": np.array([12.0, 13.0, 14.2]),
+        }
+    )
+    exact = np.array([True, False, False])
+    out = mod.mark_used_calibrators(
+        tbl.copy(),
+        ["V"],
+        transformations={"V": _TC()},
+        sigma_clip=2.5,
+        exact_masks={"V": exact},
+    )
+    np.testing.assert_array_equal(out["is_calibrator_V"], exact)
+    assert np.all(out["is_comparison"])
+
+    reconstructed = mod.mark_used_calibrators(
+        tbl.copy(),
+        ["V"],
+        transformations={"V": _TC()},
+        sigma_clip=2.5,
+    )
+    # residuals vs ZP=1 are 0, 0, 0.2; 0.2 > 2.5*0.05 so the last star is clipped
+    np.testing.assert_array_equal(reconstructed["is_calibrator_V"], [True, True, False])
 
 
 def test_rm_edge_objects_drops_border_sources():

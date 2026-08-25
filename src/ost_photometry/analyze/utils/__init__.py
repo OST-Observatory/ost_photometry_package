@@ -10,7 +10,12 @@ from .legacy_magnitudes import (
     transformation_keys_for_table_magnitudes,
 )
 from .limiting_magnitude import derive_limiting_magnitude
-from .photometry import flux_to_magnitudes, rm_edge_objects
+from .photometry import (
+    attach_finder_quality,
+    attach_sky_coords_from_wcs,
+    flux_to_magnitudes,
+    rm_edge_objects,
+)
 from .series_wcs import find_wcs
 from .starmaps import (
     prepare_and_plot_starmap,
@@ -35,6 +40,8 @@ __all__ = [
     "find_filter_for_magnitude_transformation",
     "find_wcs",
     "flux_to_magnitudes",
+    "attach_finder_quality",
+    "attach_sky_coords_from_wcs",
     "n_epsf_stars_to_select",
     "prepare_and_plot_starmap",
     "prepare_and_plot_starmap_from_image_series",

@@ -90,21 +90,24 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
 
     from ...post_processing.magnitude_systems import require_catalog_bands_for_filters
 
-    first_tbl = next(iter(epochs.values()))
-    field_center = SkyCoord(
-        np.mean(first_tbl["ra"]),
-        np.mean(first_tbl["dec"]),
-        unit="deg",
-    )
-    catalog = fetch_standard_calibration_catalog(
-        context.filter_list,
-        field_center,
-        calibration_source=config.calibration_source,
-        field_of_view_arcmin=config.calibration_catalog_radius_arcmin,
-        calibration_catalog_mag_range=config.calibration_catalog_mag_range,
-        vizier_dict=config.vizier_dict,
-        path_calibration_file=config.path_calibration_file,
-    )
+    catalog = context.calibration_catalog
+    if catalog is None:
+        first_tbl = next(iter(epochs.values()))
+        field_center = SkyCoord(
+            np.mean(first_tbl["ra"]),
+            np.mean(first_tbl["dec"]),
+            unit="deg",
+        )
+        catalog = fetch_standard_calibration_catalog(
+            context.filter_list,
+            field_center,
+            calibration_source=config.calibration_source,
+            field_of_view_arcmin=config.calibration_catalog_radius_arcmin,
+            calibration_catalog_mag_range=config.calibration_catalog_mag_range,
+            vizier_dict=config.vizier_dict,
+            path_calibration_file=config.path_calibration_file,
+        )
+        context.calibration_catalog = catalog
     if catalog is not None and len(catalog) > 0 and context.filter_list:
         require_catalog_bands_for_filters(catalog, context.filter_list)
     out = {}
@@ -204,6 +207,20 @@ class CalibrationStep(base.PipelineStep):
             calibration_summary_x_jd=jd_map if jd_map else None,
         )
         context.calibration_results = results
+
+        clip = config.fit_sigma_clip if strategy == "linear_fit" else None
+        from ...calibration_sources.flags import mark_used_calibrators
+
+        for epoch_id, tbl in epochs.items():
+            res = results.get(epoch_id)
+            mark_used_calibrators(
+                tbl,
+                filter_list,
+                transformations=None if res is None else res.transformation,
+                sigma_clip=clip,
+                exact_masks=None if res is None else res.calibrator_mask_by_filter,
+            )
+        context.calibration_epochs = epochs
 
         # linear_fit writes per-epoch plots inside PhotometryCalibrator or derive_transform backend
         if context.output_dir and strategy != "linear_fit":
@@ -333,7 +350,7 @@ class CalibrationStep(base.PipelineStep):
         run_diagnostic_plots_phase(
             context,
             config,
-            "calibration",
+            "calibration_differential",
             calibration_epochs=epochs,
         )
         return context

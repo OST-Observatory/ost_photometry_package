@@ -17,6 +17,25 @@ from astropy.table import Table
 from .. import checks, terminal_output
 from . import correlate, plots
 
+_QC_PLOT_COLUMNS = (
+    "is_comparison",
+    "is_calibrator",
+    "qfit",
+    "cfit",
+    "sharpness",
+    "roundness",
+    "roundness1",
+    "roundness2",
+    "flags",
+)
+
+
+def _copy_qc_plot_columns(src: Table, dest: Table) -> None:
+    """Copy extraction/catalog quality columns onto a mag–error plot table."""
+    for name in _QC_PLOT_COLUMNS:
+        if name in src.colnames and name not in dest.colnames:
+            dest[name] = src[name]
+
 
 def diagnostics_subdirectory(output_dir: str | Path) -> Path:
     base = Path(output_dir)
@@ -38,7 +57,7 @@ def _phase_requests_plots(dp: Any, phase: str) -> bool:
             dp.correlation_inter_filter_separation_plot
             or getattr(dp, "exposure_pairing_overview", False)
         )
-    if phase == "calibration_differential":
+    if phase in ("calibration", "calibration_differential"):
         return bool(
             dp.calibration_crossmatch_separation_histogram
             or dp.photometry_mag_vs_error_scatter
@@ -401,168 +420,179 @@ def run_diagnostic_plots_phase(
                         )
             except Exception as exc:
                 _warn(f"Diagnostic plot (correlation_inter): {exc}")
-        elif phase == "calibration_differential":
+        elif phase in ("calibration", "calibration_differential"):
             epochs = calibration_epochs or {}
             if not epochs:
                 return
-            eid = sorted(epochs.keys())[0]
-            t = epochs[eid]
             try:
-                sep_cal = np.array([])
-                if "match_sep_arcsec" in t.colnames:
-                    sep_cal = np.asarray(t["match_sep_arcsec"], dtype=float)
-                    sep_cal = sep_cal[np.isfinite(sep_cal)]
-                if dp.calibration_crossmatch_separation_histogram and sep_cal.size:
-                    plots.plot_calibration_crossmatch_separations(
-                        sep_cal,
-                        out_d,
-                        ft,
-                        title=f"Catalog cross-match separations ({eid})",
-                        filename_stem="differential_catalog_crossmatch_separations",
-                    )
-                if dp.combined_separation_histograms and obs is not None and sep_cal.size:
-                    sep_inter = np.array([])
-                    ref_name, others = "", []
-                    if len(context.filter_list) >= 2:
-                        sep_inter, ref_name, others = (
-                            correlate.inter_filter_correlation_separations_arcsec(
-                                obs,
-                                context.filter_list,
-                                0,
-                            )
-                        )
-                    plots.plot_combined_separation_histograms(
-                        sep_inter,
-                        sep_cal,
-                        out_d,
-                        ft,
-                        reference_filter=ref_name,
-                        other_filters=others,
-                    )
-
-                if dp.photometry_mag_vs_error_scatter:
-                    for f in context.filter_list:
-                        mc, ec = f"mag_{f}", f"err_{f}"
-                        if mc not in t.colnames or ec not in t.colnames:
-                            continue
-                        sub = Table()
-                        sub["mags_fit"] = t[mc]
-                        sub["mags_unc"] = t[ec]
-                        if "is_comparison" in t.colnames:
-                            sub["is_comparison"] = t["is_comparison"]
-                        if "x" in t.colnames:
-                            sub["x_fit"] = t["x"]
-                        elif "x_fit" in t.colnames:
-                            sub["x_fit"] = t["x_fit"]
-                        if "y" in t.colnames:
-                            sub["y_fit"] = t["y"]
-                        elif "y_fit" in t.colnames:
-                            sub["y_fit"] = t["y_fit"]
-                        plots.plot_photometry_mag_vs_error(
-                            sub,
+                first_eid = sorted(epochs.keys())[0]
+                for eid, t in epochs.items():
+                    sep_cal = np.array([])
+                    if "match_sep_arcsec" in t.colnames:
+                        sep_cal = np.asarray(t["match_sep_arcsec"], dtype=float)
+                        sep_cal = sep_cal[np.isfinite(sep_cal)]
+                    if dp.calibration_crossmatch_separation_histogram and sep_cal.size:
+                        plots.plot_calibration_crossmatch_separations(
+                            sep_cal,
                             out_d,
                             ft,
-                            band_label=f,
-                            filename_stem=f"photometry_mag_vs_error_{f}_{eid}",
+                            title=f"Catalog cross-match separations ({eid})",
+                            filename_stem=(
+                                "differential_catalog_crossmatch_separations"
+                                if eid == first_eid
+                                else f"differential_catalog_crossmatch_separations_{eid}"
+                            ),
                         )
-
-                std_cols = [f"mag_std_{f}" for f in context.filter_list]
-                inst_cols = [f"mag_{f}" for f in context.filter_list]
-                if all(c in t.colnames for c in std_cols + inst_cols):
-                    mask = np.ones(len(t), dtype=bool)
-                    for c in std_cols:
-                        v = np.asarray(t[c], dtype=float)
-                        mask &= np.isfinite(v)
-
                     if (
-                        dp.calibration_instrumental_vs_catalog
-                        or dp.calibration_zeropoint_residual_histogram
-                        or dp.calibration_zeropoint_residual_vs_color
+                        dp.combined_separation_histograms
+                        and eid == first_eid
+                        and obs is not None
+                        and sep_cal.size
                     ):
-                        zp_residuals_diff: dict[str, np.ndarray] = {}
-                        for f in context.filter_list:
-                            m_inst = np.asarray(t[f"mag_{f}"], dtype=float)[mask]
-                            m_std = np.asarray(t[f"mag_std_{f}"], dtype=float)[mask]
-                            ok = np.isfinite(m_inst) & np.isfinite(m_std)
-                            if not np.any(ok):
-                                continue
-                            m_inst, m_std = m_inst[ok], m_std[ok]
-                            if dp.calibration_instrumental_vs_catalog:
-                                plots.plot_instrumental_vs_catalog_magnitudes(
-                                    m_inst,
-                                    m_std,
-                                    out_d,
-                                    ft,
-                                    band_label=f"{f}_{eid}",
+                        sep_inter = np.array([])
+                        ref_name, others = "", []
+                        if len(context.filter_list) >= 2:
+                            sep_inter, ref_name, others = (
+                                correlate.inter_filter_correlation_separations_arcsec(
+                                    obs,
+                                    context.filter_list,
+                                    0,
                                 )
-                            if dp.calibration_zeropoint_residual_histogram:
-                                zp = float(np.nanmedian(m_std - m_inst))
-                                zp_residuals_diff[f] = m_std - m_inst - zp
-                        if (
-                            dp.calibration_zeropoint_residual_histogram
-                            and zp_residuals_diff
-                        ):
-                            plots.plot_zeropoint_residual_distribution(
-                                None,
+                            )
+                        plots.plot_combined_separation_histograms(
+                            sep_inter,
+                            sep_cal,
+                            out_d,
+                            ft,
+                            reference_filter=ref_name,
+                            other_filters=others,
+                        )
+
+                    if dp.photometry_mag_vs_error_scatter:
+                        for f in context.filter_list:
+                            mc, ec = f"mag_{f}", f"err_{f}"
+                            if mc not in t.colnames or ec not in t.colnames:
+                                continue
+                            sub = Table()
+                            sub["mags_fit"] = t[mc]
+                            sub["mags_unc"] = t[ec]
+                            _copy_qc_plot_columns(t, sub)
+                            used_col = f"is_calibrator_{f}"
+                            if used_col in t.colnames:
+                                sub["is_calibrator"] = t[used_col]
+                            if "x" in t.colnames:
+                                sub["x_fit"] = t["x"]
+                            elif "x_fit" in t.colnames:
+                                sub["x_fit"] = t["x_fit"]
+                            if "y" in t.colnames:
+                                sub["y_fit"] = t["y"]
+                            elif "y_fit" in t.colnames:
+                                sub["y_fit"] = t["y_fit"]
+                            plots.plot_photometry_mag_vs_error(
+                                sub,
                                 out_d,
                                 ft,
-                                residuals_by_band=zp_residuals_diff,
-                                filename_stem=f"zeropoint_residual_distribution_{eid}",
+                                band_label=f,
+                                filename_stem=f"photometry_mag_vs_error_{f}_{eid}",
                             )
 
-                    if (
-                        (
-                            dp.calibration_color_check_cal_stars
+                    std_cols = [f"mag_std_{f}" for f in context.filter_list]
+                    inst_cols = [f"mag_{f}" for f in context.filter_list]
+                    if all(c in t.colnames for c in std_cols + inst_cols):
+                        mask = np.ones(len(t), dtype=bool)
+                        for c in std_cols:
+                            v = np.asarray(t[c], dtype=float)
+                            mask &= np.isfinite(v)
+
+                        if (
+                            dp.calibration_instrumental_vs_catalog
+                            or dp.calibration_zeropoint_residual_histogram
                             or dp.calibration_zeropoint_residual_vs_color
-                        )
-                        and {"B", "V"}.issubset(set(context.filter_list))
-                        and "mag_std_B" in t.colnames
-                        and "mag_std_V" in t.colnames
-                        and "mag_B" in t.colnames
-                        and "mag_V" in t.colnames
-                    ):
-                        mB = np.asarray(t["mag_B"], dtype=float)[mask]
-                        mV = np.asarray(t["mag_V"], dtype=float)[mask]
-                        sB = np.asarray(t["mag_std_B"], dtype=float)[mask]
-                        sV = np.asarray(t["mag_std_V"], dtype=float)[mask]
-                        ok2 = (
-                            np.isfinite(mB)
-                            & np.isfinite(mV)
-                            & np.isfinite(sB)
-                            & np.isfinite(sV)
-                        )
-                        if dp.calibration_color_check_cal_stars and np.any(ok2):
-                            plots.plot_calibration_color_color_cal_stars(
-                                (sB - sV)[ok2],
-                                (mB - mV)[ok2],
-                                out_d,
-                                ft,
-                                filename_stem=f"calibration_color_color_cal_stars_{eid}",
-                            )
-                        if dp.calibration_zeropoint_residual_vs_color and np.any(ok2):
-                            mBb, mVb = mB[ok2], mV[ok2]
-                            sBb, sVb = sB[ok2], sV[ok2]
-                            clit = sBb - sVb
-                            zp_b = float(np.nanmedian(sBb - mBb))
-                            zp_v = float(np.nanmedian(sVb - mVb))
-                            res_b = sBb - mBb - zp_b
-                            res_v = sVb - mVb - zp_v
-                            ok3 = np.isfinite(clit) & np.isfinite(res_b) & np.isfinite(
-                                res_v
-                            )
-                            if np.any(ok3):
-                                plots.plot_zeropoint_residual_vs_color(
-                                    clit[ok3],
+                        ):
+                            zp_residuals_diff: dict[str, np.ndarray] = {}
+                            for f in context.filter_list:
+                                m_inst = np.asarray(t[f"mag_{f}"], dtype=float)[mask]
+                                m_std = np.asarray(t[f"mag_std_{f}"], dtype=float)[mask]
+                                ok = np.isfinite(m_inst) & np.isfinite(m_std)
+                                if not np.any(ok):
+                                    continue
+                                m_inst, m_std = m_inst[ok], m_std[ok]
+                                if dp.calibration_instrumental_vs_catalog:
+                                    plots.plot_instrumental_vs_catalog_magnitudes(
+                                        m_inst,
+                                        m_std,
+                                        out_d,
+                                        ft,
+                                        band_label=f"{f}_{eid}",
+                                    )
+                                if dp.calibration_zeropoint_residual_histogram:
+                                    zp = float(np.nanmedian(m_std - m_inst))
+                                    zp_residuals_diff[f] = m_std - m_inst - zp
+                            if (
+                                dp.calibration_zeropoint_residual_histogram
+                                and zp_residuals_diff
+                            ):
+                                plots.plot_zeropoint_residual_distribution(
                                     None,
                                     out_d,
                                     ft,
-                                    residuals_by_band={
-                                        "V": res_v[ok3],
-                                        "B": res_b[ok3],
-                                    },
-                                    color_label=r"$(B-V)_\mathrm{std}$ [mag]",
-                                    filename_stem=f"zeropoint_residual_vs_color_B_V_{eid}",
+                                    residuals_by_band=zp_residuals_diff,
+                                    filename_stem=f"zeropoint_residual_distribution_{eid}",
                                 )
+
+                        if (
+                            (
+                                dp.calibration_color_check_cal_stars
+                                or dp.calibration_zeropoint_residual_vs_color
+                            )
+                            and {"B", "V"}.issubset(set(context.filter_list))
+                            and "mag_std_B" in t.colnames
+                            and "mag_std_V" in t.colnames
+                            and "mag_B" in t.colnames
+                            and "mag_V" in t.colnames
+                        ):
+                            mB = np.asarray(t["mag_B"], dtype=float)[mask]
+                            mV = np.asarray(t["mag_V"], dtype=float)[mask]
+                            sB = np.asarray(t["mag_std_B"], dtype=float)[mask]
+                            sV = np.asarray(t["mag_std_V"], dtype=float)[mask]
+                            ok2 = (
+                                np.isfinite(mB)
+                                & np.isfinite(mV)
+                                & np.isfinite(sB)
+                                & np.isfinite(sV)
+                            )
+                            if dp.calibration_color_check_cal_stars and np.any(ok2):
+                                plots.plot_calibration_color_color_cal_stars(
+                                    (sB - sV)[ok2],
+                                    (mB - mV)[ok2],
+                                    out_d,
+                                    ft,
+                                    filename_stem=f"calibration_color_color_cal_stars_{eid}",
+                                )
+                            if dp.calibration_zeropoint_residual_vs_color and np.any(ok2):
+                                mBb, mVb = mB[ok2], mV[ok2]
+                                sBb, sVb = sB[ok2], sV[ok2]
+                                clit = sBb - sVb
+                                zp_b = float(np.nanmedian(sBb - mBb))
+                                zp_v = float(np.nanmedian(sVb - mVb))
+                                res_b = sBb - mBb - zp_b
+                                res_v = sVb - mVb - zp_v
+                                ok3 = np.isfinite(clit) & np.isfinite(res_b) & np.isfinite(
+                                    res_v
+                                )
+                                if np.any(ok3):
+                                    plots.plot_zeropoint_residual_vs_color(
+                                        clit[ok3],
+                                        None,
+                                        out_d,
+                                        ft,
+                                        residuals_by_band={
+                                            "V": res_v[ok3],
+                                            "B": res_b[ok3],
+                                        },
+                                        color_label=r"$(B-V)_\mathrm{std}$ [mag]",
+                                        filename_stem=f"zeropoint_residual_vs_color_B_V_{eid}",
+                                    )
             except Exception as exc:
                 _warn(f"Diagnostic plot (calibration_differential): {exc}")
 
