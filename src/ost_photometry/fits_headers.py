@@ -1,15 +1,77 @@
-"""FITS time/WCS header hygiene (MJD-OBS, datfix warnings)."""
+"""FITS time/WCS header hygiene (MJD-OBS, datfix warnings) and cosmic flags."""
 
 from __future__ import annotations
 
 import math
 import warnings
+from collections.abc import Mapping, MutableMapping
+from typing import Any, Literal
 
 from astropy.io import fits
 from astropy.time import Time
 from astropy.wcs import WCS, FITSFixedWarning
 
 _DATFIX_FILTER_INSTALLED = False
+
+CosmicHandling = Literal["interpolated", "masked"]
+CosmicRayRemovalMode = Literal["auto", "always", "never"]
+
+# Canonical + legacy keys that mean cosmics were already identified.
+_COSMIC_IDENTIFIED_KEYS = ("CRIDENT", "cosmics_rm", "cosmics_msk", "cosmic_mas")
+
+
+def _header_truthy(value: Any) -> bool:
+    if value is True or value == 1:
+        return True
+    if isinstance(value, str) and value.strip().lower() in {"t", "true", "yes", "1"}:
+        return True
+    return False
+
+
+def cosmics_identified(header: Mapping[str, Any] | fits.Header) -> bool:
+    """Return True if cosmics were identified (masked and/or interpolated).
+
+    Recognizes ``CRIDENT``, ``cosmics_rm``, ``cosmics_msk``, and legacy
+    ``cosmic_mas``.
+    """
+    for key in _COSMIC_IDENTIFIED_KEYS:
+        if key in header and _header_truthy(header.get(key)):
+            return True
+    return False
+
+
+def mark_cosmics_identified(
+    header: MutableMapping[str, Any] | fits.Header,
+    *,
+    handling: CosmicHandling,
+) -> None:
+    """Set cosmic-ray identification keywords on a FITS header / CCD meta.
+
+    Always sets ``CRIDENT=True``. Additionally sets ``cosmics_rm`` when
+    cosmics were interpolated out, or ``cosmics_msk`` when only masked.
+    """
+    header["CRIDENT"] = True
+    if handling == "interpolated":
+        header["cosmics_rm"] = True
+    elif handling == "masked":
+        header["cosmics_msk"] = True
+    else:
+        raise ValueError(f"Unknown cosmic handling {handling!r}")
+
+
+def normalize_cosmic_ray_removal(
+    value: bool | CosmicRayRemovalMode | str,
+) -> CosmicRayRemovalMode:
+    """Map bool aliases and strings to ``auto`` / ``always`` / ``never``."""
+    if value is True or value == "always":
+        return "always"
+    if value is False or value == "never":
+        return "never"
+    if value == "auto":
+        return "auto"
+    raise ValueError(
+        f"cosmic_ray_removal must be 'auto', 'always', 'never', or bool; got {value!r}"
+    )
 
 
 def ignore_wcs_datfix_warnings() -> None:

@@ -37,6 +37,7 @@ from photutils.detection import DAOStarFinder, IRAFStarFinder
 from photutils.psf import (
     EPSFBuilder,
     IterativePSFPhotometry,
+    PSFPhotometry,
     SourceGrouper,
     extract_stars,
 )
@@ -44,6 +45,11 @@ from photutils.psf import (
 from .. import checks, style, terminal_output
 from .. import utilities as base_utilities
 from ..core.parallel import Executor
+from ..fits_headers import (
+    cosmics_identified,
+    mark_cosmics_identified,
+    normalize_cosmic_ray_removal,
+)
 from ..fwhm import (
     estimate_image_fwhm,
     filter_table_finite_cutouts,
@@ -63,56 +69,33 @@ def rm_cosmic_rays(
     verbose: bool = False,
     add_mask: bool = True,
     terminal_logger: terminal_output.TerminalLog | None = None,
+    *,
+    force: bool = False,
 ) -> None:
     """
-    Remove cosmic rays
+    Remove cosmic rays unless the FITS header already marks them identified.
 
-    Parameters
-    ----------
-    image
-        Object with all image specific properties
-
-    limiting_contrast
-        Parameter for the cosmic ray removal: Minimum contrast between
-        Laplacian image and the fine structure image.
-        Default is ``5``.
-
-    read_noise
-        The read noise (e-) of the camera chip.
-        Default is ``8`` e-.
-
-    sigma_clipping_value
-        Parameter for the cosmic ray removal: Fractional detection limit
-        for neighboring pixels.
-        Default is ``4.5``.
-
-    saturation_level
-        Saturation limit of the camera chip.
-        Default is ``65535``.
-
-    verbose
-        If True additional output will be printed to the command line.
-        Default is ``False``.
-
-    add_mask
-        If True add hot and bad pixel mask to the reduced science images.
-        Default is ``True``.
-
-    terminal_logger
-        Logger object. If provided, the terminal output will be directed
-        to this object.
-        Default is ``None``.
+    Skips lacosmic when ``CRIDENT`` / ``cosmics_rm`` / ``cosmics_msk`` /
+    legacy ``cosmic_mas`` is set, unless ``force=True``.
     """
+    ccd = image.read_image()
+    already = cosmics_identified(ccd.meta)
+
+    if already and not force:
+        msg = (
+            "Cosmic rays already identified in FITS header "
+            "(CRIDENT / cosmics_rm / cosmics_msk); skipping lacosmic."
+        )
+        if terminal_logger is not None:
+            terminal_logger.add_to_cache(msg)
+        else:
+            terminal_output.print_to_terminal(msg)
+        return
+
     if terminal_logger is not None:
         terminal_logger.add_to_cache("Remove cosmic rays ...")
     else:
         terminal_output.print_to_terminal("Remove cosmic rays ...")
-
-    #   Get image
-    ccd = image.read_image()
-
-    #   Get status cosmic ray removal status
-    status_cosmics = ccd.meta.get("cosmics_rm", False)
 
     #   Get exposure time
     exposure_time = ccd.meta.get("exptime", 1.0)
@@ -126,49 +109,64 @@ def rm_cosmic_rays(
         scaled = False
         reduced = ccd
 
-    if not status_cosmics:
-        #   Remove cosmic rays
-        reduced = ccdp.cosmicray_lacosmic(
-            reduced,
-            objlim=limiting_contrast,
-            readnoise=read_noise,
-            sigclip=sigma_clipping_value,
-            satlevel=saturation_level,
-            verbose=verbose,
-        )
-        if not add_mask:
-            reduced.mask = np.zeros(reduced.shape, dtype=bool)
-        if verbose:
-            if terminal_logger is not None:
-                terminal_logger.add_to_cache("")
-            else:
-                terminal_output.print_to_terminal("")
+    #   Remove cosmic rays
+    reduced = ccdp.cosmicray_lacosmic(
+        reduced,
+        objlim=limiting_contrast,
+        readnoise=read_noise,
+        sigclip=sigma_clipping_value,
+        satlevel=saturation_level,
+        verbose=verbose,
+    )
+    if not add_mask:
+        reduced.mask = np.zeros(reduced.shape, dtype=bool)
+    if verbose:
+        if terminal_logger is not None:
+            terminal_logger.add_to_cache("")
+        else:
+            terminal_output.print_to_terminal("")
 
-        #   Add Header keyword to mark the file as combined
-        reduced.meta["cosmics_rm"] = True
+    mark_cosmics_identified(reduced.meta, handling="interpolated")
 
-        #   Reapply scaling if image was scaled with the exposure time
-        if scaled:
-            reduced = reduced.divide(exposure_time * u.second)
+    #   Reapply scaling if image was scaled with the exposure time
+    if scaled:
+        reduced = reduced.divide(exposure_time * u.second)
 
-        #   Set file name
-        basename = base_utilities.get_basename(image.filename)
-        file_name = f"{basename}_cosmic-rm.fit"
+    #   Set file name
+    basename = base_utilities.get_basename(image.filename)
+    file_name = f"{basename}_cosmic-rm.fit"
 
-        #   Set new file name and path
-        image.filename = file_name
-        image.path = os.path.join(
-            str(image.out_path),
-            "cosmics_rm",
-            file_name,
-        )
+    #   Set new file name and path
+    image.filename = file_name
+    image.path = os.path.join(
+        str(image.out_path),
+        "cosmics_rm",
+        file_name,
+    )
 
-        #   Check if the 'cosmics_rm' directory already exits.
-        #   If not, create it.
-        checks.check_output_directories(os.path.join(str(image.out_path), "cosmics_rm"))
+    #   Check if the 'cosmics_rm' directory already exits.
+    #   If not, create it.
+    checks.check_output_directories(os.path.join(str(image.out_path), "cosmics_rm"))
 
-        #   Save image
-        reduced.write(image.path, overwrite=True)
+    #   Save image
+    reduced.write(image.path, overwrite=True)
+
+
+def _should_run_cosmic_removal(
+    image: AnalysisImage,
+    cosmic_ray_removal: bool | str,
+) -> tuple[bool, bool]:
+    """Return ``(run, force)`` for analysis cosmic-ray handling."""
+    mode = normalize_cosmic_ray_removal(cosmic_ray_removal)
+    if mode == "never":
+        return False, False
+    if mode == "always":
+        return True, True
+    # auto: run only when header does not already mark cosmics
+    ccd = image.read_image()
+    if cosmics_identified(ccd.meta):
+        return False, False
+    return True, False
 
 
 def determine_background(
@@ -209,7 +207,8 @@ def determine_background(
         Image background
 
     rms_background
-        Root mean square of the image background
+        Root mean square of the image background (measured on the
+        background-subtracted frame used by the finder).
     """
     if verbose:
         terminal_output.print_to_terminal(
@@ -222,10 +221,6 @@ def determine_background(
 
     #   Set up sigma clipping
     sigma_clip = SigmaClip(sigma=sigma_background)
-
-    #   Calculate background RMS
-    background_rms = MADStdBackgroundRMS(sigma_clip=sigma_clip)
-    rms_background = background_rms(ccd.data)
 
     #   2D background?
     if two_d_background:
@@ -272,6 +267,10 @@ def determine_background(
         #   Add Header keyword to mark the file as background subtracted
         image_no_bg.meta["NO_BG"] = True
 
+    #   RMS on the frame the finder will see
+    background_rms = MADStdBackgroundRMS(sigma_clip=sigma_clip)
+    rms_background = background_rms(image_no_bg.data, mask=image_no_bg.mask)
+
     #   Define name and save image
     file_name = f"{base_utilities.get_basename(image.filename)}_no_bkg.fit"
     output_path = image.out_path / "no_bkg"
@@ -287,6 +286,49 @@ def determine_background(
     return background_value, rms_background
 
 
+def build_star_finder(
+    method: str,
+    *,
+    threshold: float,
+    fwhm: float,
+    sharpness_range: tuple[float, float] = (0.2, 1.0),
+    roundness_range: tuple[float, float] = (-1.0, 1.0),
+    min_separation_fwhm: float = 1.0,
+):
+    """Build IRAF or DAO star finder with shared quality cuts."""
+    min_separation = max(2, int(float(fwhm) * float(min_separation_fwhm) + 0.5))
+
+    if method == "DAO":
+        return DAOStarFinder(
+            fwhm=fwhm,
+            threshold=threshold,
+            sharpness_range=sharpness_range,
+            roundness_range=roundness_range,
+            min_separation=min_separation,
+            exclude_border=True,
+        )
+    if method == "IRAF":
+        return IRAFStarFinder(
+            threshold=threshold,
+            fwhm=fwhm,
+            min_separation=min_separation,
+            sharpness_range=sharpness_range,
+            roundness_range=roundness_range,
+        )
+    raise ValueError(
+        f"{style.Bcolors.FAIL}\nExtraction method ({method}) not valid: "
+        f"use either IRAF or DAO {style.Bcolors.ENDC}"
+    )
+
+
+def _odd_psf_fit_shape(requested: int, fwhm: float) -> int:
+    """Odd fit stamp: at least ``requested``, ~2.5×FWHM, minimum 11 px."""
+    need = max(int(requested), int(np.ceil(2.5 * float(fwhm))), 11)
+    if need % 2 == 0:
+        need += 1
+    return need
+
+
 def find_stars(
     image: AnalysisImage,
     rms_background: float,
@@ -297,6 +339,9 @@ def find_stars(
     indent: int = 2,
     fwhm_estimate_min: float = 2.0,
     fwhm_estimate_max: float = 15.0,
+    finder_sharpness_range: tuple[float, float] = (0.2, 1.0),
+    finder_roundness_range: tuple[float, float] = (-1.0, 1.0),
+    finder_min_separation_fwhm: float = 1.0,
 ) -> None:
     """
     Find the stars on the images, using photutils and search and select
@@ -335,53 +380,50 @@ def find_stars(
     fwhm_estimate_min, fwhm_estimate_max
         Accepted per-star FWHM range (pixels) for automatic estimation.
     """
-    if terminal_logger is not None:
-        terminal_logger.add_to_cache("Identify stars", indent=indent)
-    else:
-        terminal_output.print_to_terminal("Identify stars", indent=indent)
+    def _log(msg: str, *, style_name: str | None = None) -> None:
+        if terminal_logger is not None:
+            if style_name:
+                terminal_logger.add_to_cache(msg, indent=indent, style_name=style_name)
+            else:
+                terminal_logger.add_to_cache(msg, indent=indent)
+        elif style_name:
+            terminal_output.print_to_terminal(msg, indent=indent, style_name=style_name)
+        else:
+            terminal_output.print_to_terminal(msg, indent=indent)
+
+    _log("Identify stars")
 
     #   Load image data
     ccd = image.read_image()
 
     #   Use background RMS as sigma
     sigma = rms_background
+    threshold = multiplier_background_rms * sigma
 
     #   Set default FWHM
-    if fwhm_object_psf is not None:
-        default_fwhm = fwhm_object_psf
+    user_fwhm = fwhm_object_psf is not None
+    if user_fwhm:
+        default_fwhm = float(fwhm_object_psf)
+        fwhm_source = "user"
     else:
         default_fwhm = image.fwhm
+        fwhm_source = "default"
+
+    finder_kwargs = {
+        "sharpness_range": finder_sharpness_range,
+        "roundness_range": finder_roundness_range,
+        "min_separation_fwhm": finder_min_separation_fwhm,
+    }
 
     #   First run of finder with default FWHM or user provided FWHM
     #   -> needed to have some initial object positions for FWHM determination
-    if method == "DAO":
-        #   Set up DAO finder
-        dao_finder = DAOStarFinder(
-            fwhm=default_fwhm, threshold=multiplier_background_rms * sigma
-        )
-
-        #   Find stars - make table
-        tbl_objects = dao_finder(ccd.data, mask=ccd.mask)
-    elif method == "IRAF":
-        #   Set up IRAF finder
-        iraf_finder = IRAFStarFinder(
-            threshold=multiplier_background_rms * sigma,
-            fwhm=default_fwhm,
-            # min_separation=max(2, int(default_fwhm * 2.5 + 0.5)),
-            roundness_range=(-5.0, 5.0),
-            sharpness_range=(0.0, 2.0),
-        )
-
-        #   Find stars - make table
-        tbl_objects = iraf_finder(ccd.data, mask=ccd.mask)
-    else:
-        raise ValueError(
-            f"{style.Bcolors.FAIL}\nExtraction method ({method}) not valid: "
-            f"use either IRAF or DAO {style.Bcolors.ENDC}"
-        )
+    finder = build_star_finder(
+        method, threshold=threshold, fwhm=default_fwhm, **finder_kwargs
+    )
+    tbl_objects = finder(ccd.data, mask=ccd.mask)
 
     if tbl_objects is None or len(tbl_objects) == 0:
-        terminal_output.print_to_terminal(
+        _log(
             f"[Info] FWHM determination skipped: no sources found. "
             f"Use the default FWHM of {default_fwhm}.",
             style_name="WARNING",
@@ -389,7 +431,16 @@ def find_stars(
         image.fwhm = default_fwhm
         return
 
-    median_fwhm, fwhm_error = estimate_image_fwhm(
+    if user_fwhm:
+        # Keep user FWHM; still refresh detections with the same value/cuts.
+        image.positions = tbl_objects.copy()
+        image.fwhm = default_fwhm
+        _log(
+            f"FWHM = {default_fwhm:.2f} px (source=user, n_sources={len(tbl_objects)})"
+        )
+        return
+
+    median_fwhm, fwhm_error, fwhm_meta = estimate_image_fwhm(
         ccd.data,
         tbl_objects,
         mask=ccd.mask,
@@ -399,7 +450,7 @@ def find_stars(
         max_fwhm=fwhm_estimate_max,
     )
     if fwhm_error is not None:
-        terminal_output.print_to_terminal(
+        _log(
             f"[Info] FWHM determination failed with the following error "
             f"{fwhm_error}. Use the default FWHM of {default_fwhm}.",
             style_name="WARNING",
@@ -410,43 +461,32 @@ def find_stars(
         image.fwhm = default_fwhm
         return
 
+    fwhm_source = str(fwhm_meta.get("source", "default"))
+    n_in_range = int(fwhm_meta.get("n_in_range", 0))
+
     #   Run finder with new FWHM
-    if method == "DAO":
-        #   Set up DAO finder
-        dao_finder = DAOStarFinder(
-            fwhm=median_fwhm, threshold=multiplier_background_rms * sigma
+    finder = build_star_finder(
+        method, threshold=threshold, fwhm=median_fwhm, **finder_kwargs
+    )
+    tbl_objects = finder(ccd.data, mask=ccd.mask)
+
+    if tbl_objects is None or len(tbl_objects) == 0:
+        # Fall back to default-FWHM finder if the refined search finds nothing
+        finder = build_star_finder(
+            method, threshold=threshold, fwhm=default_fwhm, **finder_kwargs
         )
-
-        #   Find stars - make table
-        tbl_objects = dao_finder(ccd.data, mask=ccd.mask)
-    elif method == "IRAF":
-        #   Set up IRAF finder
-        iraf_finder = IRAFStarFinder(
-            threshold=multiplier_background_rms * sigma,
-            fwhm=median_fwhm,
-            # min_separation=max(2, int(median_fwhm * 2.5 + 0.5)),
-            roundness_range=(-5.0, 5.0),
-            sharpness_range=(0.0, 2.0),
-        )
-
-        #   Find stars - make table
-        tbl_objects = iraf_finder(ccd.data, mask=ccd.mask)
-
-        if tbl_objects is None:
-            iraf_finder = IRAFStarFinder(
-                threshold=multiplier_background_rms * sigma,
-                fwhm=default_fwhm,
-                # min_separation=max(2, int(median_fwhm * 2.5 + 0.5)),
-                roundness_range=(-5.0, 5.0),
-                sharpness_range=(0.0, 2.0),
-            )
-            tbl_objects = iraf_finder(ccd.data, mask=ccd.mask)
+        tbl_objects = finder(ccd.data, mask=ccd.mask)
+        median_fwhm = default_fwhm
+        fwhm_source = "default"
 
     #   Keep the full finder table so quality columns can be copied onto photometry.
     if tbl_objects is not None and len(tbl_objects) > 0:
         image.positions = tbl_objects.copy()
     image.fwhm = median_fwhm
-
+    _log(
+        f"FWHM = {median_fwhm:.2f} px "
+        f"(source={fwhm_source}, n_in_range={n_in_range})"
+    )
 
 def check_epsf_stars(
     image: AnalysisImage,
@@ -848,6 +888,10 @@ def extraction_epsf(
     terminal_logger: terminal_output.TerminalLog | None = None,
     rm_background: bool = False,
     indent: int = 2,
+    finder_sharpness_range: tuple[float, float] = (0.2, 1.0),
+    finder_roundness_range: tuple[float, float] = (-1.0, 1.0),
+    finder_min_separation_fwhm: float = 1.0,
+    psf_find_in_residuals: bool = False,
 ) -> None:
     """
     Main function to perform the eEPSF photometry, using photutils
@@ -889,25 +933,14 @@ def extraction_epsf(
     else:
         terminal_output.print_to_terminal(output_str, indent=indent)
 
-    if finder_method == "IRAF":
-        finder = IRAFStarFinder(
-            threshold=multiplier_background_rms * background_rms,
-            fwhm=fwhm,
-            min_separation=max(2, int(fwhm * 2.5 + 0.5)),
-            roundness_range=(-5.0, 5.0),
-            sharpness_range=(0.0, 2.0),
-        )
-    elif finder_method == "DAO":
-        finder = DAOStarFinder(
-            fwhm=fwhm,
-            threshold=multiplier_background_rms * background_rms,
-            exclude_border=True,
-        )
-    else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nExtraction method ({finder_method}) "
-            f"not valid: use either IRAF or DAO {style.Bcolors.ENDC}"
-        )
+    finder = build_star_finder(
+        finder_method,
+        threshold=multiplier_background_rms * background_rms,
+        fwhm=fwhm,
+        sharpness_range=finder_sharpness_range,
+        roundness_range=finder_roundness_range,
+        min_separation_fwhm=finder_min_separation_fwhm,
+    )
 
     if epsf_fitter == "LevMarLSQFitter":
         fitter = LevMarLSQFitter()
@@ -924,8 +957,7 @@ def extraction_epsf(
         )
         fitter = LMLSQFitter()
 
-    if size_extraction_region % 2 == 0:
-        size_extraction_region = size_extraction_region + 1
+    size_extraction_region = _odd_psf_fit_shape(size_extraction_region, fwhm)
 
     if rm_background:
         sigma_clip = SigmaClip(sigma=sigma_background)
@@ -936,17 +968,32 @@ def extraction_epsf(
 
     source_grouper = SourceGrouper(min_separation=multiplier_grouper * fwhm)
 
-    photometry = IterativePSFPhotometry(
-        psf_model=epsf,
-        fit_shape=(size_extraction_region, size_extraction_region),
-        finder=finder,
-        grouper=source_grouper,
-        fitter=fitter,
-        maxiters=n_iterations_eps_extraction,
-        local_bkg_estimator=local_bkg_estimator,
-        mode="all",
-        aperture_radius=(size_extraction_region - 1) / 2,
-    )
+    fit_shape = (size_extraction_region, size_extraction_region)
+    aperture_radius = (size_extraction_region - 1) / 2
+
+    if psf_find_in_residuals:
+        photometry = IterativePSFPhotometry(
+            psf_model=epsf,
+            fit_shape=fit_shape,
+            finder=finder,
+            grouper=source_grouper,
+            fitter=fitter,
+            maxiters=n_iterations_eps_extraction,
+            local_bkg_estimator=local_bkg_estimator,
+            mode="all",
+            aperture_radius=aperture_radius,
+        )
+    else:
+        # Fit finder positions only; do not seed new sources from residuals.
+        photometry = PSFPhotometry(
+            psf_model=epsf,
+            fit_shape=fit_shape,
+            finder=None if use_initial_positions else finder,
+            grouper=source_grouper,
+            fitter=fitter,
+            local_bkg_estimator=local_bkg_estimator,
+            aperture_radius=aperture_radius,
+        )
 
     #   Check if error is finite
     finite_error_mask = np.isfinite(error)
@@ -1269,11 +1316,15 @@ def extract_multiprocessing(
     max_n_iterations_epsf_determination: int = 7,
     use_initial_positions_epsf: bool = True,
     object_finder_method: str = "IRAF",
+    finder_sharpness_range: tuple[float, float] = (0.2, 1.0),
+    finder_roundness_range: tuple[float, float] = (-1.0, 1.0),
+    finder_min_separation_fwhm: float = 1.0,
     multiplier_background_rms_epsf: float = 5.0,
     multiplier_grouper_epsf: float = 2.0,
     strict_cleaning_epsf_results: bool = True,
     minimum_n_eps_stars: int = 15,
     photometry_extraction_method: str = "PSF",
+    psf_find_in_residuals: bool = False,
     radius_aperture: float = 5.0,
     inner_annulus_radius: float = 7.0,
     outer_annulus_radius: float = 10.0,
@@ -1316,6 +1367,9 @@ def extract_multiprocessing(
                 "max_n_iterations_epsf_determination": max_n_iterations_epsf_determination,
                 "use_initial_positions_epsf": use_initial_positions_epsf,
                 "object_finder_method": object_finder_method,
+                "finder_sharpness_range": finder_sharpness_range,
+                "finder_roundness_range": finder_roundness_range,
+                "finder_min_separation_fwhm": finder_min_separation_fwhm,
                 "multiplier_background_rms_epsf": multiplier_background_rms_epsf,
                 "multiplier_grouper_epsf": multiplier_grouper_epsf,
                 "strict_cleaning_epsf_results": strict_cleaning_epsf_results,
@@ -1323,6 +1377,7 @@ def extract_multiprocessing(
                 "strict_epsf_checks": strict_epsf_checks,
                 "id_reference_image": image_series.reference_image_index,
                 "photometry_extraction_method": photometry_extraction_method,
+                "psf_find_in_residuals": psf_find_in_residuals,
                 "radius_aperture": radius_aperture,
                 "inner_annulus_radius": inner_annulus_radius,
                 "outer_annulus_radius": outer_annulus_radius,
@@ -1370,18 +1425,22 @@ def main_extract(
     max_n_iterations_epsf_determination: int = 7,
     use_initial_positions_epsf: bool = True,
     object_finder_method: str = "IRAF",
+    finder_sharpness_range: tuple[float, float] = (0.2, 1.0),
+    finder_roundness_range: tuple[float, float] = (-1.0, 1.0),
+    finder_min_separation_fwhm: float = 1.0,
     multiplier_background_rms_epsf: float = 5.0,
     multiplier_grouper_epsf: float = 2.0,
     strict_cleaning_epsf_results: bool = True,
     minimum_n_eps_stars: int = 15,
     id_reference_image: int = 0,
     photometry_extraction_method: str = "PSF",
+    psf_find_in_residuals: bool = False,
     radius_aperture: float = 4.0,
     inner_annulus_radius: float = 7.0,
     outer_annulus_radius: float = 10.0,
     radii_unit: str = "arcsec",
     strict_epsf_checks: bool = True,
-    cosmic_ray_removal: bool = False,
+    cosmic_ray_removal: bool | str = "auto",
     limiting_contrast_rm_cosmics: float = 5.0,
     read_noise: float = 8.0,
     sigma_clipping_value: float = 4.5,
@@ -1409,14 +1468,27 @@ def main_extract(
         )
         terminal_logger = None
 
-    if cosmic_ray_removal:
+    run_cosmics, force_cosmics = _should_run_cosmic_removal(image, cosmic_ray_removal)
+    if run_cosmics:
         rm_cosmic_rays(
             image,
             limiting_contrast=limiting_contrast_rm_cosmics,
             read_noise=read_noise,
             sigma_clipping_value=sigma_clipping_value,
             saturation_level=saturation_level,
+            force=force_cosmics,
+            terminal_logger=terminal_logger,
         )
+    elif normalize_cosmic_ray_removal(cosmic_ray_removal) == "auto":
+        # Header already marks cosmics; make the skip visible once.
+        msg = (
+            "Cosmic rays already identified in FITS header; "
+            "skipping lacosmic (cosmic_ray_removal=auto)."
+        )
+        if terminal_logger is not None:
+            terminal_logger.add_to_cache(msg, indent=2)
+        else:
+            terminal_output.print_to_terminal(msg, indent=2)
 
     _, rms_background = determine_background(
         image,
@@ -1432,6 +1504,9 @@ def main_extract(
         terminal_logger=terminal_logger,
         fwhm_estimate_min=fwhm_estimate_min,
         fwhm_estimate_max=fwhm_estimate_max,
+        finder_sharpness_range=finder_sharpness_range,
+        finder_roundness_range=finder_roundness_range,
+        finder_min_separation_fwhm=finder_min_separation_fwhm,
     )
 
     if photometry_extraction_method == "PSF":
@@ -1504,6 +1579,10 @@ def main_extract(
             multiplier_grouper=multiplier_grouper_epsf,
             strict_cleaning_results=strict_cleaning_epsf_results,
             terminal_logger=terminal_logger,
+            finder_sharpness_range=finder_sharpness_range,
+            finder_roundness_range=finder_roundness_range,
+            finder_min_separation_fwhm=finder_min_separation_fwhm,
+            psf_find_in_residuals=psf_find_in_residuals,
         )
 
         plots.plot_residual(

@@ -33,6 +33,10 @@ config = PipelineConfig(
 | ------------------------------ | ------------------------------------------------------------------ | ------------------------------- | --------------------------------------------------------------- |
 | `wcs_method`                   | `astrometry`, `astap`, `twirl`                                     | WCS                             | Astrometric solution per image                                  |
 | `photometry_extraction_method` | `PSF`, `APER`                                                      | Extraction                      | PSF fitting vs aperture photometry                              |
+| `cosmic_ray_removal`           | `auto`, `always`, `never` (bool `True`/`False` still accepted)     | Extraction                      | Skip lacosmic when reduction set `CRIDENT` / `cosmics_*`        |
+| `psf_find_in_residuals`        | `True`, `False` (default `False`)                                  | Extraction (PSF)                | If False, fit finder positions only (no residual re-find)       |
+| `finder_sharpness_range` / `finder_roundness_range` | tuples (defaults `(0.2, 1.0)` / `(-1.0, 1.0)`) | Extraction                      | Shared IRAF/DAO quality cuts                                   |
+| `finder_min_separation_fwhm`   | float (default `1.0`)                                              | Extraction                      | `min_separation = max(2, int(fwhm * factor))`                   |
 | `annotate_image` / `annotate_reference_image` | `True`, `False` (default `True`)                          | Simbad annotate                 | Overlay Simbad objects on each filter's reference image (after extraction) |
 | `correlation_method`           | `astropy`, `own`                                                   | Correlation (intra/inter)       | Match detections across exposures                               |
 | `protected_object_ids`         | list of row indices                                                | Correlation (intra/inter)       | Explicit reference-image rows to keep (any object type)         |
@@ -71,6 +75,25 @@ WCS must succeed (or be copied from another filter) before extraction and correl
 
 
 Both methods feed the same downstream tables (`mag_<filter>`, `err_<filter>`). Choice does not change calibration strategy, but PSF is usually preferred when stars overlap.
+
+### `cosmic_ray_removal`
+
+
+| Value    | When to use                                      | Notes |
+| -------- | ------------------------------------------------ | ----- |
+| `auto`   | Default after reduction that sets cosmic flags   | Skips lacosmic if `CRIDENT`, `cosmics_rm`, `cosmics_msk`, or legacy `cosmic_mas` is set |
+| `always` | Force lacosmic even if reduction already ran     | Bool `True` maps here |
+| `never`  | Never run lacosmic in analysis                   | Bool `False` maps here; use when you handle cosmics elsewhere |
+
+Reduction writes `CRIDENT=True` plus `cosmics_rm` (interpolated) or `cosmics_msk` (mask-only). The finder still respects the image mask.
+
+### `psf_find_in_residuals`
+
+
+| Value   | Behaviour |
+| ------- | --------- |
+| `False` | Default. Fit the positions from `find_stars` only (`PSFPhotometry`). |
+| `True`  | Legacy iterative search on residuals (`IterativePSFPhotometry`, `mode="all"`). Can add false detections. |
 
 ### `correlation_method`
 
@@ -291,7 +314,7 @@ Catalog systems (examples): APASS/Stetson → Vega; SDSS DR → AB. See `CATALOG
 
 | Condition                           | `photometry_extraction_method` | `correlation_method` | Other                                                   |
 | ----------------------------------- | ------------------------------ | -------------------- | ------------------------------------------------------- |
-| Stellar PSF, course / OST default   | `PSF`                          | `astropy`            | Ensure `minimum_n_eps_stars` met; dense fields capped by `maximum_n_eps_stars` (default 50; `None` = no cap). Auto-FWHM uses `fwhm_estimate_min`/`fwhm_estimate_max` (default 2–15 px). |
+| Stellar PSF, course / OST default   | `PSF`                          | `astropy`            | Ensure `minimum_n_eps_stars` met; dense fields capped by `maximum_n_eps_stars` (default 50; `None` = no cap). Auto-FWHM uses `fwhm_estimate_min`/`fwhm_estimate_max` (default 2–15 px). Shared finder cuts default to DAO-like sharpness/roundness; set `psf_find_in_residuals=False` (default) unless you need residual re-find. |
 | Quick test, very sparse field       | `APER`                         | `astropy`            | Widen aperture if SNR low                               |
 | Reproduce pre-2024 script behaviour | `PSF`                          | `own`                | Check `duplicate_handling_object_identification`        |
 | B/V not aligned by index            | either                         | `astropy`            | `exposure_pairing="jd_nearest"`, set `reference_filter` |

@@ -263,26 +263,45 @@ def estimate_fwhm_from_finder_table(
     min_fwhm: float = 2.0,
     max_fwhm: float = 15.0,
     min_valid: int = 5,
-) -> tuple[float, str | None]:
+    data_shape: tuple[int, int] | None = None,
+    fit_shape: int = 25,
+) -> tuple[float, str | None, dict[str, float | int | str]]:
     """
     Estimate FWHM from an IRAFStarFinder ``fwhm`` column when available.
 
-    Returns ``(default_fwhm, reason)`` if the column is missing or unusable.
+    Aggregates only quality-selected stars (same cuts as
+    :func:`select_sources_for_fwhm_fit`). Returns
+    ``(default_fwhm, reason, meta)`` if the column is missing or unusable.
     """
+    meta: dict[str, float | int | str] = {
+        "source": "default",
+        "n_in_range": 0,
+    }
     if source_table is None or "fwhm" not in source_table.colnames:
-        return default_fwhm, "no finder fwhm column"
-    vals = np.asarray(source_table["fwhm"], dtype=float)
+        return default_fwhm, "no finder fwhm column", meta
+
+    selected = select_sources_for_fwhm_fit(
+        source_table,
+        data_shape=data_shape,
+        fit_shape=fit_shape,
+    )
+    if len(selected) == 0 or "fwhm" not in selected.colnames:
+        return default_fwhm, "no quality-selected stars with fwhm", meta
+
+    vals = np.asarray(selected["fwhm"], dtype=float)
     med, stats = _aggregate_fwhm(
         vals, min_fwhm=min_fwhm, max_fwhm=max_fwhm, min_valid=min_valid
     )
+    meta["n_in_range"] = int(stats["n_in_range"])
     if med is None:
         return default_fwhm, (
             f"finder FWHM unusable (n_fit={stats['n_fit']}, "
             f"n_in_range={stats['n_in_range']}, "
             f"raw_median={stats['raw_median']:.3f}, "
             f"allowed=[{min_fwhm}, {max_fwhm}])"
-        )
-    return med, None
+        ), meta
+    meta["source"] = "finder_column"
+    return med, None, meta
 
 
 def estimate_fwhm_from_positions(
@@ -356,29 +375,37 @@ def estimate_image_fwhm(
     min_fwhm: float = 2.0,
     max_fwhm: float = 15.0,
     min_valid: int = 5,
-) -> tuple[float, str | None]:
+) -> tuple[float, str | None, dict[str, float | int | str]]:
     """
-    Robust image FWHM: prefer finder ``fwhm`` column, else PSF fits on selected stars.
+    Robust image FWHM: prefer quality-filtered finder ``fwhm``, else PSF fits.
+
+    Returns ``(fwhm, error_or_none, meta)`` where ``meta`` has ``source``
+    (``finder_column`` / ``psf_fit`` / ``default``) and ``n_in_range``.
     """
-    # 1) IRAF (or similar) per-source FWHM
-    fwhm_finder, err_finder = estimate_fwhm_from_finder_table(
+    data_shape = tuple(int(s) for s in np.asarray(data).shape[:2])
+
+    # 1) IRAF (or similar) per-source FWHM on quality-selected stars
+    fwhm_finder, err_finder, meta = estimate_fwhm_from_finder_table(
         source_table,
         default_fwhm=default_fwhm,
         min_fwhm=min_fwhm,
         max_fwhm=max_fwhm,
         min_valid=min_valid,
+        data_shape=data_shape,
+        fit_shape=fit_shape,
     )
     if err_finder is None:
-        return fwhm_finder, None
+        return fwhm_finder, None, meta
 
     # 2) PSF fit on cleaned star sample
     selected = select_sources_for_fwhm_fit(
         source_table,
-        data_shape=np.asarray(data).shape,
+        data_shape=data_shape,
         fit_shape=fit_shape,
     )
     if len(selected) == 0:
-        return default_fwhm, err_finder
+        meta["source"] = "default"
+        return default_fwhm, err_finder, meta
 
     xy_pos = source_positions_from_table(selected)
     fwhm_fit, err_fit = estimate_fwhm_from_positions(
@@ -393,6 +420,10 @@ def estimate_image_fwhm(
         min_valid=min_valid,
     )
     if err_fit is None:
-        return fwhm_fit, None
+        # Count in-range from a fresh aggregate is not returned by positions
+        # helper; report selected-star count as a proxy for n used in the fit.
+        meta = {"source": "psf_fit", "n_in_range": len(selected)}
+        return fwhm_fit, None, meta
 
-    return default_fwhm, f"{err_finder}; {err_fit}"
+    meta = {"source": "default", "n_in_range": 0}
+    return default_fwhm, f"{err_finder}; {err_fit}", meta

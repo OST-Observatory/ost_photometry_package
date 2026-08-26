@@ -21,10 +21,19 @@ def test_pipeline_config_flat_and_nested_access():
     ext = ExtractionConfig()
     kw = ext.main_extract_kwargs(fwhm=3.5)
     assert kw["fwhm_object_psf"] == 3.5
+    assert kw["cosmic_ray_removal"] == "auto"
+    assert kw["psf_find_in_residuals"] is False
+    assert kw["finder_sharpness_range"] == (0.2, 1.0)
+    assert kw["finder_roundness_range"] == (-1.0, 1.0)
+    assert kw["finder_min_separation_fwhm"] == 1.0
     assert "sigma_value_background_clipping" in kw
     assert "annotate_image" not in kw
     assert "annotate_reference_image" not in ext.extract_multiprocessing_kwargs()
 
+    ext_bool = ExtractionConfig(cosmic_ray_removal=False)
+    assert ext_bool.main_extract_kwargs()["cosmic_ray_removal"] == "never"
+    ext_always = ExtractionConfig(cosmic_ray_removal=True)
+    assert ext_always.main_extract_kwargs()["cosmic_ray_removal"] == "always"
     cfg.apply_overrides(diagnostic_plots__photometry_mag_vs_error_scatter=True)
     assert cfg.diagnostic_plots.photometry_mag_vs_error_scatter is True
 

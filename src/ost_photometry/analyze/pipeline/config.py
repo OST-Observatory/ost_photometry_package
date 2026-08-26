@@ -8,6 +8,8 @@ from typing import Any, Literal
 import astropy.units as u
 from astropy.coordinates import EarthLocation
 
+from ...fits_headers import CosmicRayRemovalMode, normalize_cosmic_ray_removal
+
 WcsMethod = Literal["astrometry", "astap", "twirl"]
 CorrelationMethod = Literal["astropy", "own"]
 PhotometryExtractionMethod = Literal["PSF", "APER"]
@@ -126,7 +128,8 @@ class ExtractionConfig:
     #: Accepted FWHM range in pixels for automatic estimation (per-star filter).
     fwhm_estimate_min: float = 2.0
     fwhm_estimate_max: float = 15.0
-    cosmic_ray_removal: bool = False
+    #: ``auto`` skips lacosmic when reduction already set CRIDENT / cosmics_*.
+    cosmic_ray_removal: bool | CosmicRayRemovalMode = "auto"
     limiting_contrast_rm_cosmics: float = 5.0
     read_noise: float = 8.0
     sigma_clipping_value: float = 4.5
@@ -152,11 +155,17 @@ class ExtractionConfig:
     max_n_iterations_epsf_determination: int = 7
     use_initial_positions_epsf: bool = True
     object_finder_method: str = "IRAF"
+    finder_sharpness_range: tuple[float, float] = (0.2, 1.0)
+    finder_roundness_range: tuple[float, float] = (-1.0, 1.0)
+    #: ``min_separation = max(2, int(fwhm * factor))`` for IRAF/DAO finders.
+    finder_min_separation_fwhm: float = 1.0
     multiplier_background_rms_epsf: float = 5.0
     multiplier_grouper_epsf: float = 2.0
     strict_cleaning_epsf_results: bool = True
     minimum_n_eps_stars: int = 15
     photometry_extraction_method: PhotometryExtractionMethod = "PSF"
+    #: If False, fit finder positions only (no residual re-find).
+    psf_find_in_residuals: bool = False
     radius_aperture: float = 5.0
     inner_annulus_radius: float = 7.0
     outer_annulus_radius: float = 10.0
@@ -183,17 +192,21 @@ class ExtractionConfig:
             "max_n_iterations_epsf_determination": self.max_n_iterations_epsf_determination,
             "use_initial_positions_epsf": self.use_initial_positions_epsf,
             "object_finder_method": self.object_finder_method,
+            "finder_sharpness_range": self.finder_sharpness_range,
+            "finder_roundness_range": self.finder_roundness_range,
+            "finder_min_separation_fwhm": self.finder_min_separation_fwhm,
             "multiplier_background_rms_epsf": self.multiplier_background_rms_epsf,
             "multiplier_grouper_epsf": self.multiplier_grouper_epsf,
             "strict_cleaning_epsf_results": self.strict_cleaning_epsf_results,
             "minimum_n_eps_stars": self.minimum_n_eps_stars,
             "strict_epsf_checks": self.strict_epsf_checks,
             "photometry_extraction_method": self.photometry_extraction_method,
+            "psf_find_in_residuals": self.psf_find_in_residuals,
             "radius_aperture": self.radius_aperture,
             "inner_annulus_radius": self.inner_annulus_radius,
             "outer_annulus_radius": self.outer_annulus_radius,
             "radii_unit": self.radii_unit,
-            "cosmic_ray_removal": self.cosmic_ray_removal,
+            "cosmic_ray_removal": normalize_cosmic_ray_removal(self.cosmic_ray_removal),
             "limiting_contrast_rm_cosmics": self.limiting_contrast_rm_cosmics,
             "read_noise": self.read_noise,
             "sigma_clipping_value": self.sigma_clipping_value,

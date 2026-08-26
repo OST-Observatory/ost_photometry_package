@@ -10,6 +10,7 @@ from astropy.nddata import CCDData
 from ... import checks, style, terminal_output
 from ... import utilities as base_utilities
 from ...core.parallel import Executor
+from ...fits_headers import mark_cosmics_identified
 from .. import utilities, validation
 from .constants import (
     REDUCE_STATUS_REDUCED,
@@ -560,10 +561,7 @@ def reduce_light_image(
         if mask_cosmics:
             if add_hot_bad_pixel_mask:
                 reduced.mask = reduced.mask | reduced_without_cosmics.mask
-
-                #   Add a header keyword to indicate that the cosmics have been
-                #   masked
-                reduced.meta["cosmic_mas"] = True
+                mark_cosmics_identified(reduced.meta, handling="masked")
             else:
                 terminal_output.print_to_terminal(
                     "WARNING: mask_cosmics=True requires add_hot_bad_pixel_mask=True; "
@@ -575,9 +573,7 @@ def reduce_light_image(
             reduced = reduced_without_cosmics
             if not add_hot_bad_pixel_mask:
                 reduced.mask = np.zeros(reduced.shape, dtype=bool)
-
-            #   Add header keyword to indicate that cosmics have been removed
-            reduced.meta["cosmics_rm"] = True
+            mark_cosmics_identified(reduced.meta, handling="interpolated")
 
         if verbose:
             terminal_output.print_to_terminal("")

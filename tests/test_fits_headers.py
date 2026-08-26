@@ -10,7 +10,10 @@ from astropy.time import Time
 from astropy.wcs import FITSFixedWarning
 
 from ost_photometry.fits_headers import (
+    cosmics_identified,
     ensure_mjd_obs_in_header,
+    mark_cosmics_identified,
+    normalize_cosmic_ray_removal,
     wcs_from_header,
 )
 
@@ -78,3 +81,34 @@ def test_wcs_from_header_does_not_emit_datfix_warning():
         and "datfix" in str(item.message)
     ]
     assert datfix == []
+
+
+def test_cosmics_identified_reads_canonical_and_legacy_keys():
+    assert not cosmics_identified({})
+    assert not cosmics_identified({"CRIDENT": False})
+
+    for key in ("CRIDENT", "cosmics_rm", "cosmics_msk", "cosmic_mas"):
+        assert cosmics_identified({key: True})
+        assert cosmics_identified({key: "T"})
+
+
+def test_mark_cosmics_identified_interpolated_and_masked():
+    header = fits.Header()
+    mark_cosmics_identified(header, handling="interpolated")
+    assert header["CRIDENT"] is True
+    assert header["cosmics_rm"] is True
+    assert "cosmics_msk" not in header
+
+    header = fits.Header()
+    mark_cosmics_identified(header, handling="masked")
+    assert header["CRIDENT"] is True
+    assert header["cosmics_msk"] is True
+    assert "cosmics_rm" not in header
+
+
+def test_normalize_cosmic_ray_removal_aliases():
+    assert normalize_cosmic_ray_removal(True) == "always"
+    assert normalize_cosmic_ray_removal(False) == "never"
+    assert normalize_cosmic_ray_removal("auto") == "auto"
+    assert normalize_cosmic_ray_removal("always") == "always"
+    assert normalize_cosmic_ray_removal("never") == "never"

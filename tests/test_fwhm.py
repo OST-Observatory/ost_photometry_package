@@ -77,11 +77,38 @@ def test_finder_fwhm_column_used_when_in_range():
             "y_centroid": np.linspace(20, 80, 20),
             "flux": np.linspace(100, 200, 20),
             "fwhm": np.full(20, 4.5),
+            "sharpness": np.full(20, 0.5),
+            "roundness1": np.full(20, 0.0),
         }
     )
-    fwhm, err = estimate_fwhm_from_finder_table(table, default_fwhm=4.0)
+    fwhm, err, meta = estimate_fwhm_from_finder_table(
+        table, default_fwhm=4.0, data_shape=(120, 120)
+    )
     assert err is None
     assert fwhm == pytest.approx(4.5, abs=0.1)
+    assert meta["source"] == "finder_column"
+
+
+def test_finder_fwhm_ignores_junk_before_quality_filter():
+    """Noise-like FWHM values on bad stars must not dominate the aggregate."""
+    n = 30
+    table = Table(
+        {
+            "x_centroid": np.linspace(20, 100, n),
+            "y_centroid": np.linspace(20, 100, n),
+            "flux": np.linspace(50, 200, n),
+            # Most "detections" look like cosmics (tiny FWHM + bad sharpness)
+            "fwhm": np.concatenate([np.full(20, 1.2), np.full(10, 6.0)]),
+            "sharpness": np.concatenate([np.full(20, 0.05), np.full(10, 0.5)]),
+            "roundness1": np.zeros(n),
+        }
+    )
+    fwhm, err, meta = estimate_fwhm_from_finder_table(
+        table, default_fwhm=4.0, data_shape=(140, 140), min_valid=5
+    )
+    assert err is None
+    assert meta["source"] == "finder_column"
+    assert fwhm == pytest.approx(6.0, abs=0.3)
 
 
 def test_per_star_outliers_discarded_before_aggregate():
@@ -167,10 +194,13 @@ def test_estimate_image_fwhm_prefers_finder_column():
             "y_centroid": np.linspace(20, 80, 15),
             "flux": np.linspace(50, 150, 15),
             "fwhm": np.concatenate([np.full(12, 5.0), np.full(3, 25.0)]),
+            "sharpness": np.full(15, 0.5),
+            "roundness1": np.zeros(15),
         }
     )
-    fwhm, err = estimate_image_fwhm(data, table, default_fwhm=4.0, min_valid=5)
+    fwhm, err, meta = estimate_image_fwhm(data, table, default_fwhm=4.0, min_valid=5)
     assert err is None
+    assert meta["source"] == "finder_column"
     assert fwhm == pytest.approx(5.0, abs=0.2)
 
 
