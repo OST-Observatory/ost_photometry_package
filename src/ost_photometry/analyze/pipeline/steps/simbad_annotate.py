@@ -60,5 +60,8 @@ class SimbadAnnotateStep(base.PipelineStep):
                 file_type=ext.file_type_plots,
                 filter_mag=ext.filter_magnitude_limit_image_annotation,
                 mag_limit=ext.magnitude_limit_image_annotation,
+                otypes=ext.simbad_annotate_otypes,
+                require_common_name=ext.simbad_annotate_require_common_name,
+                extra_criteria=ext.simbad_annotate_criteria,
             )
         return context

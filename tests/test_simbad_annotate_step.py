@@ -244,3 +244,57 @@ def test_simbad_query_radius_clips_above_90_and_rejects_nonpositive():
     assert helper._simbad_query_radius_deg(120 * u.deg) == 90.0
     assert helper._simbad_query_radius_deg(0 * u.deg) is None
     assert helper._simbad_query_radius_deg(1.5 * u.deg) == pytest.approx(1.5)
+
+
+def test_simbad_query_criteria_combines_mag_type_and_common_name():
+    helper = _load_helper()
+    assert helper.simbad_query_criteria() is None
+    assert helper.simbad_query_criteria(mag_limit=16) == "allfluxes.V < 16.0"
+    assert helper.simbad_query_criteria(filter_mag="B", mag_limit=15.5) == (
+        "allfluxes.B < 15.5"
+    )
+    criteria = helper.simbad_query_criteria(
+        mag_limit=16,
+        otypes=["Star", "Galaxy"],
+        require_common_name=True,
+    )
+    assert "allfluxes.V < 16.0" in criteria
+    assert "otype = 'Star..'" in criteria
+    assert "otype = 'Galaxy..'" in criteria
+    assert "ids.ids LIKE '%NAME %'" in criteria
+
+
+def test_filter_simbad_objects_magnitude_and_common_name():
+    pytest.importorskip("astropy.table")
+    from astropy.table import Table
+
+    helper = _load_helper()
+    table = Table(
+        {
+            "main_id": ["NGC 7789", "NAME Bright Star", "TYC 123"],
+            "V": [8.1, 10.2, 18.4],
+            "otype": ["OpC", "Star", "Star"],
+            "ids": [
+                "NGC 7789|Cl Melotte 245",
+                "HD 1|NAME Bright Star",
+                "TYC 123-1-1",
+            ],
+        }
+    )
+    bright = helper.filter_simbad_objects(table, filter_mag="V", mag_limit=16.0)
+    assert list(bright["main_id"]) == ["NGC 7789", "NAME Bright Star"]
+    named = helper.filter_simbad_objects(table, require_common_name=True)
+    assert list(named["main_id"]) == ["NAME Bright Star"]
+    stars = helper.filter_simbad_objects(table, otypes=["Star"])
+    assert list(stars["main_id"]) == ["NAME Bright Star", "TYC 123"]
+
+
+def test_simbad_magnitude_column_accepts_tap_and_legacy_names():
+    pytest.importorskip("astropy.table")
+    from astropy.table import Table
+
+    helper = _load_helper()
+    tap = Table({"V": [10.0]})
+    legacy = Table({"FLUX_V": [10.0]})
+    assert helper.simbad_magnitude_column(tap, "V") == "V"
+    assert helper.simbad_magnitude_column(legacy, "V") == "FLUX_V"

@@ -141,8 +141,16 @@ class ExtractionConfig:
     annotate_image: bool = True
     #: Same overlay in multi-image extraction mode (``SimbadAnnotateStep``).
     annotate_reference_image: bool = True
+    #: Brightest Simbad magnitude on the overlay (TAP cut + plot). ``None`` = no mag cut.
     magnitude_limit_image_annotation: float | None = None
+    #: Band for that limit (``V``, ``B``, …). Defaults to ``V`` when the limit is set.
     filter_magnitude_limit_image_annotation: str | None = None
+    #: Hierarchical SIMBAD types, e.g. ``["Star", "Galaxy", "Cl*"]``. ``None`` = all types.
+    simbad_annotate_otypes: list[str] | None = None
+    #: If True, only objects with a SIMBAD common name (``NAME …`` identifier).
+    simbad_annotate_require_common_name: bool = False
+    #: Extra TAP/ADQL fragment ANDed into the cone query.
+    simbad_annotate_criteria: str | None = None
     sigma_value_background_clipping: float = 5.0
     multiplier_background_rms: float = 5.0
     size_epsf_region: int = 25

@@ -601,9 +601,25 @@ def plot_annotated_image(
         #   Check that the magnitude is available and meets the filter
         #   and magnitude limit conditions
         if filter_mag and mag_limit is not None:
-            mag_col = f'FLUX_{filter_mag.upper()}'
-            if (mag_col not in obj.colnames or obj[mag_col] is None or
-                    isinstance(obj[mag_col], np.ma.core.MaskedConstant) or obj[mag_col] > mag_limit):
+            mag_col = None
+            band = str(filter_mag).strip()
+            for candidate in (
+                f"FLUX_{band.upper()}",
+                band.upper(),
+                band,
+                f"{band.upper()}mag",
+            ):
+                if candidate in obj.colnames:
+                    mag_col = candidate
+                    break
+            mag_val = obj[mag_col] if mag_col is not None else None
+            if (
+                mag_col is None
+                or mag_val is None
+                or isinstance(mag_val, np.ma.core.MaskedConstant)
+                or not np.isfinite(float(mag_val))
+                or float(mag_val) > mag_limit
+            ):
                 continue
 
         #   Conversion of world coordinates to image coordinates
