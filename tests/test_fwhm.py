@@ -113,6 +113,48 @@ def test_finder_fwhm_ignores_junk_before_quality_filter():
     assert fwhm == pytest.approx(6.0, abs=0.3)
 
 
+def test_finder_fwhm_uses_iraf_roundness_column():
+    """IRAF catalogs have ``roundness``, not DAO ``roundness1``."""
+    n = 40
+    table = Table(
+        {
+            "x_centroid": np.linspace(20, 100, n),
+            "y_centroid": np.linspace(20, 100, n),
+            "flux": np.linspace(50, 200, n),
+            "fwhm": np.concatenate([np.full(25, 1.3), np.full(15, 6.2)]),
+            "sharpness": np.concatenate([np.full(25, 0.05), np.full(15, 0.5)]),
+            "roundness": np.concatenate([np.full(25, 0.9), np.full(15, 0.1)]),
+        }
+    )
+    fwhm, err, meta = estimate_fwhm_from_finder_table(
+        table, default_fwhm=4.0, data_shape=(140, 140), min_valid=5
+    )
+    assert err is None
+    assert meta["source"] == "finder_column"
+    assert fwhm == pytest.approx(6.2, abs=0.3)
+
+
+def test_finder_fwhm_near_minimum_is_rejected():
+    """A median sitting on fwhm_estimate_min is compact noise, not seeing."""
+    n = 30
+    table = Table(
+        {
+            "x_centroid": np.linspace(20, 100, n),
+            "y_centroid": np.linspace(20, 100, n),
+            "flux": np.linspace(100, 200, n),
+            "fwhm": np.full(n, 2.51),
+            "sharpness": np.full(n, 0.5),
+            "roundness": np.full(n, 0.1),
+        }
+    )
+    fwhm, err, meta = estimate_fwhm_from_finder_table(
+        table, default_fwhm=4.0, data_shape=(140, 140), min_fwhm=2.0
+    )
+    assert fwhm == 4.0
+    assert err is not None
+    assert "lower limit" in err
+
+
 def test_per_star_outliers_discarded_before_aggregate():
     """A few huge fits must not force fallback if enough stars are in range."""
     pytest.importorskip("photutils")

@@ -353,7 +353,8 @@ def _format_fwhm_status(
     if source == "finder_column":
         if n:
             return (
-                f"{value} (estimated from {n} stars in the expected size range)"
+                f"{value} (estimated from a sample of {n} stars "
+                f"in the expected size range; sample is capped at 25)"
             )
         return f"{value} (estimated from the star finder)"
     if source == "psf_fit":

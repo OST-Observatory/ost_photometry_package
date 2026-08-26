@@ -71,15 +71,21 @@ def select_sources_for_fwhm_fit(
         flux = np.asarray(table["flux"], dtype=float)
 
     # Prefer stars with finder quality flags when present (IRAF/DAO)
-    if "sharpness" in table.colnames and "roundness1" in table.colnames:
+    round_col = _finder_roundness_column(table)
+    if "sharpness" in table.colnames and round_col is not None:
         sharp = np.asarray(table["sharpness"], dtype=float)
-        round1 = np.asarray(table["roundness1"], dtype=float)
+        rnd = np.asarray(table[round_col], dtype=float)
+        if round_col == "roundness1":
+            round_ok = np.abs(rnd) < 0.5
+        else:
+            # IRAF moment ellipticity is ~[0, 1], not DAO's signed roundness.
+            round_ok = (rnd >= 0.0) & (rnd < 0.5)
         quality = (
             np.isfinite(sharp)
-            & np.isfinite(round1)
+            & np.isfinite(rnd)
             & (sharp > 0.2)
             & (sharp < 1.0)
-            & (np.abs(round1) < 0.5)
+            & round_ok
         )
         if np.sum(quality) >= max(8, n_select // 2):
             table = table[quality]
@@ -127,6 +133,15 @@ def select_sources_for_fwhm_fit(
         table = table[:n_select]
 
     return table
+
+
+def _finder_roundness_column(table: Table) -> str | None:
+    """DAO uses ``roundness1``; IRAF uses ``roundness``."""
+    if "roundness1" in table.colnames:
+        return "roundness1"
+    if "roundness" in table.colnames:
+        return "roundness"
+    return None
 
 
 def roundness_range_for_finder(
@@ -355,6 +370,12 @@ def estimate_fwhm_from_finder_table(
             f"n_in_range={stats['n_in_range']}, "
             f"raw_median={stats['raw_median']:.3f}, "
             f"allowed=[{min_fwhm}, {max_fwhm}])"
+        ), meta
+    # Pile-up at the allowed minimum is typical of noise/cosmic cores, not seeing.
+    if med < float(min_fwhm) + 1.0:
+        return default_fwhm, (
+            f"finder FWHM {med:.2f} px is too close to the lower limit "
+            f"({min_fwhm}); likely compact noise rather than stellar seeing"
         ), meta
     meta["source"] = "finder_column"
     return med, None, meta
