@@ -16,7 +16,11 @@ from photutils.utils import ImageDepth
 from regions import EllipseSkyRegion
 
 from ... import checks, style, terminal_output
-from .simbad_galaxy import simbad_galaxy_axes_arcmin
+from .simbad_galaxy import (
+    simbad_galaxy_axes_arcmin,
+    simbad_overlay_kind,
+    skycoord_from_simbad,
+)
 
 plt.switch_backend("Agg")
 
@@ -578,172 +582,186 @@ def plot_annotated_image(
     ax.set_ylabel("Declination", fontsize=16)
 
     #   Enable grid for WCS
-    # if wcs is not None:
     ax.grid(True, color='white', linestyle='--')
 
-    #   Setup list for legend
     legend_elements = []
 
-    for obj in simbad_objects:
-        if 'ra' in obj.colnames:
-           simbad_objects.rename_column('ra', 'RA')
-        if 'dec' in obj.colnames:
-            simbad_objects.rename_column('dec', 'DEC')
-        if 'otype' in obj.colnames:
-            simbad_objects.rename_column('otype', 'OTYPE')
-        if 'main_id' in obj.colnames:
-            simbad_objects.rename_column('main_id', 'MAIN_ID')
+    table = simbad_objects.copy()
+    for old, new in (
+        ("ra", "RA"),
+        ("dec", "DEC"),
+        ("otype", "OTYPE"),
+        ("main_id", "MAIN_ID"),
+    ):
+        if old in table.colnames and new not in table.colnames:
+            table.rename_column(old, new)
 
+    mag_col = None
+    if mag_limit is not None:
+        band = str(filter_mag or "V").strip() or "V"
+        lookup = {str(name).upper(): name for name in table.colnames}
+        for candidate in (
+            f"FLUX_{band.upper()}",
+            band.upper(),
+            band,
+            f"{band.upper()}mag",
+            f"flux_{band.upper()}",
+        ):
+            hit = lookup.get(candidate.upper())
+            if hit is not None:
+                mag_col = hit
+                break
+
+    for obj in table:
         ra, dec = obj['RA'], obj['DEC']
         obj_type = obj['OTYPE']
         name = obj['MAIN_ID']
+        if isinstance(name, bytes):
+            name = name.decode()
 
-        #   Check that the magnitude is available and meets the filter
-        #   and magnitude limit conditions
-        if filter_mag and mag_limit is not None:
-            mag_col = None
-            band = str(filter_mag).strip()
-            for candidate in (
-                f"FLUX_{band.upper()}",
-                band.upper(),
-                band,
-                f"{band.upper()}mag",
-            ):
-                if candidate in obj.colnames:
-                    mag_col = candidate
-                    break
-            mag_val = obj[mag_col] if mag_col is not None else None
+        if mag_limit is not None and mag_col is not None:
+            mag_val = obj[mag_col]
             if (
-                mag_col is None
-                or mag_val is None
-                or isinstance(mag_val, np.ma.core.MaskedConstant)
-                or not np.isfinite(float(mag_val))
-                or float(mag_val) > mag_limit
+                mag_val is not None
+                and not isinstance(mag_val, np.ma.core.MaskedConstant)
+                and not np.ma.is_masked(mag_val)
             ):
-                continue
+                try:
+                    mag_f = float(mag_val)
+                except (TypeError, ValueError):
+                    mag_f = np.nan
+                if np.isfinite(mag_f) and mag_f > mag_limit:
+                    continue
 
-        #   Conversion of world coordinates to image coordinates
-        coord = SkyCoord(ra=ra, dec=dec, unit=("hourangle", "deg"))
+        coord = skycoord_from_simbad(ra, dec)
         x, y = wcs_image.world_to_pixel(coord)
 
-        #   Check if the objects are actually within the image boundaries
-        if 0 <= x < image_data.shape[1] and 0 <= y < image_data.shape[0]:
-            # print(obj_type)
-            #   Select icon and colour based on the object type
-            plot_marker = False
-            if 'Star' in obj_type:
-                color, marker = 'lightblue', '*'
-                plot_marker = True
+        if not (0 <= x < image_data.shape[1] and 0 <= y < image_data.shape[0]):
+            continue
 
-                if not any(e.get_label() == 'Star' for e in legend_elements):
-                    legend_elements.append(
-                        plt.Line2D(
-                            [0],
-                            [0],
-                            color=color,
-                            marker=marker,
-                            markerfacecolor='none',
-                            markersize=8,
-                            linestyle='None',
-                            label='Star',
-                        )
+        kind = simbad_overlay_kind(obj_type)
+        plot_marker = False
+        if kind == "star":
+            color, marker = 'lightblue', '*'
+            plot_marker = True
+            if not any(e.get_label() == 'Star' for e in legend_elements):
+                legend_elements.append(
+                    plt.Line2D(
+                        [0],
+                        [0],
+                        color=color,
+                        marker=marker,
+                        markerfacecolor='none',
+                        markersize=8,
+                        linestyle='None',
+                        label='Star',
                     )
-
-
-            elif obj_type in ['Galaxy', 'Seyfert1', 'Seyfert2', 'AGN_Candidate', 'QSO']:
-                color = 'lightsalmon'
-                marker = 's'
-                axes = simbad_galaxy_axes_arcmin(obj)
-                ellipse = None
-                if axes is not None:
-                    try:
-                        ellipse = _galaxy_ellipse_from_simbad(
-                            coord, wcs_image, *axes
-                        )
-                    except (AttributeError, TypeError, ValueError):
-                        ellipse = None
-                if ellipse is not None:
-                    ellipse.set_edgecolor(color)
-                    ellipse.set_facecolor('none')
-                    ellipse.set_linewidth(1.5)
-                    ellipse.set_alpha(0.7)
-                    ax.add_patch(ellipse)
-                else:
-                    plot_marker = True
-
-                if not any(e.get_label() == 'Galaxy' for e in legend_elements):
-                    legend_elements.append(
-                        plt.Line2D(
-                            [0],
-                            [0],
-                            color=color,
-                            marker=marker,
-                            markerfacecolor='none',
-                            markersize=8,
-                            linestyle='None',
-                            label='Galaxy',
-                        )
-                    )
-
-            elif 'Nebula' in obj_type:
-                color, marker = 'lightpink', 'o'
-                plot_marker = True
-
-                if not any(e.get_label() == 'Nebula' for e in legend_elements):
-                    legend_elements.append(
-                        plt.Line2D(
-                            [0],
-                            [0],
-                            color=color,
-                            marker=marker,
-                            markerfacecolor='none',
-                            markersize=8,
-                            linestyle='None',
-                            label='Nebula',
-                        )
-                    )
-
-            else:
-                color, marker = 'lightgreen', 'H'
-                plot_marker = True
-                name = f'{name} ({obj_type})'
-
-                if not any(e.get_label() == 'Other' for e in legend_elements):
-                    legend_elements.append(
-                        plt.Line2D(
-                            [0],
-                            [0],
-                            color=color,
-                            marker=marker,
-                            markerfacecolor='none',
-                            markersize=8,
-                            linestyle='None',
-                            label='Other',
-                        )
-                    )
-
-            #   Mark objects
-            if plot_marker:
-                ax.plot(
-                    x,
-                    y,
-                    marker=marker,
-                    markerfacecolor='none',
-                    markeredgecolor=color,
-                    markeredgewidth=1.2,
-                    markersize=11,
-                    alpha=0.8,
                 )
-            ax.text(
-                x + 70,
+        elif kind == "cluster":
+            color, marker = 'gold', 'h'
+            plot_marker = True
+            if not any(e.get_label() == 'Cluster' for e in legend_elements):
+                legend_elements.append(
+                    plt.Line2D(
+                        [0],
+                        [0],
+                        color=color,
+                        marker=marker,
+                        markerfacecolor='none',
+                        markersize=8,
+                        linestyle='None',
+                        label='Cluster',
+                    )
+                )
+        elif kind == "galaxy":
+            color = 'lightsalmon'
+            marker = 's'
+            axes = simbad_galaxy_axes_arcmin(obj)
+            ellipse = None
+            if axes is not None:
+                try:
+                    ellipse = _galaxy_ellipse_from_simbad(
+                        coord, wcs_image, *axes
+                    )
+                except (AttributeError, TypeError, ValueError):
+                    ellipse = None
+            if ellipse is not None:
+                ellipse.set_edgecolor(color)
+                ellipse.set_facecolor('none')
+                ellipse.set_linewidth(1.5)
+                ellipse.set_alpha(0.7)
+                ax.add_patch(ellipse)
+            else:
+                plot_marker = True
+
+            if not any(e.get_label() == 'Galaxy' for e in legend_elements):
+                legend_elements.append(
+                    plt.Line2D(
+                        [0],
+                        [0],
+                        color=color,
+                        marker=marker,
+                        markerfacecolor='none',
+                        markersize=8,
+                        linestyle='None',
+                        label='Galaxy',
+                    )
+                )
+        elif kind == "nebula":
+            color, marker = 'lightpink', 'o'
+            plot_marker = True
+            if not any(e.get_label() == 'Nebula' for e in legend_elements):
+                legend_elements.append(
+                    plt.Line2D(
+                        [0],
+                        [0],
+                        color=color,
+                        marker=marker,
+                        markerfacecolor='none',
+                        markersize=8,
+                        linestyle='None',
+                        label='Nebula',
+                    )
+                )
+        else:
+            color, marker = 'lightgreen', 'H'
+            plot_marker = True
+            name = f'{name} ({obj_type})'
+            if not any(e.get_label() == 'Other' for e in legend_elements):
+                legend_elements.append(
+                    plt.Line2D(
+                        [0],
+                        [0],
+                        color=color,
+                        marker=marker,
+                        markerfacecolor='none',
+                        markersize=8,
+                        linestyle='None',
+                        label='Other',
+                    )
+                )
+
+        if plot_marker:
+            ax.plot(
+                x,
                 y,
-                name,
-                color=color,
-                fontsize=8,
-                alpha=0.9,
-                verticalalignment='center',
-                weight="bold",
+                marker=marker,
+                markerfacecolor='none',
+                markeredgecolor=color,
+                markeredgewidth=1.2,
+                markersize=11,
+                alpha=0.8,
             )
+        ax.text(
+            x + 70,
+            y,
+            name,
+            color=color,
+            fontsize=8,
+            alpha=0.9,
+            verticalalignment='center',
+            weight="bold",
+        )
 
 
     #   Add legend

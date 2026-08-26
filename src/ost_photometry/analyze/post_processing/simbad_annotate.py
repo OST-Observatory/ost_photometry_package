@@ -88,7 +88,12 @@ def simbad_query_criteria(
     parts: list[str] = []
     if mag_limit is not None:
         band = (filter_mag or "V").strip() or "V"
-        parts.append(f"{_allfluxes_adql_column(band)} < {float(mag_limit)}")
+        col = _allfluxes_adql_column(band)
+        # Keep bright stars and clusters even when they have no V flux
+        # (INNER JOIN on allfluxes would drop NGC 7789-like objects).
+        parts.append(
+            f"({col} < {float(mag_limit)} OR otype IN ('OpC', 'GlC', 'Cl*', 'As*'))"
+        )
     if otypes:
         clauses: list[str] = []
         for raw in otypes:
@@ -109,6 +114,22 @@ def simbad_query_criteria(
     if not parts:
         return None
     return " AND ".join(parts)
+
+
+def _left_join_allfluxes(simbad) -> None:
+    """Use LEFT JOIN for allfluxes so objects without a V row are not dropped."""
+    from dataclasses import replace
+
+    joins = getattr(simbad, "joins", None)
+    if not joins:
+        return
+    simbad.joins = [
+        replace(join, join_type="LEFT JOIN")
+        if getattr(join, "table", None) == "allfluxes"
+        and getattr(join, "join_type", "JOIN") == "JOIN"
+        else join
+        for join in joins
+    ]
 
 
 def simbad_magnitude_column(table: Table, filter_mag: str) -> str | None:
@@ -163,7 +184,8 @@ def filter_simbad_objects(
         mag_col = simbad_magnitude_column(table, band)
         if mag_col is not None:
             mag = np.asarray(table[mag_col], dtype=float)
-            keep &= np.isfinite(mag) & (mag <= float(mag_limit))
+            too_faint = np.isfinite(mag) & (mag > float(mag_limit))
+            keep &= ~too_faint
     if otypes:
         otype_col = None
         for name in ("OTYPE", "otype"):
@@ -241,11 +263,12 @@ def query_simbad_objects(
     custom_simbad = Simbad()
     custom_simbad.TIMEOUT = 120
     fields = ["otype", "dimensions"]
-    if band:
-        fields.append(f"flux({band})")
+    if mag_limit is not None:
+        fields.append(band or "V")
     if require_common_name:
         fields.append("ids")
     custom_simbad.add_votable_fields(*fields)
+    _left_join_allfluxes(custom_simbad)
 
     query_kw: dict[str, Any] = {}
     if criteria:
@@ -352,7 +375,14 @@ def mark_simbad_objects_on_image(
         )
         return
 
-    #   Marks all known objects in the image
+    terminal_output.print_to_terminal(
+        f"Simbad overlay: {len(simbad_objects)} objects after query filters",
+        indent=2,
+    )
+
+    plot_band = filter_mag
+    if mag_limit is not None and not (plot_band or "").strip():
+        plot_band = "V"
     plots.plot_annotated_image(
         image_data,
         image_wcs,
@@ -360,7 +390,7 @@ def mark_simbad_objects_on_image(
         output_dir,
         filter_=filter_,
         file_type=file_type,
-        filter_mag=filter_mag,
+        filter_mag=plot_band,
         mag_limit=mag_limit,
     )
 

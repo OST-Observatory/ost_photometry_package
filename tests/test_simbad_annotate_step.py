@@ -249,10 +249,12 @@ def test_simbad_query_radius_clips_above_90_and_rejects_nonpositive():
 def test_simbad_query_criteria_combines_mag_type_and_common_name():
     helper = _load_helper()
     assert helper.simbad_query_criteria() is None
-    assert helper.simbad_query_criteria(mag_limit=16) == "allfluxes.V < 16.0"
-    assert helper.simbad_query_criteria(filter_mag="B", mag_limit=15.5) == (
-        "allfluxes.B < 15.5"
-    )
+    mag = helper.simbad_query_criteria(mag_limit=16)
+    assert "allfluxes.V < 16.0" in mag
+    assert "otype IN ('OpC', 'GlC', 'Cl*', 'As*')" in mag
+    mag_b = helper.simbad_query_criteria(filter_mag="B", mag_limit=15.5)
+    assert "allfluxes.B < 15.5" in mag_b
+    assert "OpC" in mag_b
     criteria = helper.simbad_query_criteria(
         mag_limit=16,
         otypes=["Star", "Galaxy"],
@@ -288,6 +290,18 @@ def test_filter_simbad_objects_magnitude_and_common_name():
     stars = helper.filter_simbad_objects(table, otypes=["Star"])
     assert list(stars["main_id"]) == ["NAME Bright Star", "TYC 123"]
 
+    from astropy.table import MaskedColumn
+
+    no_v = Table(
+        {
+            "main_id": ["NGC 7789", "TYC 123"],
+            "V": MaskedColumn([np.nan, 18.4], mask=[True, False]),
+            "otype": ["OpC", "*"],
+        }
+    )
+    kept = helper.filter_simbad_objects(no_v, filter_mag="V", mag_limit=16.0)
+    assert list(kept["main_id"]) == ["NGC 7789"]
+
 
 def test_simbad_magnitude_column_accepts_tap_and_legacy_names():
     pytest.importorskip("astropy.table")
@@ -298,3 +312,39 @@ def test_simbad_magnitude_column_accepts_tap_and_legacy_names():
     legacy = Table({"FLUX_V": [10.0]})
     assert helper.simbad_magnitude_column(tap, "V") == "V"
     assert helper.simbad_magnitude_column(legacy, "V") == "FLUX_V"
+
+
+def test_left_join_allfluxes_does_not_drop_objects_without_v():
+    from dataclasses import dataclass
+
+    helper = _load_helper()
+
+    @dataclass(frozen=True)
+    class _Join:
+        table: str
+        join_type: str = "JOIN"
+
+    simbad = SimpleNamespace(
+        joins=[_Join("allfluxes"), _Join("ident")],
+    )
+    helper._left_join_allfluxes(simbad)
+    assert simbad.joins[0].join_type == "LEFT JOIN"
+    assert simbad.joins[1].join_type == "JOIN"
+
+
+def test_tap_degrees_land_on_ngc7789_frame_hourangle_does_not():
+    """Mis-reading TAP RA as hourangle throws NGC 7789 off the image."""
+    pytest.importorskip("astropy.coordinates")
+    from astropy.coordinates import SkyCoord
+
+    galaxy = load_module_from_path(
+        "ost_photometry.analyze.plots.simbad_galaxy",
+        _SRC / "analyze" / "plots" / "simbad_galaxy.py",
+    )
+    wcs_image = _tan_wcs(crval1=359.35, crval2=56.73, npix=1000, cdelt=0.001)
+    x, y = wcs_image.world_to_pixel(galaxy.skycoord_from_simbad(359.35, 56.73))
+    assert 400 < float(x) < 600
+    assert 400 < float(y) < 600
+    wrong = SkyCoord(ra=359.35, dec=56.73, unit=("hourangle", "deg"))
+    xw, yw = wcs_image.world_to_pixel(wrong)
+    assert not (0 <= float(xw) < 1000 and 0 <= float(yw) < 1000)
