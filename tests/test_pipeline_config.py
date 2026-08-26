@@ -26,6 +26,7 @@ def test_pipeline_config_flat_and_nested_access():
     assert kw["finder_sharpness_range"] == (0.2, 1.0)
     assert kw["finder_roundness_range"] == (-1.0, 1.0)
     assert kw["finder_min_separation_fwhm"] == 1.0
+    assert kw["finder_fwhm_scale_range"] == (0.5, 2.0)
     assert "sigma_value_background_clipping" in kw
     assert "annotate_image" not in kw
     assert "annotate_reference_image" not in ext.extract_multiprocessing_kwargs()

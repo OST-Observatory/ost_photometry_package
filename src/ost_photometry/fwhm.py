@@ -129,6 +129,62 @@ def select_sources_for_fwhm_fit(
     return table
 
 
+def roundness_range_for_finder(
+    method: str,
+    roundness_range: tuple[float, float],
+) -> tuple[float, float]:
+    """
+    Map a configured roundness window onto the finder that will use it.
+
+    DAO roundness is signed (about ``[-1, 1]``). IRAF roundness is moment
+    ellipticity (about ``[0, 1]``). Passing the DAO window to IRAF disables
+    the cut and lets noise peaks through at a low detection threshold.
+    """
+    lo, hi = float(roundness_range[0]), float(roundness_range[1])
+    if str(method).upper() != "IRAF":
+        return (lo, hi)
+    if lo < 0.0:
+        # DAO-style signed range on IRAF → keep stellar, slightly looser than
+        # photutils' default ``(0.0, 0.2)`` so faint stars with noisy moments
+        # still pass.
+        hi = 0.5 if hi >= 1.0 else max(hi, 0.0)
+        return (0.0, hi)
+    return (lo, hi)
+
+
+def filter_finder_table_by_fwhm_scale(
+    source_table: Table,
+    fwhm_pix: float,
+    *,
+    scale_range: tuple[float, float] | None = (0.5, 2.0),
+) -> tuple[Table, int]:
+    """
+    Keep finder rows whose ``fwhm`` is within ``scale_range × fwhm_pix``.
+
+    Returns ``(filtered_table, n_removed)``. No-op when the table has no
+    ``fwhm`` column or ``scale_range`` is ``None``. An empty filtered table
+    means every row failed the cut; the caller should decide whether to keep
+    the original catalog.
+    """
+    if (
+        source_table is None
+        or len(source_table) == 0
+        or scale_range is None
+        or "fwhm" not in source_table.colnames
+    ):
+        return source_table, 0
+    lo_s, hi_s = float(scale_range[0]), float(scale_range[1])
+    if not np.isfinite(fwhm_pix) or fwhm_pix <= 0.0 or hi_s <= lo_s:
+        return source_table, 0
+    vals = np.asarray(source_table["fwhm"], dtype=float)
+    keep = np.isfinite(vals) & (vals >= lo_s * fwhm_pix) & (vals <= hi_s * fwhm_pix)
+    n_keep = int(np.count_nonzero(keep))
+    n_removed = int(len(source_table) - n_keep)
+    if n_removed == 0:
+        return source_table, 0
+    return source_table[keep], n_removed
+
+
 def source_positions_from_table(source_table: Table) -> list[tuple[float, float]]:
     """Return ``(x, y)`` positions from a photutils source table."""
     x_column, y_column = _table_xy_columns(source_table)

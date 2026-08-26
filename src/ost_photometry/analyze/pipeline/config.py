@@ -159,6 +159,9 @@ class ExtractionConfig:
     finder_roundness_range: tuple[float, float] = (-1.0, 1.0)
     #: ``min_separation = max(2, int(fwhm * factor))`` for IRAF/DAO finders.
     finder_min_separation_fwhm: float = 1.0
+    #: Keep detections with finder FWHM in this factor times the image FWHM.
+    #: ``None`` disables. IRAF provides a ``fwhm`` column; DAO typically does not.
+    finder_fwhm_scale_range: tuple[float, float] | None = (0.5, 2.0)
     multiplier_background_rms_epsf: float = 5.0
     multiplier_grouper_epsf: float = 2.0
     strict_cleaning_epsf_results: bool = True
@@ -195,6 +198,7 @@ class ExtractionConfig:
             "finder_sharpness_range": self.finder_sharpness_range,
             "finder_roundness_range": self.finder_roundness_range,
             "finder_min_separation_fwhm": self.finder_min_separation_fwhm,
+            "finder_fwhm_scale_range": self.finder_fwhm_scale_range,
             "multiplier_background_rms_epsf": self.multiplier_background_rms_epsf,
             "multiplier_grouper_epsf": self.multiplier_grouper_epsf,
             "strict_cleaning_epsf_results": self.strict_cleaning_epsf_results,

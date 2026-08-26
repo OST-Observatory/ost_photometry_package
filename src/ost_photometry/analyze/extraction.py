@@ -52,7 +52,9 @@ from ..fits_headers import (
 )
 from ..fwhm import (
     estimate_image_fwhm,
+    filter_finder_table_by_fwhm_scale,
     filter_table_finite_cutouts,
+    roundness_range_for_finder,
 )
 from . import correlate, plots, utilities
 from .image import AnalysisImage
@@ -299,6 +301,7 @@ def build_star_finder(
 ):
     """Build IRAF or DAO star finder with shared quality cuts."""
     min_separation = max(2, int(float(fwhm) * float(min_separation_fwhm) + 0.5))
+    roundness_range = roundness_range_for_finder(method, roundness_range)
 
     if method == "DAO":
         return DAOStarFinder(
@@ -316,6 +319,7 @@ def build_star_finder(
             min_separation=min_separation,
             sharpness_range=sharpness_range,
             roundness_range=roundness_range,
+            exclude_border=True,
         )
     raise ValueError(
         f"{style.Bcolors.FAIL}\nExtraction method ({method}) not valid: "
@@ -372,6 +376,7 @@ def find_stars(
     finder_sharpness_range: tuple[float, float] = (0.2, 1.0),
     finder_roundness_range: tuple[float, float] = (-1.0, 1.0),
     finder_min_separation_fwhm: float = 1.0,
+    finder_fwhm_scale_range: tuple[float, float] | None = (0.5, 2.0),
 ) -> None:
     """
     Find the stars on the images, using photutils and search and select
@@ -409,6 +414,12 @@ def find_stars(
 
     fwhm_estimate_min, fwhm_estimate_max
         Accepted per-star FWHM range (pixels) for automatic estimation.
+
+    finder_fwhm_scale_range
+        After detection, keep only sources whose finder ``fwhm`` lies in
+        this factor times the image FWHM (e.g. ``(0.5, 2.0)``). ``None``
+        disables the cut. IRAF catalogs include ``fwhm``; DAO typically does
+        not, so the cut is then a no-op.
     """
     def _log(
         msg: str,
@@ -430,6 +441,33 @@ def find_stars(
             )
         else:
             terminal_output.print_to_terminal(msg, indent=log_indent)
+
+    def _keep_stellar_sizes(tbl, fwhm_pix):
+        filtered, n_drop = filter_finder_table_by_fwhm_scale(
+            tbl, fwhm_pix, scale_range=finder_fwhm_scale_range
+        )
+        if n_drop == 0:
+            return tbl
+        n_orig = len(tbl)
+        if filtered is None or len(filtered) == 0:
+            _log(
+                f"FWHM size cut would remove all {n_orig} detections; "
+                "keeping them.",
+                style_name="WARNING",
+                extra_indent=1,
+            )
+            return tbl
+        scale = finder_fwhm_scale_range
+        if scale is None:
+            return filtered
+        lo, hi = scale
+        _log(
+            f"Kept {len(filtered)} of {n_orig} detections with FWHM "
+            f"{lo * fwhm_pix:.1f}–{hi * fwhm_pix:.1f} px "
+            f"({lo:.1f}–{hi:.1f} × {fwhm_pix:.2f} px)",
+            extra_indent=1,
+        )
+        return filtered
 
     _log("Identify stars")
 
@@ -472,6 +510,7 @@ def find_stars(
 
     if user_fwhm:
         # Keep user FWHM; still refresh detections with the same value/cuts.
+        tbl_objects = _keep_stellar_sizes(tbl_objects, default_fwhm)
         image.positions = tbl_objects.copy()
         image.fwhm = default_fwhm
         _log(
@@ -500,6 +539,7 @@ def find_stars(
         )
 
         #   Keep the full finder table (sharpness, roundness, …) for later merge.
+        tbl_objects = _keep_stellar_sizes(tbl_objects, default_fwhm)
         image.positions = tbl_objects.copy()
         image.fwhm = default_fwhm
         return
@@ -524,6 +564,7 @@ def find_stars(
 
     #   Keep the full finder table so quality columns can be copied onto photometry.
     if tbl_objects is not None and len(tbl_objects) > 0:
+        tbl_objects = _keep_stellar_sizes(tbl_objects, median_fwhm)
         image.positions = tbl_objects.copy()
     image.fwhm = median_fwhm
     _log(
@@ -1364,6 +1405,7 @@ def extract_multiprocessing(
     finder_sharpness_range: tuple[float, float] = (0.2, 1.0),
     finder_roundness_range: tuple[float, float] = (-1.0, 1.0),
     finder_min_separation_fwhm: float = 1.0,
+    finder_fwhm_scale_range: tuple[float, float] | None = (0.5, 2.0),
     multiplier_background_rms_epsf: float = 5.0,
     multiplier_grouper_epsf: float = 2.0,
     strict_cleaning_epsf_results: bool = True,
@@ -1415,6 +1457,7 @@ def extract_multiprocessing(
                 "finder_sharpness_range": finder_sharpness_range,
                 "finder_roundness_range": finder_roundness_range,
                 "finder_min_separation_fwhm": finder_min_separation_fwhm,
+                "finder_fwhm_scale_range": finder_fwhm_scale_range,
                 "multiplier_background_rms_epsf": multiplier_background_rms_epsf,
                 "multiplier_grouper_epsf": multiplier_grouper_epsf,
                 "strict_cleaning_epsf_results": strict_cleaning_epsf_results,
@@ -1473,6 +1516,7 @@ def main_extract(
     finder_sharpness_range: tuple[float, float] = (0.2, 1.0),
     finder_roundness_range: tuple[float, float] = (-1.0, 1.0),
     finder_min_separation_fwhm: float = 1.0,
+    finder_fwhm_scale_range: tuple[float, float] | None = (0.5, 2.0),
     multiplier_background_rms_epsf: float = 5.0,
     multiplier_grouper_epsf: float = 2.0,
     strict_cleaning_epsf_results: bool = True,
@@ -1552,6 +1596,7 @@ def main_extract(
         finder_sharpness_range=finder_sharpness_range,
         finder_roundness_range=finder_roundness_range,
         finder_min_separation_fwhm=finder_min_separation_fwhm,
+        finder_fwhm_scale_range=finder_fwhm_scale_range,
     )
 
     if photometry_extraction_method == "PSF":

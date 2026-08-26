@@ -10,8 +10,10 @@ from ost_photometry.fwhm import (
     estimate_fwhm_from_finder_table,
     estimate_fwhm_from_positions,
     estimate_image_fwhm,
+    filter_finder_table_by_fwhm_scale,
     filter_table_finite_cutouts,
     finite_cutout_star_mask,
+    roundness_range_for_finder,
     select_sources_for_fwhm_fit,
     source_positions_from_table,
 )
@@ -237,3 +239,32 @@ def test_filter_table_finite_cutouts_passthrough_when_clean():
     assert n_rejected == 0
     assert len(filtered) == 1
     np.testing.assert_array_equal(filtered["x_centroid"], [15.0])
+
+
+def test_roundness_range_for_finder_maps_dao_window_on_iraf():
+    assert roundness_range_for_finder("IRAF", (-1.0, 1.0)) == (0.0, 0.5)
+    assert roundness_range_for_finder("IRAF", (0.0, 0.2)) == (0.0, 0.2)
+    assert roundness_range_for_finder("DAO", (-1.0, 1.0)) == (-1.0, 1.0)
+
+
+def test_filter_finder_table_by_fwhm_scale_drops_noise_peaks():
+    table = Table(
+        {
+            "x_centroid": [10.0, 20.0, 30.0],
+            "y_centroid": [10.0, 20.0, 30.0],
+            "fwhm": [1.2, 6.1, 18.0],
+        }
+    )
+    kept, n_removed = filter_finder_table_by_fwhm_scale(
+        table, 6.0, scale_range=(0.5, 2.0)
+    )
+    assert n_removed == 2
+    assert len(kept) == 1
+    assert float(kept["fwhm"][0]) == pytest.approx(6.1)
+
+
+def test_filter_finder_table_by_fwhm_scale_noop_without_column():
+    table = Table({"x_centroid": [10.0], "y_centroid": [10.0]})
+    kept, n_removed = filter_finder_table_by_fwhm_scale(table, 6.0)
+    assert n_removed == 0
+    assert len(kept) == 1
