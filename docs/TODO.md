@@ -65,28 +65,6 @@ Steps are already modular via config. What is missing is **persist and continue 
 
 ## Reduce
 
-### `reduce/registration.py` — modularize (P3, as needed)
-
-**~1700 lines**, 15 functions. Orchestration (`align_images`), shift algorithms, and trim logic in one file.
-
-**External API (keep stable):**
-
-| Consumer | Symbols |
-|----------|---------|
-| `reduce/workflow/main.py` | `align_images`, `make_big_images` |
-| `n1_baches/1_masterimages.py` | `trim_image_simple` |
-
-Trim helpers are already unified (`trim_ccd` / `ccd_trim_slices` / `aa_common_trim_margins`). AA footprint stays on `CCDData.mask`.
-
-**Recommendation:** no dedicated split. If touching alignment/trim, optionally:
-
-```
-reduce/registration/
-  align.py    # align_images, align_image_main
-  shifts.py   # calculate_xy_image_shifts*, astro_align, optical_flow_*
-  trim.py     # trim_ccd, trim_image, trim_image_simple
-```
-
 ### `reduce/utilities.py` — optional further split (P3)
 
 Facade plus reduction-specific helpers; already delegates to `exposure`, `instrument`, `masks`, `wcs_reduce`, …. Incremental only when touching the affected area.
@@ -140,5 +118,4 @@ input; it does not write wide tables.
 2. **P3:** OST filter throughput → synphot Vega↔AB offsets.
 3. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter.
 4. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
-5. **On further registration work:** optionally extract `trim.py` / split align+shifts.
-6. **On utilities changes:** extract only the affected area.
+5. **On utilities changes:** extract only the affected area.

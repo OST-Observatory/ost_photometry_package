@@ -70,6 +70,19 @@ def test_ccd_trim_slices_rejects_empty_window():
         )
 
 
+def test_registration_package_keeps_external_api():
+    pytest.importorskip("ccdproc")
+    from ost_photometry.reduce import registration
+
+    for name in (
+        "align_images",
+        "make_big_images",
+        "trim_image_simple",
+        "trim_ccd",
+    ):
+        assert hasattr(registration, name)
+
+
 def test_trim_ccd_positive_margins():
     pytest.importorskip("ccdproc")
     from astropy.nddata import CCDData
