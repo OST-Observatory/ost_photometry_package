@@ -140,6 +140,8 @@ def test_mag_vs_error_qc_plots(tmp_path):
                 "x_fit": np.linspace(20.0, 180.0, 80),
                 "y_fit": np.linspace(15.0, 140.0, 80),
                 "qfit": np.linspace(0.02, 0.4, 80),
+                "sharpness": np.linspace(0.3, 0.8, 80),
+                "roundness": np.linspace(-0.2, 0.4, 80),
             }
         )
         path_q = qc.plot_photometry_mag_vs_error(
@@ -160,6 +162,8 @@ def test_mag_vs_error_qc_plots(tmp_path):
                 "x_fit": np.linspace(20.0, 180.0, 80),
                 "y_fit": np.linspace(15.0, 140.0, 80),
                 "qfit": np.linspace(0.02, 0.4, 80),
+                "sharpness": np.linspace(0.3, 0.8, 80),
+                "roundness": np.linspace(-0.2, 0.4, 80),
             }
         )
         path_c = qc.plot_photometry_mag_vs_error(
@@ -203,6 +207,57 @@ def test_binned_error_percentiles_and_photon_model():
         faint = qc._photon_noise_sigma(np.array([18.0]), floor, faint_scale)[0]
         bright = qc._photon_noise_sigma(np.array([10.0]), floor, faint_scale)[0]
         assert faint > bright
+
+
+def test_quality_series_lists_all_available_columns():
+    pytest.importorskip("numpy")
+    with isolated_sys_modules():
+        qc = _load_calibration_qc()
+        n = 24
+        table = Table(
+            {
+                "qfit": np.linspace(0.01, 0.3, n),
+                "sharpness": np.linspace(0.2, 0.9, n),
+                "roundness": np.linspace(-0.4, 0.4, n),
+                "x_fit": np.arange(n, dtype=float),
+                "y_fit": np.arange(n, dtype=float),
+            }
+        )
+        ok = np.ones(n, dtype=bool)
+        series = qc._quality_series_for_plot(table, ok)
+        labels = [label for _values, label in series]
+        assert len(series) == 3
+        assert any("qfit" in label for label in labels)
+        assert any("sharpness" in label for label in labels)
+        assert any(label == "roundness" for label in labels)
+
+
+def test_snr_guide_styles_are_distinct():
+    pytest.importorskip("numpy")
+    with isolated_sys_modules():
+        qc = _load_calibration_qc()
+        s10 = qc._SNR_GUIDE_STYLE[10.0]
+        s5 = qc._SNR_GUIDE_STYLE[5.0]
+        assert s10["color"] != s5["color"]
+        assert s10["ls"] != s5["ls"]
+        assert qc._MEDIAN_COLOR != qc._PHOTON_COLOR
+
+
+def test_snr_guides_stay_inside_axes():
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+
+    with isolated_sys_modules():
+        qc = _load_calibration_qc()
+        fig, ax = plt.subplots()
+        ax.set_yscale("log")
+        ax.set_ylim(0.004, 0.04)
+        qc._draw_snr_guides(ax)
+        qc._expand_ylim_for_snr_guides(ax)
+        _y0, y1 = ax.get_ylim()
+        plt.close(fig)
+        assert y1 > qc._snr_sigma(5.0)
+        assert y1 > qc._snr_sigma(10.0)
 
 
 def test_residual_geometry_rotation_vs_scale():

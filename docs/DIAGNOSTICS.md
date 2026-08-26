@@ -14,7 +14,7 @@ Two kinds of figure, on purpose:
 
 | File (stem) | When | Content |
 |-------------|------|---------|
-| `photometry_mag_vs_error_<filter>` | After **extraction** (reference image) | Density of instrumental mag vs \(\sigma_m\) for **all** detections. Quality panel (`qfit` / `sharpness` / …) when those columns exist. **No** comparison-star overlay — the later fit still rejects stars. |
+| `photometry_mag_vs_error_<filter>` | After **extraction** (reference image) | Density of instrumental mag vs \(\sigma_m\) for **all** detections. One extra panel per quality column (`qfit`, `cfit`, `sharpness`, `roundness*`, finder FWHM) when those columns exist. **No** comparison-star overlay — the later fit still rejects stars. |
 | `photometry_mag_vs_error_overview_<filter>` | After extraction, if more than one image | Same density for **all** images, plus median \(\sigma\) vs time and/or airmass |
 | `photometry_mag_vs_error_<filter>_<epoch>` | After **calibration** | Same density for that epoch, with stars **used in the fit** (open stars) and catalog matches that were clipped or otherwise unused (grey crosses) |
 
@@ -36,27 +36,29 @@ fit cuts for that band).
   while faint non-detections at \(\sigma \sim 1\) mag do not squash the plot.
 - **Colour:** number of stars per bin (log). The dense ridge is the typical
   photometric error at that magnitude.
-- **Magenta line + white band:** binned **median** and 16–84% range (high contrast
-  on the viridis density). Compare nights with this curve, not with individual
-  faint outliers.
-- **Dashed red curve:** two-component noise envelope (see below). The data ridge
-  should follow it. A high floor at the bright end often means saturation or a
-  poor PSF; a ridge well above the curve at all mags often means extra sky/read
-  noise or underestimated flux errors.
-- **Dotted grey lines:** \(\sigma_m\) for **10σ** (≈ 0.11 mag) and **5σ**
-  (≈ 0.22 mag). Stars above the 5σ line are barely detections.
+- **Cyan line + white band:** binned **median** and 16–84% range (high contrast
+  on the viridis density; the legend uses a black-edged patch so the band stays
+  visible). Compare nights with this curve, not with individual faint outliers.
+- **Dashed orange curve:** two-component noise envelope (see below). The data
+  ridge should follow it. A high floor at the bright end often means saturation
+  or a poor PSF; a ridge well above the curve at all mags often means extra
+  sky/read noise or underestimated flux errors.
+- **Navy dash-dot / dark dotted lines:** \(\sigma_m\) for **10σ** (≈ 0.11 mag)
+  and **5σ** (≈ 0.22 mag). Stars above the 5σ line are barely detections.
 
 The stats box (N, median \(\sigma\), 90th percentile) summarises the same sample.
 After calibration it also counts stars used in the fit and catalog matches that
 were not used.
 
-### Second panel (single-image figure)
+### Extra panels (single-image figure)
 
-Drawn when comparison/calibrator flags or a quality column exist (`qfit` /
-`cfit` / `sharpness` / `roundness*`, otherwise distance to the image edge or
-offset from the field centre). After calibration, stars used in the fit are
-open stars; catalog matches rejected by the quality cuts are grey crosses. If
-the used stars sit in the high-\(\sigma\) tail, they are a poor ensemble.
+One panel per available quality column (`qfit`, `cfit`, `sharpness`,
+`roundness` / `roundness1` / `roundness2`, finder `fwhm`). If none of those
+exist, the fallback is distance to the image edge or offset from the field
+centre. After calibration, stars used in the fit are open stars; catalog
+matches rejected by the quality cuts are grey crosses (overplotted on each
+quality panel). If the used stars sit in the high-\(\sigma\) tail, they are a
+poor ensemble.
 
 ### Overview extra panels
 

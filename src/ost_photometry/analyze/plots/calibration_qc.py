@@ -1,6 +1,7 @@
 """Calibration, extinction-fit, and diagnostic QC plots."""
 from __future__ import annotations
 
+from math import ceil
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -8,6 +9,7 @@ import numpy as np
 from astropy.table import Table
 from astropy.visualization import ImageNormalize, ZScaleInterval
 from matplotlib.colors import LogNorm
+from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 
 from ... import checks
@@ -568,14 +570,21 @@ def _diagnostic_plot_path(
 
 _POGSON = 2.5 / np.log(10)
 _SNR_GUIDES = (10.0, 5.0)
-_QUALITY_COLUMNS = (
-    "qfit",
-    "cfit",
-    "sharpness",
-    "roundness",
-    "roundness1",
-    "roundness2",
-    "flags",
+# Distinct from each other and from the cyan median / orange photon curve.
+_SNR_GUIDE_STYLE = {
+    10.0: dict(color="#0072B2", ls="-.", lw=1.45),
+    5.0: dict(color="#333333", ls=(0, (1.0, 1.35)), lw=1.8),
+}
+_MEDIAN_COLOR = "#00C2D1"
+_PHOTON_COLOR = "#E69F00"
+_QUALITY_PLOT_COLUMNS = (
+    ("qfit", "qfit (PSF residual)"),
+    ("cfit", "cfit (PSF residual)"),
+    ("sharpness", "sharpness"),
+    ("roundness", "roundness"),
+    ("roundness1", "roundness1"),
+    ("roundness2", "roundness2"),
+    ("fwhm", "finder FWHM [pix]"),
 )
 
 
@@ -703,27 +712,31 @@ def _fit_photon_noise_envelope(
     return floor, faint_scale
 
 
-def _quality_for_plot(
+def _quality_series_for_plot(
     photometry: Table,
     ok: np.ndarray,
     image_shape: tuple[int, int] | None = None,
-) -> tuple[np.ndarray | None, str]:
-    for col in _QUALITY_COLUMNS:
+) -> list[tuple[np.ndarray, str]]:
+    """Every finite finder/PSF quality column, not only the first match."""
+    series: list[tuple[np.ndarray, str]] = []
+    for col, label in _QUALITY_PLOT_COLUMNS:
         if col not in photometry.colnames:
             continue
         values = _column_float(photometry, col)[ok]
         if np.any(np.isfinite(values)):
-            return values, col
+            series.append((values, label))
+    if series:
+        return series
     if "x_fit" not in photometry.colnames or "y_fit" not in photometry.colnames:
-        return None, ""
+        return []
     x = _column_float(photometry, "x_fit")[ok]
     y = _column_float(photometry, "y_fit")[ok]
     if image_shape is not None and image_shape[0] > 1 and image_shape[1] > 1:
         naxis1, naxis2 = image_shape
         dist = np.minimum.reduce([x, y, naxis1 - 1.0 - x, naxis2 - 1.0 - y])
-        return dist, "edge distance [pix]"
+        return [(dist, "edge distance [pix]")]
     r = np.hypot(x - np.nanmedian(x), y - np.nanmedian(y))
-    return r, "offset from field centre [pix]"
+    return [(r, "offset from field centre [pix]")]
 
 
 def _comparison_mask(photometry: Table, ok: np.ndarray) -> np.ndarray | None:
@@ -801,32 +814,45 @@ def _draw_mag_err_density(ax, mag: np.ndarray, err: np.ndarray):
 def _draw_snr_guides(ax) -> None:
     for snr in _SNR_GUIDES:
         sigma = _snr_sigma(snr)
+        style = _SNR_GUIDE_STYLE[snr]
         ax.axhline(
             sigma,
-            color="0.35",
-            ls=":",
-            lw=0.9,
+            color=style["color"],
+            ls=style["ls"],
+            lw=style["lw"],
             zorder=3,
             label=rf"{snr:.0f}$\sigma$  ($\sigma_m$={sigma:.2f})",
         )
 
 
+def _expand_ylim_for_snr_guides(ax) -> None:
+    """Keep 5σ / 10σ inside the frame so they are not both clipped to the top."""
+    y0, y1 = ax.get_ylim()
+    top = y1
+    for snr in _SNR_GUIDES:
+        sigma = _snr_sigma(snr)
+        if np.isfinite(sigma) and sigma > 0:
+            top = max(top, float(sigma) * 1.2)
+    if top > y1:
+        ax.set_ylim(y0, top)
+
+
 def _draw_trend_and_photon_model(ax, mag: np.ndarray, err: np.ndarray) -> None:
     centers, p16, p50, p84 = _binned_error_percentiles(mag, err)
     if centers.size:
-        # Magenta/white sits off the viridis ridge (which goes yellow at high N).
+        # Light band on viridis; legend uses a black-edged proxy (white fill
+        # is invisible on a white legend frame).
         ax.fill_between(
             centers,
             p16,
             p84,
             color="white",
-            alpha=0.78,
+            alpha=0.72,
             zorder=4,
             linewidth=0,
-            label="binned median (16–84%)",
         )
-        ax.plot(centers, p16, color="k", lw=1.6, zorder=5)
-        ax.plot(centers, p84, color="k", lw=1.6, zorder=5)
+        ax.plot(centers, p16, color="k", lw=1.5, zorder=5)
+        ax.plot(centers, p84, color="k", lw=1.5, zorder=5)
         ax.plot(
             centers,
             p50,
@@ -838,10 +864,11 @@ def _draw_trend_and_photon_model(ax, mag: np.ndarray, err: np.ndarray) -> None:
         ax.plot(
             centers,
             p50,
-            color="#FF1493",
-            lw=2.2,
+            color=_MEDIAN_COLOR,
+            lw=2.8,
             zorder=7,
             solid_capstyle="round",
+            label="binned median",
         )
     params = _fit_photon_noise_envelope(mag, err)
     if params is None:
@@ -851,12 +878,67 @@ def _draw_trend_and_photon_model(ax, mag: np.ndarray, err: np.ndarray) -> None:
     ax.plot(
         m_line,
         _photon_noise_sigma(m_line, floor, faint_scale),
-        color="C3",
-        lw=1.4,
+        color=_PHOTON_COLOR,
+        lw=1.6,
         ls="--",
         zorder=8,
         label=r"photon+sky/read  $\sqrt{\sigma_0^2+(c\,10^{0.4m})^2}$",
     )
+
+
+def _finalize_mag_err_legend(ax) -> None:
+    handles, labels = ax.get_legend_handles_labels()
+    if "binned median" in labels:
+        band = Patch(
+            facecolor="white",
+            edgecolor="0.15",
+            linewidth=1.2,
+            alpha=0.95,
+            label="16–84% range",
+        )
+        i = labels.index("binned median") + 1
+        handles.insert(i, band)
+        labels.insert(i, band.get_label())
+    ax.legend(handles, labels, loc="upper left", fontsize=8, framealpha=0.92)
+
+
+def _draw_calibrator_markers(
+    ax,
+    mag: np.ndarray,
+    err: np.ndarray,
+    used: np.ndarray | None,
+    rejected: np.ndarray | None,
+    *,
+    legend: bool,
+    used_edge: str = "C1",
+) -> None:
+    n_rej = int(np.count_nonzero(rejected)) if rejected is not None else 0
+    n_comp = int(np.count_nonzero(used)) if used is not None else 0
+    if rejected is not None and n_rej:
+        label = f"catalog, not used ({n_rej})" if legend else None
+        ax.scatter(
+            mag[rejected],
+            err[rejected],
+            s=22,
+            marker="x",
+            c="0.35",
+            linewidths=0.7,
+            zorder=8,
+            label=label,
+        )
+    if used is not None and n_comp:
+        label = f"used in calibration ({n_comp})" if legend else None
+        ax.scatter(
+            mag[used],
+            err[used],
+            s=28 if legend else 36,
+            marker="*",
+            facecolors="none",
+            edgecolors=used_edge,
+            linewidths=0.8 if legend else 0.9,
+            zorder=9,
+            label=label,
+        )
 
 
 def _mag_err_stats_text(
@@ -1038,8 +1120,8 @@ def plot_photometry_mag_vs_error(
     """
     QC figure: density of mag vs σ (log y), trend, photon-noise model, SNR guides.
 
-    A second panel is added when comparison-star flags, calibrator flags, or a
-    quality column (``qfit`` / sharpness / edge distance) is available.
+    Extra panels are added for each available quality column (``qfit``, ``cfit``,
+    sharpness, roundness*, finder FWHM) and/or comparison-star flags.
     """
     if "mags_fit" not in photometry.colnames or "mags_unc" not in photometry.colnames:
         return None
@@ -1051,59 +1133,50 @@ def plot_photometry_mag_vs_error(
         return None
 
     used, rejected = _calibrator_overlays(photometry, ok)
-    quality, quality_label = _quality_for_plot(photometry, ok, image_shape=image_shape)
+    quality_series = _quality_series_for_plot(photometry, ok, image_shape=image_shape)
     n_comp = int(np.count_nonzero(used)) if used is not None else 0
     n_rej = int(np.count_nonzero(rejected)) if rejected is not None else 0
-    extra_panel = used is not None or rejected is not None or quality is not None
+    has_cal = used is not None or rejected is not None
+    extra_panels: list[tuple[np.ndarray | None, str]] = list(quality_series)
+    if has_cal and not extra_panels:
+        extra_panels = [(None, "Stars used in calibration")]
 
     stem = filename_stem or (
         f"photometry_mag_vs_error_{band_label}" if band_label else "photometry_mag_vs_error"
     )
-    if extra_panel:
-        fig = plt.figure(figsize=(6.6, 10.8))
+    n_extra = len(extra_panels)
+    extra_axes: list = []
+    if n_extra:
+        n_cols = 1 if n_extra == 1 else 2
+        n_q_rows = ceil(n_extra / n_cols)
+        fig = plt.figure(figsize=(6.8 if n_cols == 1 else 11.2, 5.2 + 3.5 * n_q_rows))
         gs = fig.add_gridspec(
-            3,
-            1,
-            height_ratios=[1.35, 0.28, 1.0],
-            hspace=0.12,
+            1 + n_q_rows,
+            n_cols,
+            height_ratios=[1.45] + [1.0] * n_q_rows,
+            hspace=0.38,
+            wspace=0.28,
         )
-        ax0 = fig.add_subplot(gs[0])
-        ax1 = fig.add_subplot(gs[2], sharex=ax0)
+        ax0 = fig.add_subplot(gs[0, :])
+        for i in range(n_extra):
+            row = 1 + i // n_cols
+            col = i % n_cols
+            span_row = n_extra % n_cols == 1 and i == n_extra - 1 and n_cols == 2
+            ax = fig.add_subplot(gs[row, :] if span_row else gs[row, col], sharex=ax0)
+            extra_axes.append(ax)
         plt.setp(ax0.get_xticklabels(), visible=False)
     else:
         fig, ax0 = plt.subplots(figsize=(6.4, 4.8))
-        ax1 = None
 
     pcm = _draw_mag_err_density(ax0, mag, err)
     fig.colorbar(pcm, ax=ax0, label="N per bin")
     _draw_trend_and_photon_model(ax0, mag, err)
     _draw_snr_guides(ax0)
-    if rejected is not None and n_rej:
-        ax0.scatter(
-            mag[rejected],
-            err[rejected],
-            s=22,
-            marker="x",
-            c="0.35",
-            linewidths=0.7,
-            zorder=8,
-            label=f"catalog, not used ({n_rej})",
-        )
-    if used is not None and n_comp:
-        ax0.scatter(
-            mag[used],
-            err[used],
-            s=28,
-            marker="*",
-            facecolors="none",
-            edgecolors="C1",
-            linewidths=0.8,
-            zorder=9,
-            label=f"used in calibration ({n_comp})",
-        )
+    _expand_ylim_for_snr_guides(ax0)
+    _draw_calibrator_markers(ax0, mag, err, used, rejected, legend=True)
     ax0.set_ylabel(r"$\sigma_m$ [mag]")
     ax0.grid(True, which="both", alpha=0.3)
-    ax0.legend(loc="upper left", fontsize=8, framealpha=0.92)
+    _finalize_mag_err_legend(ax0)
     ax0.text(
         0.97,
         0.03,
@@ -1119,7 +1192,12 @@ def plot_photometry_mag_vs_error(
         ttl += f" ({band_label})"
     ax0.set_title(ttl)
 
-    if ax1 is not None:
+    last_row_start = 0
+    if extra_axes:
+        n_cols_extra = 1 if n_extra <= 1 else 2
+        last_row_start = ((n_extra - 1) // n_cols_extra) * n_cols_extra
+    for i, ax1 in enumerate(extra_axes):
+        quality, quality_label = extra_panels[i]
         if quality is not None:
             finite_q = np.isfinite(quality)
             sc = ax1.scatter(
@@ -1135,44 +1213,27 @@ def plot_photometry_mag_vs_error(
             fig.colorbar(sc, ax=ax1, label=quality_label)
         else:
             ax1.scatter(mag, err, s=8, alpha=0.35, c="C0", edgecolors="none", zorder=2)
-        if rejected is not None and n_rej:
-            ax1.scatter(
-                mag[rejected],
-                err[rejected],
-                s=22,
-                marker="x",
-                c="0.25",
-                linewidths=0.7,
-                zorder=3,
-                label="catalog, not used",
-            )
-        if used is not None and n_comp:
-            ax1.scatter(
-                mag[used],
-                err[used],
-                s=36,
-                marker="*",
-                facecolors="none",
-                edgecolors="k",
-                linewidths=0.9,
-                zorder=4,
-                label="used in calibration",
-            )
-            ax1.legend(loc="upper left", fontsize=8)
-        elif rejected is not None and n_rej:
+        _draw_calibrator_markers(
+            ax1,
+            mag,
+            err,
+            used,
+            rejected,
+            legend=i == 0 and has_cal,
+            used_edge="k",
+        )
+        if i == 0 and has_cal:
             ax1.legend(loc="upper left", fontsize=8)
         ax1.set_yscale("log")
         ax1.set_ylim(ax0.get_ylim())
         ax1.set_ylabel(r"$\sigma_m$ [mag]")
-        ax1.set_xlabel(x_label)
         ax1.grid(True, which="both", alpha=0.3)
-        extra_title = (
-            "Quality / stars used in calibration"
-            if used is not None
-            else "Quality"
-        )
-        ax1.set_title(extra_title, fontsize=10, pad=12)
-    else:
+        ax1.set_title(quality_label, fontsize=10, pad=8)
+        if i >= last_row_start:
+            ax1.set_xlabel(x_label)
+        else:
+            plt.setp(ax1.get_xticklabels(), visible=False)
+    if not extra_axes:
         ax0.set_xlabel(x_label)
 
     path = _diagnostic_plot_path(output_dir, stem, file_type)
@@ -1253,10 +1314,11 @@ def plot_photometry_mag_vs_error_overview(
     fig.colorbar(pcm, ax=ax0, label="N per bin")
     _draw_trend_and_photon_model(ax0, mag, err)
     _draw_snr_guides(ax0)
+    _expand_ylim_for_snr_guides(ax0)
     ax0.set_xlabel("Instrumental magnitude [mag]")
     ax0.set_ylabel(r"$\sigma_m$ [mag]")
     ax0.grid(True, which="both", alpha=0.3)
-    ax0.legend(loc="upper left", fontsize=8, framealpha=0.92)
+    _finalize_mag_err_legend(ax0)
     ax0.text(
         0.97,
         0.03,

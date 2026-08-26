@@ -27,6 +27,7 @@ _QC_PLOT_COLUMNS = (
     "roundness1",
     "roundness2",
     "flags",
+    "fwhm",
 )
 
 
