@@ -24,6 +24,7 @@ from .. import utilities as base_utilities
 from ..core.parallel import Executor
 from ..terminal_output import print_to_terminal
 from . import plots, utilities
+from .image_collection import image_file_collection as make_image_file_collection
 from .trim_slices import aa_common_trim_margins, ccd_trim_slices
 
 ############################################################################
@@ -146,7 +147,7 @@ def align_images(
     checks.clear_directory(output_path_transformation)
 
     #   New image collection for the images
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = make_image_file_collection(file_path)
 
     #   Check if image_file_collection is not empty
     if not image_file_collection.files:
@@ -548,7 +549,7 @@ def make_big_images(
     out_path = checks.check_pathlib_path(output_dir)
 
     #   New image collection for the images
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = make_image_file_collection(file_path)
 
     #   Image list
     image_type = utilities.get_image_type(
@@ -1644,4 +1645,4 @@ def trim_image_simple(
         trimmed_image.write(output_path_trimmed / file_name, overwrite=True)
 
     #   Return new image file collection
-    return ccdp.ImageFileCollection(output_path_trimmed)
+    return make_image_file_collection(output_path_trimmed)

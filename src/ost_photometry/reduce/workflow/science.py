@@ -146,7 +146,7 @@ def reduce_light(
     out_path = checks.check_pathlib_path(output_dir)
 
     #   Get image collection for the science images
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = utilities.image_file_collection(file_path)
 
     #   Return if image collection is empty
     if not image_file_collection.files:
@@ -180,7 +180,7 @@ def reduce_light(
         return
 
     #   Get image collection for the reduced files
-    image_file_collection_reduced = ccdp.ImageFileCollection(out_path)
+    image_file_collection_reduced = utilities.image_file_collection(out_path)
 
     #   Load combined darks and flats in dictionary for easy access
     dark_image_type = utilities.get_image_type(

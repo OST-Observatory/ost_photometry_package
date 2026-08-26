@@ -79,6 +79,7 @@ def test_redu_facade_reexports_reduce_main():
         "make_hot_pixel_mask",
         "get_image_type",
         "check_master_files_on_disk",
+        "image_file_collection",
     ],
 )
 def test_reduce_utilities_reexports_workflow_helpers(symbol):

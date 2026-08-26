@@ -96,7 +96,7 @@ def reduce_flat(
     out_path = checks.check_pathlib_path(output_dir)
 
     #   Create image collection for the flats
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = utilities.image_file_collection(file_path)
 
     #   Return if image collection is empty
     if not image_file_collection.files:
@@ -116,7 +116,7 @@ def reduce_flat(
         return
 
     #   Get image collection for the reduced files
-    image_file_collection_reduced = ccdp.ImageFileCollection(out_path)
+    image_file_collection_reduced = utilities.image_file_collection(out_path)
 
     #   Get master dark
     dark_image_type = utilities.get_image_type(
@@ -374,7 +374,7 @@ def master_flat(
     out_path = checks.check_pathlib_path(output_dir)
 
     #   Create new image collection for the reduced flat images
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = utilities.image_file_collection(file_path)
 
     #   Determine filter
     flat_image_type = utilities.get_image_type(

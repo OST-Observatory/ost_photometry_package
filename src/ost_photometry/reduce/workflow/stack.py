@@ -93,7 +93,7 @@ def stack_image(
     out_path = checks.check_pathlib_path(output_dir)
 
     #   New image collection for the images
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = utilities.image_file_collection(file_path)
 
     #   Check if image_file_collection is not empty
     if not image_file_collection.files:

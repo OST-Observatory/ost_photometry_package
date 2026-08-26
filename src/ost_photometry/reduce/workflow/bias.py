@@ -65,7 +65,7 @@ def master_bias(
     out_path = checks.check_pathlib_path(output_dir)
 
     #   Create image collection
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = utilities.image_file_collection(file_path)
 
     #   Return if image collection is empty
     if not image_file_collection.files:

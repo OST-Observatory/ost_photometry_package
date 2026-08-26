@@ -81,10 +81,10 @@ def reduce_dark(
     out_path = checks.check_pathlib_path(output_dir)
 
     #   Create image collection for the raw data
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = utilities.image_file_collection(file_path)
 
     #   Create image collection for the reduced data
-    image_file_collection_reduced = ccdp.ImageFileCollection(out_path)
+    image_file_collection_reduced = utilities.image_file_collection(out_path)
 
     #   Get master bias
     bias_image_type = utilities.get_image_type(
@@ -348,9 +348,9 @@ def master_dark(
 
     #   Create image collection
     try:
-        image_file_collection = ccdp.ImageFileCollection(out_path / "dark")
+        image_file_collection = utilities.image_file_collection(out_path / "dark")
     except FileNotFoundError:
-        image_file_collection = ccdp.ImageFileCollection(file_path)
+        image_file_collection = utilities.image_file_collection(file_path)
 
     #   Return if image collection is empty
     if not image_file_collection.files:

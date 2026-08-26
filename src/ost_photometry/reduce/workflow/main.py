@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import ccdproc as ccdp
 import numpy as np
 
 from ... import calibration_parameters, checks, style, terminal_output
@@ -345,7 +344,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
     image_type_dir = cfg.image_type_dir
 
     #   Get image file collection
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = utilities.image_file_collection(file_path)
 
     #   Except if image collection is empty
     if not image_file_collection.files:
@@ -778,7 +777,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
                 file_path = checks.check_pathlib_path(output_path / "aligned_lights")
 
                 #   New image collection for the images
-                image_file_collection = ccdp.ImageFileCollection(file_path)
+                image_file_collection = utilities.image_file_collection(file_path)
 
                 #   Restrict to current filter
                 filtered_files = image_file_collection.files_filtered(
@@ -800,7 +799,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
                 file_path = checks.check_pathlib_path(output_path / "light")
 
                 #   New image collection for the images
-                image_file_collection = ccdp.ImageFileCollection(file_path)
+                image_file_collection = utilities.image_file_collection(file_path)
 
                 #   Restrict to current filter
                 filtered_files = image_file_collection.files_filtered(

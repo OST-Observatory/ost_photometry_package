@@ -4,11 +4,11 @@ import sys
 from pathlib import Path
 
 import astropy.units as u
-import ccdproc as ccdp
 import numpy as np
 from astropy.nddata import CCDData
 
 from .. import checks, terminal_output
+from .image_collection import image_file_collection as make_image_file_collection
 
 
 def get_pixel_mask(out_path: Path, shape: np.ndarray) -> tuple[bool, CCDData]:
@@ -64,7 +64,7 @@ def get_pixel_mask(out_path: Path, shape: np.ndarray) -> tuple[bool, CCDData]:
             mask_bad_pixel = np.zeros(shape, dtype=bool)
 
             #   New image collection
-            image_file_collection = ccdp.ImageFileCollection(out_path)
+            image_file_collection = make_image_file_collection(out_path)
 
             #   Get hot pixel masks
             ifc_hot_pixel = image_file_collection.filter(imagetyp="dark mask")

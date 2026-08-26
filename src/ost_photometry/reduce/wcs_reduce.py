@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
-import ccdproc as ccdp
 import numpy as np
 from astropy.wcs import WCS
 
 from .. import checks, style, terminal_output
 from .. import utilities as base_utilities
+from .image_collection import image_file_collection as make_image_file_collection
 from .image_types import get_image_type
 
 
@@ -70,7 +70,7 @@ def determine_wcs(
     checks.check_output_directories(output_dir)
 
     #   Set up image collection for the images
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = make_image_file_collection(file_path)
 
     #   Filter priority list:
     #   Give the highest priority to the filter with the highest
@@ -189,7 +189,7 @@ def determine_wcs_all_images(
 
     #   Set up image collection for the images
     #   and filter according to requirements
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = make_image_file_collection(file_path)
 
     if image_type is not None:
         true_img_type = get_image_type(

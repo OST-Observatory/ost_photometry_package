@@ -32,10 +32,38 @@ from .exposure import (
     find_nearest_exposure_time_to_reference_image,
     get_exposure_times,
 )
+from .image_collection import image_file_collection
+from .image_collection import image_file_collection as make_image_file_collection
 from .image_types import get_image_type
 from .instrument import get_instrument_info
 from .masks import get_pixel_mask, make_bad_pixel_mask, make_hot_pixel_mask
 from .wcs_reduce import determine_wcs_all_images
+
+__all__ = [
+    "adjust_edian_compatibility",
+    "bin_image",
+    "check_exposure_times",
+    "check_filter_keywords",
+    "check_master_files_on_disk",
+    "detect_outlier",
+    "determine_wcs_all_images",
+    "estimate_fwhm",
+    "find_nearest_exposure_time",
+    "find_nearest_exposure_time_to_reference_image",
+    "flip_image",
+    "get_exposure_times",
+    "get_image_type",
+    "get_instrument_info",
+    "get_pixel_mask",
+    "image_file_collection",
+    "inverse_median",
+    "make_bad_pixel_mask",
+    "make_hot_pixel_mask",
+    "make_symbolic_links",
+    "prepare_reduction",
+    "sanitize_image_types",
+    "update_header_information",
+]
 
 ############################################################################
 #                           Routines & definitions                         #
@@ -128,7 +156,7 @@ def check_filter_keywords(
         )
 
     #   Create image collection
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = make_image_file_collection(file_path)
 
     #   Return if image collection is empty
     if not image_file_collection.files:
@@ -175,7 +203,7 @@ def sanitize_image_types(
         Expected image type
     """
     #   Sanitize
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = make_image_file_collection(file_path)
 
     for image_ccd, file_name in image_file_collection.ccds(
         ccd_kwargs={"unit": "adu"}, return_fname=True
@@ -370,7 +398,7 @@ def estimate_fwhm(
     out_path = checks.check_pathlib_path(output_dir)
 
     #   New image collection for the images
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = make_image_file_collection(file_path)
 
     #   Determine filter
     filter_set = set(
@@ -525,7 +553,7 @@ def check_master_files_on_disk(
     file_path = checks.check_pathlib_path(image_path)
 
     #   Get image collection for the reduced files
-    image_file_collection = ccdp.ImageFileCollection(file_path)
+    image_file_collection = make_image_file_collection(file_path)
 
     if not image_file_collection.files:
         return False
@@ -658,7 +686,7 @@ def flip_image(
         image_flipped.write(output_path_flipped / file_name, overwrite=True)
 
     #   Replace new image file collection
-    return ccdp.ImageFileCollection(output_path_flipped)
+    return make_image_file_collection(output_path_flipped)
 
 
 def bin_image(
@@ -710,7 +738,7 @@ def bin_image(
         binned_image.write(output_path_binned / file_name, overwrite=True)
 
     #   Replace new image file collection
-    return ccdp.ImageFileCollection(output_path_binned)
+    return make_image_file_collection(output_path_binned)
 
 
 def update_header_information(
