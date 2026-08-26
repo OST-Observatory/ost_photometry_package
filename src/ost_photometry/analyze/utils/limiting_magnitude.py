@@ -223,8 +223,9 @@ def _derive_limiting_magnitude_one_epoch(
     )
     p.start()
 
+    terminal_output.print_to_terminal("")
     terminal_output.print_to_terminal(
-        f"\nDetermine limiting magnitude for filter: {filter_}",
+        f"Determine limiting magnitude for filter: {filter_}",
         indent=indent,
     )
     terminal_output.print_to_terminal(

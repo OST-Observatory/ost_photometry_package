@@ -331,6 +331,34 @@ def _odd_psf_fit_shape(requested: int, fwhm: float) -> int:
     return need
 
 
+def _format_fwhm_status(
+    fwhm: float,
+    *,
+    source: str,
+    n_stars: int | None = None,
+) -> str:
+    """Terminal FWHM line in plain language (not internal meta keys)."""
+    value = f"FWHM = {fwhm:.2f} px"
+    n = int(n_stars) if n_stars else 0
+    if source == "user":
+        if n:
+            return (
+                f"{value} (using the value you provided; {n} sources found)"
+            )
+        return f"{value} (using the value you provided)"
+    if source == "finder_column":
+        if n:
+            return (
+                f"{value} (estimated from {n} stars in the expected size range)"
+            )
+        return f"{value} (estimated from the star finder)"
+    if source == "psf_fit":
+        if n:
+            return f"{value} (estimated by fitting {n} stars)"
+        return f"{value} (estimated by fitting star profiles)"
+    return f"{value} (using the default value)"
+
+
 def find_stars(
     image: AnalysisImage,
     rms_background: float,
@@ -382,16 +410,26 @@ def find_stars(
     fwhm_estimate_min, fwhm_estimate_max
         Accepted per-star FWHM range (pixels) for automatic estimation.
     """
-    def _log(msg: str, *, style_name: str | None = None) -> None:
+    def _log(
+        msg: str,
+        *,
+        style_name: str | None = None,
+        extra_indent: int = 0,
+    ) -> None:
+        log_indent = indent + extra_indent
         if terminal_logger is not None:
             if style_name:
-                terminal_logger.add_to_cache(msg, indent=indent, style_name=style_name)
+                terminal_logger.add_to_cache(
+                    msg, indent=log_indent, style_name=style_name
+                )
             else:
-                terminal_logger.add_to_cache(msg, indent=indent)
+                terminal_logger.add_to_cache(msg, indent=log_indent)
         elif style_name:
-            terminal_output.print_to_terminal(msg, indent=indent, style_name=style_name)
+            terminal_output.print_to_terminal(
+                msg, indent=log_indent, style_name=style_name
+            )
         else:
-            terminal_output.print_to_terminal(msg, indent=indent)
+            terminal_output.print_to_terminal(msg, indent=log_indent)
 
     _log("Identify stars")
 
@@ -406,10 +444,8 @@ def find_stars(
     user_fwhm = fwhm_object_psf is not None
     if user_fwhm:
         default_fwhm = float(fwhm_object_psf)
-        fwhm_source = "user"
     else:
         default_fwhm = image.fwhm
-        fwhm_source = "default"
 
     finder_kwargs = {
         "sharpness_range": finder_sharpness_range,
@@ -429,6 +465,7 @@ def find_stars(
             f"[Info] FWHM determination skipped: no sources found. "
             f"Use the default FWHM of {default_fwhm}.",
             style_name="WARNING",
+            extra_indent=1,
         )
         image.fwhm = default_fwhm
         return
@@ -438,7 +475,10 @@ def find_stars(
         image.positions = tbl_objects.copy()
         image.fwhm = default_fwhm
         _log(
-            f"FWHM = {default_fwhm:.2f} px (source=user, n_sources={len(tbl_objects)})"
+            _format_fwhm_status(
+                default_fwhm, source="user", n_stars=len(tbl_objects)
+            ),
+            extra_indent=1,
         )
         return
 
@@ -456,6 +496,7 @@ def find_stars(
             f"[Info] FWHM determination failed with the following error "
             f"{fwhm_error}. Use the default FWHM of {default_fwhm}.",
             style_name="WARNING",
+            extra_indent=1,
         )
 
         #   Keep the full finder table (sharpness, roundness, …) for later merge.
@@ -486,8 +527,10 @@ def find_stars(
         image.positions = tbl_objects.copy()
     image.fwhm = median_fwhm
     _log(
-        f"FWHM = {median_fwhm:.2f} px "
-        f"(source={fwhm_source}, n_in_range={n_in_range})"
+        _format_fwhm_status(
+            median_fwhm, source=fwhm_source, n_stars=n_in_range
+        ),
+        extra_indent=1,
     )
 
 def check_epsf_stars(
