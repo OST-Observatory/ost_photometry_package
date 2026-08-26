@@ -267,9 +267,11 @@ def determine_background(
         #   Add Header keyword to mark the file as background subtracted
         image_no_bg.meta["NO_BG"] = True
 
-    #   RMS on the frame the finder will see
+    #   RMS on the frame the finder will see (masked pixels excluded)
     background_rms = MADStdBackgroundRMS(sigma_clip=sigma_clip)
-    rms_background = background_rms(image_no_bg.data, mask=image_no_bg.mask)
+    rms_background = background_rms(
+        ma.masked_array(image_no_bg.data, mask=image_no_bg.mask)
+    )
 
     #   Define name and save image
     file_name = f"{base_utilities.get_basename(image.filename)}_no_bkg.fit"
