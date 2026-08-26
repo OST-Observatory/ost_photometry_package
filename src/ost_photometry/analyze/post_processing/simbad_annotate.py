@@ -16,6 +16,51 @@ from astroquery.simbad import Simbad
 from ... import terminal_output
 from .. import plots
 
+# TAP / Simbad cone queries reject radii outside (0, 90] deg.
+_SIMBAD_MAX_RADIUS_DEG = 90.0
+
+
+def search_cone_from_wcs(
+    wcs_image: wcs.WCS,
+    image_shape: tuple[int, int],
+) -> tuple[SkyCoord, u.Quantity]:
+    """
+    Image-center SkyCoord and circumradius covering all four corners.
+
+    Uses angular separation so RA wrap-around (e.g. fields near 0 h) does not
+    produce a ~180 deg radius from ``ra_max - ra_min``.
+    """
+    height, width = image_shape
+    x0, x1 = 0.0, float(max(width - 1, 0))
+    y0, y1 = 0.0, float(max(height - 1, 0))
+    center = wcs_image.pixel_to_world(0.5 * (x0 + x1), 0.5 * (y0 + y1))
+    corners = wcs_image.pixel_to_world(
+        [x0, x1, x0, x1],
+        [y0, y0, y1, y1],
+    )
+    radius = corners.separation(center).max()
+    return center, radius
+
+
+def _simbad_query_radius_deg(radius: u.Quantity) -> float | None:
+    """Return a TAP-legal radius in degrees, or ``None`` if the cone is unusable."""
+    radius_deg = float(radius.to_value(u.deg))
+    if not np.isfinite(radius_deg) or radius_deg <= 0.0:
+        terminal_output.print_to_terminal(
+            "Simbad search radius is not positive; skipping query.",
+            style_name="WARNING",
+        )
+        return None
+    if radius_deg > _SIMBAD_MAX_RADIUS_DEG:
+        terminal_output.print_to_terminal(
+            f"Simbad search radius {radius_deg:.1f} deg exceeds the "
+            f"{_SIMBAD_MAX_RADIUS_DEG:.0f} deg TAP limit (check WCS). "
+            f"Clipping to {_SIMBAD_MAX_RADIUS_DEG:.0f} deg.",
+            style_name="WARNING",
+        )
+        return _SIMBAD_MAX_RADIUS_DEG
+    return radius_deg
+
 
 def query_simbad_objects(
         wcs_image: wcs.WCS, image_shape: tuple[int, int],
@@ -41,20 +86,10 @@ def query_simbad_objects(
     -------
         Table of objects found
     """
-    #   Determine the limits of the image in the celestial coordinate system
-    height, width = image_shape
-    coordinates = wcs_image.pixel_to_world(
-        [0, width, 0, width], [0, 0, height, height]
-    )
-    ra_min, ra_max = coordinates.ra.degree.min(), coordinates.ra.degree.max()
-    dec_min, dec_max = coordinates.dec.degree.min(), coordinates.dec.degree.max()
-
-    #   Calculate image center and search radius
-    center_ra = (ra_min + ra_max) / 2
-    center_dec = (dec_min + dec_max) / 2
-    radius_deg = max(ra_max - ra_min, dec_max - dec_min) / 2
-
-    center_coord = SkyCoord(ra=center_ra, dec=center_dec, unit="deg")
+    center_coord, radius = search_cone_from_wcs(wcs_image, image_shape)
+    radius_deg = _simbad_query_radius_deg(radius)
+    if radius_deg is None:
+        return Table()
 
     #   Adjust Simbad query
     custom_simbad = Simbad()
@@ -188,4 +223,5 @@ __all__ = [
     "annotate_reference_image_with_simbad",
     "mark_simbad_objects_on_image",
     "query_simbad_objects",
+    "search_cone_from_wcs",
 ]

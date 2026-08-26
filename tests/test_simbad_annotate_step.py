@@ -184,3 +184,63 @@ def test_annotate_swallows_query_errors():
         side_effect=RuntimeError("simbad down")
     )
     helper.annotate_reference_image_with_simbad(_image())
+
+
+def _tan_wcs(*, crval1: float, crval2: float, npix: int = 200, cdelt: float = 0.001):
+    pytest.importorskip("astropy")
+    from astropy.wcs import WCS
+
+    return WCS(
+        {
+            "NAXIS": 2,
+            "NAXIS1": npix,
+            "NAXIS2": npix,
+            "CTYPE1": "RA---TAN",
+            "CTYPE2": "DEC--TAN",
+            "CRVAL1": crval1,
+            "CRVAL2": crval2,
+            "CRPIX1": npix / 2 + 0.5,
+            "CRPIX2": npix / 2 + 0.5,
+            "CDELT1": -cdelt,
+            "CDELT2": cdelt,
+            "CUNIT1": "deg",
+            "CUNIT2": "deg",
+        }
+    )
+
+
+def test_search_cone_handles_ra_wrap_near_zero_hours():
+    """NGC 7789-like fields must not yield a ~180 deg Simbad radius from RA min/max."""
+    pytest.importorskip("astropy.units")
+    import astropy.units as u
+    from astropy.coordinates import SkyCoord
+
+    helper = _load_helper()
+    wcs_image = _tan_wcs(crval1=359.35, crval2=56.7, npix=1000, cdelt=0.001)
+    center, radius = helper.search_cone_from_wcs(wcs_image, (1000, 1000))
+    expected = SkyCoord(ra=359.35 * u.deg, dec=56.7 * u.deg)
+    assert center.separation(expected).to_value(u.deg) < 0.05
+    radius_deg = float(radius.to_value(u.deg))
+    assert 0.3 < radius_deg < 2.0
+
+
+def test_search_cone_equator_matches_half_diagonal():
+    pytest.importorskip("astropy.units")
+    import astropy.units as u
+
+    helper = _load_helper()
+    wcs_image = _tan_wcs(crval1=180.0, crval2=0.0, npix=101, cdelt=0.01)
+    center, radius = helper.search_cone_from_wcs(wcs_image, (101, 101))
+    assert abs(center.ra.degree - 180.0) < 0.01
+    assert abs(center.dec.degree) < 0.01
+    assert 0.6 < float(radius.to_value(u.deg)) < 0.8
+
+
+def test_simbad_query_radius_clips_above_90_and_rejects_nonpositive():
+    pytest.importorskip("astropy.units")
+    import astropy.units as u
+
+    helper = _load_helper()
+    assert helper._simbad_query_radius_deg(120 * u.deg) == 90.0
+    assert helper._simbad_query_radius_deg(0 * u.deg) is None
+    assert helper._simbad_query_radius_deg(1.5 * u.deg) == pytest.approx(1.5)
