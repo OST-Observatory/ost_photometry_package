@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from .engine import CalibrationEngine, prepare_calibration_check_plots
+from typing import Any
+
 from .flux_normalize import (
     flux_normalization_flux_distribution,
     flux_normalization_image_series,
@@ -36,3 +37,19 @@ __all__ = [
     "run_second_order_campaign",
     "write_trans_para_table",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    # Engine imports differential_photometry; that module imports calibration.result,
+    # which loads this package. Importing engine here would loop.
+    if name in {"CalibrationEngine", "prepare_calibration_check_plots"}:
+        from .engine import CalibrationEngine, prepare_calibration_check_plots
+
+        globals()["CalibrationEngine"] = CalibrationEngine
+        globals()["prepare_calibration_check_plots"] = prepare_calibration_check_plots
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *__all__})

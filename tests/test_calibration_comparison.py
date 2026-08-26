@@ -13,6 +13,7 @@ from helpers import (
     isolated_sys_modules,
     load_module_from_path,
     pkg_src,
+    stub_analyze_package,
 )
 
 _PKG_SRC = pkg_src()
@@ -180,18 +181,24 @@ def test_calibration_epochs_schema_roundtrip(synthetic_calibration_epoch_table):
     assert native_single.meta.get("photometry_schema")
 
 
+def _load_engine():
+    analyze = stub_analyze_package("calibration", "pipeline")
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        analyze / "pipeline" / "config.py",
+    )
+    engine_mod = load_module_from_path(
+        "ost_photometry.analyze.calibration.engine",
+        analyze / "calibration" / "engine.py",
+    )
+    return cfg_mod, engine_mod
+
+
 @pytest.mark.comparison
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_calibration_engine_median_zp(synthetic_calibration_epoch_table):
     """CalibrationEngine median_zp backend fits ZP on synthetic epoch table."""
-    cfg_mod = load_module_from_path(
-        "ost_photometry.analyze.pipeline.config",
-        _PKG_SRC / "ost_photometry" / "analyze" / "pipeline" / "config.py",
-    )
-    engine_mod = load_module_from_path(
-        "ost_photometry.analyze.calibration.engine",
-        _PKG_SRC / "ost_photometry" / "analyze" / "calibration" / "engine.py",
-    )
+    cfg_mod, engine_mod = _load_engine()
     PipelineConfig = cfg_mod.PipelineConfig
     CalibrationEngine = engine_mod.CalibrationEngine
 
@@ -212,14 +219,7 @@ def test_prepare_calibration_check_plots_array_shapes(
     """Plot helper must pass color, delta, mask arrays of equal length."""
     from unittest.mock import patch
 
-    cfg_mod = load_module_from_path(
-        "ost_photometry.analyze.pipeline.config",
-        _PKG_SRC / "ost_photometry" / "analyze" / "pipeline" / "config.py",
-    )
-    engine_mod = load_module_from_path(
-        "ost_photometry.analyze.calibration.engine",
-        _PKG_SRC / "ost_photometry" / "analyze" / "calibration" / "engine.py",
-    )
+    cfg_mod, engine_mod = _load_engine()
     PipelineConfig = cfg_mod.PipelineConfig
     CalibrationEngine = engine_mod.CalibrationEngine
 
@@ -252,9 +252,10 @@ def test_prepare_calibration_check_plots_array_shapes(
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_derive_transform_fit_on_synthetic(synthetic_calibration_epoch_table):
     """Derive-transform backend produces finite c/ZP for two-filter epoch tables."""
+    analyze = stub_analyze_package("calibration")
     derive_mod = load_module_from_path(
         "ost_photometry.analyze.calibration.derive_transform",
-        _PKG_SRC / "ost_photometry" / "analyze" / "calibration" / "derive_transform.py",
+        analyze / "calibration" / "derive_transform.py",
     )
     tbl = synthetic_calibration_epoch_table
     fitted = derive_mod.fit_epoch_derive_transform(tbl, "epoch_000", ["B", "V"])
@@ -271,9 +272,10 @@ def test_derive_transform_fit_on_synthetic(synthetic_calibration_epoch_table):
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_derive_transform_sigma_clip_rejects_outlier(synthetic_calibration_epoch_table):
     """Tight fit_sigma_clip should drop a large residual outlier from the used mask."""
+    analyze = stub_analyze_package("calibration")
     derive_mod = load_module_from_path(
         "ost_photometry.analyze.calibration.derive_transform",
-        _PKG_SRC / "ost_photometry" / "analyze" / "calibration" / "derive_transform.py",
+        analyze / "calibration" / "derive_transform.py",
     )
     tbl = synthetic_calibration_epoch_table.copy()
     # Corrupt one comparison star far from the color-fit locus.
@@ -294,14 +296,7 @@ def test_derive_transform_sigma_clip_rejects_outlier(synthetic_calibration_epoch
 @pytest.mark.comparison
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_engine_derive_transform_from_data(synthetic_calibration_epoch_table):
-    cfg_mod = load_module_from_path(
-        "ost_photometry.analyze.pipeline.config",
-        _PKG_SRC / "ost_photometry" / "analyze" / "pipeline" / "config.py",
-    )
-    engine_mod = load_module_from_path(
-        "ost_photometry.analyze.calibration.engine",
-        _PKG_SRC / "ost_photometry" / "analyze" / "calibration" / "engine.py",
-    )
+    cfg_mod, engine_mod = _load_engine()
     PipelineConfig = cfg_mod.PipelineConfig
     CalibrationEngine = engine_mod.CalibrationEngine
 

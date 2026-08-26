@@ -14,7 +14,11 @@ _PKG_SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_PKG_SRC) not in sys.path:
     sys.path.insert(0, str(_PKG_SRC))
 
-from helpers import isolated_sys_modules, load_module_from_path, pkg_src  # noqa: E402
+from helpers import (  # noqa: E402
+    isolated_sys_modules,
+    load_module_from_path,
+    stub_analyze_package,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -32,14 +36,19 @@ def _deps_available() -> bool:
         return False
 
 
+def _load_extinction():
+    analyze = stub_analyze_package()
+    return load_module_from_path(
+        "ost_photometry.analyze.extinction",
+        analyze / "extinction.py",
+    )
+
+
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_extinction_calculate_airmass():
     import astropy.units as u
 
-    extinction_mod = load_module_from_path(
-        "ost_photometry.analyze.extinction",
-        pkg_src() / "ost_photometry" / "analyze" / "extinction.py",
-    )
+    extinction_mod = _load_extinction()
     loc = EarthLocation(lat=52.4 * u.deg, lon=13.0 * u.deg)
     coord = SkyCoord(ra=180 * u.deg, dec=45 * u.deg)
     t = Time("2024-01-01T00:00:00")
@@ -49,10 +58,7 @@ def test_extinction_calculate_airmass():
 
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_extinction_corrector_first_order():
-    extinction_mod = load_module_from_path(
-        "ost_photometry.analyze.extinction",
-        pkg_src() / "ost_photometry" / "analyze" / "extinction.py",
-    )
+    extinction_mod = _load_extinction()
     from astropy.table import Table
 
     ExtinctionCorrector = extinction_mod.ExtinctionCorrector

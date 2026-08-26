@@ -93,8 +93,32 @@ def ensure_stub_package(name: str, path: Path | str | None = None) -> types.Modu
     return mod
 
 
+def stub_analyze_package(*subpaths: str) -> Path:
+    """Register ``ost_photometry.analyze`` without running package ``__init__`` files.
+
+    ``load_module_from_path`` on an analyze submodule pre-inserts that module
+    into ``sys.modules``. A relative import then loads ``analyze/__init__.py``
+    while the target is still incomplete, which raises
+    ``ImportError: cannot import name 'ExtinctionCoefficients'``.
+    """
+    root = _PKG_SRC / "ost_photometry"
+    analyze = root / "analyze"
+    ensure_stub_package("ost_photometry", path=root)
+    ensure_stub_package("ost_photometry.analyze", path=analyze)
+    for sub in subpaths:
+        ensure_stub_package(
+            f"ost_photometry.analyze.{sub}",
+            path=analyze.joinpath(*sub.split(".")),
+        )
+    return analyze
+
+
 def load_module_from_path(module_name: str, path: Path):
-    """Load a module file without importing parent package ``__init__``."""
+    """Load a module file without importing parent package ``__init__``.
+
+    For ``ost_photometry.analyze.*`` modules with relative imports, call
+    :func:`stub_analyze_package` first.
+    """
     if str(_PKG_SRC) not in sys.path:
         sys.path.insert(0, str(_PKG_SRC))
     spec = importlib.util.spec_from_file_location(module_name, path)

@@ -1,6 +1,5 @@
 """Photometry analysis module: extraction, calibration, light curves."""
 
-from . import analyze as _analyze_module  # noqa: F401 — registers Observation.run_pipeline
 from .differential_photometry import PhotometryCalibrator
 from .extinction import (
     CoefficientMode,
@@ -13,6 +12,9 @@ from .image import AnalysisImage
 from .models import ImageSeries, ObjectOfInterest
 from .observation import Observation
 from .pipeline import AnalysisContext, AnalysisPipeline, DiagnosticPlots, PipelineConfig
+
+# Registers Observation.run_pipeline; keep after extinction so that module can finish first.
+from . import analyze as _analyze_module  # noqa: F401  # isort: skip
 
 __all__ = [
     "AnalysisContext",
