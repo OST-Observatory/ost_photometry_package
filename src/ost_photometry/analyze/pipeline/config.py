@@ -283,6 +283,9 @@ class CalibrationConfig:
     uncertainty_mode: UncertaintyMode = "fit_errors"
     calibration_catalog_radius_arcmin: float = 15.0
     calibration_catalog_mag_range: tuple[float, float] = (2.0, 18.5)
+    #: On-sky radius for matching extracted stars to the calibration catalog.
+    #: Independent of ``CorrelationConfig.separation_limit`` (intra/inter-filter).
+    calibration_match_radius: u.Quantity = 2.0 * u.arcsec
     debug_verify_ooi_global_ids: bool = False
     observatory_location: EarthLocation = field(
         default_factory=lambda: EarthLocation(

@@ -864,9 +864,12 @@ class PhotometryCalibrator:
         extinction_coefficients: dict[str, ExtinctionCoefficients] | None = None,
         observatory_location: object | None = None,
         color_indices: dict | None = None,
+        match_radius=None,
     ):
         self.mode = mode
         self.location = observatory_location
+        #: Sky radius for :func:`crossmatch_standard_catalog` (pipeline: ``calibration_match_radius``).
+        self.match_radius = match_radius
         self.extinction = ExtinctionCorrector(
             coefficients=extinction_coefficients, order=extinction_order
         )
@@ -984,8 +987,11 @@ class PhotometryCalibrator:
 
         # Attach mag_std_* (and other numeric catalog columns) from setup_calibration_source
         if self.reference_catalog is not None and len(self.reference_catalog) > 0:
+            match_kw = {}
+            if self.match_radius is not None:
+                match_kw["match_radius"] = self.match_radius
             data = crossmatch_standard_catalog(
-                data, self.reference_catalog, ra_col, dec_col
+                data, self.reference_catalog, ra_col, dec_col, **match_kw
             )
 
         self.epochs[epoch_id] = data

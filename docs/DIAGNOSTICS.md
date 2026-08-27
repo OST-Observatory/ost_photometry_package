@@ -141,9 +141,10 @@ The implied rotation (arcmin) and scale (%) in the stats box are the median
 
 The histogram (`differential_catalog_crossmatch_separations`) of
 `match_sep_arcsec` often shows a **sharp core** (true matches, limited by
-astrometry and centroids) plus a **tail** out to the search radius (default
-2″). That tail is expected in a crowded field such as NGC 7789; these extra
-figures say *which* of the usual causes it is.
+astrometry and centroids) plus a **tail** out to the search radius
+(`calibration_match_radius`, default 2″). That tail is expected in a crowded
+field such as NGC 7789; these extra figures say *which* of the usual causes it
+is.
 
 | File (stem) | Content |
 |-------------|---------|
@@ -157,9 +158,9 @@ Written with the histogram when `calibration_crossmatch_separation_histogram` is
 - **Chance coincidences / crowding** (typical in an open cluster): tail is
   **not** a clean function of radius; many points sit near the **1:1 line** in
   nearest vs second-nearest (`match_sep2_arcsec` ≈ `match_sep_arcsec`); faint
-  stars dominate the tail. The quiver looks **random**. Tighten the match
-  radius, drop ambiguous pairs (`sep2` close to `sep`), or restrict to brighter
-  catalog stars.
+  stars dominate the tail. The quiver looks **random**. Tighten
+  `calibration_match_radius`, drop ambiguous pairs (`sep2` close to `sep`), or
+  restrict to brighter catalog stars.
 - **WCS rotation / scale / distortion**: \|offset\| **grows with radius**;
   quiver is a swirl (rotation) or radial field (plate scale). Same language as
   the inter-filter geometry section above. Re-solve WCS (SIP) or check the

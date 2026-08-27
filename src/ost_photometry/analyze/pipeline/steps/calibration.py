@@ -113,7 +113,13 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
     out = {}
     for epoch_id, tbl in epochs.items():
         if catalog is not None and len(catalog) > 0:
-            out[epoch_id] = crossmatch_standard_catalog(tbl, catalog, "ra", "dec")
+            out[epoch_id] = crossmatch_standard_catalog(
+                tbl,
+                catalog,
+                "ra",
+                "dec",
+                match_radius=config.calibration_match_radius,
+            )
         else:
             out[epoch_id] = tbl.copy()
     return out

@@ -110,7 +110,7 @@ Reduction writes `CRIDENT=True` plus `cosmics_rm` (interpolated) or `cosmics_msk
 | `own`     | Legacy / reproducibility with older scripts | Duplicate handling: first match in list     |
 
 
-Requires a valid WCS. Affects intra-filter tracking (same object across exposures) and inter-filter matching (B with V on the same night). Tune `separation_limit`, `max_pixel_between_objects`, and `exposure_pairing` if matches fail.
+Requires a valid WCS. Affects intra-filter tracking (same object across exposures) and inter-filter matching (B with V on the same night). Tune `separation_limit`, `max_pixel_between_objects`, and `exposure_pairing` if matches fail. Catalog matching uses the separate `calibration_match_radius` (default 2″).
 
 **Protected objects during correlation** — sources are combined (deduplicated) into one set of reference-image row indices:
 
@@ -161,6 +161,7 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 - `derive_transform_from_data` — only with `linear_fit`, exactly **two** filters; alternative to `PhotometryCalibrator` linear fit (catalog-color slopes + median ZP). Preset `linear_fit_per_night` enables this. Incompatible with using `color_term_fit` on the standard calibrator path (derive path bypasses it). Writes QC under `<output>/calibration/`: `derive_transform_<epoch>_<filter>.*` (catalog-color slope fits), `derive_transform_fit_overview_*.*` (T/ZP/RMS/n vs epoch), and `derive_transform_summary_*.*` (applied `c`/ZP vs epoch). Outlier rejection uses `fit_sigma_clip` (default `2.5`; lower = stricter) on both `zp_sum` and fit residuals — gray points on the QC plots are excluded stars.
 - `exposure_pairing` (`jd_nearest` / `index`) and `reference_filter` — build multi-band epochs before calibration; use `jd_nearest` when B and V exposures are not strictly paired by index.
 - `zp_subsample_statistic` — extra ZP stability reporting for `median_zp` only.
+- `calibration_match_radius` — on-sky radius for matching detections to the calibration catalog (default `2 arcsec`). Independent of `separation_limit`. Tightening this cuts the tail on `differential_catalog_crossmatch_separations` in crowded fields.
 
 
 

@@ -48,6 +48,7 @@ def build_calibrator(
         observatory_location=observatory_location or config.observatory_location,
         color_indices=color_indices,
         extinction_coefficients=coeffs,
+        match_radius=config.calibration_match_radius,
     )
 
 

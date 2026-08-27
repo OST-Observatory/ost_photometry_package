@@ -157,6 +157,26 @@ def test_extinction_order_and_k_second_config():
     assert cfg.as_flat_dict()["k_second"]["V"] == pytest.approx(0.012)
 
 
+def test_calibration_match_radius_is_independent_of_separation_limit():
+    import astropy.units as u
+
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    PipelineConfig = cfg_mod.PipelineConfig
+
+    cfg = PipelineConfig()
+    assert cfg.calibration_match_radius.to_value(u.arcsec) == pytest.approx(2.0)
+    assert cfg.separation_limit.to_value(u.arcsec) == pytest.approx(2.0)
+
+    cfg.apply_overrides(calibration_match_radius=1.0 * u.arcsec, separation_limit=3.0 * u.arcsec)
+    assert cfg.calibration_match_radius.to_value(u.arcsec) == pytest.approx(1.0)
+    assert cfg.separation_limit.to_value(u.arcsec) == pytest.approx(3.0)
+    assert cfg.correlation.separation_limit.to_value(u.arcsec) == pytest.approx(3.0)
+    assert cfg.calibration.calibration_match_radius.to_value(u.arcsec) == pytest.approx(1.0)
+
+
 def test_linear_fit_ensemble_preset():
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",
