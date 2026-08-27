@@ -80,16 +80,31 @@ def _photometry_col_float(column) -> np.ndarray:
 def _image_array_for_plot(image) -> np.ndarray | None:
     if image is None:
         return None
+    getter = getattr(image, "get_data", None)
+    if getter is None:
+        return None
     try:
-        data = image.get_data()
+        arr = np.asarray(getter(), dtype=float)
     except Exception:
         return None
-    if data is None:
-        return None
-    arr = np.asarray(data, dtype=float)
     while arr.ndim > 2:
         arr = arr[0]
     return arr if arr.ndim == 2 else None
+
+
+def _reference_image(context: Any, config: Any):
+    filters = list(getattr(context, "filter_list", []) or [])
+    ref = getattr(config, "reference_filter", None) or (filters[0] if filters else None)
+    if not ref:
+        return None
+    series = (getattr(context, "image_series_dict", None) or {}).get(ref)
+    images = getattr(series, "image_list", None) if series is not None else None
+    if not images:
+        return None
+    idx = int(getattr(config, "reference_image_index", 0) or 0)
+    if idx < 0 or idx >= len(images):
+        idx = 0
+    return images[idx]
 
 
 def _write_inter_filter_geometry(
@@ -444,6 +459,42 @@ def run_diagnostic_plots_phase(
                                 else f"differential_catalog_crossmatch_separations_{eid}"
                             ),
                         )
+                        diag_stem = (
+                            "calibration_crossmatch_diagnostics"
+                            if eid == first_eid
+                            else f"calibration_crossmatch_diagnostics_{eid}"
+                        )
+                        plots.plot_calibration_crossmatch_diagnostics(
+                            t,
+                            out_d,
+                            ft,
+                            filename_stem=diag_stem,
+                            title=f"Catalog cross-match diagnostics ({eid})",
+                        )
+                        img = _reference_image(context, config)
+                        vec = plots.catalog_match_pixel_residuals(
+                            t, getattr(img, "wcs", None) if img is not None else None
+                        )
+                        if vec is not None:
+                            x, y, dx, dy, sep_vec = vec
+                            geom_stem = (
+                                "calibration_crossmatch_geometry"
+                                if eid == first_eid
+                                else f"calibration_crossmatch_geometry_{eid}"
+                            )
+                            plots.plot_inter_filter_correlation_geometry(
+                                x,
+                                y,
+                                dx,
+                                dy,
+                                out_d,
+                                ft,
+                                image_data=_image_array_for_plot(img),
+                                sep_arcsec=sep_vec,
+                                filename_stem=geom_stem,
+                                title="Catalog cross-match residual geometry"
+                                + (f" ({eid})" if eid else ""),
+                            )
                     if (
                         dp.combined_separation_histograms
                         and eid == first_eid

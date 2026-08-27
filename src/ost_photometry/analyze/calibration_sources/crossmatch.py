@@ -17,6 +17,32 @@ from .. import utilities
 from .flags import flag_comparison_stars
 
 
+def second_nearest_separations(
+    n_sources: int,
+    idx_src,
+    sep_arcsec,
+) -> np.ndarray:
+    """Second-smallest pairing separation per source (NaN if only one catalog hit)."""
+    out = np.full(int(n_sources), np.nan)
+    if n_sources <= 0:
+        return out
+    idx = np.asarray(idx_src, dtype=int)
+    seps = np.asarray(sep_arcsec, dtype=float)
+    if idx.size == 0:
+        return out
+    order = np.argsort(seps, kind="mergesort")
+    seen = np.zeros(n_sources, dtype=np.uint8)
+    for i, s in zip(idx[order], seps[order], strict=True):
+        if i < 0 or i >= n_sources or not np.isfinite(s):
+            continue
+        if seen[i] == 0:
+            seen[i] = 1
+        elif seen[i] == 1:
+            out[i] = float(s)
+            seen[i] = 2
+    return out
+
+
 def crossmatch_standard_catalog(
     sources: Table,
     catalog: Table,
@@ -35,8 +61,9 @@ def crossmatch_standard_catalog(
        This yields a **one-to-one** assignment when possible.
 
     Copies all **numeric** catalog columns onto ``sources`` (except duplicate ``ra``/``dec``).
-    Adds ``match_sep_arcsec`` (NaN = no match) and ``is_comparison`` (True if the
-    source matched a catalog star or has a finite ``mag_std_*`` value).
+    Adds ``match_sep_arcsec`` (NaN = no match), ``match_sep2_arcsec`` (second-nearest
+    catalog star before the one-to-one assignment), ``ra_cat`` / ``dec_cat`` (matched
+    catalog coordinates, deg), and ``is_comparison``.
 
     Parameters
     ----------
@@ -51,6 +78,9 @@ def crossmatch_standard_catalog(
     if len(catalog) == 0:
         result = sources.copy()
         result["match_sep_arcsec"] = np.full(len(result), np.nan)
+        result["match_sep2_arcsec"] = np.full(len(result), np.nan)
+        result["ra_cat"] = np.full(len(result), np.nan)
+        result["dec_cat"] = np.full(len(result), np.nan)
         return flag_comparison_stars(result)
 
     source_coords = SkyCoord(sources[ra_col].ravel(), sources[dec_col].ravel(), unit="deg")
@@ -65,6 +95,9 @@ def crossmatch_standard_catalog(
     if len(idx_src) == 0:
         result = sources.copy()
         result["match_sep_arcsec"] = np.full(len(result), np.nan)
+        result["match_sep2_arcsec"] = np.full(len(result), np.nan)
+        result["ra_cat"] = np.full(len(result), np.nan)
+        result["dec_cat"] = np.full(len(result), np.nan)
         for col in catalog.colnames:
             if col in ("ra", "dec") or not np.issubdtype(
                 catalog[col].dtype, np.number
@@ -72,6 +105,8 @@ def crossmatch_standard_catalog(
                 continue
             result[col] = np.full(len(result), np.nan, dtype=float)
         return flag_comparison_stars(result)
+
+    sep2_for_source = second_nearest_separations(len(sources), idx_src, sep_arcsec)
 
     # Enforce one-to-one: closest catalog star per source, then closest source per star
     idx_src, sep_arcsec, idx_cat = utilities.clear_duplicates(
@@ -90,6 +125,21 @@ def crossmatch_standard_catalog(
 
     result = sources.copy()
     result["match_sep_arcsec"] = sep_for_source
+    result["match_sep2_arcsec"] = sep2_for_source
+    ra_cat = np.full(len(result), np.nan, dtype=float)
+    dec_cat = np.full(len(result), np.nan, dtype=float)
+    if np.any(good_match):
+        cat_rows = cat_idx_for_source[good_match]
+        ra_vals = catalog["ra"][cat_rows]
+        dec_vals = catalog["dec"][cat_rows]
+        if hasattr(ra_vals, "value"):
+            ra_vals = ra_vals.value
+        if hasattr(dec_vals, "value"):
+            dec_vals = dec_vals.value
+        ra_cat[good_match] = np.asarray(ra_vals, dtype=float)
+        dec_cat[good_match] = np.asarray(dec_vals, dtype=float)
+    result["ra_cat"] = ra_cat
+    result["dec_cat"] = dec_cat
 
     for col in catalog.colnames:
         if col in ("ra", "dec"):

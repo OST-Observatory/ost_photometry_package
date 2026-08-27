@@ -1,8 +1,10 @@
 """Plotting helpers for photometry analysis (package facade)."""
 
 from .calibration_qc import (
+    catalog_match_pixel_residuals,
     plot_aperture_growth_curve,
     plot_calibration_color_color_cal_stars,
+    plot_calibration_crossmatch_diagnostics,
     plot_calibration_crossmatch_separations,
     plot_calibration_night_summary,
     plot_calibration_transformation,
@@ -45,6 +47,7 @@ from .style import (
 __all__ = [
     "MakeCMDs",
     "MaxRecursionError",
+    "catalog_match_pixel_residuals",
     "compare_images",
     "d3_scatter",
     "initialize_plot",
@@ -59,6 +62,7 @@ __all__ = [
     "plot_aperture_growth_curve",
     "plot_apertures",
     "plot_calibration_color_color_cal_stars",
+    "plot_calibration_crossmatch_diagnostics",
     "plot_calibration_crossmatch_separations",
     "plot_calibration_night_summary",
     "plot_calibration_transformation",

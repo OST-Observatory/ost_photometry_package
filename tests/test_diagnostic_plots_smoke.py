@@ -329,6 +329,74 @@ def test_residual_geometry_plot_smoke(tmp_path):
         assert overview is not None and overview.is_file()
 
 
+def test_catalog_crossmatch_diagnostic_plots(tmp_path):
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("astropy.wcs")
+    from astropy.wcs import WCS
+
+    with isolated_sys_modules():
+        qc = _load_calibration_qc()
+        n = 60
+        rng = np.random.default_rng(2)
+        mag = np.linspace(11.0, 16.5, n)
+        sep = np.abs(0.15 + 0.05 * rng.normal(size=n))
+        sep[-8:] = 1.4 + 0.2 * rng.random(8)
+        table = Table(
+            {
+                "x": np.linspace(20.0, 180.0, n),
+                "y": np.linspace(15.0, 150.0, n),
+                "mag_V": mag,
+                "mag_std_V": mag + 0.2,
+                "match_sep_arcsec": sep,
+                "match_sep2_arcsec": sep + 0.4,
+                "is_calibrator": np.arange(n) < 12,
+                "ra_cat": np.full(n, 359.35),
+                "dec_cat": np.full(n, 56.73),
+            }
+        )
+        path = qc.plot_calibration_crossmatch_diagnostics(table, tmp_path, "pdf")
+        assert path is not None and path.is_file()
+
+        wcs_image = WCS(
+            {
+                "NAXIS": 2,
+                "NAXIS1": 200,
+                "NAXIS2": 160,
+                "CTYPE1": "RA---TAN",
+                "CTYPE2": "DEC--TAN",
+                "CRVAL1": 359.35,
+                "CRVAL2": 56.73,
+                "CRPIX1": 100.5,
+                "CRPIX2": 80.5,
+                "CDELT1": -0.001,
+                "CDELT2": 0.001,
+                "CUNIT1": "deg",
+                "CUNIT2": "deg",
+            }
+        )
+        table["x"] = np.full(n, 100.5)
+        table["y"] = np.full(n, 80.5)
+        table["ra_cat"] = np.full(n, 359.35)
+        table["dec_cat"] = np.full(n, 56.73 + 0.0003)
+        vec = qc.catalog_match_pixel_residuals(table, wcs_image)
+        assert vec is not None
+        x, y, dx, dy, sep_v = vec
+        assert x.size == n
+        assert np.all(np.isfinite(dx) & np.isfinite(dy) & np.isfinite(sep_v))
+        geom = qc.plot_inter_filter_correlation_geometry(
+            x,
+            y,
+            dx,
+            dy,
+            tmp_path,
+            "pdf",
+            sep_arcsec=sep_v,
+            filename_stem="calibration_crossmatch_geometry",
+            title="Catalog cross-match residual geometry",
+        )
+        assert geom is not None and geom.is_file()
+
+
 def test_residual_vectors_on_rotated_wcs():
     pytest.importorskip("astropy")
     with isolated_sys_modules():

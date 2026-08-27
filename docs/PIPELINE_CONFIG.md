@@ -171,7 +171,7 @@ Most QC figures under `<output>/diagnostics/` are **on by default** (growth curv
 
 | Flag / option | What it checks |
 |---------------|----------------|
-| `calibration_crossmatch_separation_histogram` | Catalog match separations |
+| `calibration_crossmatch_separation_histogram` | Catalog match separations, plus **diagnostics** (mag/radius/ambiguity) and **geometry** (quiver on the image). See [DIAGNOSTICS.md](DIAGNOSTICS.md). |
 | `combined_separation_histograms` | Combined separation panels |
 | `photometry_mag_vs_error_scatter` | Mag vs photometric error. After extraction: all detections + one panel per quality column. After calibration: same density with stars **used in the fit** (and unused catalog matches). See [DIAGNOSTICS.md](DIAGNOSTICS.md). |
 | `photometry_mag_vs_error_overview` | Same density over **all** images + median err vs JD and/or airmass (image index as fallback) |

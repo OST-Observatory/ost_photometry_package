@@ -5,8 +5,10 @@ QC figures are written to `<output>/diagnostics/` when the corresponding
 are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
 
 This page explains the **magnitude vs. uncertainty** plots
-(`photometry_mag_vs_error_*`) and the **inter-filter residual geometry**
-figures that sit next to the correlation separation histograms.
+(`photometry_mag_vs_error_*`), the **inter-filter residual geometry**
+figures that sit next to the correlation separation histograms, and the
+**catalog cross-match** geometry/diagnostics next to the calibration
+separation histogram.
 
 ## Magnitude vs. uncertainty
 
@@ -133,3 +135,46 @@ components. The quiver still shows the raw vectors.
 
 The implied rotation (arcmin) and scale (%) in the stats box are the median
 \(d/r\) converted to those units — a first-order number, not a fitted WCS.
+
+## Catalog cross-match separations
+
+The histogram (`differential_catalog_crossmatch_separations`) of
+`match_sep_arcsec` often shows a **sharp core** (true matches, limited by
+astrometry and centroids) plus a **tail** out to the search radius (default
+2″). That tail is expected in a crowded field such as NGC 7789; these extra
+figures say *which* of the usual causes it is.
+
+| File (stem) | Content |
+|-------------|---------|
+| `calibration_crossmatch_diagnostics` | Log-y histogram; \|offset\| vs magnitude; \|offset\| vs radius; nearest vs second-nearest catalog star |
+| `calibration_crossmatch_geometry` | Same 2×2 quiver / radial / tangential layout as the inter-filter geometry (catalog projected onto the image WCS) |
+
+Written with the histogram when `calibration_crossmatch_separation_histogram` is on.
+
+### How to read them
+
+- **Chance coincidences / crowding** (typical in an open cluster): tail is
+  **not** a clean function of radius; many points sit near the **1:1 line** in
+  nearest vs second-nearest (`match_sep2_arcsec` ≈ `match_sep_arcsec`); faint
+  stars dominate the tail. The quiver looks **random**. Tighten the match
+  radius, drop ambiguous pairs (`sep2` close to `sep`), or restrict to brighter
+  catalog stars.
+- **WCS rotation / scale / distortion**: \|offset\| **grows with radius**;
+  quiver is a swirl (rotation) or radial field (plate scale). Same language as
+  the inter-filter geometry section above. Re-solve WCS (SIP) or check the
+  plate scale.
+- **Bulk CRVAL offset**: histogram peak **not** at zero; arrows nearly parallel
+  and similar length. Median \((\mathrm{d}x, \mathrm{d}y)\) in the stats box is
+  large; after removing it, RMS radial/tangential are small.
+- **Saturated / blended centroids**: tail at the **bright** end of \|offset\| vs
+  mag, often in the cluster core. Those stars should not enter the ZP fit
+  (they usually fail `is_calibrator` already).
+- **Proper motion / epoch mismatch**: modest extra scatter with no spatial
+  pattern, more for nearby high-\(\mu\) stars. Gaia with epoch correction is
+  the next catalog step if the core itself is wider than the expected
+  astrometric floor.
+
+Orange stars on the diagnostic scatter are stars **used in the calibration
+fit**; grey points are catalog matches that were later rejected. A tail that is
+almost only grey is already handled by the fit cuts. A tail that still contains
+orange stars is contaminating the ZP.

@@ -32,6 +32,9 @@ _QC_COLUMNS = (
     "flags",
     "fwhm",
     "match_sep_arcsec",
+    "match_sep2_arcsec",
+    "ra_cat",
+    "dec_cat",
 )
 
 

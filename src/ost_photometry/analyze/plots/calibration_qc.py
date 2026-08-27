@@ -4,8 +4,10 @@ from __future__ import annotations
 from math import ceil
 from pathlib import Path
 
+import astropy.units as u
 import matplotlib.pyplot as plt
 import numpy as np
+from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astropy.visualization import ImageNormalize, ZScaleInterval
 from matplotlib.colors import LogNorm
@@ -1006,6 +1008,261 @@ def plot_calibration_crossmatch_separations(
     return path
 
 
+def _xy_columns_for_match_plot(table: Table) -> tuple[str, str] | None:
+    for xname, yname in (("x", "y"), ("x_fit", "y_fit")):
+        if xname in table.colnames and yname in table.colnames:
+            return xname, yname
+    return None
+
+
+def _first_inst_mag_column(table: Table) -> str | None:
+    preferred = []
+    others = []
+    for name in table.colnames:
+        text = str(name)
+        if not text.startswith("mag_"):
+            continue
+        if text.startswith("mag_std_") or text.startswith("mag_cal"):
+            continue
+        (preferred if text in {"mag_V", "mag_B", "mag_R"} else others).append(text)
+    if preferred:
+        for band in ("mag_V", "mag_B", "mag_R"):
+            if band in preferred:
+                return band
+        return preferred[0]
+    return others[0] if others else None
+
+
+def _first_std_mag_column(table: Table) -> str | None:
+    names = [str(c) for c in table.colnames if str(c).startswith("mag_std_")]
+    for band in ("mag_std_V", "mag_std_B", "mag_std_R"):
+        if band in names:
+            return band
+    return names[0] if names else None
+
+
+def _calibrator_flag_for_plot(table: Table) -> np.ndarray | None:
+    if "is_calibrator" in table.colnames:
+        flag = np.asarray(table["is_calibrator"], dtype=bool)
+        return flag if np.any(flag) else None
+    cols = [c for c in table.colnames if str(c).startswith("is_calibrator_")]
+    if not cols:
+        return None
+    flag = np.zeros(len(table), dtype=bool)
+    for col in cols:
+        flag |= np.asarray(table[col], dtype=bool)
+    return flag if np.any(flag) else None
+
+
+def catalog_match_pixel_residuals(
+    table: Table,
+    wcs_image,
+    *,
+    x_col: str | None = None,
+    y_col: str | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None:
+    """Pixel residuals of catalog sky positions vs detections (matched rows only)."""
+    if (
+        wcs_image is None
+        or "ra_cat" not in table.colnames
+        or "dec_cat" not in table.colnames
+    ):
+        return None
+    xy = (x_col, y_col) if x_col and y_col else _xy_columns_for_match_plot(table)
+    if xy is None:
+        return None
+    x = _column_float(table, xy[0])
+    y = _column_float(table, xy[1])
+    ra_cat = _column_float(table, "ra_cat")
+    dec_cat = _column_float(table, "dec_cat")
+    ok = (
+        np.isfinite(x)
+        & np.isfinite(y)
+        & np.isfinite(ra_cat)
+        & np.isfinite(dec_cat)
+    )
+    sep_all = None
+    if "match_sep_arcsec" in table.colnames:
+        sep_all = _column_float(table, "match_sep_arcsec")
+        ok &= np.isfinite(sep_all)
+    if not np.any(ok):
+        return None
+    try:
+        coord = SkyCoord(ra=ra_cat[ok] * u.deg, dec=dec_cat[ok] * u.deg)
+        x_cat, y_cat = wcs_image.world_to_pixel(coord)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    dx = np.asarray(x_cat, dtype=float) - x[ok]
+    dy = np.asarray(y_cat, dtype=float) - y[ok]
+    if sep_all is not None:
+        sep = sep_all[ok]
+    elif "ra" in table.colnames and "dec" in table.colnames:
+        det = SkyCoord(
+            ra=_column_float(table, "ra")[ok] * u.deg,
+            dec=_column_float(table, "dec")[ok] * u.deg,
+        )
+        sep = np.asarray(det.separation(coord).arcsec, dtype=float)
+    else:
+        sep = np.hypot(dx, dy)
+    return x[ok], y[ok], dx, dy, sep
+
+
+def plot_calibration_crossmatch_diagnostics(
+    table: Table,
+    output_dir: str | Path,
+    file_type: str = "pdf",
+    *,
+    filename_stem: str = "calibration_crossmatch_diagnostics",
+    title: str = "Catalog cross-match diagnostics",
+) -> Path | None:
+    """
+    Why a separation histogram has a core plus a tail: mag, radius, and
+    second-nearest catalog star (ambiguous matches sit near the 1:1 line).
+    """
+    if "match_sep_arcsec" not in table.colnames:
+        return None
+    sep = _column_float(table, "match_sep_arcsec")
+    matched = np.isfinite(sep)
+    if not np.any(matched):
+        return None
+    sep_m = sep[matched]
+    xy = _xy_columns_for_match_plot(table)
+    if xy is not None:
+        x = _column_float(table, xy[0])[matched]
+        y = _column_float(table, xy[1])[matched]
+        x0, y0 = float(np.nanmedian(x)), float(np.nanmedian(y))
+        radius = np.hypot(x - x0, y - y0)
+    else:
+        radius = np.full(int(np.count_nonzero(matched)), np.nan)
+
+    inst_col = _first_inst_mag_column(table)
+    std_col = _first_std_mag_column(table)
+    inst = _column_float(table, inst_col)[matched] if inst_col else None
+    std = _column_float(table, std_col)[matched] if std_col else None
+    sep2 = None
+    if "match_sep2_arcsec" in table.colnames:
+        sep2 = _column_float(table, "match_sep2_arcsec")[matched]
+
+    used = _calibrator_flag_for_plot(table)
+    used_m = used[matched] if used is not None else None
+
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(10.6, 8.8),
+        gridspec_kw={"wspace": 0.28, "hspace": 0.32},
+    )
+    ax_h, ax_mag = axes[0]
+    ax_r, ax_amb = axes[1]
+
+    bins = "auto" if sep_m.size < 80 else min(40, max(12, int(np.sqrt(sep_m.size))))
+    ax_h.hist(
+        sep_m,
+        bins=bins,
+        color="C0",
+        alpha=0.85,
+        edgecolor="k",
+        linewidth=0.3,
+    )
+    ax_h.set_yscale("log")
+    med = float(np.median(sep_m))
+    p90 = float(np.percentile(sep_m, 90))
+    ax_h.axvline(med, color="#E69F00", ls="--", lw=1.3, label=f"median {med:.2f}\"")
+    ax_h.axvline(p90, color="#0072B2", ls="-.", lw=1.2, label=f"p90 {p90:.2f}\"")
+    ax_h.set_xlabel("Separation [arcsec]")
+    ax_h.set_ylabel("Count (log)")
+    ax_h.set_title("Separation histogram (log y)", fontsize=10)
+    ax_h.legend(fontsize=8, loc="upper right")
+    ax_h.grid(True, which="both", alpha=0.3)
+
+    def _scatter_sep(ax, xvals, xlabel, title_txt):
+        if xvals is None or not np.any(np.isfinite(xvals)):
+            ax.text(0.5, 0.5, "not available", transform=ax.transAxes, ha="center")
+            ax.set_title(title_txt, fontsize=10)
+            return
+        ok = np.isfinite(xvals)
+        if used_m is not None:
+            other = ok & ~used_m
+            ax.scatter(
+                xvals[other],
+                sep_m[other],
+                s=10,
+                alpha=0.45,
+                c="0.45",
+                edgecolors="none",
+                label="catalog match",
+            )
+            ax.scatter(
+                xvals[ok & used_m],
+                sep_m[ok & used_m],
+                s=28,
+                marker="*",
+                facecolors="none",
+                edgecolors="C1",
+                linewidths=0.8,
+                label="used in calibration",
+            )
+            ax.legend(fontsize=7, loc="upper left")
+        else:
+            ax.scatter(xvals[ok], sep_m[ok], s=10, alpha=0.45, c="C0", edgecolors="none")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Separation [arcsec]")
+        ax.set_title(title_txt, fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+    mag_vals = inst if inst is not None and np.any(np.isfinite(inst)) else std
+    mag_label = (
+        f"{inst_col} [mag]"
+        if inst is not None and np.any(np.isfinite(inst))
+        else (f"{std_col} [mag]" if std_col else "Magnitude [mag]")
+    )
+    _scatter_sep(ax_mag, mag_vals, mag_label, "|offset| vs magnitude")
+    _scatter_sep(ax_r, radius, "Radius from field centre [pix]", "|offset| vs radius")
+
+    if sep2 is not None and np.any(np.isfinite(sep2)):
+        ok2 = np.isfinite(sep2)
+        ax_amb.scatter(sep_m[ok2], sep2[ok2], s=10, alpha=0.45, c="C3", edgecolors="none")
+        hi = float(np.nanmax([np.nanmax(sep_m[ok2]), np.nanmax(sep2[ok2]), 0.2]))
+        ax_amb.plot([0.0, hi], [0.0, hi], "k--", lw=1.0, alpha=0.7, label="sep2 = sep")
+        ax_amb.legend(fontsize=7, loc="upper left")
+        ax_amb.set_xlabel("Nearest catalog star [arcsec]")
+        ax_amb.set_ylabel("Second-nearest [arcsec]")
+        ax_amb.set_title("Ambiguous matches (near 1:1)", fontsize=10)
+        ax_amb.grid(True, alpha=0.3)
+    else:
+        _scatter_sep(
+            ax_amb,
+            std,
+            f"{std_col} [mag]" if std_col else "Catalog mag",
+            "|offset| vs catalog magnitude",
+        )
+
+    n_tail = int(np.count_nonzero(sep_m > max(med * 3.0, 1.0)))
+    box = (
+        f"N match = {sep_m.size}\n"
+        f"median = {med:.3f}\"\n"
+        f"p90 = {p90:.3f}\"\n"
+        f"max = {float(np.max(sep_m)):.3f}\"\n"
+        f"N(sep > max(3×med, 1\")) = {n_tail}"
+    )
+    ax_h.text(
+        0.03,
+        0.97,
+        box,
+        transform=ax_h.transAxes,
+        fontsize=8,
+        va="top",
+        ha="left",
+        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.55),
+    )
+    fig.suptitle(title, fontsize=12)
+    fig.subplots_adjust(top=0.92)
+    path = _diagnostic_plot_path(output_dir, filename_stem, file_type)
+    fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
+    plt.close(fig)
+    return path
+
+
 def plot_combined_separation_histograms(
     separations_inter_filter_arcsec: np.ndarray,
     separations_calibration_crossmatch_arcsec: np.ndarray,
@@ -1922,10 +2179,11 @@ def plot_inter_filter_correlation_geometry(
     other_filter: str = "",
     filename_stem: str = "inter_filter_correlation_geometry",
     title_suffix: str = "",
+    title: str | None = None,
 ) -> Path | None:
     """
-    Diagnose inter-filter tails: quiver on the reference frame plus radial vs
-    tangential residuals (scale/distortion vs rotation).
+    Diagnose match tails: quiver on the image plus radial vs tangential residuals
+    (scale/distortion vs rotation). Used for inter-filter pairs and catalog matches.
     """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -2083,12 +2341,14 @@ def plot_inter_filter_correlation_geometry(
         bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.55),
     )
 
-    title = "Inter-filter residual geometry"
-    if reference_filter or other_filter:
-        title += f" ({reference_filter} → {other_filter})"
+    plot_title = title
+    if plot_title is None:
+        plot_title = "Inter-filter residual geometry"
+        if reference_filter or other_filter:
+            plot_title += f" ({reference_filter} → {other_filter})"
     if title_suffix:
-        title += f"\n{title_suffix}"
-    fig.suptitle(title, fontsize=12)
+        plot_title += f"\n{title_suffix}"
+    fig.suptitle(plot_title, fontsize=12)
     fig.subplots_adjust(top=0.90)
 
     path = _diagnostic_plot_path(output_dir, filename_stem, file_type)
