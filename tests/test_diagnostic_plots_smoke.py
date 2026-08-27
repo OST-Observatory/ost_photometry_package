@@ -475,6 +475,31 @@ def test_calibrated_color_removes_delta_zp_offset():
         assert abs(float(np.median(color_cal - (m_cat_b - m_cat_v)))) < 1e-12
 
 
+def test_residual_stats_split_by_filter():
+    pytest.importorskip("numpy")
+    with isolated_sys_modules():
+        qc = _load_calibration_qc()
+        b = np.array([0.01, -0.01, 0.02, 0.00, 0.01])
+        v = np.array([0.10, 0.12, 0.08, 0.11, 0.09])
+        lines = qc._residual_stat_lines_by_band(
+            {"B": {"residual": b}, "V": {"residual": v}}
+        )
+        assert len(lines) == 2
+        assert lines[0].startswith("B:")
+        assert lines[1].startswith("V:")
+        assert "med=" in lines[0] and "RMS=" in lines[0]
+        b_rms = qc._residual_stats(b)["rms"]
+        v_rms = qc._residual_stats(v)["rms"]
+        assert v_rms > 3.0 * b_rms
+        color = np.linspace(0.0, 1.0, 5)
+        sloped = 0.2 * color
+        with_slope = qc._residual_stat_lines_by_band(
+            {"V": {"residual": sloped, "slope_x": color}},
+            show_slope=True,
+        )
+        assert "slope=" in with_slope[0]
+
+
 def test_catalog_check_plots_used_mask_and_student_call(tmp_path):
     pytest.importorskip("matplotlib")
     import matplotlib.pyplot as plt
@@ -534,6 +559,14 @@ def test_catalog_check_plots_used_mask_and_student_call(tmp_path):
             used_mask=used,
         )
         assert path_hist is not None and path_hist.is_file()
+        path_hist_bv = qc.plot_zeropoint_residual_distribution(
+            None,
+            tmp_path,
+            "pdf",
+            residuals_by_band={"V": residual, "B": residual + 0.02},
+            filename_stem="zeropoint_residual_distribution_epoch_000",
+        )
+        assert path_hist_bv is not None and path_hist_bv.is_file()
 
         path_col = qc.plot_zeropoint_residual_vs_color(
             color,
@@ -543,9 +576,19 @@ def test_catalog_check_plots_used_mask_and_student_call(tmp_path):
             band_label="V",
             color_label="B-V",
             used_mask=used,
-            title=r"Rest nach $T\cdot c+\mathrm{ZP}$",
+            title=r"Residuals after $T\cdot c+\mathrm{ZP}$",
         )
         assert path_col is not None and path_col.is_file()
+        path_col_bv = qc.plot_zeropoint_residual_vs_color(
+            color,
+            None,
+            tmp_path,
+            "pdf",
+            residuals_by_band={"V": residual, "B": residual + 0.05 * color},
+            color_label="B-V",
+            filename_stem="zeropoint_residual_vs_color_B_V_epoch_000",
+        )
+        assert path_col_bv is not None and path_col_bv.is_file()
 
         color_cal = qc.calibrated_color(m_inst + color, m_inst, zp + 0.2, zp)
         path_cc = qc.plot_calibration_color_color_cal_stars(

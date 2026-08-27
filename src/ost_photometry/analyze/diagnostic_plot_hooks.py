@@ -136,8 +136,8 @@ def _used_mask_for_filter(table: Table, filter_name: str) -> np.ndarray | None:
 
 def _residual_vs_color_title(color_terms: list[float]) -> str:
     if any(abs(float(t)) > 1e-12 for t in color_terms):
-        return r"Rest nach $T\cdot c+\mathrm{ZP}$"
-    return "Rest-Color-Term bei reinem ZP?"
+        return r"Residuals after $T\cdot c+\mathrm{ZP}$"
+    return "Residuals after pure ZP?"
 
 
 def _plot_catalog_extraction_checks(

@@ -1819,13 +1819,12 @@ def _theil_sen_slope(x, y) -> float:
     return float(np.median(np.concatenate(chunks)))
 
 
-def _residual_stat_lines(
+def _residual_stats(
     residual,
     *,
     used_mask=None,
     slope_x=None,
-    slope_name: str = "color",
-) -> list[str]:
+) -> dict[str, float | int]:
     r = _as_float_1d(residual)
     n = r.size
     used = _align_optional(used_mask, n, dtype=bool)
@@ -1833,25 +1832,68 @@ def _residual_stat_lines(
     if used is not None:
         sample_mask &= used
     finite = r[sample_mask]
-    lines = [f"N = {finite.size}"]
+    out: dict[str, float | int] = {
+        "n": int(finite.size),
+        "n_excluded": 0,
+        "median": float("nan"),
+        "rms": float("nan"),
+        "slope": float("nan"),
+    }
     if used is not None:
-        n_ex = int(np.count_nonzero(~used & np.isfinite(r)))
-        if n_ex:
-            lines.append(f"catalog, not used = {n_ex}")
-    if finite.size == 0:
-        return lines
-    lines.append(f"median = {float(np.median(finite)):.3f} mag")
-    rms = float(np.sqrt(np.mean(finite * finite)))
-    lines.append(f"RMS = {rms:.3f} mag")
+        out["n_excluded"] = int(np.count_nonzero(~used & np.isfinite(r)))
+    if finite.size:
+        out["median"] = float(np.median(finite))
+        out["rms"] = float(np.sqrt(np.mean(finite * finite)))
     if slope_x is not None:
         sx = _align_optional(slope_x, n)
         if sx is not None:
             mask = np.isfinite(r) & np.isfinite(sx)
             if used is not None:
                 mask &= used
-            slope = _theil_sen_slope(sx[mask], r[mask])
-            if np.isfinite(slope):
-                lines.append(f"slope vs {slope_name} = {slope:.3f}")
+            out["slope"] = _theil_sen_slope(sx[mask], r[mask])
+    return out
+
+
+def _residual_stat_lines(
+    residual,
+    *,
+    used_mask=None,
+    slope_x=None,
+    slope_name: str = "color",
+) -> list[str]:
+    stats = _residual_stats(residual, used_mask=used_mask, slope_x=slope_x)
+    lines = [f"N = {stats['n']}"]
+    if stats["n_excluded"]:
+        lines.append(f"catalog, not used = {stats['n_excluded']}")
+    if stats["n"] == 0:
+        return lines
+    lines.append(f"median = {stats['median']:.3f} mag")
+    lines.append(f"RMS = {stats['rms']:.3f} mag")
+    if np.isfinite(stats["slope"]):
+        lines.append(f"slope vs {slope_name} = {stats['slope']:.3f}")
+    return lines
+
+
+def _residual_stat_lines_by_band(
+    per_band: dict[str, dict],
+    *,
+    show_slope: bool = False,
+) -> list[str]:
+    """Compact per-filter median/RMS for overlay plots (B vs V, …)."""
+    lines: list[str] = []
+    for lab, payload in per_band.items():
+        stats = _residual_stats(
+            payload["residual"],
+            used_mask=payload.get("used_mask"),
+            slope_x=payload.get("slope_x") if show_slope else None,
+        )
+        parts = [f"{lab}: N={stats['n']}"]
+        if stats["n"]:
+            parts.append(f"med={stats['median']:.3f}")
+            parts.append(f"RMS={stats['rms']:.3f}")
+        if show_slope and np.isfinite(stats["slope"]):
+            parts.append(f"slope={stats['slope']:.3f}")
+        lines.append("  ".join(parts))
     return lines
 
 
@@ -2025,9 +2067,7 @@ def plot_zeropoint_residual_vs_color(
         ci_full = _as_float_1d(color_index)
         fig, ax = plt.subplots(figsize=(5.8, 4.6))
         any_pts = False
-        first_rz = None
-        first_ci = None
-        first_used = None
+        per_band: dict[str, dict] = {}
         for i, (lab, rz_raw) in enumerate(residuals_by_band.items()):
             rz = _as_float_1d(rz_raw)
             k = min(ci_full.size, rz.size)
@@ -2057,10 +2097,11 @@ def plot_zeropoint_residual_vs_color(
                 legend=i == 0,
             )
             ax.scatter([], [], s=18, c=f"C{i % 10}", label=str(lab))
-            if first_rz is None:
-                first_rz = rz[ok]
-                first_ci = ci_b[ok]
-                first_used = mask
+            per_band[str(lab)] = {
+                "residual": rz[ok],
+                "used_mask": mask,
+                "slope_x": ci_b[ok],
+            }
         if not any_pts:
             plt.close(fig)
             return None
@@ -2081,15 +2122,10 @@ def plot_zeropoint_residual_vs_color(
             elif band_label:
                 ttl += f" ({band_label})"
         ax.set_title(ttl)
-        if show_stats and first_rz is not None:
+        if show_stats and per_band:
             _annotate_stats_box(
                 ax,
-                _residual_stat_lines(
-                    first_rz,
-                    used_mask=first_used,
-                    slope_x=first_ci if show_slope else None,
-                    slope_name="color",
-                ),
+                _residual_stat_lines_by_band(per_band, show_slope=show_slope),
             )
         path = _diagnostic_plot_path(output_dir, stem, file_type)
         plt.tight_layout()
@@ -2343,8 +2379,12 @@ def plot_zeropoint_residual_distribution(
                 ttl += f" ({keys[0]})"
         ax.set_title(ttl)
         if show_stats:
-            first = next(iter(series.values()))
-            _annotate_stats_box(ax, _residual_stat_lines(first))
+            _annotate_stats_box(
+                ax,
+                _residual_stat_lines_by_band(
+                    {lab: {"residual": x} for lab, x in series.items()}
+                ),
+            )
         path = _diagnostic_plot_path(output_dir, stem, file_type)
         plt.tight_layout()
         fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))

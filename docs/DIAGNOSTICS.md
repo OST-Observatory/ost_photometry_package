@@ -203,8 +203,8 @@ it passes no mask.
 | File (stem) | Content |
 |-------------|---------|
 | `instrumental_vs_catalog_<filter>_<epoch>` | Observed vs catalog mag, **always** with \(r\) vs mag underneath. A 1:1 line only when x is already on the catalog scale (`show_one_to_one`, student script). |
-| `zeropoint_residual_distribution_<epoch>` | Histogram of **fit** residuals (optional Gaussian with \(\sigma=\mathrm{RMS}\)) |
-| `zeropoint_residual_vs_color_<f1>_<f2>_<epoch>` | Same \(r\) vs catalog color. Title “Rest-Color-Term bei reinem ZP?” vs “Rest nach \(T\cdot c+\mathrm{ZP}\)”. |
+| `zeropoint_residual_distribution_<epoch>` | Histogram of **fit** residuals (optional Gaussian with \(\sigma=\mathrm{RMS}\)). Overlay of several filters: the stats box lists **N / median / RMS per filter**. |
+| `zeropoint_residual_vs_color_<f1>_<f2>_<epoch>` | Same \(r\) vs catalog color, with per-filter median, RMS, and slope. Title “Residual color term with pure ZP?” vs “Residuals after \(T\cdot c+\mathrm{ZP}\)”. |
 | `calibration_color_color_cal_stars_<epoch>` | Catalog color vs **calibrated** observed color (after \(\Delta\mathrm{ZP}\), or after the full transformation). Guide line is slope 1 through the median offset, not a naive 1:1 on instrumental \((B-V)\). |
 
 The transformation panels under `<output>/calibration/` remain the fit view
