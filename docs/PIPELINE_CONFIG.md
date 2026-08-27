@@ -179,10 +179,12 @@ Most QC figures under `<output>/diagnostics/` are **on by default** (growth curv
 | `correlation_inter_filter_separation_plot` | Inter-filter match separations **and** residual geometry (quiver on the reference image, radial vs tangential vs radius, plus overview). See [DIAGNOSTICS.md](DIAGNOSTICS.md). |
 | `correlation_inter_filter_max_pair_plots` | Cap on individual pair PDFs **and** geometry figures (default `25`; `None` = all; `0` = overview only) |
 | `exposure_pairing_overview` | Pairing table `diagnostics/exposure_pairing_pairs.ecsv` + ΔJD plot (same groups as `exposure_pairing`) |
-| `calibration_instrumental_vs_catalog` | Instrumental vs catalog magnitudes |
-| `calibration_zeropoint_residual_histogram` | ZP residual distribution |
-| `calibration_zeropoint_residual_vs_color` | ZP residuals vs color |
-| `calibration_color_check_cal_stars` | Color–color check of comparison stars |
+| `calibration_instrumental_vs_catalog` | Instrumental vs catalog magnitudes (fit residual vs mag; used vs excluded) |
+| `calibration_zeropoint_residual_histogram` | Fit-residual histogram (same \(r\) as the calibration model) |
+| `calibration_zeropoint_residual_vs_color` | Fit residuals vs catalog color |
+| `calibration_color_check_cal_stars` | Color–color check of comparison stars (calibrated observed color) |
+
+Catalog QC plots use the **same residual as the calibration fit** (median ZP or \(T\cdot c+\mathrm{ZP}\)). How to read a slope vs color: [DIAGNOSTICS.md](DIAGNOSTICS.md).
 
 **Exposure pairing:** after calibration, `context.calibration_epoch_meta[epoch_id]` also lists `image_id_by_filter` and `jd_by_filter`. Set `debug_exposure_pairing=True` for a terminal dump of each epoch’s pairing. The diagnostics ECSV/plot make the same pairing inspectable without re-running.
 

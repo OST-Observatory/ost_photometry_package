@@ -38,6 +38,233 @@ def _copy_qc_plot_columns(src: Table, dest: Table) -> None:
             dest[name] = src[name]
 
 
+def _column_float_or_none(table: Table, name: str) -> np.ndarray | None:
+    if name not in table.colnames:
+        return None
+    col = table[name]
+    return np.asarray(col.value if hasattr(col, "value") else col, dtype=float)
+
+
+def _epoch_transformation(context: Any, epoch_id: str, filter_name: str):
+    results = getattr(context, "calibration_results", None) or {}
+    result = results.get(epoch_id)
+    if result is None:
+        return None
+    return (getattr(result, "transformation", None) or {}).get(filter_name)
+
+
+def _color_pair_for_filter(
+    context: Any, config: Any, epoch_id: str, filter_name: str
+) -> tuple[str, str] | None:
+    tc = _epoch_transformation(context, epoch_id, filter_name)
+    if tc is not None:
+        ci = getattr(tc, "color_index_filters", None)
+        if ci and len(ci) == 2:
+            return str(ci[0]), str(ci[1])
+    indices = getattr(config, "color_indices", None) or {}
+    pair = indices.get(filter_name)
+    if pair is not None and len(pair) == 2:
+        return str(pair[0]), str(pair[1])
+    return None
+
+
+def _catalog_color(table: Table, pair: tuple[str, str] | None) -> np.ndarray | None:
+    if pair is None:
+        return None
+    a = _column_float_or_none(table, f"mag_std_{pair[0]}")
+    b = _column_float_or_none(table, f"mag_std_{pair[1]}")
+    if a is None or b is None:
+        return None
+    return a - b
+
+
+def _color_pairs_for_epoch(
+    context: Any, config: Any, epoch_id: str, filter_list
+) -> list[tuple[str, str]]:
+    have = {str(f) for f in filter_list}
+    pairs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _add(pair) -> None:
+        if not pair or len(pair) != 2:
+            return
+        item = (str(pair[0]), str(pair[1]))
+        if item[0] in have and item[1] in have and item not in seen:
+            seen.add(item)
+            pairs.append(item)
+
+    result = (getattr(context, "calibration_results", None) or {}).get(epoch_id)
+    if result is not None:
+        for tc in (getattr(result, "transformation", None) or {}).values():
+            _add(getattr(tc, "color_index_filters", None))
+    for pair in (getattr(config, "color_indices", None) or {}).values():
+        _add(pair)
+    if not pairs and "B" in have and "V" in have:
+        pairs.append(("B", "V"))
+    return pairs
+
+
+def _fit_residual_for_filter(
+    table: Table, context: Any, config: Any, epoch_id: str, filter_name: str
+) -> tuple[np.ndarray | None, np.ndarray | None, float]:
+    m_inst = _column_float_or_none(table, f"mag_{filter_name}")
+    m_cat = _column_float_or_none(table, f"mag_std_{filter_name}")
+    if m_inst is None or m_cat is None:
+        return None, None, 0.0
+    tc = _epoch_transformation(context, epoch_id, filter_name)
+    t_coef = float(getattr(tc, "color_term", 0.0) or 0.0) if tc is not None else 0.0
+    zp = float(getattr(tc, "zero_point", float("nan"))) if tc is not None else None
+    pair = _color_pair_for_filter(context, config, epoch_id, filter_name)
+    color = _catalog_color(table, pair)
+    residual = plots.catalog_fit_residual(
+        m_inst,
+        m_cat,
+        color=color,
+        color_term=t_coef,
+        zero_point=zp,
+    )
+    return residual, m_inst, t_coef
+
+
+def _used_mask_for_filter(table: Table, filter_name: str) -> np.ndarray | None:
+    col = f"is_calibrator_{filter_name}"
+    if col not in table.colnames:
+        return None
+    flag = np.asarray(table[col], dtype=bool)
+    return flag
+
+
+def _residual_vs_color_title(color_terms: list[float]) -> str:
+    if any(abs(float(t)) > 1e-12 for t in color_terms):
+        return r"Rest nach $T\cdot c+\mathrm{ZP}$"
+    return "Rest-Color-Term bei reinem ZP?"
+
+
+def _plot_catalog_extraction_checks(
+    context: Any,
+    config: Any,
+    table: Table,
+    epoch_id: str,
+    out_d: Path,
+    file_type: str,
+    dp: Any,
+) -> None:
+    filters = list(context.filter_list)
+    zp_residuals: dict[str, np.ndarray] = {}
+    used_by_band: dict[str, np.ndarray] = {}
+    color_terms: list[float] = []
+    for filt in filters:
+        residual, m_inst, t_coef = _fit_residual_for_filter(
+            table, context, config, epoch_id, filt
+        )
+        if residual is None or m_inst is None:
+            continue
+        m_cat = _column_float_or_none(table, f"mag_std_{filt}")
+        if m_cat is None:
+            continue
+        used = _used_mask_for_filter(table, filt)
+        color_terms.append(t_coef)
+        zp_residuals[filt] = residual
+        if used is not None:
+            used_by_band[filt] = used
+        if dp.calibration_instrumental_vs_catalog:
+            plots.plot_instrumental_vs_catalog_magnitudes(
+                m_inst,
+                m_cat,
+                out_d,
+                file_type,
+                band_label=f"{filt}_{epoch_id}",
+                used_mask=used,
+                err_obs=_column_float_or_none(table, f"err_{filt}"),
+                err_cat=_column_float_or_none(table, f"err_std_{filt}"),
+                residual=residual,
+                residual_label=r"$m_\mathrm{cat}-m_\mathrm{inst}-T\cdot c-\mathrm{ZP}$ [mag]",
+            )
+    if dp.calibration_zeropoint_residual_histogram and zp_residuals:
+        plots.plot_zeropoint_residual_distribution(
+            None,
+            out_d,
+            file_type,
+            residuals_by_band=zp_residuals,
+            used_mask_by_band=used_by_band or None,
+            filename_stem=f"zeropoint_residual_distribution_{epoch_id}",
+        )
+
+    pairs = _color_pairs_for_epoch(context, config, epoch_id, filters)
+    if not pairs:
+        return
+    vs_color_title = _residual_vs_color_title(color_terms)
+    for f1, f2 in pairs:
+        color = _catalog_color(table, (f1, f2))
+        if color is None:
+            continue
+        color_name = f"{f1}-{f2}"
+        if dp.calibration_zeropoint_residual_vs_color:
+            by_band = {
+                f: zp_residuals[f]
+                for f in (f1, f2)
+                if f in zp_residuals
+            }
+            if by_band:
+                used_masks = {
+                    f: used_by_band[f] for f in by_band if f in used_by_band
+                }
+                plots.plot_zeropoint_residual_vs_color(
+                    color,
+                    None,
+                    out_d,
+                    file_type,
+                    residuals_by_band=by_band,
+                    used_mask_by_band=used_masks or None,
+                    color_label=color_name,
+                    title=vs_color_title,
+                    filename_stem=f"zeropoint_residual_vs_color_{f1}_{f2}_{epoch_id}",
+                )
+        if not dp.calibration_color_check_cal_stars:
+            continue
+        m1 = _column_float_or_none(table, f"mag_{f1}")
+        m2 = _column_float_or_none(table, f"mag_{f2}")
+        s1 = _column_float_or_none(table, f"mag_std_{f1}")
+        s2 = _column_float_or_none(table, f"mag_std_{f2}")
+        if m1 is None or m2 is None or s1 is None or s2 is None:
+            continue
+        tc1 = _epoch_transformation(context, epoch_id, f1)
+        tc2 = _epoch_transformation(context, epoch_id, f2)
+        t1 = float(getattr(tc1, "color_term", 0.0) or 0.0) if tc1 is not None else 0.0
+        t2 = float(getattr(tc2, "color_term", 0.0) or 0.0) if tc2 is not None else 0.0
+        zp1 = float(getattr(tc1, "zero_point", float("nan"))) if tc1 is not None else None
+        zp2 = float(getattr(tc2, "zero_point", float("nan"))) if tc2 is not None else None
+        if zp1 is None or not np.isfinite(zp1):
+            zp1 = float(np.nanmedian(s1 - m1))
+        if zp2 is None or not np.isfinite(zp2):
+            zp2 = float(np.nanmedian(s2 - m2))
+        m1_cal = m1 + t1 * color + zp1
+        m2_cal = m2 + t2 * color + zp2
+        color_obs = m1_cal - m2_cal
+        used1 = _used_mask_for_filter(table, f1)
+        used2 = _used_mask_for_filter(table, f2)
+        used = None
+        if used1 is not None and used2 is not None:
+            used = used1 & used2
+        elif used1 is not None:
+            used = used1
+        elif used2 is not None:
+            used = used2
+        stem = f"calibration_color_color_cal_stars_{epoch_id}"
+        if len(pairs) > 1:
+            stem = f"calibration_color_color_cal_stars_{f1}_{f2}_{epoch_id}"
+        plots.plot_calibration_color_color_cal_stars(
+            color,
+            color_obs,
+            out_d,
+            file_type,
+            filename_stem=stem,
+            used_mask=used,
+            color_label=color_name,
+        )
+
+
+
 def diagnostics_subdirectory(output_dir: str | Path) -> Path:
     base = Path(output_dir)
     d = base / "diagnostics"
@@ -548,103 +775,15 @@ def run_diagnostic_plots_phase(
                                 filename_stem=f"photometry_mag_vs_error_{f}_{eid}",
                             )
 
-                    std_cols = [f"mag_std_{f}" for f in context.filter_list]
-                    inst_cols = [f"mag_{f}" for f in context.filter_list]
-                    if all(c in t.colnames for c in std_cols + inst_cols):
-                        mask = np.ones(len(t), dtype=bool)
-                        for c in std_cols:
-                            v = np.asarray(t[c], dtype=float)
-                            mask &= np.isfinite(v)
-
-                        if (
-                            dp.calibration_instrumental_vs_catalog
-                            or dp.calibration_zeropoint_residual_histogram
-                            or dp.calibration_zeropoint_residual_vs_color
-                        ):
-                            zp_residuals_diff: dict[str, np.ndarray] = {}
-                            for f in context.filter_list:
-                                m_inst = np.asarray(t[f"mag_{f}"], dtype=float)[mask]
-                                m_std = np.asarray(t[f"mag_std_{f}"], dtype=float)[mask]
-                                ok = np.isfinite(m_inst) & np.isfinite(m_std)
-                                if not np.any(ok):
-                                    continue
-                                m_inst, m_std = m_inst[ok], m_std[ok]
-                                if dp.calibration_instrumental_vs_catalog:
-                                    plots.plot_instrumental_vs_catalog_magnitudes(
-                                        m_inst,
-                                        m_std,
-                                        out_d,
-                                        ft,
-                                        band_label=f"{f}_{eid}",
-                                    )
-                                if dp.calibration_zeropoint_residual_histogram:
-                                    zp = float(np.nanmedian(m_std - m_inst))
-                                    zp_residuals_diff[f] = m_std - m_inst - zp
-                            if (
-                                dp.calibration_zeropoint_residual_histogram
-                                and zp_residuals_diff
-                            ):
-                                plots.plot_zeropoint_residual_distribution(
-                                    None,
-                                    out_d,
-                                    ft,
-                                    residuals_by_band=zp_residuals_diff,
-                                    filename_stem=f"zeropoint_residual_distribution_{eid}",
-                                )
-
-                        if (
-                            (
-                                dp.calibration_color_check_cal_stars
-                                or dp.calibration_zeropoint_residual_vs_color
-                            )
-                            and {"B", "V"}.issubset(set(context.filter_list))
-                            and "mag_std_B" in t.colnames
-                            and "mag_std_V" in t.colnames
-                            and "mag_B" in t.colnames
-                            and "mag_V" in t.colnames
-                        ):
-                            mB = np.asarray(t["mag_B"], dtype=float)[mask]
-                            mV = np.asarray(t["mag_V"], dtype=float)[mask]
-                            sB = np.asarray(t["mag_std_B"], dtype=float)[mask]
-                            sV = np.asarray(t["mag_std_V"], dtype=float)[mask]
-                            ok2 = (
-                                np.isfinite(mB)
-                                & np.isfinite(mV)
-                                & np.isfinite(sB)
-                                & np.isfinite(sV)
-                            )
-                            if dp.calibration_color_check_cal_stars and np.any(ok2):
-                                plots.plot_calibration_color_color_cal_stars(
-                                    (sB - sV)[ok2],
-                                    (mB - mV)[ok2],
-                                    out_d,
-                                    ft,
-                                    filename_stem=f"calibration_color_color_cal_stars_{eid}",
-                                )
-                            if dp.calibration_zeropoint_residual_vs_color and np.any(ok2):
-                                mBb, mVb = mB[ok2], mV[ok2]
-                                sBb, sVb = sB[ok2], sV[ok2]
-                                clit = sBb - sVb
-                                zp_b = float(np.nanmedian(sBb - mBb))
-                                zp_v = float(np.nanmedian(sVb - mVb))
-                                res_b = sBb - mBb - zp_b
-                                res_v = sVb - mVb - zp_v
-                                ok3 = np.isfinite(clit) & np.isfinite(res_b) & np.isfinite(
-                                    res_v
-                                )
-                                if np.any(ok3):
-                                    plots.plot_zeropoint_residual_vs_color(
-                                        clit[ok3],
-                                        None,
-                                        out_d,
-                                        ft,
-                                        residuals_by_band={
-                                            "V": res_v[ok3],
-                                            "B": res_b[ok3],
-                                        },
-                                        color_label=r"$(B-V)_\mathrm{std}$ [mag]",
-                                        filename_stem=f"zeropoint_residual_vs_color_B_V_{eid}",
-                                    )
+                    if (
+                        dp.calibration_instrumental_vs_catalog
+                        or dp.calibration_zeropoint_residual_histogram
+                        or dp.calibration_zeropoint_residual_vs_color
+                        or dp.calibration_color_check_cal_stars
+                    ):
+                        _plot_catalog_extraction_checks(
+                            context, config, t, eid, out_d, ft, dp
+                        )
             except Exception as exc:
                 _warn(f"Diagnostic plot (calibration_differential): {exc}")
 

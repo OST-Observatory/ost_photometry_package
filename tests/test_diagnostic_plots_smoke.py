@@ -437,5 +437,123 @@ def test_residual_vectors_on_rotated_wcs():
         assert abs(summary["rotation_arcmin"]) > 5.0
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_catalog_fit_residual_median_zp_vs_color_term():
+    pytest.importorskip("numpy")
+    with isolated_sys_modules():
+        qc = _load_calibration_qc()
+        rng = np.random.default_rng(0)
+        n = 80
+        color = np.linspace(-0.2, 1.4, n)
+        t_coef, zp = 0.25, 1.5
+        m_inst = np.linspace(12.0, 16.0, n)
+        m_cat = m_inst + t_coef * color + zp + rng.normal(0.0, 0.008, n)
+        r_med = qc.catalog_fit_residual(m_inst, m_cat, color=color, color_term=0.0)
+        r_fit = qc.catalog_fit_residual(
+            m_inst, m_cat, color=color, color_term=t_coef, zero_point=zp
+        )
+        slope_med = qc._theil_sen_slope(color, r_med)
+        slope_fit = qc._theil_sen_slope(color, r_fit)
+        assert abs(slope_med - t_coef) < 0.04
+        assert abs(slope_fit) < 0.03
+        assert abs(float(np.median(r_fit))) < 0.01
+
+
+def test_calibrated_color_removes_delta_zp_offset():
+    pytest.importorskip("numpy")
+    with isolated_sys_modules():
+        qc = _load_calibration_qc()
+        n = 40
+        zp_b, zp_v = 2.0, 1.4
+        color_lit = np.linspace(0.2, 1.1, n)
+        m_inst_v = np.linspace(12.0, 15.0, n)
+        m_inst_b = m_inst_v + color_lit - (zp_b - zp_v)
+        m_cat_v = m_inst_v + zp_v
+        m_cat_b = m_inst_b + zp_b
+        color_inst = m_inst_b - m_inst_v
+        color_cal = qc.calibrated_color(m_inst_b, m_inst_v, zp_b, zp_v)
+        assert abs(float(np.median(color_inst - (m_cat_b - m_cat_v))) + (zp_b - zp_v)) < 1e-12
+        assert abs(float(np.median(color_cal - (m_cat_b - m_cat_v)))) < 1e-12
+
+
+def test_catalog_check_plots_used_mask_and_student_call(tmp_path):
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+
+    with isolated_sys_modules():
+        qc = _load_calibration_qc()
+        rng = np.random.default_rng(1)
+        n = 50
+        color = np.linspace(-0.1, 1.2, n)
+        t_coef, zp = 0.18, 1.1
+        m_inst = np.linspace(11.5, 16.0, n)
+        m_cat = m_inst + t_coef * color + zp + rng.normal(0.0, 0.01, n)
+        used = np.zeros(n, dtype=bool)
+        used[:30] = True
+        err_obs = np.full(n, 0.02)
+        err_cat = np.full(n, 0.03)
+        residual = qc.catalog_fit_residual(
+            m_inst, m_cat, color=color, color_term=t_coef, zero_point=zp
+        )
+        fig, ax = plt.subplots()
+        qc._scatter_catalog_sample(ax, m_inst, m_cat, used)
+        assert len(ax.collections) >= 2
+        plt.close(fig)
+
+        path_mask = qc.plot_instrumental_vs_catalog_magnitudes(
+            m_inst,
+            m_cat,
+            tmp_path,
+            "pdf",
+            band_label="V",
+            used_mask=used,
+            err_obs=err_obs,
+            err_cat=err_cat,
+            residual=residual,
+        )
+        assert path_mask is not None and path_mask.is_file()
+
+        m_cal = m_inst + zp
+        path_student = qc.plot_instrumental_vs_catalog_magnitudes(
+            m_cal,
+            m_cat,
+            tmp_path,
+            "pdf",
+            band_label="V",
+            show_one_to_one=True,
+            x_label=r"$m_\mathrm{cal}$ [mag]",
+            filename_stem="calibrated_vs_catalog_V",
+            residual=qc.catalog_fit_residual(m_inst, m_cat, zero_point=zp),
+        )
+        assert path_student is not None and path_student.is_file()
+
+        path_hist = qc.plot_zeropoint_residual_distribution(
+            residual,
+            tmp_path,
+            "pdf",
+            band_label="V",
+            used_mask=used,
+        )
+        assert path_hist is not None and path_hist.is_file()
+
+        path_col = qc.plot_zeropoint_residual_vs_color(
+            color,
+            residual,
+            tmp_path,
+            "pdf",
+            band_label="V",
+            color_label="B-V",
+            used_mask=used,
+            title=r"Rest nach $T\cdot c+\mathrm{ZP}$",
+        )
+        assert path_col is not None and path_col.is_file()
+
+        color_cal = qc.calibrated_color(m_inst + color, m_inst, zp + 0.2, zp)
+        path_cc = qc.plot_calibration_color_color_cal_stars(
+            color,
+            color_cal,
+            tmp_path,
+            "pdf",
+            used_mask=used,
+            color_label="B-V",
+        )
+        assert path_cc is not None and path_cc.is_file()

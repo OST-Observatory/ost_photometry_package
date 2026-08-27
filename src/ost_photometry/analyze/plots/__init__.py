@@ -1,6 +1,8 @@
 """Plotting helpers for photometry analysis (package facade)."""
 
 from .calibration_qc import (
+    calibrated_color,
+    catalog_fit_residual,
     catalog_match_pixel_residuals,
     plot_aperture_growth_curve,
     plot_calibration_color_color_cal_stars,
@@ -47,6 +49,8 @@ from .style import (
 __all__ = [
     "MakeCMDs",
     "MaxRecursionError",
+    "calibrated_color",
+    "catalog_fit_residual",
     "catalog_match_pixel_residuals",
     "compare_images",
     "d3_scatter",

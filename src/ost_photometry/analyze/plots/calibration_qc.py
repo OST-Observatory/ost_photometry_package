@@ -1725,6 +1725,261 @@ def plot_aperture_growth_curve(
     return path
 
 
+def _as_float_1d(values) -> np.ndarray:
+    if values is None:
+        return np.array([], dtype=float)
+    if np.ma.isMaskedArray(values):
+        return np.ma.filled(np.ma.asarray(values, dtype=float), np.nan).reshape(-1)
+    return np.asarray(values, dtype=float).reshape(-1)
+
+
+def _align_optional(values, n: int, *, dtype=float) -> np.ndarray | None:
+    if values is None:
+        return None
+    if dtype is bool:
+        arr = np.asarray(values, dtype=bool).reshape(-1)
+        fill: bool | float = False
+    else:
+        arr = _as_float_1d(values)
+        fill = np.nan
+    if arr.size == n:
+        return arr
+    out = np.full(n, fill, dtype=arr.dtype)
+    k = min(arr.size, n)
+    out[:k] = arr[:k]
+    return out
+
+
+def catalog_fit_residual(
+    m_inst,
+    m_cat,
+    *,
+    color=None,
+    color_term: float = 0.0,
+    zero_point: float | None = None,
+) -> np.ndarray:
+    """Fit residual :math:`m_\\mathrm{cat}-m_\\mathrm{inst}-T\\cdot c-\\mathrm{ZP}`.
+
+    If ``zero_point`` is omitted, it is the nan-median of
+    ``m_cat - m_inst - T * color`` (median-ZP / teaching case when ``T = 0``).
+    Missing ``color`` is treated as zero.
+    """
+    inst = _as_float_1d(m_inst)
+    cat = _align_optional(m_cat, inst.size)
+    if cat is None:
+        cat = np.full(inst.size, np.nan)
+    t_coef = float(color_term) if np.isfinite(float(color_term)) else 0.0
+    if color is None or abs(t_coef) < 1e-15:
+        t_color = np.zeros(inst.size, dtype=float)
+    else:
+        col = _align_optional(color, inst.size)
+        t_color = t_coef * col if col is not None else np.zeros(inst.size, dtype=float)
+    raw = cat - inst - t_color
+    if zero_point is None or not np.isfinite(float(zero_point)):
+        zp = float(np.nanmedian(raw))
+    else:
+        zp = float(zero_point)
+    if not np.isfinite(zp):
+        zp = 0.0
+    return raw - zp
+
+
+def calibrated_color(m_inst_1, m_inst_2, zp_1: float, zp_2: float) -> np.ndarray:
+    """Observed color after zero-point offsets: ``(m1 + ZP1) - (m2 + ZP2)``."""
+    a = _as_float_1d(m_inst_1)
+    b = _as_float_1d(m_inst_2)
+    n = min(a.size, b.size)
+    return (a[:n] + float(zp_1)) - (b[:n] + float(zp_2))
+
+
+def _theil_sen_slope(x, y) -> float:
+    xx = _as_float_1d(x)
+    yy = _as_float_1d(y)
+    n = min(xx.size, yy.size)
+    xx, yy = xx[:n], yy[:n]
+    ok = np.isfinite(xx) & np.isfinite(yy)
+    xx, yy = xx[ok], yy[ok]
+    n = int(xx.size)
+    if n < 3:
+        return float("nan")
+    if n > 150:
+        rng = np.random.default_rng(0)
+        pick = np.sort(rng.choice(n, 150, replace=False))
+        xx, yy = xx[pick], yy[pick]
+        n = 150
+    chunks = []
+    for i in range(n - 1):
+        dx = xx[i + 1 :] - xx[i]
+        dy = yy[i + 1 :] - yy[i]
+        good = np.abs(dx) > 1e-12
+        if np.any(good):
+            chunks.append(dy[good] / dx[good])
+    if not chunks:
+        return float("nan")
+    return float(np.median(np.concatenate(chunks)))
+
+
+def _residual_stat_lines(
+    residual,
+    *,
+    used_mask=None,
+    slope_x=None,
+    slope_name: str = "color",
+) -> list[str]:
+    r = _as_float_1d(residual)
+    n = r.size
+    used = _align_optional(used_mask, n, dtype=bool)
+    sample_mask = np.isfinite(r)
+    if used is not None:
+        sample_mask &= used
+    finite = r[sample_mask]
+    lines = [f"N = {finite.size}"]
+    if used is not None:
+        n_ex = int(np.count_nonzero(~used & np.isfinite(r)))
+        if n_ex:
+            lines.append(f"catalog, not used = {n_ex}")
+    if finite.size == 0:
+        return lines
+    lines.append(f"median = {float(np.median(finite)):.3f} mag")
+    rms = float(np.sqrt(np.mean(finite * finite)))
+    lines.append(f"RMS = {rms:.3f} mag")
+    if slope_x is not None:
+        sx = _align_optional(slope_x, n)
+        if sx is not None:
+            mask = np.isfinite(r) & np.isfinite(sx)
+            if used is not None:
+                mask &= used
+            slope = _theil_sen_slope(sx[mask], r[mask])
+            if np.isfinite(slope):
+                lines.append(f"slope vs {slope_name} = {slope:.3f}")
+    return lines
+
+
+def _annotate_stats_box(ax, lines: list[str], *, loc: str = "upper right") -> None:
+    if not lines:
+        return
+    if loc == "upper left":
+        x, y, ha, va = 0.03, 0.97, "left", "top"
+    else:
+        x, y, ha, va = 0.97, 0.97, "right", "top"
+    ax.text(
+        x,
+        y,
+        "\n".join(lines),
+        transform=ax.transAxes,
+        fontsize=8,
+        verticalalignment=va,
+        horizontalalignment=ha,
+        bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5),
+    )
+
+
+def _combined_mag_err(err_obs, err_cat, n: int) -> np.ndarray | None:
+    e1 = _align_optional(err_obs, n)
+    e2 = _align_optional(err_cat, n)
+    if e1 is None and e2 is None:
+        return None
+    if e1 is None:
+        return np.abs(e2)
+    if e2 is None:
+        return np.abs(e1)
+    out = np.full(n, np.nan)
+    ok = np.isfinite(e1) | np.isfinite(e2)
+    a = np.where(np.isfinite(e1), e1, 0.0)
+    b = np.where(np.isfinite(e2), e2, 0.0)
+    out[ok] = np.hypot(a[ok], b[ok])
+    return out
+
+
+def _scatter_catalog_sample(
+    ax,
+    x,
+    y,
+    used_mask=None,
+    *,
+    color: str = "C0",
+    err_x=None,
+    err_y=None,
+    s: float = 14,
+    zorder: float = 3,
+    legend: bool = True,
+) -> None:
+    xx = _as_float_1d(x)
+    yy = _as_float_1d(y)
+    n = min(xx.size, yy.size)
+    xx, yy = xx[:n], yy[:n]
+    used = _align_optional(used_mask, n, dtype=bool)
+    ex = _align_optional(err_x, n)
+    ey = _align_optional(err_y, n)
+
+    def _errorbars(mask, ecolor, alpha=0.35) -> None:
+        if ex is None and ey is None:
+            return
+        m = np.asarray(mask, dtype=bool)
+        if ex is not None:
+            m = m & np.isfinite(ex)
+        if ey is not None:
+            m = m & np.isfinite(ey)
+        if not np.any(m):
+            return
+        ax.errorbar(
+            xx[m],
+            yy[m],
+            xerr=None if ex is None else np.abs(ex[m]),
+            yerr=None if ey is None else np.abs(ey[m]),
+            fmt="none",
+            ecolor=ecolor,
+            elinewidth=0.7,
+            alpha=alpha,
+            zorder=zorder,
+        )
+
+    if used is None:
+        _errorbars(np.ones(n, dtype=bool), color)
+        ax.scatter(
+            xx,
+            yy,
+            s=s,
+            alpha=0.6,
+            c=color,
+            edgecolors="none",
+            zorder=zorder + 1,
+        )
+        return
+    unused = ~used
+    if np.any(unused):
+        _errorbars(unused, "0.5", alpha=0.25)
+        ax.scatter(
+            xx[unused],
+            yy[unused],
+            s=s,
+            marker="x",
+            c="0.45",
+            linewidths=0.7,
+            alpha=0.7,
+            zorder=zorder + 1,
+            label="catalog, not used" if legend else None,
+        )
+    if np.any(used):
+        _errorbars(used, color)
+        ax.scatter(
+            xx[used],
+            yy[used],
+            s=s,
+            alpha=0.7,
+            c=color,
+            edgecolors="none",
+            zorder=zorder + 2,
+            label="used in calibration" if legend else None,
+        )
+
+
+def _maybe_legend(ax) -> None:
+    handles, labels = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(handles, labels, fontsize=8, loc="best")
+
+
 def plot_zeropoint_residual_vs_color(
     color_index: np.ndarray | None,
     zp_residuals: np.ndarray | None,
@@ -1735,68 +1990,107 @@ def plot_zeropoint_residual_vs_color(
     color_label: str | None = None,
     filename_stem: str | None = None,
     residuals_by_band: dict[str, np.ndarray] | None = None,
+    used_mask=None,
+    used_mask_by_band: dict[str, np.ndarray] | None = None,
+    err_residual=None,
+    title: str | None = None,
+    ylabel: str | None = None,
+    show_stats: bool = True,
+    show_slope: bool = True,
 ) -> Path | None:
     """
-    Scatter of ZP residuals vs. a color index (e.g. catalog ``B-V``) for cal stars.
+    Scatter of fit residuals vs. a color index (e.g. catalog ``B-V``).
 
     Pass either ``(color_index, zp_residuals)`` for one band, or ``color_index`` plus
     ``residuals_by_band`` (filter name → residual array, same row order as ``color_index``)
     to overlay several bands with distinct colors and a legend.
 
-    Residual convention matches :func:`plot_zeropoint_residual_distribution`
-    (``m_cat - m_inst - ZP`` per band).
+    Residual convention matches :func:`catalog_fit_residual` /
+    :func:`plot_zeropoint_residual_distribution`
+    (``m_cat - m_inst - T * c - ZP`` per band). A slope vs color after a
+    median-ZP model is the missing color term; after ``T * c + ZP`` it is a
+    leftover trend.
     """
-    clab = (
-        color_label
-        if color_label is not None
-        else r"$(B-V)_\mathrm{lit}$ [mag]"
-    )
-    ylabel = r"$m_\mathrm{cat} - m_\mathrm{inst} - \mathrm{ZP}$ [mag]"
+    if color_label is not None and ("$" in color_label or "mathrm" in color_label):
+        clab = color_label
+    elif color_label:
+        clab = rf"$({color_label})_\mathrm{{lit}}$ [mag]"
+    else:
+        clab = r"$(B-V)_\mathrm{lit}$ [mag]"
+    y_lab = ylabel or r"$m_\mathrm{cat} - m_\mathrm{inst} - T\cdot c - \mathrm{ZP}$ [mag]"
 
     if residuals_by_band:
         if color_index is None:
             return None
-        ci_full = np.asarray(color_index, dtype=float)
+        ci_full = _as_float_1d(color_index)
         fig, ax = plt.subplots(figsize=(5.8, 4.6))
         any_pts = False
+        first_rz = None
+        first_ci = None
+        first_used = None
         for i, (lab, rz_raw) in enumerate(residuals_by_band.items()):
-            rz = np.asarray(rz_raw, dtype=float)
+            rz = _as_float_1d(rz_raw)
             k = min(ci_full.size, rz.size)
             if k == 0:
                 continue
-            ci, rz = ci_full[:k], rz[:k]
-            ok = np.isfinite(ci) & np.isfinite(rz)
+            ci_b, rz = ci_full[:k], rz[:k]
+            ok = np.isfinite(ci_b) & np.isfinite(rz)
             if not np.any(ok):
                 continue
             any_pts = True
-            ax.scatter(
-                ci[ok],
+            mask = None
+            if used_mask_by_band and lab in used_mask_by_band:
+                mask = _align_optional(used_mask_by_band[lab], k, dtype=bool)
+                if mask is not None:
+                    mask = mask[ok]
+            elif used_mask is not None:
+                mask = _align_optional(used_mask, k, dtype=bool)
+                if mask is not None:
+                    mask = mask[ok]
+            _scatter_catalog_sample(
+                ax,
+                ci_b[ok],
                 rz[ok],
-                s=18,
-                alpha=0.65,
-                label=str(lab),
+                mask,
                 color=f"C{i % 10}",
-                edgecolors="none",
+                s=18,
+                legend=i == 0,
             )
+            ax.scatter([], [], s=18, c=f"C{i % 10}", label=str(lab))
+            if first_rz is None:
+                first_rz = rz[ok]
+                first_ci = ci_b[ok]
+                first_used = mask
         if not any_pts:
             plt.close(fig)
             return None
         ax.axhline(0.0, color="k", linestyle="--", lw=1, alpha=0.55)
-        ax.legend(title="Band", fontsize=9, loc="best")
+        _maybe_legend(ax)
         ax.set_xlabel(clab)
-        ax.set_ylabel(ylabel)
+        ax.set_ylabel(y_lab)
         keys = list(residuals_by_band.keys())
         stem = filename_stem or (
             "zeropoint_residual_vs_color_" + "_".join(keys)
             if len(keys) > 1
             else f"zeropoint_residual_vs_color_{keys[0]}"
         )
-        ttl = "ZP residuals vs. color"
-        if len(keys) > 1:
-            ttl += f" ({', '.join(keys)})"
-        elif band_label:
-            ttl += f" ({band_label})"
+        ttl = title or "ZP residuals vs. color"
+        if title is None:
+            if len(keys) > 1:
+                ttl += f" ({', '.join(keys)})"
+            elif band_label:
+                ttl += f" ({band_label})"
         ax.set_title(ttl)
+        if show_stats and first_rz is not None:
+            _annotate_stats_box(
+                ax,
+                _residual_stat_lines(
+                    first_rz,
+                    used_mask=first_used,
+                    slope_x=first_ci if show_slope else None,
+                    slope_name="color",
+                ),
+            )
         path = _diagnostic_plot_path(output_dir, stem, file_type)
         plt.tight_layout()
         fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
@@ -1805,27 +2099,45 @@ def plot_zeropoint_residual_vs_color(
 
     if color_index is None or zp_residuals is None:
         return None
-    ci = np.asarray(color_index, dtype=float)
-    rz = np.asarray(zp_residuals, dtype=float)
+    ci = _as_float_1d(color_index)
+    rz = _as_float_1d(zp_residuals)
+    n = min(ci.size, rz.size)
+    ci, rz = ci[:n], rz[:n]
+    used = _align_optional(used_mask, n, dtype=bool)
+    ey = _align_optional(err_residual, n)
     ok = np.isfinite(ci) & np.isfinite(rz)
     if not np.any(ok):
         return None
-    ci = ci[ok]
-    rz = rz[ok]
+    ci, rz = ci[ok], rz[ok]
+    if used is not None:
+        used = used[ok]
+    if ey is not None:
+        ey = ey[ok]
     stem = filename_stem or (
         f"zeropoint_residual_vs_color_{band_label}"
         if band_label
         else "zeropoint_residual_vs_color"
     )
     fig, ax = plt.subplots(figsize=(5.5, 4.5))
-    ax.scatter(ci, rz, s=14, alpha=0.55, c="C0", edgecolors="none")
+    _scatter_catalog_sample(ax, ci, rz, used, color="C0", err_y=ey, s=14)
     ax.axhline(0.0, color="k", linestyle="--", lw=1, alpha=0.55)
+    _maybe_legend(ax)
     ax.set_xlabel(clab)
-    ax.set_ylabel(ylabel)
-    ttl = "ZP residuals vs. color"
-    if band_label:
+    ax.set_ylabel(y_lab)
+    ttl = title or "ZP residuals vs. color"
+    if title is None and band_label:
         ttl += f" ({band_label})"
     ax.set_title(ttl)
+    if show_stats:
+        _annotate_stats_box(
+            ax,
+            _residual_stat_lines(
+                rz,
+                used_mask=used,
+                slope_x=ci if show_slope else None,
+                slope_name="color",
+            ),
+        )
     path = _diagnostic_plot_path(output_dir, stem, file_type)
     plt.tight_layout()
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
@@ -1844,23 +2156,41 @@ def plot_instrumental_vs_catalog_magnitudes(
     show_one_to_one: bool = False,
     x_label: str | None = None,
     title: str | None = None,
+    used_mask=None,
+    err_obs=None,
+    err_cat=None,
+    residual=None,
+    residual_label: str | None = None,
+    show_stats: bool = True,
 ) -> Path | None:
     """
     Scatter observed vs. catalog magnitudes for calibration stars.
 
-    For raw instrumental magnitudes, leave ``show_one_to_one=False`` (default): a
-    1:1 line is misleading because of the zero-point offset. Set
-    ``show_one_to_one=True`` when the x values are calibrated (e.g. ``m_cal``);
-    then a **second panel** below shows a scatter of signed offsets from the
-    1:1 relation, ``m_cat - m_obs``, vs. ``m_obs`` (x-axis magnitude, e.g. ``m_cal``).
+    A residual panel vs. observed magnitude is always drawn. The residual is
+    ``residual`` if given, otherwise ``m_cat - m_obs``. Set
+    ``show_one_to_one=True`` only when the x values are already on the catalog
+    scale (e.g. ``m_cal`` in the student script).
     """
-    mi = np.asarray(m_instrumental, dtype=float)
-    mc = np.asarray(m_catalog, dtype=float)
+    mi = _as_float_1d(m_instrumental)
+    mc = _as_float_1d(m_catalog)
+    n = min(mi.size, mc.size)
+    mi, mc = mi[:n], mc[:n]
+    used = _align_optional(used_mask, n, dtype=bool)
+    e_obs = _align_optional(err_obs, n)
+    e_cat = _align_optional(err_cat, n)
+    res_in = _align_optional(residual, n)
     ok = np.isfinite(mi) & np.isfinite(mc)
+    if res_in is not None:
+        ok &= np.isfinite(res_in)
     if not np.any(ok):
         return None
     xi = mi[ok]
     yc = mc[ok]
+    used_ok = used[ok] if used is not None else None
+    e_obs_ok = e_obs[ok] if e_obs is not None else None
+    e_cat_ok = e_cat[ok] if e_cat is not None else None
+    res = (res_in[ok] if res_in is not None else yc - xi)
+    err_res = _combined_mag_err(e_obs_ok, e_cat_ok, xi.size)
     stem = filename_stem or (
         f"instrumental_vs_catalog_{band_label}"
         if band_label
@@ -1872,46 +2202,66 @@ def plot_instrumental_vs_catalog_magnitudes(
         ttl = "Cal stars: instrumental vs. catalog" + (
             f" ({band_label})" if band_label else ""
         )
-
-    if show_one_to_one:
-        fig, (ax0, ax1) = plt.subplots(
-            2,
-            1,
-            figsize=(5, 7.2),
-            gridspec_kw={"height_ratios": [2.4, 1.15], "hspace": 0.3},
+    rlab = residual_label
+    if rlab is None:
+        rlab = (
+            r"$m_\mathrm{cat} - m_\mathrm{obs}$ [mag]"
+            if show_one_to_one
+            else r"$r$ [mag]"
         )
-        ax0.scatter(xi, yc, s=12, alpha=0.5, c="C0", edgecolors="none")
+
+    fig, (ax0, ax1) = plt.subplots(
+        2,
+        1,
+        figsize=(5, 7.2),
+        gridspec_kw={"height_ratios": [2.4, 1.15], "hspace": 0.3},
+        layout="constrained",
+    )
+    _scatter_catalog_sample(
+        ax0,
+        xi,
+        yc,
+        used_ok,
+        color="C0",
+        err_x=e_obs_ok,
+        err_y=e_cat_ok,
+        s=12,
+    )
+    if show_one_to_one:
         lo = float(np.nanmin([np.nanmin(xi), np.nanmin(yc)]))
         hi = float(np.nanmax([np.nanmax(xi), np.nanmax(yc)]))
         ax0.plot([lo, hi], [lo, hi], "k--", lw=1, alpha=0.6)
         ax0.set_aspect("equal", adjustable="box")
-        ax0.set_xlabel(xl)
-        ax0.set_ylabel(r"$m_\mathrm{cat}$ [mag]")
-        ax0.set_title(ttl)
+    ax0.set_xlabel(xl)
+    ax0.set_ylabel(r"$m_\mathrm{cat}$ [mag]")
+    ax0.set_title(ttl)
+    _maybe_legend(ax0)
 
-        res = yc - xi
-        ax1.scatter(
-            xi,
-            res,
-            s=14,
-            alpha=0.55,
-            c="C2",
-            edgecolors="none",
+    _scatter_catalog_sample(
+        ax1,
+        xi,
+        res,
+        used_ok,
+        color="C2",
+        err_y=err_res,
+        s=14,
+    )
+    ax1.axhline(0.0, color="k", linestyle="--", lw=1, alpha=0.55)
+    ax1.set_xlabel(xl)
+    ax1.set_ylabel(rlab)
+    ax1.set_title("Residual vs. magnitude", fontsize=10)
+    if show_stats:
+        _annotate_stats_box(
+            ax1,
+            _residual_stat_lines(
+                res,
+                used_mask=used_ok,
+                slope_x=xi,
+                slope_name="mag",
+            ),
         )
-        ax1.axhline(0.0, color="k", linestyle="--", lw=1, alpha=0.55)
-        ax1.set_xlabel(xl)
-        ax1.set_ylabel(r"$m_\mathrm{cat} - m_\mathrm{obs}$ [mag]")
-        ax1.set_title("Residuals from 1:1 line", fontsize=10)
-    else:
-        fig, ax0 = plt.subplots(figsize=(5, 5))
-        ax0.scatter(xi, yc, s=12, alpha=0.5, c="C0", edgecolors="none")
-        ax0.set_aspect("auto")
-        ax0.set_xlabel(xl)
-        ax0.set_ylabel(r"$m_\mathrm{cat}$ [mag]")
-        ax0.set_title(ttl)
 
     path = _diagnostic_plot_path(output_dir, stem, file_type)
-    plt.tight_layout()
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
     plt.close(fig)
     return path
@@ -1925,23 +2275,42 @@ def plot_zeropoint_residual_distribution(
     band_label: str = "",
     filename_stem: str | None = None,
     residuals_by_band: dict[str, np.ndarray] | None = None,
+    used_mask=None,
+    used_mask_by_band: dict[str, np.ndarray] | None = None,
+    xlabel: str | None = None,
+    title: str | None = None,
+    show_stats: bool = True,
+    show_gaussian: bool = True,
 ) -> Path | None:
     """
-    Histogram of ZP residuals :math:`m_\\mathrm{cat} - m_\\mathrm{inst} - \\mathrm{ZP}`.
+    Histogram of fit residuals :math:`m_\\mathrm{cat}-m_\\mathrm{inst}-T\\cdot c-\\mathrm{ZP}`.
 
     Pass either a single ``residuals`` array or ``residuals_by_band`` (filter name →
     residuals) to overlay several filters in **one** figure with a common binning and
     a legend (fewer files for reports).
     """
-    ax_xlabel = r"$m_\mathrm{cat} - m_\mathrm{inst} - \mathrm{ZP}$ [mag]"
+    ax_xlabel = xlabel or (
+        r"$m_\mathrm{cat} - m_\mathrm{inst} - T\cdot c - \mathrm{ZP}$ [mag]"
+    )
 
     if residuals_by_band:
         series: dict[str, np.ndarray] = {}
         for label, arr in residuals_by_band.items():
-            x = np.asarray(arr, dtype=float)
-            x = x[np.isfinite(x)]
-            if x.size > 0:
-                series[str(label)] = x
+            x = _as_float_1d(arr)
+            if x.size == 0:
+                continue
+            mask = None
+            if used_mask_by_band and label in used_mask_by_band:
+                mask = _align_optional(used_mask_by_band[label], x.size, dtype=bool)
+            elif used_mask is not None:
+                mask = _align_optional(used_mask, x.size, dtype=bool)
+            finite = np.isfinite(x)
+            if mask is not None:
+                sample = x[finite & mask]
+            else:
+                sample = x[finite]
+            if sample.size > 0:
+                series[str(label)] = sample
         if not series:
             return None
         combined = np.concatenate(list(series.values()))
@@ -1966,12 +2335,16 @@ def plot_zeropoint_residual_distribution(
         ax.legend(title="Filter", fontsize=9)
         ax.set_xlabel(ax_xlabel)
         ax.set_ylabel("Count")
-        ttl = "ZP residual distribution"
-        if len(keys) > 1:
-            ttl += f" ({', '.join(keys)})"
-        elif len(keys) == 1:
-            ttl += f" ({keys[0]})"
+        ttl = title or "ZP residual distribution"
+        if title is None:
+            if len(keys) > 1:
+                ttl += f" ({', '.join(keys)})"
+            elif len(keys) == 1:
+                ttl += f" ({keys[0]})"
         ax.set_title(ttl)
+        if show_stats:
+            first = next(iter(series.values()))
+            _annotate_stats_box(ax, _residual_stat_lines(first))
         path = _diagnostic_plot_path(output_dir, stem, file_type)
         plt.tight_layout()
         fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
@@ -1980,18 +2353,66 @@ def plot_zeropoint_residual_distribution(
 
     if residuals is None:
         return None
-    x = np.asarray(residuals, dtype=float)
-    x = x[np.isfinite(x)]
-    if x.size == 0:
+    x_all = _as_float_1d(residuals)
+    used = _align_optional(used_mask, x_all.size, dtype=bool)
+    finite = np.isfinite(x_all)
+    if not np.any(finite):
         return None
     stem = filename_stem or (
         f"zeropoint_residuals_{band_label}" if band_label else "zeropoint_residual_distribution"
     )
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.hist(x, bins="auto", color="C2", alpha=0.85, edgecolor="k", linewidth=0.3)
+    edges = np.histogram_bin_edges(x_all[finite], bins="auto")
+    if used is not None:
+        unused = x_all[finite & ~used]
+        used_x = x_all[finite & used]
+        if unused.size:
+            ax.hist(
+                unused,
+                bins=edges,
+                color="0.75",
+                alpha=0.7,
+                edgecolor="k",
+                linewidth=0.25,
+                label="catalog, not used",
+            )
+        if used_x.size:
+            ax.hist(
+                used_x,
+                bins=edges,
+                color="C2",
+                alpha=0.85,
+                edgecolor="k",
+                linewidth=0.3,
+                label="used in calibration",
+            )
+        sample = used_x
+        _maybe_legend(ax)
+    else:
+        sample = x_all[finite]
+        ax.hist(sample, bins=edges, color="C2", alpha=0.85, edgecolor="k", linewidth=0.3)
     ax.set_xlabel(ax_xlabel)
     ax.set_ylabel("Count")
-    ax.set_title("ZP residual distribution" + (f" ({band_label})" if band_label else ""))
+    ax.set_title(
+        (title or "ZP residual distribution")
+        + (f" ({band_label})" if title is None and band_label else "")
+    )
+    if show_gaussian and sample.size >= 5:
+        rms = float(np.sqrt(np.mean(sample * sample)))
+        if rms > 1e-12:
+            xs = np.linspace(float(edges[0]), float(edges[-1]), 200)
+            bw = float(np.mean(np.diff(edges)))
+            pdf = np.exp(-0.5 * (xs / rms) ** 2) / (rms * np.sqrt(2.0 * np.pi))
+            ax.plot(
+                xs,
+                sample.size * bw * pdf,
+                color="k",
+                lw=1.2,
+                label=rf"$\mathcal{{N}}(0,\mathrm{{RMS}}={rms:.3f})$",
+            )
+            _maybe_legend(ax)
+    if show_stats:
+        _annotate_stats_box(ax, _residual_stat_lines(x_all, used_mask=used))
     path = _diagnostic_plot_path(output_dir, stem, file_type)
     plt.tight_layout()
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
@@ -2007,24 +2428,80 @@ def plot_calibration_color_color_cal_stars(
     *,
     filename_stem: str = "calibration_color_color_cal_stars",
     show_residual_panel: bool = True,
+    used_mask=None,
+    err_lit=None,
+    err_obs=None,
+    color_label: str | None = None,
+    title: str | None = None,
+    show_stats: bool = True,
 ) -> Path | None:
     """
-    Literature vs. observed color (e.g. ``B-V``) for calibration stars.
+    Literature vs. observed color for calibration stars.
 
-    With ``show_residual_panel=True`` (default), a second axes below shows
-    ``(B-V)_lit - (B-V)_obs`` vs. ``(B-V)_lit`` and a horizontal line at zero,
-    analogous to the residual panel in :func:`plot_instrumental_vs_catalog_magnitudes`
-    when ``show_one_to_one=True``.
+    ``color_observed`` should already be on a calibrated color scale (median
+    :math:`\\Delta\\mathrm{ZP}` or the full transformation). The guide line has
+    slope 1 through the median offset; residuals are around that offset.
     """
-    cl = np.asarray(color_literature, dtype=float)
-    co = np.asarray(color_observed, dtype=float)
+    cl = _as_float_1d(color_literature)
+    co = _as_float_1d(color_observed)
+    n = min(cl.size, co.size)
+    cl, co = cl[:n], co[:n]
+    used = _align_optional(used_mask, n, dtype=bool)
+    e_lit = _align_optional(err_lit, n)
+    e_obs = _align_optional(err_obs, n)
     ok = np.isfinite(cl) & np.isfinite(co)
     if not np.any(ok):
         return None
     cl_ok = cl[ok]
     co_ok = co[ok]
-    xlit = r"$(B-V)_\mathrm{lit}$ [mag]"
-    yobs = r"$(B-V)_\mathrm{obs}$ [mag]"
+    used_ok = used[ok] if used is not None else None
+    e_lit_ok = e_lit[ok] if e_lit is not None else None
+    e_obs_ok = e_obs[ok] if e_obs is not None else None
+    if color_label is not None and ("$" in color_label or "mathrm" in color_label):
+        xlit = color_label if "lit" in color_label else color_label
+        yobs = color_label
+        short = color_label
+    else:
+        short = color_label or "B-V"
+        xlit = rf"$({short})_\mathrm{{lit}}$ [mag]"
+        yobs = rf"$({short})_\mathrm{{obs}}$ [mag]"
+    offset_src = co_ok - cl_ok
+    if used_ok is not None and np.any(used_ok):
+        delta = float(np.nanmedian(offset_src[used_ok]))
+    else:
+        delta = float(np.nanmedian(offset_src))
+    if not np.isfinite(delta):
+        delta = 0.0
+    res = offset_src - delta
+    ttl = title or "Calibration stars: color-color"
+
+    def _draw_main(ax) -> None:
+        _scatter_catalog_sample(
+            ax,
+            cl_ok,
+            co_ok,
+            used_ok,
+            color="C3",
+            err_x=e_lit_ok,
+            err_y=e_obs_ok,
+            s=14,
+        )
+        lo = float(np.nanmin([np.nanmin(cl_ok), np.nanmin(co_ok)]))
+        hi = float(np.nanmax([np.nanmax(cl_ok), np.nanmax(co_ok)]))
+        line_lab = "1:1" if abs(delta) < 0.02 else "slope 1 (median offset)"
+        ax.plot(
+            [lo, hi],
+            [lo + delta, hi + delta],
+            "k--",
+            lw=1,
+            alpha=0.6,
+            label=line_lab,
+        )
+        ax.set_xlabel(xlit)
+        ax.set_ylabel(yobs)
+        ax.set_title(ttl)
+        ax.set_aspect("equal", adjustable="box")
+        _maybe_legend(ax)
 
     if show_residual_panel:
         fig, (ax0, ax1) = plt.subplots(
@@ -2032,42 +2509,43 @@ def plot_calibration_color_color_cal_stars(
             1,
             figsize=(5, 7.2),
             gridspec_kw={"height_ratios": [2.4, 1.15], "hspace": 0.3},
+            layout="constrained",
         )
-        ax0.scatter(cl_ok, co_ok, s=14, alpha=0.55, c="C3", edgecolors="none")
-        lo = float(np.nanmin([np.nanmin(cl_ok), np.nanmin(co_ok)]))
-        hi = float(np.nanmax([np.nanmax(cl_ok), np.nanmax(co_ok)]))
-        ax0.plot([lo, hi], [lo, hi], "k--", lw=1, alpha=0.6)
-        ax0.set_xlabel(xlit)
-        ax0.set_ylabel(yobs)
-        ax0.set_title("Calibration stars: color-color")
-        ax0.set_aspect("equal", adjustable="box")
-
-        res = cl_ok - co_ok
-        ax1.scatter(
+        _draw_main(ax0)
+        err_res = _combined_mag_err(e_lit_ok, e_obs_ok, cl_ok.size)
+        _scatter_catalog_sample(
+            ax1,
             cl_ok,
             res,
+            used_ok,
+            color="C2",
+            err_y=err_res,
             s=16,
-            alpha=0.55,
-            c="C2",
-            edgecolors="none",
         )
         ax1.axhline(0.0, color="k", linestyle="--", lw=1, alpha=0.55)
         ax1.set_xlabel(xlit)
-        ax1.set_ylabel(r"$(B-V)_\mathrm{lit} - (B-V)_\mathrm{obs}$ [mag]")
-        ax1.set_title("Residuals from 1:1 line", fontsize=10)
+        ax1.set_ylabel(rf"$\Delta({short}) - \delta$ [mag]")
+        ax1.set_title("Residuals around median offset", fontsize=10)
+        if show_stats:
+            _annotate_stats_box(
+                ax1,
+                _residual_stat_lines(
+                    res,
+                    used_mask=used_ok,
+                    slope_x=cl_ok,
+                    slope_name="color",
+                ),
+            )
     else:
         fig, ax0 = plt.subplots(figsize=(5, 5))
-        ax0.scatter(cl_ok, co_ok, s=14, alpha=0.55, c="C3", edgecolors="none")
-        lo = float(np.nanmin([np.nanmin(cl_ok), np.nanmin(co_ok)]))
-        hi = float(np.nanmax([np.nanmax(cl_ok), np.nanmax(co_ok)]))
-        ax0.plot([lo, hi], [lo, hi], "k--", lw=1, alpha=0.6)
-        ax0.set_xlabel(xlit)
-        ax0.set_ylabel(yobs)
-        ax0.set_title("Calibration stars: color-color")
-        ax0.set_aspect("equal", adjustable="box")
+        _draw_main(ax0)
+        if show_stats:
+            _annotate_stats_box(
+                ax0,
+                _residual_stat_lines(res, used_mask=used_ok),
+            )
 
     path = _diagnostic_plot_path(output_dir, filename_stem, file_type)
-    plt.tight_layout()
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
     plt.close(fig)
     return path

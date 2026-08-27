@@ -6,9 +6,10 @@ are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
 
 This page explains the **magnitude vs. uncertainty** plots
 (`photometry_mag_vs_error_*`), the **inter-filter residual geometry**
-figures that sit next to the correlation separation histograms, and the
+figures that sit next to the correlation separation histograms, the
 **catalog cross-match** geometry/diagnostics next to the calibration
-separation histogram.
+separation histogram, and the **catalog vs. extraction** checks that use
+the same residual as the calibration fit.
 
 ## Magnitude vs. uncertainty
 
@@ -178,3 +179,34 @@ Orange stars on the diagnostic scatter are stars **used in the calibration
 fit**; grey points are catalog matches that were later rejected. A tail that is
 almost only grey is already handled by the fit cuts. A tail that still contains
 orange stars is contaminating the ZP.
+
+## Katalog vs. Extraktion
+
+The four catalog-check figures use **one plot API** and the **same residual as
+the fit** that produced the calibrated magnitudes. There is no second,
+median-only ZP hidden in the diagnostics.
+
+\[
+r = m_\mathrm{cat} - m_\mathrm{inst} - T\cdot c - \mathrm{ZP}.
+\]
+
+| Fit | \(T\) | \(\mathrm{ZP}\) | What a slope of \(r\) vs color means |
+|-----|-------|-----------------|--------------------------------------|
+| Median-ZP (teaching script and pipeline `median_zp`) | \(0\) | median of \(m_\mathrm{cat}-m_\mathrm{inst}\) | the **missing color term** |
+| Linear fit (pipeline `linear_fit`) | `color_term` from `TransformationCoefficients` | `zero_point` from the same object | a **leftover** trend after \(T\cdot c+\mathrm{ZP}\) |
+
+Color \(c\) is the catalog index from `color_index_filters` (not hardcoded
+\(B-V\)). Stars used in the fit (`is_calibrator_<filter>`) are overplotted on
+catalog matches that were clipped. The student extract script has no clip, so
+it passes no mask.
+
+| File (stem) | Content |
+|-------------|---------|
+| `instrumental_vs_catalog_<filter>_<epoch>` | Observed vs catalog mag, **always** with \(r\) vs mag underneath. A 1:1 line only when x is already on the catalog scale (`show_one_to_one`, student script). |
+| `zeropoint_residual_distribution_<epoch>` | Histogram of **fit** residuals (optional Gaussian with \(\sigma=\mathrm{RMS}\)) |
+| `zeropoint_residual_vs_color_<f1>_<f2>_<epoch>` | Same \(r\) vs catalog color. Title “Rest-Color-Term bei reinem ZP?” vs “Rest nach \(T\cdot c+\mathrm{ZP}\)”. |
+| `calibration_color_color_cal_stars_<epoch>` | Catalog color vs **calibrated** observed color (after \(\Delta\mathrm{ZP}\), or after the full transformation). Guide line is slope 1 through the median offset, not a naive 1:1 on instrumental \((B-V)\). |
+
+The transformation panels under `<output>/calibration/` remain the fit view
+with the line \(T\cdot c+\mathrm{ZP}\). These diagnostic figures must agree
+with that residual, not invent a second one.
