@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import itertools
-import os
 
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.modeling import fitting
 
-from ... import checks
+from ...output_layout import diagnostics_dir
 from .style import (
     mk_color_cycler_error_bars,
     mk_color_cycler_symbols,
@@ -111,11 +110,7 @@ def d3_scatter(
             # Headless / no Tk: keep non-interactive behaviour
             display = False
 
-    #   Check output directories
-    checks.check_output_directories(
-        output_dir,
-        os.path.join(output_dir, 'compare'),
-    )
+    out = diagnostics_dir(output_dir, "cluster")
 
     #   Prepare plot
     fig = plt.figure(figsize=(20, 15), constrained_layout=True)
@@ -284,7 +279,7 @@ def d3_scatter(
 
     #   Save image if it is not displayed directly
     plt.savefig(
-        f'{output_dir}/compare/pm_vs_distance.{file_type}',
+        f'{out}/pm_vs_distance.{file_type}',
         bbox_inches='tight',
         format=file_type,
     )
@@ -351,11 +346,7 @@ def scatter(
         Type of plot file to be created
         Default is ``pdf``.
     """
-    #   Check output directories
-    checks.check_output_directories(
-        output_dir,
-        os.path.join(output_dir, 'scatter'),
-    )
+    out = diagnostics_dir(output_dir, "cluster")
 
     if x_errors is None:
         x_errors = [None] * len(x_values)
@@ -451,7 +442,7 @@ def scatter(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/scatter/{rts}.{file_type}',
+        f'{out}/scatter_{rts}.{file_type}',
         bbox_inches='tight',
         format=file_type,
     )

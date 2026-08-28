@@ -158,7 +158,7 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 
 **Related (not in the Literal list but coupled):**
 
-- `derive_transform_from_data` — only with `linear_fit`, exactly **two** filters; alternative to `PhotometryCalibrator` linear fit (catalog-color slopes + median ZP). Preset `linear_fit_per_night` enables this. Incompatible with using `color_term_fit` on the standard calibrator path (derive path bypasses it). Writes QC under `<output>/calibration/`: `derive_transform_<epoch>_<filter>.*` (catalog-color slope fits), `derive_transform_fit_overview_*.*` (T/ZP/RMS/n vs epoch), and `derive_transform_summary_*.*` (applied `c`/ZP vs epoch). Outlier rejection uses `fit_sigma_clip` (default `2.5`; lower = stricter) on both `zp_sum` and fit residuals — gray points on the QC plots are excluded stars.
+- `derive_transform_from_data` — only with `linear_fit`, exactly **two** filters; alternative to `PhotometryCalibrator` linear fit (catalog-color slopes + median ZP). Preset `linear_fit_per_night` enables this. Incompatible with using `color_term_fit` on the standard calibrator path (derive path bypasses it). Writes QC under `<output>/diagnostics/calibration/`: `derive_transform_<epoch>_<filter>.*` (catalog-color slope fits), `derive_transform_fit_overview_*.*` (T/ZP/RMS/n vs epoch), and `derive_transform_summary_*.*` (applied `c`/ZP vs epoch). Outlier rejection uses `fit_sigma_clip` (default `2.5`; lower = stricter) on both `zp_sum` and fit residuals — gray points on the QC plots are excluded stars.
 - `exposure_pairing` (`jd_nearest` / `index`) and `reference_filter` — build multi-band epochs before calibration; use `jd_nearest` when B and V exposures are not strictly paired by index.
 - `zp_subsample_statistic` — extra ZP stability reporting for `median_zp` only.
 - `calibration_match_radius` — on-sky radius for matching detections to the calibration catalog (default `2 arcsec`). Independent of `separation_limit`. Tightening this cuts the tail on `differential_catalog_crossmatch_separations` in crowded fields.
@@ -174,7 +174,7 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 ### `diagnostic_plots`
 
 
-Most QC figures under `<output>/diagnostics/` are **on by default** (growth curves stay off). Toggle via nested overrides, e.g. `diagnostic_plots__photometry_mag_vs_error_scatter=False`. How to read the mag–error figures and the inter-filter geometry plots: [DIAGNOSTICS.md](DIAGNOSTICS.md).
+Most QC figures under `<output>/diagnostics/<step>/` are **on by default** (growth curves stay off). Toggle via nested overrides, e.g. `diagnostic_plots__photometry_mag_vs_error_scatter=False`. How to read the mag–error figures and the inter-filter geometry plots: [DIAGNOSTICS.md](DIAGNOSTICS.md). Folder layout is in that page (`extraction`, `correlation`, `calibration`, `extinction`, `cluster`).
 
 | Flag / option | What it checks |
 |---------------|----------------|
@@ -185,7 +185,7 @@ Most QC figures under `<output>/diagnostics/` are **on by default** (growth curv
 | `photometry_radial_growth_curve` | Aperture growth for brightest star (off by default) |
 | `correlation_inter_filter_separation_plot` | Inter-filter match separations **and** residual geometry (quiver on the reference image, radial vs tangential vs radius, plus overview). See [DIAGNOSTICS.md](DIAGNOSTICS.md). |
 | `correlation_inter_filter_max_pair_plots` | Cap on individual pair PDFs **and** geometry figures (default `25`; `None` = all; `0` = overview only) |
-| `exposure_pairing_overview` | Pairing table `diagnostics/exposure_pairing_pairs.ecsv` + ΔJD plot (same groups as `exposure_pairing`) |
+| `exposure_pairing_overview` | Pairing table `diagnostics/correlation/exposure_pairing_pairs.ecsv` + ΔJD plot (same groups as `exposure_pairing`) |
 | `calibration_instrumental_vs_catalog` | Instrumental vs catalog magnitudes (fit residual vs mag; used vs excluded) |
 | `calibration_zeropoint_residual_histogram` | Fit-residual histogram (same \(r\) as the calibration model) |
 | `calibration_zeropoint_residual_vs_color` | Fit residuals vs catalog color |
@@ -195,7 +195,7 @@ Catalog QC plots use the **same residual as the calibration fit** (median ZP or 
 
 **Exposure pairing:** after calibration, `context.calibration_epoch_meta[epoch_id]` also lists `image_id_by_filter` and `jd_by_filter`. Set `debug_exposure_pairing=True` for a terminal dump of each epoch’s pairing. The diagnostics ECSV/plot make the same pairing inspectable without re-running.
 
-Standard `linear_fit` (non-derive) also writes transformation panels under `<output>/calibration/` (`calibration_<epoch>_<filter>.*`, night/per-image summaries). Those are separate from `diagnostic_plots`.
+Standard `linear_fit` (non-derive) also writes transformation panels under `<output>/diagnostics/calibration/` (`calibration_<epoch>_<filter>.*`, night/per-image summaries).
 
 
 ### `extinction_mode`

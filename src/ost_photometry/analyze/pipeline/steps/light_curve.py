@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 from astropy.table import Table
 from astropy.time import Time
 
 from .... import checks, terminal_output
+from ....output_layout import results_dir, tables_dir
 from ... import calibration
 from ...ooi_ids import ooi_photometry_id
 from ...post_processing.light_curve import (
@@ -126,14 +125,12 @@ class LightCurveStep(base.PipelineStep):
                 or bool(epoch_meta)
             )
 
-        checks.check_output_directories(
-            f"{output_dir}/lightcurve",
-            f"{output_dir}/tables",
-        )
+        tables_dir(output_dir)
+        lc_root = results_dir(output_dir, "lightcurves")
         if config.plot_light_curve_all_objects:
-            checks.clear_directory(Path(f"{output_dir}/lightcurve/by_id"))
+            checks.clear_directory(lc_root / "by_id")
         if config.plot_light_curve_calibration_objects:
-            checks.clear_directory(Path(f"{output_dir}/lightcurve/calibration"))
+            checks.clear_directory(lc_root / "calibration")
 
         binning = config.light_curve_binning_factor
         dist_samples = config.distribution_samples

@@ -47,6 +47,7 @@ def plot_starmap_from_imaging_context(
     file_type_plots: str = "pdf",
 ) -> None:
     """Overlay ``tbl`` positions on the reference image (same contract as ``prepare_and_plot_starmap``)."""
+    from ...output_layout import diagnostics_dir
     from .. import plots
 
     data = ctx.reference_image
@@ -66,7 +67,7 @@ def plot_starmap_from_imaging_context(
         else:
             title_rts = filename_suffix
     plots.starmap(
-        str(ctx.out_path_stub),
+        str(diagnostics_dir(ctx.out_path_stub, "cluster")),
         data,
         filter_,
         tbl_xy,

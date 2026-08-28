@@ -36,8 +36,8 @@ def fits_filenames(location: str | Path) -> list[str]:
 def image_file_collection(location: str | Path, **kwargs) -> ccdp.ImageFileCollection:
     """``ImageFileCollection`` that does not try to read directories as FITS.
 
-    ccdproc globs ``*fit``, which matches analysis folders such as
-    ``output/extinction_fit``, then logs ``Is a directory`` while reading
+    ccdproc globs ``*fit``, which matches leftover analysis folders such as
+    ``output/diagnostics``, then logs ``Is a directory`` while reading
     headers. An empty ``filenames`` list is treated as unset, so that case
     uses ``glob_exclude='*'`` instead of falling back to the directory glob.
     """

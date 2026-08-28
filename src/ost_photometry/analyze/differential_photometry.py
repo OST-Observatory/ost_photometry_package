@@ -270,7 +270,7 @@ class DifferentialPhotometer:
             ``always`` — always attempt linear T/ZP when color columns exist.
             ``auto`` — linear when color spread > 0.1 mag, else median ZP (default).
         output_dir : str, optional
-            If provided, save transformation fit plots to output_dir/calibration/.
+            If provided, save transformation fit plots to output_dir/diagnostics/calibration/.
         file_type : str
             Plot file format when output_dir is set. Default is ``pdf``.
         """
@@ -1020,7 +1020,7 @@ class PhotometryCalibrator:
         Parameters
         ----------
         output_dir : str, optional
-            If provided, save diagnostic plots to output_dir/extinction_fit/.
+            If provided, save diagnostic plots to output_dir/diagnostics/extinction/.
         file_type : str
             Plot file format when output_dir is set. Default is ``pdf``.
         """
@@ -1072,7 +1072,7 @@ class PhotometryCalibrator:
         Parameters
         ----------
         output_dir : str, optional
-            If provided, save calibration diagnostic plots to output_dir/calibration/.
+            If provided, save calibration diagnostic plots to output_dir/diagnostics/calibration/.
         file_type : str
             Plot file format when output_dir is set. Default is ``pdf``.
         sigma_clip : float

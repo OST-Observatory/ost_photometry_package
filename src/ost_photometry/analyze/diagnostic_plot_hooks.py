@@ -1,8 +1,8 @@
 """
 Optional pipeline hooks for :class:`~ost_photometry.analyze.pipeline.config.DiagnosticPlots`.
 
-Figures go to ``<output_dir>/diagnostics/`` using ``PipelineConfig.file_type_plots``.
-Failures are logged and do not abort the pipeline.
+Figures go to ``<output_dir>/diagnostics/<step>/`` using
+``PipelineConfig.file_type_plots``. Failures are logged and do not abort the pipeline.
 """
 
 from __future__ import annotations
@@ -14,7 +14,8 @@ from typing import Any
 import numpy as np
 from astropy.table import Table
 
-from .. import checks, terminal_output
+from .. import terminal_output
+from ..output_layout import diagnostics_dir
 from . import correlate, plots
 
 _QC_PLOT_COLUMNS = (
@@ -265,11 +266,12 @@ def _plot_catalog_extraction_checks(
 
 
 
-def diagnostics_subdirectory(output_dir: str | Path) -> Path:
-    base = Path(output_dir)
-    d = base / "diagnostics"
-    checks.check_output_directories(base, d)
-    return d
+_DIAGNOSTIC_PHASE_STEP = {
+    "extraction": "extraction",
+    "correlation_inter": "correlation",
+    "calibration": "calibration",
+    "calibration_differential": "calibration",
+}
 
 
 def _phase_requests_plots(dp: Any, phase: str) -> bool:
@@ -394,8 +396,11 @@ def run_diagnostic_plots_phase(
     if not _phase_requests_plots(dp, phase):
         return
 
-    # Create diagnostics/ only when at least one toggle for this phase is on.
-    out_d = diagnostics_subdirectory(out_root)
+    # Create diagnostics/<step>/ only when at least one toggle for this phase is on.
+    step = _DIAGNOSTIC_PHASE_STEP.get(phase)
+    if step is None:
+        return
+    out_d = diagnostics_dir(out_root, step)
     ft = getattr(config, "file_type_plots", "pdf")
     obs = getattr(context, "_observation", None)
 

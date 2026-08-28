@@ -141,7 +141,7 @@ def prepare_calibration_check_plots(
     title_prefix: str | None = None,
     fit_masks: dict[str, np.ndarray] | None = None,
 ) -> None:
-    """Write transformation diagnostic plots under ``output_dir/calibration/``.
+    """Write transformation diagnostic plots under ``output_dir/diagnostics/calibration/``.
 
     Parameters
     ----------

@@ -56,10 +56,15 @@ from ..fwhm import (
     filter_table_finite_cutouts,
     roundness_range_for_finder,
 )
+from ..output_layout import extraction_plot_dir, tables_dir
 from . import correlate, plots, utilities
 from .image import AnalysisImage
 from .models import ImageSeries
 from .utils.epsf_selection import n_epsf_stars_to_select
+
+
+def _extraction_qc_dir(image: AnalysisImage, *, gallery: bool) -> str:
+    return str(extraction_plot_dir(image.out_path, gallery=gallery))
 
 
 def rm_cosmic_rays(
@@ -812,6 +817,7 @@ def determine_epsf(
     terminal_logger: terminal_output.TerminalLog | None = None,
     file_type_plots: str = "pdf",
     indent: int = 2,
+    plot_output_dir: str | None = None,
 ) -> None:
     """
     Main function to determine the ePSF, using photutils
@@ -927,7 +933,7 @@ def determine_epsf(
     string = f"img-{image.image_id}-{image.filter_}"
 
     #   Get output directory
-    output_dir = image.out_path.name
+    output_dir = plot_output_dir or _extraction_qc_dir(image, gallery=False)
 
     #   Plot the brightest ePSF stars
     if multiprocess_plots:
@@ -985,10 +991,8 @@ def extraction_epsf(
     """
     output_path = image.out_path
 
-    checks.check_output_directories(
-        output_path,
-        output_path / "tables",
-    )
+    table_dir = tables_dir(output_path)
+    checks.check_output_directories(output_path, table_dir)
 
     data = image.get_data()
     error = image.get_error()
@@ -1184,7 +1188,7 @@ def extraction_epsf(
 
     filename = f"table_photometry_{identification_str}_PSF.dat"
     result_tbl.write(
-        output_path / "tables" / filename,
+        table_dir / filename,
         format="ascii",
         overwrite=True,
     )
@@ -1365,7 +1369,7 @@ def extraction_aperture(
 
     if plot_aperture_positions:
         plots.plot_apertures(
-            image.out_path.name,
+            _extraction_qc_dir(image, gallery=False),
             data,
             aperture,
             annulus_aperture,
@@ -1600,6 +1604,9 @@ def main_extract(
         finder_fwhm_scale_range=finder_fwhm_scale_range,
     )
 
+    gallery = image.image_id != id_reference_image
+    plot_dir = _extraction_qc_dir(image, gallery=gallery)
+
     if photometry_extraction_method == "PSF":
         if size_epsf_region % 2 == 0:
             size_epsf_region = size_epsf_region + 1
@@ -1616,7 +1623,7 @@ def main_extract(
 
         if plots_for_all_images or image.image_id == id_reference_image:
             plots.starmap(
-                image.out_path.name,
+                plot_dir,
                 image.get_data(),
                 image.filter_,
                 image.positions,
@@ -1646,10 +1653,11 @@ def main_extract(
             multiprocess_plots=False,
             terminal_logger=terminal_logger,
             file_type_plots=file_type_plots,
+            plot_output_dir=plot_dir,
         )
 
         plots.plot_epsf(
-            image.out_path.name,
+            plot_dir,
             {f"img-{image.image_id}-{image.filter_}": [image.epsf]},
             terminal_logger=terminal_logger,
             file_type=file_type_plots,
@@ -1679,7 +1687,7 @@ def main_extract(
         plots.plot_residual(
             {f"{image.filter_}, Image ID: {image.image_id}": image.get_data()},
             {f"{image.filter_}, Image ID: {image.image_id}": image.residual_image},
-            image.out_path.name,
+            plot_dir,
             terminal_logger=terminal_logger,
             file_type=file_type_plots,
             indent=2,
@@ -1737,6 +1745,7 @@ def main_extract(
             file_type_plots=file_type_plots,
             label=f"Stars with photometric extractions ({method_label})",
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+            gallery=gallery,
         )
 
     if multiprocessing:

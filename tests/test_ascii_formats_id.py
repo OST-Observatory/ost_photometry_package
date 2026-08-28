@@ -72,16 +72,8 @@ class TestAsciiFormatsId(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
 
-            class _OutPath:
-                def __truediv__(self, other):
-                    return tmp_path / other
-
-                @property
-                def name(self):
-                    return str(tmp_path)
-
             obs = SimpleNamespace(
-                image_series_dict={"V": SimpleNamespace(out_path=_OutPath())}
+                image_series_dict={"V": SimpleNamespace(out_path=tmp_path)}
             )
             tbl = Table(
                 {

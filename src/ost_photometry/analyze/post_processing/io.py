@@ -36,12 +36,9 @@ def write_epoch_native_magnitudes(
         for instrumental (uncalibrated) epoch-native dumps.
     """
     output_dir = list(observation.image_series_dict.values())[0].out_path
-    from ... import checks
+    from ...output_layout import tables_dir
 
-    checks.check_output_directories(
-        output_dir,
-        output_dir / "tables",
-    )
+    table_dir = tables_dir(output_dir)
 
     if object_id is not None:
         object_id_suffix = f"_img_{object_id}"
@@ -53,7 +50,7 @@ def write_epoch_native_magnitudes(
     filename = (
         f"{file_stem}{photometry_extraction_method}{object_id_suffix}{rts}.ecsv"
     )
-    out_path = output_dir / "tables" / filename
+    out_path = table_dir / filename
 
     if validate_schema:
         schema.validate_epoch_native_table(tbl, require_mag_columns=False)

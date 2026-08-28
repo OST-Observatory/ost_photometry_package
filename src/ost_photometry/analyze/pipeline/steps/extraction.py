@@ -3,6 +3,7 @@
 import multiprocessing as mp
 
 from .... import terminal_output
+from ....output_layout import diagnostics_dir
 from ... import plots
 from ...diagnostic_plot_hooks import run_diagnostic_plots_phase
 from ...extraction import extract_multiprocessing, main_extract
@@ -75,13 +76,13 @@ class ExtractionStep(base.PipelineStep):
 
             p = mp.Process(
                 target=plots.plot_epsf,
-                args=(context.output_dir, epsf_dict),
+                args=(str(diagnostics_dir(context.output_dir, "extraction")), epsf_dict),
                 kwargs={"file_type": ext.file_type_plots},
             )
             p.start()
             p = mp.Process(
                 target=plots.plot_residual,
-                args=(img_dict, residual_dict, context.output_dir),
+                args=(img_dict, residual_dict, str(diagnostics_dir(context.output_dir, "extraction"))),
                 kwargs={"file_type": ext.file_type_plots},
             )
             p.start()

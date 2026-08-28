@@ -16,6 +16,7 @@ from astropy.io import fits
 
 from . import checks, style, terminal_output
 from .fits_headers import wcs_from_header
+from .output_layout import work_dir
 
 if TYPE_CHECKING:
     from .image import Image  # noqa: F401
@@ -313,7 +314,7 @@ def find_wcs_astrometry(
 
     wcs_working_dir
         Path to the working directory, where intermediate data will be
-        saved. If `None` a wcs_images directory will be created in the
+        saved. If `None`, ``work/wcs_images`` will be created in the
         output directory.
         Default is ``None``.
 
@@ -331,7 +332,7 @@ def find_wcs_astrometry(
 
     #   Define WCS dir
     if wcs_working_dir is None:
-        wcs_working_dir = image.out_path / "wcs_images"
+        wcs_working_dir = work_dir(image.out_path, "wcs_images")
     else:
         wcs_working_dir = checks.check_pathlib_path(wcs_working_dir)
         wcs_working_dir = wcs_working_dir / random_string_generator(7)
@@ -532,7 +533,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
 
     field_of_view = _astap_field_of_view_degrees(image)
     source_path = Path(image.path)
-    working_dir = image.out_path / "wcs_images"
+    working_dir = work_dir(image.out_path, "wcs_images")
     astap_path, is_temporary = _prepare_astap_fits(source_path, working_dir)
     ny, nx = image.get_shape()
 
@@ -617,7 +618,7 @@ def check_wcs_exists(
 
     wcs_dir
         Path to the working directory, where intermediate data will be
-        saved. If `None` a wcs_images directory will be created in the
+        saved. If `None`, ``work/wcs_images`` will be created in the
         output directory.
         Default is ``None``.
 
@@ -667,7 +668,7 @@ def check_wcs_exists(
 
         #   Set WCS dir
         if wcs_dir is None:
-            wcs_dir = image.out_path / "wcs_images"
+            wcs_dir = work_dir(image.out_path, "wcs_images")
 
         #   Get image base name
         basename = Path(image.path).stem

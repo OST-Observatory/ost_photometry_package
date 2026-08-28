@@ -16,6 +16,7 @@ from photutils.utils import ImageDepth
 from regions import EllipseSkyRegion
 
 from ... import checks, style, terminal_output
+from ...output_layout import diagnostics_dir, results_dir
 from .simbad_galaxy import (
     simbad_galaxy_axes_arcmin,
     simbad_overlay_kind,
@@ -420,11 +421,7 @@ def plot_limiting_mag_sky_apertures(
     """
     from scipy.ndimage import binary_dilation
 
-    #   Check output directories
-    checks.check_output_directories(
-        output_dir,
-        os.path.join(output_dir, 'limiting_mag'),
-    )
+    out = diagnostics_dir(output_dir, "extraction")
 
     # ImageDepth places apertures on the *dilated* mask; show that for QC.
     mask_bool = np.asarray(mask, dtype=bool)
@@ -479,7 +476,7 @@ def plot_limiting_mag_sky_apertures(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/limiting_mag/limiting_mag_sky_regions.{file_type}',
+        f'{out}/limiting_mag_sky_regions.{file_type}',
         bbox_inches='tight',
         format=file_type,
     )
@@ -548,11 +545,7 @@ def plot_annotated_image(
         Limiting magnitude, only objects brighter as this limit will be shown
         Default is ``None``.
     """
-    #   Check output directories
-    checks.check_output_directories(
-        output_dir,
-        os.path.join(output_dir, 'starmaps'),
-    )
+    out = results_dir(output_dir, "starmaps")
 
     #   Setup figure
     fig, ax = plt.subplots(figsize=(20, 9), subplot_kw={'projection': wcs_image})
@@ -778,7 +771,7 @@ def plot_annotated_image(
 
     #   Save plot
     plt.savefig(
-        output_dir / f'starmaps/annotated_starmap_{filter_}.{file_type}',
+        out / f'annotated_starmap_{filter_}.{file_type}',
         bbox_inches='tight',
         format=file_type,
     )

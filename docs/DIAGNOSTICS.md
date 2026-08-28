@@ -1,8 +1,30 @@
 # Diagnostic plots
 
-QC figures are written to `<output>/diagnostics/` when the corresponding
+QC figures live under `<output>/diagnostics/<step>/` when the corresponding
 `PipelineConfig.diagnostic_plots` flags are on (most are on by default). Toggles
 are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
+
+```
+<output>/
+  diagnostics/
+    extraction/      # mag–error, growth, starmaps, aperture, ePSF, residual
+    correlation/     # inter-filter separations/geometry, exposure pairing
+    calibration/     # catalog match, fit panels, residuals, night summary
+    extinction/      # k′ vs airmass
+    cluster/         # PM vs distance, membership scatter
+  results/
+    lightcurves/     # by_id/, calibration/
+    cmds/
+    starmaps/        # Simbad-annotated maps
+  tables/
+  work/
+    wcs_images/
+    extraction/      # all-image galleries when plots_for_all_images
+    subtract/
+```
+
+Former top-level plot folders (`calibration/`, `lightcurve/`, `extinction_fit/`,
+`compare/`, `scatter/`, `wcs_images/`, `subtract/`) are no longer written.
 
 This page explains the **magnitude vs. uncertainty** plots
 (`photometry_mag_vs_error_*`), the **inter-filter residual geometry**
@@ -214,6 +236,6 @@ it passes no mask.
 | `zeropoint_residual_vs_color_<f1>_<f2>_<epoch>` | Same \(r\) vs catalog color, with per-filter median, RMS, and slope. Title “Residual color term with pure ZP?” vs “Residuals after \(T\cdot c+\mathrm{ZP}\)”. |
 | `calibration_color_color_cal_stars_<epoch>` | Catalog color vs **calibrated** observed color (after \(\Delta\mathrm{ZP}\), or after the full transformation). Guide line is slope 1 through the median offset, not a naive 1:1 on instrumental \((B-V)\). |
 
-The transformation panels under `<output>/calibration/` remain the fit view
+The transformation panels under `<output>/diagnostics/calibration/` are the fit view
 with the line \(T\cdot c+\mathrm{ZP}\). These diagnostic figures must agree
 with that residual, not invent a second one.

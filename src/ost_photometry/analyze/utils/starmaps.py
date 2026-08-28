@@ -11,6 +11,7 @@ from astropy.table import Table
 
 from ... import terminal_output
 from ... import utilities as base_utilities
+from ...output_layout import diagnostics_dir, extraction_plot_dir
 from .. import plots
 
 if TYPE_CHECKING:
@@ -25,7 +26,8 @@ def prepare_and_plot_starmap(
         label: str = 'Stars with photometric extractions',
         add_image_id: bool = True,
         use_wcs_projection_for_star_maps: bool = True,
-        file_type_plots: str = 'pdf') -> None:
+        file_type_plots: str = 'pdf',
+        gallery: bool = False) -> None:
     """
     Creates a star map using information from an Image object
 
@@ -99,7 +101,7 @@ def prepare_and_plot_starmap(
 
     #   Plot star map
     plots.starmap(
-        image.out_path.name,
+        str(extraction_plot_dir(image.out_path, gallery=gallery)),
         data,
         filter_,
         tbl_xy,
@@ -153,7 +155,7 @@ def prepare_and_plot_starmap_from_observation(
         p = mp.Process(
             target=plots.starmap,
             args=(
-                image.out_path.name,
+                str(diagnostics_dir(image.out_path, "correlation")),
                 image.get_data(),
                 filter_,
                 image.photometry,
@@ -236,7 +238,7 @@ def prepare_and_plot_starmap_from_image_series(
         p = mp.Process(
             target=plots.starmap,
             args=(
-                image_series.out_path.name,
+                str(diagnostics_dir(image_series.out_path, "correlation")),
                 img.get_data(),
                 image_series.filter_,
                 img.photometry,

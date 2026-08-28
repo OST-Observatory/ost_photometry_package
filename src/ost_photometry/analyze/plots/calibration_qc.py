@@ -15,6 +15,7 @@ from matplotlib.patches import Patch
 from matplotlib.ticker import MaxNLocator
 
 from ... import checks
+from ...output_layout import diagnostics_dir
 
 plt.switch_backend("Agg")
 
@@ -35,7 +36,7 @@ def plot_extinction_fit_value_airmass(
     Parameters
     ----------
     output_dir : str or Path
-        Base output directory. Plots saved to output_dir/extinction_fit/.
+        Base output directory. Plots saved to ``diagnostics/extinction/``.
     data_by_filter : dict
         {filter_name: (airmass_arr, y_arr)} with airmass and ln(flux) or magnitude.
     coefficients : dict
@@ -48,7 +49,7 @@ def plot_extinction_fit_value_airmass(
         Plot file format (pdf, png, etc.). Default is ``pdf``.
     """
 
-    out = Path(output_dir) / "extinction_fit"
+    out = diagnostics_dir(output_dir, "extinction")
     checks.check_output_directories(out)
 
     for filter_, (airmass, y) in data_by_filter.items():
@@ -99,7 +100,7 @@ def plot_extinction_fit_comparison_stars(
     Parameters
     ----------
     output_dir : str or Path
-        Base output directory. Plots saved to output_dir/extinction_fit/.
+        Base output directory. Plots saved to ``diagnostics/extinction/``.
     data_by_filter : dict
         {filter_name: (X_arr, delta_arr)} with airmass and mean(m_obs - m_std).
     coefficients : dict
@@ -108,7 +109,7 @@ def plot_extinction_fit_comparison_stars(
         Plot file format (pdf, png, etc.). Default is ``pdf``.
     """
 
-    out = Path(output_dir) / "extinction_fit"
+    out = diagnostics_dir(output_dir, "extinction")
     checks.check_output_directories(out)
 
     for filter_, (airmass, delta) in data_by_filter.items():
@@ -160,7 +161,7 @@ def plot_calibration_transformation(
     Parameters
     ----------
     output_dir : str or Path
-        Base output directory. Plots saved to output_dir/calibration/.
+        Base output directory. Plots saved to ``diagnostics/calibration/``.
     epoch_id : str
         Identifier for the calibration epoch (e.g. ``epoch_000``).
     data_by_filter : dict
@@ -176,7 +177,7 @@ def plot_calibration_transformation(
         Prepended to the left-panel title (e.g. ``Derive-transform fit``).
     """
 
-    out = Path(output_dir) / "calibration"
+    out = diagnostics_dir(output_dir, "calibration")
     checks.check_output_directories(out)
 
     for filter_, (color, delta, mask) in data_by_filter.items():
@@ -256,7 +257,7 @@ def plot_derive_transform_fit_overview(
     if not epoch_ids or not filters:
         return
 
-    out = Path(output_dir) / "calibration"
+    out = diagnostics_dir(output_dir, "calibration")
     checks.check_output_directories(out)
 
     n_ep = len(epoch_ids)
@@ -362,7 +363,7 @@ def plot_calibration_night_summary(
     Parameters
     ----------
     output_dir : str or Path
-        Base output directory. Plots saved to output_dir/calibration/.
+        Base output directory. Plots saved to ``diagnostics/calibration/``.
     epoch_ids : list
         Epoch identifiers in order.
     coefficients_per_epoch : list of dict
@@ -400,7 +401,7 @@ def plot_calibration_night_summary(
     if n_filt == 0:
         return
 
-    out = Path(output_dir) / "calibration"
+    out = diagnostics_dir(output_dir, "calibration")
     checks.check_output_directories(out)
 
     n_ep = len(epoch_ids)
@@ -555,7 +556,7 @@ def plot_calibration_night_summary(
 
 # ---------------------------------------------------------------------------
 # Diagnostic plots (written under a caller-provided directory, typically
-# ``<pipeline_output>/diagnostics/``; toggles in ``DiagnosticPlots``).
+# ``<pipeline_output>/diagnostics/<step>/``; toggles in ``DiagnosticPlots``).
 # ---------------------------------------------------------------------------
 
 

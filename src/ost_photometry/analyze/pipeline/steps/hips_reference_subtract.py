@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 from .... import checks, terminal_output
+from ....output_layout import work_dir
 from ...post_processing.hips_reference_subtract import run_hips_reference_subtraction
 from .. import base
 from ..config import PipelineConfig
@@ -71,7 +72,7 @@ class HipsReferenceSubtractStep(base.PipelineStep):
         science_path = str(im.path)
         checks.check_file(science_path)
 
-        workdir = Path(output_dir) / "subtract"
+        workdir = work_dir(output_dir, "subtract")
         checks.check_output_directories(str(Path(output_dir)), str(workdir))
 
         wcs_method = (

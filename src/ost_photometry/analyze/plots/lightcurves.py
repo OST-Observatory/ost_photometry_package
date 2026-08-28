@@ -1,7 +1,7 @@
 """Light-curve plotting helpers."""
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 import astropy.units as u
 import matplotlib.pyplot as plt
@@ -10,9 +10,16 @@ from astropy.stats import sigma_clip as sigma_clipping
 from astropy.time import Time
 from astropy.timeseries import TimeSeries, aggregate_downsample
 
-from ... import checks
+from ...output_layout import results_dir
 
 plt.switch_backend("Agg")
+
+
+def _lightcurve_dir(output_dir: str, subdirectory: str = "") -> Path:
+    extra = subdirectory.strip("/")
+    if extra:
+        return results_dir(output_dir, "lightcurves", extra)
+    return results_dir(output_dir, "lightcurves")
 
 def _nonnegative_errorbar_yerr(values) -> np.ndarray:
     """``matplotlib.errorbar`` rejects negative ``yerr``; use absolute uncertainty."""
@@ -168,16 +175,7 @@ def light_curve_jd(
         ``vega`` / ``ab`` / … for the magnitude y-axis suffix (ignored for flux).
     """
     #   Check output directories
-    if subdirectory != '':
-        checks.check_output_directories(
-            output_dir,
-            f'{output_dir}/lightcurve{subdirectory}',
-        )
-    else:
-        checks.check_output_directories(
-            output_dir,
-            os.path.join(output_dir, 'lightcurve'),
-        )
+    plot_dir = _lightcurve_dir(output_dir, subdirectory)
 
     #   Make plot
     fig = plt.figure(figsize=(20, 9))
@@ -226,8 +224,9 @@ def light_curve_jd(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/lightcurve{subdirectory}/lightcurve_jd_{name_object}'
-        f'_{data_column}{file_name_suffix}.{file_type}',
+        plot_dir / (
+            f'lightcurve_jd_{name_object}_{data_column}{file_name_suffix}.{file_type}'
+        ),
         bbox_inches='tight',
         format=file_type,
     )
@@ -289,16 +288,7 @@ def light_curve_fold(
         Default is ``pdf``.
     """
     #   Check output directories
-    if subdirectory != '':
-        checks.check_output_directories(
-            output_dir,
-            f'{output_dir}/lightcurve{subdirectory}',
-        )
-    else:
-        checks.check_output_directories(
-            output_dir,
-            os.path.join(output_dir, 'lightcurve'),
-        )
+    plot_dir = _lightcurve_dir(output_dir, subdirectory)
 
     #   Make a time object for the  transit times
     transit_time = Time(transit_time, format='isot', scale='utc')
@@ -396,8 +386,10 @@ def light_curve_fold(
 
     #   Save plot
     plt.savefig(
-        f'{output_dir}/lightcurve{subdirectory}/lightcurve_folded_{name_object}'
-        f'_{data_column}{file_name_suffix}.{file_type}',
+        plot_dir / (
+            f'lightcurve_folded_{name_object}_{data_column}'
+            f'{file_name_suffix}.{file_type}'
+        ),
         bbox_inches='tight',
         format=file_type,
     )

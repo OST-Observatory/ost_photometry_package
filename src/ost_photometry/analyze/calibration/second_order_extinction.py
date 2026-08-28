@@ -13,6 +13,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from ...output_layout import diagnostics_dir
 from .mk_calib import (
     LEGACY_C_COLUMNS,
     LEGACY_C_ERR_COLUMNS,
@@ -143,7 +144,7 @@ def fit_and_plot_second_order(
         airmass, c_vals, c_errs, apply_weights=apply_weights
     )
 
-    outdir = Path(outdir)
+    outdir = diagnostics_dir(outdir, "extinction")
     outdir.mkdir(parents=True, exist_ok=True)
     t_label = coefficient_column[1:4]
     plot_path = outdir / f"C_vs_x_{filt}_T{t_label}.pdf"

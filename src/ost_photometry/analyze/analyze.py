@@ -11,6 +11,7 @@ from skimage.transform import SimilarityTransform
 
 from .. import checks, terminal_output
 from .. import utilities as base_utilities
+from ..output_layout import tables_dir
 from .image import AnalysisImage
 from .models import ImageSeries
 from .observation import Observation
@@ -171,7 +172,7 @@ def _run_pipeline_impl(
     if image_paths is not None and output_dir is not None:
         checks.check_output_directories(
             output_dir,
-            os.path.join(output_dir, "tables"),
+            tables_dir(output_dir),
         )
         if cfg.extraction_mode == "multi" or (
             cfg.extraction_mode == "auto"

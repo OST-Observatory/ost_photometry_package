@@ -15,6 +15,7 @@ from astropy.time import Time
 from astropy.timeseries import TimeSeries
 
 from ... import terminal_output
+from ...output_layout import tables_dir
 
 LightCurveQuantity = Literal["magnitude", "flux"]
 LightCurveCalibrationRows = Literal["auto", "transformed", "simple"]
@@ -638,17 +639,16 @@ def prepare_plot_time_series(
             style_name='WARNING',
         )
 
+    table_dir = tables_dir(output_dir)
     if light_curve_save_format == 'dat':
         time_series.write(
-            f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-            f'{lc_suffix}.dat',
+            str(table_dir / f'light_curve_{object_name}_{filter_}{lc_suffix}.dat'),
             format='ascii',
             overwrite=True,
         )
     else:
         time_series.write(
-            f'{output_dir}/tables/light_curve_{object_name}_{filter_}'
-            f'{lc_suffix}.csv',
+            str(table_dir / f'light_curve_{object_name}_{filter_}{lc_suffix}.csv'),
             format='ascii.csv',
             overwrite=True,
         )
@@ -738,7 +738,7 @@ def plot_light_curve_from_epoch_native_ecsv(
     Requires ``quantity="flux"`` and a rectangular epoch×source matrix fillable
     from the table (see :func:`epoch_native_flux_matrix_for_pipeline_normalization`).
     """
-    from ... import checks
+    from ...output_layout import results_dir, tables_dir
     from .. import calibration
     from .io import read_epoch_native_magnitudes
 
@@ -756,7 +756,8 @@ def plot_light_curve_from_epoch_native_ecsv(
         )
 
     out = str(output_dir)
-    checks.check_output_directories(f"{out}/lightcurve", f"{out}/tables")
+    results_dir(out, "lightcurves")
+    tables_dir(out)
 
     has_sky = object_ra_deg is not None and object_dec_deg is not None
     if has_sky and object_id is not None:

@@ -86,12 +86,13 @@ CALIBRATION_PRESET_ALIASES: dict[str, str] = {
 
 @dataclass
 class DiagnosticPlots:
-    """QC figures under ``<output_dir>/diagnostics/``.
+    """QC figures under ``<output_dir>/diagnostics/<step>/``.
 
     Most checks are on by default so a normal pipeline run leaves enough plots
     to judge photometry, cross-match, and calibration quality. Disable
     individually via ``diagnostic_plots__<name>=False`` overrides. Growth curves
-    stay off (pick a star / more specialized).
+    stay off (pick a star / more specialized). Layout:
+    ``diagnostics/extraction|correlation|calibration|extinction|cluster``.
     """
 
     calibration_crossmatch_separation_histogram: bool = True

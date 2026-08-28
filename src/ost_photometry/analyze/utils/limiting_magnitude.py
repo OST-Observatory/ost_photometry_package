@@ -11,6 +11,7 @@ from astropy.table import Table
 from photutils.utils import ImageDepth
 
 from ... import terminal_output
+from ...output_layout import extraction_plot_dir
 from .. import plots
 from ..post_processing.adapters import ensure_epoch_native_photometry_table
 from ..post_processing.imaging import ImagingPlotContext
@@ -206,7 +207,7 @@ def _derive_limiting_magnitude_one_epoch(
     p = mp.Process(
         target=plots.starmap,
         args=(
-            out_path_stub,
+            str(extraction_plot_dir(out_path_stub)),
             image_data,
             filter_,
             tbl_faintest,
@@ -421,7 +422,7 @@ def derive_limiting_magnitude(
 
         _derive_limiting_magnitude_one_epoch(
             image_data=image.get_data(),
-            out_path_stub=image.out_path.name,
+            out_path_stub=image.out_path,
             filter_=filter_,
             wcs_image=image.wcs,
             photo=photo,

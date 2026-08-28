@@ -90,7 +90,7 @@ Within `linear_fit`, set `derive_transform_from_data=True` for the catalog-color
 derive-transform (two filters only, e.g. B and V). Preset `linear_fit_per_night` enables
 this. Otherwise `color_term_fit` controls the standard `PhotometryCalibrator` fit.
 
-QC plots (when `output_dir` is set) go under `<output>/calibration/`:
+QC plots (when `output_dir` is set) go under `<output>/diagnostics/calibration/`:
 
 - `derive_transform_<epoch>_<filter>.pdf` — fit of `m_std−m_inst` vs catalog color
   (slopes used to build applied `c` factors), with residuals; gray = outliers rejected

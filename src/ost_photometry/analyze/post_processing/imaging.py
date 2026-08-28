@@ -25,6 +25,7 @@ class ImagingPlotContext:
 
     wcs: WCS
     reference_image: np.ndarray
+    #: Campaign output directory (not a basename). Plot writers nest under this.
     out_path_stub: Path | str
     #: Band / filter name (e.g. for plot labels); mirrors ``ImageSeries.filter_``.
     filter_name: str
@@ -53,7 +54,7 @@ def imaging_context_from_image_series(image_series: object) -> ImagingPlotContex
     return ImagingPlotContext(
         wcs=ref.wcs,
         reference_image=arr,
-        out_path_stub=ref.out_path.name,
+        out_path_stub=ref.out_path,
         filter_name=image_series.filter_,
         image_shape=tuple(arr.shape),
         plot_reference_image_id=ref.image_id,

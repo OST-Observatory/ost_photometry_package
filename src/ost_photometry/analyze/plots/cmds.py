@@ -11,6 +11,7 @@ from matplotlib import gridspec
 from scipy.spatial import KDTree
 
 from ... import checks, terminal_output
+from ...output_layout import results_dir
 from .cmd_reddening import combine_cmd_error_bars, reddening_for_absolute_cmd
 from .style import (
     MaxRecursionError,
@@ -191,7 +192,7 @@ class MakeCMDs:
         plot_type
             Plot type
         """
-        cmd_dir = f'{self.output_dir}/cmds'
+        cmd_dir = str(results_dir(self.output_dir, "cmds"))
         checks.check_output_directories(cmd_dir)
 
         if self.name_of_star_cluster == "" or self.name_of_star_cluster == "?":

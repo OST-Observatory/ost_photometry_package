@@ -141,7 +141,7 @@ per filter** (`fit_extinction_from_value_airmass`, `ExtinctionFitStep`).
 
 1. At least **3 images per filter** at different airmasses.
 2. At least **one star** with ≥ 3 valid points over ΔX (several stars is better).
-3. Inspect diagnostic plots in `output_dir/extinction_fit/` (linear trend, no obvious outliers).
+3. Inspect diagnostic plots in `output_dir/diagnostics/extinction/` (linear trend, no obvious outliers).
 4. Note `k_prime_err` in the night JSON; exclude nights with large errors from aggregation.
 
 ### Typical OST workflow

@@ -131,7 +131,7 @@ def fit_extinction_from_value_airmass(
     use_magnitude : bool
         If True, column contains magnitude (slope of m vs X = k). If False, flux.
     output_dir : str, optional
-        If provided, save diagnostic plots to output_dir/extinction_fit/.
+        If provided, save diagnostic plots to output_dir/diagnostics/extinction/.
     file_type : str
         Plot file format when output_dir is set. Default is ``pdf``.
 
@@ -337,7 +337,7 @@ def fit_extinction_from_comparison_stars(
     fallback_airmass_col : str
         Column with airmass.
     output_dir : str, optional
-        If provided, save diagnostic plots to output_dir/extinction_fit/.
+        If provided, save diagnostic plots to output_dir/diagnostics/extinction/.
     file_type : str
         Plot file format when output_dir is set. Default is ``pdf``.
 

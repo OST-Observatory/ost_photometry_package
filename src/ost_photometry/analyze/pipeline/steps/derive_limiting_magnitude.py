@@ -58,7 +58,7 @@ def _imaging_context_from_pipeline_image(image, filter_: str) -> ImagingPlotCont
     return ImagingPlotContext(
         wcs=image.wcs,
         reference_image=arr,
-        out_path_stub=image.out_path.name,
+        out_path_stub=image.out_path,
         filter_name=filter_,
         image_shape=tuple(arr.shape),
         plot_reference_image_id=getattr(image, "image_id", None),
