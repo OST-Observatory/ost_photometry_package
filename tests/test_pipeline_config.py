@@ -37,6 +37,15 @@ def test_pipeline_config_flat_and_nested_access():
     assert ext_always.main_extract_kwargs()["cosmic_ray_removal"] == "always"
     cfg.apply_overrides(diagnostic_plots__photometry_mag_vs_error_scatter=True)
     assert cfg.diagnostic_plots.photometry_mag_vs_error_scatter is True
+    assert cfg.calibrator_error_p84_clip is True
+    assert cfg.calibrator_photon_factor == 2.0
+    assert cfg.calibrator_qfit_max == 0.2
+    assert cfg.calibrator_cfit_max == 0.2
+    assert cfg.calibrator_apply_finder_shape_cuts is True
+    assert cfg.calibrator_min_keep == 3
+    cfg.apply_overrides(calibrator_photon_factor=None, calibrator_qfit_max=0.15)
+    assert cfg.calibrator_photon_factor is None
+    assert cfg.calibration.calibrator_qfit_max == 0.15
 
 
 def test_pipeline_config_from_preset_overrides():

@@ -286,6 +286,22 @@ class CalibrationConfig:
     #: On-sky radius for matching extracted stars to the calibration catalog.
     #: Independent of ``CorrelationConfig.separation_limit`` (intra/inter-filter).
     calibration_match_radius: u.Quantity = 2.0 * u.arcsec
+    #: Reject catalog stars whose ``err_<filter>`` sits above the binned p84
+    #: ridge of all detections at that magnitude.
+    calibrator_error_p84_clip: bool = True
+    #: Reject if ``σ`` exceeds this factor times the photon+sky envelope.
+    #: ``None`` disables the envelope cut.
+    calibrator_photon_factor: float | None = 2.0
+    calibrator_qfit_max: float | None = 0.2
+    calibrator_cfit_max: float | None = 0.2
+    calibrator_qfit_bright_percentile: float | None = 90.0
+    calibrator_cfit_bright_percentile: float | None = 90.0
+    calibrator_bright_frac: float = 0.4
+    #: Re-apply ``finder_sharpness_range`` / ``finder_roundness_range`` to
+    #: catalog stars before the fit. Missing/NaN shape columns are kept.
+    calibrator_apply_finder_shape_cuts: bool = True
+    #: Skip a quality cut if it would leave fewer than this many candidates.
+    calibrator_min_keep: int = 3
     debug_verify_ooi_global_ids: bool = False
     observatory_location: EarthLocation = field(
         default_factory=lambda: EarthLocation(

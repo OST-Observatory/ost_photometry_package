@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..quality import calibrator_candidate_mask
 from ..result import CalibrationResult
-from ..zp import comparison_mask_from_std_columns, fit_median_zero_point_epoch
+from ..zp import fit_median_zero_point_epoch
 
 if TYPE_CHECKING:
     from astropy.table import Table
@@ -28,7 +29,7 @@ def fit_epochs(
         from astropy.table import vstack
 
         combined = vstack(list(epochs.values()))
-        mask = comparison_mask_from_std_columns(combined, filters)
+        mask = calibrator_candidate_mask(combined, filters, config)
         result = fit_median_zero_point_epoch(
             combined,
             "ensemble",
@@ -36,6 +37,7 @@ def fit_epochs(
             mask,
             color_index_filters=color_indices,
             min_comparisons=min_comparisons,
+            sigma_clip=config.fit_sigma_clip,
         )
         return {eid: result for eid in epochs}
 
@@ -43,7 +45,7 @@ def fit_epochs(
         from astropy.table import vstack
 
         combined = vstack(list(epochs.values()))
-        mask = comparison_mask_from_std_columns(combined, filters)
+        mask = calibrator_candidate_mask(combined, filters, config)
         night_result = fit_median_zero_point_epoch(
             combined,
             "night_combined",
@@ -51,13 +53,14 @@ def fit_epochs(
             mask,
             color_index_filters=color_indices,
             min_comparisons=min_comparisons,
+            sigma_clip=config.fit_sigma_clip,
         )
         return {eid: night_result for eid in epochs}
 
     # per_image (default for median_zp_per_image) and fixed (same as per_image without preset coeffs)
     results: dict[str, CalibrationResult] = {}
     for epoch_id, data in epochs.items():
-        mask = comparison_mask_from_std_columns(data, filters)
+        mask = calibrator_candidate_mask(data, filters, config)
         results[epoch_id] = fit_median_zero_point_epoch(
             data,
             epoch_id,
@@ -65,6 +68,7 @@ def fit_epochs(
             mask,
             color_index_filters=color_indices,
             min_comparisons=min_comparisons,
+            sigma_clip=config.fit_sigma_clip,
         )
     return results
 

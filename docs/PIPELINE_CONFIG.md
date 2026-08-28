@@ -162,6 +162,12 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 - `exposure_pairing` (`jd_nearest` / `index`) and `reference_filter` — build multi-band epochs before calibration; use `jd_nearest` when B and V exposures are not strictly paired by index.
 - `zp_subsample_statistic` — extra ZP stability reporting for `median_zp` only.
 - `calibration_match_radius` — on-sky radius for matching detections to the calibration catalog (default `2 arcsec`). Independent of `separation_limit`. Tightening this cuts the tail on `differential_catalog_crossmatch_separations` in crowded fields.
+- **Calibrator quality (before the fit)** — catalog matches are further filtered so junk does not enter the ZP / T+ZP / derive-transform fit. Rejected stars stay `is_comparison` (grey on QC) and are not `is_calibrator_<filter>`. Each cut is skipped if it would leave fewer than `calibrator_min_keep` (default 3) candidates, rather than failing the epoch.
+  - `calibrator_error_p84_clip` (default `True`) — drop stars whose `err_<filter>` sits above the binned **p84** ridge of **all** detections at that magnitude (faint stars are allowed larger σ).
+  - `calibrator_photon_factor` (default `2.0`; `None` disables) — also drop if σ exceeds this factor times the photon+sky envelope fitted to the same ridge.
+  - `calibrator_qfit_max` / `calibrator_cfit_max` (default `0.2`) and `calibrator_qfit_bright_percentile` / `calibrator_cfit_bright_percentile` (default 90th percentile among the brightest `calibrator_bright_frac`, default 40%). The applied cap is `min(fixed, percentile)` when both exist. Missing/NaN `qfit`/`cfit` (typical for `APER`) skips that cut.
+  - `calibrator_apply_finder_shape_cuts` (default `True`) — re-apply `finder_sharpness_range` / `finder_roundness_range` to catalog stars. NaN shape columns are kept.
+  - Residual clip for `median_zp` now uses `fit_sigma_clip` (default `2.5`), same `|m_cat−m_inst−ZP| < clip × RMS` loop as `linear_fit`.
 
 
 

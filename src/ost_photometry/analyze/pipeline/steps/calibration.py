@@ -214,7 +214,7 @@ class CalibrationStep(base.PipelineStep):
         )
         context.calibration_results = results
 
-        clip = config.fit_sigma_clip if strategy == "linear_fit" else None
+        clip = config.fit_sigma_clip
         from ...calibration_sources.flags import mark_used_calibrators
 
         for epoch_id, tbl in epochs.items():

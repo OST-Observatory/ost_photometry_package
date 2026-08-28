@@ -9,6 +9,7 @@ color-term transformation row-wise on multi-band epoch tables.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from astropy.stats import sigma_clip as astropy_sigma_clip
@@ -293,12 +294,18 @@ def fit_epoch_derive_transform(
     sigma_clip: float = 2.5,
     zp_subsample_statistic: bool = False,
     distribution_samples: int = 1000,
+    quality_config: Any | None = None,
 ) -> tuple[CalibrationResult, DeriveTransformFit] | None:
     """Fit one epoch; returns calibration result and raw derive-transform fit for plots."""
     if len(filters) != 2:
         return None
     f0, f1 = filters[0], filters[1]
-    comp_mask = comparison_mask_from_std_columns(table, filters)
+    if quality_config is not None:
+        from .quality import calibrator_candidate_mask
+
+        comp_mask = calibrator_candidate_mask(table, filters, quality_config)
+    else:
+        comp_mask = comparison_mask_from_std_columns(table, filters)
     derive_fit = fit_color_corrections_epoch(
         table,
         f0,

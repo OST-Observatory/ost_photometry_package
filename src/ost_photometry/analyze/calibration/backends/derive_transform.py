@@ -100,6 +100,7 @@ def fit_epochs(
             sigma_clip=config.fit_sigma_clip,
             zp_subsample_statistic=config.zp_subsample_statistic,
             distribution_samples=config.distribution_samples,
+            quality_config=config,
         )
         if fitted is None:
             warnings.warn(

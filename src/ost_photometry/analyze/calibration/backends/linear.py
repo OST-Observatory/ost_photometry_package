@@ -11,6 +11,7 @@ from ...extinction_io import (
     resolve_pipeline_extinction_coefficients,
     resolve_pipeline_extinction_order,
 )
+from ..quality import calibrator_candidate_mask
 from ..result import CalibrationResult
 
 if TYPE_CHECKING:
@@ -90,8 +91,12 @@ def fit_epochs(
         )
         _apply_second_order_after_fit(calibrator, config)
 
+    def _comparison_selector(table):
+        return calibrator_candidate_mask(table, filters, config)
+
     calibrator.fit_transformation_parameters(
         filters=filters,
+        comparison_selector=_comparison_selector,
         determine_color_terms=True,
         min_comparisons=5,
         sigma_clip=config.fit_sigma_clip,

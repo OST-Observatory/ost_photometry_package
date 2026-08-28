@@ -30,7 +30,11 @@ Finder quality (`sharpness`, `roundness*`) and PSF-fit quality (`qfit`, `cfit`,
 `flags`) are copied onto the photometry table at extraction so both figures can
 use them. Comparison / calibrator flags are written only after the calibration
 step (`is_comparison` = catalog match; `is_calibrator_<filter>` = survived the
-fit cuts for that band).
+pre-fit quality cuts and the residual clip for that band). The quality cuts
+are: σ above the binned p84 ridge of all detections (and optionally the
+photon+sky envelope), `qfit`/`cfit` caps, and the finder sharpness/roundness
+windows. See [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md) (`calibrator_*`). APER
+tables often have no `qfit`; that cut is then skipped.
 
 ### How to read the top panel
 
@@ -60,8 +64,9 @@ One panel per available quality column (`qfit`, `cfit`, `sharpness`,
 exist, the fallback is distance to the image edge or offset from the field
 centre. After calibration, stars used in the fit are open stars; catalog
 matches rejected by the quality cuts are grey crosses (overplotted on each
-quality panel). If the used stars sit in the high-\(\sigma\) tail, they are a
-poor ensemble.
+quality panel). Used stars should sit on the \(\sigma\) ridge and inside the
+qfit/shape windows. Remaining outliers in the used sample mean a cut was
+skipped (`calibrator_min_keep`) or the column was absent.
 
 ### Overview extra panels
 
@@ -177,9 +182,10 @@ Written with the histogram when `calibration_crossmatch_separation_histogram` is
   astrometric floor.
 
 Orange stars on the diagnostic scatter are stars **used in the calibration
-fit**; grey points are catalog matches that were later rejected. A tail that is
-almost only grey is already handled by the fit cuts. A tail that still contains
-orange stars is contaminating the ZP.
+fit**; grey points are catalog matches that were rejected by the pre-fit
+quality cuts or the residual clip. A tail that is almost only grey is already
+handled. A tail that still contains orange stars is contaminating the ZP
+(usually because a cut was skipped to keep `calibrator_min_keep` stars).
 
 ## Katalog vs. Extraktion
 

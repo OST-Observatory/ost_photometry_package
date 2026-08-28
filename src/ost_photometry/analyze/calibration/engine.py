@@ -94,7 +94,11 @@ class CalibrationEngine:
                     inst_col, std_col = f"mag_{f}", f"mag_std_{f}"
                     if inst_col not in tbl.colnames or std_col not in tbl.colnames:
                         continue
-                    mask = comparison_mask_from_std_columns(tbl, [f])
+                    used = result.calibrator_mask_by_filter.get(f)
+                    if used is not None:
+                        mask = np.asarray(used, dtype=bool)
+                    else:
+                        mask = comparison_mask_from_std_columns(tbl, [f])
                     if not np.any(mask):
                         continue
                     stats = zp_subsample_statistic(

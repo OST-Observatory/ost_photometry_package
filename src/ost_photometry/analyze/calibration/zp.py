@@ -30,15 +30,22 @@ def fit_median_zero_point_epoch(
     std_col_prefix: str = "mag_std_",
     min_comparisons: int = 3,
     color_index_filters: dict[str, tuple[str, str]] | None = None,
+    sigma_clip: float | None = None,
+    max_clip_iterations: int = 5,
 ) -> CalibrationResult:
     """
     Fit zero points as median(m_std - m_inst) per filter; color term fixed at 0.
 
-    No iterative sigma-clip (unlike some older ZP helpers).
+    When ``sigma_clip`` is set, iteratively drop stars with
+    ``|m_std - m_inst - ZP| >= sigma_clip × RMS`` (same convention as
+    ``linear_fit``). Pipeline: ``PipelineConfig.fit_sigma_clip``.
     """
     color_indices = color_index_filters or {}
     result = CalibrationResult(identifier=epoch_id)
-    comps = data[comparison_mask]
+    cand = np.asarray(comparison_mask, dtype=bool)
+    comp_idx = np.flatnonzero(cand)
+    comps = data[cand]
+    n_table = len(data)
 
     for filter_ in filters:
         inst_col = f"{mag_col_prefix}{filter_}"
@@ -52,9 +59,24 @@ def fit_median_zero_point_epoch(
         if np.sum(valid) < min_comparisons:
             continue
 
-        residuals = m_std[valid] - m_inst[valid]
-        zp = float(np.median(residuals))
-        zp_err = float(np.std(residuals) / np.sqrt(np.sum(valid)))
+        used = valid.copy()
+        residuals = m_std - m_inst
+        zp = float(np.median(residuals[used]))
+        n_iter = max_clip_iterations if sigma_clip is not None else 1
+        for _ in range(n_iter):
+            zp = float(np.median(residuals[used]))
+            resid_from_zp = residuals - zp
+            rms = float(np.nanstd(resid_from_zp[used]))
+            if sigma_clip is None or rms <= 0.0:
+                break
+            new_used = valid & (np.abs(resid_from_zp) < float(sigma_clip) * rms)
+            if np.sum(new_used) == np.sum(used) or np.sum(new_used) < min_comparisons:
+                break
+            used = new_used
+
+        used_residuals = residuals[used]
+        zp = float(np.median(used_residuals))
+        zp_err = float(np.std(used_residuals) / np.sqrt(np.sum(used)))
         ci = color_indices.get(filter_, ("B", "V"))
 
         result.transformation[filter_] = TransformationCoefficients(
@@ -64,11 +86,14 @@ def fit_median_zero_point_epoch(
             zero_point=zp,
             zero_point_err=zp_err,
             color_index_filters=ci,
-            n_stars_used=int(np.sum(valid)),
-            rms_residual=float(np.nanstd(residuals)),
+            n_stars_used=int(np.sum(used)),
+            rms_residual=float(np.nanstd(used_residuals)),
         )
+        full_mask = np.zeros(n_table, dtype=bool)
+        full_mask[comp_idx[used]] = True
+        result.calibrator_mask_by_filter[filter_] = full_mask
 
-    result.n_comparison_stars = int(np.sum(comparison_mask))
+    result.n_comparison_stars = int(np.sum(cand))
     return result
 
 
