@@ -16,7 +16,7 @@ changes see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
 | `c7/3_plot_lightcurve.py` | ✅ | `analyze.plots`, epoch-native ECSV input |
 | `n1_baches/1_masterimages.py` | ✅ | `reduce.utilities`, `reduce.registration`, `checks` |
 | `n2/1_add_images.py` | ✅ | `reduce.redu.reduce_main` (stacking via MP per filter) |
-| `n2/3_plot_cmd.py` | ✅ | `analyze.plots`, `analyze.utilities`, `style.Bcolors` |
+| `n2/3_plot_cmd.py` | ✅ | `load_cmd_table`, `plot_cmds_from_table`, `style.Bcolors` |
 
 **Hinweis N2:** In `reduction_scripts_students/n2/` gibt es **kein** `2_obtain_flux.py`.
 Die Photometrie-Extraktion für N2 läuft über die Supervisor-Skripte (Abschnitt 2).
@@ -31,7 +31,7 @@ Legacy `Observation.extract_flux` / `extract_flux_multi` entfallen zugunsten von
 |--------|--------|-----------|
 | `n2/2_extract_data_supervisors.py` | ✅ | `run_pipeline`, `PipelineConfig`, Preset `median_zp_per_image` / custom |
 | `n2/2_extract_data_students.py` | ✅ | Wie supervisors; student-facing variant |
-| `n2/3_plot_cmd_supervisors.py` | ✅ | wie `n2/3_plot_cmd` (students) |
+| `n2/3_plot_cmd_supervisors.py` | ✅ | wie `n2/3_plot_cmd` (plus Fit/Cali/E(B-V)-Fehler) |
 | `n2/2b_post_process.py` | ✅ | `post_processing`, `analyze.utilities`, `checks` |
 
 ---

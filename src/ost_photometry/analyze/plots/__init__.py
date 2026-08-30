@@ -26,6 +26,7 @@ from .calibration_qc import (
     plot_zeropoint_residual_vs_color,
     residual_geometry_summary,
 )
+from .cmd_workflow import plot_cmds_from_table
 from .cmds import MakeCMDs
 from .extraction import plot_apertures, plot_cutouts, plot_epsf, plot_residual
 from .lightcurves import light_curve_fold, light_curve_jd
@@ -70,6 +71,7 @@ __all__ = [
     "plot_calibration_crossmatch_separations",
     "plot_calibration_night_summary",
     "plot_calibration_transformation",
+    "plot_cmds_from_table",
     "plot_combined_separation_histograms",
     "plot_cutouts",
     "plot_derive_transform_fit_overview",
