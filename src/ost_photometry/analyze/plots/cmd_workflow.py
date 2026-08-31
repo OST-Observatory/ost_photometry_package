@@ -58,7 +58,11 @@ def plot_cmds_from_table(
     apply_corrections_to: str = "observation",
 ) -> None:
     """Plot apparent CMDs and, when a distance modulus is set, a second CMD
-    with reddening/distance on the stars or on the isochrones."""
+    with reddening/distance on the stars or on the isochrones.
+
+    With ``apply_corrections_to="isochrone"`` the overlay uses the apparent
+    plot ranges; otherwise the absolute ranges.
+    """
     if len(tbl) == 0:
         raise ValueError("CMD table is empty.")
 
@@ -119,8 +123,11 @@ def plot_cmds_from_table(
             f" CMD: {filter_2} vs. {filter_1}-{filter_2}",
         )
         iso = load_isochrone_config(isochrone_configuration_file, [filter_1, filter_2])
-        x_abs = _range_at(x_plot_range_absolute, filter_id)
-        y_abs = _range_at(y_plot_range_absolute, filter_id)
+        if iso_on_data:
+            x_overlay, y_overlay = x_app, y_app
+        else:
+            x_overlay = _range_at(x_plot_range_absolute, filter_id)
+            y_overlay = _range_at(y_plot_range_absolute, filter_id)
         cmds.plot_absolute_cmd(
             e_b_v,
             mu,
@@ -136,10 +143,10 @@ def plot_cmds_from_table(
             rv_err=rv_err if do_error_bars else None,
             figure_size_x=figure_size_x,
             figure_size_y=figure_size_y,
-            y_plot_range_max=y_abs[1],
-            y_plot_range_min=y_abs[0],
-            x_plot_range_max=x_abs[1],
-            x_plot_range_min=x_abs[0],
+            y_plot_range_max=y_overlay[1],
+            y_plot_range_min=y_overlay[0],
+            x_plot_range_max=x_overlay[1],
+            x_plot_range_min=x_overlay[0],
             fit_isochrone=fit_isochrone,
             n_bin_observation=n_bin_observation,
             magnitude_fit_range=magnitude_fit_range,
