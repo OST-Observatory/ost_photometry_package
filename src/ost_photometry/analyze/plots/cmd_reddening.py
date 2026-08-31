@@ -114,3 +114,24 @@ def reddening_for_absolute_cmd(
         0.0 if a_filter_2_err is None else float(a_filter_2_err),
         0.0 if relative_extinction_err is None else float(relative_extinction_err),
     )
+
+
+def cmd_correction_offsets(
+        a_filter_2: float, relative_extinction: float, m_m: float,
+        *, apply_to: str = "observation",
+    ) -> tuple[float, float, float, float]:
+    """
+    Signed offsets ``(dmag_obs, dcolor_obs, dmag_iso, dcolor_iso)``.
+
+    ``observation`` (default): subtract extinction and distance from the stars.
+    ``isochrone``: add the same terms to theoretical isochrones so they sit on
+    the apparent CMD.
+    """
+    target = str(apply_to).strip().lower()
+    if target in ("observation", "data", "stars"):
+        return (-(a_filter_2 + m_m), -relative_extinction, 0.0, 0.0)
+    if target in ("isochrone", "isochrones"):
+        return (0.0, 0.0, a_filter_2 + m_m, relative_extinction)
+    raise ValueError(
+        f"apply_to must be 'observation' or 'isochrone', got {apply_to!r}"
+    )

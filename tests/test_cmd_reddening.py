@@ -59,3 +59,27 @@ def test_vr_reddening_uses_fitzpatrick_curve():
     assert excess_err > 0.0
     # A_R = k_R E(B-V) is smaller than A_V = R_V E(B-V)
     assert a_r < 3.1 * 0.2
+
+
+def test_cmd_correction_offsets_observation_vs_isochrone():
+    mod = _cmd_reddening()
+    a_v, excess = 0.62, 0.2
+    m_m = 10.0
+    dmag_obs, dcol_obs, dmag_iso, dcol_iso = mod.cmd_correction_offsets(
+        a_v, excess, m_m, apply_to="observation"
+    )
+    assert dmag_obs == pytest.approx(-(a_v + m_m))
+    assert dcol_obs == pytest.approx(-excess)
+    assert dmag_iso == 0.0
+    assert dcol_iso == 0.0
+
+    dmag_obs, dcol_obs, dmag_iso, dcol_iso = mod.cmd_correction_offsets(
+        a_v, excess, m_m, apply_to="isochrone"
+    )
+    assert dmag_obs == 0.0
+    assert dcol_obs == 0.0
+    assert dmag_iso == pytest.approx(a_v + m_m)
+    assert dcol_iso == pytest.approx(excess)
+
+    with pytest.raises(ValueError, match="apply_to"):
+        mod.cmd_correction_offsets(a_v, excess, m_m, apply_to="neither")

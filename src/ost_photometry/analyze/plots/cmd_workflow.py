@@ -55,8 +55,10 @@ def plot_cmds_from_table(
     magnitude_fit_range: tuple[float | None, float | None] = (None, None),
     chi_square_plot_mode: str | None = None,
     n_bin_observation: int = 40,
+    apply_corrections_to: str = "observation",
 ) -> None:
-    """Plot apparent CMDs and, when a distance modulus is set, absolute CMDs."""
+    """Plot apparent CMDs and, when a distance modulus is set, a second CMD
+    with reddening/distance on the stars or on the isochrones."""
     if len(tbl) == 0:
         raise ValueError("CMD table is empty.")
 
@@ -108,8 +110,13 @@ def plot_cmds_from_table(
         if mu == 0.0:
             continue
 
+        iso_on_data = str(apply_corrections_to).strip().lower() in (
+            "isochrone",
+            "isochrones",
+        )
         terminal_output.print_to_terminal(
-            f"Create absolute CMD: {filter_2} vs. {filter_1}-{filter_2}",
+            f"Create {'apparent (reddened isochrones)' if iso_on_data else 'absolute'}"
+            f" CMD: {filter_2} vs. {filter_1}-{filter_2}",
         )
         iso = load_isochrone_config(isochrone_configuration_file, [filter_1, filter_2])
         x_abs = _range_at(x_plot_range_absolute, filter_id)
@@ -137,6 +144,7 @@ def plot_cmds_from_table(
             n_bin_observation=n_bin_observation,
             magnitude_fit_range=magnitude_fit_range,
             chi_square_plot_mode=chi_square_plot_mode,
+            apply_corrections_to=apply_corrections_to,
         )
 
 

@@ -12,7 +12,11 @@ from scipy.spatial import KDTree
 
 from ... import checks, terminal_output
 from ...output_layout import results_dir
-from .cmd_reddening import combine_cmd_error_bars, reddening_for_absolute_cmd
+from .cmd_reddening import (
+    cmd_correction_offsets,
+    combine_cmd_error_bars,
+    reddening_for_absolute_cmd,
+)
 from .style import (
     MaxRecursionError,
     initialize_plot,
@@ -526,11 +530,11 @@ class MakeCMDs:
             n_bin_observation: int = 40,
             fiduciary_points_observation: bool | None = None,
             fiduciary_points_isochrones: bool = False,
-            chi_square_plot_mode: str | None = None) -> None:
+            chi_square_plot_mode: str | None = None,
+            apply_corrections_to: str = "observation") -> None:
         """
-        Plot calibrated CMD with
-            * magnitudes corrected for reddening and distance
-            * isochrones
+        Plot a CMD with reddening and distance applied either to the stars
+        (absolute magnitudes) or to the isochrones (apparent CMD overlay).
 
         Parameters
         ----------
@@ -642,8 +646,13 @@ class MakeCMDs:
             If `None` and fit_isochrone is `True` chi_square_plot_mode is set
             to `simple`.
             Default is ``None``.
+
+        apply_corrections_to        : `string`, optional
+            ``observation`` (default): subtract reddening and distance from
+            the stars (absolute CMD). ``isochrone``: add the same terms to
+            the theoretical isochrones so they overlay the apparent data.
+            Default is ``observation``.
         """
-        #   Correct for reddening and distance
         a_filter_2, relative_extinction, a_filter_2_err, relative_extinction_err = (
             reddening_for_absolute_cmd(
                 self.filter_1,
@@ -654,18 +663,38 @@ class MakeCMDs:
                 rv_err=rv_err,
             )
         )
-        magnitude_filter_2 = self.magnitude_filter_2 - a_filter_2 - m_m
-        magnitude_color = self.magnitude_color - relative_extinction
+        dmag_obs, dcolor_obs, dmag_iso, dcolor_iso = cmd_correction_offsets(
+            a_filter_2,
+            relative_extinction,
+            m_m,
+            apply_to=apply_corrections_to,
+        )
+        apply_to_iso = str(apply_corrections_to).strip().lower() in (
+            "isochrone",
+            "isochrones",
+        )
+        magnitude_filter_2 = self.magnitude_filter_2 + dmag_obs
+        magnitude_color = self.magnitude_color + dcolor_obs
         self.magnitude_filter_2_absolute = magnitude_filter_2
         self.magnitude_color_absolute = magnitude_color
-        magnitude_filter_2_err = combine_cmd_error_bars(
-            self.magnitude_filter_2_err,
-            a_filter_2_err,
-        )
-        magnitude_color_err = combine_cmd_error_bars(
-            self.magnitude_color_err,
-            relative_extinction_err,
-        )
+        if apply_to_iso:
+            magnitude_filter_2_err = self.magnitude_filter_2_err
+            magnitude_color_err = self.magnitude_color_err
+        else:
+            magnitude_filter_2_err = combine_cmd_error_bars(
+                self.magnitude_filter_2_err,
+                a_filter_2_err,
+            )
+            magnitude_color_err = combine_cmd_error_bars(
+                self.magnitude_color_err,
+                relative_extinction_err,
+            )
+
+        def _shift_isochrone(mag, color):
+            return (
+                np.asarray(mag, dtype=float) + dmag_iso,
+                np.asarray(color, dtype=float) + dcolor_iso,
+            )
 
         #   Plot fiduciary points if isochrone fit is performed
         if fiduciary_points_observation is None and fit_isochrone:
@@ -893,6 +922,11 @@ class MakeCMDs:
                     #   Close file with the iso data
                     isochrone_data.close()
 
+                    isochrone_magnitude_2, isochrone_color = _shift_isochrone(
+                        isochrone_magnitude_2,
+                        isochrone_color,
+                    )
+
                     #   Construct label
                     if not isinstance(age_value, str):
                         label = str(age_value)
@@ -997,9 +1031,11 @@ class MakeCMDs:
                     if not isochrone_magnitude_2:
                         return
                     age_list.append(float(age))
-                    isochrone_array = np.column_stack(
-                        (isochrone_magnitude_2, isochrone_color)
+                    mag_iso, color_iso = _shift_isochrone(
+                        isochrone_magnitude_2,
+                        isochrone_color,
                     )
+                    isochrone_array = np.column_stack((mag_iso, color_iso))
                     isochrones_list.append(isochrone_array)
                     if fit_isochrone:
                         isochrone_tree = KDTree(isochrone_array, leafsize=100)
@@ -1222,7 +1258,7 @@ class MakeCMDs:
         )
 
         #   Write plot to disk
-        self.write_cmd('absolut')
+        self.write_cmd("apparent_iso" if apply_to_iso else "absolut")
         plt.close()
 
 
