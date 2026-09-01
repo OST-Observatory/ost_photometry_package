@@ -7,12 +7,15 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.stats import sigma_clipped_stats
-from matplotlib import gridspec
 from scipy.spatial import KDTree
 
 from ... import checks, terminal_output
 from ...output_layout import results_dir
-from ..cmd_prepare import format_isochrone_annotation
+from ..cmd_prepare import (
+    fiducial_fit_sigma,
+    format_isochrone_annotation,
+    weighted_chi_square,
+)
 from .cmd_reddening import (
     cmd_correction_offsets,
     combine_cmd_error_bars,
@@ -27,6 +30,84 @@ from .style import (
 )
 
 plt.switch_backend("Agg")
+
+
+def _overlay_cmd_axes(
+    fig,
+    *,
+    chi_square_plot_mode: str | None,
+    draw_chi2: bool,
+):
+    """CMD axes plus χ² panels only when those panels will be filled."""
+    ax1 = None
+    ax2 = None
+    if draw_chi2 and chi_square_plot_mode == "detailed":
+        spec = fig.add_gridspec(
+            2,
+            2,
+            width_ratios=[4, 1],
+            height_ratios=[4, 1],
+            wspace=0.3,
+            hspace=0.25,
+        )
+        ax0 = fig.add_subplot(spec[0, 0])
+        ax1 = fig.add_subplot(spec[0, 1])
+        ax2 = fig.add_subplot(spec[1, 0])
+    elif draw_chi2 and chi_square_plot_mode == "simple":
+        spec = fig.add_gridspec(2, 1, height_ratios=[4, 1], hspace=0.28)
+        ax0 = fig.add_subplot(spec[0])
+        ax2 = fig.add_subplot(spec[1])
+    else:
+        ax0 = fig.add_subplot(1, 1, 1)
+    return ax0, ax1, ax2
+
+
+def _draw_reddening_vector(
+    ax,
+    *,
+    e_color: float,
+    a_mag: float,
+    color_name: str,
+    filter_2: str,
+) -> None:
+    """Arrow in data coordinates: dust makes stars redder and fainter."""
+    if not (np.isfinite(e_color) and np.isfinite(a_mag)):
+        return
+    if abs(e_color) < 1e-4 and abs(a_mag) < 1e-4:
+        return
+    x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+    x_start = x0 + 0.10 * (x1 - x0)
+    y_start = y1 + 0.14 * (y0 - y1)
+    x_end = x_start + e_color
+    y_end = y_start + a_mag
+    ax.annotate(
+        "",
+        xy=(x_end, y_end),
+        xytext=(x_start, y_start),
+        arrowprops={
+            "arrowstyle": "->",
+            "color": "0.2",
+            "lw": 1.3,
+            "mutation_scale": 12,
+        },
+        zorder=101,
+        clip_on=True,
+    )
+    e_txt = f"{e_color:.3g}"
+    a_txt = f"{a_mag:.3g}"
+    ax.annotate(
+        rf"$E({color_name})={e_txt}$" "\n" rf"$A_{{{filter_2}}}={a_txt}$",
+        xy=(x_start, y_start),
+        xytext=(6, -12),
+        textcoords="offset points",
+        fontsize=8,
+        color="0.2",
+        ha="left",
+        va="top",
+        zorder=101,
+    )
+
 
 class MakeCMDs:
     """
@@ -406,16 +487,20 @@ class MakeCMDs:
     @staticmethod
     def calculate_chi_square(
             magnitude_filter_2: np.ndarray, magnitude_color: np.ndarray,
-            isochrone_array: np.ndarray, nearst_neighbour_indexes: np.ndarray
-            ) -> tuple[np.ndarray, np.ndarray, list[float]]:
+            isochrone_array: np.ndarray, nearst_neighbour_indexes: np.ndarray,
+            magnitude_filter_2_err: np.ndarray | None = None,
+            magnitude_color_err: np.ndarray | None = None,
+            ) -> tuple[float, float, float]:
         """
+        Error-weighted χ² of binned fiducials vs. nearest isochrone points.
+
         Parameters
         ----------
         magnitude_filter_2
-            Object magnitudes of filter 2
+            Object magnitudes of filter 2 (sigma-clipped stats columns)
 
         magnitude_color
-            Object colors
+            Object colors (sigma-clipped stats columns)
 
         isochrone_array
             Array with isochrone data
@@ -424,26 +509,26 @@ class MakeCMDs:
             Indexes of the nearest isochrone points to the reference points
             of the observed objects.
 
+        magnitude_filter_2_err, magnitude_color_err
+            1-sigma for each fiducial. Missing sigmas fall back to unweighted χ².
+
         Returns
         -------
-        chi_square_magnitude_2
-            Chi square based on object magnitudes
-
-        chi_square_color
-            Chi square based on object color
-
-        chi_square_list
-            See above
+        chi_square_magnitude_2, chi_square_color, chi_square_total
         """
-        #   Calculate chi square
-        chi_square_magnitude_2 = np.square(
-            magnitude_filter_2[:, 1] - isochrone_array[:, 0][nearst_neighbour_indexes]
-        ).sum()
-        chi_square_color = np.square(
-            magnitude_color[:, 1] - isochrone_array[:, 1][nearst_neighbour_indexes]
-        ).sum()
+        dmag = (
+            magnitude_filter_2[:, 1]
+            - isochrone_array[:, 0][nearst_neighbour_indexes]
+        )
+        dcolor = (
+            magnitude_color[:, 1]
+            - isochrone_array[:, 1][nearst_neighbour_indexes]
+        )
+        chi_square_magnitude_2 = weighted_chi_square(
+            dmag, magnitude_filter_2_err
+        )
+        chi_square_color = weighted_chi_square(dcolor, magnitude_color_err)
         chi_square_total = chi_square_magnitude_2 + chi_square_color
-
         return chi_square_magnitude_2, chi_square_color, chi_square_total
 
     def plot_apparent_cmd(
@@ -643,8 +728,8 @@ class MakeCMDs:
 
         chi_square_plot_mode        : `string` or None, optional
             Mode to plot the chi square values from the isochrone fits.
-            Possibilities: 1. simple   -> Combined chi square values shown on
-                                          the right hand side.
+            Possibilities: 1. simple   -> Combined chi square values shown
+                                          below the CMD.
                            2. detailed -> Chi square values split according
                                           to X and Y contributions. Plots are
                                           on top and on the right hand side of
@@ -717,24 +802,23 @@ class MakeCMDs:
         if fit_isochrone and chi_square_plot_mode is None:
             chi_square_plot_mode = 'simple'
 
+        have_isochrones = isochrones not in ('', '?')
+        draw_chi2 = bool(
+            have_isochrones
+            and fit_isochrone
+            and chi_square_plot_mode in ('simple', 'detailed')
+        )
+
         #   Initialize plot and check plot dimensions
         fig = initialize_plot(
             figure_size_x,
             figure_size_y,
         )
-
-        #   Create grid for different subplots
-        spec = gridspec.GridSpec(
-            ncols=2,
-            nrows=2,
-            width_ratios=[4, 1],
-            wspace=0.3,
-            hspace=0.2,
-            height_ratios=[4, 1],
+        ax0, ax1, ax2 = _overlay_cmd_axes(
+            fig,
+            chi_square_plot_mode=chi_square_plot_mode,
+            draw_chi2=draw_chi2,
         )
-
-        #   Add main plot to plot grid
-        ax0 = fig.add_subplot(spec[0])
 
         #   Set plot details
         self.set_cmd_plot_details(
@@ -784,16 +868,45 @@ class MakeCMDs:
 
             #   Perform binning
             digitized = np.digitize(magnitude_filter_2, bins)
-            magnitude_filter_2_binned = np.array([
-                sigma_clipped_stats(magnitude_filter_2[digitized == i])
-                for i in range(1, len(bins))
-                if np.any(digitized == i)
-            ])
-            magnitude_color_binned = np.array([
-                sigma_clipped_stats(magnitude_color[digitized == i])
-                for i in range(1, len(bins))
-                if np.any(digitized == i)
-            ])
+            mag_rows = []
+            color_rows = []
+            mag_fit_err = []
+            color_fit_err = []
+            for i in range(1, len(bins)):
+                in_bin = digitized == i
+                if not np.any(in_bin):
+                    continue
+                mag_stats = sigma_clipped_stats(magnitude_filter_2[in_bin])
+                color_stats = sigma_clipped_stats(magnitude_color[in_bin])
+                n_bin = int(np.count_nonzero(in_bin))
+                mag_phot = None
+                if magnitude_filter_2_err is not None:
+                    mag_phot = np.broadcast_to(
+                        np.asarray(magnitude_filter_2_err, dtype=float),
+                        magnitude_filter_2.shape,
+                    )[in_bin]
+                color_phot = None
+                if magnitude_color_err is not None:
+                    color_phot = np.broadcast_to(
+                        np.asarray(magnitude_color_err, dtype=float),
+                        magnitude_color.shape,
+                    )[in_bin]
+                mag_rows.append(mag_stats)
+                color_rows.append(color_stats)
+                mag_fit_err.append(
+                    fiducial_fit_sigma(mag_phot, mag_stats[2], n_bin)
+                )
+                color_fit_err.append(
+                    fiducial_fit_sigma(color_phot, color_stats[2], n_bin)
+                )
+            if not mag_rows:
+                raise ValueError(
+                    "No CMD points left in the magnitude fit range."
+                )
+            magnitude_filter_2_binned = np.array(mag_rows)
+            magnitude_color_binned = np.array(color_rows)
+            magnitude_filter_2_fit_err = np.asarray(mag_fit_err, dtype=float)
+            magnitude_color_fit_err = np.asarray(color_fit_err, dtype=float)
             magnitude_binned_array = np.column_stack(
                 (magnitude_filter_2_binned[:, 1], magnitude_color_binned[:, 1])
             )
@@ -818,6 +931,8 @@ class MakeCMDs:
             magnitude_binned_array = None
             magnitude_filter_2_binned = None
             magnitude_color_binned = None
+            magnitude_filter_2_fit_err = None
+            magnitude_color_fit_err = None
 
         #   Plot isochrones
         #
@@ -839,16 +954,6 @@ class MakeCMDs:
                 [],
                 0,
             )
-
-            #   Initialize chi square subplots
-            if chi_square_plot_mode == 'detailed' and fit_isochrone:
-                ax1 = fig.add_subplot(spec[1])
-                ax2 = fig.add_subplot(spec[2])
-            elif chi_square_plot_mode == 'simple' and fit_isochrone:
-                ax2 = fig.add_subplot(spec[2])
-            else:
-                ax1 = None
-                ax2 = None
 
             #   Prepare list for chi square values
             age_list = []
@@ -994,6 +1099,8 @@ class MakeCMDs:
                             magnitude_color_binned,
                             isochrone_array,
                             nearst_neighbour_indexes,
+                            magnitude_filter_2_err=magnitude_filter_2_fit_err,
+                            magnitude_color_err=magnitude_color_fit_err,
                         )
                         chi_square_magnitude_2_list.append(
                             chi_square_magnitude_2
@@ -1158,6 +1265,8 @@ class MakeCMDs:
                             magnitude_color_binned,
                             isochrones_list[i],
                             nearst_neighbour_indexes_list[i],
+                            magnitude_filter_2_err=magnitude_filter_2_fit_err,
+                            magnitude_color_err=magnitude_color_fit_err,
                         )
                         chi_square_magnitude_2_list.append(
                             chi_square_magnitude_2
@@ -1274,6 +1383,13 @@ class MakeCMDs:
             rf'${self.filter_2}$ [mag]',
             rf'${self.color}$ [mag]',
             ax0,
+        )
+        _draw_reddening_vector(
+            ax0,
+            e_color=relative_extinction,
+            a_mag=a_filter_2,
+            color_name=self.color,
+            filter_2=self.filter_2,
         )
 
         annotation = format_isochrone_annotation(

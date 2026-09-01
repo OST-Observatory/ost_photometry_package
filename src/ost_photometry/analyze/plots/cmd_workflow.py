@@ -11,6 +11,7 @@ from ..cmd_prepare import (
     cmd_series_from_table,
     distance_modulus,
     load_isochrone_config,
+    mask_cmd_series,
 )
 from ..utils.cmd_defaults import check_variable_apparent_cmd
 from .cmds import MakeCMDs
@@ -56,12 +57,14 @@ def plot_cmds_from_table(
     chi_square_plot_mode: str | None = None,
     n_bin_observation: int = 40,
     apply_corrections_to: str = "observation",
+    max_photometric_err: float | None = None,
 ) -> None:
     """Plot apparent CMDs and, when a distance modulus is set, a second CMD
     with reddening/distance on the stars or on the isochrones.
 
     With ``apply_corrections_to="isochrone"`` the overlay uses the apparent
-    plot ranges; otherwise the absolute ranges.
+    plot ranges; otherwise the absolute ranges. Non-finite magnitudes are
+    dropped; ``max_photometric_err`` optionally rejects large photometric σ.
     """
     if len(tbl) == 0:
         raise ValueError("CMD table is empty.")
@@ -84,6 +87,20 @@ def plot_cmds_from_table(
             magnitude_transformation=magnitude_transformation,
             cali=cali,
         )
+        n_in = series.color.size
+        series = mask_cmd_series(
+            series, max_photometric_err=max_photometric_err
+        )
+        n_dropped = n_in - series.color.size
+        if n_dropped:
+            terminal_output.print_to_terminal(
+                f"Dropped {n_dropped} CMD point(s) (non-finite or error cut)",
+            )
+        if series.color.size == 0:
+            raise ValueError(
+                "No finite CMD points left after quality cuts "
+                f"for {color_name}."
+            )
 
         terminal_output.print_to_terminal(
             f"Create apparent CMD: {filter_2} vs. {filter_1}-{filter_2}",

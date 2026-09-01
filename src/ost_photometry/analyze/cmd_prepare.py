@@ -268,6 +268,88 @@ def cmd_series_from_table(
     )
 
 
+def mask_cmd_series(
+    series: CmdSeries,
+    *,
+    max_photometric_err: float | None = None,
+) -> CmdSeries:
+    """Drop non-finite CMD points and, optionally, large photometric errors."""
+    color = np.asarray(series.color, dtype=float)
+    mag = np.asarray(series.magnitude_filter_2, dtype=float)
+    keep = np.isfinite(color) & np.isfinite(mag)
+    color_err = (
+        None
+        if series.color_err is None
+        else np.asarray(series.color_err, dtype=float)
+    )
+    mag_err = (
+        None
+        if series.magnitude_filter_2_err is None
+        else np.asarray(series.magnitude_filter_2_err, dtype=float)
+    )
+    if color_err is not None:
+        keep &= np.isfinite(color_err)
+    if mag_err is not None:
+        keep &= np.isfinite(mag_err)
+
+    cut: float | None
+    try:
+        cut = None if max_photometric_err is None else float(max_photometric_err)
+    except (TypeError, ValueError):
+        cut = None
+    if cut is not None and np.isfinite(cut) and cut > 0:
+        if color_err is not None:
+            keep &= color_err <= cut
+        if mag_err is not None:
+            keep &= mag_err <= cut
+
+    return CmdSeries(
+        series.filter_1,
+        series.filter_2,
+        color[keep],
+        mag[keep],
+        color_err=None if color_err is None else color_err[keep],
+        magnitude_filter_2_err=None if mag_err is None else mag_err[keep],
+    )
+
+
+def fiducial_fit_sigma(
+    phot_err: np.ndarray | None,
+    scatter: float,
+    n: int,
+) -> float:
+    """1-sigma for a binned CMD fiducial: photometric IVW, else scatter/√N."""
+    phot_term = 0.0
+    if phot_err is not None:
+        err = np.asarray(phot_err, dtype=float)
+        err = err[np.isfinite(err) & (err > 0)]
+        if err.size:
+            phot_term = float(np.sqrt(1.0 / np.sum(1.0 / np.square(err))))
+    if phot_term > 0:
+        return phot_term
+    count = max(int(n), 1)
+    if np.isfinite(scatter) and scatter > 0:
+        return float(scatter) / np.sqrt(count)
+    return 1.0
+
+
+def weighted_chi_square(
+    residual: np.ndarray,
+    sigma: np.ndarray | None = None,
+) -> float:
+    """Σ (δ/σ)², or unweighted Σ δ² if ``sigma`` is missing or unusable."""
+    delta = np.asarray(residual, dtype=float)
+    if sigma is None:
+        finite = np.isfinite(delta)
+        return float(np.square(delta[finite]).sum()) if np.any(finite) else 0.0
+    sig = np.asarray(sigma, dtype=float)
+    good = np.isfinite(delta) & np.isfinite(sig) & (sig > 0)
+    if not np.any(good):
+        finite = np.isfinite(delta)
+        return float(np.square(delta[finite]).sum()) if np.any(finite) else 0.0
+    return float(np.sum(np.square(delta[good] / sig[good])))
+
+
 def _optional_yaml_str(data: dict, *keys: str) -> str | None:
     for key in keys:
         if key not in data or data[key] is None:
@@ -477,9 +559,12 @@ __all__ = [
     "IsochronePlotConfig",
     "cmd_series_from_table",
     "distance_modulus",
+    "fiducial_fit_sigma",
     "format_isochrone_annotation",
     "load_cmd_table",
     "load_isochrone_config",
+    "mask_cmd_series",
+    "weighted_chi_square",
     "slice_cmd_table_to_single_epoch",
     "table_is_epoch_native_cmd",
 ]

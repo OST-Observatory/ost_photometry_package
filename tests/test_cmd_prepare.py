@@ -350,3 +350,44 @@ grids:
         )
         with pytest.raises(ValueError, match="has no 'isochrones' path"):
             mod.load_isochrone_config(path, ["B", "V"])
+
+
+def test_mask_cmd_series_drops_nan_and_large_errors():
+    with isolated_sys_modules():
+        mod = _prepare()
+        series = mod.CmdSeries(
+            "B",
+            "V",
+            np.array([0.5, np.nan, 0.6, 0.7]),
+            np.array([15.0, 15.1, 15.2, 15.3]),
+            color_err=np.array([0.02, 0.03, 0.04, 0.5]),
+            magnitude_filter_2_err=np.array([0.01, 0.02, 0.03, 0.04]),
+        )
+        finite = mod.mask_cmd_series(series)
+        np.testing.assert_allclose(finite.color, [0.5, 0.6, 0.7])
+        clipped = mod.mask_cmd_series(series, max_photometric_err=0.2)
+        np.testing.assert_allclose(clipped.color, [0.5, 0.6])
+        np.testing.assert_allclose(clipped.magnitude_filter_2, [15.0, 15.2])
+
+
+def test_weighted_chi_square_downweights_large_sigma():
+    with isolated_sys_modules():
+        mod = _prepare()
+        residual = np.array([1.0, 1.0])
+        assert mod.weighted_chi_square(residual) == pytest.approx(2.0)
+        assert mod.weighted_chi_square(
+            residual, np.array([1.0, 10.0])
+        ) == pytest.approx(1.01)
+        assert mod.weighted_chi_square(residual, np.array([0.0, np.nan])) == (
+            pytest.approx(2.0)
+        )
+
+
+def test_fiducial_fit_sigma_photometry_or_scatter():
+    with isolated_sys_modules():
+        mod = _prepare()
+        ivw = mod.fiducial_fit_sigma(np.array([0.1, 0.1]), scatter=0.5, n=2)
+        assert ivw == pytest.approx(0.1 / np.sqrt(2))
+        fallback = mod.fiducial_fit_sigma(None, scatter=0.4, n=4)
+        assert fallback == pytest.approx(0.2)
+        assert mod.fiducial_fit_sigma(None, scatter=0.0, n=1) == 1.0
