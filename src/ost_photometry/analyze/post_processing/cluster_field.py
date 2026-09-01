@@ -55,8 +55,9 @@ def write_post_processed_cluster_field_table(
     """Write ``observation.table_magnitudes`` as post-processed ECSV.
 
     When cluster-field steps ran, the file keeps **all** pre-cut sources and
-    adds ``is_cluster_member`` (True for IDs that survived the cuts). The
-    in-memory ``table_magnitudes`` remains the member subset.
+    adds ``is_cluster_member`` (True for IDs that survived the cuts) and
+    ``cluster_p_mem`` when Gaia membership ran. The in-memory
+    ``table_magnitudes`` remains the member subset.
     """
     tbl = observation.table_magnitudes
     if tbl is None or len(tbl) == 0:
@@ -69,7 +70,11 @@ def write_post_processed_cluster_field_table(
         and "id" in full.colnames
         and "id" in tbl.colnames
     ):
-        tbl = flag_cluster_members(full, np.asarray(tbl["id"]))
+        tbl = flag_cluster_members(
+            full,
+            np.asarray(tbl["id"]),
+            p_mem_by_id=getattr(observation, "cluster_p_mem_by_id", None),
+        )
 
     if len(filter_list) == 2:
         rts = f"_{filter_list[0]}-{filter_list[1]}_post_processed"
@@ -98,8 +103,13 @@ def apply_cluster_field_phase(
     plot_context: ImagingPlotContext,
     region_radius: float = 600.0,
     max_distance_cluster: float = 6.0,
-    find_cluster_para_set: int = 1,
+    find_cluster_para_set: int | None = None,
     cluster_selection_id: int | None = None,
+    cluster_ruwe_max: float = 1.4,
+    cluster_plx_snr_min: float | None = None,
+    cluster_pmem_min: float = 0.5,
+    cluster_membership_method: str = "gmm",
+    cluster_component_id: int | None = None,
     use_wcs_projection_for_star_maps: bool = True,
     file_type_plots: str = "pdf",
     input_table: Table | None = None,
@@ -133,6 +143,12 @@ def apply_cluster_field_phase(
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         )
     elif phase == "gaia":
+        observation_jd = None
+        try:
+            series = next(iter(observation.image_series_dict.values()))
+            observation_jd = float(series.median_observation_time())
+        except Exception:
+            observation_jd = None
         work, _, _, _ = utilities.find_cluster(
             work,
             observation.get_object_of_interest_names(),
@@ -140,16 +156,35 @@ def apply_cluster_field_phase(
             max_distance=max_distance_cluster,
             parameter_set=find_cluster_para_set,
             cluster_selection_id=cluster_selection_id,
+            ruwe_max=cluster_ruwe_max,
+            plx_snr_min=cluster_plx_snr_min,
+            pmem_min=cluster_pmem_min,
+            membership_method=cluster_membership_method,
+            cluster_component_id=cluster_component_id,
+            observation_jd=observation_jd,
             file_type_plots=file_type_plots,
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         )
+        membership = work.meta.get("cluster_membership") if work is not None else None
+        if isinstance(membership, dict) and membership.get("p_mem_by_id"):
+            observation.cluster_p_mem_by_id = dict(membership["p_mem_by_id"])
     elif phase == "pm":
-        work, _, _ = utilities.proper_motion_selection(
+        work = utilities.proper_motion_selection(
             work,
             plot_context=plot_context,
+            object_names=observation.get_object_of_interest_names(),
+            max_distance=max_distance_cluster,
+            ruwe_max=cluster_ruwe_max,
+            plx_snr_min=cluster_plx_snr_min,
+            pmem_min=cluster_pmem_min,
+            membership_method=cluster_membership_method,
+            cluster_component_id=cluster_component_id,
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
             file_type_plots=file_type_plots,
         )
+        membership = work.meta.get("cluster_membership") if work is not None else None
+        if isinstance(membership, dict) and membership.get("p_mem_by_id"):
+            observation.cluster_p_mem_by_id = dict(membership["p_mem_by_id"])
     else:
         raise ValueError(f"Unknown cluster-field phase: {phase!r}")
 
@@ -172,8 +207,13 @@ def post_process_cluster_field(
     identify_cluster_gaia_data: bool = False,
     clean_objects_using_proper_motion: bool = False,
     max_distance_cluster: float = 6.0,
-    find_cluster_para_set: int = 1,
+    find_cluster_para_set: int | None = None,
     cluster_selection_id: int | None = None,
+    cluster_ruwe_max: float = 1.4,
+    cluster_plx_snr_min: float | None = None,
+    cluster_pmem_min: float = 0.5,
+    cluster_membership_method: str = "gmm",
+    cluster_component_id: int | None = None,
     convert_magnitudes: bool = False,
     target_filter_system: str | None = None,
     output_filter_set: str = "auto",
@@ -232,15 +272,21 @@ def post_process_cluster_field(
         Default is ``False``.
 
     max_distance_cluster
-        Expected maximal distance of the cluster in kpc. Used to
-        restrict the parameter space to facilitate an easy
-        identification of the star cluster.
+        Expected maximal distance of the cluster in kpc. Converted to a
+        minimum parallax pre-cut (``ϖ ≥ 1/d`` mas). Not a fit coordinate.
         Default is ``6``.
 
     find_cluster_para_set
-        Parameter set used to identify the star cluster in proper
-        motion and distance data.
-        Default is ``1``.
+        Deprecated; ignored. Membership uses GMM/HDBSCAN in (μ, π).
+
+    cluster_ruwe_max, cluster_plx_snr_min, cluster_pmem_min
+        Gaia quality and P(member) threshold.
+
+    cluster_membership_method
+        ``gmm`` (default) or ``hdbscan``.
+
+    cluster_component_id
+        Optional override for which GMM/HDBSCAN component is the cluster.
 
     convert_magnitudes
         If True, run ``apply_magnitude_system_convert_on_observation`` (see
@@ -292,6 +338,11 @@ def post_process_cluster_field(
         max_distance_cluster=max_distance_cluster,
         find_cluster_para_set=find_cluster_para_set,
         cluster_selection_id=cluster_selection_id,
+        cluster_ruwe_max=cluster_ruwe_max,
+        cluster_plx_snr_min=cluster_plx_snr_min,
+        cluster_pmem_min=cluster_pmem_min,
+        cluster_membership_method=cluster_membership_method,
+        cluster_component_id=cluster_component_id,
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )

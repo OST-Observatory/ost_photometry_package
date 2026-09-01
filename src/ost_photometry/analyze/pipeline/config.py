@@ -329,8 +329,15 @@ class PostProcessConfig:
     identify_cluster_gaia_data: bool = False
     clean_objs_using_pm: bool = False
     max_distance_cluster: float = 6.0
-    find_cluster_para_set: int = 1
+    #: Deprecated SpectralClustering preset; ignored by GMM membership.
+    find_cluster_para_set: int | None = None
+    #: Deprecated alias for ``cluster_component_id``.
     cluster_selection_id: int | None = None
+    cluster_ruwe_max: float = 1.4
+    cluster_plx_snr_min: float | None = None
+    cluster_pmem_min: float = 0.5
+    cluster_membership_method: Literal["gmm", "hdbscan"] = "gmm"
+    cluster_component_id: int | None = None
     convert_magnitudes: bool = False
     #: Preferred output filter family after calibration (``auto`` = calibrated set).
     output_filter_set: Literal["auto", "bessell", "sdss"] = "auto"

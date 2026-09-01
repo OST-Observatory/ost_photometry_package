@@ -366,10 +366,13 @@ def test_flag_cluster_members_and_series_mask():
             }
         )
         tbl.meta["photometry_schema"] = "ost_photometry.epoch_native.v1"
-        flagged = mod.flag_cluster_members(tbl, np.array([1, 3]))
+        flagged = mod.flag_cluster_members(
+            tbl, np.array([1, 3]), p_mem_by_id={1: 0.95, 3: 0.2}
+        )
         np.testing.assert_array_equal(
             flagged["is_cluster_member"], [True, False, True]
         )
+        np.testing.assert_allclose(flagged["cluster_p_mem"], [0.95, 0.0, 0.2])
         series = mod.cmd_series_from_table(flagged, "B", "V", do_error_bars=True)
         np.testing.assert_array_equal(
             series.is_cluster_member, [True, False, True]

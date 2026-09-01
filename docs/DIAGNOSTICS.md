@@ -11,7 +11,7 @@ are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
     correlation/     # inter-filter separations/geometry, exposure pairing
     calibration/     # catalog match, fit panels, residuals, night summary
     extinction/      # k′ vs airmass
-    cluster/         # PM vs distance, membership scatter
+    cluster/         # Gaia μ–π membership (P_mem vs field)
   results/
     lightcurves/     # by_id/, calibration/
     cmds/
@@ -239,3 +239,22 @@ it passes no mask.
 The transformation panels under `<output>/diagnostics/calibration/` are the fit view
 with the line \(T\cdot c+\mathrm{ZP}\). These diagnostic figures must agree
 with that residual, not invent a second one.
+
+## Cluster membership (Gaia)
+
+Supervisor post-processing (`identify_cluster_gaia_data`) selects members in
+**astrometric** space \((\mu_{\alpha*},\,\mu_\delta,\,\varpi)\), not in
+distance \(d=1/\varpi\). Figures land under `diagnostics/cluster/`.
+
+| File (stem) | Content |
+|-------------|---------|
+| `cluster_pm_members_*` | \(\mu_{\alpha*}\) vs \(\mu_\delta\): field vs members (\(P_\mathrm{mem}\ge\) threshold) |
+| `cluster_parallax_*` | \(G\) vs \(\varpi\) for the same split |
+| `pm_vs_distance.*` | 3-D QC of \((\mu_{\alpha*},\,\mu_\delta,\,\varpi)\) (not a distance axis) |
+
+The pipeline GMM (or HDBSCAN fallback) writes `is_cluster_member` and
+`cluster_p_mem` on the full post-processed ECSV. The **student** extract
+script uses hard μ (and optional π / RUWE) boxes instead: that is a teaching
+cut, not \(P_\mathrm{mem}\). A star on the edge of the box can be a member in
+the supervisor table and field in the student CMD, or the other way around.
+

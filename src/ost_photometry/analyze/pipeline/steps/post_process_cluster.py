@@ -66,6 +66,11 @@ def _phase_kwargs(config: PipelineConfig) -> dict:
         max_distance_cluster=config.max_distance_cluster,
         find_cluster_para_set=config.find_cluster_para_set,
         cluster_selection_id=config.cluster_selection_id,
+        cluster_ruwe_max=config.cluster_ruwe_max,
+        cluster_plx_snr_min=config.cluster_plx_snr_min,
+        cluster_pmem_min=config.cluster_pmem_min,
+        cluster_membership_method=config.cluster_membership_method,
+        cluster_component_id=config.cluster_component_id,
         use_wcs_projection_for_star_maps=config.use_wcs_projection_for_star_maps,
         file_type_plots=config.file_type_plots,
     )
@@ -99,7 +104,7 @@ class PostProcessRegionStep(base.PipelineStep):
 
 
 class PostProcessClusterGaiaStep(base.PipelineStep):
-    """Identify cluster in Gaia distance / proper-motion space."""
+    """Identify cluster members in Gaia (μ_α*, μ_δ, ϖ)."""
 
     name = "post_process_cluster_gaia"
 

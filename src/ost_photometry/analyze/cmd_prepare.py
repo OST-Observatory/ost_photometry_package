@@ -284,15 +284,26 @@ def cluster_member_flags(tbl: Table) -> np.ndarray | None:
     return np.asarray(tbl["is_cluster_member"], dtype=bool)
 
 
-def flag_cluster_members(tbl: Table, member_ids: np.ndarray) -> Table:
-    """Copy ``tbl`` and set ``is_cluster_member`` from surviving source ``id`` values."""
+def flag_cluster_members(
+    tbl: Table,
+    member_ids: np.ndarray,
+    p_mem_by_id: dict[int, float] | None = None,
+) -> Table:
+    """Copy ``tbl`` and set ``is_cluster_member`` from surviving source ``id`` values.
+
+    Optional ``p_mem_by_id`` writes ``cluster_p_mem`` (0 for unmatched / field).
+    """
     if "id" not in tbl.colnames:
         raise ValueError("Table has no 'id' column to flag cluster members.")
     out = tbl.copy()
-    out["is_cluster_member"] = np.isin(
-        np.asarray(out["id"]),
-        np.unique(np.asarray(member_ids)),
-    )
+    ids = np.asarray(out["id"])
+    out["is_cluster_member"] = np.isin(ids, np.unique(np.asarray(member_ids)))
+    if p_mem_by_id is not None:
+        mapping = {int(key): float(value) for key, value in p_mem_by_id.items()}
+        p_mem = np.zeros(len(out), dtype=float)
+        for i, source_id in enumerate(ids):
+            p_mem[i] = mapping.get(int(source_id), 0.0)
+        out["cluster_p_mem"] = p_mem
     return out
 
 

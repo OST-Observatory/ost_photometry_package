@@ -1,30 +1,50 @@
-"""Cluster / proper-motion / region selection (Gaia Vizier)."""
+"""Cluster / region selection using Gaia DR3 astrometry."""
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import astropy.units as u
 import numpy as np
-from astropy.coordinates import SkyCoord, matching
-from astropy.stats import sigma_clip
-from astropy.table import Column, Table
+from astropy.coordinates import SkyCoord
+from astropy.table import Table
 from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
-from sklearn.cluster import SpectralClustering
 
-from ... import style, terminal_output
-from ... import utilities as base_utilities
+from ... import terminal_output
 from .. import plots
 from ..post_processing.coords import (
     plot_starmap_from_imaging_context,
     table_object_sky_coords,
 )
 from ..post_processing.imaging import ImagingPlotContext, imaging_context_from_image_series
-from .duplicates import clear_duplicates
+from .cluster_membership import (
+    as_float_column,
+    gaia_quality_mask,
+    match_photometry_to_gaia,
+    membership_from_astrometry,
+    plx_min_mas_from_distance_kpc,
+    propagate_gaia_positions,
+    years_since_gaia_dr3,
+)
 
 if TYPE_CHECKING:
     from .. import analyze
+
+GAIA_DR3_CATALOG = "I/355/gaiadr3"
+GAIA_DR3_COLUMNS = (
+    "RA_ICRS",
+    "DE_ICRS",
+    "Gmag",
+    "Plx",
+    "e_Plx",
+    "pmRA",
+    "e_pmRA",
+    "pmDE",
+    "e_pmDE",
+    "RUWE",
+)
 
 
 def _resolve_imaging_plot_context(
@@ -60,282 +80,456 @@ def _vizier_field_cone(
     )
 
 
-def proper_motion_selection(
-        tbl: Table,
-        *,
-        image_series: analyze.ImageSeries | None = None,
-        plot_context: ImagingPlotContext | None = None,
-        catalog: str = "I/355/gaiadr3", g_mag_limit: int = 20,
-        separation_limit: float = 1., sigma: float = 3.,
-        max_n_iterations_sigma_clipping: int = 3,
-        use_wcs_projection_for_star_maps: bool = True,
-        file_type_plots: str = 'pdf',
-    ) -> Column:
+def query_gaia_dr3_cone(
+    center: SkyCoord,
+    radius: u.Quantity,
+    *,
+    catalog: str = GAIA_DR3_CATALOG,
+    g_mag_limit: float = 20.0,
+) -> Table:
+    """Download Gaia DR3 rows in a cone (Vizier)."""
+    vizier = Vizier(
+        columns=list(GAIA_DR3_COLUMNS),
+        row_limit=1_000_000,
+        catalog=catalog,
+        column_filters={"Gmag": f"<{float(g_mag_limit)}"},
+    )
+    result = vizier.query_region(center, radius=radius)
+    if result is None or len(result) == 0:
+        raise RuntimeError("Gaia Vizier cone query returned no tables.")
+    tbl = result[0]
+    if tbl is None or len(tbl) == 0:
+        raise RuntimeError("Gaia Vizier cone query returned an empty table.")
+    return tbl
+
+
+def _simbad_field(table: Table, *names: str):
+    cols = {str(c).lower(): c for c in table.colnames}
+    for name in names:
+        key = cols.get(name.lower())
+        if key is not None:
+            return table[key][0]
+    return None
+
+
+def _simbad_scalar(value) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if text in {"", "--", "masked", "None"}:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(number):
+        return None
+    return number
+
+
+def query_simbad_astrometry(name: str) -> tuple[float | None, float | None, float | None]:
+    """Simbad μ_α*, μ_δ (mas/yr) and π (mas). Missing fields are ``None``."""
+    if not str(name).strip() or str(name).strip() in {"?", "--"}:
+        return None, None, None
+    custom = Simbad()
+    try:
+        custom.add_votable_fields("pmra", "pmdec", "plx")
+    except Exception:
+        pass
+    try:
+        result = custom.query_object(str(name).strip())
+    except Exception:
+        return None, None, None
+    if result is None or len(result) == 0:
+        return None, None, None
+    pm_ra = _simbad_scalar(_simbad_field(result, "pmra", "PMRA"))
+    pm_de = _simbad_scalar(_simbad_field(result, "pmdec", "pmde", "PMDEC"))
+    plx = _simbad_scalar(_simbad_field(result, "plx", "PLX_VALUE", "plx_value"))
+    return pm_ra, pm_de, plx
+
+
+def _observation_jd(
+    image_series: analyze.ImageSeries | None,
+    observation_jd: float | None,
+) -> float | None:
+    if observation_jd is not None:
+        return float(observation_jd)
+    if image_series is None:
+        return None
+    try:
+        jd = float(image_series.median_observation_time())
+    except Exception:
+        return None
+    return jd
+
+
+def _gaia_skycoord(gaia: Table, *, years: float) -> SkyCoord:
+    ra = as_float_column(gaia["RA_ICRS"])
+    dec = as_float_column(gaia["DE_ICRS"])
+    pm_ra = as_float_column(gaia["pmRA"])
+    pm_de = as_float_column(gaia["pmDE"])
+    ra_obs, dec_obs = propagate_gaia_positions(ra, dec, pm_ra, pm_de, years)
+    return SkyCoord(ra_obs, dec_obs, unit=(u.degree, u.degree), frame="icrs")
+
+
+def _gaia_astrometry_arrays(gaia: Table) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray | None,
+    np.ndarray | None,
+    np.ndarray | None,
+]:
+    pm_ra = as_float_column(gaia["pmRA"])
+    pm_de = as_float_column(gaia["pmDE"])
+    plx = as_float_column(gaia["Plx"])
+    ruwe = as_float_column(gaia["RUWE"]) if "RUWE" in gaia.colnames else None
+    plx_err = as_float_column(gaia["e_Plx"]) if "e_Plx" in gaia.colnames else None
+    gmag = as_float_column(gaia["Gmag"]) if "Gmag" in gaia.colnames else None
+    return pm_ra, pm_de, plx, ruwe, plx_err, gmag
+
+
+def _empty_cluster_table(tbl: Table) -> Table:
+    empty = tbl[0:0]
+    empty.meta["cluster_membership"] = {
+        "ids": [],
+        "p_mem": [],
+        "p_mem_by_id": {},
+    }
+    return empty
+
+
+def _plot_membership_diagnostics(
+    *,
+    plot_stub: str,
+    file_type: str,
+    pm_ra: np.ndarray,
+    pm_de: np.ndarray,
+    plx: np.ndarray,
+    gmag: np.ndarray | None,
+    member: np.ndarray,
+    simbad_pm_ra: float | None,
+    simbad_pm_de: float | None,
+) -> None:
+    member = np.asarray(member, dtype=bool)
+    field = ~member
+    series_pm_ra: list[np.ndarray] = []
+    series_pm_de: list[np.ndarray] = []
+    series_plx: list[np.ndarray] = []
+    series_g: list[np.ndarray] = []
+    labels: list[str] = []
+    ids: list[int] = []
+    if np.any(field):
+        series_pm_ra.append(pm_ra[field])
+        series_pm_de.append(pm_de[field])
+        series_plx.append(plx[field])
+        if gmag is not None:
+            series_g.append(gmag[field])
+        labels.append("Field")
+        ids.append(0)
+    if np.any(member):
+        series_pm_ra.append(pm_ra[member])
+        series_pm_de.append(pm_de[member])
+        series_plx.append(plx[member])
+        if gmag is not None:
+            series_g.append(gmag[member])
+        labels.append("Members")
+        ids.append(1)
+    if not series_pm_ra:
+        return
+    plots.scatter(
+        series_pm_ra,
+        r"$\mu_{\alpha*}$ [mas/yr]",
+        series_pm_de,
+        r"$\mu_{\delta}$ [mas/yr]",
+        "cluster_pm_members_",
+        plot_stub,
+        dataset_label=labels,
+        file_type=file_type,
+    )
+    if gmag is not None and series_g:
+        plots.scatter(
+            series_g,
+            r"$G$ [mag]",
+            series_plx,
+            r"$\varpi$ [mas]",
+            "cluster_parallax_",
+            plot_stub,
+            dataset_label=labels,
+            file_type=file_type,
+        )
+    plots.d3_scatter(
+        series_pm_ra,
+        series_pm_de,
+        series_plx,
+        plot_stub,
+        name_x=r"$\mu_{\alpha*}$ [mas/yr]",
+        name_y=r"$\mu_{\delta}$ [mas/yr]",
+        name_z=r"$\varpi$ [mas]",
+        pm_ra=simbad_pm_ra,
+        pm_dec=simbad_pm_de,
+        file_type=file_type,
+        cluster_ids=ids,
+        display=False,
+    )
+
+
+def find_cluster(
+    tbl: Table,
+    object_names: list[str],
+    *,
+    image_series: analyze.ImageSeries | None = None,
+    plot_context: ImagingPlotContext | None = None,
+    catalog: str = GAIA_DR3_CATALOG,
+    g_mag_limit: float = 20.0,
+    separation_limit: float = 1.0,
+    max_distance: float = 6.0,
+    parameter_set: int | None = None,
+    file_type_plots: str = "pdf",
+    use_wcs_projection_for_star_maps: bool = True,
+    cluster_selection_id: int | None = None,
+    ruwe_max: float = 1.4,
+    plx_snr_min: float | None = None,
+    pmem_min: float = 0.5,
+    membership_method: str = "gmm",
+    cluster_component_id: int | None = None,
+    observation_jd: float | None = None,
+) -> tuple[Table, np.ndarray, np.ndarray, np.ndarray]:
+    """Identify cluster members in scaled Gaia (μ_α*, μ_δ, ϖ).
+
+    Quality-filter the Gaia cone, fit membership, then match photometry
+    (~1 arcsec). Returns the **member subset** of ``tbl`` (P_mem ≥ ``pmem_min``).
+    All Gaia-matched stars and their ``P_mem`` are stored on
+    ``returned.meta['cluster_membership']`` for the full-table ECSV write.
+
+    ``parameter_set`` is ignored (deprecated SpectralClustering presets).
+    ``cluster_selection_id`` is an alias for ``cluster_component_id``.
     """
-    Select a subset of objects based on their proper motion
+    if parameter_set is not None:
+        warnings.warn(
+            "find_cluster(parameter_set=...) is deprecated and ignored; "
+            "membership uses a GMM/HDBSCAN in (μ_α*, μ_δ, ϖ).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    if cluster_component_id is None and cluster_selection_id is not None:
+        cluster_component_id = int(cluster_selection_id)
 
-    Parameters
-    ----------
-    tbl
-        Table with position information
-
-    image_series
-        Optional :class:`~ost_photometry.analyze.models.ImageSeries`; used with
-        ``plot_context is None`` to build an :class:`~ost_photometry.analyze.post_processing.imaging.ImagingPlotContext`.
-
-    plot_context
-        :class:`~ost_photometry.analyze.post_processing.imaging.ImagingPlotContext`
-        with WCS, filter name, and (for Gaia) field center / radius. Provide this **or**
-        ``image_series``.
-
-    catalog
-        Identifier for the catalog to download.
-        Default is ``I/350/gaiaedr3``.
-
-    g_mag_limit
-        Limiting magnitude in the G band. Fainter objects will not be
-        downloaded.
-
-    separation_limit
-        Maximal allowed separation between objects in arcsec.
-        Default is ``1``.
-
-    sigma
-        The sigma value used in the sigma clipping of the proper motion
-        values.
-        Default is ``3``.
-
-    max_n_iterations_sigma_clipping
-        Maximal number of iteration of the sigma clipping.
-        Default is ``3``.
-
-    use_wcs_projection_for_star_maps
-        If ``True`` the starmap will be plotted with sky coordinates instead
-        of pixel coordinates
-        Default is ``True``.
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-    """
     ctx = _resolve_imaging_plot_context(
         image_series=image_series, plot_context=plot_context
     )
-    w = ctx.wcs
+    obj_coordinates = table_object_sky_coords(tbl, ctx.wcs)
     plot_stub = str(ctx.out_path_stub)
     v_center, v_radius = _vizier_field_cone(ctx, image_series)
 
-    obj_coordinates = table_object_sky_coords(tbl, w)
-
-    #   Get Gaia data from Vizier
-    #
-    #   Columns to download
-    columns = [
-        'RA_ICRS',
-        'DE_ICRS',
-        'Gmag',
-        'Plx',
-        'e_Plx',
-        'pmRA',
-        'e_pmRA',
-        'pmDE',
-        'e_pmDE',
-        'RUWE',
-    ]
-
-    #   Define astroquery instance
-    v = Vizier(
-        columns=columns,
-        row_limit=1e6,
+    gaia = query_gaia_dr3_cone(
+        v_center,
+        v_radius,
         catalog=catalog,
-        column_filters={'Gmag': '<' + str(g_mag_limit)},
+        g_mag_limit=g_mag_limit,
     )
 
-    #   Get data from the corresponding catalog for the objects in
-    #   the field of view
-    result = v.query_region(v_center, radius=v_radius)
+    object_name = ""
+    if object_names:
+        object_name = str(object_names[0]).strip()
+    simbad_pm_ra, simbad_pm_de, simbad_plx = query_simbad_astrometry(object_name)
 
-    #   Create SkyCoord object with coordinates of all Gaia objects
-    calib_coordinates = SkyCoord(
-        result[0]['RA_ICRS'],
-        result[0]['DE_ICRS'],
-        unit=(u.degree, u.degree),
-        frame="icrs"
+    years = years_since_gaia_dr3(_observation_jd(image_series, observation_jd))
+    pm_ra, pm_de, plx, ruwe, plx_err, gmag = _gaia_astrometry_arrays(gaia)
+    quality = gaia_quality_mask(
+        pm_ra=pm_ra,
+        pm_de=pm_de,
+        plx=plx,
+        ruwe=ruwe,
+        plx_err=plx_err,
+        ruwe_max=ruwe_max,
+        plx_snr_min=plx_snr_min,
+        plx_min_mas=plx_min_mas_from_distance_kpc(max_distance),
+    )
+    if not np.any(quality):
+        terminal_output.print_to_terminal(
+            "No Gaia sources survived the quality cuts (RUWE / π).",
+            style_name="WARNING",
+        )
+        empty = _empty_cluster_table(tbl)
+        return empty, np.zeros(0, dtype=int), quality, np.zeros(0, dtype=bool)
+
+    gaia_q = gaia[quality]
+    pm_ra_q = pm_ra[quality]
+    pm_de_q = pm_de[quality]
+    plx_q = plx[quality]
+    gmag_q = None if gmag is None else gmag[quality]
+
+    result = membership_from_astrometry(
+        pm_ra_q,
+        pm_de_q,
+        plx_q,
+        method=membership_method,
+        simbad_pm_ra=simbad_pm_ra,
+        simbad_pm_de=simbad_pm_de,
+        simbad_plx=simbad_plx,
+        component_id=cluster_component_id,
+    )
+    gaia_member = result.p_mem >= float(pmem_min)
+    n_gaia_mem = int(np.count_nonzero(gaia_member))
+
+    _plot_membership_diagnostics(
+        plot_stub=plot_stub,
+        file_type=file_type_plots,
+        pm_ra=pm_ra_q,
+        pm_de=pm_de_q,
+        plx=plx_q,
+        gmag=gmag_q,
+        member=gaia_member,
+        simbad_pm_ra=simbad_pm_ra,
+        simbad_pm_de=simbad_pm_de,
     )
 
-    #   Correlate own objects with Gaia objects
-    #
-    #   Set maximal separation between objects
-    separation_limit = separation_limit * u.arcsec
-
-    #   Correlate data
-    id_img, id_calib, d2ds, d3ds = matching.search_around_sky(
+    gaia_coordinates = _gaia_skycoord(gaia_q, years=years)
+    id_img, id_gaia, _sep = match_photometry_to_gaia(
         obj_coordinates,
-        calib_coordinates,
-        separation_limit,
+        gaia_coordinates,
+        separation_arcsec=separation_limit,
+    )
+    if id_img.size == 0:
+        terminal_output.print_to_terminal(
+            "No photometry–Gaia matches within the separation limit.",
+            style_name="WARNING",
+        )
+        empty = _empty_cluster_table(tbl)
+        return empty, id_img, quality, gaia_member
+
+    p_mem_matched = np.asarray(result.p_mem[id_gaia], dtype=float)
+    member_mask = p_mem_matched >= float(pmem_min)
+    n_phot_mem = int(np.count_nonzero(member_mask))
+    terminal_output.print_to_terminal(
+        f"Gaia membership ({result.method}): {n_gaia_mem}/{gaia_member.size} "
+        f"Gaia stars with P_mem ≥ {float(pmem_min):.2f} "
+        f"(component {result.cluster_component}); "
+        f"{n_phot_mem} photometry matches kept in memory.",
+        style_name="GOOD",
     )
 
-    #   Identify and remove duplicate indexes
-    id_img, d2ds, id_calib = clear_duplicates(
-        id_img,
-        d2ds,
-        id_calib,
+    phot_ids = np.asarray(tbl["id"][id_img]) if "id" in tbl.colnames else id_img
+    p_mem_by_id = {
+        int(sid): float(p)
+        for sid, p in zip(phot_ids, p_mem_matched, strict=True)
+    }
+
+    members = tbl[id_img][member_mask]
+    members["cluster_p_mem"] = p_mem_matched[member_mask]
+    members.meta["cluster_membership"] = {
+        "ids": [int(i) for i in phot_ids],
+        "p_mem": [float(p) for p in p_mem_matched],
+        "method": result.method,
+        "cluster_component": int(result.cluster_component),
+        "p_mem_by_id": p_mem_by_id,
+    }
+
+    if len(members) > 0:
+        plot_starmap_from_imaging_context(
+            ctx,
+            members,
+            filter_=ctx.filter_name,
+            x_name="x",
+            y_name="y",
+            rts_pre="selected cluster members",
+            label="Cluster members (Gaia μ, π)",
+            add_image_id=False,
+            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+            file_type_plots=file_type_plots,
+        )
+    return members, id_img, quality, member_mask
+
+
+def proper_motion_selection(
+    tbl: Table,
+    *,
+    image_series: analyze.ImageSeries | None = None,
+    plot_context: ImagingPlotContext | None = None,
+    catalog: str = GAIA_DR3_CATALOG,
+    g_mag_limit: int | float = 20,
+    separation_limit: float = 1.0,
+    sigma: float = 3.0,
+    max_n_iterations_sigma_clipping: int = 3,
+    use_wcs_projection_for_star_maps: bool = True,
+    file_type_plots: str = "pdf",
+    object_names: list[str] | None = None,
+    max_distance: float = 6.0,
+    ruwe_max: float = 1.4,
+    plx_snr_min: float | None = None,
+    pmem_min: float = 0.5,
+    membership_method: str = "gmm",
+    cluster_component_id: int | None = None,
+    observation_jd: float | None = None,
+) -> Table:
+    """Deprecated alias: same Gaia (μ, π) membership as :func:`find_cluster`.
+
+    The old 1-D σ-clip (which kept PM *outliers*) is gone. ``sigma`` and
+    ``max_n_iterations_sigma_clipping`` are ignored.
+    """
+    warnings.warn(
+        "proper_motion_selection is deprecated; it now calls find_cluster "
+        "(GMM/HDBSCAN in μ, π). Prefer identify_cluster_gaia_data and leave "
+        "clean_objects_using_proper_motion=False.",
+        DeprecationWarning,
+        stacklevel=2,
     )
-    id_calib, d2ds, id_img = clear_duplicates(
-        id_calib,
-        d2ds,
-        id_img,
-    )
-
-    #   Sigma clipping of the proper motion values
-    #
-    #   Proper motion of the common objects
-    pm_de = result[0]['pmDE'][id_calib]
-    pm_ra = result[0]['pmRA'][id_calib]
-
-    #   Parallax
-    parallax = result[0]['Plx'][id_calib].data / 1000 * u.arcsec
-
-    #   Distance
-    distance = parallax.to_value(u.kpc, equivalencies=u.parallax())
-
-    #   Sigma clipping
-    sigma_clip_de = sigma_clip(
-        pm_de,
-        sigma=sigma,
-        maxiters=max_n_iterations_sigma_clipping,
-    )
-    sigma_clip_ra = sigma_clip(
-        pm_ra,
-        sigma=sigma,
-        maxiters=max_n_iterations_sigma_clipping,
-    )
-
-    #   Create mask from sigma clipping
-    mask = sigma_clip_ra.mask | sigma_clip_de.mask
-
-    #   Make plots
-    #
-    #   Restrict Gaia table to the common objects
-    result_cut = result[0][id_calib][mask]
-
-    #   Convert ra & dec to pixel coordinates
-    x_obj, y_obj = w.all_world2pix(
-        result_cut['RA_ICRS'],
-        result_cut['DE_ICRS'],
-        0,
-    )
-
-    tbl_pm_plot = Table(names=["x_fit", "y_fit"], data=[x_obj, y_obj])
-    plot_starmap_from_imaging_context(
-        ctx,
-        tbl_pm_plot,
-        filter_=ctx.filter_name,
-        x_name="x_fit",
-        y_name="y_fit",
-        rts_pre="proper motion [Gaia]",
-        label="Objects selected based on proper motion",
-        add_image_id=True,
-        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+    if sigma != 3.0 or max_n_iterations_sigma_clipping != 3:
+        warnings.warn(
+            "proper_motion_selection(sigma=..., max_n_iterations_sigma_clipping=...) "
+            "is ignored.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    names = list(object_names) if object_names else [""]
+    members, _, _, _ = find_cluster(
+        tbl,
+        names,
+        image_series=image_series,
+        plot_context=plot_context,
+        catalog=catalog,
+        g_mag_limit=float(g_mag_limit),
+        separation_limit=separation_limit,
+        max_distance=max_distance,
         file_type_plots=file_type_plots,
+        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+        ruwe_max=ruwe_max,
+        plx_snr_min=plx_snr_min,
+        pmem_min=pmem_min,
+        membership_method=membership_method,
+        cluster_component_id=cluster_component_id,
+        observation_jd=observation_jd,
     )
-
-    #   2D and 3D plot of the proper motion and the distance
-    plots.scatter(
-        [pm_ra],
-        'pm_RA * cos(DEC) (mas/yr)',
-        [pm_de],
-        'pm_DEC (mas/yr)',
-        'compare_pm_',
-        plot_stub,
-        file_type=file_type_plots,
-    )
-    plots.d3_scatter(
-        [pm_ra],
-        [pm_de],
-        [distance],
-        plot_stub,
-        name_x='pm_RA * cos(DEC) (mas/yr)',
-        name_y='pm_DEC (mas/yr)',
-        name_z='d (kpc)',
-        file_type=file_type_plots,
-    )
-
-    #   Apply mask
-    return tbl[id_img][mask]
+    return members
 
 
 def region_selection(
-        coordinates_target: SkyCoord | list[SkyCoord], tbl: Table,
-        *,
-        image_series: analyze.ImageSeries | None = None,
-        plot_context: ImagingPlotContext | None = None,
-        radius: float = 600., file_type_plots: str = 'pdf',
-        use_wcs_projection_for_star_maps: bool = True,
-    ) -> tuple[Table, np.ndarray]:
-    """
-    Select a subset of objects based on a target coordinate and a radius
-
-    Parameters
-    ----------
-    coordinates_target
-        Coordinates of the observed object such as a star cluster
-
-    tbl
-        Table with object position information
-
-    image_series
-        Optional series used to build ``ImagingPlotContext`` when ``plot_context``
-        is omitted.
-
-    plot_context
-        Context for WCS and starmaps; provide this or ``image_series``.
-
-    radius
-        Selection radius around the object in arcsec
-        Default is ``600``.
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    use_wcs_projection_for_star_maps
-        If ``True`` the starmap will be plotted with sky coordinates instead
-        of pixel coordinates
-        Default is ``True``.
-
-    Returns
-    -------
-    tbl
-        Table with object position information
-
-    mask
-        Boolean mask applied to the table
-    """
+    coordinates_target: SkyCoord | list[SkyCoord],
+    tbl: Table,
+    *,
+    image_series: analyze.ImageSeries | None = None,
+    plot_context: ImagingPlotContext | None = None,
+    radius: float = 600.0,
+    file_type_plots: str = "pdf",
+    use_wcs_projection_for_star_maps: bool = True,
+) -> tuple[Table, np.ndarray]:
+    """Keep sources within ``radius`` arcsec of the cluster (Simbad / OOI) position."""
     ctx = _resolve_imaging_plot_context(
         image_series=image_series, plot_context=plot_context
     )
     obj_coordinates = table_object_sky_coords(tbl, ctx.wcs)
 
-    #   Calculate separation between the coordinates defined in ``coord``
-    #   the objects in ``tbl``
     if isinstance(coordinates_target, list):
         mask = np.zeros(len(obj_coordinates), dtype=bool)
         for target_coordinates in coordinates_target:
             sep = obj_coordinates.separation(target_coordinates)
-
-            #   Calculate mask of all object closer than ``radius``
             mask = mask | (sep.arcsec <= radius)
     else:
         sep = obj_coordinates.separation(coordinates_target)
-
-        #   Calculate mask of all object closer than ``radius``
         mask = sep.arcsec <= radius
 
-    #   Limit objects to those within radius
     tbl = tbl[mask]
-
-    #   Plot starmap
     plot_starmap_from_imaging_context(
         ctx,
         tbl,
@@ -348,388 +542,15 @@ def region_selection(
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
     )
-
     return tbl, mask
 
 
-def find_cluster(
-        tbl: Table, object_names: list[str],
-        *,
-        image_series: analyze.ImageSeries | None = None,
-        plot_context: ImagingPlotContext | None = None,
-        catalog: str = "I/355/gaiadr3", g_mag_limit: float = 20.,
-        separation_limit: float = 1., max_distance: float = 6.,
-        parameter_set: int = 1, file_type_plots: str = 'pdf',
-        use_wcs_projection_for_star_maps: bool = True,
-        cluster_selection_id: int | None = None,
-    ) -> tuple[Table, int, np.ndarray, np.ndarray]:
-    """
-    Identify cluster in data
-
-    Parameters
-    ----------
-    tbl
-        Table with position information
-
-    object_names
-        Names of the objects. This first entry in the list is assumed to
-        be the custer of interest.
-
-    image_series
-        Optional series; used to build context when ``plot_context`` is omitted.
-
-    plot_context
-        Imaging context (WCS, filter, Vizier cone). Provide this or ``image_series``.
-
-    catalog
-        Identifier for the catalog to download.
-        Default is ``I/350/gaiaedr3``.
-
-    g_mag_limit
-        Limiting magnitude in the G band. Fainter objects will not be
-        downloaded.
-
-    separation_limit
-        Maximal allowed separation between objects in arcsec.
-        Default is ``1``.
-
-    max_distance
-        Maximal distance of the star cluster.
-        Default is ``6.``.
-
-    parameter_set
-        Predefined parameter sets can be used.
-        Possibilities: ``1``, ``2``, ``3``
-        Default is ``1``.
-
-    file_type_plots
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    use_wcs_projection_for_star_maps
-        If ``True`` the starmap will be plotted with sky coordinates instead
-        of pixel coordinates
-        Default is ``True``.
-
-    Returns
-    -------
-    tbl
-        Table with object position information
-
-    id_img
-
-    mask
-        The mask that needs to be applied to the table.
-
-    cluster_mask
-        Mask that identifies cluster members according to the user
-        input.
-    """
-    ctx = _resolve_imaging_plot_context(
-        image_series=image_series, plot_context=plot_context
-    )
-    obj_coordinates = table_object_sky_coords(tbl, ctx.wcs)
-    plot_stub = str(ctx.out_path_stub)
-    v_center, v_radius = _vizier_field_cone(ctx, image_series)
-
-    #   Get Gaia data from Vizier
-    #
-    #   Columns to download
-    columns = [
-        'RA_ICRS',
-        'DE_ICRS',
-        'Gmag',
-        'Plx',
-        'e_Plx',
-        'pmRA',
-        'e_pmRA',
-        'pmDE',
-        'e_pmDE',
-        'RUWE',
-    ]
-
-    #   Define astroquery instance
-    v = Vizier(
-        columns=columns,
-        row_limit=1e6,
-        catalog=catalog,
-        column_filters={'Gmag': '<' + str(g_mag_limit)},
-    )
-
-    #   Get data from the corresponding catalog for the objects in
-    #   the field of view
-    result = v.query_region(v_center, radius=v_radius)[0]
-
-    #   Multiple objects can be specified. The first object is assumed to
-    #   be the cluster of interest.
-    object_name = object_names[0]
-
-    #   Restrict proper motion to Simbad value plus some margin
-    custom_simbad = Simbad()
-    custom_simbad.add_votable_fields('pmra', 'pmdec')
-
-    result_simbad = custom_simbad.query_object(object_name)
-    pm_ra_object = result_simbad['pmra'].value[0]
-    pm_de_object = result_simbad['pmdec'].value[0]
-    if pm_ra_object != '--' and pm_de_object != '--':
-        pm_m = 3.
-        mask_de = ((result['pmDE'] <= pm_de_object - pm_m) |
-                   (result['pmDE'] >= pm_de_object + pm_m))
-        mask_ra = ((result['pmRA'] <= pm_ra_object - pm_m) |
-                   (result['pmRA'] >= pm_ra_object + pm_m))
-        mask = np.invert(mask_de | mask_ra)
-        result = result[mask]
-
-    #   Create SkyCoord object with coordinates of all Gaia objects
-    calib_coordinates = SkyCoord(
-        result['RA_ICRS'],
-        result['DE_ICRS'],
-        unit=(u.degree, u.degree),
-        frame="icrs"
-    )
-
-    #   Correlate own objects with Gaia objects
-    #
-    #   Set maximal separation between objects
-    separation_limit = separation_limit * u.arcsec
-
-    #   Correlate data
-    id_img, id_calib, d2ds, d3ds = matching.search_around_sky(
-        obj_coordinates,
-        calib_coordinates,
-        separation_limit,
-    )
-
-    #   Identify and remove duplicate indexes
-    id_img, d2ds, id_calib = clear_duplicates(
-        id_img,
-        d2ds,
-        id_calib,
-    )
-    id_calib, d2ds, id_img = clear_duplicates(
-        id_calib,
-        d2ds,
-        id_img,
-    )
-
-    #   Find cluster in proper motion and distance data
-    #
-
-    #   Proper motion of the common objects
-    pm_de_common_objects = result['pmDE'][id_calib]
-    pm_ra_common_objects = result['pmRA'][id_calib]
-
-    #   Parallax
-    parallax = result['Plx'][id_calib].data / 1000 * u.arcsec
-
-    #   Distance
-    distance = parallax.to_value(u.kpc, equivalencies=u.parallax())
-
-    #   Restrict sample to objects closer than 'max_distance'
-    #   and remove nans and infs
-    if max_distance is not None:
-        max_mask = np.invert(distance <= max_distance)
-        distance_mask = np.isnan(distance) | np.isinf(distance) | max_mask
-    else:
-        distance_mask = np.isnan(distance) | np.isinf(distance)
-
-    #   Calculate a mask accounting for NaNs in proper motion and the
-    #   distance estimates
-    mask = np.invert(pm_de_common_objects.mask | pm_ra_common_objects.mask
-                     | distance_mask)
-
-    #   Convert astropy table to pandas data frame and add distance
-    pd_result = result[id_calib].to_pandas()
-    pd_result['distance'] = distance
-    pd_result = pd_result[mask]
-
-    #   Prepare SpectralClustering object to identify the "cluster" in the
-    #   proper motion and distance data sets
-    if parameter_set == 1:
-        n_clusters = 2
-        random_state = 25
-        n_neighbors = 20
-        affinity = 'nearest_neighbors'
-    elif parameter_set == 2:
-        n_clusters = 10
-        random_state = 2
-        n_neighbors = 4
-        affinity = 'nearest_neighbors'
-    elif parameter_set == 3:
-        n_clusters = 2
-        random_state = 25
-        n_neighbors = 20
-        affinity = 'rbf'
-    else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNo valid parameter set defined: "
-            f"Possibilities are 1, 2, or 3. {style.Bcolors.ENDC}"
-        )
-    spectral_cluster_model = SpectralClustering(
-        # eigen_solver='lobpcg',
-        n_clusters=n_clusters,
-        random_state=random_state,
-        # gamma=2.,
-        # gamma=5.,
-        n_neighbors=n_neighbors,
-        affinity=affinity,
-    )
-
-    #   Find "cluster" in the data
-    #   SpectralClustering is O(n³) and hangs on datasets >~1500 objects.
-    #   Subsample when necessary and assign rest via nearest centroid.
-    max_cluster_sample = 100
-    cluster_features = ['pmDE', 'pmRA', 'distance']
-    n_objects = len(pd_result)
-    if n_objects > max_cluster_sample:
-        rng = np.random.default_rng(random_state)
-        sample_idx = rng.choice(
-            len(pd_result), size=max_cluster_sample, replace=False
-        )
-        pd_sample = pd_result.iloc[sample_idx]
-        sample_labels = spectral_cluster_model.fit_predict(
-            pd_sample[cluster_features]
-        )
-        # Compute cluster centroids and assign all points to nearest
-        centroids = []
-        for c in range(n_clusters):
-            mask_c = sample_labels == c
-            centroids.append(
-                pd_sample.loc[mask_c, cluster_features].mean().values
-            )
-        from scipy.spatial.distance import cdist
-        centroid_arr = np.array(centroids)
-        dists = cdist(
-            pd_result[cluster_features].values,
-            centroid_arr,
-        )
-        pd_result['cluster'] = np.argmin(dists, axis=1)
-    else:
-        pd_result['cluster'] = spectral_cluster_model.fit_predict(
-            pd_result[cluster_features],
-        )
-
-    #   3D plot of the proper motion and the distance
-    #   -> select the star cluster by eye (interactive pick when display=True)
-    groups = pd_result.groupby('cluster')
-    pm_ra_group = []
-    pm_de_group = []
-    distance_group = []
-    cluster_ids_ordered: list[int] = []
-    for name, group in groups:
-        cluster_ids_ordered.append(int(name))
-        pm_ra_group.append(group.pmRA.values)
-        pm_de_group.append(group.pmDE.values)
-        distance_group.append(group.distance.values)
-    plots.d3_scatter(
-        pm_ra_group,
-        pm_de_group,
-        distance_group,
-        plot_stub,
-        name_x='pm_RA * cos(DEC) (mas/yr)',
-        name_y='pm_DEC (mas/yr)',
-        name_z='d (kpc)',
-        pm_ra=pm_ra_object,
-        pm_dec=pm_de_object,
-        file_type=file_type_plots,
-        cluster_ids=cluster_ids_ordered,
-    )
-
-    available = np.unique(pd_result["cluster"])
-
-    if cluster_selection_id is not None:
-        cluster_id = int(cluster_selection_id)
-        terminal_output.print_to_terminal(
-            f"Using configured cluster id: {cluster_id}",
-            indent=2,
-            style_name="INFO",
-        )
-    else:
-        selected_id = plots.d3_scatter(
-            pm_ra_group,
-            pm_de_group,
-            distance_group,
-            plot_stub,
-            name_x='pm_RA * cos(DEC) (mas/yr)',
-            name_y='pm_DEC (mas/yr)',
-            name_z='d (kpc)',
-            pm_ra=pm_ra_object,
-            pm_dec=pm_de_object,
-            display=True,
-            file_type=file_type_plots,
-            cluster_ids=cluster_ids_ordered,
-        )
-        if selected_id is not None and selected_id in available:
-            cluster_id = int(selected_id)
-            terminal_output.print_to_terminal(
-                f"Using cluster id {cluster_id} from interactive 3D plot.",
-                indent=2,
-                style_name="INFO",
-            )
-        else:
-            if selected_id is not None:
-                terminal_output.print_to_terminal(
-                    f"Clicked cluster id {selected_id} not in "
-                    f"{sorted(available.tolist())}; asking on the terminal.",
-                    indent=2,
-                    style_name="WARNING",
-                )
-            cluster_id_raw, timed_out = base_utilities.get_input(
-                style.Bcolors.OKBLUE +
-                "\n   Which one is the correct cluster (id)? \n"
-                + style.Bcolors.ENDC,
-                timeout=300,
-            )
-            if timed_out or cluster_id_raw is None or str(cluster_id_raw).strip() == "":
-                cluster_id = 0
-            else:
-                parsed = base_utilities.parse_cluster_selection_id(cluster_id_raw)
-                if parsed is None:
-                    terminal_output.print_to_terminal(
-                        f"Could not parse cluster id from {cluster_id_raw!r}; using 0.",
-                        indent=2,
-                        style_name="WARNING",
-                    )
-                    cluster_id = 0
-                else:
-                    cluster_id = parsed
-
-    if cluster_id not in available:
-        terminal_output.print_to_terminal(
-            f"Cluster id {cluster_id} not in {sorted(available.tolist())}; "
-            "using 0.",
-            indent=2,
-            style_name="WARNING",
-        )
-        cluster_id = 0
-
-    #   Calculated mask according to user input
-    cluster_mask = pd_result['cluster'] == cluster_id
-
-    #   Apply correlation results and masks to the input table
-    tbl = tbl[id_img][mask][cluster_mask.values]
-
-    #   Make star map
-    #
-    plot_starmap_from_imaging_context(
-        ctx,
-        tbl,
-        filter_=ctx.filter_name,
-        x_name="x",
-        y_name="y",
-        rts_pre="selected cluster members",
-        label="Cluster members based on proper motion and distance evaluation",
-        add_image_id=False,
-        use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-        file_type_plots=file_type_plots,
-    )
-
-    #   Return table
-    return tbl, id_img, mask, cluster_mask.values
-
-
 __all__ = [
+    "GAIA_DR3_CATALOG",
+    "GAIA_DR3_COLUMNS",
     "find_cluster",
     "proper_motion_selection",
+    "query_gaia_dr3_cone",
+    "query_simbad_astrometry",
     "region_selection",
 ]

@@ -18,6 +18,7 @@ _KEEP_MODULE_PREFIXES = (
     "scipy",
     "astropy",
     "astroquery",
+    "sklearn",
     "pandas",
     "PIL",
     "cycler",
