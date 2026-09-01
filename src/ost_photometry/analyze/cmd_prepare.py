@@ -23,6 +23,7 @@ class CmdSeries:
     magnitude_filter_2: np.ndarray
     color_err: np.ndarray | None = None
     magnitude_filter_2_err: np.ndarray | None = None
+    is_cluster_member: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -236,9 +237,16 @@ def cmd_series_from_table(
     mag_1 = _column_array(tbl, mag_col_1) + float(zp.get(filter_1, 0.0))
     mag_2 = _column_array(tbl, mag_col_2) + float(zp.get(filter_2, 0.0))
     color = mag_1 - mag_2
+    members = cluster_member_flags(tbl)
 
     if not do_error_bars:
-        return CmdSeries(filter_1, filter_2, color, mag_2)
+        return CmdSeries(
+            filter_1,
+            filter_2,
+            color,
+            mag_2,
+            is_cluster_member=members,
+        )
 
     err_col_1 = _err_column_for_mag(
         tbl,
@@ -265,7 +273,27 @@ def cmd_series_from_table(
         mag_2,
         color_err=color_err,
         magnitude_filter_2_err=err_2,
+        is_cluster_member=members,
     )
+
+
+def cluster_member_flags(tbl: Table) -> np.ndarray | None:
+    """Boolean membership from ``is_cluster_member`` if that column exists."""
+    if "is_cluster_member" not in tbl.colnames:
+        return None
+    return np.asarray(tbl["is_cluster_member"], dtype=bool)
+
+
+def flag_cluster_members(tbl: Table, member_ids: np.ndarray) -> Table:
+    """Copy ``tbl`` and set ``is_cluster_member`` from surviving source ``id`` values."""
+    if "id" not in tbl.colnames:
+        raise ValueError("Table has no 'id' column to flag cluster members.")
+    out = tbl.copy()
+    out["is_cluster_member"] = np.isin(
+        np.asarray(out["id"]),
+        np.unique(np.asarray(member_ids)),
+    )
+    return out
 
 
 def mask_cmd_series(
@@ -310,6 +338,11 @@ def mask_cmd_series(
         mag[keep],
         color_err=None if color_err is None else color_err[keep],
         magnitude_filter_2_err=None if mag_err is None else mag_err[keep],
+        is_cluster_member=(
+            None
+            if series.is_cluster_member is None
+            else np.asarray(series.is_cluster_member, dtype=bool)[keep]
+        ),
     )
 
 
@@ -557,9 +590,11 @@ def load_isochrone_config(
 __all__ = [
     "CmdSeries",
     "IsochronePlotConfig",
+    "cluster_member_flags",
     "cmd_series_from_table",
     "distance_modulus",
     "fiducial_fit_sigma",
+    "flag_cluster_members",
     "format_isochrone_annotation",
     "load_cmd_table",
     "load_isochrone_config",

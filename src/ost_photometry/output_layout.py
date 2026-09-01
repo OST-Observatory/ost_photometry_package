@@ -2,7 +2,7 @@
 
 ``<output>/``
 
-- ``diagnostics/<step>/`` — QC (extraction, correlation, calibration, extinction, cluster)
+- ``diagnostics/<step>/`` — QC (extraction, correlation, calibration, extinction, cluster, cmds)
 - ``results/<kind>/`` — science figures (lightcurves, cmds, starmaps)
 - ``tables/`` — ECSV / ASCII
 - ``work/<kind>/`` — scratch (wcs_images, extraction galleries, subtract)
@@ -18,7 +18,7 @@ WORK_ROOT = "work"
 TABLES_ROOT = "tables"
 
 DIAGNOSTIC_STEPS = frozenset(
-    {"extraction", "correlation", "calibration", "extinction", "cluster"}
+    {"extraction", "correlation", "calibration", "extinction", "cluster", "cmds"}
 )
 RESULT_KINDS = frozenset({"lightcurves", "cmds", "starmaps"})
 WORK_KINDS = frozenset({"wcs_images", "extraction", "subtract"})

@@ -20,6 +20,7 @@ class Observation:
     image_series_dict: dict[str, ImageSeries]
     objects_of_interest_coordinates: SkyCoord | None
     table_magnitudes: Table | None
+    table_magnitudes_all: Table | None
 
     def __init__(self, **kwargs):
         """ Backward-compatible constructor delegating to :meth:`from_config`."""
@@ -29,11 +30,13 @@ class Observation:
             self.image_series_dict = built.image_series_dict
             self.objects_of_interest_coordinates = built.objects_of_interest_coordinates
             self.table_magnitudes = built.table_magnitudes
+            self.table_magnitudes_all = getattr(built, "table_magnitudes_all", None)
         else:
             self.objects_of_interest = []
             self.image_series_dict = {}
             self.objects_of_interest_coordinates = None
             self.table_magnitudes = None
+            self.table_magnitudes_all = None
 
     @classmethod
     def from_config(cls, **kwargs) -> Observation:
@@ -86,6 +89,7 @@ class Observation:
         obs.objects_of_interest = objects
         obs.image_series_dict = dict(kwargs.get("image_series_dict") or {})
         obs.table_magnitudes = kwargs.get("table_magnitudes")
+        obs.table_magnitudes_all = kwargs.get("table_magnitudes_all")
         if objects:
             ra_list = [o.ra for o in objects]
             dec_list = [o.dec for o in objects]

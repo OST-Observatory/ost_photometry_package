@@ -9,6 +9,7 @@ from astropy.table import Table
 
 from ... import style
 from .. import utilities
+from ..cmd_prepare import flag_cluster_members
 from . import io
 from .imaging import ImagingPlotContext
 
@@ -51,10 +52,24 @@ def write_post_processed_cluster_field_table(
     object_id: int | None = None,
     extraction_method: str = "",
 ) -> None:
-    """Write ``observation.table_magnitudes`` as post-processed ECSV (one file per ``filter_list`` combo)."""
+    """Write ``observation.table_magnitudes`` as post-processed ECSV.
+
+    When cluster-field steps ran, the file keeps **all** pre-cut sources and
+    adds ``is_cluster_member`` (True for IDs that survived the cuts). The
+    in-memory ``table_magnitudes`` remains the member subset.
+    """
     tbl = observation.table_magnitudes
     if tbl is None or len(tbl) == 0:
         return
+
+    full = getattr(observation, "table_magnitudes_all", None)
+    if (
+        full is not None
+        and len(full) > 0
+        and "id" in full.colnames
+        and "id" in tbl.colnames
+    ):
+        tbl = flag_cluster_members(full, np.asarray(tbl["id"]))
 
     if len(filter_list) == 2:
         rts = f"_{filter_list[0]}-{filter_list[1]}_post_processed"
@@ -101,6 +116,9 @@ def apply_cluster_field_phase(
     tbl = input_table if input_table is not None else observation.table_magnitudes
     if tbl is None or len(tbl) == 0:
         return
+
+    if getattr(observation, "table_magnitudes_all", None) is None:
+        observation.table_magnitudes_all = tbl.copy()
 
     multiepoch_full = _vstack_multiepoch_source(tbl)
     work = _cluster_work_slice(tbl)
@@ -297,6 +315,19 @@ def post_process_cluster_field(
     if convert_on:
         from .magnitude_convert import apply_magnitude_system_convert_on_observation
 
+        member_ids = None
+        convert_input = pending_input
+        full = getattr(observation, "table_magnitudes_all", None)
+        members = observation.table_magnitudes
+        if (
+            convert_input is None
+            and full is not None
+            and members is not None
+            and "id" in members.colnames
+        ):
+            member_ids = np.unique(np.asarray(members["id"]))
+            convert_input = full
+
         apply_magnitude_system_convert_on_observation(
             observation,
             target_filter_system=target_filter_system,
@@ -305,8 +336,15 @@ def post_process_cluster_field(
             convert_magnitudes=True,
             distribution_samples=distribution_samples,
             calibration_source=calibration_source,
-            input_table=pending_input,
+            input_table=convert_input,
         )
+
+        if member_ids is not None and observation.table_magnitudes is not None:
+            converted = observation.table_magnitudes
+            observation.table_magnitudes_all = converted
+            observation.table_magnitudes = converted[
+                np.isin(np.asarray(converted["id"]), member_ids)
+            ]
 
     if not skip_save_post_processed_magnitudes:
         write_post_processed_cluster_field_table(

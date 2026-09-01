@@ -7,10 +7,11 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.stats import sigma_clipped_stats
+from astropy.table import Table
 from scipy.spatial import KDTree
 
 from ... import checks, terminal_output
-from ...output_layout import results_dir
+from ...output_layout import diagnostics_dir, results_dir, tables_dir
 from ..cmd_prepare import (
     fiducial_fit_sigma,
     format_isochrone_annotation,
@@ -109,6 +110,88 @@ def _draw_reddening_vector(
     )
 
 
+def _scatter_cmd_stars(
+    ax,
+    color: np.ndarray,
+    mag: np.ndarray,
+    *,
+    members: np.ndarray | None,
+    mag_err: np.ndarray | float | None,
+    color_err: np.ndarray | float | None,
+    color_by_error: bool,
+    marker_alpha: float = 0.45,
+):
+    """Field (grey) behind members; optional colour-coding by photometric σ."""
+    n = len(color)
+    if members is None or members.size != n:
+        member_mask = np.ones(n, dtype=bool)
+        has_field = False
+    else:
+        member_mask = np.asarray(members, dtype=bool)
+        has_field = bool(np.any(~member_mask))
+    if has_field:
+        field = ~member_mask
+        ax.scatter(
+            color[field],
+            mag[field],
+            s=6,
+            c="0.75",
+            zorder=1,
+            alpha=0.45,
+            label="Field",
+            rasterized=True,
+        )
+    m_color = color[member_mask]
+    m_mag = mag[member_mask]
+    member_label = "Members" if has_field else None
+    mag_err_arr = None if mag_err is None else np.broadcast_to(
+        np.asarray(mag_err, dtype=float), color.shape
+    )
+    color_err_arr = None if color_err is None else np.broadcast_to(
+        np.asarray(color_err, dtype=float), color.shape
+    )
+    if color_by_error and mag_err_arr is not None and m_mag.size:
+        sc = ax.scatter(
+            m_color,
+            m_mag,
+            s=10,
+            c=mag_err_arr[member_mask],
+            cmap="viridis_r",
+            zorder=3,
+            alpha=0.75,
+            label=member_label,
+            rasterized=True,
+        )
+        cbar = plt.colorbar(sc, ax=ax, pad=0.02, fraction=0.046)
+        cbar.set_label(r"$\sigma$ [mag]")
+    else:
+        ax.scatter(
+            m_color,
+            m_mag,
+            s=10,
+            c="darkred",
+            zorder=3,
+            alpha=marker_alpha,
+            label=member_label,
+            rasterized=True,
+        )
+    if mag_err_arr is not None or color_err_arr is not None:
+        ax.errorbar(
+            color,
+            mag,
+            yerr=mag_err_arr,
+            xerr=color_err_arr,
+            fmt="none",
+            elinewidth=0.5,
+            capsize=2,
+            ecolor="#ccdbfd",
+            alpha=0.25,
+            zorder=2,
+        )
+    if has_field:
+        ax.legend(loc="upper right", fontsize=8, framealpha=0.85)
+
+
 class MakeCMDs:
     """
     This class contains the necessary functionality for color magnitude plots.
@@ -125,7 +208,10 @@ class MakeCMDs:
             magnitude_filter_2: np.ndarray,
             color_err: np.ndarray | None = None,
             magnitude_filter_2_err: np.ndarray | None = None,
-            output_dir: str = 'output') -> None:
+            output_dir: str = 'output',
+            is_cluster_member: np.ndarray | None = None,
+            color_by_error: bool = False,
+            cmd_diagnostics: bool = False) -> None:
         """
         Parameters
         ----------
@@ -173,6 +259,9 @@ class MakeCMDs:
         self.magnitude_color_err = color_err
         self.magnitude_filter_2_err = magnitude_filter_2_err
         self.output_dir = output_dir
+        self.is_cluster_member = is_cluster_member
+        self.color_by_error = color_by_error
+        self.cmd_diagnostics = cmd_diagnostics
 
         #   Additional attributes filled later
         self.magnitude_filter_2_absolute: np.ndarray | None = None
@@ -308,6 +397,90 @@ class MakeCMDs:
                 format=self.file_type,
                 bbox_inches="tight",
             )
+
+    def _cmd_file_stub(self) -> str:
+        cluster = ""
+        if self.name_of_star_cluster not in ("", "?"):
+            cluster = "_" + str(self.name_of_star_cluster).replace(" ", "_")
+        return f"{self.file_name}{cluster}_{self.filter_2}_{self.color}"
+
+    def write_isochrone_fit_diagnostics(
+        self,
+        *,
+        mag: np.ndarray,
+        color: np.ndarray,
+        iso_array: np.ndarray,
+        best_age: float,
+        best_age_unit: str | None,
+        chi_square: float,
+        n_fiducials: int,
+        n_isochrones: int,
+        e_b_v: float,
+        rv: float,
+        m_m: float,
+        apply_corrections_to: str,
+        isochrone_set: str | None,
+        isochrones_path: str,
+        n_members: int | None,
+        n_field: int | None,
+        plot_tag: str,
+    ) -> None:
+        """Write fit summary ECSV and a residual CMD under diagnostics/cmds."""
+        tree = KDTree(np.asarray(iso_array, dtype=float), leafsize=100)
+        points = np.column_stack(
+            (np.asarray(mag, dtype=float), np.asarray(color, dtype=float))
+        )
+        _, idx = tree.query(points, k=1)
+        idx = np.asarray(idx, dtype=int)
+        dmag = points[:, 0] - iso_array[idx, 0]
+        dcolor = points[:, 1] - iso_array[idx, 1]
+        stub = self._cmd_file_stub()
+        unit = "" if not best_age_unit else str(best_age_unit)
+        row = {
+            "color": self.color,
+            "filter_2": self.filter_2,
+            "plot_tag": plot_tag,
+            "isochrone_set": "" if isochrone_set is None else str(isochrone_set),
+            "isochrones": str(isochrones_path),
+            "best_age": float(best_age),
+            "age_unit": unit,
+            "chi_square": float(chi_square),
+            "n_fiducials": int(n_fiducials),
+            "n_isochrones": int(n_isochrones),
+            "n_members": -1 if n_members is None else int(n_members),
+            "n_field": -1 if n_field is None else int(n_field),
+            "e_b_v": float(e_b_v),
+            "rv": float(rv),
+            "m_m": float(m_m),
+            "apply_corrections_to": str(apply_corrections_to),
+            "median_d_color": float(np.nanmedian(dcolor)),
+            "median_d_mag": float(np.nanmedian(dmag)),
+        }
+        fit_path = tables_dir(self.output_dir) / f"cmd_isochrone_fit_{stub}.ecsv"
+        Table(rows=[row]).write(str(fit_path), format="ascii.ecsv", overwrite=True)
+        terminal_output.print_to_terminal(f"Save isochrone fit table: {fit_path}")
+
+        fig = initialize_plot("", "")
+        ax = fig.add_subplot(1, 1, 1)
+        ax.axvline(0.0, color="0.6", lw=0.8, zorder=0)
+        ax.scatter(dcolor, mag, s=10, c="darkred", alpha=0.45, rasterized=True)
+        mag_lo = float(np.nanmin(mag))
+        mag_hi = float(np.nanmax(mag))
+        ax.set_ylim(mag_hi + 0.3, mag_lo - 0.3)
+        mk_ticks_labels(
+            rf"${self.filter_2}$ [mag]",
+            rf"$\Delta({self.color})$ [mag]",
+            ax,
+        )
+        ax.set_title(
+            rf"Residual vs best isochrone ({best_age:g} {unit})",
+            fontsize=9,
+        )
+        diag = diagnostics_dir(self.output_dir, "cmds")
+        res_path = diag / f"{stub}_residual.{self.file_type}"
+        fig.savefig(str(res_path), format=self.file_type, bbox_inches="tight")
+        plt.close(fig)
+        terminal_output.print_to_terminal(f"Save CMD residual plot: {res_path}")
 
     def decode_isochrone_filter_relation(
             self, isochrone_column_type: dict[str, str],
@@ -576,19 +749,14 @@ class MakeCMDs:
 
         #   Plot the stars
         terminal_output.print_to_terminal("Add stars", indent=1)
-        ax0.errorbar(
+        _scatter_cmd_stars(
+            ax0,
             self.magnitude_color,
             self.magnitude_filter_2,
-            yerr=self.magnitude_filter_2_err,
-            xerr=self.magnitude_color_err,
-            marker='o',
-            ls='none',
-            elinewidth=0.5,
-            markersize=2,
-            capsize=2,
-            ecolor='#ccdbfd',
-            color='darkred',
-            alpha=0.4,
+            members=self.is_cluster_member,
+            mag_err=self.magnitude_filter_2_err,
+            color_err=self.magnitude_color_err,
+            color_by_error=self.color_by_error,
         )
 
         #   Set ticks and labels
@@ -831,31 +999,66 @@ class MakeCMDs:
 
         #   Plot the stars
         terminal_output.print_to_terminal("Add stars")
-        ax0.errorbar(
+        _scatter_cmd_stars(
+            ax0,
             magnitude_color,
             magnitude_filter_2,
-            yerr=magnitude_filter_2_err,
-            xerr=magnitude_color_err,
-            marker='o',
-            ls='none',
-            elinewidth=0.5,
-            markersize=2,
-            capsize=2,
-            ecolor='#ccdbfd',
-            color='darkred',
-            alpha=0.3,
+            members=self.is_cluster_member,
+            mag_err=magnitude_filter_2_err,
+            color_err=magnitude_color_err,
+            color_by_error=self.color_by_error,
+            marker_alpha=0.35,
         )
 
-        #   Bin observation
+        #   Bin observation (cluster members only when a membership flag exists)
+        fit_members = None
+        if (
+            self.is_cluster_member is not None
+            and np.asarray(self.is_cluster_member).size == magnitude_filter_2.size
+        ):
+            fit_members = np.asarray(self.is_cluster_member, dtype=bool)
+            if not np.any(fit_members):
+                terminal_output.print_to_terminal(
+                    "is_cluster_member is all False; fitting all stars",
+                    style_name="WARNING",
+                )
+                fit_members = None
+            else:
+                terminal_output.print_to_terminal(
+                    f"Isochrone fit uses {int(np.count_nonzero(fit_members))} "
+                    "cluster member(s); field stars are plotted only",
+                )
+        mag_fit = (
+            magnitude_filter_2 if fit_members is None
+            else magnitude_filter_2[fit_members]
+        )
+        color_fit = (
+            magnitude_color if fit_members is None
+            else magnitude_color[fit_members]
+        )
+        mag_err_fit = magnitude_filter_2_err
+        color_err_fit = magnitude_color_err
+        if fit_members is not None:
+            if mag_err_fit is not None:
+                mag_err_fit = np.broadcast_to(
+                    np.asarray(mag_err_fit, dtype=float),
+                    magnitude_filter_2.shape,
+                )[fit_members]
+            if color_err_fit is not None:
+                color_err_fit = np.broadcast_to(
+                    np.asarray(color_err_fit, dtype=float),
+                    magnitude_color.shape,
+                )[fit_members]
+
         if fiduciary_points_observation or fit_isochrone:
             #   Check if fit range is defined. If not, minimum and maximum
             #   values of the data are used.
             if magnitude_fit_range[0] is None:
-                min_magnitude_filter_2 = np.min(magnitude_filter_2)
+                min_magnitude_filter_2 = np.min(mag_fit)
             else:
                 min_magnitude_filter_2 = magnitude_fit_range[0]
             if magnitude_fit_range[1] is None:
-                max_magnitude_filter_2 = np.max(magnitude_filter_2)
+                max_magnitude_filter_2 = np.max(mag_fit)
             else:
                 max_magnitude_filter_2 = magnitude_fit_range[1]
 
@@ -867,7 +1070,7 @@ class MakeCMDs:
             )
 
             #   Perform binning
-            digitized = np.digitize(magnitude_filter_2, bins)
+            digitized = np.digitize(mag_fit, bins)
             mag_rows = []
             color_rows = []
             mag_fit_err = []
@@ -876,20 +1079,20 @@ class MakeCMDs:
                 in_bin = digitized == i
                 if not np.any(in_bin):
                     continue
-                mag_stats = sigma_clipped_stats(magnitude_filter_2[in_bin])
-                color_stats = sigma_clipped_stats(magnitude_color[in_bin])
+                mag_stats = sigma_clipped_stats(mag_fit[in_bin])
+                color_stats = sigma_clipped_stats(color_fit[in_bin])
                 n_bin = int(np.count_nonzero(in_bin))
                 mag_phot = None
-                if magnitude_filter_2_err is not None:
+                if mag_err_fit is not None:
                     mag_phot = np.broadcast_to(
-                        np.asarray(magnitude_filter_2_err, dtype=float),
-                        magnitude_filter_2.shape,
+                        np.asarray(mag_err_fit, dtype=float),
+                        mag_fit.shape,
                     )[in_bin]
                 color_phot = None
-                if magnitude_color_err is not None:
+                if color_err_fit is not None:
                     color_phot = np.broadcast_to(
-                        np.asarray(magnitude_color_err, dtype=float),
-                        magnitude_color.shape,
+                        np.asarray(color_err_fit, dtype=float),
+                        color_fit.shape,
                     )[in_bin]
                 mag_rows.append(mag_stats)
                 color_rows.append(color_stats)
@@ -1426,7 +1629,52 @@ class MakeCMDs:
             )
 
         #   Write plot to disk
-        self.write_cmd("apparent_iso" if apply_to_iso else "absolut")
+        plot_tag = "apparent_iso" if apply_to_iso else "absolut"
+        self.write_cmd(plot_tag)
+        if self.cmd_diagnostics and fit_isochrone and best_age is not None:
+            try:
+                iso_best = isochrones_list[min_chi_square_id]
+            except NameError:
+                iso_best = None
+            if iso_best is not None and mag_fit.size:
+                n_fid = (
+                    0
+                    if magnitude_binned_array is None
+                    else int(np.shape(magnitude_binned_array)[0])
+                )
+                try:
+                    n_iso = len(isochrones_list)
+                except NameError:
+                    n_iso = 0
+                n_mem = (
+                    None
+                    if fit_members is None
+                    else int(np.count_nonzero(fit_members))
+                )
+                n_fld = (
+                    None
+                    if fit_members is None
+                    else int(np.count_nonzero(~fit_members))
+                )
+                self.write_isochrone_fit_diagnostics(
+                    mag=mag_fit,
+                    color=color_fit,
+                    iso_array=iso_best,
+                    best_age=float(best_age),
+                    best_age_unit=best_age_unit,
+                    chi_square=float(best_chi_square),
+                    n_fiducials=n_fid,
+                    n_isochrones=n_iso,
+                    e_b_v=e_b_v,
+                    rv=rv,
+                    m_m=m_m,
+                    apply_corrections_to=apply_corrections_to,
+                    isochrone_set=isochrone_set,
+                    isochrones_path=str(isochrones),
+                    n_members=n_mem,
+                    n_field=n_fld,
+                    plot_tag=plot_tag,
+                )
         plt.close()
 
 

@@ -58,6 +58,8 @@ def plot_cmds_from_table(
     n_bin_observation: int = 40,
     apply_corrections_to: str = "observation",
     max_photometric_err: float | None = None,
+    color_by_error: bool = False,
+    cmd_diagnostics: bool = False,
 ) -> None:
     """Plot apparent CMDs and, when a distance modulus is set, a second CMD
     with reddening/distance on the stars or on the isochrones.
@@ -65,6 +67,9 @@ def plot_cmds_from_table(
     With ``apply_corrections_to="isochrone"`` the overlay uses the apparent
     plot ranges; otherwise the absolute ranges. Non-finite magnitudes are
     dropped; ``max_photometric_err`` optionally rejects large photometric σ.
+    ``is_cluster_member`` in the table (if present) greys out field stars and
+    restricts the isochrone fit to members. ``color_by_error`` colours members
+    by photometric σ. ``cmd_diagnostics`` writes a fit ECSV and residual CMD.
     """
     if len(tbl) == 0:
         raise ValueError("CMD table is empty.")
@@ -116,6 +121,9 @@ def plot_cmds_from_table(
             color_err=series.color_err,
             magnitude_filter_2_err=series.magnitude_filter_2_err,
             output_dir=output_dir,
+            is_cluster_member=series.is_cluster_member,
+            color_by_error=color_by_error,
+            cmd_diagnostics=cmd_diagnostics,
         )
         x_app = _range_at(x_plot_range_apparent, filter_id)
         y_app = _range_at(y_plot_range_apparent, filter_id)

@@ -352,6 +352,34 @@ grids:
             mod.load_isochrone_config(path, ["B", "V"])
 
 
+def test_flag_cluster_members_and_series_mask():
+    with isolated_sys_modules():
+        mod = _prepare()
+        tbl = Table(
+            {
+                "id": [1, 2, 3],
+                "epoch_id": ["epoch_000", "epoch_000", "epoch_000"],
+                "mag_cal_B": [16.0, 17.0, 18.0],
+                "mag_cal_V": [15.0, 16.0, 17.0],
+                "err_cal_B": [0.03, 0.04, 0.5],
+                "err_cal_V": [0.02, 0.05, 0.4],
+            }
+        )
+        tbl.meta["photometry_schema"] = "ost_photometry.epoch_native.v1"
+        flagged = mod.flag_cluster_members(tbl, np.array([1, 3]))
+        np.testing.assert_array_equal(
+            flagged["is_cluster_member"], [True, False, True]
+        )
+        series = mod.cmd_series_from_table(flagged, "B", "V", do_error_bars=True)
+        np.testing.assert_array_equal(
+            series.is_cluster_member, [True, False, True]
+        )
+        clipped = mod.mask_cmd_series(series, max_photometric_err=0.2)
+        np.testing.assert_allclose(clipped.color, [1.0, 1.0])
+        np.testing.assert_array_equal(clipped.is_cluster_member, [True, False])
+        assert mod.cluster_member_flags(tbl) is None
+
+
 def test_mask_cmd_series_drops_nan_and_large_errors():
     with isolated_sys_modules():
         mod = _prepare()

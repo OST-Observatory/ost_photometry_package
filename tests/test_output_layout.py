@@ -21,6 +21,10 @@ def test_diagnostics_and_results_and_work_dirs(tmp_path):
     assert cal == tmp_path / "diagnostics" / "calibration"
     assert cal.is_dir()
 
+    cmds = layout.diagnostics_dir(tmp_path, "cmds")
+    assert cmds == tmp_path / "diagnostics" / "cmds"
+    assert cmds.is_dir()
+
     lc = layout.results_dir(tmp_path, "lightcurves", "by_id")
     assert lc == tmp_path / "results" / "lightcurves" / "by_id"
     assert lc.is_dir()

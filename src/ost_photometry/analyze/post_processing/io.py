@@ -64,7 +64,7 @@ def write_epoch_native_magnitudes(
         if column_name in ("ra (deg)", "dec (deg)"):
             continue
         col = out_tbl[column_name]
-        if not np.issubdtype(col.dtype, np.number):
+        if col.dtype.kind == "b" or not np.issubdtype(col.dtype, np.number):
             continue
         col.info.format = "{:12.3f}"
 
