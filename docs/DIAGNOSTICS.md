@@ -248,8 +248,8 @@ distance \(d=1/\varpi\). Figures land under `diagnostics/cluster/`.
 
 | File (stem) | Content |
 |-------------|---------|
-| `cluster_pm_members` | \(\mu_{\alpha*}\) vs \(\mu_\delta\): field in grey, members coloured by \(P_\mathrm{mem}\), Simbad μ as a star. Caption states method, which Gaussian is the cluster, and the threshold. |
-| `cluster_parallax` | Left: \(\varpi\) histogram (members pile at one parallax). Right: \(G\) vs \(\varpi\) coloured by \(P_\mathrm{mem}\). Not \(d=1/\varpi\). |
+| `cluster_pm_members` | \(\mu_{\alpha*}\) vs \(\mu_\delta\): field in grey, members coloured by \(P_\mathrm{mem}\), Simbad μ as a star. Axes follow the member clump (median ± MAD), not PM outliers. |
+| `cluster_parallax` | Left: \(\varpi\) histogram in the member window. Right: \(G\) vs \(\varpi\) (same \(\varpi\) limits). Nearby dwarfs at \(\varpi\gtrsim 10\,\mathrm{mas}\) are kept off-axis. |
 | `cluster_pmem` | Histogram of \(P_\mathrm{mem}\) with the keep-threshold; a clean split looks bimodal. |
 | `cluster_mu_plx_3d` | Four views of \((\mu_{\alpha*},\,\mu_\delta,\,\varpi)\) as QC only — this is not where members are defined. |
 

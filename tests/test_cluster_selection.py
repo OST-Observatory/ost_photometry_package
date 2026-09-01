@@ -203,3 +203,40 @@ def test_membership_diagnostics_write_files(tmp_path):
             "cluster_mu_plx_3d",
         ):
             assert (cluster / f"{stem}.png").is_file()
+
+
+def test_focus_limits_ignore_pm_and_parallax_outliers():
+    pytest.importorskip("matplotlib")
+    with isolated_sys_modules():
+        stub_analyze_package("plots")
+        load_module_from_path(
+            "ost_photometry.output_layout",
+            pkg_src() / "ost_photometry" / "output_layout.py",
+        )
+        mod = load_module_from_path(
+            "ost_photometry.analyze.plots.cluster_membership",
+            pkg_src() / "ost_photometry" / "analyze" / "plots" / "cluster_membership.py",
+        )
+        rng = np.random.default_rng(2)
+        n_c, n_f = 80, 40
+        member = np.concatenate([np.ones(n_c, dtype=bool), np.zeros(n_f, dtype=bool)])
+        pm = np.concatenate(
+            [rng.normal(-1.0, 0.08, n_c), rng.normal(5.0, 1.0, n_f)]
+        )
+        pm[-1] = -250.0
+        lo, hi = mod._focus_limits(pm, member, min_half=2.5)
+        assert lo > -40.0
+        assert hi < 20.0
+        assert lo < -1.0 < hi
+
+        plx = np.concatenate(
+            [rng.normal(0.5, 0.04, n_c), rng.normal(0.2, 0.15, n_f)]
+        )
+        plx[-1] = 18.0
+        plo, phi = mod._focus_limits(
+            plx, member, extras=(0.5,), min_half=0.35
+        )
+        assert plo > -2.0
+        assert phi < 4.0
+        assert plo < 0.5 < phi
+        assert 18.0 > phi
