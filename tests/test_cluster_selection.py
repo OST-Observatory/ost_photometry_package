@@ -240,3 +240,15 @@ def test_focus_limits_ignore_pm_and_parallax_outliers():
         assert phi < 4.0
         assert plo < 0.5 < phi
         assert 18.0 > phi
+
+        floored = np.concatenate(
+            [rng.normal(0.5, 0.04, n_c), rng.uniform(0.25, 0.9, n_f)]
+        )
+        floored = np.clip(floored, 0.25, None)
+        floored[-1] = 18.0
+        flo, fhi = mod._focus_limits(
+            floored, member, extras=(0.5,), min_half=0.35
+        )
+        assert flo >= 0.25 - 0.08
+        assert flo < 0.5 < fhi
+        assert fhi < 4.0

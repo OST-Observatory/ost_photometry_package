@@ -64,7 +64,55 @@ def _focus_limits(
         if np.isfinite(point):
             half = max(half, abs(point - center) + 0.25 * float(min_half))
     half *= 1.0 + float(pad)
-    return center - half, center + half
+    lo, hi = center - half, center + half
+    return _shrink_empty_edges(
+        lo,
+        hi,
+        values[finite],
+        extras=extras,
+        pad_abs=0.12 * float(min_half),
+    )
+
+
+def _shrink_empty_edges(
+    lo: float,
+    hi: float,
+    values: np.ndarray,
+    *,
+    extras: tuple[float | None, ...] = (),
+    pad_frac: float = 0.04,
+    pad_abs: float = 0.04,
+) -> tuple[float, float]:
+    """Pull limits in where the window is empty (e.g. ϖ cut at ~0.25 mas)."""
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size < 8 or not np.isfinite(lo) or not np.isfinite(hi) or hi <= lo:
+        return lo, hi
+    span = hi - lo
+    pad = max(pad_frac * span, float(pad_abs))
+    inside = finite[(finite >= lo) & (finite <= hi)]
+    if inside.size < 8:
+        return lo, hi
+    vlo = float(np.min(inside))
+    vhi = float(np.max(inside))
+    for extra in extras:
+        if extra is None:
+            continue
+        try:
+            point = float(extra)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(point) and lo <= point <= hi:
+            vlo = min(vlo, point)
+            vhi = max(vhi, point)
+    if vlo - lo > pad:
+        lo = vlo - pad
+    if hi - vhi > pad:
+        hi = vhi + pad
+    if hi <= lo:
+        mid = 0.5 * (vlo + vhi)
+        return mid - pad, mid + pad
+    return lo, hi
 
 
 def _square_limits(
