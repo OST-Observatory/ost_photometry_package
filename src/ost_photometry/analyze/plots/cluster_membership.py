@@ -1,0 +1,457 @@
+"""QC figures for Gaia (μ, π) cluster membership."""
+
+from __future__ import annotations
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+from ...output_layout import diagnostics_dir
+
+plt.switch_backend("Agg")
+
+_FIELD_COLOR = "0.65"
+_MEMBER_CMAP = "cividis"
+_N_PLOT_MAX = 12_000
+
+
+def _finite_mask(*arrays: np.ndarray) -> np.ndarray:
+    keep = np.ones(arrays[0].size, dtype=bool)
+    for arr in arrays:
+        keep &= np.isfinite(np.asarray(arr, dtype=float))
+    return keep
+
+
+def _subsample_indices(n: int, n_max: int, rng: np.random.Generator) -> np.ndarray:
+    if n <= n_max:
+        return np.arange(n)
+    return np.sort(rng.choice(n, size=n_max, replace=False))
+
+
+def _subtitle(
+    *,
+    method: str,
+    cluster_component: int,
+    reason: str,
+    pmem_min: float,
+    n_member: int,
+    n_total: int,
+) -> str:
+    why = f" — {reason}" if reason else ""
+    return (
+        f"{method.upper()} in (μ_α*, μ_δ, ϖ): cluster = component "
+        f"{cluster_component}{why}. "
+        f"Members: P_mem ≥ {pmem_min:.2f} ({n_member}/{n_total})."
+    )
+
+
+def _save(fig: plt.Figure, out, stem: str, file_type: str) -> None:
+    fig.savefig(
+        out / f"{stem}.{file_type}",
+        bbox_inches="tight",
+        format=file_type,
+    )
+    plt.close(fig)
+
+
+def plot_cluster_membership_diagnostics(
+    *,
+    output_dir: str,
+    file_type: str = "pdf",
+    pm_ra: np.ndarray,
+    pm_de: np.ndarray,
+    plx: np.ndarray,
+    p_mem: np.ndarray,
+    gmag: np.ndarray | None = None,
+    pmem_min: float = 0.5,
+    method: str = "gmm",
+    cluster_component: int = 0,
+    reason: str = "",
+    simbad_pm_ra: float | None = None,
+    simbad_pm_de: float | None = None,
+    simbad_plx: float | None = None,
+) -> None:
+    """Write μ–μ, parallax, P_mem, and 3-D QC under ``diagnostics/cluster/``."""
+    pm_ra = np.asarray(pm_ra, dtype=float)
+    pm_de = np.asarray(pm_de, dtype=float)
+    plx = np.asarray(plx, dtype=float)
+    p_mem = np.asarray(p_mem, dtype=float)
+    keep = _finite_mask(pm_ra, pm_de, plx, p_mem)
+    pm_ra, pm_de, plx, p_mem = pm_ra[keep], pm_de[keep], plx[keep], p_mem[keep]
+    if gmag is not None:
+        gmag = np.asarray(gmag, dtype=float)[keep]
+    n = p_mem.size
+    if n == 0:
+        return
+
+    member = p_mem >= float(pmem_min)
+    n_mem = int(np.count_nonzero(member))
+    note = _subtitle(
+        method=method,
+        cluster_component=cluster_component,
+        reason=reason,
+        pmem_min=pmem_min,
+        n_member=n_mem,
+        n_total=n,
+    )
+    rng = np.random.default_rng(0)
+    show = _subsample_indices(n, _N_PLOT_MAX, rng)
+    out = diagnostics_dir(output_dir, "cluster")
+
+    _plot_proper_motion(
+        out,
+        file_type,
+        pm_ra[show],
+        pm_de[show],
+        p_mem[show],
+        member[show],
+        pmem_min=pmem_min,
+        note=note,
+        n_shown=show.size,
+        n_total=n,
+        simbad_pm_ra=simbad_pm_ra,
+        simbad_pm_de=simbad_pm_de,
+    )
+    _plot_parallax(
+        out,
+        file_type,
+        plx,
+        p_mem,
+        member,
+        gmag,
+        pmem_min=pmem_min,
+        note=note,
+        simbad_plx=simbad_plx,
+        show=show,
+    )
+    _plot_pmem_histogram(
+        out,
+        file_type,
+        p_mem,
+        pmem_min=pmem_min,
+        note=note,
+    )
+    _plot_mu_plx_3d(
+        out,
+        file_type,
+        pm_ra[show],
+        pm_de[show],
+        plx[show],
+        member[show],
+        note=note,
+        simbad_pm_ra=simbad_pm_ra,
+        simbad_pm_de=simbad_pm_de,
+        simbad_plx=simbad_plx,
+    )
+
+
+def _plot_proper_motion(
+    out,
+    file_type: str,
+    pm_ra: np.ndarray,
+    pm_de: np.ndarray,
+    p_mem: np.ndarray,
+    member: np.ndarray,
+    *,
+    pmem_min: float,
+    note: str,
+    n_shown: int,
+    n_total: int,
+    simbad_pm_ra: float | None,
+    simbad_pm_de: float | None,
+) -> None:
+    field = ~member
+    fig, ax = plt.subplots(figsize=(8.5, 7.5))
+    if np.any(field):
+        ax.scatter(
+            pm_ra[field],
+            pm_de[field],
+            s=6,
+            c=_FIELD_COLOR,
+            alpha=0.35,
+            linewidths=0,
+            label=f"Field (P_mem < {pmem_min:.2f})",
+            zorder=1,
+        )
+    points = None
+    if np.any(member):
+        points = ax.scatter(
+            pm_ra[member],
+            pm_de[member],
+            s=10,
+            c=p_mem[member],
+            cmap=_MEMBER_CMAP,
+            vmin=float(pmem_min),
+            vmax=1.0,
+            alpha=0.85,
+            linewidths=0,
+            label=f"Members (P_mem ≥ {pmem_min:.2f})",
+            zorder=2,
+        )
+    if (
+        simbad_pm_ra is not None
+        and simbad_pm_de is not None
+        and np.isfinite(simbad_pm_ra)
+        and np.isfinite(simbad_pm_de)
+    ):
+        ax.scatter(
+            [float(simbad_pm_ra)],
+            [float(simbad_pm_de)],
+            marker="*",
+            s=180,
+            c="crimson",
+            edgecolors="k",
+            linewidths=0.6,
+            zorder=3,
+            label="Simbad (μ)",
+        )
+        ax.axvline(float(simbad_pm_ra), color="crimson", ls=":", lw=0.8, alpha=0.6)
+        ax.axhline(float(simbad_pm_de), color="crimson", ls=":", lw=0.8, alpha=0.6)
+    if points is not None:
+        cbar = fig.colorbar(points, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_label(r"$P_{\mathrm{mem}}$")
+    ax.set_xlabel(r"$\mu_{\alpha*}$ [mas/yr]")
+    ax.set_ylabel(r"$\mu_{\delta}$ [mas/yr]")
+    ax.set_title("Cluster selection in proper motion")
+    sample = (
+        f"Showing {n_shown} of {n_total} quality Gaia stars."
+        if n_shown < n_total
+        else f"{n_total} quality Gaia stars."
+    )
+    ax.text(
+        0.0,
+        1.02,
+        sample,
+        transform=ax.transAxes,
+        fontsize=8,
+        color="0.3",
+    )
+    fig.text(0.5, 0.01, note, ha="center", va="bottom", fontsize=8, wrap=True)
+    ax.legend(loc="best", fontsize=8, markerscale=1.4)
+    ax.grid(True, color="lightgray", linestyle="--", alpha=0.35)
+    ax.set_aspect("equal", adjustable="datalim")
+    fig.tight_layout(rect=(0, 0.06, 1, 1))
+    _save(fig, out, "cluster_pm_members", file_type)
+
+
+def _plot_parallax(
+    out,
+    file_type: str,
+    plx: np.ndarray,
+    p_mem: np.ndarray,
+    member: np.ndarray,
+    gmag: np.ndarray | None,
+    *,
+    pmem_min: float,
+    note: str,
+    simbad_plx: float | None,
+    show: np.ndarray,
+) -> None:
+    field = ~member
+    fig, axes = plt.subplots(1, 2, figsize=(11.5, 5.2))
+
+    ax_h = axes[0]
+    bins = np.linspace(
+        float(np.nanpercentile(plx, 1)),
+        float(np.nanpercentile(plx, 99)),
+        50,
+    )
+    if np.any(field):
+        ax_h.hist(
+            plx[field],
+            bins=bins,
+            color=_FIELD_COLOR,
+            alpha=0.7,
+            label=f"Field (P_mem < {pmem_min:.2f})",
+        )
+    if np.any(member):
+        ax_h.hist(
+            plx[member],
+            bins=bins,
+            color="C0",
+            alpha=0.75,
+            label=f"Members (P_mem ≥ {pmem_min:.2f})",
+        )
+    if simbad_plx is not None and np.isfinite(simbad_plx):
+        ax_h.axvline(
+            float(simbad_plx),
+            color="crimson",
+            ls="--",
+            lw=1.2,
+            label=f"Simbad ϖ = {float(simbad_plx):.2f} mas",
+        )
+    ax_h.set_xlabel(r"$\varpi$ [mas]")
+    ax_h.set_ylabel("Number of Gaia stars")
+    ax_h.set_title("Parallax: members pile at one ϖ")
+    ax_h.legend(fontsize=8)
+    ax_h.grid(True, color="lightgray", linestyle="--", alpha=0.35)
+
+    ax_s = axes[1]
+    if gmag is not None and np.any(np.isfinite(gmag)):
+        g_show = gmag[show]
+        plx_show = plx[show]
+        p_show = p_mem[show]
+        mem_show = member[show]
+        field_show = ~mem_show
+        if np.any(field_show):
+            ax_s.scatter(
+                plx_show[field_show],
+                g_show[field_show],
+                s=6,
+                c=_FIELD_COLOR,
+                alpha=0.3,
+                linewidths=0,
+                label=f"Field (P_mem < {pmem_min:.2f})",
+            )
+        if np.any(mem_show):
+            points = ax_s.scatter(
+                plx_show[mem_show],
+                g_show[mem_show],
+                s=10,
+                c=p_show[mem_show],
+                cmap=_MEMBER_CMAP,
+                vmin=float(pmem_min),
+                vmax=1.0,
+                alpha=0.85,
+                linewidths=0,
+                label=f"Members (P_mem ≥ {pmem_min:.2f})",
+            )
+            cbar = fig.colorbar(points, ax=ax_s, fraction=0.046, pad=0.04)
+            cbar.set_label(r"$P_{\mathrm{mem}}$")
+        if simbad_plx is not None and np.isfinite(simbad_plx):
+            ax_s.axvline(float(simbad_plx), color="crimson", ls="--", lw=1.2)
+        ax_s.set_xlabel(r"$\varpi$ [mas]")
+        ax_s.set_ylabel(r"$G$ [mag]")
+        ax_s.invert_yaxis()
+        ax_s.set_title(r"$G$ vs ϖ (not $d=1/\varpi$)")
+        ax_s.legend(fontsize=8)
+        ax_s.grid(True, color="lightgray", linestyle="--", alpha=0.35)
+    else:
+        ax_s.scatter(plx[show], p_mem[show], s=8, c="C0", alpha=0.4, linewidths=0)
+        ax_s.axhline(float(pmem_min), color="k", ls="--", lw=1, label="threshold")
+        ax_s.set_xlabel(r"$\varpi$ [mas]")
+        ax_s.set_ylabel(r"$P_{\mathrm{mem}}$")
+        ax_s.set_title(r"$P_{\mathrm{mem}}$ vs ϖ")
+        ax_s.legend(fontsize=8)
+        ax_s.grid(True, color="lightgray", linestyle="--", alpha=0.35)
+
+    fig.suptitle("Cluster selection in parallax", fontsize=12)
+    fig.text(0.5, 0.01, note, ha="center", va="bottom", fontsize=8, wrap=True)
+    fig.tight_layout(rect=(0, 0.07, 1, 0.95))
+    _save(fig, out, "cluster_parallax", file_type)
+
+
+def _plot_pmem_histogram(
+    out,
+    file_type: str,
+    p_mem: np.ndarray,
+    *,
+    pmem_min: float,
+    note: str,
+) -> None:
+    fig, ax = plt.subplots(figsize=(8.0, 5.2))
+    ax.hist(p_mem, bins=np.linspace(0.0, 1.0, 41), color="C0", alpha=0.85)
+    ax.axvline(
+        float(pmem_min),
+        color="k",
+        ls="--",
+        lw=1.4,
+        label=rf"Threshold $P_{{\mathrm{{mem}}}} \geq {pmem_min:.2f}$",
+    )
+    n_hi = int(np.count_nonzero(p_mem >= float(pmem_min)))
+    n_lo = int(p_mem.size - n_hi)
+    ax.set_xlabel(r"$P_{\mathrm{mem}}$ (probability of the cluster Gaussian)")
+    ax.set_ylabel("Number of quality Gaia stars")
+    ax.set_title(
+        r"Why these stars: $P_{\mathrm{mem}}$ is bimodal if cluster and field separate"
+    )
+    ax.legend(fontsize=8)
+    ax.text(
+        0.98,
+        0.95,
+        f"below threshold: {n_lo}\nabove threshold: {n_hi}",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=8,
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8, "lw": 0.4},
+    )
+    ax.grid(True, color="lightgray", linestyle="--", alpha=0.35)
+    fig.text(0.5, 0.01, note, ha="center", va="bottom", fontsize=8, wrap=True)
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
+    _save(fig, out, "cluster_pmem", file_type)
+
+
+def _plot_mu_plx_3d(
+    out,
+    file_type: str,
+    pm_ra: np.ndarray,
+    pm_de: np.ndarray,
+    plx: np.ndarray,
+    member: np.ndarray,
+    *,
+    note: str,
+    simbad_pm_ra: float | None,
+    simbad_pm_de: float | None,
+    simbad_plx: float | None,
+) -> None:
+    field = ~member
+    fig = plt.figure(figsize=(12, 10), constrained_layout=True)
+    fig.suptitle(
+        r"Cluster membership in $(\mu_{\alpha*},\,\mu_{\delta},\,\varpi)$ "
+        r"(QC only — not a distance axis)",
+        fontsize=13,
+    )
+    for i in range(4):
+        ax = fig.add_subplot(2, 2, i + 1, projection="3d")
+        ax.view_init(22, 40 + i * 90)
+        if np.any(field):
+            ax.scatter(
+                pm_ra[field],
+                pm_de[field],
+                plx[field],
+                s=4,
+                c=_FIELD_COLOR,
+                alpha=0.25,
+                linewidths=0,
+                label="Field",
+            )
+        if np.any(member):
+            ax.scatter(
+                pm_ra[member],
+                pm_de[member],
+                plx[member],
+                s=8,
+                c="C0",
+                alpha=0.7,
+                linewidths=0,
+                label="Members",
+            )
+        if (
+            simbad_pm_ra is not None
+            and simbad_pm_de is not None
+            and simbad_plx is not None
+            and np.isfinite(simbad_pm_ra)
+            and np.isfinite(simbad_pm_de)
+            and np.isfinite(simbad_plx)
+        ):
+            ax.scatter(
+                [float(simbad_pm_ra)],
+                [float(simbad_pm_de)],
+                [float(simbad_plx)],
+                marker="*",
+                s=120,
+                c="crimson",
+                edgecolors="k",
+                linewidths=0.4,
+                label="Simbad",
+            )
+        ax.set_xlabel(r"$\mu_{\alpha*}$ [mas/yr]")
+        ax.set_ylabel(r"$\mu_{\delta}$ [mas/yr]")
+        ax.set_zlabel(r"$\varpi$ [mas]")
+        if i == 0:
+            ax.legend(loc="upper left", fontsize=7)
+    fig.text(0.5, 0.02, note, ha="center", va="bottom", fontsize=8, wrap=True)
+    _save(fig, out, "cluster_mu_plx_3d", file_type)
+
+
+__all__ = ["plot_cluster_membership_diagnostics"]

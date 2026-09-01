@@ -13,7 +13,7 @@ from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
 
 from ... import terminal_output
-from .. import plots
+from ..plots.cluster_membership import plot_cluster_membership_diagnostics
 from ..post_processing.coords import (
     plot_starmap_from_imaging_context,
     table_object_sky_coords,
@@ -206,71 +206,31 @@ def _plot_membership_diagnostics(
     pm_ra: np.ndarray,
     pm_de: np.ndarray,
     plx: np.ndarray,
+    p_mem: np.ndarray,
     gmag: np.ndarray | None,
-    member: np.ndarray,
+    pmem_min: float,
+    method: str,
+    cluster_component: int,
+    reason: str,
     simbad_pm_ra: float | None,
     simbad_pm_de: float | None,
+    simbad_plx: float | None,
 ) -> None:
-    member = np.asarray(member, dtype=bool)
-    field = ~member
-    series_pm_ra: list[np.ndarray] = []
-    series_pm_de: list[np.ndarray] = []
-    series_plx: list[np.ndarray] = []
-    series_g: list[np.ndarray] = []
-    labels: list[str] = []
-    ids: list[int] = []
-    if np.any(field):
-        series_pm_ra.append(pm_ra[field])
-        series_pm_de.append(pm_de[field])
-        series_plx.append(plx[field])
-        if gmag is not None:
-            series_g.append(gmag[field])
-        labels.append("Field")
-        ids.append(0)
-    if np.any(member):
-        series_pm_ra.append(pm_ra[member])
-        series_pm_de.append(pm_de[member])
-        series_plx.append(plx[member])
-        if gmag is not None:
-            series_g.append(gmag[member])
-        labels.append("Members")
-        ids.append(1)
-    if not series_pm_ra:
-        return
-    plots.scatter(
-        series_pm_ra,
-        r"$\mu_{\alpha*}$ [mas/yr]",
-        series_pm_de,
-        r"$\mu_{\delta}$ [mas/yr]",
-        "cluster_pm_members_",
-        plot_stub,
-        dataset_label=labels,
+    plot_cluster_membership_diagnostics(
+        output_dir=plot_stub,
         file_type=file_type,
-    )
-    if gmag is not None and series_g:
-        plots.scatter(
-            series_g,
-            r"$G$ [mag]",
-            series_plx,
-            r"$\varpi$ [mas]",
-            "cluster_parallax_",
-            plot_stub,
-            dataset_label=labels,
-            file_type=file_type,
-        )
-    plots.d3_scatter(
-        series_pm_ra,
-        series_pm_de,
-        series_plx,
-        plot_stub,
-        name_x=r"$\mu_{\alpha*}$ [mas/yr]",
-        name_y=r"$\mu_{\delta}$ [mas/yr]",
-        name_z=r"$\varpi$ [mas]",
-        pm_ra=simbad_pm_ra,
-        pm_dec=simbad_pm_de,
-        file_type=file_type,
-        cluster_ids=ids,
-        display=False,
+        pm_ra=pm_ra,
+        pm_de=pm_de,
+        plx=plx,
+        p_mem=p_mem,
+        gmag=gmag,
+        pmem_min=pmem_min,
+        method=method,
+        cluster_component=cluster_component,
+        reason=reason,
+        simbad_pm_ra=simbad_pm_ra,
+        simbad_pm_de=simbad_pm_de,
+        simbad_plx=simbad_plx,
     )
 
 
@@ -294,6 +254,7 @@ def find_cluster(
     membership_method: str = "gmm",
     cluster_component_id: int | None = None,
     observation_jd: float | None = None,
+    indent: int = 1,
 ) -> tuple[Table, np.ndarray, np.ndarray, np.ndarray]:
     """Identify cluster members in scaled Gaia (μ_α*, μ_δ, ϖ).
 
@@ -315,6 +276,12 @@ def find_cluster(
     if cluster_component_id is None and cluster_selection_id is not None:
         cluster_component_id = int(cluster_selection_id)
 
+    detail = indent + 1
+    terminal_output.print_to_terminal(
+        "Cluster selection (Gaia astrometry)",
+        indent=indent,
+        style_name="HEADER",
+    )
     ctx = _resolve_imaging_plot_context(
         image_series=image_series, plot_context=plot_context
     )
@@ -349,6 +316,7 @@ def find_cluster(
     if not np.any(quality):
         terminal_output.print_to_terminal(
             "No Gaia sources survived the quality cuts (RUWE / π).",
+            indent=detail,
             style_name="WARNING",
         )
         empty = _empty_cluster_table(tbl)
@@ -379,10 +347,15 @@ def find_cluster(
         pm_ra=pm_ra_q,
         pm_de=pm_de_q,
         plx=plx_q,
+        p_mem=result.p_mem,
         gmag=gmag_q,
-        member=gaia_member,
+        pmem_min=float(pmem_min),
+        method=result.method,
+        cluster_component=int(result.cluster_component),
+        reason=result.reason,
         simbad_pm_ra=simbad_pm_ra,
         simbad_pm_de=simbad_pm_de,
+        simbad_plx=simbad_plx,
     )
 
     gaia_coordinates = _gaia_skycoord(gaia_q, years=years)
@@ -394,6 +367,7 @@ def find_cluster(
     if id_img.size == 0:
         terminal_output.print_to_terminal(
             "No photometry–Gaia matches within the separation limit.",
+            indent=detail,
             style_name="WARNING",
         )
         empty = _empty_cluster_table(tbl)
@@ -402,11 +376,13 @@ def find_cluster(
     p_mem_matched = np.asarray(result.p_mem[id_gaia], dtype=float)
     member_mask = p_mem_matched >= float(pmem_min)
     n_phot_mem = int(np.count_nonzero(member_mask))
+    why = f", {result.reason}" if result.reason else ""
     terminal_output.print_to_terminal(
         f"Gaia membership ({result.method}): {n_gaia_mem}/{gaia_member.size} "
-        f"Gaia stars with P_mem ≥ {float(pmem_min):.2f} "
-        f"(component {result.cluster_component}); "
+        f"quality stars with P_mem ≥ {float(pmem_min):.2f} "
+        f"(component {result.cluster_component}{why}); "
         f"{n_phot_mem} photometry matches kept in memory.",
+        indent=detail,
         style_name="GOOD",
     )
 
@@ -423,6 +399,7 @@ def find_cluster(
         "p_mem": [float(p) for p in p_mem_matched],
         "method": result.method,
         "cluster_component": int(result.cluster_component),
+        "reason": result.reason,
         "p_mem_by_id": p_mem_by_id,
     }
 

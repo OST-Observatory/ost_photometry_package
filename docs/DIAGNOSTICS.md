@@ -248,9 +248,10 @@ distance \(d=1/\varpi\). Figures land under `diagnostics/cluster/`.
 
 | File (stem) | Content |
 |-------------|---------|
-| `cluster_pm_members_*` | \(\mu_{\alpha*}\) vs \(\mu_\delta\): field vs members (\(P_\mathrm{mem}\ge\) threshold) |
-| `cluster_parallax_*` | \(G\) vs \(\varpi\) for the same split |
-| `pm_vs_distance.*` | 3-D QC of \((\mu_{\alpha*},\,\mu_\delta,\,\varpi)\) (not a distance axis) |
+| `cluster_pm_members` | \(\mu_{\alpha*}\) vs \(\mu_\delta\): field in grey, members coloured by \(P_\mathrm{mem}\), Simbad μ as a star. Caption states method, which Gaussian is the cluster, and the threshold. |
+| `cluster_parallax` | Left: \(\varpi\) histogram (members pile at one parallax). Right: \(G\) vs \(\varpi\) coloured by \(P_\mathrm{mem}\). Not \(d=1/\varpi\). |
+| `cluster_pmem` | Histogram of \(P_\mathrm{mem}\) with the keep-threshold; a clean split looks bimodal. |
+| `cluster_mu_plx_3d` | Four views of \((\mu_{\alpha*},\,\mu_\delta,\,\varpi)\) as QC only — this is not where members are defined. |
 
 The pipeline GMM (or HDBSCAN fallback) writes `is_cluster_member` and
 `cluster_p_mem` on the full post-processed ECSV. The **student** extract

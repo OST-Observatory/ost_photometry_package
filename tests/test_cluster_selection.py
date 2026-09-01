@@ -123,6 +123,7 @@ def test_gmm_membership_picks_tight_component():
             random_state=0,
         )
         assert result.method == "gmm"
+        assert "tighter" in result.reason.lower() or "simbad" in result.reason.lower()
         assert result.p_mem.size == n_c + n_f
         core = result.p_mem[:n_c]
         field = result.p_mem[n_c:]
@@ -139,6 +140,7 @@ def test_gmm_membership_picks_tight_component():
             random_state=0,
         )
         assert np.median(simbad.p_mem[:n_c]) > 0.7
+        assert "simbad" in simbad.reason.lower()
 
 
 def test_flag_cluster_members_writes_p_mem():
@@ -156,3 +158,48 @@ def test_flag_cluster_members_writes_p_mem():
         )
         np.testing.assert_array_equal(out["is_cluster_member"], [True, False, True])
         np.testing.assert_allclose(out["cluster_p_mem"], [0.9, 0.0, 0.6])
+
+
+def test_membership_diagnostics_write_files(tmp_path):
+    pytest.importorskip("matplotlib")
+    with isolated_sys_modules():
+        stub_analyze_package("plots")
+        load_module_from_path(
+            "ost_photometry.output_layout",
+            pkg_src() / "ost_photometry" / "output_layout.py",
+        )
+        mod = load_module_from_path(
+            "ost_photometry.analyze.plots.cluster_membership",
+            pkg_src() / "ost_photometry" / "analyze" / "plots" / "cluster_membership.py",
+        )
+        rng = np.random.default_rng(1)
+        n_c, n_f = 40, 60
+        pm_ra = np.concatenate([rng.normal(-1.0, 0.1, n_c), rng.normal(4.0, 2.0, n_f)])
+        pm_de = np.concatenate([rng.normal(-2.0, 0.1, n_c), rng.normal(0.0, 2.0, n_f)])
+        plx = np.concatenate([rng.normal(0.5, 0.04, n_c), rng.normal(0.2, 0.3, n_f)])
+        gmag = rng.uniform(12.0, 18.0, n_c + n_f)
+        p_mem = np.concatenate([np.full(n_c, 0.9), np.full(n_f, 0.1)])
+        mod.plot_cluster_membership_diagnostics(
+            output_dir=str(tmp_path),
+            file_type="png",
+            pm_ra=pm_ra,
+            pm_de=pm_de,
+            plx=plx,
+            p_mem=p_mem,
+            gmag=gmag,
+            pmem_min=0.5,
+            method="gmm",
+            cluster_component=0,
+            reason="tighter Gaussian",
+            simbad_pm_ra=-1.0,
+            simbad_pm_de=-2.0,
+            simbad_plx=0.5,
+        )
+        cluster = tmp_path / "diagnostics" / "cluster"
+        for stem in (
+            "cluster_pm_members",
+            "cluster_parallax",
+            "cluster_pmem",
+            "cluster_mu_plx_3d",
+        ):
+            assert (cluster / f"{stem}.png").is_file()

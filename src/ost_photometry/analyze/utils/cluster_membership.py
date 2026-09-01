@@ -141,6 +141,7 @@ class MembershipResult:
     labels: np.ndarray
     cluster_component: int
     method: str
+    reason: str = ""
 
 
 def _scaled_features(
@@ -189,21 +190,21 @@ def _gmm_cluster_component(
     *,
     simbad_scaled: np.ndarray | None,
     component_id: int | None,
-) -> int:
+) -> tuple[int, str]:
     n_comp = int(gmm.n_components)
     if component_id is not None:
         cid = int(component_id)
         if 0 <= cid < n_comp:
-            return cid
+            return cid, f"manual override (component {cid})"
     if simbad_scaled is not None:
         means = np.asarray(gmm.means_, dtype=float)
         dist = np.linalg.norm(means - simbad_scaled[None, :], axis=1)
-        return int(np.argmin(dist))
+        return int(np.argmin(dist)), "nearest Simbad (μ, π)"
     spreads = []
     for k in range(n_comp):
         cov = np.atleast_2d(gmm.covariances_[k])
         spreads.append(float(np.trace(cov)))
-    return int(np.argmin(spreads))
+    return int(np.argmin(spreads)), "tighter Gaussian"
 
 
 def _gmm_components_look_alike(gmm, *, ratio_min: float = 1.5) -> bool:
@@ -239,6 +240,7 @@ def _hdbscan_membership(
             labels=np.zeros(n, dtype=int),
             cluster_component=-1,
             method="none",
+            reason="HDBSCAN unavailable or too few stars",
         )
     min_size = max(8, n // 40)
     clusterer = HDBSCAN(
@@ -253,9 +255,11 @@ def _hdbscan_membership(
             labels=labels,
             cluster_component=-1,
             method="hdbscan",
+            reason="HDBSCAN found no core",
         )
     if component_id is not None and int(component_id) in unique:
         chosen = int(component_id)
+        reason = f"manual override (component {chosen})"
     elif simbad_scaled is not None:
         centroids = []
         for cid in unique:
@@ -265,9 +269,11 @@ def _hdbscan_membership(
             axis=1,
         )
         chosen = unique[int(np.argmin(dist))]
+        reason = "nearest Simbad (μ, π)"
     else:
         counts = [int(np.count_nonzero(labels == cid)) for cid in unique]
         chosen = unique[int(np.argmax(counts))]
+        reason = "largest HDBSCAN core"
     strength = np.asarray(getattr(clusterer, "probabilities_", np.ones(n)), dtype=float)
     p_mem = np.zeros(n, dtype=float)
     in_cluster = labels == chosen
@@ -277,6 +283,7 @@ def _hdbscan_membership(
         labels=labels,
         cluster_component=chosen,
         method="hdbscan",
+        reason=reason,
     )
 
 
@@ -309,6 +316,7 @@ def membership_from_astrometry(
             labels=np.zeros(0, dtype=int),
             cluster_component=-1,
             method="none",
+            reason="no stars",
         )
     scaled, scaler = _scaled_features(pm_ra, pm_de, plx)
     simbad_scaled = _simbad_scaled_point(
@@ -328,6 +336,7 @@ def membership_from_astrometry(
             labels=np.zeros(n, dtype=int),
             cluster_component=0,
             method="gmm",
+            reason="too few stars; all kept",
         )
     from sklearn.mixture import GaussianMixture
 
@@ -351,8 +360,16 @@ def membership_from_astrometry(
             random_state=random_state,
         )
         if fallback.cluster_component >= 0:
-            return fallback
-    cluster_k = _gmm_cluster_component(
+            extra = "GMM components had similar spread"
+            reason = f"{fallback.reason}; {extra}" if fallback.reason else extra
+            return MembershipResult(
+                p_mem=fallback.p_mem,
+                labels=fallback.labels,
+                cluster_component=fallback.cluster_component,
+                method=fallback.method,
+                reason=reason,
+            )
+    cluster_k, reason = _gmm_cluster_component(
         gmm, simbad_scaled=simbad_scaled, component_id=component_id
     )
     proba = gmm.predict_proba(scaled)
@@ -363,6 +380,7 @@ def membership_from_astrometry(
         labels=np.asarray(labels, dtype=int),
         cluster_component=int(cluster_k),
         method="gmm",
+        reason=reason,
     )
 
 
