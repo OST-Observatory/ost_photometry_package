@@ -36,6 +36,11 @@ class IsochronePlotConfig:
     isochrone_keyword: str = ""
     isochrone_log_age: bool | str = ""
     isochrone_legend: bool | str = ""
+    isochrone_set: str | None = None
+    feh: float | None = None
+    z: float | None = None
+    y: float | None = None
+    alpha_fe: float | None = None
 
 
 def _is_unset(value: object) -> bool:
@@ -263,11 +268,166 @@ def cmd_series_from_table(
     )
 
 
+def _optional_yaml_str(data: dict, *keys: str) -> str | None:
+    for key in keys:
+        if key not in data or data[key] is None:
+            continue
+        value = str(data[key]).strip()
+        if value in {"", "?"}:
+            continue
+        return value
+    return None
+
+
+def _optional_yaml_float(data: dict, *keys: str) -> float | None:
+    for key in keys:
+        if key not in data or data[key] is None:
+            continue
+        raw = data[key]
+        if isinstance(raw, str) and raw.strip() in {"", "?"}:
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if not np.isfinite(value):
+            continue
+        return value
+    return None
+
+
+def _fmt_annotation_number(value: object, *, digits: int = 4) -> str | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(number):
+        return None
+    text = f"{number:.{digits}g}"
+    return text
+
+
+def format_isochrone_annotation(
+    *,
+    isochrone_set: str | None = None,
+    feh: float | None = None,
+    z: float | None = None,
+    y: float | None = None,
+    alpha_fe: float | None = None,
+    e_b_v: float | None = None,
+    rv: float | None = None,
+    m_m: float | None = None,
+    apply_corrections_to: str = "observation",
+    best_age: float | None = None,
+    best_age_unit: str | None = None,
+    chi_square: float | None = None,
+) -> str:
+    """Compact matplotlib mathtext block for the CMD isochrone info box."""
+    lines: list[str] = []
+    set_name = None if _is_unset(isochrone_set) else str(isochrone_set).strip()
+    if set_name:
+        lines.append(set_name)
+
+    composition: list[str] = []
+    feh_txt = _fmt_annotation_number(feh, digits=3)
+    if feh_txt is not None:
+        composition.append(rf"$[\mathrm{{Fe}}/\mathrm{{H}}]={feh_txt}$")
+    z_txt = _fmt_annotation_number(z, digits=4)
+    if z_txt is not None:
+        composition.append(rf"$Z={z_txt}$")
+    y_txt = _fmt_annotation_number(y, digits=4)
+    if y_txt is not None:
+        composition.append(rf"$Y={y_txt}$")
+    alpha_txt = _fmt_annotation_number(alpha_fe, digits=3)
+    if alpha_txt is not None:
+        composition.append(rf"$[\alpha/\mathrm{{Fe}}]={alpha_txt}$")
+    if composition:
+        lines.append(", ".join(composition))
+
+    cluster: list[str] = []
+    ebv_txt = _fmt_annotation_number(e_b_v, digits=3)
+    if ebv_txt is not None:
+        cluster.append(rf"$E(B-V)={ebv_txt}$")
+    rv_txt = _fmt_annotation_number(rv, digits=3)
+    if rv_txt is not None:
+        cluster.append(rf"$R_V={rv_txt}$")
+    mm_txt = _fmt_annotation_number(m_m, digits=4)
+    if mm_txt is not None:
+        cluster.append(rf"$(m-M)={mm_txt}$")
+    if cluster:
+        lines.append(", ".join(cluster))
+
+    target = str(apply_corrections_to).strip().lower()
+    if target in ("isochrone", "isochrones"):
+        lines.append("Corrections: isochrones")
+    elif target in ("observation", "data", "stars"):
+        lines.append("Corrections: stars")
+
+    age_txt = _fmt_annotation_number(best_age, digits=3)
+    if age_txt is not None:
+        unit = "" if _is_unset(best_age_unit) else f" {best_age_unit}"
+        fit = rf"Best age: ${age_txt}${unit}"
+        chi_txt = _fmt_annotation_number(chi_square, digits=3)
+        if chi_txt is not None:
+            fit += rf", $\chi^2={chi_txt}$"
+        lines.append(fit)
+
+    return "\n".join(lines)
+
+
+def _select_isochrone_grid(data: dict) -> tuple[dict, str | None]:
+    """Return ``(grid_entry, name)``; ``({}, None)`` if the YAML has no catalog."""
+    grids = data.get("grids")
+    if grids is None:
+        return {}, None
+    if not isinstance(grids, dict) or not grids:
+        raise ValueError("isochrone YAML 'grids' must be a non-empty mapping")
+    use = data.get("use")
+    if _is_unset(use):
+        names = ", ".join(str(name) for name in grids)
+        raise ValueError(
+            "isochrone YAML has 'grids' but no 'use' key "
+            f"(available: {names})"
+        )
+    if use in grids:
+        selected = grids[use]
+        name = str(use)
+    else:
+        name = str(use).strip()
+        if name not in grids:
+            names = ", ".join(str(key) for key in grids)
+            raise ValueError(
+                f"Unknown isochrone grid {name!r}; available: {names}"
+            )
+        selected = grids[name]
+    if not isinstance(selected, dict):
+        raise ValueError(
+            f"isochrone grid {name!r} must be a mapping of path and metadata"
+        )
+    return selected, name
+
+
+def _merged_optional_str(selected: dict, data: dict, *keys: str) -> str | None:
+    return _optional_yaml_str(selected, *keys) or _optional_yaml_str(data, *keys)
+
+
+def _merged_optional_float(selected: dict, data: dict, *keys: str) -> float | None:
+    value = _optional_yaml_float(selected, *keys)
+    if value is not None:
+        return value
+    return _optional_yaml_float(data, *keys)
+
+
 def load_isochrone_config(
     path: str | Path | None,
     filter_list: list[str],
 ) -> IsochronePlotConfig:
-    """Read an isochrone YAML; empty path or missing file yields blank fields."""
+    """Read an isochrone YAML; empty path or missing file yields blank fields.
+
+    Optional ``grids`` / ``use`` select one catalog entry. That entry supplies
+    ``isochrones`` and may override composition metadata; shared keys stay at
+    file level. Without ``grids`` the top-level ``isochrones`` path is used.
+    """
     if _is_unset(path):
         return IsochronePlotConfig()
 
@@ -290,14 +450,25 @@ def load_isochrone_config(
             )
         if filter_ not in column:
             raise ValueError(f"No isochrone_column entry for filter {filter_!r}")
+
+    selected, grid_name = _select_isochrone_grid(data)
+    isochrones = _merged_optional_str(selected, data, "isochrones") or ""
+    if grid_name is not None and not isochrones:
+        raise ValueError(f"isochrone grid {grid_name!r} has no 'isochrones' path")
+
     return IsochronePlotConfig(
-        isochrones=data.get("isochrones", ""),
+        isochrones=isochrones,
         isochrone_type=data["isochrone_type"],
         isochrone_column_type=column_type,
         isochrone_column=column,
         isochrone_keyword=data["isochrone_keyword"],
         isochrone_log_age=data["isochrone_log_age"],
         isochrone_legend=data["isochrone_legend"],
+        isochrone_set=_merged_optional_str(selected, data, "isochrone_set"),
+        feh=_merged_optional_float(selected, data, "FeH", "feh"),
+        z=_merged_optional_float(selected, data, "Z", "z"),
+        y=_merged_optional_float(selected, data, "Y", "y"),
+        alpha_fe=_merged_optional_float(selected, data, "alpha_Fe", "alpha_fe"),
     )
 
 
@@ -306,6 +477,7 @@ __all__ = [
     "IsochronePlotConfig",
     "cmd_series_from_table",
     "distance_modulus",
+    "format_isochrone_annotation",
     "load_cmd_table",
     "load_isochrone_config",
     "slice_cmd_table_to_single_epoch",

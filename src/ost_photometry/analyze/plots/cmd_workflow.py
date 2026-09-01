@@ -152,6 +152,11 @@ def plot_cmds_from_table(
             magnitude_fit_range=magnitude_fit_range,
             chi_square_plot_mode=chi_square_plot_mode,
             apply_corrections_to=apply_corrections_to,
+            isochrone_set=iso.isochrone_set,
+            feh=iso.feh,
+            z=iso.z,
+            y=iso.y,
+            alpha_fe=iso.alpha_fe,
         )
 
 

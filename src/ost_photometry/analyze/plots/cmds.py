@@ -12,6 +12,7 @@ from scipy.spatial import KDTree
 
 from ... import checks, terminal_output
 from ...output_layout import results_dir
+from ..cmd_prepare import format_isochrone_annotation
 from .cmd_reddening import (
     cmd_correction_offsets,
     combine_cmd_error_bars,
@@ -531,7 +532,12 @@ class MakeCMDs:
             fiduciary_points_observation: bool | None = None,
             fiduciary_points_isochrones: bool = False,
             chi_square_plot_mode: str | None = None,
-            apply_corrections_to: str = "observation") -> None:
+            apply_corrections_to: str = "observation",
+            isochrone_set: str | None = None,
+            feh: float | None = None,
+            z: float | None = None,
+            y: float | None = None,
+            alpha_fe: float | None = None) -> None:
         """
         Plot a CMD with reddening and distance applied either to the stars
         (absolute magnitudes) or to the isochrones (apparent CMD overlay).
@@ -652,6 +658,13 @@ class MakeCMDs:
             the stars (absolute CMD). ``isochrone``: add the same terms to
             the theoretical isochrones so they overlay the apparent data.
             Default is ``observation``.
+
+        isochrone_set               : `string` or `None`, optional
+            Model / grid name for the CMD info box. Omitted if unset.
+
+        feh, z, y, alpha_fe         : `float` or `None`, optional
+            Optional composition values for the CMD info box. Missing
+            values are omitted.
         """
         a_filter_2, relative_extinction, a_filter_2_err, relative_extinction_err = (
             reddening_for_absolute_cmd(
@@ -1191,9 +1204,15 @@ class MakeCMDs:
                 for element in legend_.legend_handles:
                     element.set_alpha(0.6)
 
+        best_age = None
+        best_age_unit = None
+        best_chi_square = None
         if fit_isochrone:
             #   Evaluate chi square
             min_chi_square_id = np.argmin(chi_square_list)
+            best_age = age_list[min_chi_square_id]
+            best_age_unit = age_unit
+            best_chi_square = chi_square_list[min_chi_square_id]
 
             terminal_output.print_to_terminal(
                 f'Best fitting isochrone: {age_list[min_chi_square_id]:.1f} '
@@ -1256,6 +1275,39 @@ class MakeCMDs:
             rf'${self.color}$ [mag]',
             ax0,
         )
+
+        annotation = format_isochrone_annotation(
+            isochrone_set=isochrone_set,
+            feh=feh,
+            z=z,
+            y=y,
+            alpha_fe=alpha_fe,
+            e_b_v=e_b_v,
+            rv=rv,
+            m_m=m_m,
+            apply_corrections_to=apply_corrections_to,
+            best_age=best_age,
+            best_age_unit=best_age_unit,
+            chi_square=best_chi_square,
+        )
+        if annotation:
+            ax0.text(
+                0.03,
+                0.03,
+                annotation,
+                transform=ax0.transAxes,
+                ha="left",
+                va="bottom",
+                fontsize=8,
+                linespacing=1.35,
+                zorder=100,
+                bbox={
+                    "boxstyle": "round,pad=0.35",
+                    "facecolor": "white",
+                    "edgecolor": "0.75",
+                    "alpha": 0.85,
+                },
+            )
 
         #   Write plot to disk
         self.write_cmd("apparent_iso" if apply_to_iso else "absolut")
