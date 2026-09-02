@@ -11,7 +11,14 @@ import numpy as np
 from .... import terminal_output
 from ...calibration import CalibrationEngine, prepare_calibration_check_plots
 from ...calibration.backends.linear import build_calibrator
-from ...calibration_sources import crossmatch_standard_catalog, fetch_standard_calibration_catalog
+from ...calibration_sources import (
+    crossmatch_standard_catalog,
+    fetch_standard_calibration_catalog,
+)
+from ...calibration_sources.known_variables import (
+    KNOWN_VARIABLES_EXCLUDED_META,
+    drop_catalog_rows_near_known_variables,
+)
 from ...differential_photometry import DifferentialPhotometer
 from ...extinction_io import build_extinction_corrector
 from ...post_processing.adapters import ensure_epoch_native_photometry_table
@@ -91,13 +98,13 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
     from ...post_processing.magnitude_systems import require_catalog_bands_for_filters
 
     catalog = context.calibration_catalog
+    first_tbl = next(iter(epochs.values()))
+    field_center = SkyCoord(
+        np.mean(first_tbl["ra"]),
+        np.mean(first_tbl["dec"]),
+        unit="deg",
+    )
     if catalog is None:
-        first_tbl = next(iter(epochs.values()))
-        field_center = SkyCoord(
-            np.mean(first_tbl["ra"]),
-            np.mean(first_tbl["dec"]),
-            unit="deg",
-        )
         catalog = fetch_standard_calibration_catalog(
             context.filter_list,
             field_center,
@@ -106,8 +113,22 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
             calibration_catalog_mag_range=config.calibration_catalog_mag_range,
             vizier_dict=config.vizier_dict,
             path_calibration_file=config.path_calibration_file,
+            exclude_known_variables=config.exclude_known_variables,
+            exclude_known_variables_radius=config.exclude_known_variables_radius,
         )
-        context.calibration_catalog = catalog
+    elif (
+        config.exclude_known_variables
+        and catalog is not None
+        and len(catalog) > 0
+        and not catalog.meta.get(KNOWN_VARIABLES_EXCLUDED_META)
+    ):
+        catalog = drop_catalog_rows_near_known_variables(
+            catalog,
+            field_center,
+            config.calibration_catalog_radius_arcmin,
+            radius=config.exclude_known_variables_radius,
+        )
+    context.calibration_catalog = catalog
     if catalog is not None and len(catalog) > 0 and context.filter_list:
         require_catalog_bands_for_filters(catalog, context.filter_list)
     out = {}

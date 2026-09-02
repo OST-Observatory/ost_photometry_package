@@ -193,6 +193,8 @@ def test_calibration_match_radius_is_independent_of_separation_limit():
     assert cfg.separation_limit.to_value(u.arcsec) == pytest.approx(3.0)
     assert cfg.correlation.separation_limit.to_value(u.arcsec) == pytest.approx(3.0)
     assert cfg.calibration.calibration_match_radius.to_value(u.arcsec) == pytest.approx(1.0)
+    assert cfg.exclude_known_variables is True
+    assert cfg.exclude_known_variables_radius.to_value(u.arcsec) == pytest.approx(1.0)
 
 
 def test_linear_fit_ensemble_preset():

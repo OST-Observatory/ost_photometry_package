@@ -287,6 +287,9 @@ class CalibrationConfig:
     #: On-sky radius for matching extracted stars to the calibration catalog.
     #: Independent of ``CorrelationConfig.separation_limit`` (intra/inter-filter).
     calibration_match_radius: u.Quantity = 2.0 * u.arcsec
+    #: Drop catalog stars that coincide with VSX (known variables) before the fit.
+    exclude_known_variables: bool = True
+    exclude_known_variables_radius: u.Quantity = 1.0 * u.arcsec
     #: Reject catalog stars whose ``err_<filter>`` sits above the binned p84
     #: ridge of all detections at that magnitude.
     calibrator_error_p84_clip: bool = True

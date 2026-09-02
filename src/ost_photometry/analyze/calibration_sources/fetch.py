@@ -29,6 +29,11 @@ from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
 
 from ... import calibration_parameters, style, terminal_output
+from .known_variables import (
+    DEFAULT_EXCLUDE_RADIUS,
+    VSX_VIZIER_ID,
+    drop_catalog_rows_near_known_variables,
+)
 from .transforms import add_johnson_ri_to_standard_table
 from .vizier_query import get_vizier_catalog
 
@@ -465,6 +470,8 @@ def fetch_standard_calibration_catalog(
     path_calibration_file: str | None = None,
     apply_sloan_to_johnson_ri: bool = True,
     indent: int = 1,
+    exclude_known_variables: bool = True,
+    exclude_known_variables_radius: u.Quantity | float = DEFAULT_EXCLUDE_RADIUS,
 ) -> Table:
     """
     Fetch a calibration catalog and return the standard-schema ``Table``.
@@ -491,6 +498,10 @@ def fetch_standard_calibration_catalog(
         Required for ``simbad_vot``.
     apply_sloan_to_johnson_ri
         For generic Vizier: add Johnson R/I from ``mag_std_r``/``mag_std_i`` if missing.
+    exclude_known_variables
+        Drop catalog rows that coincide with VSX (or similar) variables, so they
+        never receive ``mag_std_*`` and never enter the ZP fit. Default on
+        (legacy calibration behaviour).
     """
     if vizier_dict is None:
         vizier_dict = calibration_parameters.vizier_dict
@@ -562,4 +573,17 @@ def fetch_standard_calibration_catalog(
             f"-> EXIT {style.Bcolors.ENDC}"
         )
 
+    if (
+        exclude_known_variables
+        and catalog_id != VSX_VIZIER_ID
+        and std is not None
+        and len(std) > 0
+    ):
+        std = drop_catalog_rows_near_known_variables(
+            std,
+            center,
+            field_of_view_arcmin,
+            radius=exclude_known_variables_radius,
+            indent=indent + 1,
+        )
     return std
