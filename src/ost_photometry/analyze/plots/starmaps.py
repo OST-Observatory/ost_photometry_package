@@ -25,6 +25,25 @@ from .simbad_galaxy import (
 
 plt.switch_backend("Agg")
 
+
+def _plot_image_array(image) -> np.ndarray:
+    """2-D float image from an ndarray, CCDData, HDU, Quantity, or ``.data`` container."""
+    if isinstance(image, np.ndarray):
+        arr = image
+    else:
+        arr = getattr(image, "data", image)
+        if hasattr(arr, "value") and not isinstance(arr, np.ndarray):
+            arr = arr.value
+    out = np.asarray(arr, dtype=np.float64)
+    if out.ndim == 3 and out.shape[-1] in (3, 4):
+        out = out.mean(axis=-1)
+    while out.ndim > 2:
+        out = out[0]
+    if out.ndim != 2:
+        raise ValueError(f"expected a 2-D image, got shape {out.shape}")
+    return np.ascontiguousarray(out)
+
+
 def compare_images(
         output_dir: str, original_image: np.ndarray,
         comparison_image: np.ndarray, file_type: str = 'pdf') -> None:
@@ -37,29 +56,32 @@ def compare_images(
         Output directory
 
     original_image
-        Original image data
+        Original image (ndarray, CCDData, FITS HDU, or an object with ``.data``)
 
     comparison_image
-        Comparison image data
+        Comparison image (same types as ``original_image``)
 
     file_type
         Type of plot file to be created
         Default is ``pdf``.
     """
+    sci = _plot_image_array(original_image)
+    ref = _plot_image_array(comparison_image)
+
     #   Prepare plot
     plt.figure(figsize=(12, 7))
     ax1 = plt.subplot(1, 2, 1)
     ax2 = plt.subplot(1, 2, 2, sharex=ax1, sharey=ax1)
 
     #   Original image: normalize and plot
-    norm = simple_norm(original_image.data, 'log', percent=99.)
-    ax1.imshow(original_image.data, norm=norm, cmap='gray')
+    norm = simple_norm(sci, 'log', percent=99.)
+    ax1.imshow(sci, norm=norm, cmap='gray')
     ax1.set_axis_off()
     ax1.set_title('Original image')
 
     #   Comparison image: normalize and plot
-    norm = simple_norm(comparison_image, 'log', percent=99.)
-    ax2.imshow(comparison_image, norm=norm, cmap='gray')
+    norm = simple_norm(ref, 'log', percent=99.)
+    ax2.imshow(ref, norm=norm, cmap='gray')
     ax2.set_axis_off()
     ax2.set_title('Downloaded image')
 
@@ -70,6 +92,7 @@ def compare_images(
         format=file_type,
     )
     plt.close()
+
 
 def _sanitize_starmap_filename_part(text: str) -> str:
     replace_dict = {

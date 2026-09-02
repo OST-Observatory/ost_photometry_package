@@ -43,6 +43,17 @@ def _star_field(shape: tuple[int, int], xy: np.ndarray, fwhm: float) -> np.ndarr
     return img
 
 
+def test_as_2d_accepts_uint8_and_rgb():
+    from ost_photometry.analyze.subtraction_alard_lupton import _as_2d
+
+    plane = np.arange(12, dtype=np.uint8).reshape(3, 4)
+    out = _as_2d(plane)
+    assert out.dtype == np.float64
+    assert out.shape == (3, 4)
+    rgb = np.stack([plane, plane, plane], axis=-1)
+    assert _as_2d(rgb).shape == (3, 4)
+
+
 def test_kernel_basis_shape_and_normalization():
     bases = kernel_basis(15)
     # degrees (2, 1, 0) → 6 + 3 + 1 basis images

@@ -95,6 +95,28 @@ class TestDiagnosticPlotsSmoke(unittest.TestCase):
             )
             self.assertTrue(path2.is_file())
 
+    @unittest.skipUnless(_plotting_stack_available(), "requires matplotlib and photutils")
+    def test_compare_images_accepts_namespace_and_ndarray(self):
+        from types import SimpleNamespace
+
+        import matplotlib
+
+        matplotlib.use("Agg")
+
+        from ost_photometry.analyze.plots.starmaps import compare_images
+
+        sci = np.random.default_rng(0).random((24, 24)) * 50.0 + 10.0
+        ref = np.random.default_rng(1).random((24, 24)) * 50.0 + 10.0
+        with tempfile.TemporaryDirectory() as tmp:
+            compare_images(
+                tmp,
+                SimpleNamespace(data=sci),
+                SimpleNamespace(data=ref),
+                file_type="png",
+            )
+            compare_images(tmp, sci, ref, file_type="png")
+            self.assertTrue((Path(tmp) / "img_comparison.png").is_file())
+
 
 def _load_wcs_residuals():
     root = pkg_src() / "ost_photometry"

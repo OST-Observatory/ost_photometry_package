@@ -18,9 +18,18 @@ _DEFAULT_DEGREES = (2, 1, 0)
 
 
 def _as_2d(data) -> np.ndarray:
-    arr = np.asarray(data, dtype=np.float64)
+    if data is None:
+        raise ValueError("image data is None")
+    raw = data
+    if hasattr(raw, "value") and not isinstance(raw, np.ndarray):
+        raw = raw.value
+    arr = np.asarray(raw, dtype=np.float64)
+    if arr.ndim == 3 and arr.shape[-1] in (3, 4):
+        arr = arr.mean(axis=-1)
     while arr.ndim > 2:
         arr = arr[0]
+    if arr.ndim != 2:
+        raise ValueError(f"expected a 2-D image, got shape {arr.shape}")
     return np.ascontiguousarray(arr)
 
 

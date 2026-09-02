@@ -7,7 +7,6 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 
 import ccdproc as ccdp
 import numpy as np
@@ -310,12 +309,10 @@ def run_hips_reference_subtraction(
     )
 
     if plot_comp:
-        sci_plot = np.asarray(ccd_image.data, dtype=np.float64)
-        ref_plot = np.asarray(hips_hdus[0].data, dtype=np.float64)
         plots.compare_images(
             str(workdir),
-            SimpleNamespace(data=sci_plot),
-            SimpleNamespace(data=ref_plot),
+            ccd_image,
+            hips_hdus[0],
             file_type=file_type_plots,
         )
 
