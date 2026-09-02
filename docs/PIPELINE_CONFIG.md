@@ -186,6 +186,7 @@ Most QC figures under `<output>/diagnostics/<step>/` are **on by default** (grow
 | `photometry_radial_growth_curve` | Aperture growth for brightest star (off by default) |
 | `correlation_inter_filter_separation_plot` | Inter-filter match separations **and** residual geometry (quiver on the reference image, radial vs tangential vs radius, plus overview). See [DIAGNOSTICS.md](DIAGNOSTICS.md). |
 | `correlation_inter_filter_max_pair_plots` | Cap on individual pair PDFs **and** geometry figures (default `25`; `None` = all; `0` = overview only) |
+| `calibration_max_epoch_plots` | Cap on **per-epoch** calibration QC PDFs (cross-match, mag–error, catalog checks). Default `25`; `None` = all epochs; `0` = skip (combined histogram still uses the first epoch). C7 nights with many exposures otherwise write ~10 PDFs per epoch with no terminal progress after `Magnitude output`. |
 | `exposure_pairing_overview` | Pairing table `diagnostics/correlation/exposure_pairing_pairs.ecsv` + ΔJD plot (same groups as `exposure_pairing`) |
 | `calibration_instrumental_vs_catalog` | Instrumental vs catalog magnitudes (fit residual vs mag; used vs excluded) |
 | `calibration_zeropoint_residual_histogram` | Fit-residual histogram (same \(r\) as the calibration model) |

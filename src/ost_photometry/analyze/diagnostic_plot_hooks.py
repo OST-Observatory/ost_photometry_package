@@ -673,13 +673,44 @@ def run_diagnostic_plots_phase(
             if not epochs:
                 return
             try:
-                first_eid = sorted(epochs.keys())[0]
-                for eid, t in epochs.items():
+                epoch_ids = sorted(epochs.keys())
+                first_eid = epoch_ids[0]
+                n_epochs = len(epoch_ids)
+                max_raw = getattr(dp, "calibration_max_epoch_plots", 25)
+                if max_raw is None or (
+                    isinstance(max_raw, int) and max_raw < 0
+                ):
+                    max_epoch_plots = None
+                else:
+                    max_epoch_plots = int(max_raw)
+                cap_note = (
+                    f", first {max_epoch_plots} of {n_epochs}"
+                    if max_epoch_plots is not None
+                    else f", {n_epochs} epochs"
+                )
+                terminal_output.print_to_terminal(
+                    f"Calibration diagnostic plots{cap_note} ...",
+                    indent=2,
+                    style_name="NORMAL",
+                )
+                img = _reference_image(context, config)
+                image_data = _image_array_for_plot(img)
+                img_wcs = getattr(img, "wcs", None) if img is not None else None
+                n_written = 0
+                for eid in epoch_ids:
+                    t = epochs[eid]
+                    write_epoch = max_epoch_plots is None or (
+                        max_epoch_plots != 0 and n_written < max_epoch_plots
+                    )
                     sep_cal = np.array([])
                     if "match_sep_arcsec" in t.colnames:
                         sep_cal = np.asarray(t["match_sep_arcsec"], dtype=float)
                         sep_cal = sep_cal[np.isfinite(sep_cal)]
-                    if dp.calibration_crossmatch_separation_histogram and sep_cal.size:
+                    if (
+                        write_epoch
+                        and dp.calibration_crossmatch_separation_histogram
+                        and sep_cal.size
+                    ):
                         plots.plot_calibration_crossmatch_separations(
                             sep_cal,
                             out_d,
@@ -703,10 +734,7 @@ def run_diagnostic_plots_phase(
                             filename_stem=diag_stem,
                             title=f"Catalog cross-match diagnostics ({eid})",
                         )
-                        img = _reference_image(context, config)
-                        vec = plots.catalog_match_pixel_residuals(
-                            t, getattr(img, "wcs", None) if img is not None else None
-                        )
+                        vec = plots.catalog_match_pixel_residuals(t, img_wcs)
                         if vec is not None:
                             x, y, dx, dy, sep_vec = vec
                             geom_stem = (
@@ -721,7 +749,7 @@ def run_diagnostic_plots_phase(
                                 dy,
                                 out_d,
                                 ft,
-                                image_data=_image_array_for_plot(img),
+                                image_data=image_data,
                                 sep_arcsec=sep_vec,
                                 filename_stem=geom_stem,
                                 title="Catalog cross-match residual geometry"
@@ -752,7 +780,7 @@ def run_diagnostic_plots_phase(
                             other_filters=others,
                         )
 
-                    if dp.photometry_mag_vs_error_scatter:
+                    if write_epoch and dp.photometry_mag_vs_error_scatter:
                         for f in context.filter_list:
                             mc, ec = f"mag_{f}", f"err_{f}"
                             if mc not in t.colnames or ec not in t.colnames:
@@ -780,7 +808,7 @@ def run_diagnostic_plots_phase(
                                 filename_stem=f"photometry_mag_vs_error_{f}_{eid}",
                             )
 
-                    if (
+                    if write_epoch and (
                         dp.calibration_instrumental_vs_catalog
                         or dp.calibration_zeropoint_residual_histogram
                         or dp.calibration_zeropoint_residual_vs_color
@@ -789,6 +817,18 @@ def run_diagnostic_plots_phase(
                         _plot_catalog_extraction_checks(
                             context, config, t, eid, out_d, ft, dp
                         )
+                    if write_epoch:
+                        n_written += 1
+                if (
+                    max_epoch_plots is not None
+                    and n_epochs > max_epoch_plots
+                ):
+                    _warn(
+                        f"Calibration diagnostics: wrote per-epoch plots "
+                        f"for the first {max_epoch_plots} of {n_epochs} "
+                        f"epochs. "
+                        f"(calibration_max_epoch_plots={max_epoch_plots})"
+                    )
             except Exception as exc:
                 _warn(f"Diagnostic plot (calibration_differential): {exc}")
 

@@ -341,12 +341,22 @@ class CalibrationStep(base.PipelineStep):
                     rts = f"_{filter_list[0]}-{filter_list[1]}"
                 else:
                     rts = ""
-                write_epoch_native_magnitudes(
+                terminal_output.print_to_terminal(
+                    "Writing calibrated magnitudes table ...",
+                    indent=2,
+                    style_name="NORMAL",
+                )
+                out_path = write_epoch_native_magnitudes(
                     obs,
                     table_native,
                     object_id=config.object_id,
                     photometry_extraction_method=config.photometry_extraction_method,
                     rts=rts,
+                )
+                terminal_output.print_to_terminal(
+                    f"Wrote {out_path.name} ({len(table_native)} rows)",
+                    indent=2,
+                    style_name="INFO",
                 )
         else:
             inst = instrumental_epoch_native_from_calibration_epochs(epochs, filter_list)

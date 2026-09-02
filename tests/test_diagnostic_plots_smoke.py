@@ -59,6 +59,9 @@ class TestDiagnosticPlotsSmoke(unittest.TestCase):
         cfg = PipelineConfig()
         self.assertIsInstance(cfg.diagnostic_plots, DiagnosticPlots)
         self.assertTrue(cfg.diagnostic_plots.calibration_instrumental_vs_catalog)
+        self.assertEqual(cfg.diagnostic_plots.calibration_max_epoch_plots, 25)
+        cfg.apply_overrides(diagnostic_plots__calibration_max_epoch_plots=5)
+        self.assertEqual(cfg.diagnostic_plots.calibration_max_epoch_plots, 5)
 
     @unittest.skipUnless(_plotting_stack_available(), "requires matplotlib and photutils")
     def test_synthetic_inter_filter_separation_plot(self):

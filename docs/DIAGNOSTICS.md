@@ -180,6 +180,11 @@ is.
 | `calibration_crossmatch_geometry` | Same 2×2 quiver / radial / tangential layout as the inter-filter geometry (catalog projected onto the image WCS) |
 
 Written with the histogram when `calibration_crossmatch_separation_histogram` is on.
+Per-epoch copies of these figures (and mag–error / catalog-check panels) are
+capped by `calibration_max_epoch_plots` (default 25), same idea as the
+inter-filter pair cap. After `Magnitude output` the pipeline writes the
+calibrated ECSV and then these plots — that was a silent wait on C7 nights
+with many epochs.
 
 ### How to read them
 

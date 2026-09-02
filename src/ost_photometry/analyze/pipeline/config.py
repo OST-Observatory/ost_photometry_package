@@ -108,6 +108,9 @@ class DiagnosticPlots:
     #: Max individual inter-filter pair PDFs / geometry figures
     #: (``None`` = all; ``0`` = overview only). Geometry quiver plots share this cap.
     correlation_inter_filter_max_pair_plots: int | None = 25
+    #: Max per-epoch calibration QC PDFs (cross-match, mag–error, catalog checks).
+    #: ``None`` = all epochs; ``0`` = none (combined histogram still uses epoch 0).
+    calibration_max_epoch_plots: int | None = 25
     #: ΔJD / image-id pairing table + plot (same groups as ``exposure_pairing``).
     exposure_pairing_overview: bool = True
     combined_separation_histograms: bool = True
