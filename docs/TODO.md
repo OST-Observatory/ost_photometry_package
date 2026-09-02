@@ -247,7 +247,7 @@ What remains is architecture: HiPS is one **template source**, not the whole
 difference-image product. Do **not** start with the legacy trim
 `(0, 1599, 0, 2501)`, extra survey strings in config, or HOTPANTS flag
 tuning while there is still no night template, no detection, and one
-overwritten `hotpants_diff.fits`.
+overwritten `diff.fits`.
 
 ### Split Template / Subtractor / Detection (P2)
 
@@ -288,7 +288,7 @@ movers.
 FWHM, dipole flag, `matched_id` or empty, `motion_arcsec_per_h` if linked).
 That table is the science product; FITS stay under `work/`. Diagnostics
 under `diagnostics/subtract/` with `epoch_id` / `image_id` in the filename,
-not one overwritten `hotpants_diff.fits`. Result list on `context`.
+not one overwritten `diff.fits`. Result list on `context`.
 
 ### Subtractor backends (P3)
 

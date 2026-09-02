@@ -38,7 +38,13 @@ def _match_shapes(sci: np.ndarray, tmpl: np.ndarray) -> tuple[np.ndarray, np.nda
         return sci, tmpl
     h = min(sci.shape[0], tmpl.shape[0])
     w = min(sci.shape[1], tmpl.shape[1])
-    return sci[:h, :w], tmpl[:h, :w]
+
+    def _center(arr: np.ndarray) -> np.ndarray:
+        y0 = (arr.shape[0] - h) // 2
+        x0 = (arr.shape[1] - w) // 2
+        return arr[y0 : y0 + h, x0 : x0 + w]
+
+    return _center(sci), _center(tmpl)
 
 
 def _sky_level(data: np.ndarray) -> tuple[float, float]:
@@ -104,7 +110,9 @@ def _cutout(data: np.ndarray, x: float, y: float, half: int) -> np.ndarray | Non
 def _stamp_snr(stamp: np.ndarray) -> float:
     sky = _border_sky(stamp)
     noise = float(np.nanstd(stamp - sky))
-    peak = float(np.nanmax(stamp) - sky)
+    hi = float(np.nanmax(stamp) - sky)
+    lo = float(sky - np.nanmin(stamp))
+    peak = max(hi, lo)
     if not np.isfinite(noise) or noise <= 0:
         return 0.0
     return peak / noise
@@ -122,11 +130,124 @@ def _aperture_flux(stamp: np.ndarray, radius: float = 5.0) -> float:
     return float(np.sum(vals))
 
 
+def _shift_to_peak(
+    data: np.ndarray,
+    x: float,
+    y: float,
+    half: int,
+    *,
+    max_shift: float = 10.0,
+) -> tuple[float, float]:
+    """Move ``(x, y)`` to the local positive peak (handles a few pixels of WCS error)."""
+    stamp = _cutout(data, x, y, half)
+    if stamp is None:
+        return x, y
+    sky = _border_sky(stamp)
+    work = stamp - sky
+    if float(np.nanmax(work)) < float(-np.nanmin(work)):
+        work = -work
+    cy = stamp.shape[0] / 2.0 - 0.5
+    cx = stamp.shape[1] / 2.0 - 0.5
+    yy, xx = np.indices(stamp.shape)
+    dist2 = (yy - cy) ** 2 + (xx - cx) ** 2
+    work = np.where((dist2 <= max_shift**2) & (work > 0) & np.isfinite(work), work, 0.0)
+    total = float(work.sum())
+    if total <= 0:
+        return x, y
+    dx = float((work * xx).sum() / total - cx)
+    dy = float((work * yy).sum() / total - cy)
+    return x + dx, y + dy
+
+
+def _template_polarity(template: np.ndarray, star_xy: np.ndarray, half: int = 9) -> float:
+    """``+1`` if stars are brighter than sky, ``-1`` if they are dips (photographic)."""
+    deltas: list[float] = []
+    for x, y in np.asarray(star_xy, dtype=float).reshape(-1, 2)[:40]:
+        xt, yt = _shift_to_peak(template, x, y, half, max_shift=float(min(half - 2, 10)))
+        stamp = _cutout(template, xt, yt, half)
+        if stamp is None:
+            continue
+        sky = _border_sky(stamp)
+        cy, cx = stamp.shape[0] // 2, stamp.shape[1] // 2
+        r = 2
+        core = stamp[cy - r : cy + r + 1, cx - r : cx + r + 1]
+        delta = float(np.nanmedian(core) - sky)
+        if np.isfinite(delta):
+            deltas.append(delta)
+    if len(deltas) < 3:
+        return 1.0
+    return 1.0 if float(np.median(deltas)) >= 0.0 else -1.0
+
+
+def _stamp_fwhm(data: np.ndarray, star_xy: np.ndarray, half: int = 11) -> float:
+    """Median Gaussian-equivalent FWHM from star stamps (NaN if too few)."""
+    fwhms: list[float] = []
+    xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
+    for x, y in xy[:25]:
+        xt, yt = _shift_to_peak(data, x, y, half, max_shift=float(min(half - 2, 10)))
+        stamp = _cutout(data, xt, yt, half)
+        if stamp is None or _stamp_snr(stamp) < 3.0:
+            continue
+        sky = _border_sky(stamp)
+        work = stamp - sky
+        if float(np.nanmax(work)) < float(-np.nanmin(work)):
+            work = -work
+        work = np.where(np.isfinite(work), work, 0.0)
+        work = np.clip(work, 0.0, None)
+        total = float(work.sum())
+        if total <= 0:
+            continue
+        yy, xx = np.indices(stamp.shape)
+        cy = stamp.shape[0] / 2.0 - 0.5
+        cx = stamp.shape[1] / 2.0 - 0.5
+        varx = float(((xx - cx) ** 2 * work).sum() / total)
+        vary = float(((yy - cy) ** 2 * work).sum() / total)
+        sigma = float(np.sqrt(max((varx + vary) / 2.0, 0.0)))
+        if sigma > 0.3:
+            fwhms.append(2.355 * sigma)
+    if len(fwhms) < 2:
+        return float("nan")
+    return float(np.median(fwhms))
+
+
+def _median_peak_offset(
+    data: np.ndarray,
+    star_xy: np.ndarray,
+    half: int = 11,
+) -> tuple[float, float]:
+    """Median ``(dx, dy)`` from given positions to the local template peak."""
+    dxs: list[float] = []
+    dys: list[float] = []
+    xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
+    for x, y in xy[:40]:
+        xt, yt = _shift_to_peak(data, x, y, half, max_shift=float(min(half - 2, 10)))
+        dxs.append(xt - x)
+        dys.append(yt - y)
+    if len(dxs) < 3:
+        return 0.0, 0.0
+    return float(np.median(dxs)), float(np.median(dys))
+
+
+def _align_template_to_stars(
+    template: np.ndarray,
+    star_xy: np.ndarray,
+    half: int = 11,
+) -> tuple[np.ndarray, float, float]:
+    """Shift ``template`` so its stars land on ``star_xy`` (science positions)."""
+    from scipy.ndimage import shift as nd_shift
+
+    dx, dy = _median_peak_offset(template, star_xy, half=half)
+    if abs(dx) < 0.05 and abs(dy) < 0.05:
+        return template, 0.0, 0.0
+    aligned = nd_shift(template, shift=(-dy, -dx), order=1, mode="nearest")
+    return np.ascontiguousarray(aligned, dtype=np.float64), dx, dy
+
+
 def find_kernel_stars(
     science: np.ndarray,
     *,
     n_stars: int = 40,
-    fwhm: float = 3.0,
+    fwhm: float = 4.0,
     threshold_sigma: float = 5.0,
     min_separation: float | None = None,
 ) -> np.ndarray:
@@ -150,11 +271,12 @@ def find_kernel_stars(
     if "flux" in tbl.colnames:
         tbl.sort("flux")
         tbl.reverse()
-    skip_bright = max(1, int(0.1 * len(tbl))) if len(tbl) > 8 else 0
-    sep = float(min_separation) if min_separation is not None else max(8.0, 3.0 * fwhm)
+    img_max = float(np.nanmax(sci))
+    sat = 0.95 * img_max if np.isfinite(img_max) and img_max > 0 else np.inf
+    sep = float(min_separation) if min_separation is not None else max(8.0, 2.5 * fwhm)
     xy: list[tuple[float, float]] = []
-    for i, row in enumerate(tbl):
-        if i < skip_bright:
+    for row in tbl:
+        if "peak" in tbl.colnames and float(row["peak"]) > sat:
             continue
         x, y = float(row[x_col]), float(row[y_col])
         if any((x - x0) ** 2 + (y - y0) ** 2 < sep**2 for x0, y0 in xy):
@@ -173,25 +295,37 @@ def flux_scale_from_stamps(
     star_xy: np.ndarray,
     *,
     half: int = 11,
+    aperture_radius: float = 6.0,
 ) -> float:
     """Robust science/template flux ratio from star stamps (after local sky)."""
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
+    xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
+    if len(xy) == 0:
+        raise RuntimeError("Need star positions to estimate the flux scale")
     ratios: list[float] = []
-    for x, y in np.asarray(star_xy, dtype=float).reshape(-1, 2):
+    for x, y in xy:
+        xt, yt = _shift_to_peak(tmpl, x, y, half, max_shift=float(min(half - 2, 10)))
         s = _cutout(sci, x, y, half)
-        t = _cutout(tmpl, x, y, half)
+        t = _cutout(tmpl, xt, yt, half)
         if s is None or t is None:
             continue
-        if _stamp_snr(s) < 5.0 or _stamp_snr(t) < 4.0:
+        if _stamp_snr(s) < 4.0 or _stamp_snr(t) < 2.0:
             continue
-        fs = _aperture_flux(s)
-        ft = _aperture_flux(t)
-        if ft > 0 and fs > 0 and np.isfinite(fs) and np.isfinite(ft):
+        fs = _aperture_flux(s, radius=aperture_radius)
+        ft = _aperture_flux(t, radius=aperture_radius)
+        # DSS / photographic templates have negative star cores; the ratio may
+        # be negative and is applied as a signed scale (or an invert + |scale|).
+        if (
+            abs(ft) > 1e-6
+            and abs(fs) > 1e-6
+            and np.isfinite(fs)
+            and np.isfinite(ft)
+        ):
             ratios.append(fs / ft)
-    if len(ratios) < 3:
-        raise RuntimeError("Need at least 3 star stamps to estimate the flux scale")
+    if not ratios:
+        raise RuntimeError("Need at least 1 star stamp to estimate the flux scale")
     scale = float(np.median(ratios))
-    if not np.isfinite(scale) or scale <= 0 or scale > 1e6:
+    if not np.isfinite(scale) or abs(scale) < 1e-8 or abs(scale) > 1e6:
         raise RuntimeError(f"Unusable flux scale {scale}")
     return scale
 
@@ -199,24 +333,34 @@ def flux_scale_from_stamps(
 def flux_scale_subtract(
     science: np.ndarray,
     template: np.ndarray,
+    star_xy: np.ndarray | None = None,
 ) -> tuple[np.ndarray, float]:
     """Science minus a robust scalar times the template, plus a sky offset."""
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
-    ok = np.isfinite(sci) & np.isfinite(tmpl)
-    if np.count_nonzero(ok) < 16:
-        return sci - tmpl, 1.0
-    sci_med, _ = _sky_level(sci)
-    tmpl_med, _ = _sky_level(tmpl)
+    sci_med, sci_std = _sky_level(sci)
+    tmpl_med, tmpl_std = _sky_level(tmpl)
     sci0 = sci - sci_med
     tmpl0 = tmpl - tmpl_med
-    peak = float(np.nanpercentile(np.abs(tmpl0[ok]), 99.0))
-    bright = ok & (np.abs(tmpl0) > max(0.1 * peak, 1e-8))
-    if np.count_nonzero(bright) < 16:
-        scale = 1.0
+    xy = None if star_xy is None else np.asarray(star_xy, dtype=float).reshape(-1, 2)
+    if xy is not None and len(xy) > 0:
+        try:
+            scale = flux_scale_from_stamps(sci0, tmpl0, xy)
+            return sci0 - scale * tmpl0, scale
+        except RuntimeError:
+            pass
+    ok = np.isfinite(sci0) & np.isfinite(tmpl0)
+    bright = ok & (sci0 > max(5.0 * sci_std, float(np.nanpercentile(sci0[ok], 90.0))))
+    both = bright & (np.abs(tmpl0) > 3.0 * tmpl_std)
+    if np.count_nonzero(both) < 16:
+        scale = float(sci_std / tmpl_std) if tmpl_std > 0 else 1.0
+        if xy is not None and len(xy) > 0:
+            scale = abs(scale) * _template_polarity(tmpl0, xy)
     else:
-        scale = float(np.nanmedian(sci0[bright] / tmpl0[bright]))
-    if not np.isfinite(scale) or abs(scale) > 1e6:
-        scale = 1.0
+        scale = float(np.nanmedian(sci0[both] / tmpl0[both]))
+    if not np.isfinite(scale) or abs(scale) > 1e6 or abs(scale) < 1e-4:
+        scale = float(sci_std / tmpl_std) if tmpl_std > 0 else 1.0
+        if xy is not None and len(xy) > 0:
+            scale = abs(scale) * _template_polarity(tmpl0, xy)
     return sci0 - scale * tmpl0, scale
 
 
@@ -244,13 +388,14 @@ def fit_alard_lupton_kernel(
     used = 0
     xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
     for x, y in xy:
+        xt, yt = _shift_to_peak(tmpl, x, y, half_stamp, max_shift=10.0)
         s = _cutout(sci, x, y, half_stamp)
-        t = _cutout(tmpl, x, y, half_stamp)
+        t = _cutout(tmpl, xt, yt, half_stamp)
         if s is None or t is None:
             continue
         if not np.all(np.isfinite(s)) or not np.all(np.isfinite(t)):
             continue
-        if _stamp_snr(s) < 5.0 or _stamp_snr(t) < 4.0:
+        if _stamp_snr(s) < 4.0 or _stamp_snr(t) < 2.0:
             continue
         s = s - _border_sky(s)
         t = t - _border_sky(t)
@@ -277,14 +422,15 @@ def alard_lupton_difference(
     *,
     star_xy: np.ndarray | None = None,
     n_stars: int = 40,
-    fwhm: float = 3.0,
+    fwhm: float = 4.0,
     ksize: int | None = None,
 ) -> tuple[np.ndarray, str]:
     """
-    ``science - (kernel ⊗ scaled_template)`` after matching sky and flux.
+    Science minus a PSF-matched, flux-scaled template.
 
-    Falls back to a scalar flux scale if the kernel fit has too few stamps.
-    Returns ``(difference, method)`` with ``method`` ``alard_lupton`` or ``flux_scale``.
+    Convolves whichever image is sharper. Falls back to a scalar flux scale if
+    the kernel fit has too few stamps. Returns ``(difference, method)`` with
+    ``method`` ``alard_lupton`` or ``flux_scale``.
     """
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
     sci_sky, _ = _sky_level(sci)
@@ -303,22 +449,72 @@ def alard_lupton_difference(
                 sci0,
                 n_stars=max(n_stars, 20),
                 fwhm=fwhm,
-                min_separation=max(8.0, 0.9 * ksize),
+                threshold_sigma=3.5,
+                min_separation=max(8.0, 2.5 * fwhm),
             )
-        scale = flux_scale_from_stamps(sci0, tmpl0, xy, half=max(7, ksize // 2))
-        tmpl_s = scale * tmpl0
-        kernel, n_used = fit_alard_lupton_kernel(
-            sci0, tmpl_s, xy, ksize=ksize, n_stars=n_stars
+        xy = np.asarray(xy, dtype=float).reshape(-1, 2)
+        if len(xy) == 0:
+            raise RuntimeError("No kernel stars found on the science image")
+        scale = flux_scale_from_stamps(
+            sci0, tmpl0, xy, half=max(9, ksize // 2), aperture_radius=max(5.0, 1.6 * fwhm)
         )
-        matched = fftconvolve(tmpl_s, kernel, mode="same")
-        residual = sci0 - matched
+        if scale < 0:
+            tmpl0 = -tmpl0
+            scale = -scale
+            terminal_output.print_to_terminal(
+                "HiPS/template stars are dips; inverting template before the kernel fit",
+                indent=2,
+                style_name="WARNING",
+            )
+        tmpl0, dx, dy = _align_template_to_stars(
+            tmpl0, xy, half=max(9, ksize // 2)
+        )
+        if abs(dx) > 0.05 or abs(dy) > 0.05:
+            terminal_output.print_to_terminal(
+                f"Aligned template to science stars (Δx={dx:+.2f}, Δy={dy:+.2f} px)",
+                indent=2,
+                style_name="NORMAL",
+            )
+            scale = flux_scale_from_stamps(
+                sci0,
+                tmpl0,
+                xy,
+                half=max(9, ksize // 2),
+                aperture_radius=max(5.0, 1.6 * fwhm),
+            )
+            if scale < 0:
+                tmpl0 = -tmpl0
+                scale = -scale
+        tmpl_s = scale * tmpl0
+        sci_fw = _stamp_fwhm(sci0, xy, half=max(9, ksize // 2))
+        tmpl_fw = _stamp_fwhm(tmpl_s, xy, half=max(9, ksize // 2))
+        # A kernel can only broaden. DSS/HiPS is often broader than the CCD, so
+        # convolve the science image down to the template seeing.
+        convolve_template = True
+        if np.isfinite(sci_fw) and np.isfinite(tmpl_fw) and tmpl_fw > 1.15 * sci_fw:
+            convolve_template = False
+        if convolve_template:
+            kernel, n_used = fit_alard_lupton_kernel(
+                sci0, tmpl_s, xy, ksize=ksize, n_stars=n_stars
+            )
+            residual = sci0 - fftconvolve(tmpl_s, kernel, mode="same")
+            which = "template→science"
+        else:
+            kernel, n_used = fit_alard_lupton_kernel(
+                tmpl_s, sci0, xy, ksize=ksize, n_stars=n_stars
+            )
+            residual = fftconvolve(sci0, kernel, mode="same") - tmpl_s
+            which = "science→template"
         _, resid_sky, _ = sigma_clipped_stats(residual, sigma=3.0, maxiters=5)
         if not np.isfinite(resid_sky):
             resid_sky = 0.0
         ksum = float(np.sum(kernel))
+        seeing = ""
+        if np.isfinite(sci_fw) and np.isfinite(tmpl_fw):
+            seeing = f", seeing={sci_fw:.2f}/{tmpl_fw:.2f}px"
         terminal_output.print_to_terminal(
             f"Alard–Lupton kernel ({n_used} stamps, ksize={ksize}, "
-            f"flux_scale={scale:.4g}, kernel_sum={ksum:.3f})",
+            f"flux_scale={scale:.4g}, kernel_sum={ksum:.3f}, {which}{seeing})",
             indent=2,
             style_name="NORMAL",
         )
@@ -329,7 +525,7 @@ def alard_lupton_difference(
             indent=2,
             style_name="WARNING",
         )
-        diff, scale = flux_scale_subtract(sci, tmpl)
+        diff, scale = flux_scale_subtract(sci, tmpl, star_xy=xy)
         terminal_output.print_to_terminal(
             f"Flux-scale subtraction (scale={scale:.4g})",
             indent=2,
@@ -346,7 +542,7 @@ def run_alard_lupton(
     output_filename: str = "diff.fits",
     star_xy: np.ndarray | None = None,
     n_stars: int = 40,
-    fwhm: float = 3.0,
+    fwhm: float = 4.0,
     ksize: int | None = None,
 ) -> Path:
     """Write ``science − matched template`` under ``workdir`` (same contract as HOTPANTS)."""

@@ -410,7 +410,7 @@ class HipsConfig:
     hips_reference_subtraction_hotpants_extra_args: tuple[str, ...] = field(
         default_factory=tuple
     )
-    hips_reference_subtraction_output_filename: str = "hotpants_diff.fits"
+    hips_reference_subtraction_output_filename: str = "diff.fits"
 
 
 @dataclass

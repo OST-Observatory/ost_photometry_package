@@ -102,6 +102,43 @@ def test_alard_lupton_handles_sky_and_flux_mismatch():
     assert float(np.std(diff)) < 0.15 * float(np.std(sci - tmpl))
 
 
+def test_alard_lupton_handles_inverted_and_shifted_template():
+    stars = _star_field((180, 180), _STAR_XY, fwhm=3.0)
+    sci = 1.6 * gaussian_filter(stars, sigma=1.0) + 80.0
+    shifted = np.roll(np.roll(stars, 2, axis=1), 1, axis=0)
+    tmpl = -0.03 * shifted + 1200.0
+    diff, method = alard_lupton_difference(sci, tmpl, star_xy=_STAR_XY, fwhm=4.0)
+    assert method == "alard_lupton"
+    assert abs(float(np.median(diff))) < 10.0
+    assert float(np.std(diff)) < 0.25 * float(np.std(sci - tmpl))
+
+
+def test_alard_lupton_matches_when_template_is_broader():
+    """DSS/HiPS-like: template seeing is worse than the science CCD."""
+    stars = _star_field((180, 180), _STAR_XY, fwhm=3.0)
+    sci = 1.6 * stars + 80.0
+    tmpl = -0.03 * gaussian_filter(stars, sigma=1.8) + 1200.0
+    diff, method = alard_lupton_difference(sci, tmpl, star_xy=_STAR_XY, fwhm=4.0)
+    assert method == "alard_lupton"
+    assert abs(float(np.median(diff))) < 12.0
+    cores = []
+    for x, y in _STAR_XY:
+        cut = diff[int(y) - 3 : int(y) + 4, int(x) - 3 : int(x) + 4]
+        cores.append(float(np.nanmax(np.abs(cut))))
+    assert float(np.median(cores)) < 0.25 * 1.6 * 1800.0
+
+
+def test_flux_scale_from_stamps_accepts_photographic_dips():
+    from ost_photometry.analyze.subtraction_alard_lupton import flux_scale_from_stamps
+
+    stars = _star_field((180, 180), _STAR_XY, fwhm=3.0)
+    sci = 1.5 * stars + 40.0
+    tmpl = -0.02 * stars + 900.0
+    scale = flux_scale_from_stamps(sci - np.median(sci), tmpl - np.median(tmpl), _STAR_XY)
+    assert scale < 0
+    assert abs(abs(scale) - (1.5 / 0.02)) / (1.5 / 0.02) < 0.25
+
+
 def test_alard_lupton_falls_back_when_stamps_are_missing():
     xy = np.array([[40.0, 40.0], [55.0, 50.0], [65.0, 60.0]])
     tmpl = _star_field((80, 80), xy, fwhm=3.0)
@@ -123,10 +160,10 @@ def test_run_alard_lupton_writes_fits(tmp_path: Path):
         ccd,
         hdu,
         workdir=tmp_path,
-        output_filename="hotpants_diff.fits",
+        output_filename="diff.fits",
         star_xy=_STAR_XY[:4],
     )
-    assert out == tmp_path / "hotpants_diff.fits"
+    assert out == tmp_path / "diff.fits"
     assert out.is_file()
     written = CCDData.read(out)
     assert written.data.shape == sci.shape
@@ -158,4 +195,4 @@ def test_subtract_science_template_dispatches_to_alard_lupton(tmp_path: Path):
         star_xy=_STAR_XY[:4],
     )
     assert path.is_file()
-    assert path.name == "hotpants_diff.fits"
+    assert path.name == "diff.fits"

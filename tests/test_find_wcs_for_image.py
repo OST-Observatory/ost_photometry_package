@@ -95,10 +95,10 @@ def _hips_module(monkeypatch):
 
     subtraction_mod = types.ModuleType("ost_photometry.analyze.subtraction")
     subtraction_mod.run_hotpants = MagicMock(
-        return_value=Path("/tmp/hotpants_diff.fits")
+        return_value=Path("/tmp/diff.fits")
     )
     subtraction_mod.subtract_science_template = MagicMock(
-        return_value=Path("/tmp/hotpants_diff.fits")
+        return_value=Path("/tmp/diff.fits")
     )
 
     def _resolve_backend(backend="auto", hotpants_executable=None):
@@ -167,7 +167,7 @@ def test_run_hips_reference_subtraction_reuses_image_wcs(
         captured["science_ccd"] = science_ccd
         captured["template_hdu"] = template_hdu
         captured["kwargs"] = kwargs
-        return workdir / "hotpants_diff.fits"
+        return workdir / "diff.fits"
 
     class _FakeHips:
         last_timeout = None
@@ -196,7 +196,7 @@ def test_run_hips_reference_subtraction_reuses_image_wcs(
     )
 
     assert calls == []
-    assert result.difference_fits == workdir / "hotpants_diff.fits"
+    assert result.difference_fits == workdir / "diff.fits"
     assert result.hips_source == "CDS/P/DSS2/blue"
     assert result.hips_from_cache is False
     assert result.subtract_backend == "alard_lupton"
@@ -242,7 +242,7 @@ def test_run_hips_reference_subtraction_solves_wcs_for_single_image(
     monkeypatch.setattr(
         hips_mod.subtraction,
         "subtract_science_template",
-        lambda *args, **kwargs: workdir / "hotpants_diff.fits",
+        lambda *args, **kwargs: workdir / "diff.fits",
     )
 
     run_hips(
@@ -460,7 +460,7 @@ def test_run_hips_maps_v_filter_to_dss2_red(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(
         hips_mod.subtraction,
         "subtract_science_template",
-        lambda *a, **k: workdir / "hotpants_diff.fits",
+        lambda *a, **k: workdir / "diff.fits",
     )
 
     result = hips_mod.run_hips_reference_subtraction(

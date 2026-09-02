@@ -412,9 +412,10 @@ abort** the rest of the analysis.
 | `hips_reference_subtraction_fallback_servers` | CDS `alasky` mirror | Tried after the primary `hips_reference_subtraction_server` |
 | `hips_reference_subtraction_timeout_ms` | `120000` | Converted to seconds for astroquery (`hips2fitsClass.timeout`) |
 | `hips_reference_subtraction_reuse_pipeline_wcs` | `True` | Same WCS on the science `CCDData` and the HiPS query |
+| `hips_reference_subtraction_output_filename` | `diff.fits` | Difference image under `work/subtract/` (legacy `hotpants_diff.fits` is no longer the default) |
 
-Cutouts are cached; `hotpants_diff.fits` is still a single output name (one
-image per run). Night templates, detection, and candidate tables are not in
+Cutouts are cached; `diff.fits` is a single output name (one image per run).
+Night templates, detection, and candidate tables are not in
 this step — see [TODO.md](TODO.md#difference-images).
 
 ## Further reading
