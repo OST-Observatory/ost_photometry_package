@@ -16,6 +16,7 @@ from ost_photometry.analyze.subtraction import (
 )
 from ost_photometry.analyze.subtraction_alard_lupton import (
     alard_lupton_difference,
+    find_kernel_stars,
     kernel_basis,
     run_alard_lupton,
 )
@@ -52,6 +53,24 @@ def test_as_2d_accepts_uint8_and_rgb():
     assert out.shape == (3, 4)
     rgb = np.stack([plane, plane, plane], axis=-1)
     assert _as_2d(rgb).shape == (3, 4)
+
+
+def test_find_kernel_stars_uses_photutils_centroid_columns():
+    tmpl = _star_field((180, 180), _STAR_XY, fwhm=3.0)
+    xy = find_kernel_stars(tmpl, n_stars=6, fwhm=3.0, threshold_sigma=3.0)
+    assert xy.ndim == 2 and xy.shape[1] == 2
+    assert len(xy) >= 3
+    for x, y in xy:
+        dist = np.hypot(_STAR_XY[:, 0] - x, _STAR_XY[:, 1] - y)
+        assert float(np.min(dist)) < 3.0
+
+
+def test_alard_lupton_without_star_xy_uses_finder():
+    tmpl = _star_field((180, 180), _STAR_XY, fwhm=3.0)
+    sci = 1.25 * gaussian_filter(tmpl, sigma=1.1) + 12.0
+    diff, method = alard_lupton_difference(sci, tmpl, star_xy=None, fwhm=4.0)
+    assert method in ("alard_lupton", "flux_scale")
+    assert diff.shape == sci.shape
 
 
 def test_kernel_basis_shape_and_normalization():

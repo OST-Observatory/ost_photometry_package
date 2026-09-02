@@ -93,15 +93,24 @@ def find_kernel_stars(
     tbl = finder(sci - med)
     if tbl is None or len(tbl) == 0:
         return np.empty((0, 2))
-    tbl.sort("flux")
-    tbl.reverse()
-    peak_lim = float(np.nanpercentile(sci, 99.9))
+    from .utils.photometry import xy_column_names
+
+    xy_cols = xy_column_names(tbl)
+    if xy_cols is None:
+        return np.empty((0, 2))
+    x_col, y_col = xy_cols
+    if "flux" in tbl.colnames:
+        tbl.sort("flux")
+        tbl.reverse()
+    peak_col = "peak" if "peak" in tbl.colnames else None
+    sat_peak = None
+    if peak_col is not None and len(tbl) >= 4:
+        sat_peak = float(np.nanpercentile(np.asarray(tbl[peak_col], dtype=float), 98.0))
     xy: list[tuple[float, float]] = []
     for row in tbl:
-        peak = float(row["peak"])
-        if np.isfinite(peak_lim) and peak > peak_lim:
+        if sat_peak is not None and float(row[peak_col]) > sat_peak:
             continue
-        xy.append((float(row["xcentroid"]), float(row["ycentroid"])))
+        xy.append((float(row[x_col]), float(row[y_col])))
         if len(xy) >= int(n_stars):
             break
     if not xy:
@@ -205,9 +214,9 @@ def alard_lupton_difference(
             ksize += 1
         ksize = int(np.clip(ksize, 9, 31))
     xy = star_xy
-    if xy is None or len(np.asarray(xy).reshape(-1, 2)) == 0:
-        xy = find_kernel_stars(sci, n_stars=n_stars, fwhm=fwhm)
     try:
+        if xy is None or len(np.asarray(xy).reshape(-1, 2)) == 0:
+            xy = find_kernel_stars(sci, n_stars=n_stars, fwhm=fwhm)
         kernel, sky, n_used = fit_alard_lupton_kernel(
             sci, tmpl, xy, ksize=ksize, n_stars=n_stars
         )
