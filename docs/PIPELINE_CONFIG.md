@@ -373,7 +373,24 @@ config = PipelineConfig.from_preset("linear_fit_per_night", overrides={"fit_sigm
 config_mk = PipelineConfig.from_preset("extract_protect_calibrators", overrides={"calibration_source": "APASS"})
 ```
 
+## Light curves
 
+`LightCurveStep` is off by default (`skip_light_curve=True`). C7 sets it False.
+The step writes `tables/light_curves.ecsv` and plots views of that table.
+
+| Flag | Default | Role |
+|------|---------|------|
+| `plot_light_curve_objects_of_interest` | True | JD (and folded) plots for OOI under `results/lightcurves/` |
+| `plot_light_curve_calibration_objects` | False | Check-star QC (OOI + K most variable calibrators) and ensemble variability under `diagnostics/lightcurves/` |
+| `plot_light_curve_all_objects` | False | Overview raster (OOI + `light_curve_overview_n` random stars), not one PDF per star |
+| `light_curve_calibrator_qc_n` | 3 | How many calibrators (largest excess RMS) appear on the QC panel |
+| `light_curve_quantity` | `magnitude` | `mag_cal_*` vs normalized flux fallback |
+| `light_curve_color` | None | e.g. `B-V` colour rows and colour light curve |
+| `light_curve_time_scale` | `bjd_tdb` | Barycentric JD when RA/Dec + site exist; else `jd` |
+| `light_curve_outlier_sigma` | 5 | Per-source sigma clip; `None` disables. Flags stay in the table |
+| `light_curve_binning_factor` | None | Folded-curve phase bin width (0–1) or number of bins (≥ 1) |
+
+See [DIAGNOSTICS.md](DIAGNOSTICS.md#light-curves).
 
 ## Further reading
 

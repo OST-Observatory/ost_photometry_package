@@ -145,6 +145,15 @@ def test_protect_calibration_objects_and_extract_protect_calibrators_preset():
     assert mk.skip_correlation_inter is True
     assert mk.skip_light_curve is True
     assert mk.extinction_mode == "none"
+    cfg_lc = PipelineConfig(
+        skip_light_curve=False,
+        light_curve_calibrator_qc_n=4,
+        light_curve_color="B-V",
+        light_curve_time_scale="jd",
+    )
+    assert cfg_lc.light_curve.light_curve_calibrator_qc_n == 4
+    assert cfg_lc.light_curve_color == "B-V"
+    assert cfg_lc.light_curve_time_scale == "jd"
 
 
 def test_extinction_order_and_k_second_config():

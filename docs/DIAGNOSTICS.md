@@ -12,8 +12,9 @@ are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
     calibration/     # catalog match, fit panels, residuals, night summary
     extinction/      # k′ vs airmass
     cluster/         # Gaia μ–π membership (P_mem vs field)
+    lightcurves/     # check-star QC, calibrator variability, overview raster
   results/
-    lightcurves/     # by_id/, calibration/
+    lightcurves/     # OOI JD / folded / colour curves
     cmds/
     starmaps/        # Simbad-annotated maps
   tables/
@@ -258,4 +259,31 @@ The pipeline GMM (or HDBSCAN fallback) writes `is_cluster_member` and
 script uses hard μ (and optional π / RUWE) boxes instead: that is a teaching
 cut, not \(P_\mathrm{mem}\). A star on the edge of the box can be a member in
 the supervisor table and field in the student CMD, or the other way around.
+
+## Light curves
+
+The pipeline writes one long table `tables/light_curves.ecsv` (source × filter ×
+epoch). JD and folded figures under `results/lightcurves/` are views of that
+table. QC lives under `diagnostics/lightcurves/`.
+
+Time is `BJD_TDB − 2450000` when barycentric correction succeeds (observatory
+location + RA/Dec), otherwise `JD − 2450000`. Grey bands mark local nights
+(`floor(JD − 0.5)`). Outlier epochs stay in the table (`flag_outlier`) and are
+drawn as open grey points.
+
+| File (stem) | Content |
+|-------------|---------|
+| `lightcurve_jd_<name>_<filter>` | Science light curve (OOI). Magnitudes inverted; limits from median ± MAD. |
+| `lightcurve_folded_<name>_<filter>` | Phase \(0\ldots 1\) (optionally two cycles), marker at phase 0. |
+| `check_star_qc_<filter>` | OOI plus the **K most variable calibrators** (excess RMS, not raw RMS). |
+| `calibrator_variability_<filter>` | All used calibrators: excess RMS vs magnitude, residual LCs (top-K in colour). |
+| `lightcurve_overview_<filter>` | OOI + N random field stars (only if `plot_light_curve_all_objects`). |
+
+**Excess RMS** is \(\sqrt{\max(0,\mathrm{RMS}^2-\mathrm{median}(\sigma_m)^2)}\)
+on unflagged points. Faint, noisy stars have large raw RMS but little excess;
+a calibrator that is actually variable ranks high. Stats:
+`tables/calibrator_lc_stats.ecsv`. Replot from the long table with the C7
+script `3_plot_lightcurve.py` (`tables/epoch_meta.json` is written at
+calibration).
+
 

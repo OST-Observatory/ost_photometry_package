@@ -92,7 +92,7 @@ class DiagnosticPlots:
     to judge photometry, cross-match, and calibration quality. Disable
     individually via ``diagnostic_plots__<name>=False`` overrides. Growth curves
     stay off (pick a star / more specialized). Layout:
-    ``diagnostics/extraction|correlation|calibration|extinction|cluster``.
+    ``diagnostics/extraction|correlation|calibration|extinction|cluster|lightcurves``.
     """
 
     calibration_crossmatch_separation_histogram: bool = True
@@ -357,11 +357,21 @@ class PostProcessConfig:
 class LightCurveConfig:
     skip_light_curve: bool = True
     plot_light_curve_objects_of_interest: bool = True
+    #: Check-star QC (OOI + most variable calibrators) and ensemble variability.
     plot_light_curve_calibration_objects: bool = False
+    #: Overview raster (OOI + N random), not one PDF per star.
     plot_light_curve_all_objects: bool = False
+    #: Phase-bin width (0–1) or number of phase bins (≥ 1) for folded curves.
     light_curve_binning_factor: float | None = None
     light_curve_quantity: Literal["magnitude", "flux"] = "magnitude"
     light_curve_calibration_rows: Literal["auto", "transformed", "simple"] = "auto"
+    light_curve_overview_n: int = 8
+    light_curve_calibrator_qc_n: int = 3
+    light_curve_outlier_sigma: float | None = 5.0
+    light_curve_color: str | None = None
+    light_curve_time_scale: Literal["bjd_tdb", "jd"] = "bjd_tdb"
+    light_curve_phase_cycles: int = 1
+    light_curve_show_airmass: bool = True
 
 
 @dataclass

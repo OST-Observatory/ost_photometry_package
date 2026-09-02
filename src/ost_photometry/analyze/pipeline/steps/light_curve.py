@@ -1,19 +1,27 @@
-"""Plot and save light curves from calibrated tables or normalized flux (fallback)."""
+"""Build ``light_curves.ecsv`` and plot views (OOI, QC, overview)."""
 
 from __future__ import annotations
 
 import numpy as np
-from astropy.table import Table
+from astropy.table import Table, vstack
 from astropy.time import Time
 
-from .... import checks, terminal_output
+from .... import terminal_output
 from ....output_layout import results_dir, tables_dir
 from ... import calibration
 from ...ooi_ids import ooi_photometry_id
 from ...post_processing.light_curve import (
+    CALIBRATOR_STATS_FILENAME,
+    build_light_curves_table,
+    build_light_curves_table_from_flux,
+    calibrator_variability_stats,
     is_epoch_native_photometry_table,
-    prepare_plot_time_series,
+    plot_from_light_curves_table,
+    top_variable_calibrator_ids,
+    write_epoch_meta_json,
+    write_light_curves_table,
 )
+from ...post_processing.magnitude_systems import table_magnitude_system
 from .. import base
 from ..config import PipelineConfig
 from ..context import AnalysisContext
@@ -53,17 +61,38 @@ def _calibration_object_ids_from_table(
     return sorted({int(i) for i in ids})
 
 
+def _ooi_id_name_pairs(objects_of_interest: list, filter_: str) -> list[tuple[int, str]]:
+    pairs: list[tuple[int, str]] = []
+    seen: set[int] = set()
+    for obj in objects_of_interest:
+        oid = ooi_photometry_id(obj, filter_=filter_)
+        if oid is None:
+            continue
+        oid_i = int(oid)
+        if oid_i in seen:
+            continue
+        seen.add(oid_i)
+        pairs.append((oid_i, str(getattr(obj, "name", oid_i))))
+    return pairs
+
+
+def _parse_period(raw) -> float | None:
+    if raw is None or raw == "?":
+        return None
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0.0 else None
+
+
 class LightCurveStep(base.PipelineStep):
     """
-    After calibration, plot JD light curves per filter.
+    After calibration, write ``tables/light_curves.ecsv`` and plot views.
 
-    Primary path: epoch-native ``table_magnitudes`` with **calibrated**
-    ``mag_cal_*`` / ``err_cal_*`` and ``context.calibration_epoch_meta`` for JDs.
-
-    When only instrumental ``mag_inst_*`` exists (e.g. uncalibrated Clear-filter
-    run), light curves use the same quasi-flux calibration and per-object
-    normalization as ``_run_flux_fallback_for_filter`` — ``NdarrayDistribution``
-    and ``ImageSeries.get_observation_time()``, not raw ``mag_inst_*``.
+    Primary path: epoch-native ``table_magnitudes`` with ``mag_cal_*`` /
+    ``err_cal_*``. Flux fallback fills the same long table from normalized
+    ``ImageSeries`` flux when no epoch-native mag/flux columns exist.
     """
 
     name = "light_curve"
@@ -126,19 +155,26 @@ class LightCurveStep(base.PipelineStep):
             )
 
         tables_dir(output_dir)
-        lc_root = results_dir(output_dir, "lightcurves")
-        if config.plot_light_curve_all_objects:
-            checks.clear_directory(lc_root / "by_id")
-        if config.plot_light_curve_calibration_objects:
-            checks.clear_directory(lc_root / "calibration")
-
-        binning = config.light_curve_binning_factor
-        dist_samples = config.distribution_samples
+        results_dir(output_dir, "lightcurves")
+        write_epoch_meta_json(output_dir, epoch_meta)
 
         terminal_output.print_to_terminal("Light curves", style_name="HEADER")
 
         objects_of_interest = context.objects_of_interest or []
+        object_names: dict[int, str] = {}
+        for obj in objects_of_interest:
+            for filt in context.filter_list:
+                oid = ooi_photometry_id(obj, filter_=filt)
+                if oid is not None:
+                    object_names[int(oid)] = str(getattr(obj, "name", oid))
 
+        cal_ids_all: set[int] = set()
+        if has_tbl:
+            raw_cal = _calibration_object_ids_from_table(tbl)
+            if raw_cal:
+                cal_ids_all.update(int(i) for i in raw_cal)
+
+        parts: list[Table] = []
         for filter_ in context.filter_list:
             use_table = (
                 has_tbl
@@ -155,31 +191,52 @@ class LightCurveStep(base.PipelineStep):
                 and getattr(image_series, "image_list", None)
                 and len(image_series.image_list) > 0
             )
-            ids_cal = _calibration_object_ids_from_table(tbl, filter_) if has_tbl else None
+            ids_cal = (
+                _calibration_object_ids_from_table(tbl, filter_) if has_tbl else None
+            )
+            cal_set = set(int(i) for i in ids_cal) if ids_cal else set()
+            cal_ids_all.update(cal_set)
 
             if use_table:
-                self._run_table_path_for_filter(
-                    tbl,
-                    filter_,
-                    epoch_meta,
-                    obs,
-                    output_dir,
-                    config,
-                    binning,
-                    ids_cal,
-                    objects_of_interest,
+                terminal_output.print_to_terminal(
+                    f"Light curves in filter: {filter_}",
+                    style_name="OKBLUE",
                 )
+                part = build_light_curves_table(
+                    tbl,
+                    [filter_],
+                    epoch_meta=epoch_meta,
+                    quantity=config.light_curve_quantity,
+                    calibration_rows=config.light_curve_calibration_rows,
+                    object_names=object_names,
+                    calibrator_ids=cal_set,
+                    outlier_sigma=config.light_curve_outlier_sigma,
+                    observatory_location=config.observatory_location,
+                    color=None,
+                )
+                if len(part) > 0:
+                    parts.append(part)
             elif use_flux:
-                self._run_flux_fallback_for_filter(
+                terminal_output.print_to_terminal(
+                    f"Light curves in filter: {filter_}",
+                    style_name="OKBLUE",
+                )
+                terminal_output.print_to_terminal(
+                    "No ``mag_cal_*`` light-curve path for this filter. "
+                    "Using normalized flux for the light-curve table.",
+                    indent=2,
+                    style_name="WARNING",
+                )
+                part = self._flux_fallback_table(
                     image_series,
                     filter_,
-                    output_dir,
                     config,
-                    binning,
-                    dist_samples,
-                    ids_cal,
-                    objects_of_interest,
+                    object_names,
+                    cal_set,
+                    tbl if has_tbl else None,
                 )
+                if part is not None and len(part) > 0:
+                    parts.append(part)
             else:
                 terminal_output.print_to_terminal(
                     f"LightCurveStep: no epoch-native table columns for filter "
@@ -187,116 +244,45 @@ class LightCurveStep(base.PipelineStep):
                     style_name="WARNING",
                 )
 
-        return context
+        if not parts:
+            terminal_output.print_to_terminal(
+                "LightCurveStep: no light-curve rows; skipping plots.",
+                style_name="WARNING",
+            )
+            return context
 
-    def _run_table_path_for_filter(
-        self,
-        tbl: Table,
-        filter_: str,
-        epoch_meta: dict,
-        obs,
-        output_dir: str,
-        config: PipelineConfig,
-        binning: float | None,
-        ids_cal,
-        objects_of_interest: list,
-    ) -> None:
+        lc = vstack(parts, metadata_conflicts="silent")
+        if config.light_curve_color:
+            from ...post_processing.light_curve import add_color_index_rows
+
+            lc = add_color_index_rows(lc, config.light_curve_color)
+        path = write_light_curves_table(lc, output_dir)
         terminal_output.print_to_terminal(
-            f"Light curves in filter: {filter_}",
-            style_name="OKBLUE",
+            f"Wrote {path.name} ({len(lc)} rows)",
+            indent=1,
+            style_name="INFO",
         )
 
-        ids_ooi: set[int] = set()
-        if config.plot_light_curve_objects_of_interest:
-            for object_ in objects_of_interest:
-                oid = ooi_photometry_id(object_, filter_=filter_)
-                if oid is None:
-                    continue
-                oid = int(oid)
-                ids_ooi.add(oid)
-                prepare_plot_time_series(
-                    tbl,
-                    None,
-                    filter_,
-                    object_.name,
-                    oid,
-                    output_dir,
-                    binning_factor=binning,
-                    transit_time=getattr(object_, "transit_time", None),
-                    period=getattr(object_, "period", None),
-                    file_type_plots=config.file_type_plots,
-                    epoch_meta=epoch_meta,
-                    light_curve_quantity=config.light_curve_quantity,
-                    light_curve_calibration_rows=config.light_curve_calibration_rows,
-                )
+        self._plot_views(
+            lc,
+            context,
+            config,
+            output_dir,
+            objects_of_interest,
+            cal_ids_all,
+        )
+        return context
 
-        if config.plot_light_curve_calibration_objects and ids_cal is not None:
-            arr = np.asarray(ids_cal)
-            if arr.size and np.any(arr):
-                for index in arr.flatten().astype(int):
-                    prepare_plot_time_series(
-                        tbl,
-                        None,
-                        filter_,
-                        str(int(index)),
-                        int(index),
-                        output_dir,
-                        binning_factor=binning,
-                        file_type_plots=config.file_type_plots,
-                        subdirectory="/calibration",
-                        epoch_meta=epoch_meta,
-                        light_curve_quantity=config.light_curve_quantity,
-                        light_curve_calibration_rows=config.light_curve_calibration_rows,
-                    )
-
-        if config.plot_light_curve_all_objects:
-            uids = np.unique(np.asarray(tbl["id"]).astype(int))
-            cal_set: set[int] = set()
-            if ids_cal is not None and np.size(ids_cal):
-                cal_set = set(
-                    np.asarray(ids_cal).flatten().astype(int).tolist()
-                )
-            for sid in uids:
-                if int(sid) in ids_ooi or int(sid) in cal_set:
-                    continue
-                prepare_plot_time_series(
-                    tbl,
-                    None,
-                    filter_,
-                    str(int(sid)),
-                    int(sid),
-                    output_dir,
-                    binning_factor=binning,
-                    file_type_plots=config.file_type_plots,
-                    subdirectory="/by_id",
-                    epoch_meta=epoch_meta,
-                    light_curve_quantity=config.light_curve_quantity,
-                    light_curve_calibration_rows=config.light_curve_calibration_rows,
-                )
-
-    def _run_flux_fallback_for_filter(
+    def _flux_fallback_table(
         self,
         image_series,
         filter_: str,
-        output_dir: str,
         config: PipelineConfig,
-        binning: float | None,
-        dist_samples: int,
-        ids_cal,
-        objects_of_interest: list,
-    ) -> None:
-        terminal_output.print_to_terminal(
-            f"Light curves in filter: {filter_}",
-            style_name="OKBLUE",
-        )
-        terminal_output.print_to_terminal(
-            "No ``mag_cal_*`` light-curve path for this filter (instrumental-only "
-            "``mag_inst_*`` or no epoch-native table). Using normalized flux for "
-            "light curves.",
-            indent=2,
-            style_name="WARNING",
-        )
-
+        object_names: dict[int, str],
+        cal_set: set[int],
+        phot: Table | None,
+    ) -> Table | None:
+        dist_samples = config.distribution_samples
         quasi = calibration.quasi_flux_calibration_image_series(
             image_series,
             distribution_samples=dist_samples,
@@ -306,70 +292,161 @@ class LightCurveStep(base.PipelineStep):
             quasi_calibrated_flux=quasi,
             distribution_samples=dist_samples,
         )
-
-        obs_times = Time(
-            image_series.get_observation_time(),
-            format="jd",
+        obs_times = Time(image_series.get_observation_time(), format="jd")
+        airmasses = []
+        for im in image_series.image_list:
+            am = getattr(im, "air_mass", None)
+            airmasses.append(float(am) if am is not None else np.nan)
+        n_obj = int(plot_quantity.pdf_median().shape[1])
+        source_ids = np.arange(n_obj, dtype=np.int64)
+        ra = dec = None
+        if phot is not None and "id" in phot.colnames:
+            if "ra" in phot.colnames and "dec" in phot.colnames:
+                ra_map: dict[int, float] = {}
+                dec_map: dict[int, float] = {}
+                ids = np.asarray(phot["id"]).astype(int)
+                for sid in np.unique(ids):
+                    m = ids == int(sid)
+                    ra_map[int(sid)] = float(
+                        np.nanmedian(np.asarray(phot["ra"][m], dtype=float))
+                    )
+                    dec_map[int(sid)] = float(
+                        np.nanmedian(np.asarray(phot["dec"][m], dtype=float))
+                    )
+                ra = np.array([ra_map.get(int(i), np.nan) for i in source_ids])
+                dec = np.array([dec_map.get(int(i), np.nan) for i in source_ids])
+        return build_light_curves_table_from_flux(
+            plot_quantity,
+            obs_times,
+            filter_,
+            source_ids=source_ids,
+            object_names=object_names,
+            calibrator_ids=cal_set,
+            airmasses=np.asarray(airmasses, dtype=float),
+            ra=ra,
+            dec=dec,
+            outlier_sigma=config.light_curve_outlier_sigma,
+            observatory_location=config.observatory_location,
         )
 
-        ids_ooi: set[int] = set()
-        if config.plot_light_curve_objects_of_interest:
-            for object_ in objects_of_interest:
-                oid = ooi_photometry_id(object_, filter_=filter_)
-                if oid is None:
-                    continue
-                oid = int(oid)
-                ids_ooi.add(oid)
-                prepare_plot_time_series(
-                    plot_quantity,
-                    obs_times,
-                    filter_,
-                    object_.name,
-                    oid,
-                    output_dir,
-                    binning_factor=binning,
-                    transit_time=getattr(object_, "transit_time", None),
-                    period=getattr(object_, "period", None),
-                    file_type_plots=config.file_type_plots,
-                    calibration_type="simple",
+    def _plot_views(
+        self,
+        lc: Table,
+        context: AnalysisContext,
+        config: PipelineConfig,
+        output_dir: str,
+        objects_of_interest: list,
+        cal_ids_all: set[int],
+        ) -> None:
+        from ...plots import lightcurves as lc_plots
+
+        mag_sys = table_magnitude_system(lc)
+        file_type = config.file_type_plots
+        filters = [
+            f
+            for f in context.filter_list
+            if f in set(np.asarray(lc["filter"]).astype(str))
+        ]
+        color = config.light_curve_color
+        if color and color in set(np.asarray(lc["filter"]).astype(str)):
+            filters = list(filters) + [color]
+
+        rng = np.random.default_rng(0)
+        all_ids = {int(i) for i in np.unique(np.asarray(lc["id"]).astype(int))}
+        stats_parts: list[Table] = []
+
+        for filter_ in filters:
+            ooi_pairs = _ooi_id_name_pairs(objects_of_interest, filter_)
+            if filter_ == color:
+                ooi_pairs = _ooi_id_name_pairs(
+                    objects_of_interest, context.filter_list[0]
                 )
 
-        if config.plot_light_curve_calibration_objects and ids_cal is not None:
-            arr = np.asarray(ids_cal)
-            if arr.size and np.any(arr):
-                for index in arr.flatten().astype(int):
-                    prepare_plot_time_series(
-                        plot_quantity,
-                        obs_times,
+            if config.plot_light_curve_objects_of_interest:
+                for oid, name in ooi_pairs:
+                    obj = next(
+                        (
+                            o
+                            for o in objects_of_interest
+                            if int(ooi_photometry_id(o, filter_=filter_) or -1) == oid
+                            or str(getattr(o, "name", "")) == name
+                        ),
+                        None,
+                    )
+                    tt = getattr(obj, "transit_time", None) if obj is not None else None
+                    per = _parse_period(getattr(obj, "period", None) if obj else None)
+                    plot_from_light_curves_table(
+                        lc,
+                        oid,
                         filter_,
-                        str(int(index)),
-                        int(index),
                         output_dir,
-                        binning_factor=binning,
-                        file_type_plots=config.file_type_plots,
-                        subdirectory="/calibration",
-                        calibration_type="simple",
+                        name_object=name,
+                        file_type=file_type,
+                        transit_time=tt,
+                        period=per,
+                        binning_factor=config.light_curve_binning_factor,
+                        time_scale=config.light_curve_time_scale,
+                        phase_cycles=config.light_curve_phase_cycles,
+                        show_airmass=config.light_curve_show_airmass,
+                        magnitude_system=mag_sys,
                     )
 
-        if config.plot_light_curve_all_objects:
-            shape_n = plot_quantity.shape[1]
-            cal_set: set[int] = set()
-            if ids_cal is not None and np.size(ids_cal):
-                cal_set = set(
-                    np.asarray(ids_cal).flatten().astype(int).tolist()
+            if config.plot_light_curve_calibration_objects and cal_ids_all:
+                stats = calibrator_variability_stats(lc, cal_ids_all, filter_)
+                if len(stats) > 0:
+                    stats_parts.append(stats)
+                top = top_variable_calibrator_ids(
+                    stats, n=config.light_curve_calibrator_qc_n
                 )
-            for idx in range(shape_n):
-                if idx in ids_ooi or idx in cal_set:
-                    continue
-                prepare_plot_time_series(
-                    plot_quantity,
-                    obs_times,
-                    filter_,
-                    str(idx),
-                    idx,
+                lc_plots.plot_check_star_qc(
+                    lc,
                     output_dir,
-                    binning_factor=binning,
-                    file_type_plots=config.file_type_plots,
-                    subdirectory="/by_id",
-                    calibration_type="simple",
+                    filter_=filter_,
+                    ooi_ids=ooi_pairs,
+                    calibrator_ids=top,
+                    file_type=file_type,
+                    time_scale=config.light_curve_time_scale,
+                    show_airmass=config.light_curve_show_airmass,
+                    magnitude_system=mag_sys,
                 )
+                lc_plots.plot_calibrator_variability(
+                    lc,
+                    stats,
+                    output_dir,
+                    filter_=filter_,
+                    top_ids=top,
+                    file_type=file_type,
+                    time_scale=config.light_curve_time_scale,
+                    magnitude_system=mag_sys,
+                )
+
+            if config.plot_light_curve_all_objects:
+                ooi_set = {oid for oid, _n in ooi_pairs}
+                pool = [i for i in sorted(all_ids) if i not in ooi_set]
+                n_extra = min(int(config.light_curve_overview_n), len(pool))
+                extra = (
+                    rng.choice(pool, size=n_extra, replace=False).tolist()
+                    if n_extra
+                    else []
+                )
+                extra = [int(i) for i in extra]
+                lc_plots.plot_light_curve_overview(
+                    lc,
+                    output_dir,
+                    filter_=filter_,
+                    ooi_ids=ooi_pairs,
+                    extra_ids=extra,
+                    file_type=file_type,
+                    time_scale=config.light_curve_time_scale,
+                    magnitude_system=mag_sys,
+                )
+
+        if stats_parts:
+            vstack(stats_parts, metadata_conflicts="silent").write(
+                str(tables_dir(output_dir) / CALIBRATOR_STATS_FILENAME),
+                format="ascii.ecsv",
+                overwrite=True,
+            )
+
+
+__all__ = ["LightCurveStep"]

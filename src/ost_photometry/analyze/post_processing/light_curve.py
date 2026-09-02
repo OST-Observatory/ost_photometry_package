@@ -272,7 +272,36 @@ def attach_observation_jd_column(
 
 def save_calibration_epoch_meta_json(meta: dict, path: str | Path) -> None:
     """Write ``calibration_epoch_meta``-style dict as JSON (for offline light curves)."""
-    Path(path).write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    Path(path).write_text(
+        json.dumps(_json_safe(meta), indent=2),
+        encoding="utf-8",
+    )
+
+
+def write_epoch_meta_json(output_dir: str | Path, meta: dict | None) -> Path | None:
+    """Write ``tables/epoch_meta.json`` when ``meta`` is non-empty."""
+    if not meta:
+        return None
+    path = tables_dir(output_dir) / "epoch_meta.json"
+    save_calibration_epoch_meta_json(meta, path)
+    return path
+
+
+def _json_safe(obj):
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        val = float(obj)
+        return val if np.isfinite(val) else None
+    if isinstance(obj, np.ndarray):
+        return _json_safe(obj.tolist())
+    if obj is None or isinstance(obj, str | int | float | bool):
+        return obj
+    return str(obj)
 
 
 def load_calibration_epoch_meta_json(path: str | Path) -> dict:
@@ -425,20 +454,6 @@ def prepare_time_series_data(
     )
 
 
-def _light_curve_plot_filename_suffix(lc_suffix: str, ts_data_col: str) -> str:
-    """
-    :func:`plots.light_curve_jd` / ``light_curve_fold`` build
-    ``..._{ts_data_col}{file_name_suffix}``. For flux, ``ts_data_col`` is already
-    ``flux_<filter>``; strip a trailing ``_flux`` from the suffix to avoid
-    ``flux_V_flux`` in the filename.
-    """
-    if not ts_data_col.startswith("flux_"):
-        return lc_suffix
-    if lc_suffix.endswith("_flux"):
-        return lc_suffix[: -len("_flux")]
-    return lc_suffix
-
-
 def mk_time_series_flux(
     observation_times: Time,
     flux: np.ndarray,
@@ -492,57 +507,612 @@ def mk_time_series(
     return ts
 
 
+LIGHT_CURVES_FILENAME = "light_curves.ecsv"
+CALIBRATOR_STATS_FILENAME = "calibrator_lc_stats.ecsv"
+JD_MINUS_OFFSET = 2450000.0
+
+
+def _as_positive_period(period) -> float | None:
+    if period is None or period == "?":
+        return None
+    try:
+        val = float(period)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(val) or val <= 0.0:
+        return None
+    return val
+
+
+def night_id_from_jd(jd) -> np.ndarray:
+    """Local night index: ``floor(JD - 0.5)`` so evening UT stays one night."""
+    arr = np.asarray(jd, dtype=float)
+    out = np.full(arr.shape, -1, dtype=np.int64)
+    ok = np.isfinite(arr)
+    out[ok] = np.floor(arr[ok] - 0.5).astype(np.int64)
+    return out
+
+
+def excess_rms(values, errors) -> float:
+    """
+    Scatter beyond photometric noise: ``sqrt(max(0, RMS^2 - median(err)^2))``.
+
+    Computed about the sample median. Returns 0 if fewer than two finite points.
+    """
+    y = np.asarray(values, dtype=float)
+    e = np.asarray(errors, dtype=float)
+    ok = np.isfinite(y)
+    if int(np.count_nonzero(ok)) < 2:
+        return 0.0
+    y = y[ok]
+    e = e[ok] if e.shape == np.asarray(values).shape else e[np.isfinite(e)]
+    rms = float(np.sqrt(np.mean((y - np.median(y)) ** 2)))
+    if e.size:
+        e_ok = e[np.isfinite(e)]
+        med_e = float(np.median(e_ok)) if e_ok.size else 0.0
+    else:
+        med_e = 0.0
+    if not np.isfinite(med_e) or med_e < 0.0:
+        med_e = 0.0
+    return float(np.sqrt(max(0.0, rms * rms - med_e * med_e)))
+
+
+def _airmass_for_rows(
+    sub: Table,
+    epoch_meta: dict | None,
+    filter_: str,
+) -> np.ndarray:
+    col_f = f"airmass_{filter_}"
+    if col_f in sub.colnames:
+        return np.asarray(sub[col_f], dtype=float)
+    if "airmass" in sub.colnames:
+        return np.asarray(sub["airmass"], dtype=float)
+    n = len(sub)
+    out = np.full(n, np.nan, dtype=float)
+    if not epoch_meta or "epoch_id" not in sub.colnames:
+        return out
+    eids = np.asarray(sub["epoch_id"]).astype(str)
+    for i, eid in enumerate(eids):
+        meta = epoch_meta.get(eid)
+        if meta is None:
+            meta = epoch_meta.get(str(eid))
+        if not meta:
+            continue
+        ams = meta.get("airmasses") or {}
+        val = ams.get(filter_)
+        if val is None:
+            continue
+        try:
+            fv = float(val)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(fv):
+            out[i] = fv
+    return out
+
+
+def _empty_light_curves_table() -> Table:
+    return Table(
+        {
+            "id": np.array([], dtype=np.int64),
+            "object_name": np.array([], dtype="U64"),
+            "filter": np.array([], dtype="U32"),
+            "epoch_id": np.array([], dtype="U64"),
+            "jd": np.array([], dtype=float),
+            "bjd_tdb": np.array([], dtype=float),
+            "airmass": np.array([], dtype=float),
+            "night_id": np.array([], dtype=np.int64),
+            "mag": np.array([], dtype=float),
+            "mag_err": np.array([], dtype=float),
+            "flux": np.array([], dtype=float),
+            "flux_err": np.array([], dtype=float),
+            "quantity": np.array([], dtype="U16"),
+            "flag_outlier": np.array([], dtype=bool),
+            "ra": np.array([], dtype=float),
+            "dec": np.array([], dtype=float),
+            "is_calibrator": np.array([], dtype=bool),
+        }
+    )
+
+
+def _rows_from_epoch_native_source(
+    data: Table,
+    filter_: str,
+    source_id: int,
+    epoch_meta: dict | None,
+    *,
+    quantity: LightCurveQuantity,
+    calibration_rows: LightCurveCalibrationRows,
+    object_name: str = "",
+    is_calibrator: bool = False,
+) -> Table | None:
+    if quantity == "flux":
+        cols = epoch_native_flux_err_columns(data, filter_)
+    else:
+        cols = epoch_native_mag_err_columns(data, filter_)
+    if cols is None:
+        return None
+    val_col, err_col = cols
+    ids = np.asarray(data["id"]).astype(int)
+    sub = data[ids == int(source_id)]
+    if len(sub) == 0:
+        return None
+    sub = _subset_for_calibration_row_mode(sub, calibration_rows, epoch_meta, filter_)
+    if len(sub) == 0:
+        return None
+    values = np.asarray(sub[val_col].ravel(), dtype=float)
+    errs = np.abs(np.asarray(sub[err_col].ravel(), dtype=float))
+    jds = _row_jds_from_table(sub, epoch_meta, filter_)
+    airmass = _airmass_for_rows(sub, epoch_meta, filter_)
+    if "epoch_id" in sub.colnames:
+        eids = np.asarray(sub["epoch_id"]).astype(str)
+    else:
+        eids = np.array([""] * len(sub), dtype=str)
+    if "ra" in sub.colnames:
+        ra = np.asarray(sub["ra"], dtype=float)
+    else:
+        ra = np.full(len(sub), np.nan)
+    if "dec" in sub.colnames:
+        dec = np.asarray(sub["dec"], dtype=float)
+    else:
+        dec = np.full(len(sub), np.nan)
+    n = len(sub)
+    mag = np.full(n, np.nan)
+    mag_err = np.full(n, np.nan)
+    flux = np.full(n, np.nan)
+    flux_err = np.full(n, np.nan)
+    if quantity == "flux":
+        flux[:] = values
+        flux_err[:] = errs
+    else:
+        mag[:] = values
+        mag_err[:] = errs
+    name = str(object_name or "")
+    return Table(
+        {
+            "id": np.full(n, int(source_id), dtype=np.int64),
+            "object_name": np.full(n, name, dtype="U64"),
+            "filter": np.full(n, str(filter_), dtype="U32"),
+            "epoch_id": eids.astype("U64"),
+            "jd": jds,
+            "bjd_tdb": np.full(n, np.nan),
+            "airmass": airmass,
+            "night_id": night_id_from_jd(jds),
+            "mag": mag,
+            "mag_err": mag_err,
+            "flux": flux,
+            "flux_err": flux_err,
+            "quantity": np.full(n, str(quantity), dtype="U16"),
+            "flag_outlier": np.zeros(n, dtype=bool),
+            "ra": ra,
+            "dec": dec,
+            "is_calibrator": np.full(n, bool(is_calibrator), dtype=bool),
+        }
+    )
+
+
+def flag_outliers_in_light_curves(
+    tbl: Table,
+    sigma: float | None = 5.0,
+) -> Table:
+    """Per ``(id, filter)`` sigma-clip on mag or flux. Flags stay in the table."""
+    out = tbl.copy()
+    n = len(out)
+    flag = np.zeros(n, dtype=bool)
+    if sigma is None or n == 0:
+        out["flag_outlier"] = flag
+        return out
+    from astropy.stats import sigma_clip
+
+    ids = np.asarray(out["id"]).astype(int)
+    filts = np.asarray(out["filter"]).astype(str)
+    qty = np.asarray(out["quantity"]).astype(str)
+    mag = np.asarray(out["mag"], dtype=float)
+    flux = np.asarray(out["flux"], dtype=float)
+    sig = float(sigma)
+    for sid in np.unique(ids):
+        for filt in np.unique(filts[ids == sid]):
+            m = (ids == sid) & (filts == filt)
+            q = qty[m]
+            if np.any(q == "flux"):
+                y = flux[m]
+            else:
+                y = mag[m]
+            ok = np.isfinite(y)
+            if int(np.count_nonzero(ok)) < 4:
+                continue
+            y_ok = y[ok]
+            center = float(np.median(y_ok))
+            mad = float(np.median(np.abs(y_ok - center)))
+            scale = 1.4826 * mad
+            if not np.isfinite(scale) or scale <= 0.0:
+                clipped = sigma_clip(y_ok, sigma=sig, masked=True)
+                local = np.zeros(int(np.count_nonzero(m)), dtype=bool)
+                local[ok] = np.asarray(clipped.mask, dtype=bool)
+            else:
+                local = np.zeros(int(np.count_nonzero(m)), dtype=bool)
+                local[ok] = np.abs(y_ok - center) > sig * scale
+            flag[m] = local
+    out["flag_outlier"] = flag
+    return out
+
+
+def add_bjd_tdb_column(tbl: Table, location) -> Table:
+    """Barycentric JD (TDB) from ``jd`` + source RA/Dec + observatory location."""
+    out = tbl.copy()
+    n = len(out)
+    bjd = np.full(n, np.nan, dtype=float)
+    if location is None or n == 0:
+        out["bjd_tdb"] = bjd
+        return out
+    jd = np.asarray(out["jd"], dtype=float)
+    ra = np.asarray(out["ra"], dtype=float)
+    dec = np.asarray(out["dec"], dtype=float)
+    ok = np.isfinite(jd) & np.isfinite(ra) & np.isfinite(dec)
+    if not np.any(ok):
+        out["bjd_tdb"] = bjd
+        return out
+    t = Time(jd[ok], format="jd", scale="utc")
+    coord = SkyCoord(ra[ok] * u.deg, dec[ok] * u.deg, frame="icrs")
+    ltt = t.light_travel_time(coord, kind="barycentric", location=location)
+    bjd[ok] = (t.tdb + ltt).jd
+    out["bjd_tdb"] = bjd
+    return out
+
+
+def add_color_index_rows(tbl: Table, color: str | None) -> Table:
+    """Append colour rows (e.g. ``B-V``) matched on ``id`` and ``epoch_id``."""
+    if not color or color in ("?", "?-?", "-"):
+        return tbl
+    text = str(color).strip()
+    if "-" not in text:
+        return tbl
+    f1, f2 = (p.strip() for p in text.split("-", 1))
+    if not f1 or not f2:
+        return tbl
+    filts = np.asarray(tbl["filter"]).astype(str)
+    has1 = np.any(filts == f1)
+    has2 = np.any(filts == f2)
+    if not has1 or not has2:
+        terminal_output.print_to_terminal(
+            f"Colour {text!r}: missing filter {f1!r} or {f2!r} in light-curve table.",
+            style_name="WARNING",
+        )
+        return tbl
+    ids = np.asarray(tbl["id"]).astype(int)
+    eids = np.asarray(tbl["epoch_id"]).astype(str)
+    mag = np.asarray(tbl["mag"], dtype=float)
+    mag_err = np.asarray(tbl["mag_err"], dtype=float)
+    parts: list[Table] = []
+    for sid in np.unique(ids):
+        m1 = (ids == sid) & (filts == f1)
+        m2 = (ids == sid) & (filts == f2)
+        if not np.any(m1) or not np.any(m2):
+            continue
+        map2 = {eids[i]: i for i in np.flatnonzero(m2)}
+        for i in np.flatnonzero(m1):
+            j = map2.get(eids[i])
+            if j is None:
+                continue
+            c = mag[i] - mag[j]
+            e = np.hypot(mag_err[i], mag_err[j])
+            row = tbl[i : i + 1].copy()
+            row["filter"] = text
+            row["mag"] = c
+            row["mag_err"] = e
+            row["flux"] = np.nan
+            row["flux_err"] = np.nan
+            row["quantity"] = "magnitude"
+            row["flag_outlier"] = False
+            parts.append(row)
+    if not parts:
+        return tbl
+    return vstack([tbl, *parts], metadata_conflicts="silent")
+
+
+def build_light_curves_table(
+    phot: Table,
+    filter_list: list[str],
+    *,
+    epoch_meta: dict | None = None,
+    quantity: LightCurveQuantity = "magnitude",
+    calibration_rows: LightCurveCalibrationRows = "auto",
+    object_names: dict[int, str] | None = None,
+    calibrator_ids: set[int] | None = None,
+    outlier_sigma: float | None = 5.0,
+    observatory_location=None,
+    color: str | None = None,
+) -> Table:
+    """Long light-curve table: one row per source × filter × epoch."""
+    names = object_names or {}
+    cal = calibrator_ids or set()
+    if phot is None or len(phot) == 0 or "id" not in phot.colnames:
+        return _empty_light_curves_table()
+    parts: list[Table] = []
+    for sid in np.unique(np.asarray(phot["id"]).astype(int)):
+        sid_i = int(sid)
+        for filt in filter_list:
+            if not is_epoch_native_photometry_table(phot, filt, quantity=quantity):
+                continue
+            rows = _rows_from_epoch_native_source(
+                phot,
+                filt,
+                sid_i,
+                epoch_meta,
+                quantity=quantity,
+                calibration_rows=calibration_rows,
+                object_name=names.get(sid_i, ""),
+                is_calibrator=sid_i in cal,
+            )
+            if rows is not None and len(rows) > 0:
+                parts.append(rows)
+    if not parts:
+        return _empty_light_curves_table()
+    tbl = vstack(parts, metadata_conflicts="silent")
+    tbl = flag_outliers_in_light_curves(tbl, sigma=outlier_sigma)
+    tbl = add_bjd_tdb_column(tbl, observatory_location)
+    tbl = add_color_index_rows(tbl, color)
+    from .magnitude_systems import table_magnitude_system
+
+    tbl.meta["ost_photometry.magnitude_system"] = table_magnitude_system(phot)
+    return tbl
+
+
+def build_light_curves_table_from_flux(
+    flux_distribution: unc.core.NdarrayDistribution,
+    observation_times: Time,
+    filter_: str,
+    *,
+    source_ids: np.ndarray | None = None,
+    object_names: dict[int, str] | None = None,
+    calibrator_ids: set[int] | None = None,
+    airmasses: np.ndarray | None = None,
+    ra: np.ndarray | None = None,
+    dec: np.ndarray | None = None,
+    outlier_sigma: float | None = 5.0,
+    observatory_location=None,
+) -> Table:
+    """Long table from a normalized ``(n_epochs, n_objects)`` flux distribution."""
+    med = np.asarray(flux_distribution.pdf_median(), dtype=float)
+    std = np.abs(np.asarray(flux_distribution.pdf_std(), dtype=float))
+    n_ep, n_obj = med.shape
+    jds = np.asarray(observation_times.jd, dtype=float)
+    if jds.size != n_ep:
+        raise ValueError(
+            f"observation_times length {jds.size} != n_epochs {n_ep} in flux array"
+        )
+    if source_ids is None:
+        ids = np.arange(n_obj, dtype=np.int64)
+    else:
+        ids = np.asarray(source_ids).astype(np.int64)
+        if ids.size != n_obj:
+            raise ValueError("source_ids length must match flux object axis")
+    names = object_names or {}
+    cal = calibrator_ids or set()
+    if airmasses is None:
+        am = np.full(n_ep, np.nan)
+    else:
+        am = np.asarray(airmasses, dtype=float)
+        if am.size != n_ep:
+            am = np.full(n_ep, np.nan)
+    nights = night_id_from_jd(jds)
+    rows: list[Table] = []
+    for j in range(n_obj):
+        sid = int(ids[j])
+        ra_j = float(ra[j]) if ra is not None and j < len(ra) else np.nan
+        dec_j = float(dec[j]) if dec is not None and j < len(dec) else np.nan
+        rows.append(
+            Table(
+                {
+                    "id": np.full(n_ep, sid, dtype=np.int64),
+                    "object_name": np.full(n_ep, str(names.get(sid, "")), dtype="U64"),
+                    "filter": np.full(n_ep, str(filter_), dtype="U32"),
+                    "epoch_id": np.array([f"epoch_{k:03d}" for k in range(n_ep)], dtype="U64"),
+                    "jd": jds,
+                    "bjd_tdb": np.full(n_ep, np.nan),
+                    "airmass": am,
+                    "night_id": nights,
+                    "mag": np.full(n_ep, np.nan),
+                    "mag_err": np.full(n_ep, np.nan),
+                    "flux": med[:, j],
+                    "flux_err": std[:, j],
+                    "quantity": np.full(n_ep, "flux", dtype="U16"),
+                    "flag_outlier": np.zeros(n_ep, dtype=bool),
+                    "ra": np.full(n_ep, ra_j),
+                    "dec": np.full(n_ep, dec_j),
+                    "is_calibrator": np.full(n_ep, sid in cal, dtype=bool),
+                }
+            )
+        )
+    tbl = vstack(rows, metadata_conflicts="silent") if rows else _empty_light_curves_table()
+    tbl = flag_outliers_in_light_curves(tbl, sigma=outlier_sigma)
+    tbl = add_bjd_tdb_column(tbl, observatory_location)
+    return tbl
+
+
+def write_light_curves_table(tbl: Table, output_dir: str | Path) -> Path:
+    """Write ``tables/light_curves.ecsv``."""
+    path = tables_dir(output_dir) / LIGHT_CURVES_FILENAME
+    tbl.write(str(path), format="ascii.ecsv", overwrite=True)
+    return path
+
+
+def calibrator_variability_stats(
+    lc: Table,
+    calibrator_ids: set[int] | list[int],
+    filter_: str,
+) -> Table:
+    """Per-calibrator RMS / excess-RMS / χ²/ν in one filter (unflagged points)."""
+    cal = {int(i) for i in calibrator_ids}
+    if len(lc) == 0 or not cal:
+        return Table(
+            {
+                "id": np.array([], dtype=np.int64),
+                "filter": np.array([], dtype="U32"),
+                "n": np.array([], dtype=np.int64),
+                "med_mag": np.array([], dtype=float),
+                "rms": np.array([], dtype=float),
+                "excess_rms": np.array([], dtype=float),
+                "chi2_nu": np.array([], dtype=float),
+            }
+        )
+    ids = np.asarray(lc["id"]).astype(int)
+    filts = np.asarray(lc["filter"]).astype(str)
+    flag = np.asarray(lc["flag_outlier"], dtype=bool)
+    mag = np.asarray(lc["mag"], dtype=float)
+    mag_err = np.asarray(lc["mag_err"], dtype=float)
+    flux = np.asarray(lc["flux"], dtype=float)
+    flux_err = np.asarray(lc["flux_err"], dtype=float)
+    qty = np.asarray(lc["quantity"]).astype(str)
+    rec_id: list[int] = []
+    rec_n: list[int] = []
+    rec_med: list[float] = []
+    rec_rms: list[float] = []
+    rec_exc: list[float] = []
+    rec_chi: list[float] = []
+    for sid in sorted(cal):
+        m = (ids == sid) & (filts == str(filter_)) & (~flag)
+        if not np.any(m):
+            continue
+        if np.any(qty[m] == "flux"):
+            y = flux[m]
+            e = flux_err[m]
+        else:
+            y = mag[m]
+            e = mag_err[m]
+        ok = np.isfinite(y)
+        y = y[ok]
+        e = e[ok]
+        n = int(y.size)
+        if n < 2:
+            continue
+        med = float(np.median(y))
+        rms = float(np.sqrt(np.mean((y - med) ** 2)))
+        exc = excess_rms(y, e)
+        e_pos = np.where(np.isfinite(e) & (e > 0), e, np.nan)
+        if np.any(np.isfinite(e_pos)):
+            chi = float(np.nansum(((y - med) / e_pos) ** 2) / max(n - 1, 1))
+        else:
+            chi = np.nan
+        rec_id.append(int(sid))
+        rec_n.append(n)
+        rec_med.append(med)
+        rec_rms.append(rms)
+        rec_exc.append(exc)
+        rec_chi.append(chi)
+    return Table(
+        {
+            "id": np.asarray(rec_id, dtype=np.int64),
+            "filter": np.full(len(rec_id), str(filter_), dtype="U32"),
+            "n": np.asarray(rec_n, dtype=np.int64),
+            "med_mag": np.asarray(rec_med, dtype=float),
+            "rms": np.asarray(rec_rms, dtype=float),
+            "excess_rms": np.asarray(rec_exc, dtype=float),
+            "chi2_nu": np.asarray(rec_chi, dtype=float),
+        }
+    )
+
+
+def top_variable_calibrator_ids(stats: Table, n: int = 3) -> list[int]:
+    """``id``s with the largest ``excess_rms`` (stable order for ties)."""
+    if stats is None or len(stats) == 0 or n <= 0:
+        return []
+    exc = np.asarray(stats["excess_rms"], dtype=float)
+    ids = np.asarray(stats["id"]).astype(int)
+    order = np.argsort(-exc, kind="stable")
+    k = min(int(n), order.size)
+    return [int(ids[i]) for i in order[:k]]
+
+
+def slice_light_curve(
+    lc: Table,
+    source_id: int,
+    filter_: str,
+) -> Table:
+    ids = np.asarray(lc["id"]).astype(int)
+    filts = np.asarray(lc["filter"]).astype(str)
+    return lc[(ids == int(source_id)) & (filts == str(filter_))]
+
+
+def plot_from_light_curves_table(
+    lc: Table,
+    source_id: int,
+    filter_: str,
+    output_dir: str,
+    *,
+    name_object: str | None = None,
+    file_type: str = "pdf",
+    subdirectory: str = "",
+    transit_time: str | None = None,
+    period: float | None = None,
+    binning_factor: float | None = None,
+    time_scale: str = "bjd_tdb",
+    phase_cycles: int = 1,
+    show_airmass: bool = True,
+    magnitude_system: str | None = None,
+) -> None:
+    """JD (and folded, if period/t0) plots for one source from the long table."""
+    from .. import plots
+    from .magnitude_systems import table_magnitude_system
+
+    sub = slice_light_curve(lc, source_id, filter_)
+    if len(sub) == 0:
+        terminal_output.print_to_terminal(
+            f"No light-curve rows for id={source_id}, filter={filter_!r}.",
+            style_name="WARNING",
+        )
+        return
+    name = name_object or str(sub["object_name"][0] or source_id)
+    mag_sys = magnitude_system or table_magnitude_system(lc)
+    plots.light_curve_jd_from_table(
+        sub,
+        output_dir,
+        name_object=name,
+        filter_=filter_,
+        file_type=file_type,
+        subdirectory=subdirectory,
+        time_scale=time_scale,
+        show_airmass=show_airmass,
+        magnitude_system=mag_sys,
+    )
+    per = period
+    if per is not None and per != "?" and float(per) > 0.0:
+        if transit_time is not None and transit_time != "?":
+            plots.light_curve_fold_from_table(
+                sub,
+                output_dir,
+                transit_time=str(transit_time),
+                period=float(per),
+                name_object=name,
+                filter_=filter_,
+                file_type=file_type,
+                subdirectory=subdirectory,
+                binning_factor=binning_factor,
+                time_scale=time_scale,
+                phase_cycles=phase_cycles,
+                magnitude_system=mag_sys,
+            )
+
+
 def prepare_plot_time_series(
         data: unc.core.NdarrayDistribution | Table,
         observation_times: Time | None,
         filter_: str, object_name: str, object_id: int, output_dir: str,
         binning_factor: float | None = None, transit_time: str | None = None,
         period: float | None = None, file_name_suffix: str = '',
-        light_curve_save_format: str = 'csv', subdirectory: str = '',
+        light_curve_save_format: str | None = None,
+        subdirectory: str = '',
         file_type_plots: str = 'pdf', calibration_type: str = 'transformed',
         epoch_meta: dict | None = None,
         light_curve_quantity: LightCurveQuantity = "magnitude",
         light_curve_calibration_rows: LightCurveCalibrationRows = "auto",
         magnitude_system: str | None = None,
+        time_scale: str = "bjd_tdb",
+        phase_cycles: int = 1,
+        show_airmass: bool = True,
+        observatory_location=None,
         ) -> None:
-    """
-    Prepares, plot, and saves a time series for the object with the
-    object ID: ``object_id``
-
-    Parameters
-    ----------
-    data
-        Epoch-native ``Table`` (``mag_cal_*`` or ``mag_inst_*``, ``epoch_id``, ``id``) or
-        ``NdarrayDistribution`` (legacy flux-style light curves).
-
-    observation_times
-        Required for ``NdarrayDistribution``. For epoch-native tables, pass ``None``
-        and supply ``epoch_meta``.
-
-    filter_
-        Filter in which the magnitudes are taken
-
-    object_name
-        Name of the object
-
-    object_id
-        Correlated source ``id`` (epoch-native) or column index (distributions).
-
-    epoch_meta
-        Per-epoch JD map (e.g. ``context.calibration_epoch_meta``). Required for tables
-        unless the table has an ``observation_jd`` or ``jd`` column.
-
-    light_curve_quantity
-        ``"magnitude"`` (``mag_cal_*`` / ``mag_inst_*``) or ``"flux"``
-        (``flux_inst_*`` or ``flux_*``).
-
-    light_curve_calibration_rows
-        For legacy tables with both transformed and ``*_simple`` epochs: ``"auto"``
-        drops simple rows when transformed exists at the same JD; ``"transformed"``
-        or ``"simple"`` keeps only those rows.
-    """
-    from .. import plots
-
+    """Plot one object from an epoch-native table or flux distribution (no per-star CSV)."""
     if object_id is None:
         terminal_output.print_to_terminal(
             f"ID of object {object_name} is None. Failed to create "
@@ -551,148 +1121,71 @@ def prepare_plot_time_series(
         )
         return
 
+    _ = file_name_suffix
+    _ = calibration_type
+    _ = light_curve_save_format
+
     if isinstance(data, Table):
-        if not is_epoch_native_photometry_table(
-            data, filter_, quantity=light_curve_quantity
-        ):
-            terminal_output.print_to_terminal(
-                f"Light curve for {object_name!r}: table is not epoch-native for "
-                f"quantity={light_curve_quantity!r} (filter {filter_!r}; need mag or "
-                f"flux columns, plus epoch_id, id). Skipping.",
-                style_name="WARNING",
-            )
-            return
-        need_meta = "observation_jd" not in data.colnames and "jd" not in data.colnames
-        if need_meta and not epoch_meta:
-            terminal_output.print_to_terminal(
-                f"Epoch-native table for filter {filter_!r}: need ``observation_jd`` "
-                f"or ``jd`` column, or ``epoch_meta`` (e.g. from pipeline "
-                f"``calibration_epoch_meta`` / JSON). Skipping {object_name!r}.",
-                style_name="WARNING",
-            )
-            return
-        y_values, y_errs, obs_times = prepare_time_series_epoch_native(
+        lc = build_light_curves_table(
             data,
-            filter_,
-            int(object_id),
-            epoch_meta,
+            [filter_],
+            epoch_meta=epoch_meta,
             quantity=light_curve_quantity,
             calibration_rows=light_curve_calibration_rows,
+            object_names={int(object_id): object_name},
+            observatory_location=observatory_location,
         )
-    elif isinstance(data, unc.core.NdarrayDistribution):
+        plot_from_light_curves_table(
+            lc,
+            int(object_id),
+            filter_,
+            output_dir,
+            name_object=object_name,
+            file_type=file_type_plots,
+            subdirectory=subdirectory,
+            transit_time=transit_time,
+            period=_as_positive_period(period),
+            binning_factor=binning_factor,
+            time_scale=time_scale,
+            phase_cycles=phase_cycles,
+            show_airmass=show_airmass,
+            magnitude_system=magnitude_system,
+        )
+        return
+
+    if isinstance(data, unc.core.NdarrayDistribution):
         if observation_times is None:
             raise ValueError(
                 "prepare_plot_time_series requires observation_times for NdarrayDistribution"
             )
-        y_values, y_errs = prepare_time_series_data(
+        lc = build_light_curves_table_from_flux(
             data,
+            observation_times,
             filter_,
-            object_id,
-            calibration_type=calibration_type,
+            object_names={int(object_id): object_name},
+            observatory_location=observatory_location,
         )
-        obs_times = observation_times
-    else:
-        raise TypeError(
-            f"prepare_plot_time_series: unsupported data type {type(data)}"
-        )
-
-    if y_values.size == 0:
-        terminal_output.print_to_terminal(
-            f"No photometry points for light curve: {object_name!r}, filter {filter_!r}.",
-            style_name="WARNING",
+        plot_from_light_curves_table(
+            lc,
+            int(object_id),
+            filter_,
+            output_dir,
+            name_object=object_name,
+            file_type=file_type_plots,
+            subdirectory=subdirectory,
+            transit_time=transit_time,
+            period=_as_positive_period(period),
+            binning_factor=binning_factor,
+            time_scale=time_scale,
+            phase_cycles=phase_cycles,
+            show_airmass=show_airmass,
+            magnitude_system=magnitude_system,
         )
         return
 
-    y_style = "flux" if light_curve_quantity == "flux" else "magnitude"
-    lc_suffix = file_name_suffix
-    if light_curve_calibration_rows != "auto":
-        lc_suffix = f"{lc_suffix}_{light_curve_calibration_rows}"
-    if light_curve_quantity == "flux":
-        lc_suffix = f"{lc_suffix}_flux"
-
-    if light_curve_quantity == "flux":
-        time_series = mk_time_series_flux(
-            obs_times,
-            y_values,
-            y_errs,
-            filter_,
-        )
-        ts_data_col = f"flux_{filter_}"
-        ts_err_col = f"{ts_data_col}_err"
-    else:
-        time_series = mk_time_series(
-            obs_times,
-            y_values,
-            y_errs,
-            filter_,
-        )
-        ts_data_col = filter_
-        ts_err_col = f"{filter_}_err"
-
-    plot_suffix = _light_curve_plot_filename_suffix(lc_suffix, ts_data_col)
-
-    #   Write time series
-    if light_curve_save_format not in ['dat', 'csv']:
-        terminal_output.print_to_terminal(
-            f"Format to save the light curve not known. Assume csv. "
-            f"The provided format was: {light_curve_save_format}",
-            style_name='WARNING',
-        )
-
-    table_dir = tables_dir(output_dir)
-    if light_curve_save_format == 'dat':
-        time_series.write(
-            str(table_dir / f'light_curve_{object_name}_{filter_}{lc_suffix}.dat'),
-            format='ascii',
-            overwrite=True,
-        )
-    else:
-        time_series.write(
-            str(table_dir / f'light_curve_{object_name}_{filter_}{lc_suffix}.csv'),
-            format='ascii.csv',
-            overwrite=True,
-        )
-
-    #   Plot light curve over JD
-    from .magnitude_systems import table_magnitude_system
-
-    mag_sys = magnitude_system
-    if mag_sys is None and isinstance(data, Table):
-        mag_sys = table_magnitude_system(data)
-    if mag_sys is None:
-        mag_sys = "vega"
-
-    plots.light_curve_jd(
-        time_series,
-        ts_data_col,
-        ts_err_col,
-        output_dir,
-        name_object=object_name,
-        file_name_suffix=plot_suffix,
-        subdirectory=subdirectory,
-        file_type=file_type_plots,
-        y_axis_style=y_style,
-        magnitude_system=mag_sys,
+    raise TypeError(
+        f"prepare_plot_time_series: unsupported data type {type(data)}"
     )
-
-    #   Plot the light curve folded on the period
-    if (transit_time is not None and transit_time != '?'
-            and period is not None and period != '?' and period > 0.):
-        plots.light_curve_fold(
-            time_series,
-            ts_data_col,
-            ts_err_col,
-            output_dir,
-            transit_time,
-            period,
-            binning_factor=binning_factor,
-            name_object=object_name,
-            file_name_suffix=plot_suffix,
-            subdirectory=subdirectory,
-            file_type=file_type_plots,
-            y_axis_style=y_style,
-            magnitude_system=mag_sys,
-        )
 
 
 def plot_light_curve_from_epoch_native_ecsv(

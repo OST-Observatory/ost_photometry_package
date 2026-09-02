@@ -194,8 +194,9 @@ and `PhotometryCalibrator.setup_calibration_source`.
 
 - `utilities.post_process_results` → `post_process_cluster_field` (`post_processing`)
 - `convert_magnitudes_to_other_system` expects epoch-native `mag_cal_<filter>` columns
-- Light-curve helpers in `post_processing.light_curve`; `LightCurveStep` uses `prepare_plot_time_series`
-- Pass `epoch_meta=context.calibration_epoch_meta` for epoch-native light curves
+- Light-curve helpers in `post_processing.light_curve`; `LightCurveStep` writes
+  `tables/light_curves.ecsv` and plots views of that table (JD, folded, check-star
+  QC, calibrator variability). `epoch_meta.json` is written at calibration.
 
 ### Output format
 

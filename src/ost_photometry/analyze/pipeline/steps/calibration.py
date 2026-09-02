@@ -16,7 +16,7 @@ from ...differential_photometry import DifferentialPhotometer
 from ...extinction_io import build_extinction_corrector
 from ...post_processing.adapters import ensure_epoch_native_photometry_table
 from ...post_processing.io import write_epoch_native_magnitudes
-from ...post_processing.light_curve import attach_observation_jd_column
+from ...post_processing.light_curve import attach_observation_jd_column, write_epoch_meta_json
 from ...warnings_types import OstPhotometryAnalyzeWarning
 from .. import base
 from ..bridge import (
@@ -358,6 +358,9 @@ class CalibrationStep(base.PipelineStep):
             config,
             "calibration_differential",
             calibration_epochs=epochs,
+        )
+        write_epoch_meta_json(
+            context.output_dir, context.calibration_epoch_meta
         )
         return context
 

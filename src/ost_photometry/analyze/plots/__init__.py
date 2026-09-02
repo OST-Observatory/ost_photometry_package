@@ -29,7 +29,17 @@ from .calibration_qc import (
 from .cmd_workflow import plot_cmds_from_table
 from .cmds import MakeCMDs
 from .extraction import plot_apertures, plot_cutouts, plot_epsf, plot_residual
-from .lightcurves import light_curve_fold, light_curve_jd
+from .lightcurves import (
+    fold_phase,
+    light_curve_fold,
+    light_curve_fold_from_table,
+    light_curve_jd,
+    light_curve_jd_from_table,
+    plot_calibrator_variability,
+    plot_check_star_qc,
+    plot_light_curve_overview,
+    y_limits_for_quantity,
+)
 from .scatter import d3_scatter, scatter
 from .starmaps import (
     compare_images,
@@ -55,9 +65,12 @@ __all__ = [
     "catalog_match_pixel_residuals",
     "compare_images",
     "d3_scatter",
+    "fold_phase",
     "initialize_plot",
     "light_curve_fold",
+    "light_curve_fold_from_table",
     "light_curve_jd",
+    "light_curve_jd_from_table",
     "mk_color_cycler_error_bars",
     "mk_color_cycler_symbols",
     "mk_colormap",
@@ -67,6 +80,8 @@ __all__ = [
     "plot_aperture_growth_curve",
     "plot_apertures",
     "plot_calibration_color_color_cal_stars",
+    "plot_calibrator_variability",
+    "plot_check_star_qc",
     "plot_calibration_crossmatch_diagnostics",
     "plot_calibration_crossmatch_separations",
     "plot_calibration_night_summary",
@@ -85,6 +100,7 @@ __all__ = [
     "plot_inter_filter_correlation_separations",
     "plot_inter_filter_correlation_separations_overview",
     "plot_limiting_mag_sky_apertures",
+    "plot_light_curve_overview",
     "plot_photometry_mag_vs_error",
     "plot_photometry_mag_vs_error_overview",
     "plot_residual",
@@ -93,4 +109,5 @@ __all__ = [
     "residual_geometry_summary",
     "scatter",
     "starmap",
+    "y_limits_for_quantity",
 ]
