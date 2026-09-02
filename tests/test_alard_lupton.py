@@ -75,8 +75,8 @@ def test_alard_lupton_without_star_xy_uses_finder():
 
 def test_kernel_basis_shape_and_normalization():
     bases = kernel_basis(15)
-    # degrees (2, 1, 0) → 6 + 3 + 1 basis images
-    assert bases.shape == (10, 15, 15)
+    # degrees (4, 2, 1) → 15 + 6 + 3 basis images
+    assert bases.shape == (24, 15, 15)
     assert np.all(np.isfinite(bases))
 
 
@@ -88,6 +88,18 @@ def test_alard_lupton_cancels_convolved_template():
     naive = sci - tmpl
     assert float(np.std(diff)) < 0.2 * float(np.std(naive))
     assert float(np.std(diff)) < 15.0
+    assert abs(float(np.median(diff))) < 2.0
+
+
+def test_alard_lupton_handles_sky_and_flux_mismatch():
+    """HiPS-like: template sky/units differ strongly from the science CCD."""
+    stars = _star_field((180, 180), _STAR_XY, fwhm=3.0)
+    tmpl = 0.04 * stars + 3500.0
+    sci = 1.8 * gaussian_filter(stars, sigma=1.0) + 220.0
+    diff, method = alard_lupton_difference(sci, tmpl, star_xy=_STAR_XY, fwhm=4.0)
+    assert method == "alard_lupton"
+    assert abs(float(np.median(diff))) < 8.0
+    assert float(np.std(diff)) < 0.15 * float(np.std(sci - tmpl))
 
 
 def test_alard_lupton_falls_back_when_stamps_are_missing():
