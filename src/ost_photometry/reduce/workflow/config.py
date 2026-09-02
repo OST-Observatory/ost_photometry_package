@@ -25,7 +25,7 @@ class ReduceConfig:
     reference_image_index: int = 0
     enforce_bias: bool = False
     add_hot_bad_pixel_mask: bool = True
-    shift_method: str = "skimage"
+    shift_method: str = "aa_true"
     n_cores_multiprocessing: int | None = None
     stack_images: bool = True
     estimate_fwhm: bool = False
@@ -34,7 +34,7 @@ class ReduceConfig:
     stack_method: str = "average"
     target_name: str | None = None
     find_wcs: bool = True
-    wcs_method: str = "astrometry"
+    wcs_method: str = "astap"
     find_wcs_of_all_images: bool = False
     force_wcs_determination: bool = False
     rm_outliers_image_shifts: bool = True

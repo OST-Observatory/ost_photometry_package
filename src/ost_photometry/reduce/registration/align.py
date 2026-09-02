@@ -25,7 +25,7 @@ from .shifts import (
 def align_images(
         image_path: str | Path, output_dir: str | Path,
         image_type_list: list[str], reference_image_index: int = 0,
-        enlarged_only: bool = False, shift_method: str = 'skimage',
+        enlarged_only: bool = False, shift_method: str = 'aa_true',
         n_cores_multiprocessing: int | None = None,
         rm_outliers: bool = True, filter_window: int = 25,
         threshold: int | float = 10., instrument: str | None = None,
@@ -71,7 +71,7 @@ def align_images(
                                    phase correlation, applying fft to
                                    the images
                        'skimage' = phase correlation with skimage
-        Default is ``skimage``.
+        Default is ``aa_true``.
 
     n_cores_multiprocessing
         Number of cores to use during calculation of the image shifts.
@@ -247,7 +247,7 @@ def align_images(
 def align_image_main(
         image_file_collection: ccdp.ImageFileCollection, output_path: Path,
         output_path_transformation: Path,
-        shift_method: str = 'skimage',
+        shift_method: str = 'aa_true',
         n_cores_multiprocessing: int | None = None,
         reference_image_index: int = 0,
         terminal_alignment_comment: str | None = None,
@@ -284,7 +284,7 @@ def align_image_main(
                                    skimage
                        'flow'    = image registration using optical flow
                                    implementation by skimage
-        Default is ``skimage``.
+        Default is ``aa_true``.
 
     n_cores_multiprocessing
         Number of cores to use during calculation of the image shifts.

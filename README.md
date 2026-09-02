@@ -72,8 +72,10 @@ Core Python dependencies:
 * [scipy](https://github.com/scipy/scipy)
 * [matplotlib](https://github.com/matplotlib/matplotlib)
 
-For the default WCS method (`astrometry`), a local
-[astrometry.net](https://nova.astrometry.net/) installation is required.
+For the default WCS method (`astap`), the
+[ASTAP](https://www.hnsky.org/astap.htm) binary must be on `PATH`.
+The alternative `astrometry` method needs a local
+[astrometry.net](https://nova.astrometry.net/) installation.
 
 ## Documentation
 

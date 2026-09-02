@@ -56,6 +56,8 @@ def test_reduce_config_is_dataclass():
         shift_all=True,
     )
     assert cfg.shift_all is True
+    assert cfg.shift_method == "aa_true"
+    assert cfg.wcs_method == "astap"
     assert cfg.image_path == Path("/tmp/in")
 
 

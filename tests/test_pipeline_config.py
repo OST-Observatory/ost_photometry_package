@@ -14,6 +14,7 @@ def test_pipeline_config_flat_and_nested_access():
     ExtractionConfig = cfg_mod.ExtractionConfig
 
     cfg = PipelineConfig(skip_extraction=True, calibration_strategy="linear_fit")
+    assert cfg.wcs_method == "astap"
     assert cfg.skip_extraction is True
     assert cfg.extraction.skip_extraction is True
     assert cfg.calibration_strategy == "linear_fit"

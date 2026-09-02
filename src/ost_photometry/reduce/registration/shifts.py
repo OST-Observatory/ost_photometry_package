@@ -23,7 +23,7 @@ from .trim import trim_image
 def apply_xy_image_shift(
         current_image_name: str, image_shifts: np.ndarray,
         image_flips: np.ndarray, image_id: int, output_path: Path,
-        shift_method: str = 'skimage', modify_file_name: bool = False,
+        shift_method: str = 'aa_true', modify_file_name: bool = False,
         rm_enlarged_keyword: bool = False, instrument: str | None = None,
         verbose: bool = False,
         aa_trim_margins: tuple[int, int, int, int] | None = None,
@@ -57,7 +57,7 @@ def apply_xy_image_shift(
                                    the images
                        'skimage' = phase correlation implemented by
                                    skimage
-        Default is ``skimage``.
+        Default is ``aa_true``.
 
     modify_file_name
         It true the trimmed image will be saved, using a modified file
@@ -380,7 +380,7 @@ def own_image_cross_correlation(
 
 def calculate_xy_image_shifts_core(
         current_file_name: str, reference_file_name: str,
-        image_id: int, correlation_method: str = 'skimage'
+        image_id: int, correlation_method: str = 'aa_true'
     ) -> tuple[int, tuple[float | int, float | int], bool]:
     """
     Calculate image shifts using different methods
@@ -403,7 +403,7 @@ def calculate_xy_image_shifts_core(
                                    the images
                        'skimage' = phase correlation with skimage'
                        'aa'      = astroalign module
-        Default is 'skimage'.
+        Default is 'aa_true'.
 
     Returns
     -------
@@ -547,7 +547,7 @@ def calculate_xy_image_shifts_core(
 def calculate_xy_image_shifts(
         image_file_collection: ccdp.ImageFileCollection,
         id_reference_image: int, comment: str,
-        correlation_method: str = 'skimage',
+        correlation_method: str = 'aa_true',
         n_cores_multiprocessing: int | None = None
     ) -> tuple[np.ndarray, np.ndarray]:
     """
@@ -572,7 +572,7 @@ def calculate_xy_image_shifts(
                                    the images
                        'skimage' = phase correlation with skimage'
                        'aa'      = astroalign module
-        Default is 'skimage'.
+        Default is 'aa_true'.
 
     n_cores_multiprocessing
         Number of cores to use during multiprocessing.

@@ -210,7 +210,7 @@ def run_hips_reference_subtraction(
     science_image_path: str,
     work_output_dir: str | Path,
     *,
-    wcs_method: str = "astrometry",
+    wcs_method: str = "astap",
     plot_comp: bool = True,
     hips_source: str | None = None,
     file_type_plots: str = "pdf",

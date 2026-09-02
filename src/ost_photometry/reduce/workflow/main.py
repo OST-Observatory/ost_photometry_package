@@ -32,7 +32,7 @@ def reduce_main(
     reference_image_index: int = 0,
     enforce_bias: bool = False,
     add_hot_bad_pixel_mask: bool = True,
-    shift_method: str = "skimage",
+    shift_method: str = "aa_true",
     n_cores_multiprocessing: int | None = None,
     stack_images: bool = True,
     estimate_fwhm: bool = False,
@@ -41,7 +41,7 @@ def reduce_main(
     stack_method: str = "average",
     target_name: str | None = None,
     find_wcs: bool = True,
-    wcs_method: str = "astrometry",
+    wcs_method: str = "astap",
     find_wcs_of_all_images: bool = False,
     force_wcs_determination: bool = False,
     rm_outliers_image_shifts: bool = True,
@@ -146,7 +146,7 @@ def reduce_main(
                                    phase correlation, applying fft to
                                    the images
                        'skimage' = phase correlation with skimage
-        Default is ``skimage``.
+        Default is ``aa_true``.
 
     n_cores_multiprocessing
         Number of cores to use during calculation of the image shifts.
@@ -187,7 +187,7 @@ def reduce_main(
     wcs_method
         Method to use for WCS determination.
         Possibilities are 'astrometry', 'astap', and 'twirl'
-        Default is ``astrometry``.
+        Default is ``astap``.
 
     find_wcs_of_all_images
         If `True` the WCS will be calculated for each image

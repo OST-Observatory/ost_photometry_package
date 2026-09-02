@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 def find_wcs(
     image_series: ImageSeries,
     reference_image_index: int | None = None,
-    method: str = "astrometry",
+    method: str = "astap",
     cosmics_removed: bool = False,
     image_path_cosmics_removed: str | None = None,
     object_x_coordinates: np.ndarray | None = None,

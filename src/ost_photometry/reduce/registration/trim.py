@@ -141,7 +141,7 @@ def trim_ccd(
 
 def trim_image(
         image: CCDData, image_id: int, image_shift: np.ndarray,
-        correlation_method: str = 'skimage', verbose: bool = False,
+        correlation_method: str = 'aa_true', verbose: bool = False,
         aa_trim_margins: tuple[int, int, int, int] | None = None,
         ) -> CCDData:
     """
@@ -168,7 +168,7 @@ def trim_image(
                                    phase correlation, applying fft to
                                    the images
                        'skimage' = phase correlation with skimage
-        Default is ``skimage``.
+        Default is ``aa_true``.
 
     verbose
         If True additional output will be printed to the command line.

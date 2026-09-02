@@ -14,7 +14,7 @@ config = PipelineConfig.from_preset("linear_fit_per_night")
 
 # Or build explicitly
 config = PipelineConfig(
-    wcs_method="astrometry",
+    wcs_method="astap",
     photometry_extraction_method="PSF",
     correlation_method="astropy",
     calibration_strategy="linear_fit",
@@ -64,8 +64,8 @@ config = PipelineConfig(
 
 | Value        | When to use                                    | Requirements / notes                                         |
 | ------------ | ---------------------------------------------- | ------------------------------------------------------------ |
-| `astrometry` | Default; best accuracy when it converges       | Local [astrometry.net](https://nova.astrometry.net/) install |
-| `astap`      | Fast blind solve; few stars; no astrometry.net | ASTAP binary on `PATH`                                       |
+| `astap`      | Default; fast blind solve                      | ASTAP binary on `PATH`                                       |
+| `astrometry` | Highest accuracy when it converges             | Local [astrometry.net](https://nova.astrometry.net/) install |
 | `twirl`      | Small fields with Gaia-visible stars           | Internet for catalog query                                   |
 
 
@@ -350,7 +350,7 @@ Catalog systems (examples): APASS/Stetson → Vega; SDSS DR → AB. See `CATALOG
 | `extinction_mode="from_value_airmass"`    | Runs `ExtinctionFitStep`; calibration should use `linear_fit` to consume coefficients                        |
 | `calibration_grouping="fixed"`            | Requires `transformation_coefficients_dict` (set on calibrator via advanced API; pipeline field exists)      |
 | `calibration_grouping="ensemble"`         | All epochs must be combinable; poor if instrument response drifts between nights                             |
-| WCS failure                               | Extraction and correlation cannot proceed; try `astap` or `twirl`, or `force_wcs_determination`              |
+| WCS failure                               | Extraction and correlation cannot proceed; try `astrometry` or `twirl`, or `force_wcs_determination`         |
 
 
 

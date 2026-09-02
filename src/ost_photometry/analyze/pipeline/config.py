@@ -118,7 +118,7 @@ class DiagnosticPlots:
 
 @dataclass
 class WcsConfig:
-    wcs_method: WcsMethod = "astrometry"
+    wcs_method: WcsMethod = "astap"
     force_wcs_determination: bool = False
     skip_wcs: bool = False
 

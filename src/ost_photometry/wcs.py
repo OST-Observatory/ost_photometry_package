@@ -710,7 +710,7 @@ def _load_wcs_from_fits(path: str | Path) -> wcs.WCS:
 def find_wcs_for_image(
     image: Image,
     *,
-    method: str = "astrometry",
+    method: str = "astap",
     cosmics_removed: bool = False,
     image_path_cosmics_removed: str | None = None,
     object_x_coordinates: np.ndarray | None = None,

@@ -16,7 +16,7 @@ def determine_wcs(
     output_dir: str | Path,
     reference_image_index: int = 0,
     force_wcs_determination: bool = False,
-    wcs_method: str = "astrometry",
+    wcs_method: str = "astap",
     x_pixel_coordinates: np.ndarray | None = None,
     y_pixel_coordinates: np.ndarray | None = None,
     indent: int = 2,
@@ -48,7 +48,7 @@ def determine_wcs(
     wcs_method
         Method to use for the WCS determination
         Options: 'astrometry', 'astap', or 'twirl'
-        Default is ``astrometry``.
+        Default is ``astap``.
 
     x_pixel_coordinates
         Pixel coordinates of the objects
@@ -131,7 +131,7 @@ def determine_wcs_all_images(
     input_dir: str | Path,
     output_dir: Path,
     force_wcs_determination: bool = False,
-    wcs_method: str = "astrometry",
+    wcs_method: str = "astap",
     x_pixel_coordinates: np.ndarray | None = None,
     y_pixel_coordinates: np.ndarray | None = None,
     only_combined_images: bool = False,
@@ -158,7 +158,7 @@ def determine_wcs_all_images(
     wcs_method
         Method to use for the WCS determination
         Options: 'astrometry', 'astap', or 'twirl'
-        Default is ``astrometry``.
+        Default is ``astap``.
 
     x_pixel_coordinates
         Pixel coordinates of the objects
@@ -239,7 +239,7 @@ def determine_wcs_all_images(
 
 def determine_wcs_core(
     image: base_utilities.Image,
-    wcs_method: str = "astrometry",
+    wcs_method: str = "astap",
     x_pixel_coordinates: np.ndarray | None = None,
     y_pixel_coordinates: np.ndarray | None = None,
     indent: int = 2,
@@ -255,7 +255,7 @@ def determine_wcs_core(
     wcs_method
         Method to use for the WCS determination
         Options: 'astrometry', 'astap', or 'twirl'
-        Default is ``astrometry``.
+        Default is ``astap``.
 
     x_pixel_coordinates
         Pixel coordinates of the objects
