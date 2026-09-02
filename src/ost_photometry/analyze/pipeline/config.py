@@ -357,7 +357,8 @@ class PostProcessConfig:
 class LightCurveConfig:
     skip_light_curve: bool = True
     plot_light_curve_objects_of_interest: bool = True
-    #: Check-star QC (OOI + most variable calibrators) and ensemble variability.
+    #: Check-star QC (OOI vs most variable catalog calibrators; OOI excluded
+    #: from the calibrator pool) and ensemble variability.
     plot_light_curve_calibration_objects: bool = False
     #: Overview raster (OOI + N random), not one PDF per star.
     plot_light_curve_all_objects: bool = False

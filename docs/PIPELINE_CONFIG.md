@@ -381,9 +381,9 @@ The step writes `tables/light_curves.ecsv` and plots views of that table.
 | Flag | Default | Role |
 |------|---------|------|
 | `plot_light_curve_objects_of_interest` | True | JD (and folded) plots for OOI under `results/lightcurves/` |
-| `plot_light_curve_calibration_objects` | False | Check-star QC (OOI + K most variable calibrators) and ensemble variability under `diagnostics/lightcurves/` |
+| `plot_light_curve_calibration_objects` | False | Check-star QC (OOI vs K most variable **catalog** calibrators; OOI ids are dropped from that pool) and ensemble variability under `diagnostics/lightcurves/` |
 | `plot_light_curve_all_objects` | False | Overview raster (OOI + `light_curve_overview_n` random stars), not one PDF per star |
-| `light_curve_calibrator_qc_n` | 3 | How many calibrators (largest excess RMS) appear on the QC panel |
+| `light_curve_calibrator_qc_n` | 3 | How many calibrators (largest excess RMS, excluding OOI) appear on the QC panel |
 | `light_curve_quantity` | `magnitude` | `mag_cal_*` vs normalized flux fallback |
 | `light_curve_color` | None | e.g. `B-V` colour rows and colour light curve |
 | `light_curve_time_scale` | `bjd_tdb` | Barycentric JD when RA/Dec + site exist; else `jd` |

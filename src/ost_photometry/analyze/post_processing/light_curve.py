@@ -1013,15 +1013,36 @@ def calibrator_variability_stats(
     )
 
 
-def top_variable_calibrator_ids(stats: Table, n: int = 3) -> list[int]:
+def ids_excluding(
+    ids: set[int] | list[int] | tuple[int, ...],
+    exclude: set[int] | list[int] | tuple[int, ...] | None,
+) -> set[int]:
+    """``ids`` without any member of ``exclude`` (e.g. drop OOI from calibrators)."""
+    skip = {int(i) for i in (exclude or ())}
+    return {int(i) for i in ids if int(i) not in skip}
+
+
+def top_variable_calibrator_ids(
+    stats: Table,
+    n: int = 3,
+    exclude: set[int] | list[int] | tuple[int, ...] | None = None,
+) -> list[int]:
     """``id``s with the largest ``excess_rms`` (stable order for ties)."""
     if stats is None or len(stats) == 0 or n <= 0:
         return []
+    skip = {int(i) for i in (exclude or ())}
     exc = np.asarray(stats["excess_rms"], dtype=float)
     ids = np.asarray(stats["id"]).astype(int)
     order = np.argsort(-exc, kind="stable")
-    k = min(int(n), order.size)
-    return [int(ids[i]) for i in order[:k]]
+    out: list[int] = []
+    for i in order:
+        sid = int(ids[i])
+        if sid in skip:
+            continue
+        out.append(sid)
+        if len(out) >= int(n):
+            break
+    return out
 
 
 def slice_light_curve(
@@ -1032,6 +1053,45 @@ def slice_light_curve(
     ids = np.asarray(lc["id"]).astype(int)
     filts = np.asarray(lc["filter"]).astype(str)
     return lc[(ids == int(source_id)) & (filts == str(filter_))]
+
+
+def build_check_star_qc_panels(
+    lc: Table,
+    filter_: str,
+    ooi_ids: list[tuple[int, str]],
+    calibrator_ids: list[int],
+) -> list[tuple[str, Table]]:
+    """
+    Panel specs for the check-star QC figure.
+
+    Objects of interest come first. Catalog calibrators that share an OOI
+    ``id`` are omitted so the science target is not listed twice.
+    """
+    panels: list[tuple[str, Table]] = []
+    seen: set[int] = set()
+    for oid, name in ooi_ids:
+        oid_i = int(oid)
+        if oid_i in seen:
+            continue
+        sub = slice_light_curve(lc, oid_i, filter_)
+        if len(sub) == 0:
+            continue
+        seen.add(oid_i)
+        panels.append((f"object of interest {name} (id={oid_i})", sub))
+    rank = 0
+    for cid in calibrator_ids:
+        cid_i = int(cid)
+        if cid_i in seen:
+            continue
+        sub = slice_light_curve(lc, cid_i, filter_)
+        if len(sub) == 0:
+            continue
+        seen.add(cid_i)
+        rank += 1
+        panels.append(
+            (f"catalog calibrator id={cid_i} (#{rank} by excess RMS)", sub)
+        )
+    return panels
 
 
 def plot_from_light_curves_table(

@@ -15,6 +15,7 @@ from ...post_processing.light_curve import (
     build_light_curves_table,
     build_light_curves_table_from_flux,
     calibrator_variability_stats,
+    ids_excluding,
     is_epoch_native_photometry_table,
     plot_from_light_curves_table,
     top_variable_calibrator_ids,
@@ -167,12 +168,14 @@ class LightCurveStep(base.PipelineStep):
                 oid = ooi_photometry_id(obj, filter_=filt)
                 if oid is not None:
                     object_names[int(oid)] = str(getattr(obj, "name", oid))
+        ooi_ids_all = set(object_names.keys())
 
         cal_ids_all: set[int] = set()
         if has_tbl:
             raw_cal = _calibration_object_ids_from_table(tbl)
             if raw_cal:
                 cal_ids_all.update(int(i) for i in raw_cal)
+        cal_ids_all = ids_excluding(cal_ids_all, ooi_ids_all)
 
         parts: list[Table] = []
         for filter_ in context.filter_list:
@@ -194,7 +197,10 @@ class LightCurveStep(base.PipelineStep):
             ids_cal = (
                 _calibration_object_ids_from_table(tbl, filter_) if has_tbl else None
             )
-            cal_set = set(int(i) for i in ids_cal) if ids_cal else set()
+            cal_set = ids_excluding(
+                set(int(i) for i in ids_cal) if ids_cal else set(),
+                ooi_ids_all,
+            )
             cal_ids_all.update(cal_set)
 
             if use_table:
@@ -392,11 +398,15 @@ class LightCurveStep(base.PipelineStep):
                     )
 
             if config.plot_light_curve_calibration_objects and cal_ids_all:
-                stats = calibrator_variability_stats(lc, cal_ids_all, filter_)
+                ooi_set = {oid for oid, _n in ooi_pairs}
+                cal_for_qc = ids_excluding(cal_ids_all, ooi_set)
+                stats = calibrator_variability_stats(lc, cal_for_qc, filter_)
                 if len(stats) > 0:
                     stats_parts.append(stats)
                 top = top_variable_calibrator_ids(
-                    stats, n=config.light_curve_calibrator_qc_n
+                    stats,
+                    n=config.light_curve_calibrator_qc_n,
+                    exclude=ooi_set,
                 )
                 lc_plots.plot_check_star_qc(
                     lc,

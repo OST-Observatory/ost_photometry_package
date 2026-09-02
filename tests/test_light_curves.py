@@ -270,6 +270,57 @@ def test_excess_rms_ranking_not_raw_rms():
         assert raw > exc[3]
 
 
+def test_ids_excluding_drops_ooi_from_calibrator_pool():
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        assert mod.ids_excluding({1, 38, 40}, {38}) == {1, 40}
+        assert mod.ids_excluding([38], [38]) == set()
+        assert mod.ids_excluding({1, 2}, None) == {1, 2}
+
+
+def test_top_variable_calibrator_ids_skips_excluded_ooi():
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        phot = _mini_photometry()
+        tbl = mod.build_light_curves_table(
+            phot,
+            ["V"],
+            calibrator_ids={1, 2, 3},
+            outlier_sigma=5.0,
+        )
+        stats = mod.calibrator_variability_stats(tbl, {1, 2, 3}, "V")
+        # id 1 ranks first; excluding it should promote the next calibrator.
+        top_all = mod.top_variable_calibrator_ids(stats, n=2)
+        assert top_all[0] == 1
+        top = mod.top_variable_calibrator_ids(stats, n=2, exclude={1})
+        assert 1 not in top
+        assert len(top) == 2
+
+
+def test_check_star_qc_panels_do_not_repeat_ooi():
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        phot = _mini_photometry()
+        tbl = mod.build_light_curves_table(
+            phot,
+            ["V"],
+            object_names={1: "V* demo"},
+            calibrator_ids={1, 2, 3},
+        )
+        panels = mod.build_check_star_qc_panels(
+            tbl,
+            "V",
+            ooi_ids=[(1, "V* demo")],
+            calibrator_ids=[1, 2, 3],
+        )
+        titles = [title for title, _sub in panels]
+        assert titles[0] == "object of interest V* demo (id=1)"
+        assert sum("id=1" in t for t in titles) == 1
+        assert [t for t in titles if t.startswith("catalog calibrator")] == [
+            "catalog calibrator id=2 (#1 by excess RMS)",
+            "catalog calibrator id=3 (#2 by excess RMS)",
+        ]
+
 def test_excess_rms_helper():
     with isolated_sys_modules():
         mod = _load_light_curve()

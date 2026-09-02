@@ -275,8 +275,8 @@ drawn as open grey points.
 |-------------|---------|
 | `lightcurve_jd_<name>_<filter>` | Science light curve (OOI). Magnitudes inverted; limits from median ± MAD. |
 | `lightcurve_folded_<name>_<filter>` | Phase \(0\ldots 1\) (optionally two cycles), marker at phase 0. |
-| `check_star_qc_<filter>` | OOI plus the **K most variable calibrators** (excess RMS, not raw RMS). |
-| `calibrator_variability_<filter>` | All used calibrators: excess RMS vs magnitude, residual LCs (top-K in colour). |
+| `check_star_qc_<filter>` | OOI vs the **K most variable catalog calibrators** (excess RMS, not raw RMS). OOI `id`s are removed from the calibrator pool even if they have `mag_std_*`. |
+| `calibrator_variability_<filter>` | Catalog calibrators only (OOI excluded): excess RMS vs magnitude, residual LCs (top-K in colour). |
 | `lightcurve_overview_<filter>` | OOI + N random field stars (only if `plot_light_curve_all_objects`). |
 
 **Excess RMS** is \(\sqrt{\max(0,\mathrm{RMS}^2-\mathrm{median}(\sigma_m)^2)}\)

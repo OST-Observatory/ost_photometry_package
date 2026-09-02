@@ -359,20 +359,13 @@ def plot_check_star_qc(
     show_airmass: bool = False,
     magnitude_system: str = "vega",
 ) -> Path | None:
-    """OOI plus the most variable calibrators, shared time axis."""
-    from ..post_processing.light_curve import slice_light_curve
+    """OOI plus the most variable catalog calibrators (OOI ids are not repeated)."""
+    from ..post_processing.light_curve import build_check_star_qc_panels
 
-    panels: list[tuple[str, Table]] = []
-    for oid, name in ooi_ids:
-        sub = slice_light_curve(lc, oid, filter_)
-        if len(sub) > 0:
-            panels.append((f"OOI {name} (id={oid})", sub))
-    for cid in calibrator_ids:
-        sub = slice_light_curve(lc, cid, filter_)
-        if len(sub) > 0:
-            panels.append((f"calibrator id={cid}", sub))
+    panels = build_check_star_qc_panels(lc, filter_, ooi_ids, calibrator_ids)
     if not panels:
         return None
+    n_cal = sum(1 for title, _sub in panels if title.startswith("catalog calibrator"))
     n = len(panels)
     fig, axes = plt.subplots(
         n,
@@ -417,7 +410,19 @@ def plot_check_star_qc(
                 ax2.set_ylabel("X", fontsize=8, color="0.4")
     if x_label:
         axes[-1, 0].set_xlabel(x_label, fontsize=_LABEL_FS)
-    fig.suptitle(f"Check-star QC ({filter_})", fontsize=_TITLE_FS)
+    if n_cal <= 0:
+        fig.suptitle(
+            f"Check-star QC ({filter_}): object of interest "
+            "(no independent catalog calibrators)",
+            fontsize=_TITLE_FS,
+        )
+    else:
+        fig.suptitle(
+            f"Check-star QC ({filter_}): object of interest vs "
+            f"{n_cal} catalog calibrator"
+            f"{'s' if n_cal != 1 else ''} with largest excess RMS",
+            fontsize=_TITLE_FS,
+        )
     fig.tight_layout()
     out = diagnostics_dir(output_dir, "lightcurves")
     path = out / f"check_star_qc_{_sanitize_filename(filter_)}.{file_type}"
