@@ -88,6 +88,151 @@ Do **not** add a third linear y-axis on the same panel or overlay every epoch in
 
 ---
 
+## Light curves
+
+The pipeline already writes one long table `tables/light_curves.ecsv` and
+plots **views** of it (JD / folded / check-star QC / calibrator excess-RMS).
+See [DIAGNOSTICS.md](DIAGNOSTICS.md#light-curves). Check-star QC ranks the
+**most variable** calibrators on purpose (teaching / debug). The items below
+are about **determination** (ensemble, errors, epoch quality) and
+**evaluation** (period, colour vs phase), not another PDF layout.
+
+Do **not** add more per-star PDFs, interactive HTML/plotly, a prettier
+`ImageSeries` flux backend, or a full eclipse MCMC. Those cement the old dual
+path or assume the table physics below already exists.
+
+### Two light-curve products, not one API (P1)
+
+Build **two versions**, same photometry table, different physics — not one
+function with a `mode=` switch that shares defaults.
+
+| Product | Scale | What it is for |
+|---------|--------|----------------|
+| **Catalog-transformed** | Calibrated magnitudes (`mag_cal_*`, Vega/AB as labelled) | Absolute level, colour, comparison to catalogs / other nights / other sites. ZP, colour term, and catalog \(\sigma\) stay in the error budget. |
+| **Differential** | Relative magnitude (OOI minus a quiet field ensemble) | Eclipse/pulsation **depth** with the smallest extra scatter. No catalog magnitudes in the comparison; catalog ZP must not enter the differential points or their uncertainties. |
+
+Today only the first exists (`mag_cal_*` in `light_curves.ecsv`). The quiet
+ensemble below is the second product, not a post-hoc tweak of the first.
+
+**Direction:** both live on the long table (e.g. `mag` / `mag_err` for the
+transformed curve; `dmag` / `dmag_err` or `quantity="differential"` rows for
+the relative curve). Plots and C7 scripts say which product they show. Do not
+silently subtract the ensemble from `mag_cal_*` and still call it calibrated.
+
+### Quiet comparison ensemble — differential product (P1)
+
+A C7 light curve whose **relative depth** can be defended against check stars
+needs the opposite of today’s QC ranking: the **quietest** \(N\) field stars
+(smallest excess RMS, similar brightness to the OOI) as a comparison ensemble.
+Their median residual is the common mode (cloud, tracking, extinction).
+Subtract that from the OOI in **instrumental** (or quasi-ZP) magnitudes so
+catalog \(\sigma\) never enters `dmag_err`.
+
+This is not a replacement for the catalog-transformed curve: that one keeps
+`mag_cal_*` and catalog systematics on purpose.
+
+**Direction:** select quiet stars from `calibrator_lc_stats.ecsv` (and/or
+similar-mag field stars, not only catalog calibrators); write ensemble
+residual and OOI-minus-ensemble on `light_curves.ecsv` as the differential
+product. Keep the “most variable” QC panel as a separate diagnostic of the
+transformed set.
+
+### Global bad-epoch flags (P1)
+
+`flag_outlier` is per source. A cloud hits everyone. Use the median residual of
+the **quiet** ensemble per epoch; if that common mode is large, the epoch is
+bad, not the OOI.
+
+**Direction:** `flag_epoch` (or equivalent) on the long table, plotted
+distinctly from per-star outliers. Do not delete rows.
+
+### Inflate photometric uncertainties (P1)
+
+Error bars on the **transformed** curve include photon/sky \(\sigma_m\) and,
+honestly, catalog/ZP scatter. On the **differential** curve they must not
+include catalog \(\sigma\): only photometry of OOI and ensemble, plus the
+ensemble’s excess RMS as systematic floor. If the quiet ensemble has 0.02 mag
+excess RMS, that floor applies to `dmag_err`. A 0.03 mag “variation” on
+`mag_cal_*` can still be the night **or** the catalog; on `dmag` it should
+not be the catalog.
+
+**Direction:** `mag_err_inflated` for the transformed product (optional ZP
+floor); `dmag_err = \sqrt{\sigma_{\mathrm{OOI}}^2 + \sigma_{\mathrm{ens}}^2 +
+\sigma_{\mathrm{ens,exc}}^2}` for the differential product. Periodograms use
+the product they are run on.
+
+### Residuals vs observables (P1)
+
+One diagnostic sheet: OOI residual (after the **differential** ensemble) vs
+airmass, FWHM, sky, pixel \((x,y)\). The catalog-transformed curve can share
+the same \(x\)-observables; do not mix `mag_cal` residuals into the
+differential depth QC. Correlation with airmass → extinction/colour; with
+FWHM → seeing/blend; with position → tracking.
+
+**Direction:** add `fwhm`, `sky`, `x`, `y` (and existing `airmass`) to
+`light_curves.ecsv` when extraction already has them. Views cannot invent
+those columns later.
+
+### Period search from the table (P2)
+
+`period` / \(t_0\) are still typed into the C7 script. Lomb–Scargle (or BLS
+for eclipses) on the **differential** curve (smallest extra scatter), with a
+false-alarm probability, then fold on the peak. Report the same \(P\) on the
+catalog-transformed fold so students see depth on a mag scale vs a cleaner
+relative curve. Teaching core: measure \(P\), do not paste it.
+
+**Direction:** optional step/helper reading `light_curves.ecsv`; write
+periodogram PDF under `diagnostics/lightcurves/` and annotate the folded
+science plot. Default off for non-C7 runs.
+
+### Colour vs phase (P2)
+
+Colour vs JD exists (`light_curve_color`, e.g. \(B-V\)). Colour vs **phase**
+distinguishes eclipse (minimum cooler) from pulsation (colour tracks
+brightness).
+
+**Direction:** one extra view of the colour rows already in the long table,
+folded with the same \(P\) / \(t_0\) as the magnitude curve.
+
+### Simple shape benchmark (P2)
+
+No MCMC. Overlay a constant, optionally a sinusoid or trapezoid minimum, with
+\(\chi^2/\nu\) in the annotation. Enough to read “flat vs variable” and
+“period fit vs noise”.
+
+**Direction:** optional; science PDF stays the data. Do not couple this to
+isochrone MCMC.
+
+### APER vs PSF as two curves (P3)
+
+C7 detection thresholds and blending in tight pairs change amplitude. Same
+`id` from APER and PSF tables on one plot: if the amplitude agrees, blend is
+unlikely.
+
+**Direction:** only when both extractions exist; do not force dual extraction
+in the default C7 script.
+
+### Comparison stars by magnitude and colour (P3)
+
+Calibrators are catalog matches. For the variable, stars of **similar mag and
+colour** in the field matter more. Otherwise differential red/blue remains in
+the residual.
+
+**Direction:** optional extra cut when building the quiet ensemble (P1), not a
+second calibration engine.
+
+### Blend / neighbour in the aperture (P3)
+
+Per OOI epoch: brightest neighbour inside the aperture radius and its flux
+fraction. If the neighbour contributes ~20 %, the observed amplitude is a
+lower bound.
+
+**Direction:** needs extraction positions + aperture radius already on the
+run; store a column on the long table. Skip if crowding products are not
+worth the join.
+
+---
+
 ## CMD / isochrones
 
 ### Overhaul isochrone handling (P2)
@@ -212,14 +357,17 @@ input; it does not write wide tables.
 
 ## Suggested order
 
-1. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
-2. **P3:** OST filter throughput → synphot Vega↔AB offsets.
-3. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter.
-4. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
-5. **P2:** Overhaul isochrone handling (refresh grids, fetch+cache, named-column loaders).
-6. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
-7. **P3:** Hess / density underlay on crowded CMDs (default off).
-8. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
-9. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
-10. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
-11. **On utilities changes:** extract only the affected area.
+1. **P1:** Light curves — two products (catalog-transformed mag scale vs differential depth without catalog \(\sigma\)); quiet ensemble + `flag_epoch`; then inflate \(\sigma\) and residuals vs airmass/FWHM/sky/\(x,y\).
+2. **P2:** Light curves — period search (Lomb–Scargle / BLS) from `light_curves.ecsv`; colour vs phase; simple \(\chi^2\) shape overlay.
+3. **P2:** Overhaul isochrone handling (refresh grids, fetch+cache, named-column loaders).
+4. **P3:** Light curves — APER vs PSF amplitude, mag/colour-matched ensemble, aperture blend fraction.
+5. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
+6. **P3:** OST filter throughput → synphot Vega↔AB offsets.
+7. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter.
+8. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
+9. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
+10. **P3:** Hess / density underlay on crowded CMDs (default off).
+11. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
+12. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
+13. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
+14. **On utilities changes:** extract only the affected area.
