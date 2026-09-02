@@ -148,21 +148,28 @@ def test_run_hips_reference_subtraction_reuses_image_wcs(
         calls.append("find_wcs_for_image")
         return astropy_wcs.WCS(naxis=2)
 
+    captured: dict = {}
+
+    def _fake_hotpants(science_ccd, template_hdu, **kwargs):
+        captured["science_ccd"] = science_ccd
+        captured["template_hdu"] = template_hdu
+        return workdir / "hotpants_diff.fits"
+
     class _FakeHips:
+        last_timeout = None
+        last_hips = None
         timeout = 0
         server = ""
 
         def query_with_wcs(self, **kwargs):
+            type(self).last_timeout = self.timeout
+            type(self).last_hips = kwargs.get("hips")
             primary = fits.PrimaryHDU(data=np.ones((8, 8), dtype=np.float32))
             return fits.HDUList([primary])
 
     monkeypatch.setattr(hips_mod, "find_wcs_for_image", _fake_find_wcs_for_image)
     monkeypatch.setattr(hips_mod, "hips2fitsClass", _FakeHips)
-    monkeypatch.setattr(
-        hips_mod.subtraction,
-        "run_hotpants",
-        lambda *args, **kwargs: workdir / "hotpants_diff.fits",
-    )
+    monkeypatch.setattr(hips_mod.subtraction, "run_hotpants", _fake_hotpants)
 
     result = run_hips(
         "B",
@@ -174,6 +181,12 @@ def test_run_hips_reference_subtraction_reuses_image_wcs(
 
     assert calls == []
     assert result.difference_fits == workdir / "hotpants_diff.fits"
+    assert result.hips_source == "CDS/P/DSS2/blue"
+    assert result.hips_from_cache is False
+    assert captured["science_ccd"].wcs.wcs.crval[0] == pytest.approx(180.0)
+    assert captured["science_ccd"].wcs.wcs.crval[1] == pytest.approx(45.0)
+    assert _FakeHips.last_timeout == pytest.approx(120.0)
+    assert _FakeHips.last_hips == "CDS/P/DSS2/blue"
 
 
 def test_run_hips_reference_subtraction_solves_wcs_for_single_image(
@@ -224,3 +237,222 @@ def test_run_hips_reference_subtraction_solves_wcs_for_single_image(
     )
 
     assert calls == ["science.fit"]
+
+
+def test_hips_source_for_filter_bandpass_map(monkeypatch):
+    hips_mod = _hips_module(monkeypatch)
+    fn = hips_mod.hips_source_for_filter
+    assert fn("B") == "CDS/P/DSS2/blue"
+    assert fn("U") == "CDS/P/DSS2/blue"
+    assert fn("V") == "CDS/P/DSS2/red"
+    assert fn("R") == "CDS/P/DSS2/red"
+    assert fn("I") == "CDS/P/DSS2/red"
+    assert fn("g") == "CDS/P/PanSTARRS/DR1/g"
+    assert fn("r") == "CDS/P/PanSTARRS/DR1/r"
+    assert fn("unknown") == "CDS/P/DSS2/red"
+    assert fn("V", explicit="CDS/P/PanSTARRS/DR1/g") == "CDS/P/PanSTARRS/DR1/g"
+    assert fn("V", explicit="auto") == "CDS/P/DSS2/red"
+    assert fn("V", explicit=None) == "CDS/P/DSS2/red"
+
+
+def test_hips_timeout_seconds_converts_milliseconds(monkeypatch):
+    hips_mod = _hips_module(monkeypatch)
+    fn = hips_mod.hips_timeout_seconds
+    assert fn(120_000) == pytest.approx(120.0)
+    assert fn(30) == pytest.approx(30.0)
+    assert fn(0) == pytest.approx(120.0)
+    assert fn(-1) == pytest.approx(120.0)
+
+
+def _dummy_wcs() -> astropy_wcs.WCS:
+    wcs_obj = astropy_wcs.WCS(naxis=2)
+    wcs_obj.wcs.crpix = [32.5, 32.5]
+    wcs_obj.wcs.crval = [180.0, 45.0]
+    wcs_obj.wcs.cd = [[0.0001, 0.0], [0.0, 0.0001]]
+    wcs_obj.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+    return wcs_obj
+
+
+def _ok_hdus() -> fits.HDUList:
+    return fits.HDUList([fits.PrimaryHDU(data=np.ones((8, 8), dtype=np.float32))])
+
+
+def test_fetch_hips_cutout_uses_cache(monkeypatch, tmp_path: Path):
+    hips_mod = _hips_module(monkeypatch)
+    monkeypatch.setattr(hips_mod.time, "sleep", lambda *a, **k: None)
+    wcs_obj = _dummy_wcs()
+    shape = (64, 64)
+    n_query = {"n": 0}
+
+    class _CountingHips:
+        timeout = 0
+        server = ""
+
+        def query_with_wcs(self, **kwargs):
+            n_query["n"] += 1
+            return _ok_hdus()
+
+    monkeypatch.setattr(hips_mod, "hips2fitsClass", _CountingHips)
+
+    first = hips_mod.fetch_hips_cutout(
+        wcs_obj,
+        "CDS/P/DSS2/blue",
+        workdir=tmp_path,
+        shape=shape,
+        retries=1,
+        fallback_servers=(),
+    )
+    first[0].close()
+    second = hips_mod.fetch_hips_cutout(
+        wcs_obj,
+        "CDS/P/DSS2/blue",
+        workdir=tmp_path,
+        shape=shape,
+        retries=1,
+        fallback_servers=(),
+    )
+    second[0].close()
+
+    assert n_query["n"] == 1
+    assert first[2] is False
+    assert second[2] is True
+    assert first[1] == second[1]
+    assert first[1].is_file()
+
+
+def test_fetch_hips_cutout_retries_then_succeeds(monkeypatch, tmp_path: Path):
+    hips_mod = _hips_module(monkeypatch)
+    sleeps: list[float] = []
+    monkeypatch.setattr(hips_mod.time, "sleep", lambda s: sleeps.append(s))
+    wcs_obj = _dummy_wcs()
+
+    class _FlakyHips:
+        calls = 0
+        timeout = 0
+        server = ""
+
+        def query_with_wcs(self, **kwargs):
+            type(self).calls += 1
+            if type(self).calls < 3:
+                raise ConnectionError("temporary")
+            return _ok_hdus()
+
+    monkeypatch.setattr(hips_mod, "hips2fitsClass", _FlakyHips)
+
+    hdus, path, from_cache = hips_mod.fetch_hips_cutout(
+        wcs_obj,
+        "CDS/P/DSS2/red",
+        workdir=tmp_path,
+        shape=(64, 64),
+        retries=3,
+        retry_backoff_s=1.5,
+        fallback_servers=(),
+        use_cache=False,
+    )
+    hdus.close()
+
+    assert _FlakyHips.calls == 3
+    assert from_cache is False
+    assert path.is_file()
+    assert sleeps == [1.5, 3.0]
+
+
+def test_fetch_hips_cutout_falls_back_to_second_server(monkeypatch, tmp_path: Path):
+    hips_mod = _hips_module(monkeypatch)
+    monkeypatch.setattr(hips_mod.time, "sleep", lambda *a, **k: None)
+    wcs_obj = _dummy_wcs()
+    primary = "https://alaskybis.example/hips2fits"
+    fallback = "https://alasky.example/hips2fits"
+    tried: list[str] = []
+
+    class _ServerAwareHips:
+        timeout = 0
+        server = ""
+
+        def query_with_wcs(self, **kwargs):
+            tried.append(self.server)
+            if self.server == primary:
+                raise ConnectionError("primary down")
+            return _ok_hdus()
+
+    monkeypatch.setattr(hips_mod, "hips2fitsClass", _ServerAwareHips)
+
+    hdus, _path, from_cache = hips_mod.fetch_hips_cutout(
+        wcs_obj,
+        "CDS/P/DSS2/blue",
+        workdir=tmp_path,
+        shape=(64, 64),
+        server=primary,
+        fallback_servers=(fallback,),
+        retries=1,
+        use_cache=False,
+    )
+    hdus.close()
+
+    assert tried == [primary, fallback]
+    assert from_cache is False
+
+
+def test_fetch_hips_cutout_raises_after_all_servers_fail(monkeypatch, tmp_path: Path):
+    hips_mod = _hips_module(monkeypatch)
+    monkeypatch.setattr(hips_mod.time, "sleep", lambda *a, **k: None)
+
+    class _DeadHips:
+        timeout = 0
+        server = ""
+
+        def query_with_wcs(self, **kwargs):
+            raise ConnectionError("offline")
+
+    monkeypatch.setattr(hips_mod, "hips2fitsClass", _DeadHips)
+
+    with pytest.raises(RuntimeError, match="after retries"):
+        hips_mod.fetch_hips_cutout(
+            _dummy_wcs(),
+            "CDS/P/DSS2/blue",
+            workdir=tmp_path,
+            shape=(64, 64),
+            retries=2,
+            fallback_servers=(),
+            use_cache=False,
+        )
+
+
+def test_run_hips_maps_v_filter_to_dss2_red(monkeypatch, tmp_path: Path):
+    hips_mod = _hips_module(monkeypatch)
+    science_path = tmp_path / "science.fit"
+    _write_science_fits(science_path)
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    class _FakeHips:
+        last_hips = None
+        timeout = 0
+        server = ""
+
+        def query_with_wcs(self, **kwargs):
+            type(self).last_hips = kwargs.get("hips")
+            return _ok_hdus()
+
+    monkeypatch.setattr(
+        hips_mod,
+        "find_wcs_for_image",
+        lambda *a, **k: _dummy_wcs(),
+    )
+    monkeypatch.setattr(hips_mod, "hips2fitsClass", _FakeHips)
+    monkeypatch.setattr(
+        hips_mod.subtraction,
+        "run_hotpants",
+        lambda *a, **k: workdir / "hotpants_diff.fits",
+    )
+
+    result = hips_mod.run_hips_reference_subtraction(
+        "V",
+        str(science_path),
+        workdir,
+        reuse_wcs_image_series=None,
+        plot_comp=False,
+    )
+
+    assert result.hips_source == "CDS/P/DSS2/red"
+    assert _FakeHips.last_hips == "CDS/P/DSS2/red"

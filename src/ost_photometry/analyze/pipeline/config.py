@@ -381,13 +381,20 @@ class HipsConfig:
     hips_reference_subtraction_image_index: int = 0
     hips_reference_subtraction_wcs_method: WcsMethod | None = None
     hips_reference_subtraction_plot_comp: bool = True
-    hips_reference_subtraction_hips_source: str = "CDS/P/DSS2/blue"
+    # None / "auto" → bandpass-matched survey (DSS2 blue/red, PanSTARRS ugrizy).
+    hips_reference_subtraction_hips_source: str | None = None
     hips_reference_subtraction_trim: tuple[int, int, int, int] | None = None
     hips_reference_subtraction_reuse_pipeline_wcs: bool = True
     hips_reference_subtraction_timeout_ms: int = 120_000
     hips_reference_subtraction_server: str = (
         "https://alaskybis.cds.unistra.fr/hips-image-services/hips2fits"
     )
+    hips_reference_subtraction_fallback_servers: tuple[str, ...] = (
+        "https://alasky.cds.unistra.fr/hips-image-services/hips2fits",
+    )
+    hips_reference_subtraction_retries: int = 3
+    hips_reference_subtraction_retry_backoff_s: float = 1.5
+    hips_reference_subtraction_use_cache: bool = True
     hips_reference_subtraction_verbose: bool = False
     hips_reference_subtraction_hotpants_executable: str | None = None
     hips_reference_subtraction_hotpants_extra_args: tuple[str, ...] = field(

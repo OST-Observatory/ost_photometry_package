@@ -233,3 +233,30 @@ def test_path_extinction_coefficients_flat_access():
     cfg = PipelineConfig(path_extinction_coefficients="/tmp/site_extinction.json")
     assert cfg.path_extinction_coefficients == "/tmp/site_extinction.json"
     assert cfg.extinction.path_extinction_coefficients == "/tmp/site_extinction.json"
+
+
+def test_hips_config_defaults_and_overrides():
+    cfg_mod = load_module_from_path(
+        "ost_photometry.analyze.pipeline.config",
+        pkg_src() / "ost_photometry" / "analyze" / "pipeline" / "config.py",
+    )
+    PipelineConfig = cfg_mod.PipelineConfig
+
+    cfg = PipelineConfig()
+    assert cfg.skip_hips_reference_subtraction is True
+    assert cfg.hips_reference_subtraction_hips_source is None
+    assert cfg.hips_reference_subtraction_use_cache is True
+    assert cfg.hips_reference_subtraction_retries == 3
+    assert cfg.hips_reference_subtraction_retry_backoff_s == pytest.approx(1.5)
+    assert cfg.hips_reference_subtraction_fallback_servers == (
+        "https://alasky.cds.unistra.fr/hips-image-services/hips2fits",
+    )
+
+    cfg.apply_overrides(
+        hips_reference_subtraction_hips_source="CDS/P/DSS2/blue",
+        hips_reference_subtraction_retries=1,
+        hips_reference_subtraction_use_cache=False,
+    )
+    assert cfg.hips.hips_reference_subtraction_hips_source == "CDS/P/DSS2/blue"
+    assert cfg.hips_reference_subtraction_retries == 1
+    assert cfg.hips_reference_subtraction_use_cache is False

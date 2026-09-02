@@ -233,6 +233,82 @@ worth the join.
 
 ---
 
+## Difference images
+
+HiPS archival subtraction is still **one science image**, one HOTPANTS run,
+optional, skip-by-default. Fetch hardening is **done**: bandpass-matched
+survey, cache under `work/subtract/`, retries with backoff, CDS fallback
+server, the same WCS on science CCD and HiPS query, and the step **warns and
+continues** on network/HOTPANTS failure (`context.hips_subtract_result`).
+
+What remains is architecture: HiPS is one **template source**, not the whole
+difference-image product. Do **not** start with the legacy trim
+`(0, 1599, 0, 2501)`, extra survey strings in config, or HOTPANTS flag
+tuning while there is still no night template, no detection, and one
+overwritten `hotpants_diff.fits`.
+
+### Split Template / Subtractor / Detection (P2)
+
+Three layers, like the two light-curve products: do not grow
+`HipsReferenceSubtractStep` into a second pipeline.
+
+| Layer | Job |
+|-------|-----|
+| **Template** | Archive (HiPS / PanSTARRS) **or** a night median / other epoch of the same series |
+| **Subtractor** | HOTPANTS (current) or later ZOGY; always a shared WCS, kernel, masks |
+| **Detection** | Sources on the difference; match known photometry `id`s vs new vs moving |
+
+Photometry must not block on this. Difference search is its own step (or
+night job) after WCS + extraction, with a clear skip when the template or
+`hotpants` is missing.
+
+### Internal night template (P2)
+
+Asteroids, comets, and transients do **not** need CDS. Template = median of
+the other epochs (leave-one-out) or the nearest exposure, regridded to a
+common WCS. That scales with RASA: same data, no hips2fits. HiPS stays the
+question “was this already on the DSS plate?”.
+
+**Direction:** a template provider next to the HiPS fetch, not a second
+copy of HOTPANTS wiring. Reuse the subtractor on whatever FITS the provider
+returns.
+
+### Detection on ±diff and linking (P2)
+
+Starfinder on the positive and negative difference (new/brighter vs
+disappeared). Match against photometry `id`s: a large residual on a known
+star is a bad kernel, not a transient. Unmatched positive sources linked
+across epochs: linear on the sky in minutes–hours → mover; fixed over the
+night → transient, variable, cosmic, ghost. Optional SkyBoT/MPC for known
+movers.
+
+**Direction:** `tables/diff_candidates.ecsv` (RA/Dec, JD, flux on the diff,
+FWHM, dipole flag, `matched_id` or empty, `motion_arcsec_per_h` if linked).
+That table is the science product; FITS stay under `work/`. Diagnostics
+under `diagnostics/subtract/` with `epoch_id` / `image_id` in the filename,
+not one overwritten `hotpants_diff.fits`. Result list on `context`.
+
+### HOTPANTS as one backend (P3)
+
+Keep HOTPANTS; it can fit a kernel. ZOGY would give cleaner significance
+maps later, as a second backend, not a first-day replacement.
+`run_hotpants` should stay analogous to “one table, plots as views”:
+`subtract(science, template) → diff FITS + noise map`.
+
+### RASA / wide field (P3)
+
+- **Once per pointing, not per frame:** cache one archive template per
+  field; all epochs of the night against the **internal** template. HiPS
+  only if you care about “not in DSS”.
+- **Tiles or downsample:** hips2fits and HOTPANTS on a full RASA frame are
+  unreliable. Tile the template, or difference a binned preview plus
+  cutouts around candidates.
+- **Separate preset from C7 photometry:** RASA monitoring can skip
+  calibration (extraction + diff + candidates). C7: HiPS optional on the
+  reference image; the time series uses the internal template.
+
+---
+
 ## CMD / isochrones
 
 ### Overhaul isochrone handling (P2)
@@ -358,16 +434,18 @@ input; it does not write wide tables.
 ## Suggested order
 
 1. **P1:** Light curves — two products (catalog-transformed mag scale vs differential depth without catalog \(\sigma\)); quiet ensemble + `flag_epoch`; then inflate \(\sigma\) and residuals vs airmass/FWHM/sky/\(x,y\).
-2. **P2:** Light curves — period search (Lomb–Scargle / BLS) from `light_curves.ecsv`; colour vs phase; simple \(\chi^2\) shape overlay.
-3. **P2:** Overhaul isochrone handling (refresh grids, fetch+cache, named-column loaders).
-4. **P3:** Light curves — APER vs PSF amplitude, mag/colour-matched ensemble, aperture blend fraction.
-5. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
-6. **P3:** OST filter throughput → synphot Vega↔AB offsets.
-7. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter.
-8. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
-9. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
-10. **P3:** Hess / density underlay on crowded CMDs (default off).
-11. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
-12. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
-13. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
-14. **On utilities changes:** extract only the affected area.
+2. **P2:** Difference images — internal night template + detection/linking + `diff_candidates.ecsv` (HiPS fetch hardening is done; do not start with legacy trim or extra survey strings).
+3. **P2:** Light curves — period search (Lomb–Scargle / BLS) from `light_curves.ecsv`; colour vs phase; simple \(\chi^2\) shape overlay.
+4. **P2:** Overhaul isochrone handling (refresh grids, fetch+cache, named-column loaders).
+5. **P3:** Light curves — APER vs PSF amplitude, mag/colour-matched ensemble, aperture blend fraction.
+6. **P3:** Difference images — ZOGY backend; RASA field-wise HiPS cache / tiles; separate monitoring preset.
+7. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
+8. **P3:** OST filter throughput → synphot Vega↔AB offsets.
+9. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter.
+10. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
+11. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
+12. **P3:** Hess / density underlay on crowded CMDs (default off).
+13. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
+14. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
+15. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
+16. **On utilities changes:** extract only the affected area.

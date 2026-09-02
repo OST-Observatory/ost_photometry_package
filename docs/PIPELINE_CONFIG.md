@@ -392,6 +392,27 @@ The step writes `tables/light_curves.ecsv` and plots views of that table.
 
 See [DIAGNOSTICS.md](DIAGNOSTICS.md#light-curves).
 
+## HiPS reference subtraction
+
+`HipsReferenceSubtractStep` is off by default (`skip_hips_reference_subtraction=True`).
+It subtracts one archival HiPS cutout from one science image with HOTPANTS
+(needs `hotpants` on `PATH`). A failed HiPS download or HOTPANTS run **does not
+abort** the rest of the analysis.
+
+| Flag | Default | Role |
+|------|---------|------|
+| `hips_reference_subtraction_hips_source` | `None` (auto) | Explicit HiPS id, or bandpass-matched (`B`/`U` → DSS2 blue, `V`/`R`/`I` → DSS2 red, `ugrizy` → PanSTARRS) |
+| `hips_reference_subtraction_use_cache` | `True` | Reuse cutouts under `work/subtract/` keyed by survey + WCS fingerprint |
+| `hips_reference_subtraction_retries` | `3` | Attempts per hips2fits server |
+| `hips_reference_subtraction_retry_backoff_s` | `1.5` | Exponential backoff between attempts |
+| `hips_reference_subtraction_fallback_servers` | CDS `alasky` mirror | Tried after the primary `hips_reference_subtraction_server` |
+| `hips_reference_subtraction_timeout_ms` | `120000` | Converted to seconds for astroquery (`hips2fitsClass.timeout`) |
+| `hips_reference_subtraction_reuse_pipeline_wcs` | `True` | Same WCS on the science `CCDData` and the HiPS query |
+
+Cutouts are cached; `hotpants_diff.fits` is still a single output name (one
+image per run). Night templates, detection, and candidate tables are not in
+this step — see [TODO.md](TODO.md#difference-images).
+
 ## Further reading
 
 - [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) — site extinction table and dedicated-night best practices

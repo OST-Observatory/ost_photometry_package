@@ -28,7 +28,8 @@ class HipsReferenceSubtractStep(base.PipelineStep):
     Post-processing: subtract a HiPS archive cutout from one science image.
 
     Requires ``hotpants`` on ``PATH`` or `hips_reference_subtraction_hotpants_executable`.
-    Disabled by default (`skip_hips_reference_subtraction`).
+    Disabled by default (`skip_hips_reference_subtraction`). HiPS/network
+    failures warn and leave `context.hips_subtract_result` unset; analysis continues.
     """
 
     name = "hips_reference_subtract"
@@ -87,25 +88,41 @@ class HipsReferenceSubtractStep(base.PipelineStep):
             "HiPS reference image subtraction (HOTPANTS)",
             style_name="HEADER",
         )
-        result = run_hips_reference_subtraction(
-            filter_,
-            science_path,
-            workdir,
-            wcs_method=wcs_method,
-            plot_comp=config.hips_reference_subtraction_plot_comp,
-            hips_source=config.hips_reference_subtraction_hips_source,
-            file_type_plots=config.file_type_plots,
-            trim_slice_yx=config.hips_reference_subtraction_trim,
-            reuse_wcs_image_series=reuse,
-            hips_timeout_ms=config.hips_reference_subtraction_timeout_ms,
-            hips_server=config.hips_reference_subtraction_server,
-            hips_verbose=config.hips_reference_subtraction_verbose,
-            hotpants_executable=_hotpants_executable(config),
-            hotpants_extra_args=extra if extra else None,
-            hotpants_output_filename=config.hips_reference_subtraction_output_filename,
-        )
+        try:
+            result = run_hips_reference_subtraction(
+                filter_,
+                science_path,
+                workdir,
+                wcs_method=wcs_method,
+                plot_comp=config.hips_reference_subtraction_plot_comp,
+                hips_source=config.hips_reference_subtraction_hips_source,
+                file_type_plots=config.file_type_plots,
+                trim_slice_yx=config.hips_reference_subtraction_trim,
+                reuse_wcs_image_series=reuse,
+                hips_timeout_ms=config.hips_reference_subtraction_timeout_ms,
+                hips_server=config.hips_reference_subtraction_server,
+                hips_fallback_servers=config.hips_reference_subtraction_fallback_servers,
+                hips_retries=config.hips_reference_subtraction_retries,
+                hips_retry_backoff_s=config.hips_reference_subtraction_retry_backoff_s,
+                hips_use_cache=config.hips_reference_subtraction_use_cache,
+                hips_verbose=config.hips_reference_subtraction_verbose,
+                hotpants_executable=_hotpants_executable(config),
+                hotpants_extra_args=extra if extra else None,
+                hotpants_output_filename=config.hips_reference_subtraction_output_filename,
+            )
+        except Exception as exc:
+            terminal_output.print_to_terminal(
+                f"HipsReferenceSubtractStep failed; continuing analysis ({exc})",
+                indent=2,
+                style_name="WARNING",
+            )
+            context.hips_subtract_result = None
+            return context
+        context.hips_subtract_result = result
+        cache_note = " (cached HiPS cutout)" if result.hips_from_cache else ""
         terminal_output.print_to_terminal(
-            f"Difference image: {result.difference_fits}",
+            f"Difference image: {result.difference_fits} "
+            f"[{result.hips_source}]{cache_note}",
             indent=2,
             style_name="OKGREEN",
         )
