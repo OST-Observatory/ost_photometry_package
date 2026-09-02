@@ -60,40 +60,50 @@ def _catalog() -> Table:
     )
 
 
-def test_drops_catalog_row_within_one_arcsec(monkeypatch):
+def _center() -> SkyCoord:
+    return SkyCoord(10.0 * u.deg, 20.0 * u.deg)
+
+
+def test_xmatch_drops_catalog_row(monkeypatch):
     mod = _load_known_variables(monkeypatch)
-    vsx = Table({"RAJ2000": [10.0], "DEJ2000": [20.0]})
 
-    def _fake_get(*_a, **_k):
-        return vsx, {"ra": "RAJ2000", "dec": "DEJ2000"}, u.deg
+    def _fake_xm(positions, radius, catalog_identifier="B/vsx/vsx"):
+        return Table({"ost_cat_row": np.array([0], dtype=np.int64)})
 
-    monkeypatch.setattr(mod, "get_vizier_catalog", _fake_get)
+    monkeypatch.setattr(mod, "query_vsx_xmatch", _fake_xm)
     out = mod.drop_catalog_rows_near_known_variables(
-        _catalog(),
-        SkyCoord(10.0 * u.deg, 20.0 * u.deg),
-        15.0,
-        radius=1.0 * u.arcsec,
+        _catalog(), _center(), 15.0, radius=1.0 * u.arcsec
     )
     assert len(out) == 2
     assert 10.0 not in np.asarray(out["ra"], dtype=float)
     assert out.meta[mod.KNOWN_VARIABLES_EXCLUDED_META] is True
 
 
-def test_keeps_all_when_vsx_is_empty(monkeypatch):
+def test_xmatch_empty_keeps_all(monkeypatch):
     mod = _load_known_variables(monkeypatch)
-
-    def _fake_get(*_a, **_k):
-        return Table(), {"ra": "RAJ2000", "dec": "DEJ2000"}, u.deg
-
-    monkeypatch.setattr(mod, "get_vizier_catalog", _fake_get)
-    cat = _catalog()
-    out = mod.drop_catalog_rows_near_known_variables(
-        cat,
-        SkyCoord(10.0 * u.deg, 20.0 * u.deg),
-        15.0,
-    )
+    monkeypatch.setattr(mod, "query_vsx_xmatch", lambda *a, **k: Table())
+    out = mod.drop_catalog_rows_near_known_variables(_catalog(), _center(), 15.0)
     assert len(out) == 3
     assert out.meta[mod.KNOWN_VARIABLES_EXCLUDED_META] is True
+
+
+def test_cone_fallback_when_xmatch_fails(monkeypatch):
+    mod = _load_known_variables(monkeypatch)
+    vsx = Table({"RAJ2000": [10.0], "DEJ2000": [20.0]})
+
+    def _boom(*_a, **_k):
+        raise ConnectionError("xmatch down")
+
+    def _fake_get(*_a, **_k):
+        return vsx, {"ra": "RAJ2000", "dec": "DEJ2000"}, u.deg
+
+    monkeypatch.setattr(mod, "query_vsx_xmatch", _boom)
+    monkeypatch.setattr(mod, "get_vizier_catalog", _fake_get)
+    out = mod.drop_catalog_rows_near_known_variables(
+        _catalog(), _center(), 15.0, radius=1.0 * u.arcsec
+    )
+    assert len(out) == 2
+    assert 10.0 not in np.asarray(out["ra"], dtype=float)
 
 
 def test_query_failure_keeps_catalog(monkeypatch):
@@ -102,12 +112,9 @@ def test_query_failure_keeps_catalog(monkeypatch):
     def _boom(*_a, **_k):
         raise ConnectionError("vizier down")
 
+    monkeypatch.setattr(mod, "query_vsx_xmatch", _boom)
     monkeypatch.setattr(mod, "get_vizier_catalog", _boom)
     cat = _catalog()
-    out = mod.drop_catalog_rows_near_known_variables(
-        cat,
-        SkyCoord(10.0 * u.deg, 20.0 * u.deg),
-        15.0,
-    )
+    out = mod.drop_catalog_rows_near_known_variables(cat, _center(), 15.0)
     assert len(out) == 3
     assert not out.meta.get(mod.KNOWN_VARIABLES_EXCLUDED_META)
