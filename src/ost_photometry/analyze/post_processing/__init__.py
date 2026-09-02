@@ -1,6 +1,6 @@
 """Post-processing: cluster-field filters, magnitude conversion, I/O, light curves.
 
-HiPS/HOTPANTS subtraction lives in :mod:`ost_photometry.analyze.post_processing.hips_reference_subtract`
+HiPS/template subtraction lives in :mod:`ost_photometry.analyze.post_processing.hips_reference_subtract`
 and Simbad image overlays in :mod:`ost_photometry.analyze.post_processing.simbad_annotate`
 (not re-exported here) to avoid import cycles with :mod:`ost_photometry.analyze.utilities`.
 """

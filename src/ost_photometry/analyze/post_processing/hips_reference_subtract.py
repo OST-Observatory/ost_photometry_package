@@ -1,4 +1,4 @@
-"""Fetch a HiPS archival cutout and subtract it from science with HOTPANTS."""
+"""Fetch a HiPS archival cutout and subtract it from the science image."""
 
 from __future__ import annotations
 
@@ -56,6 +56,7 @@ class HipsReferenceSubtractResult:
     science_fits_path: Path
     hips_source: str
     hips_from_cache: bool
+    subtract_backend: str
 
 
 def hips_source_for_filter(
@@ -223,6 +224,7 @@ def run_hips_reference_subtraction(
     hips_retry_backoff_s: float = 1.5,
     hips_use_cache: bool = True,
     hips_verbose: bool = False,
+    subtract_backend: str = "auto",
     hotpants_executable: str | None = None,
     hotpants_extra_args: Sequence[str] | None = None,
     hotpants_output_filename: str = "hotpants_diff.fits",
@@ -230,7 +232,7 @@ def run_hips_reference_subtraction(
     template_gain: float | None = None,
 ) -> HipsReferenceSubtractResult:
     """
-    Trim (optional), solve or reuse WCS, query HiPS2FITS, optionally plot, run HOTPANTS.
+    Trim (optional), solve or reuse WCS, query HiPS2FITS, optionally plot, subtract.
 
     Parameters
     ----------
@@ -243,9 +245,12 @@ def run_hips_reference_subtraction(
         (e.g. an :class:`~ost_photometry.analyze.models.ImageSeries` after the
         pipeline WCS step, or a single :class:`~ost_photometry.utilities.Image`),
         that WCS is reused and WCS solving is skipped. The same WCS is written
-        onto the science ``CCDData`` before HOTPANTS.
+        onto the science ``CCDData`` before subtraction.
     hips_source
         HiPS id, or ``None`` / ``"auto"`` to pick from ``filter_``.
+    subtract_backend
+        ``auto`` (HOTPANTS if present, else Alard–Lupton), ``hotpants``, or
+        ``alard_lupton``.
     """
     workdir = Path(work_output_dir)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -314,11 +319,15 @@ def run_hips_reference_subtraction(
             file_type=file_type_plots,
         )
 
-    diff_path = subtraction.run_hotpants(
+    resolved_backend = subtraction.resolve_subtract_backend(
+        subtract_backend, hotpants_executable
+    )
+    diff_path = subtraction.subtract_science_template(
         ccd_image,
         hips_hdus[0],
         workdir=str(workdir),
         output_filename=hotpants_output_filename,
+        backend=resolved_backend,
         template_mask=None,
         image_gain=image_gain,
         template_gain=template_gain,
@@ -334,4 +343,5 @@ def run_hips_reference_subtraction(
         science_fits_path=Path(path_for_series),
         hips_source=source,
         hips_from_cache=from_cache,
+        subtract_backend=resolved_backend,
     )

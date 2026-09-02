@@ -400,6 +400,9 @@ class HipsConfig:
     hips_reference_subtraction_retry_backoff_s: float = 1.5
     hips_reference_subtraction_use_cache: bool = True
     hips_reference_subtraction_verbose: bool = False
+    hips_reference_subtraction_backend: Literal["auto", "hotpants", "alard_lupton"] = (
+        "auto"
+    )
     hips_reference_subtraction_hotpants_executable: str | None = None
     hips_reference_subtraction_hotpants_extra_args: tuple[str, ...] = field(
         default_factory=tuple

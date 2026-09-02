@@ -396,12 +396,14 @@ See [DIAGNOSTICS.md](DIAGNOSTICS.md#light-curves).
 ## HiPS reference subtraction
 
 `HipsReferenceSubtractStep` is off by default (`skip_hips_reference_subtraction=True`).
-It subtracts one archival HiPS cutout from one science image with HOTPANTS
-(needs `hotpants` on `PATH`). A failed HiPS download or HOTPANTS run **does not
+It subtracts one archival HiPS cutout from one science image. `backend="auto"`
+uses HOTPANTS when the binary is on `PATH`, otherwise a Python Alard–Lupton
+kernel (numpy/scipy/photutils). A failed HiPS download or subtraction **does not
 abort** the rest of the analysis.
 
 | Flag | Default | Role |
 |------|---------|------|
+| `hips_reference_subtraction_backend` | `auto` | `auto` / `hotpants` / `alard_lupton`. `auto` falls back to Alard–Lupton if HOTPANTS is missing; `hotpants` skips the step if the binary is absent |
 | `hips_reference_subtraction_hips_source` | `None` (auto) | Explicit HiPS id, or bandpass-matched (`B`/`U` → DSS2 blue, `V`/`R`/`I` → DSS2 red, `ugrizy` → PanSTARRS) |
 | `hips_reference_subtraction_use_cache` | `True` | Reuse cutouts under `work/subtract/` keyed by survey + WCS fingerprint |
 | `hips_reference_subtraction_retries` | `3` | Attempts per hips2fits server |

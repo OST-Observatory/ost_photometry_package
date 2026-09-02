@@ -235,11 +235,13 @@ worth the join.
 
 ## Difference images
 
-HiPS archival subtraction is still **one science image**, one HOTPANTS run,
-optional, skip-by-default. Fetch hardening is **done**: bandpass-matched
-survey, cache under `work/subtract/`, retries with backoff, CDS fallback
-server, the same WCS on science CCD and HiPS query, and the step **warns and
-continues** on network/HOTPANTS failure (`context.hips_subtract_result`).
+HiPS archival subtraction is still **one science image**, optional,
+skip-by-default. Fetch hardening is **done**: bandpass-matched survey, cache
+under `work/subtract/`, retries with backoff, CDS fallback server, the same
+WCS on science CCD and HiPS query, and the step **warns and continues** on
+network/subtraction failure (`context.hips_subtract_result`). The subtractor
+is **Alard–Lupton in Python** when HOTPANTS is not on `PATH`
+(`hips_reference_subtraction_backend="auto"`); HOTPANTS stays optional.
 
 What remains is architecture: HiPS is one **template source**, not the whole
 difference-image product. Do **not** start with the legacy trim
@@ -255,12 +257,12 @@ Three layers, like the two light-curve products: do not grow
 | Layer | Job |
 |-------|-----|
 | **Template** | Archive (HiPS / PanSTARRS) **or** a night median / other epoch of the same series |
-| **Subtractor** | HOTPANTS (current) or later ZOGY; always a shared WCS, kernel, masks |
+| **Subtractor** | Alard–Lupton (Python, default) or HOTPANTS; shared WCS, kernel, masks |
 | **Detection** | Sources on the difference; match known photometry `id`s vs new vs moving |
 
 Photometry must not block on this. Difference search is its own step (or
-night job) after WCS + extraction, with a clear skip when the template or
-`hotpants` is missing.
+night job) after WCS + extraction, with a clear skip when the template is
+missing.
 
 ### Internal night template (P2)
 
@@ -270,8 +272,8 @@ common WCS. That scales with RASA: same data, no hips2fits. HiPS stays the
 question “was this already on the DSS plate?”.
 
 **Direction:** a template provider next to the HiPS fetch, not a second
-copy of HOTPANTS wiring. Reuse the subtractor on whatever FITS the provider
-returns.
+copy of subtractor wiring. Reuse `subtract_science_template` on whatever
+FITS the provider returns.
 
 ### Detection on ±diff and linking (P2)
 
@@ -288,12 +290,13 @@ That table is the science product; FITS stay under `work/`. Diagnostics
 under `diagnostics/subtract/` with `epoch_id` / `image_id` in the filename,
 not one overwritten `hotpants_diff.fits`. Result list on `context`.
 
-### HOTPANTS as one backend (P3)
+### Subtractor backends (P3)
 
-Keep HOTPANTS; it can fit a kernel. ZOGY would give cleaner significance
-maps later, as a second backend, not a first-day replacement.
-`run_hotpants` should stay analogous to “one table, plots as views”:
-`subtract(science, template) → diff FITS + noise map`.
+Alard–Lupton is the in-tree default (`subtract_science_template`,
+`backend="auto"`). HOTPANTS remains an optional binary. ZOGY is **not**
+next: extra stack, and it duplicates finder/PSF/WCS we already have.
+`subtract(science, template) → diff FITS` stays analogous to “one table,
+plots as views”; a noise map can wait until detection exists.
 
 ### RASA / wide field (P3)
 

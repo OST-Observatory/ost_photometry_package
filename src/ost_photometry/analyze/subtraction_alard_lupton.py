@@ -1,0 +1,265 @@
+"""Alard–Lupton PSF-matching kernel (no HOTPANTS binary)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+from astropy.io import fits
+from astropy.nddata import CCDData
+from astropy.stats import sigma_clipped_stats
+from scipy.signal import fftconvolve
+
+from .. import terminal_output
+
+# Compact AL basis: three Gaussians × low-order polynomials (Alard & Lupton 1998).
+_DEFAULT_SIGMA_SCALE = (0.7, 1.5, 3.0)
+_DEFAULT_DEGREES = (2, 1, 0)
+
+
+def _as_2d(data) -> np.ndarray:
+    arr = np.asarray(data, dtype=np.float64)
+    while arr.ndim > 2:
+        arr = arr[0]
+    return np.ascontiguousarray(arr)
+
+
+def _match_shapes(sci: np.ndarray, tmpl: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    if sci.shape == tmpl.shape:
+        return sci, tmpl
+    h = min(sci.shape[0], tmpl.shape[0])
+    w = min(sci.shape[1], tmpl.shape[1])
+    return sci[:h, :w], tmpl[:h, :w]
+
+
+def kernel_basis(
+    ksize: int,
+    sigmas: tuple[float, ...] = _DEFAULT_SIGMA_SCALE,
+    degrees: tuple[int, ...] = _DEFAULT_DEGREES,
+) -> np.ndarray:
+    """Stack of kernel basis images, shape ``(n_basis, ksize, ksize)``."""
+    if ksize % 2 == 0:
+        raise ValueError("ksize must be odd")
+    if len(sigmas) != len(degrees):
+        raise ValueError("sigmas and degrees must have the same length")
+    hw = ksize // 2
+    yy, xx = np.mgrid[-hw : hw + 1, -hw : hw + 1]
+    xn = xx / max(hw, 1)
+    yn = yy / max(hw, 1)
+    bases: list[np.ndarray] = []
+    for sigma, deg in zip(sigmas, degrees, strict=True):
+        sig = max(float(sigma), 0.3)
+        g = np.exp(-(xx.astype(float) ** 2 + yy.astype(float) ** 2) / (2.0 * sig**2))
+        g /= g.sum()
+        for p in range(int(deg) + 1):
+            for q in range(int(deg) + 1 - p):
+                bases.append(g * (xn**p) * (yn**q))
+    return np.stack(bases, axis=0)
+
+
+def _cutout(data: np.ndarray, x: float, y: float, half: int) -> np.ndarray | None:
+    xi, yi = int(round(x)), int(round(y))
+    y0, y1 = yi - half, yi + half + 1
+    x0, x1 = xi - half, xi + half + 1
+    if y0 < 0 or x0 < 0 or y1 > data.shape[0] or x1 > data.shape[1]:
+        return None
+    return data[y0:y1, x0:x1]
+
+
+def find_kernel_stars(
+    science: np.ndarray,
+    *,
+    n_stars: int = 40,
+    fwhm: float = 3.0,
+    threshold_sigma: float = 5.0,
+) -> np.ndarray:
+    """Bright unsaturated star positions ``(n, 2)`` as ``(x, y)``."""
+    from photutils.detection import DAOStarFinder
+
+    sci = _as_2d(science)
+    _mean, med, std = sigma_clipped_stats(sci, sigma=3.0, maxiters=5)
+    if not np.isfinite(std) or std <= 0:
+        return np.empty((0, 2))
+    finder = DAOStarFinder(fwhm=float(max(fwhm, 1.0)), threshold=threshold_sigma * std)
+    tbl = finder(sci - med)
+    if tbl is None or len(tbl) == 0:
+        return np.empty((0, 2))
+    tbl.sort("flux")
+    tbl.reverse()
+    peak_lim = float(np.nanpercentile(sci, 99.9))
+    xy: list[tuple[float, float]] = []
+    for row in tbl:
+        peak = float(row["peak"])
+        if np.isfinite(peak_lim) and peak > peak_lim:
+            continue
+        xy.append((float(row["xcentroid"]), float(row["ycentroid"])))
+        if len(xy) >= int(n_stars):
+            break
+    if not xy:
+        return np.empty((0, 2))
+    return np.asarray(xy, dtype=float)
+
+
+def flux_scale_subtract(
+    science: np.ndarray,
+    template: np.ndarray,
+) -> tuple[np.ndarray, float]:
+    """Science minus a robust scalar times the template, plus a sky offset."""
+    sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
+    ok = np.isfinite(sci) & np.isfinite(tmpl)
+    if np.count_nonzero(ok) < 16:
+        return sci - tmpl, 1.0
+    sci_med = float(np.nanmedian(sci[ok]))
+    tmpl_med = float(np.nanmedian(tmpl[ok]))
+    sci0 = sci - sci_med
+    tmpl0 = tmpl - tmpl_med
+    peak = float(np.nanpercentile(np.abs(tmpl0[ok]), 99.0))
+    bright = ok & (np.abs(tmpl0) > max(0.1 * peak, 1e-8))
+    if np.count_nonzero(bright) < 16:
+        scale = 1.0
+    else:
+        scale = float(np.nanmedian(sci0[bright] / tmpl0[bright]))
+    if not np.isfinite(scale) or abs(scale) > 1e6:
+        scale = 1.0
+    sky = sci_med - scale * tmpl_med
+    return sci - scale * tmpl - sky, scale
+
+
+def fit_alard_lupton_kernel(
+    science: np.ndarray,
+    template: np.ndarray,
+    star_xy: np.ndarray,
+    *,
+    ksize: int = 15,
+    sigmas: tuple[float, ...] = _DEFAULT_SIGMA_SCALE,
+    degrees: tuple[int, ...] = _DEFAULT_DEGREES,
+    n_stars: int = 40,
+) -> tuple[np.ndarray, float, int]:
+    """
+    Fit a spatially constant AL kernel plus sky.
+
+    Returns ``(kernel, sky, n_stamps_used)``.
+    """
+    sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
+    bases = kernel_basis(ksize, sigmas, degrees)
+    hw = ksize // 2
+    half_stamp = hw + 4
+    rows: list[np.ndarray] = []
+    rhs: list[np.ndarray] = []
+    used = 0
+    xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
+    for x, y in xy:
+        s = _cutout(sci, x, y, half_stamp)
+        t = _cutout(tmpl, x, y, half_stamp)
+        if s is None or t is None:
+            continue
+        if not np.all(np.isfinite(s)) or not np.all(np.isfinite(t)):
+            continue
+        s = s - np.median(s)
+        t = t - np.median(t)
+        if float(np.std(s)) < 1e-8 or float(np.std(t)) < 1e-8:
+            continue
+        convs = [fftconvolve(t, b, mode="same")[hw:-hw, hw:-hw].ravel() for b in bases]
+        convs.append(np.ones(convs[0].shape, dtype=float))
+        rows.append(np.column_stack(convs))
+        rhs.append(s[hw:-hw, hw:-hw].ravel())
+        used += 1
+        if used >= int(n_stars):
+            break
+    if used < 3:
+        raise RuntimeError(f"Need at least 3 valid stamps to fit the kernel (got {used})")
+    coeff, *_ = np.linalg.lstsq(np.vstack(rows), np.concatenate(rhs), rcond=None)
+    kernel = np.tensordot(coeff[:-1], bases, axes=(0, 0))
+    sky = float(coeff[-1])
+    return kernel, sky, used
+
+
+def alard_lupton_difference(
+    science: np.ndarray,
+    template: np.ndarray,
+    *,
+    star_xy: np.ndarray | None = None,
+    n_stars: int = 40,
+    fwhm: float = 3.0,
+    ksize: int | None = None,
+) -> tuple[np.ndarray, str]:
+    """
+    ``science - (kernel ⊗ template + sky)``.
+
+    Falls back to a scalar flux scale if the kernel fit has too few stamps.
+    Returns ``(difference, method)`` with ``method`` ``alard_lupton`` or ``flux_scale``.
+    """
+    sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
+    if ksize is None:
+        ksize = int(2 * np.ceil(3.0 * max(_DEFAULT_SIGMA_SCALE) * max(fwhm / 3.0, 0.5)) + 1)
+        if ksize % 2 == 0:
+            ksize += 1
+        ksize = int(np.clip(ksize, 9, 31))
+    xy = star_xy
+    if xy is None or len(np.asarray(xy).reshape(-1, 2)) == 0:
+        xy = find_kernel_stars(sci, n_stars=n_stars, fwhm=fwhm)
+    try:
+        kernel, sky, n_used = fit_alard_lupton_kernel(
+            sci, tmpl, xy, ksize=ksize, n_stars=n_stars
+        )
+        matched = fftconvolve(tmpl, kernel, mode="same") + sky
+        terminal_output.print_to_terminal(
+            f"Alard–Lupton kernel ({n_used} stamps, ksize={ksize})",
+            indent=2,
+            style_name="NORMAL",
+        )
+        return sci - matched, "alard_lupton"
+    except Exception as exc:
+        terminal_output.print_to_terminal(
+            f"Alard–Lupton kernel fit failed ({exc}); using flux-scale subtraction",
+            indent=2,
+            style_name="WARNING",
+        )
+        diff, scale = flux_scale_subtract(sci, tmpl)
+        terminal_output.print_to_terminal(
+            f"Flux-scale subtraction (scale={scale:.4g})",
+            indent=2,
+            style_name="NORMAL",
+        )
+        return diff, "flux_scale"
+
+
+def run_alard_lupton(
+    science_ccd: CCDData,
+    template_hdu: fits.ImageHDU | fits.PrimaryHDU,
+    *,
+    workdir: str | Path,
+    output_filename: str = "diff.fits",
+    star_xy: np.ndarray | None = None,
+    n_stars: int = 40,
+    fwhm: float = 3.0,
+    ksize: int | None = None,
+) -> Path:
+    """Write ``science − matched template`` under ``workdir`` (same contract as HOTPANTS)."""
+    work = Path(workdir)
+    work.mkdir(parents=True, exist_ok=True)
+    sci = _as_2d(science_ccd.data)
+    tmpl = _as_2d(template_hdu.data)
+    diff, _method = alard_lupton_difference(
+        sci, tmpl, star_xy=star_xy, n_stars=n_stars, fwhm=fwhm, ksize=ksize
+    )
+    out_path = work / output_filename
+    out = CCDData(diff, unit=getattr(science_ccd, "unit", None) or "adu")
+    if getattr(science_ccd, "wcs", None) is not None:
+        out.wcs = science_ccd.wcs
+    if getattr(science_ccd, "mask", None) is not None:
+        mask = np.asarray(science_ccd.mask)
+        if mask.shape == diff.shape:
+            out.mask = mask
+    out.write(out_path, overwrite=True)
+    return out_path
+
+
+__all__ = [
+    "alard_lupton_difference",
+    "find_kernel_stars",
+    "fit_alard_lupton_kernel",
+    "flux_scale_subtract",
+    "kernel_basis",
+    "run_alard_lupton",
+]

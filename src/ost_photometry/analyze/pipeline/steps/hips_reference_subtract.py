@@ -1,4 +1,4 @@
-"""HiPS archival template subtraction (HOTPANTS) for the reference science image."""
+"""HiPS archival template subtraction for the reference science image."""
 
 from __future__ import annotations
 
@@ -27,7 +27,9 @@ class HipsReferenceSubtractStep(base.PipelineStep):
     """
     Post-processing: subtract a HiPS archive cutout from one science image.
 
-    Requires ``hotpants`` on ``PATH`` or `hips_reference_subtraction_hotpants_executable`.
+    Subtracts with HOTPANTS when that binary is on ``PATH`` (or
+    `hips_reference_subtraction_hotpants_executable`), otherwise a Python
+    Alard–Lupton kernel (`hips_reference_subtraction_backend="auto"`).
     Disabled by default (`skip_hips_reference_subtraction`). HiPS/network
     failures warn and leave `context.hips_subtract_result` unset; analysis continues.
     """
@@ -52,10 +54,13 @@ class HipsReferenceSubtractStep(base.PipelineStep):
         idx = config.hips_reference_subtraction_image_index
         if idx < 0 or idx >= len(series.image_list):
             return True
-        if _hotpants_executable(config) is None:
+        backend = (config.hips_reference_subtraction_backend or "auto").strip().lower()
+        if backend == "hotpants" and _hotpants_executable(config) is None:
             terminal_output.print_to_terminal(
-                "HipsReferenceSubtractStep: hotpants not found; skipping "
-                "(install HOTPANTS or set hips_reference_subtraction_hotpants_executable).",
+                "HipsReferenceSubtractStep: backend is hotpants but the executable "
+                "was not found; skipping (install HOTPANTS, set "
+                "hips_reference_subtraction_hotpants_executable, or use "
+                "hips_reference_subtraction_backend='auto' / 'alard_lupton').",
                 style_name="WARNING",
             )
             return True
@@ -85,7 +90,7 @@ class HipsReferenceSubtractStep(base.PipelineStep):
         extra = config.hips_reference_subtraction_hotpants_extra_args
 
         terminal_output.print_to_terminal(
-            "HiPS reference image subtraction (HOTPANTS)",
+            "HiPS reference image subtraction",
             style_name="HEADER",
         )
         try:
@@ -106,6 +111,7 @@ class HipsReferenceSubtractStep(base.PipelineStep):
                 hips_retry_backoff_s=config.hips_reference_subtraction_retry_backoff_s,
                 hips_use_cache=config.hips_reference_subtraction_use_cache,
                 hips_verbose=config.hips_reference_subtraction_verbose,
+                subtract_backend=config.hips_reference_subtraction_backend,
                 hotpants_executable=_hotpants_executable(config),
                 hotpants_extra_args=extra if extra else None,
                 hotpants_output_filename=config.hips_reference_subtraction_output_filename,
@@ -122,7 +128,7 @@ class HipsReferenceSubtractStep(base.PipelineStep):
         cache_note = " (cached HiPS cutout)" if result.hips_from_cache else ""
         terminal_output.print_to_terminal(
             f"Difference image: {result.difference_fits} "
-            f"[{result.hips_source}]{cache_note}",
+            f"[{result.hips_source}, {result.subtract_backend}]{cache_note}",
             indent=2,
             style_name="OKGREEN",
         )

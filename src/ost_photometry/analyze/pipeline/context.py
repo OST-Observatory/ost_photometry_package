@@ -45,7 +45,7 @@ class AnalysisContext:
     # Optional link to the live Observation while a pipeline run is active.
     # Prefer context data fields; use :meth:`require_observation` only for legacy APIs.
     observation: object = None
-    # Optional HiPS/HOTPANTS result (None if the step skipped or failed)
+    # Optional HiPS subtraction result (None if the step skipped or failed)
     hips_subtract_result: object | None = None
 
     # Deprecated alias (removed): use ``observation`` instead.

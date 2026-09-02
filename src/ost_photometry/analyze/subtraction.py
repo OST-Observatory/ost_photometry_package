@@ -1,8 +1,9 @@
 """
-Image subtraction via the external `hotpants` program (HOTPANTS / Aaron Roodman style).
+Image subtraction: HOTPANTS (optional binary) or a Python Alard–Lupton kernel.
 
-Requires a `hotpants` binary on ``PATH`` or passed explicitly. FITS inputs must carry
-compatible WCS headers where hotpants expects them.
+``subtract_science_template`` is the public entry. ``backend="auto"`` uses
+HOTPANTS when the executable is on ``PATH``, otherwise Alard–Lupton
+(numpy/scipy/photutils — no extra stack).
 """
 
 from __future__ import annotations
@@ -11,12 +12,81 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from astropy.io import fits
 from astropy.nddata import CCDData
 
 from .. import terminal_output
+
+SubtractBackend = Literal["auto", "hotpants", "alard_lupton"]
+
+
+def resolve_subtract_backend(
+    backend: SubtractBackend | str | None = "auto",
+    hotpants_executable: str | None = None,
+) -> str:
+    """``hotpants`` or ``alard_lupton``. ``auto`` prefers HOTPANTS when present."""
+    name = (backend or "auto").strip().lower()
+    if name in ("alard_lupton", "alard-lupton", "python"):
+        return "alard_lupton"
+    exe = hotpants_executable or shutil.which("hotpants")
+    if name == "hotpants":
+        if not exe:
+            raise RuntimeError(
+                "subtract backend is hotpants but the executable was not found"
+            )
+        return "hotpants"
+    if exe:
+        return "hotpants"
+    return "alard_lupton"
+
+
+def subtract_science_template(
+    science_ccd: CCDData,
+    template_hdu: fits.ImageHDU | fits.PrimaryHDU,
+    *,
+    workdir: str | Path,
+    output_filename: str = "hotpants_diff.fits",
+    backend: str = "auto",
+    template_mask: np.ndarray | None = None,
+    image_gain: float = 1.0,
+    template_gain: float | None = None,
+    hotpants_executable: str | None = None,
+    extra_args: Sequence[str] | None = None,
+    star_xy: np.ndarray | None = None,
+) -> Path:
+    """
+    Science minus PSF-matched template. Dispatches to HOTPANTS or Alard–Lupton.
+    """
+    resolved = resolve_subtract_backend(backend, hotpants_executable)
+    if resolved == "hotpants":
+        return run_hotpants(
+            science_ccd,
+            template_hdu,
+            workdir=workdir,
+            output_filename=output_filename,
+            template_mask=template_mask,
+            image_gain=image_gain,
+            template_gain=template_gain,
+            hotpants_executable=hotpants_executable,
+            extra_args=extra_args,
+        )
+    from .subtraction_alard_lupton import run_alard_lupton
+
+    terminal_output.print_to_terminal(
+        "Image subtraction backend: Alard–Lupton (Python)",
+        indent=2,
+        style_name="NORMAL",
+    )
+    return run_alard_lupton(
+        science_ccd,
+        template_hdu,
+        workdir=workdir,
+        output_filename=output_filename,
+        star_xy=star_xy,
+    )
 
 
 def run_hotpants(

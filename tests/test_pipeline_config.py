@@ -246,6 +246,7 @@ def test_hips_config_defaults_and_overrides():
 
     cfg = PipelineConfig()
     assert cfg.skip_hips_reference_subtraction is True
+    assert cfg.hips_reference_subtraction_backend == "auto"
     assert cfg.hips_reference_subtraction_hips_source is None
     assert cfg.hips_reference_subtraction_use_cache is True
     assert cfg.hips_reference_subtraction_retries == 3

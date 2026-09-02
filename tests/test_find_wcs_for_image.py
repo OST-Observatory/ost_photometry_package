@@ -97,6 +97,19 @@ def _hips_module(monkeypatch):
     subtraction_mod.run_hotpants = MagicMock(
         return_value=Path("/tmp/hotpants_diff.fits")
     )
+    subtraction_mod.subtract_science_template = MagicMock(
+        return_value=Path("/tmp/hotpants_diff.fits")
+    )
+
+    def _resolve_backend(backend="auto", hotpants_executable=None):
+        name = (backend or "auto").strip().lower()
+        if name in ("alard_lupton", "alard-lupton", "python"):
+            return "alard_lupton"
+        if name == "hotpants":
+            return "hotpants"
+        return "alard_lupton"
+
+    subtraction_mod.resolve_subtract_backend = _resolve_backend
     sys.modules["ost_photometry.analyze.subtraction"] = subtraction_mod
 
     models_mod = types.ModuleType("ost_photometry.analyze.models")
@@ -150,9 +163,10 @@ def test_run_hips_reference_subtraction_reuses_image_wcs(
 
     captured: dict = {}
 
-    def _fake_hotpants(science_ccd, template_hdu, **kwargs):
+    def _fake_subtract(science_ccd, template_hdu, **kwargs):
         captured["science_ccd"] = science_ccd
         captured["template_hdu"] = template_hdu
+        captured["kwargs"] = kwargs
         return workdir / "hotpants_diff.fits"
 
     class _FakeHips:
@@ -169,7 +183,9 @@ def test_run_hips_reference_subtraction_reuses_image_wcs(
 
     monkeypatch.setattr(hips_mod, "find_wcs_for_image", _fake_find_wcs_for_image)
     monkeypatch.setattr(hips_mod, "hips2fitsClass", _FakeHips)
-    monkeypatch.setattr(hips_mod.subtraction, "run_hotpants", _fake_hotpants)
+    monkeypatch.setattr(
+        hips_mod.subtraction, "subtract_science_template", _fake_subtract
+    )
 
     result = run_hips(
         "B",
@@ -183,6 +199,7 @@ def test_run_hips_reference_subtraction_reuses_image_wcs(
     assert result.difference_fits == workdir / "hotpants_diff.fits"
     assert result.hips_source == "CDS/P/DSS2/blue"
     assert result.hips_from_cache is False
+    assert result.subtract_backend == "alard_lupton"
     assert captured["science_ccd"].wcs.wcs.crval[0] == pytest.approx(180.0)
     assert captured["science_ccd"].wcs.wcs.crval[1] == pytest.approx(45.0)
     assert _FakeHips.last_timeout == pytest.approx(120.0)
@@ -224,7 +241,7 @@ def test_run_hips_reference_subtraction_solves_wcs_for_single_image(
     monkeypatch.setattr(hips_mod, "hips2fitsClass", _FakeHips)
     monkeypatch.setattr(
         hips_mod.subtraction,
-        "run_hotpants",
+        "subtract_science_template",
         lambda *args, **kwargs: workdir / "hotpants_diff.fits",
     )
 
@@ -442,7 +459,7 @@ def test_run_hips_maps_v_filter_to_dss2_red(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(hips_mod, "hips2fitsClass", _FakeHips)
     monkeypatch.setattr(
         hips_mod.subtraction,
-        "run_hotpants",
+        "subtract_science_template",
         lambda *a, **k: workdir / "hotpants_diff.fits",
     )
 

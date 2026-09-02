@@ -21,7 +21,7 @@ are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
   work/
     wcs_images/
     extraction/      # all-image galleries when plots_for_all_images
-    subtract/        # HiPS cache + HOTPANTS work (optional step)
+    subtract/        # HiPS cache + difference FITS (optional step)
 ```
 
 Former top-level plot folders (`calibration/`, `lightcurve/`, `extinction_fit/`,
