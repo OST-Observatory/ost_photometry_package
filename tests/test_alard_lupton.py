@@ -128,6 +128,23 @@ def test_alard_lupton_matches_when_template_is_broader():
     assert float(np.median(cores)) < 0.25 * 1.6 * 1800.0
 
 
+def test_alard_lupton_fits_kernel_with_nan_hips_mask():
+    """HiPS cutouts often have NaN borders and holes; the kernel must still fit."""
+    stars = _star_field((220, 220), _STAR_XY, fwhm=3.0)
+    sci = 1.5 * stars + 90.0
+    tmpl = -0.02 * gaussian_filter(stars, sigma=1.6) + 4000.0
+    rng = np.random.default_rng(1)
+    tmpl[rng.random(tmpl.shape) < 0.08] = np.nan
+    tmpl[:18, :] = np.nan
+    tmpl[-18:, :] = np.nan
+    tmpl[:, :18] = np.nan
+    tmpl[:, -18:] = np.nan
+    diff, method = alard_lupton_difference(sci, tmpl, star_xy=_STAR_XY, fwhm=4.0)
+    assert method == "alard_lupton"
+    assert diff.shape == sci.shape
+    assert abs(float(np.nanmedian(diff))) < 15.0
+
+
 def test_flux_scale_from_stamps_accepts_photographic_dips():
     from ost_photometry.analyze.subtraction_alard_lupton import flux_scale_from_stamps
 

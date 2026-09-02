@@ -33,6 +33,18 @@ def _as_2d(data) -> np.ndarray:
     return np.ascontiguousarray(arr)
 
 
+def _fill_image(arr: np.ndarray) -> np.ndarray:
+    good = np.isfinite(arr)
+    if np.all(good):
+        return arr
+    fill = float(np.nanmedian(arr))
+    if not np.isfinite(fill):
+        fill = 0.0
+    out = np.array(arr, dtype=np.float64, copy=True)
+    out[~good] = fill
+    return out
+
+
 def _match_shapes(sci: np.ndarray, tmpl: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     if sci.shape == tmpl.shape:
         return sci, tmpl
@@ -56,21 +68,48 @@ def _sky_level(data: np.ndarray) -> tuple[float, float]:
     return float(med), float(max(std, 1e-8))
 
 
-def _border_sky(stamp: np.ndarray, border: int = 3) -> float:
+def _border_pixels(stamp: np.ndarray, border: int = 3) -> np.ndarray:
     h, w = stamp.shape
-    b = min(max(int(border), 1), h // 3, w // 3)
+    b = min(max(int(border), 1), max(h // 3, 1), max(w // 3, 1))
     frame = np.concatenate(
         [
             stamp[:b, :].ravel(),
             stamp[-b:, :].ravel(),
-            stamp[b:-b, :b].ravel(),
-            stamp[b:-b, -b:].ravel(),
+            stamp[b:-b, :b].ravel() if h > 2 * b else np.array([]),
+            stamp[b:-b, -b:].ravel() if h > 2 * b else np.array([]),
         ]
     )
-    frame = frame[np.isfinite(frame)]
+    return frame[np.isfinite(frame)]
+
+
+def _border_sky(stamp: np.ndarray, border: int = 3) -> float:
+    frame = _border_pixels(stamp, border=border)
     if frame.size == 0:
-        return 0.0
+        finite = stamp[np.isfinite(stamp)]
+        return float(np.median(finite)) if finite.size else 0.0
     return float(np.median(frame))
+
+
+def _border_std(stamp: np.ndarray, border: int = 3) -> float:
+    frame = _border_pixels(stamp, border=border)
+    if frame.size < 4:
+        finite = stamp[np.isfinite(stamp)]
+        if finite.size < 4:
+            return 1e-8
+        return float(max(np.std(finite), 1e-8))
+    return float(max(np.std(frame), 1e-8))
+
+
+def _replace_nonfinite(stamp: np.ndarray) -> np.ndarray | None:
+    """Fill NaN/Inf with local sky so a HiPS mask does not drop the stamp."""
+    out = np.array(stamp, dtype=np.float64, copy=True)
+    good = np.isfinite(out)
+    if not np.any(good):
+        return None
+    if np.all(good):
+        return out
+    out[~good] = _border_sky(stamp)
+    return out
 
 
 def kernel_basis(
@@ -109,9 +148,12 @@ def _cutout(data: np.ndarray, x: float, y: float, half: int) -> np.ndarray | Non
 
 def _stamp_snr(stamp: np.ndarray) -> float:
     sky = _border_sky(stamp)
-    noise = float(np.nanstd(stamp - sky))
-    hi = float(np.nanmax(stamp) - sky)
-    lo = float(sky - np.nanmin(stamp))
+    noise = _border_std(stamp)
+    finite = stamp[np.isfinite(stamp)]
+    if finite.size == 0:
+        return 0.0
+    hi = float(np.max(finite) - sky)
+    lo = float(sky - np.min(finite))
     peak = max(hi, lo)
     if not np.isfinite(noise) or noise <= 0:
         return 0.0
@@ -274,16 +316,29 @@ def find_kernel_stars(
     img_max = float(np.nanmax(sci))
     sat = 0.95 * img_max if np.isfinite(img_max) and img_max > 0 else np.inf
     sep = float(min_separation) if min_separation is not None else max(8.0, 2.5 * fwhm)
+    ny, nx = sci.shape
+    margin = max(12.0, 3.0 * fwhm)
     xy: list[tuple[float, float]] = []
     for row in tbl:
         if "peak" in tbl.colnames and float(row["peak"]) > sat:
             continue
         x, y = float(row[x_col]), float(row[y_col])
+        if x < margin or y < margin or x >= nx - margin or y >= ny - margin:
+            continue
         if any((x - x0) ** 2 + (y - y0) ** 2 < sep**2 for x0, y0 in xy):
             continue
         xy.append((x, y))
         if len(xy) >= int(n_stars):
             break
+    if not xy:
+        # Interior cut was empty (small image or stars near the edge).
+        for row in tbl:
+            x, y = float(row[x_col]), float(row[y_col])
+            if any((x - x0) ** 2 + (y - y0) ** 2 < sep**2 for x0, y0 in xy):
+                continue
+            xy.append((x, y))
+            if len(xy) >= int(n_stars):
+                break
     if not xy:
         return np.empty((0, 2))
     return np.asarray(xy, dtype=float)
@@ -309,7 +364,7 @@ def flux_scale_from_stamps(
         t = _cutout(tmpl, xt, yt, half)
         if s is None or t is None:
             continue
-        if _stamp_snr(s) < 4.0 or _stamp_snr(t) < 2.0:
+        if _stamp_snr(s) < 2.5 or _stamp_snr(t) < 1.5:
             continue
         fs = _aperture_flux(s, radius=aperture_radius)
         ft = _aperture_flux(t, radius=aperture_radius)
@@ -337,6 +392,8 @@ def flux_scale_subtract(
 ) -> tuple[np.ndarray, float]:
     """Science minus a robust scalar times the template, plus a sky offset."""
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
+    sci = _fill_image(sci)
+    tmpl = _fill_image(tmpl)
     sci_med, sci_std = _sky_level(sci)
     tmpl_med, tmpl_std = _sky_level(tmpl)
     sci0 = sci - sci_med
@@ -393,9 +450,15 @@ def fit_alard_lupton_kernel(
         t = _cutout(tmpl, xt, yt, half_stamp)
         if s is None or t is None:
             continue
-        if not np.all(np.isfinite(s)) or not np.all(np.isfinite(t)):
+        s = _replace_nonfinite(s)
+        t = _replace_nonfinite(t)
+        if s is None or t is None:
             continue
-        if _stamp_snr(s) < 4.0 or _stamp_snr(t) < 2.0:
+        inner_s = s[hw:-hw, hw:-hw]
+        inner_t = t[hw:-hw, hw:-hw]
+        if inner_s.size == 0 or inner_t.size == 0:
+            continue
+        if _stamp_snr(s) < 2.0 or _stamp_snr(t) < 1.5:
             continue
         s = s - _border_sky(s)
         t = t - _border_sky(t)
@@ -403,7 +466,7 @@ def fit_alard_lupton_kernel(
             continue
         convs = [fftconvolve(t, b, mode="same")[hw:-hw, hw:-hw].ravel() for b in bases]
         rows.append(np.column_stack(convs))
-        rhs.append(s[hw:-hw, hw:-hw].ravel())
+        rhs.append(inner_s.ravel())
         used += 1
         if used >= int(n_stars):
             break
@@ -433,15 +496,17 @@ def alard_lupton_difference(
     ``method`` ``alard_lupton`` or ``flux_scale``.
     """
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
+    sci = _fill_image(sci)
+    tmpl = _fill_image(tmpl)
     sci_sky, _ = _sky_level(sci)
     tmpl_sky, _ = _sky_level(tmpl)
     sci0 = sci - sci_sky
     tmpl0 = tmpl - tmpl_sky
     if ksize is None:
-        ksize = int(2 * np.ceil(3.0 * max(_DEFAULT_SIGMA_SCALE) * max(fwhm / 3.0, 0.5)) + 1)
+        ksize = int(2 * np.ceil(2.0 * max(_DEFAULT_SIGMA_SCALE) * max(fwhm / 3.0, 0.5)) + 1)
         if ksize % 2 == 0:
             ksize += 1
-        ksize = int(np.clip(ksize, 15, 41))
+        ksize = int(np.clip(ksize, 11, 25))
     xy = star_xy
     try:
         if xy is None or len(np.asarray(xy).reshape(-1, 2)) == 0:
@@ -455,6 +520,11 @@ def alard_lupton_difference(
         xy = np.asarray(xy, dtype=float).reshape(-1, 2)
         if len(xy) == 0:
             raise RuntimeError("No kernel stars found on the science image")
+        terminal_output.print_to_terminal(
+            f"Alard–Lupton: {len(xy)} kernel-star positions",
+            indent=2,
+            style_name="NORMAL",
+        )
         scale = flux_scale_from_stamps(
             sci0, tmpl0, xy, half=max(9, ksize // 2), aperture_radius=max(5.0, 1.6 * fwhm)
         )
@@ -490,21 +560,49 @@ def alard_lupton_difference(
         tmpl_fw = _stamp_fwhm(tmpl_s, xy, half=max(9, ksize // 2))
         # A kernel can only broaden. DSS/HiPS is often broader than the CCD, so
         # convolve the science image down to the template seeing.
-        convolve_template = True
+        prefer_convolve_template = True
         if np.isfinite(sci_fw) and np.isfinite(tmpl_fw) and tmpl_fw > 1.15 * sci_fw:
-            convolve_template = False
-        if convolve_template:
-            kernel, n_used = fit_alard_lupton_kernel(
-                sci0, tmpl_s, xy, ksize=ksize, n_stars=n_stars
-            )
-            residual = sci0 - fftconvolve(tmpl_s, kernel, mode="same")
-            which = "template→science"
+            prefer_convolve_template = False
+        directions: list[tuple[str, np.ndarray, np.ndarray]]
+        if prefer_convolve_template:
+            directions = [
+                ("template→science", sci0, tmpl_s),
+                ("science→template", tmpl_s, sci0),
+            ]
         else:
-            kernel, n_used = fit_alard_lupton_kernel(
-                tmpl_s, sci0, xy, ksize=ksize, n_stars=n_stars
-            )
+            directions = [
+                ("science→template", tmpl_s, sci0),
+                ("template→science", sci0, tmpl_s),
+            ]
+        ksizes: list[int] = []
+        for k_try in (ksize, 21, 15, 11):
+            k_odd = int(k_try) | 1
+            if k_odd >= 11 and k_odd not in ksizes:
+                ksizes.append(k_odd)
+        kernel = None
+        n_used = 0
+        which = directions[0][0]
+        last_err: BaseException | None = None
+        for k_try in ksizes:
+            for label, target, source in directions:
+                try:
+                    kernel, n_used = fit_alard_lupton_kernel(
+                        target, source, xy, ksize=k_try, n_stars=n_stars
+                    )
+                    ksize = k_try
+                    which = label
+                    last_err = None
+                    break
+                except RuntimeError as exc:
+                    last_err = exc
+            if kernel is not None:
+                break
+        if kernel is None:
+            raise last_err or RuntimeError("Kernel fit failed")
+        if which == "template→science":
+            residual = sci0 - fftconvolve(tmpl_s, kernel, mode="same")
+        else:
             residual = fftconvolve(sci0, kernel, mode="same") - tmpl_s
-            which = "science→template"
         _, resid_sky, _ = sigma_clipped_stats(residual, sigma=3.0, maxiters=5)
         if not np.isfinite(resid_sky):
             resid_sky = 0.0
