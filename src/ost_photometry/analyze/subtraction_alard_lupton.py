@@ -375,18 +375,12 @@ def _seeing_kernel_params(
 
 
 def _robust_ratio_median(ratios: list[float], fluxes: list[float] | None = None) -> float:
-    """Median flux ratio, dropping the brightest (often saturated) stamps."""
+    """Median flux ratio, clipping outlier *ratios* (not the brightest stars)."""
     arr = np.asarray(ratios, dtype=float)
     if arr.size == 0:
         raise RuntimeError("Need at least 1 star stamp to estimate the flux scale")
-    if fluxes is not None and len(fluxes) == len(arr) and arr.size >= 6:
-        order = np.argsort(np.abs(np.asarray(fluxes, dtype=float)))
-        # Keep the middle of the brightness range (drop faint 10% and bright 25%).
-        lo = max(int(0.10 * len(order)), 0)
-        hi = max(int(0.75 * len(order)), lo + 3)
-        arr = arr[order[lo:hi]]
     if arr.size >= 8:
-        lo, hi = np.percentile(arr, [20.0, 80.0])
+        lo, hi = np.percentile(arr, [16.0, 84.0])
         clipped = arr[(arr >= lo) & (arr <= hi)]
         if clipped.size >= 3:
             arr = clipped
@@ -421,36 +415,6 @@ def _aperture_flux_pairs(
     if not fs_list:
         return np.empty(0), np.empty(0)
     return np.asarray(fs_list, dtype=float), np.asarray(ft_list, dtype=float)
-
-
-def _quadratic_photometry(fs: np.ndarray, ft: np.ndarray) -> tuple[float, float]:
-    """
-    Fit ``fs/ft ≈ α + β·(ft/median)``, i.e. ``fs ≈ a·ft + b·ft²``.
-
-    Photographic plates compress bright cores; a linear scale then over-subtracts
-    faint stars and under-subtracts bright ones. Fitting *ratios* vs brightness
-    keeps faint and bright stamps equally weighted.
-    """
-    linear = _robust_ratio_median(list(fs / ft), list(fs))
-    if len(ft) < 6:
-        return linear, 0.0
-    ft0 = float(np.median(np.abs(ft)))
-    if ft0 <= 0:
-        return linear, 0.0
-    ratio = fs / ft
-    x = ft / ft0
-    design = np.column_stack([np.ones(len(x)), x])
-    coef, *_ = np.linalg.lstsq(design, ratio, rcond=None)
-    alpha, beta = float(coef[0]), float(coef[1])
-    if not np.isfinite(alpha) or not np.isfinite(beta) or alpha <= 0:
-        return linear, 0.0
-    a = alpha
-    b = beta / ft0
-    # Keep the correction bounded so background pixels stay well behaved.
-    if abs(beta) > 1.5:
-        beta = float(np.clip(beta, -1.5, 1.5))
-        b = beta / ft0
-    return a, b
 
 
 def _core_residual_terciles(
@@ -777,17 +741,16 @@ def alard_lupton_difference(
             left, right = matched, tmpl_s
         try:
             fs, ft = _aperture_flux_pairs(
-                left, right, xy, half=phot_half, aperture_radius=phot_radius
+                left, right, xy_kernel, half=phot_half, aperture_radius=phot_radius
             )
-            phot, phot_quad = _quadratic_photometry(fs, ft)
+            ratios = fs / ft
+            phot = _robust_ratio_median(list(ratios), list(fs))
+            p16, p84 = np.percentile(ratios, [16.0, 84.0])
         except Exception:
-            phot, phot_quad = 1.0, 0.0
+            phot, p16, p84, ratios = 1.0, 1.0, 1.0, np.array([1.0])
         if not np.isfinite(phot) or abs(phot) < 1e-6 or abs(phot) > 1e3:
-            phot, phot_quad = 1.0, 0.0
-        eff = phot + phot_quad * np.clip(right, 0.0, None)
-        lo, hi = 0.25 * abs(phot), 4.0 * abs(phot)
-        eff = np.clip(eff, lo, hi)
-        residual = left - eff * right
+            phot = 1.0
+        residual = left - phot * right
         _, resid_sky, _ = sigma_clipped_stats(residual, sigma=3.0, maxiters=5)
         if not np.isfinite(resid_sky):
             resid_sky = 0.0
@@ -797,11 +760,11 @@ def alard_lupton_difference(
         seeing = ""
         if np.isfinite(sci_fw) and np.isfinite(tmpl_fw):
             seeing = f", seeing={sci_fw:.2f}/{tmpl_fw:.2f}px"
-        quad_note = f", quad={phot_quad:.3g}" if phot_quad != 0.0 else ""
         terminal_output.print_to_terminal(
             f"Alard–Lupton kernel ({n_used} stamps, ksize={ksize}, "
             f"sigmas={used_sigmas[0]:.1f}/{used_sigmas[1]:.1f}/{used_sigmas[2]:.1f}, "
-            f"flux_scale={scale:.4g}, phot_match={phot:.3f}{quad_note}, "
+            f"flux_scale={scale:.4g}, phot_match={phot:.3f} "
+            f"(p16={p16:.3f}, p84={p84:.3f}, n={len(ratios)}), "
             f"kernel_sum={ksum:.3f}, {which}{seeing})",
             indent=2,
             style_name="NORMAL",
