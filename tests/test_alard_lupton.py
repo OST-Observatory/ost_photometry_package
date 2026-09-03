@@ -91,6 +91,16 @@ def test_seeing_kernel_params_tracks_fwhm_mismatch():
     assert max(sig_small) < max(sigmas)
 
 
+def test_seeing_kernel_params_follows_absolute_psf():
+    """Similar, broad PSFs still need a kernel on the star scale, not 0.9 px."""
+    from ost_photometry.analyze.subtraction_alard_lupton import _seeing_kernel_params
+
+    ksize, sigmas = _seeing_kernel_params(13.5, 14.2)
+    assert ksize >= 31
+    assert min(sigmas) >= 1.8
+    assert max(sigmas) >= 4.5
+
+
 def test_kernel_basis_shape_and_normalization():
     bases = kernel_basis(15)
     assert bases.shape == (10, 15, 15)

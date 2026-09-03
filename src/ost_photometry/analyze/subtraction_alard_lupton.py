@@ -371,22 +371,35 @@ def _seeing_kernel_params(
     tmpl_fwhm: float,
     fallback_fwhm: float = 4.0,
 ) -> tuple[int, tuple[float, float, float]]:
-    """Kernel size and Gaussian widths from the FWHM mismatch (pixels)."""
+    """Kernel size and Gaussian widths from PSF scale and FWHM mismatch.
+
+    The matching Gaussian ``sqrt(FWHM_wide² − FWHM_narrow²)`` is only the
+    *difference* of two Gaussians. Science and HiPS PSFs also differ in shape
+    (wings, colour), so the bases must live on the scale of the stars. A
+    0.9 px Gaussian on a 13 px FWHM star fits the core, rings in the wings,
+    and leaves a central spike — the classic donut-with-a-dot residual.
+    """
     vals = [v for v in (sci_fwhm, tmpl_fwhm) if np.isfinite(v) and v > 0.5]
     if len(vals) == 2:
         narrow, wide = min(vals), max(vals)
         extra = float(np.sqrt(max(wide**2 - narrow**2, 0.0)) / 2.355)
+        fwhm_typ = 0.5 * (narrow + wide)
     elif len(vals) == 1:
         extra = float(vals[0] / 2.355)
+        fwhm_typ = float(vals[0])
     else:
         extra = float(max(fallback_fwhm, 1.0) / 2.355)
+        fwhm_typ = float(max(fallback_fwhm, 1.0))
     extra = float(np.clip(extra, 0.6, 10.0))
+    pix = float(max(fwhm_typ, 1.0) / 2.355)
     sigmas = (
-        float(max(0.5, 0.5 * extra)),
-        float(max(0.6, 1.0 * extra)),
-        float(max(0.8, 1.7 * extra)),
+        float(max(0.35 * pix, 0.5 * extra, 0.5)),
+        float(max(0.60 * pix, 1.0 * extra, 0.6)),
+        float(max(0.90 * pix, 1.7 * extra, 0.8)),
     )
     ksize = int(2 * np.ceil(3.2 * max(sigmas)) + 1)
+    k_psf = int(2 * np.ceil(1.15 * fwhm_typ) + 1)
+    ksize = max(ksize, k_psf)
     if ksize % 2 == 0:
         ksize += 1
     ksize = int(np.clip(ksize, 15, 61))
