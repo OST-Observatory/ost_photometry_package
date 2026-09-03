@@ -129,6 +129,130 @@ def _image_pairing_label(image) -> str:
     return f"image_id={getattr(image, 'image_id', '?')}"
 
 
+def format_duration_days(days: float | None) -> str:
+    """Human duration from a Julian-date difference (days)."""
+    if days is None or not np.isfinite(days):
+        return "?"
+    d = abs(float(days))
+    minutes = d * 24.0 * 60.0
+    if minutes < 1.0:
+        return f"{minutes * 60.0:.0f} s ({d:.5f} d)"
+    if minutes < 120.0:
+        return f"{minutes:.0f} min ({d:.4f} d)"
+    hours = d * 24.0
+    if hours < 48.0:
+        return f"{hours:.1f} h ({d:.4f} d)"
+    return f"{d:.3f} d"
+
+
+def describe_calibration_epoch_skip(entry: dict) -> str:
+    """One-line explanation of a skipped multi-filter pairing attempt."""
+    reason = entry.get("reason", "?")
+    if reason == "index_unequal_lengths":
+        return str(entry.get("message") or entry)
+    if reason == "jd_exceeds_tolerance":
+        ref = entry.get("reference_filter", "?")
+        failed = entry.get("failed_filter", "?")
+        iid = entry.get("reference_exposure_image_id", "?")
+        delta = format_duration_days(entry.get("best_delta_jd"))
+        window = format_duration_days(entry.get("jd_tolerance"))
+        return (
+            f"Could not pair {ref} image {iid} with {failed}: the closest {failed} "
+            f"exposure is {delta} away, but only {window} is allowed "
+            f"(exposure_jd_tolerance)."
+        )
+    if reason == "jd_no_partner":
+        ref = entry.get("reference_filter", "?")
+        failed = entry.get("failed_filter", "?")
+        iid = entry.get("reference_exposure_image_id", "?")
+        return (
+            f"Could not pair {ref} image {iid} with {failed}: no {failed} exposure "
+            "with photometry and a known observation time."
+        )
+    if reason == "missing_photometry":
+        return (
+            f"No photometry on {entry.get('filter', '?')} image "
+            f"{entry.get('image_id', '?')} (index {entry.get('index', '?')})."
+        )
+    if reason == "no_wcs":
+        return f"No WCS for filter {entry.get('filter', '?')}."
+    if reason == "bad_photometry_or_wcs":
+        return (
+            f"Could not build a photometry table for {entry.get('filter', '?')} "
+            f"image {entry.get('image_id', '?')}."
+        )
+    if reason == "merge_failed":
+        return f"Could not merge filter tables: {entry.get('error', '?')}"
+    return f"Calibration epoch pairing note: {entry}"
+
+
+def no_calibration_epochs_message(
+    skipped: list[dict] | None,
+    *,
+    pairing: str,
+    jd_tolerance: float,
+    filter_list: list[str],
+) -> str:
+    """User-facing error when no multi-filter calibration epoch was built."""
+    bands = "+".join(str(f) for f in filter_list) if filter_list else "the filters"
+    lines = [
+        f"Cannot calibrate: no {bands} epoch could be built from the extracted images.",
+    ]
+    if skipped:
+        lines.append("Why:")
+        lines.extend(f"  - {describe_calibration_epoch_skip(e)}" for e in skipped)
+    else:
+        lines.append(
+            "No pairing notes were recorded. Check that extraction produced "
+            "photometry in every filter and that each image series has a WCS."
+        )
+    jd_skips = [
+        e
+        for e in (skipped or [])
+        if e.get("reason") in ("jd_exceeds_tolerance", "jd_no_partner")
+    ]
+    if jd_skips and pairing == "jd_nearest":
+        window = format_duration_days(jd_tolerance)
+        lines.append(
+            "Time-window pairing (exposure_pairing='jd_nearest') is for variable-star "
+            "series where the filters of one visit are nearly simultaneous. Stacked "
+            "cluster images (N2) are often taken many minutes apart; pair them by "
+            "file order with exposure_pairing='index' (N2 default), or raise "
+            f"exposure_jd_tolerance (currently {jd_tolerance} d = {window})."
+        )
+    return "\n".join(lines)
+
+
+def _effective_exposure_pairing(
+    context: AnalysisContext,
+    config: PipelineConfig,
+    *,
+    log: bool = False,
+) -> str:
+    """
+    ``index`` when every filter has a single image (typical N2 stacks).
+
+    ``jd_nearest`` + ``exposure_jd_tolerance`` only matters when a filter has
+    several exposures that could be mismatched in time (C7).
+    """
+    pairing = config.exposure_pairing
+    filter_list = list(context.filter_list)
+    if (
+        pairing == "jd_nearest"
+        and len(filter_list) >= 2
+        and not context.has_multiple_images_per_filter()
+    ):
+        if log:
+            terminal_output.print_to_terminal(
+                "One image per filter: pairing B/V (etc.) by file order, not by "
+                "time. The ΔJD window is only used when a filter has several exposures.",
+                indent=2,
+                style_name="INFO",
+            )
+        return "index"
+    return pairing
+
+
 def _merge_epoch_on_id(
     tables: dict[str, Table],
     ref_filter: str,
@@ -403,7 +527,7 @@ def observation_to_calibration_epochs(
     if ref_filter not in context.image_series_dict:
         ref_filter = filter_list[0]
 
-    pairing = config.exposure_pairing
+    pairing = _effective_exposure_pairing(context, config, log=True)
     skipped = context.calibration_epochs_skipped
     debug_pairing = bool(config.debug_exposure_pairing)
 
@@ -471,6 +595,7 @@ def observation_to_calibration_epochs(
             "jd_by_filter": jd_by_filter,
             "reference_filter": ref_filter,
             "pairing_mode": pairing,
+            "configured_pairing": config.exposure_pairing,
             "airmasses": airmasses,
         }
 
@@ -484,9 +609,10 @@ def list_exposure_image_groups(
     """
     Paired multi-filter image groups (same logic as calibration epochs).
 
-    Returns a list of ``{filter_name: Image}`` dicts using
-    ``config.exposure_pairing`` (``index`` or ``jd_nearest``). Does **not**
-    mutate ``context.calibration_epochs``.
+    Returns a list of ``{filter_name: Image}`` dicts using the same pairing
+    rules as calibration (``index`` / ``jd_nearest``, including the
+    one-image-per-filter index fallback). Does **not** mutate
+    ``context.calibration_epochs``.
     """
     filter_list = list(context.filter_list)
     if len(filter_list) < 2:
@@ -497,7 +623,7 @@ def list_exposure_image_groups(
         ref_filter = filter_list[0]
 
     skipped: list[dict] = []
-    pairing = config.exposure_pairing
+    pairing = _effective_exposure_pairing(context, config, log=False)
     if pairing == "index":
         return _pairing_index(context, filter_list, skipped, debug=False)
     return _pairing_jd_nearest(

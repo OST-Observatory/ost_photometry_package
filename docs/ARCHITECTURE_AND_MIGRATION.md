@@ -123,8 +123,8 @@ matched set of exposures — with keys `epoch_000`, `epoch_001`, … (not `B_0`,
 
 `PipelineConfig` fields for exposure pairing:
 
-- `exposure_pairing`: `"jd_nearest"` (default) or `"index"`
-- `exposure_jd_tolerance`: JD match tolerance in days
+- `exposure_pairing`: `"jd_nearest"` (package default, C7) or `"index"` (N2 stacked fields; also used automatically when each filter has a single image)
+- `exposure_jd_tolerance`: JD match tolerance in days (`jd_nearest` only; ignored for one-image-per-filter stacks)
 - `reference_filter`: reference band for pairing (`None` → first filter)
 
 Skipped pairings are listed in `context.calibration_epochs_skipped` and logged

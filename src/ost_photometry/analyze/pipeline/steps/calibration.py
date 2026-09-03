@@ -28,7 +28,9 @@ from ...post_processing.light_curve import attach_observation_jd_column, write_e
 from ...warnings_types import OstPhotometryAnalyzeWarning
 from .. import base
 from ..bridge import (
+    describe_calibration_epoch_skip,
     instrumental_epoch_native_from_calibration_epochs,
+    no_calibration_epochs_message,
     observation_to_calibration_epochs,
 )
 from ..config import PipelineConfig
@@ -70,26 +72,10 @@ def _attach_jd_from_epoch_meta(tbl, context: AnalysisContext, config: PipelineCo
 
 def _log_calibration_skips(skipped: list) -> None:
     for entry in skipped:
-        reason = entry.get("reason", "?")
-        if reason == "index_unequal_lengths":
-            terminal_output.print_to_terminal(
-                entry.get("message", str(entry)),
-                style_name="WARNING",
-            )
-        elif reason in ("jd_no_partner", "jd_exceeds_tolerance"):
-            terminal_output.print_to_terminal(
-                f"Skipped calibration epoch: {reason} — ref_filter={entry.get('reference_filter')!r} "
-                f"image_id={entry.get('reference_exposure_image_id')} jd={entry.get('reference_jd')} "
-                f"failed_filter={entry.get('failed_filter')!r} "
-                f"best_delta_jd={entry.get('best_delta_jd')} "
-                f"tolerance={entry.get('jd_tolerance')}",
-                style_name="WARNING",
-            )
-        else:
-            terminal_output.print_to_terminal(
-                f"Calibration epoch pairing note: {entry}",
-                style_name="INFO",
-            )
+        terminal_output.print_to_terminal(
+            describe_calibration_epoch_skip(entry),
+            style_name="WARNING",
+        )
 
 
 def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineConfig) -> dict:
@@ -191,8 +177,12 @@ class CalibrationStep(base.PipelineStep):
         epochs = dict(context.calibration_epochs)
         if not epochs:
             raise RuntimeError(
-                "No calibration epochs from observation_to_calibration_epochs. "
-                "Ensure extraction and correlation have run."
+                no_calibration_epochs_message(
+                    context.calibration_epochs_skipped,
+                    pairing=config.exposure_pairing,
+                    jd_tolerance=config.exposure_jd_tolerance,
+                    filter_list=list(context.filter_list),
+                )
             )
 
         filter_list = list(context.filter_list)

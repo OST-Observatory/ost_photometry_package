@@ -96,8 +96,12 @@ def test_deprecated_preset_aliases_still_resolve():
 
     with warnings.catch_warnings(record=True):
         warnings.simplefilter("ignore", DeprecationWarning)
+        n2 = PipelineConfig.from_preset("n2_stack")
+        assert n2.calibration_strategy == "median_zp"
+        assert n2.exposure_pairing == "index"
         assert (
-            PipelineConfig.from_preset("n2_stack").calibration_strategy == "median_zp"
+            PipelineConfig.from_preset("median_zp_per_image").exposure_pairing
+            == "index"
         )
         assert (
             PipelineConfig.from_preset(

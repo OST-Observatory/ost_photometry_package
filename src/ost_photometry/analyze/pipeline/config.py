@@ -34,6 +34,8 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "color_term_fit": "never",
         "derive_transform_from_data": False,
         "zp_subsample_statistic": True,
+        # Stacked B/V (N2) are sequential, not simultaneous — pair by file order.
+        "exposure_pairing": "index",
     },
     # Nightly linear color term + ZP (e.g. multi-epoch light curves).
     "linear_fit_per_night": {
@@ -277,7 +279,11 @@ class CalibrationConfig:
     per_image_rolling_mean_zero_point: bool = False
     per_image_rolling_window: int = 3
     color_indices: dict[str, tuple[str, str]] | None = None
+    #: ``jd_nearest`` (C7 visits) or ``index`` (N2 stacks). One image per filter
+    #: is always paired by index, so stacked B/V may be many minutes apart.
     exposure_pairing: Literal["jd_nearest", "index"] = "jd_nearest"
+    #: Max |ΔJD| (days) when ``exposure_pairing="jd_nearest"``. Ignored for
+    #: stacked cluster fields with one image per filter (paired by index).
     exposure_jd_tolerance: float = 0.02
     debug_exposure_pairing: bool = False
     reference_filter: str | None = None
