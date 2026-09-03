@@ -345,6 +345,54 @@ def find_kernel_stars(
     return np.asarray(xy, dtype=float)
 
 
+def _seeing_kernel_params(
+    sci_fwhm: float,
+    tmpl_fwhm: float,
+    fallback_fwhm: float = 4.0,
+) -> tuple[int, tuple[float, float, float]]:
+    """Kernel size and Gaussian widths from the FWHM mismatch (pixels)."""
+    vals = [v for v in (sci_fwhm, tmpl_fwhm) if np.isfinite(v) and v > 0.5]
+    if len(vals) == 2:
+        narrow, wide = min(vals), max(vals)
+        extra = float(np.sqrt(max(wide**2 - narrow**2, 0.0)) / 2.355)
+    elif len(vals) == 1:
+        extra = float(vals[0] / 2.355)
+    else:
+        extra = float(max(fallback_fwhm, 1.0) / 2.355)
+    extra = float(np.clip(extra, 0.6, 10.0))
+    sigmas = (
+        float(max(0.5, 0.5 * extra)),
+        float(max(0.6, 1.0 * extra)),
+        float(max(0.8, 1.7 * extra)),
+    )
+    ksize = int(2 * np.ceil(3.2 * max(sigmas)) + 1)
+    if ksize % 2 == 0:
+        ksize += 1
+    ksize = int(np.clip(ksize, 15, 61))
+    max_sig = (ksize / 2.0) / 3.0
+    sigmas = tuple(float(min(s, max_sig)) for s in sigmas)
+    return ksize, sigmas
+
+
+def _robust_ratio_median(ratios: list[float], fluxes: list[float] | None = None) -> float:
+    """Median flux ratio, dropping the brightest (often saturated) stamps."""
+    arr = np.asarray(ratios, dtype=float)
+    if arr.size == 0:
+        raise RuntimeError("Need at least 1 star stamp to estimate the flux scale")
+    if fluxes is not None and len(fluxes) == len(arr) and arr.size >= 6:
+        order = np.argsort(np.abs(np.asarray(fluxes, dtype=float)))
+        # Keep the middle of the brightness range (drop faint 10% and bright 25%).
+        lo = max(int(0.10 * len(order)), 0)
+        hi = max(int(0.75 * len(order)), lo + 3)
+        arr = arr[order[lo:hi]]
+    if arr.size >= 8:
+        lo, hi = np.percentile(arr, [20.0, 80.0])
+        clipped = arr[(arr >= lo) & (arr <= hi)]
+        if clipped.size >= 3:
+            arr = clipped
+    return float(np.median(arr))
+
+
 def flux_scale_from_stamps(
     science: np.ndarray,
     template: np.ndarray,
@@ -359,6 +407,7 @@ def flux_scale_from_stamps(
     if len(xy) == 0:
         raise RuntimeError("Need star positions to estimate the flux scale")
     ratios: list[float] = []
+    fluxes: list[float] = []
     for x, y in xy:
         xt, yt = _shift_to_peak(tmpl, x, y, half, max_shift=float(min(half - 2, 10)))
         s = _cutout(sci, x, y, half)
@@ -378,9 +427,10 @@ def flux_scale_from_stamps(
             and np.isfinite(ft)
         ):
             ratios.append(fs / ft)
+            fluxes.append(fs)
     if not ratios:
         raise RuntimeError("Need at least 1 star stamp to estimate the flux scale")
-    scale = float(np.median(ratios))
+    scale = _robust_ratio_median(ratios, fluxes)
     if not np.isfinite(scale) or abs(scale) < 1e-8 or abs(scale) > 1e6:
         raise RuntimeError(f"Unusable flux scale {scale}")
     return scale
@@ -459,8 +509,7 @@ def fit_alard_lupton_kernel(
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
     bases = kernel_basis(ksize, sigmas, degrees)
     hw = ksize // 2
-    # Extra padding so the stamp border used for sky is outside the star wings.
-    half_stamp = hw + 12
+    half_stamp = hw + 6
     rows: list[np.ndarray] = []
     rhs: list[np.ndarray] = []
     used = 0
@@ -523,11 +572,7 @@ def alard_lupton_difference(
     tmpl_sky, _ = _sky_level(tmpl)
     sci0 = sci - sci_sky
     tmpl0 = tmpl - tmpl_sky
-    if ksize is None:
-        ksize = int(2 * np.ceil(2.0 * max(_DEFAULT_SIGMA_SCALE) * max(fwhm / 3.0, 0.5)) + 1)
-        if ksize % 2 == 0:
-            ksize += 1
-        ksize = int(np.clip(ksize, 11, 25))
+    ksize_user = ksize
     xy = star_xy
     try:
         if xy is None or len(np.asarray(xy).reshape(-1, 2)) == 0:
@@ -547,11 +592,7 @@ def alard_lupton_difference(
             style_name="NORMAL",
         )
         scale = flux_scale_from_stamps(
-            sci0,
-            tmpl0,
-            xy,
-            half=max(16, ksize // 2 + 8),
-            aperture_radius=max(10.0, 2.8 * fwhm),
+            sci0, tmpl0, xy, half=16, aperture_radius=12.0
         )
         if scale < 0:
             tmpl0 = -tmpl0
@@ -561,34 +602,38 @@ def alard_lupton_difference(
                 indent=2,
                 style_name="WARNING",
             )
-        tmpl0, dx, dy = _align_template_to_stars(
-            tmpl0, xy, half=max(9, ksize // 2)
-        )
+        tmpl0, dx, dy = _align_template_to_stars(tmpl0, xy, half=16)
         if abs(dx) > 0.05 or abs(dy) > 0.05:
             terminal_output.print_to_terminal(
                 f"Aligned template to science stars (Δx={dx:+.2f}, Δy={dy:+.2f} px)",
                 indent=2,
                 style_name="NORMAL",
             )
-            scale = flux_scale_from_stamps(
-                sci0,
-                tmpl0,
-                xy,
-                half=max(16, ksize // 2 + 8),
-                aperture_radius=max(10.0, 2.8 * fwhm),
-            )
-            if scale < 0:
-                tmpl0 = -tmpl0
-                scale = -scale
+        sci_fw = _stamp_fwhm(sci0, xy, half=20)
+        tmpl_fw = _stamp_fwhm(tmpl0, xy, half=20)
+        if ksize_user is None:
+            ksize, sigmas = _seeing_kernel_params(sci_fw, tmpl_fw, fallback_fwhm=fwhm)
+        else:
+            ksize = int(ksize_user) | 1
+            _, sigmas = _seeing_kernel_params(sci_fw, tmpl_fw, fallback_fwhm=fwhm)
+        wide_fw = max(
+            v for v in (sci_fw, tmpl_fw, fwhm) if np.isfinite(v) and v > 0
+        )
+        phot_half = max(16, ksize // 2 + 4, int(np.ceil(2.2 * wide_fw)))
+        phot_radius = min(float(phot_half - 2), max(10.0, 2.2 * wide_fw))
+        scale = flux_scale_from_stamps(
+            sci0, tmpl0, xy, half=phot_half, aperture_radius=phot_radius
+        )
+        if scale < 0:
+            tmpl0 = -tmpl0
+            scale = -scale
         tmpl_s = scale * tmpl0
-        sci_fw = _stamp_fwhm(sci0, xy, half=max(9, ksize // 2))
-        tmpl_fw = _stamp_fwhm(tmpl_s, xy, half=max(9, ksize // 2))
-        # A kernel can only broaden. DSS/HiPS is often broader than the CCD, so
-        # convolve the science image down to the template seeing.
+        # Saturated cores (plate + CCD) bias the kernel; use fainter kernel stars.
+        skip_bright = int(0.2 * len(xy)) if len(xy) >= 10 else 0
+        xy_kernel = xy[skip_bright:] if skip_bright else xy
         prefer_convolve_template = True
         if np.isfinite(sci_fw) and np.isfinite(tmpl_fw) and tmpl_fw > 1.15 * sci_fw:
             prefer_convolve_template = False
-        directions: list[tuple[str, np.ndarray, np.ndarray]]
         if prefer_convolve_template:
             directions = [
                 ("template→science", sci0, tmpl_s),
@@ -600,21 +645,32 @@ def alard_lupton_difference(
                 ("template→science", sci0, tmpl_s),
             ]
         ksizes: list[int] = []
-        for k_try in (ksize, 21, 15, 11):
+        for k_try in (ksize, min(ksize, 41), min(ksize, 31)):
             k_odd = int(k_try) | 1
-            if k_odd >= 11 and k_odd not in ksizes:
+            if k_odd >= 15 and k_odd not in ksizes:
                 ksizes.append(k_odd)
         kernel = None
         n_used = 0
         which = directions[0][0]
         last_err: BaseException | None = None
+        used_sigmas = sigmas
         for k_try in ksizes:
+            sig_try = sigmas
+            if k_try != ksize:
+                max_sig = (k_try / 2.0) / 3.0
+                sig_try = tuple(float(min(s, max_sig)) for s in sigmas)
             for label, target, source in directions:
                 try:
                     kernel, n_used = fit_alard_lupton_kernel(
-                        target, source, xy, ksize=k_try, n_stars=n_stars
+                        target,
+                        source,
+                        xy_kernel,
+                        ksize=k_try,
+                        sigmas=sig_try,
+                        n_stars=n_stars,
                     )
                     ksize = k_try
+                    used_sigmas = sig_try
                     which = label
                     last_err = None
                     break
@@ -624,10 +680,6 @@ def alard_lupton_difference(
                 break
         if kernel is None:
             raise last_err or RuntimeError("Kernel fit failed")
-        phot_half = max(16, ksize // 2 + 8)
-        phot_radius = max(10.0, 2.8 * fwhm)
-        if np.isfinite(sci_fw) and np.isfinite(tmpl_fw):
-            phot_radius = max(phot_radius, 2.5 * max(sci_fw, tmpl_fw))
         if which == "template→science":
             matched = fftconvolve(tmpl_s, kernel, mode="same")
             left, right = sci0, matched
@@ -636,7 +688,7 @@ def alard_lupton_difference(
             left, right = matched, tmpl_s
         try:
             phot = flux_scale_from_stamps(
-                left, right, xy, half=phot_half, aperture_radius=phot_radius
+                left, right, xy_kernel, half=phot_half, aperture_radius=phot_radius
             )
         except RuntimeError:
             phot = 1.0
@@ -652,6 +704,7 @@ def alard_lupton_difference(
             seeing = f", seeing={sci_fw:.2f}/{tmpl_fw:.2f}px"
         terminal_output.print_to_terminal(
             f"Alard–Lupton kernel ({n_used} stamps, ksize={ksize}, "
+            f"sigmas={used_sigmas[0]:.1f}/{used_sigmas[1]:.1f}/{used_sigmas[2]:.1f}, "
             f"flux_scale={scale:.4g}, phot_match={phot:.3f}, "
             f"kernel_sum={ksum:.3f}, {which}{seeing})",
             indent=2,

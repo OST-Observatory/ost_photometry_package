@@ -73,6 +73,17 @@ def test_alard_lupton_without_star_xy_uses_finder():
     assert diff.shape == sci.shape
 
 
+def test_seeing_kernel_params_tracks_fwhm_mismatch():
+    from ost_photometry.analyze.subtraction_alard_lupton import _seeing_kernel_params
+
+    ksize, sigmas = _seeing_kernel_params(7.5, 18.0)
+    assert ksize >= 41
+    assert max(sigmas) >= 6.0
+    k_small, sig_small = _seeing_kernel_params(3.0, 3.2)
+    assert k_small < ksize
+    assert max(sig_small) < max(sigmas)
+
+
 def test_kernel_basis_shape_and_normalization():
     bases = kernel_basis(15)
     assert bases.shape == (10, 15, 15)
