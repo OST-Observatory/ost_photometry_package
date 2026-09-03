@@ -548,8 +548,9 @@ def load_isochrone_config(
     path: str | Path | None,
     filter_list: list[str],
 ) -> IsochronePlotConfig:
-    """Read an isochrone YAML; empty path or missing file yields blank fields.
+    """Read an isochrone YAML; empty path or ``?`` yields blank fields.
 
+    A non-empty path that is not a file raises ``FileNotFoundError``.
     Optional ``grids`` / ``use`` select one catalog entry. That entry supplies
     ``isochrones`` and may override composition metadata; shared keys stay at
     file level. Without ``grids`` the top-level ``isochrones`` path is used.
@@ -559,11 +560,22 @@ def load_isochrone_config(
 
     import yaml
 
+    yaml_path = Path(path).expanduser()
+    if not yaml_path.is_file():
+        raise FileNotFoundError(
+            f"Isochrone configuration file not found: {yaml_path.resolve()}. "
+            "Copy the YAML (e.g. parsec_3p6_noTP-AGB_isochrones.yaml) into the "
+            "working directory next to 3_plot_cmd_supervisors.py, or set "
+            "isochrone_configuration_file to its full path. Leave it empty or "
+            "'?' to plot the CMD without isochrones."
+        )
     try:
-        with Path(path).open() as file:
+        with yaml_path.open() as file:
             data = yaml.safe_load(file)
-    except (yaml.YAMLError, FileNotFoundError, OSError, TypeError):
-        return IsochronePlotConfig()
+    except yaml.YAMLError as exc:
+        raise ValueError(
+            f"Could not parse isochrone YAML {yaml_path}: {exc}"
+        ) from exc
     if not isinstance(data, dict) or not data:
         return IsochronePlotConfig()
 

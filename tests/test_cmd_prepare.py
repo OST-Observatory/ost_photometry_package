@@ -133,8 +133,8 @@ def test_load_isochrone_config_blank():
         assert cfg.isochrones == ""
         assert cfg.isochrone_set is None
         assert cfg.feh is None
-        cfg_missing = mod.load_isochrone_config("no_such_isochrones.yaml", ["B", "V"])
-        assert cfg_missing.isochrones == ""
+        with pytest.raises(FileNotFoundError, match="not found"):
+            mod.load_isochrone_config("no_such_isochrones.yaml", ["B", "V"])
 
 
 def _minimal_isochrone_yaml(**extra: object) -> str:

@@ -970,11 +970,19 @@ class MakeCMDs:
         if fit_isochrone and chi_square_plot_mode is None:
             chi_square_plot_mode = 'simple'
 
-        have_isochrones = isochrones not in ('', '?')
+        have_isochrones = isochrones not in ("", "?", None)
+        if fit_isochrone and not have_isochrones:
+            terminal_output.print_to_terminal(
+                "fit_isochrone=True, but no isochrone file or directory is set "
+                "(YAML missing, unreadable, or isochrones: empty). "
+                "Plotting the CMD without a χ² fit.",
+                style_name="WARNING",
+            )
+            fit_isochrone = False
         draw_chi2 = bool(
             have_isochrones
             and fit_isochrone
-            and chi_square_plot_mode in ('simple', 'detailed')
+            and chi_square_plot_mode in ("simple", "detailed")
         )
 
         #   Initialize plot and check plot dimensions
@@ -1139,6 +1147,14 @@ class MakeCMDs:
 
         #   Plot isochrones
         #
+        age_list: list = []
+        chi_square_list: list = []
+        chi_square_magnitude_2_list: list = []
+        chi_square_color_list: list = []
+        isochrones_list: list = []
+        age_unit = "Gyr"
+        color_pick = None
+
         #   Check if isochrones are specified
         if isochrones != '' and isochrones != '?':
             #   Decode relationships between isochrone magnitudes such as color
@@ -1169,6 +1185,12 @@ class MakeCMDs:
             if isochrone_type == 'directory':
                 #   Resolve iso path
                 isochrones = Path(isochrones).expanduser()
+                if not isochrones.is_dir():
+                    raise FileNotFoundError(
+                        f"Isochrone directory not found: {isochrones}. "
+                        "The YAML loaded, but the grid path under 'isochrones' "
+                        "is missing (typical: ~/isochrone_database/...)."
+                    )
 
                 #   Make list of isochrone files
                 file_list = os.listdir(isochrones)
@@ -1340,6 +1362,12 @@ class MakeCMDs:
             if isochrone_type == 'file':
                 #   Resolve iso path
                 isochrones = Path(isochrones).expanduser()
+                if not isochrones.is_file():
+                    raise FileNotFoundError(
+                        f"Isochrone data file not found: {isochrones}. "
+                        "The YAML loaded, but the grid file under 'isochrones' "
+                        "is missing (typical: ~/isochrone_database/parsec_iso/...)."
+                    )
 
                 #   Load file
                 isochrone_data = open(isochrones)
@@ -1519,67 +1547,75 @@ class MakeCMDs:
         best_age = None
         best_age_unit = None
         best_chi_square = None
+        min_chi_square_id = None
         if fit_isochrone:
-            #   Evaluate chi square
-            min_chi_square_id = np.argmin(chi_square_list)
-            best_age = age_list[min_chi_square_id]
-            best_age_unit = age_unit
-            best_chi_square = chi_square_list[min_chi_square_id]
+            if not chi_square_list:
+                terminal_output.print_to_terminal(
+                    "Isochrone fit requested, but no isochrones were scored "
+                    "(missing grid files, empty catalog, or no overlapping CMD points).",
+                    style_name="WARNING",
+                )
+            else:
+                #   Evaluate chi square
+                min_chi_square_id = int(np.argmin(chi_square_list))
+                best_age = age_list[min_chi_square_id]
+                best_age_unit = age_unit
+                best_chi_square = chi_square_list[min_chi_square_id]
 
-            terminal_output.print_to_terminal(
-                f'Best fitting isochrone: {age_list[min_chi_square_id]:.1f} '
-                f'{age_unit} with chi^2 = {chi_square_list[min_chi_square_id]:.3f}',
-                style_name="GOOD",
-            )
+                terminal_output.print_to_terminal(
+                    f'Best fitting isochrone: {age_list[min_chi_square_id]:.1f} '
+                    f'{age_unit} with chi^2 = {chi_square_list[min_chi_square_id]:.3f}',
+                    style_name="GOOD",
+                )
 
-            #   Plot best isochrone
-            ax0.plot(
-                isochrones_list[min_chi_square_id][:, 1],
-                isochrones_list[min_chi_square_id][:, 0],
-                linestyle='-',
-                color=color_pick.to_rgba(min_chi_square_id),
-                linewidth=2,
-            )
+                #   Plot best isochrone
+                ax0.plot(
+                    isochrones_list[min_chi_square_id][:, 1],
+                    isochrones_list[min_chi_square_id][:, 0],
+                    linestyle='-',
+                    color=color_pick.to_rgba(min_chi_square_id),
+                    linewidth=2,
+                )
 
-            #   Finish chi square plots
-            if chi_square_plot_mode == 'detailed':
-                ax1.scatter(
-                    chi_square_magnitude_2_list[min_chi_square_id],
-                    age_list[min_chi_square_id],
-                    color=color_pick.to_rgba(min_chi_square_id),
-                    marker='o',
-                    alpha=1.0,
-                )
-                ax2.scatter(
-                    age_list[min_chi_square_id],
-                    chi_square_color_list[min_chi_square_id],
-                    color=color_pick.to_rgba(min_chi_square_id),
-                    marker='o',
-                    alpha=1.0,
-                )
-                mk_ticks_labels(
-                    f'Age [{age_unit}]',
-                    r'$\chi^2$ ',
-                    ax1,
-                )
-                mk_ticks_labels(
-                    r'$\chi^2$ ',
-                    f'Age [{age_unit}]',
-                    ax2,
-                )
-            elif chi_square_plot_mode == 'simple':
-                ax2.scatter(
-                    age_list[min_chi_square_id],
-                    chi_square_magnitude_2_list[min_chi_square_id] + chi_square_color_list[min_chi_square_id],
-                    color=color_pick.to_rgba(min_chi_square_id),
-                    marker='o',
-                    alpha=1.0,
-                )
-                mk_ticks_labels(
-                    r'$\chi^2$ ',
-                    f'Age [{age_unit}]',
-                    ax2,
-                )
+                #   Finish chi square plots
+                if chi_square_plot_mode == 'detailed':
+                    ax1.scatter(
+                        chi_square_magnitude_2_list[min_chi_square_id],
+                        age_list[min_chi_square_id],
+                        color=color_pick.to_rgba(min_chi_square_id),
+                        marker='o',
+                        alpha=1.0,
+                    )
+                    ax2.scatter(
+                        age_list[min_chi_square_id],
+                        chi_square_color_list[min_chi_square_id],
+                        color=color_pick.to_rgba(min_chi_square_id),
+                        marker='o',
+                        alpha=1.0,
+                    )
+                    mk_ticks_labels(
+                        f'Age [{age_unit}]',
+                        r'$\chi^2$ ',
+                        ax1,
+                    )
+                    mk_ticks_labels(
+                        r'$\chi^2$ ',
+                        f'Age [{age_unit}]',
+                        ax2,
+                    )
+                elif chi_square_plot_mode == 'simple':
+                    ax2.scatter(
+                        age_list[min_chi_square_id],
+                        chi_square_magnitude_2_list[min_chi_square_id] + chi_square_color_list[min_chi_square_id],
+                        color=color_pick.to_rgba(min_chi_square_id),
+                        marker='o',
+                        alpha=1.0,
+                    )
+                    mk_ticks_labels(
+                        r'$\chi^2$ ',
+                        f'Age [{age_unit}]',
+                        ax2,
+                    )
 
         #   Set ticks and labels for CMD
         mk_ticks_labels(
@@ -1632,20 +1668,18 @@ class MakeCMDs:
         plot_tag = "apparent_iso" if apply_to_iso else "absolut"
         self.write_cmd(plot_tag)
         if self.cmd_diagnostics and fit_isochrone and best_age is not None:
-            try:
-                iso_best = isochrones_list[min_chi_square_id]
-            except NameError:
-                iso_best = None
+            iso_best = (
+                isochrones_list[min_chi_square_id]
+                if min_chi_square_id is not None and isochrones_list
+                else None
+            )
             if iso_best is not None and mag_fit.size:
                 n_fid = (
                     0
                     if magnitude_binned_array is None
                     else int(np.shape(magnitude_binned_array)[0])
                 )
-                try:
-                    n_iso = len(isochrones_list)
-                except NameError:
-                    n_iso = 0
+                n_iso = len(isochrones_list)
                 n_mem = (
                     None
                     if fit_members is None
