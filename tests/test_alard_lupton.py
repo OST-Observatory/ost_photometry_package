@@ -75,8 +75,7 @@ def test_alard_lupton_without_star_xy_uses_finder():
 
 def test_kernel_basis_shape_and_normalization():
     bases = kernel_basis(15)
-    # degrees (4, 2, 1) → 15 + 6 + 3 basis images
-    assert bases.shape == (24, 15, 15)
+    assert bases.shape == (10, 15, 15)
     assert np.all(np.isfinite(bases))
 
 
@@ -122,10 +121,14 @@ def test_alard_lupton_matches_when_template_is_broader():
     assert method == "alard_lupton"
     assert abs(float(np.median(diff))) < 12.0
     cores = []
+    signed = []
     for x, y in _STAR_XY:
         cut = diff[int(y) - 3 : int(y) + 4, int(x) - 3 : int(x) + 4]
         cores.append(float(np.nanmax(np.abs(cut))))
+        signed.append(float(np.nanmedian(cut)))
     assert float(np.median(cores)) < 0.25 * 1.6 * 1800.0
+    # Systematic negative holes at every star would mean the flux scale is high.
+    assert float(np.median(signed)) > -40.0
 
 
 def test_alard_lupton_fits_kernel_with_nan_hips_mask():

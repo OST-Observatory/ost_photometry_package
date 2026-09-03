@@ -12,9 +12,10 @@ from scipy.signal import fftconvolve
 
 from .. import terminal_output
 
-# Three Gaussians × polynomials (Alard & Lupton 1998 / HOTPANTS-like).
-_DEFAULT_SIGMA_SCALE = (0.8, 2.0, 4.5)
-_DEFAULT_DEGREES = (4, 2, 1)
+# Three Gaussians × polynomials (Alard & Lupton 1998). Keep the polynomial
+# degrees modest so the kernel cannot add an extra flux scale or negative rings.
+_DEFAULT_SIGMA_SCALE = (0.7, 1.5, 3.0)
+_DEFAULT_DEGREES = (2, 1, 0)
 
 
 def _as_2d(data) -> np.ndarray:
@@ -421,6 +422,25 @@ def flux_scale_subtract(
     return sci0 - scale * tmpl0, scale
 
 
+def _lstsq_flux_conserving_kernel(
+    design: np.ndarray,
+    target: np.ndarray,
+    bases: np.ndarray,
+) -> np.ndarray:
+    """Least-squares kernel with ``sum(kernel) = 1`` (photometric scaling is separate)."""
+    n_basis = int(bases.shape[0])
+    bsum = bases.reshape(n_basis, -1).sum(axis=1)
+    weight = float(np.sqrt(max(design.shape[0], 1)))
+    design_c = np.vstack([design, weight * bsum])
+    target_c = np.concatenate([target, [weight]])
+    coeff, *_ = np.linalg.lstsq(design_c, target_c, rcond=1e-6)
+    kernel = np.tensordot(coeff, bases, axes=(0, 0))
+    ksum = float(np.sum(kernel))
+    if abs(ksum) > 1e-8:
+        kernel = kernel / ksum
+    return kernel
+
+
 def fit_alard_lupton_kernel(
     science: np.ndarray,
     template: np.ndarray,
@@ -439,7 +459,8 @@ def fit_alard_lupton_kernel(
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
     bases = kernel_basis(ksize, sigmas, degrees)
     hw = ksize // 2
-    half_stamp = hw + 6
+    # Extra padding so the stamp border used for sky is outside the star wings.
+    half_stamp = hw + 12
     rows: list[np.ndarray] = []
     rhs: list[np.ndarray] = []
     used = 0
@@ -455,13 +476,14 @@ def fit_alard_lupton_kernel(
         if s is None or t is None:
             continue
         inner_s = s[hw:-hw, hw:-hw]
-        inner_t = t[hw:-hw, hw:-hw]
-        if inner_s.size == 0 or inner_t.size == 0:
+        if inner_s.size == 0:
             continue
         if _stamp_snr(s) < 2.0 or _stamp_snr(t) < 1.5:
             continue
-        s = s - _border_sky(s)
-        t = t - _border_sky(t)
+        # Thin border: images are already globally sky-subtracted; a thick
+        # border on a broad DSS stamp eats the wings and biases the flux low.
+        s = s - _border_sky(s, border=2)
+        t = t - _border_sky(t, border=2)
         if float(np.std(s)) < 1e-8 or float(np.std(t)) < 1e-8:
             continue
         convs = [fftconvolve(t, b, mode="same")[hw:-hw, hw:-hw].ravel() for b in bases]
@@ -474,8 +496,7 @@ def fit_alard_lupton_kernel(
         raise RuntimeError(f"Need at least 3 valid stamps to fit the kernel (got {used})")
     design = np.vstack(rows)
     target = np.concatenate(rhs)
-    coeff, *_ = np.linalg.lstsq(design, target, rcond=1e-6)
-    kernel = np.tensordot(coeff, bases, axes=(0, 0))
+    kernel = _lstsq_flux_conserving_kernel(design, target, bases)
     return kernel, used
 
 
@@ -526,7 +547,11 @@ def alard_lupton_difference(
             style_name="NORMAL",
         )
         scale = flux_scale_from_stamps(
-            sci0, tmpl0, xy, half=max(9, ksize // 2), aperture_radius=max(5.0, 1.6 * fwhm)
+            sci0,
+            tmpl0,
+            xy,
+            half=max(16, ksize // 2 + 8),
+            aperture_radius=max(10.0, 2.8 * fwhm),
         )
         if scale < 0:
             tmpl0 = -tmpl0
@@ -549,8 +574,8 @@ def alard_lupton_difference(
                 sci0,
                 tmpl0,
                 xy,
-                half=max(9, ksize // 2),
-                aperture_radius=max(5.0, 1.6 * fwhm),
+                half=max(16, ksize // 2 + 8),
+                aperture_radius=max(10.0, 2.8 * fwhm),
             )
             if scale < 0:
                 tmpl0 = -tmpl0
@@ -599,10 +624,25 @@ def alard_lupton_difference(
                 break
         if kernel is None:
             raise last_err or RuntimeError("Kernel fit failed")
+        phot_half = max(16, ksize // 2 + 8)
+        phot_radius = max(10.0, 2.8 * fwhm)
+        if np.isfinite(sci_fw) and np.isfinite(tmpl_fw):
+            phot_radius = max(phot_radius, 2.5 * max(sci_fw, tmpl_fw))
         if which == "template→science":
-            residual = sci0 - fftconvolve(tmpl_s, kernel, mode="same")
+            matched = fftconvolve(tmpl_s, kernel, mode="same")
+            left, right = sci0, matched
         else:
-            residual = fftconvolve(sci0, kernel, mode="same") - tmpl_s
+            matched = fftconvolve(sci0, kernel, mode="same")
+            left, right = matched, tmpl_s
+        try:
+            phot = flux_scale_from_stamps(
+                left, right, xy, half=phot_half, aperture_radius=phot_radius
+            )
+        except RuntimeError:
+            phot = 1.0
+        if not np.isfinite(phot) or abs(phot) < 1e-6 or abs(phot) > 1e3:
+            phot = 1.0
+        residual = left - phot * right
         _, resid_sky, _ = sigma_clipped_stats(residual, sigma=3.0, maxiters=5)
         if not np.isfinite(resid_sky):
             resid_sky = 0.0
@@ -612,7 +652,8 @@ def alard_lupton_difference(
             seeing = f", seeing={sci_fw:.2f}/{tmpl_fw:.2f}px"
         terminal_output.print_to_terminal(
             f"Alard–Lupton kernel ({n_used} stamps, ksize={ksize}, "
-            f"flux_scale={scale:.4g}, kernel_sum={ksum:.3f}, {which}{seeing})",
+            f"flux_scale={scale:.4g}, phot_match={phot:.3f}, "
+            f"kernel_sum={ksum:.3f}, {which}{seeing})",
             indent=2,
             style_name="NORMAL",
         )
