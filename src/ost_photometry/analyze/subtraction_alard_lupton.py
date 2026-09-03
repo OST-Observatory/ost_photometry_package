@@ -345,6 +345,27 @@ def find_kernel_stars(
     return np.asarray(xy, dtype=float)
 
 
+def _isolate_xy(star_xy: np.ndarray, min_separation: float) -> np.ndarray:
+    """Greedy keep-first isolation of ``(x, y)`` positions."""
+    xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
+    if len(xy) == 0:
+        return xy
+    sep2 = float(min_separation) ** 2
+    kept: list[tuple[float, float]] = []
+    for x, y in xy:
+        if any((x - x0) ** 2 + (y - y0) ** 2 < sep2 for x0, y0 in kept):
+            continue
+        kept.append((x, y))
+    return np.asarray(kept, dtype=float) if kept else xy
+
+
+def _phot_geometry(fwhm: float) -> tuple[int, float]:
+    """Stamp half-width and aperture radius from seeing (kept small for crowding)."""
+    radius = float(np.clip(1.4 * max(fwhm, 2.0), 5.0, 16.0))
+    half = int(max(np.ceil(radius + 4.0), 9))
+    return half, radius
+
+
 def _seeing_kernel_params(
     sci_fwhm: float,
     tmpl_fwhm: float,
@@ -627,8 +648,10 @@ def alard_lupton_difference(
     tmpl0 = tmpl - tmpl_sky
     ksize_user = ksize
     xy = star_xy
+    xy_was_found = False
     try:
         if xy is None or len(np.asarray(xy).reshape(-1, 2)) == 0:
+            xy_was_found = True
             xy = find_kernel_stars(
                 sci0,
                 n_stars=max(n_stars, 20),
@@ -664,6 +687,28 @@ def alard_lupton_difference(
             )
         sci_fw = _stamp_fwhm(sci0, xy, half=20)
         tmpl_fw = _stamp_fwhm(tmpl0, xy, half=20)
+        meas_fw = sci_fw if np.isfinite(sci_fw) and sci_fw > 1.0 else fwhm
+        sep = max(8.0, 3.5 * meas_fw)
+        if xy_was_found:
+            xy_refound = find_kernel_stars(
+                sci0,
+                n_stars=max(n_stars, 20),
+                fwhm=meas_fw,
+                threshold_sigma=3.5,
+                min_separation=sep,
+            )
+            if len(xy_refound) >= 8:
+                xy = xy_refound
+                terminal_output.print_to_terminal(
+                    f"Kernel stars re-selected for seeing {meas_fw:.1f} px "
+                    f"({len(xy)} isolated, min sep {sep:.0f} px)",
+                    indent=2,
+                    style_name="NORMAL",
+                )
+        else:
+            xy_iso = _isolate_xy(xy, sep)
+            if len(xy_iso) >= 8:
+                xy = xy_iso
         if ksize_user is None:
             ksize, sigmas = _seeing_kernel_params(sci_fw, tmpl_fw, fallback_fwhm=fwhm)
         else:
@@ -672,8 +717,7 @@ def alard_lupton_difference(
         wide_fw = max(
             v for v in (sci_fw, tmpl_fw, fwhm) if np.isfinite(v) and v > 0
         )
-        phot_half = max(16, ksize // 2 + 4, int(np.ceil(2.2 * wide_fw)))
-        phot_radius = min(float(phot_half - 2), max(10.0, 2.2 * wide_fw))
+        phot_half, phot_radius = _phot_geometry(wide_fw)
         scale = flux_scale_from_stamps(
             sci0, tmpl0, xy, half=phot_half, aperture_radius=phot_radius
         )
@@ -681,9 +725,7 @@ def alard_lupton_difference(
             tmpl0 = -tmpl0
             scale = -scale
         tmpl_s = scale * tmpl0
-        # Saturated cores (plate + CCD) bias the kernel; use fainter kernel stars.
-        skip_bright = int(0.2 * len(xy)) if len(xy) >= 10 else 0
-        xy_kernel = xy[skip_bright:] if skip_bright else xy
+        xy_kernel = xy
         prefer_convolve_template = True
         if np.isfinite(sci_fw) and np.isfinite(tmpl_fw) and tmpl_fw > 1.15 * sci_fw:
             prefer_convolve_template = False
@@ -749,6 +791,16 @@ def alard_lupton_difference(
         except Exception:
             phot, p16, p84, ratios = 1.0, 1.0, 1.0, np.array([1.0])
         if not np.isfinite(phot) or abs(phot) < 1e-6 or abs(phot) > 1e3:
+            phot = 1.0
+        spread = float(p84 / max(abs(p16), 1e-6))
+        if spread > 2.0:
+            terminal_output.print_to_terminal(
+                f"Aperture flux ratios are too scattered (p84/p16={spread:.2f}); "
+                "keeping the kernel flux scale (phot_match=1). Crowding and "
+                "B vs PanSTARRS-g colour both limit a single factor.",
+                indent=2,
+                style_name="WARNING",
+            )
             phot = 1.0
         residual = left - phot * right
         _, resid_sky, _ = sigma_clipped_stats(residual, sigma=3.0, maxiters=5)

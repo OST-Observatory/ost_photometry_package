@@ -159,7 +159,21 @@ def test_alard_lupton_fits_kernel_with_nan_hips_mask():
     assert abs(float(np.nanmedian(diff))) < 15.0
 
 
-def test_phot_match_uses_median_ratio_not_intercept():
+def test_phot_geometry_keeps_apertures_small():
+    from ost_photometry.analyze.subtraction_alard_lupton import _phot_geometry
+
+    half, radius = _phot_geometry(13.5)
+    assert radius <= 16.0
+    assert half < 30
+
+
+def test_isolate_xy_enforces_separation():
+    from ost_photometry.analyze.subtraction_alard_lupton import _isolate_xy
+
+    xy = np.array([[10.0, 10.0], [12.0, 11.0], [80.0, 80.0]])
+    out = _isolate_xy(xy, 10.0)
+    assert len(out) == 2
+    assert float(np.hypot(*(out[1] - out[0]))) >= 10.0
     from ost_photometry.analyze.subtraction_alard_lupton import _robust_ratio_median
 
     ft = np.linspace(10.0, 1280.0, 12)
