@@ -546,23 +546,90 @@ def flux_scale_subtract(
     return sci0 - scale * tmpl0, scale
 
 
-def _lstsq_flux_conserving_kernel(
+def _norm_xy(x: float, y: float, shape: tuple[int, int]) -> tuple[float, float]:
+    """Map pixel ``(x, y)`` to ``[-1, 1]`` across the frame."""
+    ny, nx = int(shape[0]), int(shape[1])
+    xn = 2.0 * float(x) / max(nx - 1, 1) - 1.0
+    yn = 2.0 * float(y) / max(ny - 1, 1) - 1.0
+    return xn, yn
+
+
+class SpatialKernel:
+    """Alard–Lupton kernel with optional first-order spatial variation.
+
+    ``coeff[i, 0] + coeff[i, 1]·x̂ + coeff[i, 2]·ŷ`` scales basis ``i``.
+    ``x̂, ŷ`` are pixel coordinates mapped to ``[-1, 1]``.
+    """
+
+    def __init__(self, bases: np.ndarray, coeff: np.ndarray):
+        self.bases = np.asarray(bases, dtype=np.float64)
+        self.coeff = np.asarray(coeff, dtype=np.float64)
+        if self.coeff.ndim == 1:
+            self.coeff = self.coeff.reshape(-1, 1)
+        if self.coeff.shape[0] != self.bases.shape[0]:
+            raise ValueError("coeff rows must match the number of basis images")
+
+    @property
+    def n_poly(self) -> int:
+        return int(self.coeff.shape[1])
+
+    @property
+    def spatial(self) -> bool:
+        return self.n_poly >= 3
+
+    def kernel_sum(self, x: float = 0.0, y: float = 0.0, shape: tuple[int, int] = (2, 2)) -> float:
+        xn, yn = (0.0, 0.0) if self.n_poly == 1 else _norm_xy(x, y, shape)
+        poly = np.array([1.0, xn, yn][: self.n_poly])
+        weights = self.coeff @ poly
+        bsum = self.bases.reshape(self.bases.shape[0], -1).sum(axis=1)
+        return float(np.dot(weights, bsum))
+
+    def apply(self, image: np.ndarray) -> np.ndarray:
+        img = _as_2d(image)
+        ny, nx = img.shape
+        out = np.zeros((ny, nx), dtype=np.float64)
+        if self.n_poly >= 3:
+            yy, xx = np.indices((ny, nx))
+            xn = 2.0 * xx / max(nx - 1, 1) - 1.0
+            yn = 2.0 * yy / max(ny - 1, 1) - 1.0
+        else:
+            xn = yn = None
+        for i, basis in enumerate(self.bases):
+            conv = fftconvolve(img, basis, mode="same")
+            w = self.coeff[i, 0]
+            if xn is not None:
+                w = w + self.coeff[i, 1] * xn + self.coeff[i, 2] * yn
+            out += w * conv
+        return out
+
+
+def _lstsq_spatial_kernel(
     design: np.ndarray,
     target: np.ndarray,
     bases: np.ndarray,
+    n_poly: int,
 ) -> np.ndarray:
-    """Least-squares kernel with ``sum(kernel) = 1`` (photometric scaling is separate)."""
+    """Least-squares coefficients with flux conservation at every polynomial order."""
     n_basis = int(bases.shape[0])
     bsum = bases.reshape(n_basis, -1).sum(axis=1)
     weight = float(np.sqrt(max(design.shape[0], 1)))
-    design_c = np.vstack([design, weight * bsum])
-    target_c = np.concatenate([target, [weight]])
+    extra_rows = []
+    extra_rhs = []
+    for j in range(n_poly):
+        row = np.zeros(n_basis * n_poly, dtype=np.float64)
+        for i in range(n_basis):
+            row[i * n_poly + j] = bsum[i]
+        extra_rows.append(weight * row)
+        extra_rhs.append(weight if j == 0 else 0.0)
+    design_c = np.vstack([design, *extra_rows])
+    target_c = np.concatenate([target, extra_rhs])
     coeff, *_ = np.linalg.lstsq(design_c, target_c, rcond=1e-6)
-    kernel = np.tensordot(coeff, bases, axes=(0, 0))
-    ksum = float(np.sum(kernel))
+    out = coeff.reshape(n_basis, n_poly)
+    # Normalize the spatially constant part so the kernel sums to 1 at the origin.
+    ksum = float(np.dot(out[:, 0], bsum))
     if abs(ksum) > 1e-8:
-        kernel = kernel / ksum
-    return kernel
+        out[:, 0] = out[:, 0] / ksum
+    return out
 
 
 def fit_alard_lupton_kernel(
@@ -574,19 +641,19 @@ def fit_alard_lupton_kernel(
     sigmas: tuple[float, ...] = _DEFAULT_SIGMA_SCALE,
     degrees: tuple[int, ...] = _DEFAULT_DEGREES,
     n_stars: int = 40,
-) -> tuple[np.ndarray, int]:
+    spatial_order: int = 1,
+) -> tuple[SpatialKernel, int]:
     """
-    Fit a spatially constant AL kernel on sky-subtracted, flux-matched images.
+    Fit an AL kernel on sky-subtracted, flux-matched images.
 
-    Returns ``(kernel, n_stamps_used)``.
+    ``spatial_order=1`` uses coefficients linear in x and y (HOTPANTS-like).
+    Falls back to a spatially constant kernel if too few stamps are usable.
     """
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
     bases = kernel_basis(ksize, sigmas, degrees)
     hw = ksize // 2
     half_stamp = hw + 6
-    rows: list[np.ndarray] = []
-    rhs: list[np.ndarray] = []
-    used = 0
+    packed: list[tuple[list[np.ndarray], np.ndarray, float, float]] = []
     xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
     for x, y in xy:
         xt, yt = _shift_to_peak(tmpl, x, y, half_stamp, max_shift=10.0)
@@ -603,24 +670,30 @@ def fit_alard_lupton_kernel(
             continue
         if _stamp_snr(s) < 2.0 or _stamp_snr(t) < 1.5:
             continue
-        # Thin border: images are already globally sky-subtracted; a thick
-        # border on a broad DSS stamp eats the wings and biases the flux low.
         s = s - _border_sky(s, border=2)
         t = t - _border_sky(t, border=2)
         if float(np.std(s)) < 1e-8 or float(np.std(t)) < 1e-8:
             continue
         convs = [fftconvolve(t, b, mode="same")[hw:-hw, hw:-hw].ravel() for b in bases]
-        rows.append(np.column_stack(convs))
-        rhs.append(inner_s.ravel())
-        used += 1
-        if used >= int(n_stars):
+        packed.append((convs, inner_s.ravel(), float(x), float(y)))
+        if len(packed) >= int(n_stars):
             break
+    used = len(packed)
     if used < 3:
         raise RuntimeError(f"Need at least 3 valid stamps to fit the kernel (got {used})")
-    design = np.vstack(rows)
-    target = np.concatenate(rhs)
-    kernel = _lstsq_flux_conserving_kernel(design, target, bases)
-    return kernel, used
+    n_poly = 3 if (int(spatial_order) >= 1 and used >= 8) else 1
+    rows: list[np.ndarray] = []
+    rhs: list[np.ndarray] = []
+    for convs, inner, x, y in packed:
+        xn, yn = _norm_xy(x, y, sci.shape)
+        poly = (1.0, xn, yn)[:n_poly]
+        cols = [c * p for c in convs for p in poly]
+        rows.append(np.column_stack(cols))
+        rhs.append(inner)
+    coeff = _lstsq_spatial_kernel(
+        np.vstack(rows), np.concatenate(rhs), bases, n_poly
+    )
+    return SpatialKernel(bases, coeff), used
 
 
 def alard_lupton_difference(
@@ -776,10 +849,10 @@ def alard_lupton_difference(
         if kernel is None:
             raise last_err or RuntimeError("Kernel fit failed")
         if which == "template→science":
-            matched = fftconvolve(tmpl_s, kernel, mode="same")
+            matched = kernel.apply(tmpl_s)
             left, right = sci0, matched
         else:
-            matched = fftconvolve(sci0, kernel, mode="same")
+            matched = kernel.apply(sci0)
             left, right = matched, tmpl_s
         try:
             fs, ft = _aperture_flux_pairs(
@@ -808,14 +881,17 @@ def alard_lupton_difference(
             resid_sky = 0.0
         residual = residual - float(resid_sky)
         faint_c, mid_c, bright_c = _core_residual_terciles(residual, left, xy)
-        ksum = float(np.sum(kernel))
+        ksum = kernel.kernel_sum(
+            x=sci0.shape[1] / 2.0, y=sci0.shape[0] / 2.0, shape=sci0.shape
+        )
+        spatial_note = "spatial=x,y" if kernel.spatial else "spatial=const"
         seeing = ""
         if np.isfinite(sci_fw) and np.isfinite(tmpl_fw):
             seeing = f", seeing={sci_fw:.2f}/{tmpl_fw:.2f}px"
         terminal_output.print_to_terminal(
             f"Alard–Lupton kernel ({n_used} stamps, ksize={ksize}, "
             f"sigmas={used_sigmas[0]:.1f}/{used_sigmas[1]:.1f}/{used_sigmas[2]:.1f}, "
-            f"flux_scale={scale:.4g}, phot_match={phot:.3f} "
+            f"{spatial_note}, flux_scale={scale:.4g}, phot_match={phot:.3f} "
             f"(p16={p16:.3f}, p84={p84:.3f}, n={len(ratios)}), "
             f"kernel_sum={ksum:.3f}, {which}{seeing})",
             indent=2,
@@ -876,6 +952,7 @@ def run_alard_lupton(
 
 
 __all__ = [
+    "SpatialKernel",
     "alard_lupton_difference",
     "find_kernel_stars",
     "fit_alard_lupton_kernel",

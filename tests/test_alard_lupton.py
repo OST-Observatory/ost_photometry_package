@@ -15,10 +15,17 @@ from ost_photometry.analyze.subtraction import (
     subtract_science_template,
 )
 from ost_photometry.analyze.subtraction_alard_lupton import (
+    SpatialKernel,
     alard_lupton_difference,
     find_kernel_stars,
+    fit_alard_lupton_kernel,
     kernel_basis,
     run_alard_lupton,
+)
+
+_STAR_XY12 = np.array(
+    [[30.0 + 50.0 * (i % 4), 30.0 + 50.0 * (i // 4)] for i in range(12)],
+    dtype=float,
 )
 
 _STAR_XY = np.array(
@@ -239,6 +246,80 @@ def test_resolve_subtract_backend_auto(monkeypatch):
     assert resolve_subtract_backend("auto") == "hotpants"
     assert resolve_subtract_backend("alard_lupton") == "alard_lupton"
     assert resolve_subtract_backend("hotpants") == "hotpants"
+
+
+def test_spatial_kernel_constant_apply_matches_fftconvolve():
+    from scipy.signal import fftconvolve
+
+    bases = kernel_basis(11)
+    coeff = np.zeros((bases.shape[0], 1))
+    coeff[0, 0] = 1.0
+    sk = SpatialKernel(bases, coeff)
+    img = np.zeros((40, 40))
+    img[20, 20] = 1.0
+    assert np.allclose(sk.apply(img), fftconvolve(img, bases[0], mode="same"), atol=1e-9)
+
+
+def test_spatial_kernel_linear_weights_follow_x():
+    bases = kernel_basis(11)
+    coeff = np.zeros((bases.shape[0], 3))
+    coeff[0, 0] = 1.0
+    coeff[0, 1] = 0.5
+    sk = SpatialKernel(bases, coeff)
+    img = np.zeros((21, 41))
+    img[10, 10] = 1.0
+    img[10, 30] = 1.0
+    out = sk.apply(img)
+    assert float(np.max(out[:, :20])) < float(np.max(out[:, 20:]))
+
+
+def test_fit_falls_back_to_constant_kernel_with_few_stars():
+    tmpl = _star_field((180, 180), _STAR_XY, fwhm=3.0)
+    sci = gaussian_filter(tmpl, sigma=1.0)
+    sk, n_used = fit_alard_lupton_kernel(sci, tmpl, _STAR_XY, ksize=15)
+    assert n_used == 6
+    assert not sk.spatial
+    assert abs(sk.kernel_sum() - 1.0) < 1e-6
+
+
+def test_fit_uses_spatial_kernel_with_enough_stars():
+    tmpl = _star_field((240, 240), _STAR_XY12, fwhm=3.0)
+    sci = gaussian_filter(tmpl, sigma=1.0)
+    sk, n_used = fit_alard_lupton_kernel(sci, tmpl, _STAR_XY12, ksize=15)
+    assert n_used >= 8
+    assert sk.spatial
+    ksum = sk.kernel_sum(x=120.0, y=120.0, shape=(240, 240))
+    assert abs(ksum - 1.0) < 0.05
+
+
+def test_spatial_kernel_beats_constant_on_psf_gradient():
+    """Left-to-right seeing gradient: linear spatial terms should help."""
+    from ost_photometry.analyze.subtraction_alard_lupton import (
+        _sky_level,
+        flux_scale_from_stamps,
+    )
+
+    shape = (240, 240)
+    tmpl = _star_field(shape, _STAR_XY12, fwhm=3.0)
+    xx = np.indices(shape)[1]
+    w = xx / (shape[1] - 1)
+    sci = (1.0 - w) * gaussian_filter(tmpl, sigma=0.4) + w * gaussian_filter(
+        tmpl, sigma=1.6
+    )
+    sci0 = sci - _sky_level(sci)[0]
+    tmpl0 = tmpl - _sky_level(tmpl)[0]
+    tmpl_s = flux_scale_from_stamps(sci0, tmpl0, _STAR_XY12) * tmpl0
+    sk_s, _ = fit_alard_lupton_kernel(
+        sci0, tmpl_s, _STAR_XY12, ksize=21, spatial_order=1
+    )
+    sk_c, _ = fit_alard_lupton_kernel(
+        sci0, tmpl_s, _STAR_XY12, ksize=21, spatial_order=0
+    )
+    assert sk_s.spatial
+    assert not sk_c.spatial
+    std_s = float(np.std(sci0 - sk_s.apply(tmpl_s)))
+    std_c = float(np.std(sci0 - sk_c.apply(tmpl_s)))
+    assert std_s < 0.9 * std_c
 
 
 def test_subtract_science_template_dispatches_to_alard_lupton(tmp_path: Path):

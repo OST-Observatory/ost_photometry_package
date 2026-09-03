@@ -404,7 +404,9 @@ See [DIAGNOSTICS.md](DIAGNOSTICS.md#light-curves).
 It subtracts one archival HiPS cutout from one science image. The default
 template is PanSTARRS DR1 (linear CCD). `backend="auto"`
 uses HOTPANTS when the binary is on `PATH`, otherwise a Python Alard–Lupton
-kernel (numpy/scipy/photutils). A failed HiPS download or subtraction **does not
+kernel (numpy/scipy/photutils). With at least eight usable stamps the Python
+kernel is linear in \(x,y\) (HOTPANTS-like); fewer stamps stay spatially
+constant. A failed HiPS download or subtraction **does not
 abort** the rest of the analysis.
 
 | Flag | Default | Role |
