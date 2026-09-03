@@ -17,7 +17,7 @@ changes see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
 | `n1_baches/1_masterimages.py` | ✅ | `reduce.utilities`, `reduce.registration`, `checks` |
 | `n2/1_add_images.py` | ✅ | `reduce.redu.reduce_main` (stacking via MP per filter) |
 | `n2/3_plot_cmd.py` | ✅ | `load_cmd_table`, `plot_cmds_from_table`, `style.Bcolors` |
-
+D
 **Hinweis N2:** In `reduction_scripts_students/n2/` gibt es **kein** `2_obtain_flux.py`.
 Die Photometrie-Extraktion für N2 läuft über die Supervisor-Skripte (Abschnitt 2).
 

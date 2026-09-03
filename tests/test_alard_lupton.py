@@ -23,6 +23,11 @@ from ost_photometry.analyze.subtraction_alard_lupton import (
     run_alard_lupton,
 )
 
+_STAR_XY16 = np.array(
+    [[30.0 + 45.0 * (i % 4), 30.0 + 45.0 * (i // 4)] for i in range(16)],
+    dtype=float,
+)
+
 _STAR_XY12 = np.array(
     [[30.0 + 50.0 * (i % 4), 30.0 + 50.0 * (i // 4)] for i in range(12)],
     dtype=float,
@@ -283,6 +288,22 @@ def test_spatial_kernel_linear_weights_follow_x():
     assert float(np.max(out[:, :20])) < float(np.max(out[:, 20:]))
 
 
+def test_spatial_kernel_quadratic_weights_follow_x2():
+    bases = kernel_basis(11)
+    coeff = np.zeros((bases.shape[0], 6))
+    coeff[0, 0] = 1.0
+    coeff[0, 3] = 0.5
+    sk = SpatialKernel(bases, coeff)
+    img = np.zeros((21, 41))
+    img[10, 5] = 1.0
+    img[10, 20] = 1.0
+    img[10, 35] = 1.0
+    out = sk.apply(img)
+    mid = float(np.max(out[:, 12:28]))
+    assert float(np.max(out[:, :12])) > mid
+    assert float(np.max(out[:, 28:])) > mid
+
+
 def test_fit_falls_back_to_constant_kernel_with_few_stars():
     tmpl = _star_field((180, 180), _STAR_XY, fwhm=3.0)
     sci = gaussian_filter(tmpl, sigma=1.0)
@@ -298,7 +319,18 @@ def test_fit_uses_spatial_kernel_with_enough_stars():
     sk, n_used = fit_alard_lupton_kernel(sci, tmpl, _STAR_XY12, ksize=15)
     assert n_used >= 8
     assert sk.spatial
+    assert sk.n_poly == 3
     ksum = sk.kernel_sum(x=120.0, y=120.0, shape=(240, 240))
+    assert abs(ksum - 1.0) < 0.05
+
+
+def test_fit_uses_quadratic_spatial_kernel_with_many_stars():
+    tmpl = _star_field((260, 260), _STAR_XY16, fwhm=3.0)
+    sci = gaussian_filter(tmpl, sigma=1.0)
+    sk, n_used = fit_alard_lupton_kernel(sci, tmpl, _STAR_XY16, ksize=15)
+    assert n_used >= 16
+    assert sk.n_poly == 6
+    ksum = sk.kernel_sum(x=130.0, y=130.0, shape=(260, 260))
     assert abs(ksum - 1.0) < 0.05
 
 
@@ -330,6 +362,38 @@ def test_spatial_kernel_beats_constant_on_psf_gradient():
     std_s = float(np.std(sci0 - sk_s.apply(tmpl_s)))
     std_c = float(np.std(sci0 - sk_c.apply(tmpl_s)))
     assert std_s < 0.9 * std_c
+
+
+def test_quadratic_spatial_beats_linear_on_radial_psf():
+    """Corner-worse seeing (r²): a quadratic kernel should beat a plane."""
+    from ost_photometry.analyze.subtraction_alard_lupton import (
+        _sky_level,
+        flux_scale_from_stamps,
+    )
+
+    shape = (260, 260)
+    tmpl = _star_field(shape, _STAR_XY16, fwhm=3.0)
+    yy, xx = np.indices(shape)
+    cy, cx = (shape[0] - 1) / 2.0, (shape[1] - 1) / 2.0
+    r = np.hypot((xx - cx) / cx, (yy - cy) / cy)
+    w = np.clip(r / np.sqrt(2.0), 0.0, 1.0)
+    sci = (1.0 - w) * gaussian_filter(tmpl, sigma=0.4) + w * gaussian_filter(
+        tmpl, sigma=1.6
+    )
+    sci0 = sci - _sky_level(sci)[0]
+    tmpl0 = tmpl - _sky_level(tmpl)[0]
+    tmpl_s = flux_scale_from_stamps(sci0, tmpl0, _STAR_XY16) * tmpl0
+    sk_q, _ = fit_alard_lupton_kernel(
+        sci0, tmpl_s, _STAR_XY16, ksize=21, spatial_order=2
+    )
+    sk_l, _ = fit_alard_lupton_kernel(
+        sci0, tmpl_s, _STAR_XY16, ksize=21, spatial_order=1
+    )
+    assert sk_q.n_poly == 6
+    assert sk_l.n_poly == 3
+    std_q = float(np.std(sci0 - sk_q.apply(tmpl_s)))
+    std_l = float(np.std(sci0 - sk_l.apply(tmpl_s)))
+    assert std_q < 0.9 * std_l
 
 
 def test_subtract_science_template_dispatches_to_alard_lupton(tmp_path: Path):

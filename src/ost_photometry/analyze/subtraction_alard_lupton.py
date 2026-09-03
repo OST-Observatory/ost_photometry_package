@@ -567,11 +567,33 @@ def _norm_xy(x: float, y: float, shape: tuple[int, int]) -> tuple[float, float]:
     return xn, yn
 
 
-class SpatialKernel:
-    """Alard–Lupton kernel with optional first-order spatial variation.
+def _spatial_poly(xn, yn, n_poly: int) -> tuple:
+    """Polynomial terms ``(1, x, y[, x², xy, y²])``; ``xn``/``yn`` may be arrays."""
+    if n_poly <= 1:
+        return (1.0,)
+    terms: tuple = (1.0, xn, yn)
+    if n_poly >= 6:
+        terms = terms + (xn * xn, xn * yn, yn * yn)
+    return terms[:n_poly]
 
-    ``coeff[i, 0] + coeff[i, 1]·x̂ + coeff[i, 2]·ŷ`` scales basis ``i``.
-    ``x̂, ŷ`` are pixel coordinates mapped to ``[-1, 1]``.
+
+def _spatial_n_poly(spatial_order: int, n_stamps: int) -> int:
+    """Spatial polynomial length: 1 (const), 3 (linear), or 6 (quadratic)."""
+    order = int(spatial_order)
+    used = int(n_stamps)
+    if order >= 2 and used >= 16:
+        return 6
+    if order >= 1 and used >= 8:
+        return 3
+    return 1
+
+
+class SpatialKernel:
+    """Alard–Lupton kernel with optional spatial variation.
+
+    Basis ``i`` is scaled by a polynomial in ``x̂, ŷ`` (pixels mapped to
+    ``[-1, 1]``): constant, linear ``(1, x, y)``, or quadratic
+    ``(1, x, y, x², xy, y²)``.
     """
 
     def __init__(self, bases: np.ndarray, coeff: np.ndarray):
@@ -581,6 +603,8 @@ class SpatialKernel:
             self.coeff = self.coeff.reshape(-1, 1)
         if self.coeff.shape[0] != self.bases.shape[0]:
             raise ValueError("coeff rows must match the number of basis images")
+        if self.coeff.shape[1] not in (1, 3, 6):
+            raise ValueError("coeff must have 1, 3, or 6 polynomial columns")
 
     @property
     def n_poly(self) -> int:
@@ -591,8 +615,11 @@ class SpatialKernel:
         return self.n_poly >= 3
 
     def kernel_sum(self, x: float = 0.0, y: float = 0.0, shape: tuple[int, int] = (2, 2)) -> float:
-        xn, yn = (0.0, 0.0) if self.n_poly == 1 else _norm_xy(x, y, shape)
-        poly = np.array([1.0, xn, yn][: self.n_poly])
+        if self.n_poly == 1:
+            poly = np.array([1.0])
+        else:
+            xn, yn = _norm_xy(x, y, shape)
+            poly = np.array(_spatial_poly(xn, yn, self.n_poly), dtype=np.float64)
         weights = self.coeff @ poly
         bsum = self.bases.reshape(self.bases.shape[0], -1).sum(axis=1)
         return float(np.dot(weights, bsum))
@@ -601,18 +628,20 @@ class SpatialKernel:
         img = _as_2d(image)
         ny, nx = img.shape
         out = np.zeros((ny, nx), dtype=np.float64)
-        if self.n_poly >= 3:
+        if self.n_poly == 1:
+            terms = None
+        else:
             yy, xx = np.indices((ny, nx))
             xn = 2.0 * xx / max(nx - 1, 1) - 1.0
             yn = 2.0 * yy / max(ny - 1, 1) - 1.0
-        else:
-            xn = yn = None
+            terms = _spatial_poly(xn, yn, self.n_poly)
         for i, basis in enumerate(self.bases):
             conv = fftconvolve(img, basis, mode="same")
-            w = self.coeff[i, 0]
-            if xn is not None:
-                w = w + self.coeff[i, 1] * xn + self.coeff[i, 2] * yn
-            out += w * conv
+            if terms is None:
+                out += self.coeff[i, 0] * conv
+            else:
+                w = sum(self.coeff[i, j] * terms[j] for j in range(self.n_poly))
+                out += w * conv
         return out
 
 
@@ -654,13 +683,13 @@ def fit_alard_lupton_kernel(
     sigmas: tuple[float, ...] = _DEFAULT_SIGMA_SCALE,
     degrees: tuple[int, ...] = _DEFAULT_DEGREES,
     n_stars: int = 40,
-    spatial_order: int = 1,
+    spatial_order: int = 2,
 ) -> tuple[SpatialKernel, int]:
     """
     Fit an AL kernel on sky-subtracted, flux-matched images.
 
-    ``spatial_order=1`` uses coefficients linear in x and y (HOTPANTS-like).
-    Falls back to a spatially constant kernel if too few stamps are usable.
+    ``spatial_order=2`` (default) is quadratic in x and y when enough stamps
+    exist; ``1`` is linear, ``0`` is spatially constant.
     """
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
     bases = kernel_basis(ksize, sigmas, degrees)
@@ -694,12 +723,12 @@ def fit_alard_lupton_kernel(
     used = len(packed)
     if used < 3:
         raise RuntimeError(f"Need at least 3 valid stamps to fit the kernel (got {used})")
-    n_poly = 3 if (int(spatial_order) >= 1 and used >= 8) else 1
+    n_poly = _spatial_n_poly(spatial_order, used)
     rows: list[np.ndarray] = []
     rhs: list[np.ndarray] = []
     for convs, inner, x, y in packed:
         xn, yn = _norm_xy(x, y, sci.shape)
-        poly = (1.0, xn, yn)[:n_poly]
+        poly = _spatial_poly(xn, yn, n_poly)
         cols = [c * p for c in convs for p in poly]
         rows.append(np.column_stack(cols))
         rhs.append(inner)
@@ -897,7 +926,12 @@ def alard_lupton_difference(
         ksum = kernel.kernel_sum(
             x=sci0.shape[1] / 2.0, y=sci0.shape[0] / 2.0, shape=sci0.shape
         )
-        spatial_note = "spatial=x,y" if kernel.spatial else "spatial=const"
+        if kernel.n_poly >= 6:
+            spatial_note = "spatial=x,y,quad"
+        elif kernel.spatial:
+            spatial_note = "spatial=x,y"
+        else:
+            spatial_note = "spatial=const"
         seeing = ""
         if np.isfinite(sci_fw) and np.isfinite(tmpl_fw):
             seeing = f", seeing={sci_fw:.2f}/{tmpl_fw:.2f}px"
