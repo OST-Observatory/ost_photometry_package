@@ -43,6 +43,7 @@ from .lightcurves import (
 from .scatter import d3_scatter, scatter
 from .starmaps import (
     compare_images,
+    covariance_ellipse_pixels,
     plot_annotated_image,
     plot_limiting_mag_sky_apertures,
     starmap,
@@ -64,6 +65,7 @@ __all__ = [
     "catalog_fit_residual",
     "catalog_match_pixel_residuals",
     "compare_images",
+    "covariance_ellipse_pixels",
     "d3_scatter",
     "fold_phase",
     "initialize_plot",

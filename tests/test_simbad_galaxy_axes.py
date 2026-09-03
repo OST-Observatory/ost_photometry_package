@@ -25,6 +25,19 @@ def test_simbad_galaxy_axes_from_galdim_columns():
         }
     )
     assert mod.simbad_galaxy_axes_arcmin(tbl[0]) == (12.0, 6.0, 45.0)
+    assert mod.simbad_angular_axes_arcmin(tbl[0]) == (12.0, 6.0, 45.0)
+
+
+def test_simbad_angular_axes_major_only_is_circle():
+    mod = _simbad_galaxy_mod()
+    tbl = Table({"galdim_majaxis": [8.0], "galdim_angle": [20.0]})
+    assert mod.simbad_angular_axes_arcmin(tbl[0]) == (8.0, 8.0, 20.0)
+
+
+def test_simbad_angular_axes_from_single_diameter_string():
+    mod = _simbad_galaxy_mod()
+    tbl = Table({"DIMENSIONS": ["4.0"]})
+    assert mod.simbad_angular_axes_arcmin(tbl[0]) == (4.0, 4.0, 0.0)
 
 
 def test_simbad_galaxy_axes_from_dimensions_string_defaults_pa():

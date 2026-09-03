@@ -27,29 +27,54 @@ def simbad_unmasked_value(row, *names: str):
     return None
 
 
-def simbad_galaxy_axes_arcmin(row) -> tuple[float, float, float] | None:
+def simbad_angular_axes_arcmin(row) -> tuple[float, float, float] | None:
     """Major/minor axis in arcmin and position angle in degrees.
 
     Prefers TAP ``galdim_*`` columns from the SIMBAD ``dimensions`` field;
-    falls back to a ``DIMENSIONS`` string ``a x b``. The angle is East of
-    North; ``0`` if the PA is missing or masked.
+    falls back to a ``DIMENSIONS`` string ``a x b`` or a single diameter.
+    Missing minor axis is treated as a circle. The angle is East of North;
+    ``0`` if the PA is missing or masked.
     """
     major = simbad_unmasked_value(row, "galdim_majaxis")
     minor = simbad_unmasked_value(row, "galdim_minaxis")
     angle = simbad_unmasked_value(row, "galdim_angle")
     pa = 0.0 if angle is None else float(angle)
+    if not np.isfinite(pa):
+        pa = 0.0
 
-    if major is not None and minor is not None:
-        return float(major), float(minor), pa
+    if major is not None:
+        maj = float(major)
+        if np.isfinite(maj) and maj > 0:
+            if minor is None:
+                return maj, maj, pa
+            min_ = float(minor)
+            if not np.isfinite(min_) or min_ <= 0:
+                min_ = maj
+            return maj, min_, pa
 
     dimensions = simbad_unmasked_value(row, "DIMENSIONS")
     if dimensions is None:
         return None
+    text = str(dimensions).strip()
     try:
-        major_s, minor_s = [part.strip() for part in str(dimensions).split("x")]
-        return float(major_s), float(minor_s), pa
+        if "x" in text.lower():
+            major_s, minor_s = [part.strip() for part in text.split("x", 1)]
+            maj = float(major_s)
+            min_ = float(minor_s)
+            if not np.isfinite(min_) or min_ <= 0:
+                min_ = maj
+            return maj, min_, pa
+        maj = float(text)
+        if np.isfinite(maj) and maj > 0:
+            return maj, maj, pa
     except ValueError:
         return None
+    return None
+
+
+def simbad_galaxy_axes_arcmin(row) -> tuple[float, float, float] | None:
+    """Alias for :func:`simbad_angular_axes_arcmin` (galaxies, clusters, nebulae)."""
+    return simbad_angular_axes_arcmin(row)
 
 
 def skycoord_from_simbad(ra, dec) -> SkyCoord:

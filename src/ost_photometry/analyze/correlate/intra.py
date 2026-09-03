@@ -312,6 +312,14 @@ def correlate_preserve_objects(
         overlay_y.extend(y_position_object.tolist())
 
     if overlay_x:
+        has_calib = bool(protect_calibration_objects and calib_x)
+        has_ooi = bool(protect_ooi and objects_of_interest)
+        if has_calib and has_ooi:
+            overlay_label = "Protected objects"
+        elif has_ooi:
+            overlay_label = "Objects of interest"
+        else:
+            overlay_label = "Calibration stars"
         utilities.prepare_and_plot_starmap_from_image_series(
             image_series,
             overlay_x,
@@ -319,6 +327,7 @@ def correlate_preserve_objects(
             plots_for_all_images=plots_for_all_images and not plot_only_reference_starmap,
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
             file_type_plots=file_type_plots,
+            label_2=overlay_label,
         )
 
 

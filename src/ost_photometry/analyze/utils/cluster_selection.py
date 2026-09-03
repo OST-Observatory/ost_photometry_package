@@ -403,15 +403,18 @@ def find_cluster(
         "p_mem_by_id": p_mem_by_id,
     }
 
-    if len(members) > 0:
+    if len(tbl) > 0:
         plot_starmap_from_imaging_context(
             ctx,
-            members,
+            tbl,
+            tbl_2=members if len(members) > 0 else None,
             filter_=ctx.filter_name,
             x_name="x",
             y_name="y",
-            rts_pre="selected cluster members",
-            label="Cluster members (Gaia μ, π)",
+            rts_pre="Gaia membership",
+            label="Stars with photometric extractions",
+            label_2="Cluster members (Gaia μ, π)",
+            covariance_on_tbl_2=True,
             add_image_id=False,
             use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
             file_type_plots=file_type_plots,

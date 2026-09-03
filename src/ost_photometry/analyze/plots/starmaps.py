@@ -17,8 +17,9 @@ from regions import EllipseSkyRegion
 
 from ... import checks, style, terminal_output
 from ...output_layout import diagnostics_dir, results_dir
+from ..utils.photometry import xy_column_names
 from .simbad_galaxy import (
-    simbad_galaxy_axes_arcmin,
+    simbad_angular_axes_arcmin,
     simbad_overlay_kind,
     skycoord_from_simbad,
 )
@@ -77,13 +78,13 @@ def compare_images(
     norm = simple_norm(sci, 'log', percent=99.)
     ax1.imshow(sci, norm=norm, cmap='gray')
     ax1.set_axis_off()
-    ax1.set_title('Original image')
+    ax1.set_title('Science')
 
     #   Comparison image: normalize and plot
     norm = simple_norm(ref, 'log', percent=99.)
     ax2.imshow(ref, norm=norm, cmap='gray')
     ax2.set_axis_off()
-    ax2.set_title('Downloaded image')
+    ax2.set_title('HiPS')
 
     #   Save the plot
     plt.savefig(
@@ -108,6 +109,113 @@ def _sanitize_starmap_filename_part(text: str) -> str:
     return text.strip('_').lower()
 
 
+_REF_FIG_AREA = 20.0 * 9.0
+_REF_SCATTER_S = 40.0
+_REF_ANNOT_MARKERSIZE = 11.0
+_REF_EXTENDED_MARKERSIZE = 14.0
+_REF_CENTER_MARKERSIZE = 8.0
+_ID_LABEL_MAX = 40
+_FOV_ELLIPSE_MAX_FACTOR = 3.0
+
+
+def _starmap_figsize(ny: int, nx: int) -> tuple[float, float]:
+    """Keep the historical ~180 in² figure area; aspect follows the image."""
+    aspect = float(ny) / float(max(int(nx), 1))
+    aspect = float(np.clip(aspect, 0.25, 4.0))
+    width = float(np.sqrt(_REF_FIG_AREA / aspect))
+    return width, width * aspect
+
+
+def _marker_scale_from_figsize(figsize: tuple[float, float], marker_scale: float) -> float:
+    area = float(figsize[0]) * float(figsize[1])
+    return float(marker_scale) * (area / _REF_FIG_AREA)
+
+
+def _pixel_transform(ax):
+    getter = getattr(ax, "get_transform", None)
+    if getter is None:
+        return None
+    try:
+        return getter("pixel")
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _overlay_kwargs(ax) -> dict:
+    pix = _pixel_transform(ax)
+    return {"transform": pix} if pix is not None else {}
+
+
+def _set_pixel_limits(ax, ny: int, nx: int) -> None:
+    ax.set_xlim(-0.5, nx - 0.5)
+    ax.set_ylim(-0.5, ny - 0.5)
+
+
+def _xy_values(tbl: Table, x_column: str, y_column: str) -> tuple[np.ndarray, np.ndarray]:
+    x = tbl[x_column]
+    y = tbl[y_column]
+    if hasattr(x, "value"):
+        x = x.value
+    if hasattr(y, "value"):
+        y = y.value
+    return np.asarray(x, dtype=float).ravel(), np.asarray(y, dtype=float).ravel()
+
+
+def _xy_columns(tbl: Table, which: str) -> tuple[str, str]:
+    cols = xy_column_names(tbl)
+    if cols is None:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \nNo valid X and Y column found for "
+            f"{which}. {style.Bcolors.ENDC}"
+        )
+    return cols
+
+
+def _ellipse_fits_image(ellipse: Ellipse, image_shape: tuple[int, ...]) -> bool:
+    ny, nx = int(image_shape[0]), int(image_shape[1])
+    diag = float(np.hypot(nx, ny))
+    return max(float(ellipse.width), float(ellipse.height)) <= _FOV_ELLIPSE_MAX_FACTOR * diag
+
+
+def covariance_ellipse_pixels(
+    x,
+    y,
+    *,
+    n_sigma: float = 2.0,
+    min_points: int = 5,
+    image_shape: tuple[int, ...] | None = None,
+) -> Ellipse | None:
+    """2σ covariance ellipse in pixel coordinates, or ``None`` if unusable."""
+    xx = np.asarray(x, dtype=float).ravel()
+    yy = np.asarray(y, dtype=float).ravel()
+    ok = np.isfinite(xx) & np.isfinite(yy)
+    xx, yy = xx[ok], yy[ok]
+    if xx.size < int(min_points):
+        return None
+    cov = np.cov(xx, yy)
+    if cov.shape != (2, 2) or not np.all(np.isfinite(cov)):
+        return None
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    eigvals = np.clip(eigvals, 0.0, None)
+    order = np.argsort(eigvals)[::-1]
+    eigvals = eigvals[order]
+    eigvecs = eigvecs[:, order]
+    width = 2.0 * float(n_sigma) * float(np.sqrt(eigvals[0]))
+    height = 2.0 * float(n_sigma) * float(np.sqrt(max(eigvals[1], 0.0)))
+    if width <= 0 or height <= 0:
+        return None
+    angle = float(np.degrees(np.arctan2(eigvecs[1, 0], eigvecs[0, 0])))
+    ellipse = Ellipse(
+        (float(np.mean(xx)), float(np.mean(yy))),
+        width=width,
+        height=height,
+        angle=angle,
+    )
+    if image_shape is not None and not _ellipse_fits_image(ellipse, image_shape):
+        return None
+    return ellipse
+
+
 def starmap(
         output_dir: str, image: np.ndarray, filter_: str, tbl: Table,
         tbl_2: Table = None, label: str = 'Identified stars',
@@ -117,7 +225,9 @@ def starmap(
         wcs_image: wcs.WCS = None, use_wcs_projection: bool = True,
         terminal_logger: terminal_output.TerminalLog | None = None,
         file_type: str = 'pdf', indent: int = 2,
-        filename_suffix: str | None = None) -> None:
+        filename_suffix: str | None = None,
+        marker_scale: float = 1.0,
+        extra_patches: list | None = None) -> None:
     """
     Plot star maps  -> overlays of the determined star positions on FITS
                     -> supports different versions
@@ -156,6 +266,13 @@ def starmap(
         Optional stem used in the output filename instead of ``rts``.
         Prefer this when the title should include an image basename that must
         not appear in the path. Default is ``None`` (fall back to ``rts``).
+
+    marker_scale
+        Multiplier on the historical scatter size (``s=40`` at 20×9 in).
+        Default is ``1``.
+
+    extra_patches
+        Optional matplotlib patches (pixel coordinates) drawn on the image.
 
     mode
         String used to switch between different plot modes
@@ -213,42 +330,18 @@ def starmap(
             )
 
     #   Check if column with X and Y coordinates are available for table 1
-    if 'x' in tbl.colnames:
-        x_column = 'x'
-        y_column = 'y'
-    elif 'x_centroid' in tbl.colnames:
-        x_column = 'x_centroid'
-        y_column = 'y_centroid'
-    elif 'xfit' in tbl.colnames:
-        x_column = 'xfit'
-        y_column = 'yfit'
-    elif 'x_fit' in tbl.colnames:
-        x_column = 'x_fit'
-        y_column = 'y_fit'
-    else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNo valid X and Y column found for "
-            f"table 1. {style.Bcolors.ENDC}"
-        )
-    #   Check if column with X and Y coordinates are available for table 2
+    x_column, y_column = _xy_columns(tbl, "table 1")
+    x_column_2 = y_column_2 = None
     if tbl_2 is not None:
-        if 'x' in tbl_2.colnames:
-            x_column_2 = 'x'
-            y_column_2 = 'y'
-        elif 'x_centroid' in tbl_2.colnames:
-            x_column_2 = 'x_centroid'
-            y_column_2 = 'y_centroid'
-        elif 'xfit' in tbl_2.colnames:
-            x_column_2 = 'xfit'
-            y_column_2 = 'yfit'
-        else:
-            raise RuntimeError(
-                f"{style.Bcolors.FAIL} \nNo valid X and Y column found for "
-                f"table 2. {style.Bcolors.ENDC}"
-            )
+        x_column_2, y_column_2 = _xy_columns(tbl_2, "table 2")
+
+    ny, nx = int(np.asarray(image).shape[0]), int(np.asarray(image).shape[1])
+    figsize = _starmap_figsize(ny, nx)
+    scale = _marker_scale_from_figsize(figsize, marker_scale)
+    scatter_s = _REF_SCATTER_S * scale
 
     #   Set layout
-    fig = plt.figure(figsize=(20, 9))
+    fig = plt.figure(figsize=figsize)
 
     if not use_wcs_projection:
         ax = fig.add_subplot()
@@ -264,6 +357,7 @@ def starmap(
             )
             ax = fig.add_subplot()
 
+    overlay = _overlay_kwargs(ax)
 
     #   Limit the space for the object names in case several are given
     if isinstance(name_object, list):
@@ -295,39 +389,59 @@ def starmap(
         interpolation='nearest',
     )
 
-    #   Plot apertures
+    x, y = _xy_values(tbl, x_column, y_column)
     ax.scatter(
-        tbl[x_column],
-        tbl[y_column],
-        s=40,
+        x,
+        y,
+        s=scatter_s,
         facecolors=(0.5, 0., 0.5, 0.2),
         edgecolors=(0.5, 0., 0.5, 0.7),
         lw=0.9,
         label=label,
+        **overlay,
     )
+    x2 = y2 = None
     if tbl_2 is not None:
+        x2, y2 = _xy_values(tbl_2, x_column_2, y_column_2)
         ax.scatter(
-            tbl_2[x_column_2],
-            tbl_2[y_column_2],
-            s=40,
+            x2,
+            y2,
+            s=scatter_s,
             facecolors=(0., 0.7, 0.35, 0.2),
             edgecolors=(0., 0.7, 0.35, 0.7),
             lw=0.9,
             label=label_2,
+            **overlay,
         )
 
-    #   Set plot limits
-    ax.set_xlim(0, image.shape[1] - 1)
-    ax.set_ylim(0, image.shape[0] - 1)
+    for patch in extra_patches or ():
+        if patch is None:
+            continue
+        drawn = Ellipse(
+            xy=tuple(np.asarray(patch.xy, dtype=float).ravel()[:2]),
+            width=float(patch.width),
+            height=float(patch.height),
+            angle=float(getattr(patch, "angle", 0.0)),
+        )
+        drawn.set_facecolor("none")
+        drawn.set_edgecolor((0.0, 0.55, 0.25, 0.9))
+        drawn.set_linewidth(1.4)
+        if overlay:
+            drawn.set_transform(overlay["transform"])
+        ax.add_patch(drawn)
 
-    # Plot labels next to the apertures
-    # if isinstance(tbl[x_column], u.quantity.Quantity):
-    if hasattr(tbl[x_column], "value"):
-        x = tbl[x_column].value.ravel()
-        y = tbl[y_column].value.ravel()
-    else:
-        x = tbl[x_column]
-        y = tbl[y_column]
+    _set_pixel_limits(ax, ny, nx)
+
+    def _annotate_xy(xs, ys, texts, color="purple"):
+        for i, (xi, yi) in enumerate(zip(xs, ys, strict=True)):
+            ax.text(
+                xi + 11,
+                yi + 8,
+                f" {texts[i]}",
+                fontdict=style.font,
+                color=color,
+                **overlay,
+            )
 
     if mode == 'mags':
         if magnitude_column is not None:
@@ -337,42 +451,28 @@ def starmap(
                 magnitudes = tbl['mag_cali_trans']
             except KeyError:
                 magnitudes = tbl['mag_cali_no-trans']
-        for i in range(0, len(x)):
-            mag_i = magnitudes[i]
+        mag_text = []
+        for mag_i in magnitudes:
             if hasattr(mag_i, 'value'):
                 mag_i = mag_i.value
-            ax.text(
-                x[i] + 11,
-                y[i] + 8,
-                f" {float(mag_i):.1f}",
-                fontdict=style.font,
-                color='purple',
-            )
+            mag_text.append(f"{float(mag_i):.1f}")
+        _annotate_xy(x, y, mag_text)
     elif mode == 'list':
-        for i in range(0, len(x)):
-            ax.text(
-                x[i],
-                y[i],
-                f" {i}",
-                fontdict=style.font,
-                color='purple',
-            )
+        _annotate_xy(x, y, [str(i) for i in range(len(x))])
     else:
-        for i in range(0, len(x)):
-            ax.text(
-                x[i] + 11,
-                y[i] + 8,
-                f" {tbl['id'][i]}",
-                fontdict=style.font,
-                color='purple',
-            )
+        if tbl_2 is not None and x2 is not None:
+            if 'id' in tbl_2.colnames:
+                texts = [str(v) for v in tbl_2['id']]
+            else:
+                texts = [str(i) for i in range(len(x2))]
+            _annotate_xy(x2, y2, texts, color="green")
+        elif 'id' in tbl.colnames and len(x) <= _ID_LABEL_MAX:
+            _annotate_xy(x, y, [str(v) for v in tbl['id']])
 
     #   Define the ticks
     ax.tick_params(
         axis='both',
         which='both',
-        # top=True,
-        # right=True,
         direction='in',
     )
     ax.minorticks_on()
@@ -506,7 +606,7 @@ def plot_limiting_mag_sky_apertures(
     plt.close()
 
 
-def _galaxy_ellipse_from_simbad(
+def _sky_ellipse_from_simbad(
         center: SkyCoord, wcs_image: wcs.WCS,
         major_arcmin: float, minor_arcmin: float, pa_deg: float,
         ) -> Ellipse | None:
@@ -531,52 +631,66 @@ def _galaxy_ellipse_from_simbad(
     )
 
 
+def _simbad_extent_ellipse(
+    obj,
+    coord: SkyCoord,
+    wcs_image: wcs.WCS,
+    image_shape: tuple[int, ...],
+) -> Ellipse | None:
+    axes = simbad_angular_axes_arcmin(obj)
+    if axes is None:
+        return None
+    try:
+        ellipse = _sky_ellipse_from_simbad(coord, wcs_image, *axes)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if ellipse is None or not _ellipse_fits_image(ellipse, image_shape):
+        return None
+    return ellipse
+
+
+def _legend_marker(legend_elements, label, color, marker, markersize):
+    if any(e.get_label() == label for e in legend_elements):
+        return
+    legend_elements.append(
+        plt.Line2D(
+            [0],
+            [0],
+            color=color,
+            marker=marker,
+            markerfacecolor='none',
+            markersize=markersize,
+            linestyle='None',
+            label=label,
+        )
+    )
+
+
 def plot_annotated_image(
         image_data: np.ndarray, wcs_image: wcs.WCS, simbad_objects: Table,
         output_dir: Path, filter_: str, file_type: str = 'pdf',
         filter_mag: str | None = None, mag_limit: float | None = None,
+        marker_scale: float = 1.0,
     ) -> None :
     """
     Visualises the image and marks objects from the Simbad database.
 
-    Parameters
-    ----------
-    image_data
-        2D image data
-
-    wcs_image
-        WCS object
-
-    simbad_objects
-        Table with Simbad objects
-
-    output_dir
-        Output directory
-
-    filter_
-        Filter identifier
-
-    file_type
-        Type of plot file to be created
-        Default is ``pdf``.
-
-    filter_mag
-        Name of the filter (e.g. 'V')
-        Default is ``None``.
-
-    mag_limit
-        Limiting magnitude, only objects brighter as this limit will be shown
-        Default is ``None``.
+    Magnitude filtering is applied at query time; ``filter_mag`` / ``mag_limit``
+    are kept for callers and ignored here.
     """
+    del filter_mag, mag_limit
     out = results_dir(output_dir, "starmaps")
+    ny, nx = int(image_data.shape[0]), int(image_data.shape[1])
+    figsize = _starmap_figsize(ny, nx)
+    scale = _marker_scale_from_figsize(figsize, marker_scale)
+    star_ms = _REF_ANNOT_MARKERSIZE * scale
+    extended_ms = _REF_EXTENDED_MARKERSIZE * scale
+    center_ms = _REF_CENTER_MARKERSIZE * scale
 
-    #   Setup figure
-    fig, ax = plt.subplots(figsize=(20, 9), subplot_kw={'projection': wcs_image})
+    _fig, ax = plt.subplots(figsize=figsize, subplot_kw={'projection': wcs_image})
+    overlay = _overlay_kwargs(ax)
 
-    #   Set up normalization for the image
     norm = ImageNormalize(image_data, interval=ZScaleInterval(contrast=0.1, ))
-
-    #   Display the actual image
     ax.imshow(
         image_data,
         cmap='gray',
@@ -584,21 +698,12 @@ def plot_annotated_image(
         norm=norm,
         interpolation='nearest',
     )
-
-    #   Define the ticks
-    ax.tick_params(
-        axis='both',
-        which='both',
-        direction='in',
-    )
+    ax.tick_params(axis='both', which='both', direction='in')
     ax.minorticks_on()
-
-    #   Set labels
     ax.set_xlabel("Right ascension", fontsize=16)
     ax.set_ylabel("Declination", fontsize=16)
-
-    #   Enable grid for WCS
     ax.grid(True, color='white', linestyle='--')
+    _set_pixel_limits(ax, ny, nx)
 
     legend_elements = []
 
@@ -612,22 +717,7 @@ def plot_annotated_image(
         if old in table.colnames and new not in table.colnames:
             table.rename_column(old, new)
 
-    mag_col = None
-    if mag_limit is not None:
-        band = str(filter_mag or "V").strip() or "V"
-        lookup = {str(name).upper(): name for name in table.colnames}
-        for candidate in (
-            f"FLUX_{band.upper()}",
-            band.upper(),
-            band,
-            f"{band.upper()}mag",
-            f"flux_{band.upper()}",
-        ):
-            hit = lookup.get(candidate.upper())
-            if hit is not None:
-                mag_col = hit
-                break
-
+    name_index = 0
     for obj in table:
         ra, dec = obj['RA'], obj['DEC']
         obj_type = obj['OTYPE']
@@ -635,127 +725,49 @@ def plot_annotated_image(
         if isinstance(name, bytes):
             name = name.decode()
 
-        if mag_limit is not None and mag_col is not None:
-            mag_val = obj[mag_col]
-            if (
-                mag_val is not None
-                and not isinstance(mag_val, np.ma.core.MaskedConstant)
-                and not np.ma.is_masked(mag_val)
-            ):
-                try:
-                    mag_f = float(mag_val)
-                except (TypeError, ValueError):
-                    mag_f = np.nan
-                if np.isfinite(mag_f) and mag_f > mag_limit:
-                    continue
-
         coord = skycoord_from_simbad(ra, dec)
         x, y = wcs_image.world_to_pixel(coord)
+        x = float(np.asarray(x).ravel()[0])
+        y = float(np.asarray(y).ravel()[0])
 
-        if not (0 <= x < image_data.shape[1] and 0 <= y < image_data.shape[0]):
+        if not (0 <= x < nx and 0 <= y < ny):
             continue
 
         kind = simbad_overlay_kind(obj_type)
-        plot_marker = False
+        plot_marker = True
+        marker_size = star_ms
+        ellipse = None
         if kind == "star":
             color, marker = 'lightblue', '*'
-            plot_marker = True
-            if not any(e.get_label() == 'Star' for e in legend_elements):
-                legend_elements.append(
-                    plt.Line2D(
-                        [0],
-                        [0],
-                        color=color,
-                        marker=marker,
-                        markerfacecolor='none',
-                        markersize=8,
-                        linestyle='None',
-                        label='Star',
-                    )
-                )
+            _legend_marker(legend_elements, 'Star', color, marker, 8)
         elif kind == "cluster":
             color, marker = 'gold', 'h'
-            plot_marker = True
-            if not any(e.get_label() == 'Cluster' for e in legend_elements):
-                legend_elements.append(
-                    plt.Line2D(
-                        [0],
-                        [0],
-                        color=color,
-                        marker=marker,
-                        markerfacecolor='none',
-                        markersize=8,
-                        linestyle='None',
-                        label='Cluster',
-                    )
-                )
+            ellipse = _simbad_extent_ellipse(obj, coord, wcs_image, image_data.shape)
+            marker_size = center_ms if ellipse is not None else extended_ms
+            _legend_marker(legend_elements, 'Cluster', color, marker, 8)
         elif kind == "galaxy":
-            color = 'lightsalmon'
-            marker = 's'
-            axes = simbad_galaxy_axes_arcmin(obj)
-            ellipse = None
-            if axes is not None:
-                try:
-                    ellipse = _galaxy_ellipse_from_simbad(
-                        coord, wcs_image, *axes
-                    )
-                except (AttributeError, TypeError, ValueError):
-                    ellipse = None
-            if ellipse is not None:
-                ellipse.set_edgecolor(color)
-                ellipse.set_facecolor('none')
-                ellipse.set_linewidth(1.5)
-                ellipse.set_alpha(0.7)
-                ax.add_patch(ellipse)
-            else:
-                plot_marker = True
-
-            if not any(e.get_label() == 'Galaxy' for e in legend_elements):
-                legend_elements.append(
-                    plt.Line2D(
-                        [0],
-                        [0],
-                        color=color,
-                        marker=marker,
-                        markerfacecolor='none',
-                        markersize=8,
-                        linestyle='None',
-                        label='Galaxy',
-                    )
-                )
+            color, marker = 'lightsalmon', 's'
+            ellipse = _simbad_extent_ellipse(obj, coord, wcs_image, image_data.shape)
+            marker_size = center_ms if ellipse is not None else extended_ms
+            _legend_marker(legend_elements, 'Galaxy', color, marker, 8)
         elif kind == "nebula":
             color, marker = 'lightpink', 'o'
-            plot_marker = True
-            if not any(e.get_label() == 'Nebula' for e in legend_elements):
-                legend_elements.append(
-                    plt.Line2D(
-                        [0],
-                        [0],
-                        color=color,
-                        marker=marker,
-                        markerfacecolor='none',
-                        markersize=8,
-                        linestyle='None',
-                        label='Nebula',
-                    )
-                )
+            ellipse = _simbad_extent_ellipse(obj, coord, wcs_image, image_data.shape)
+            marker_size = center_ms if ellipse is not None else extended_ms
+            _legend_marker(legend_elements, 'Nebula', color, marker, 8)
         else:
             color, marker = 'lightgreen', 'H'
-            plot_marker = True
             name = f'{name} ({obj_type})'
-            if not any(e.get_label() == 'Other' for e in legend_elements):
-                legend_elements.append(
-                    plt.Line2D(
-                        [0],
-                        [0],
-                        color=color,
-                        marker=marker,
-                        markerfacecolor='none',
-                        markersize=8,
-                        linestyle='None',
-                        label='Other',
-                    )
-                )
+            _legend_marker(legend_elements, 'Other', color, marker, 8)
+
+        if ellipse is not None:
+            ellipse.set_edgecolor(color)
+            ellipse.set_facecolor('none')
+            ellipse.set_linewidth(1.5)
+            ellipse.set_alpha(0.7)
+            if overlay:
+                ellipse.set_transform(overlay["transform"])
+            ax.add_patch(ellipse)
 
         if plot_marker:
             ax.plot(
@@ -765,22 +777,26 @@ def plot_annotated_image(
                 markerfacecolor='none',
                 markeredgecolor=color,
                 markeredgewidth=1.2,
-                markersize=11,
+                markersize=marker_size,
                 alpha=0.8,
+                **overlay,
             )
+        dx = 18.0 if name_index % 2 == 0 else -18.0
+        dy = 0.0 if name_index % 4 < 2 else 12.0
         ax.text(
-            x + 70,
-            y,
+            x + dx,
+            y + dy,
             name,
             color=color,
             fontsize=8,
             alpha=0.9,
             verticalalignment='center',
+            horizontalalignment='left' if dx > 0 else 'right',
             weight="bold",
+            **overlay,
         )
+        name_index += 1
 
-
-    #   Add legend
     ax.legend(
         bbox_to_anchor=(0., 1.02, 1.0, 0.102),
         loc=3,
@@ -791,14 +807,11 @@ def plot_annotated_image(
         mode='expand',
         borderaxespad=0.,
     )
-
-    #   Save plot
     plt.savefig(
         out / f'annotated_starmap_{filter_}.{file_type}',
         bbox_inches='tight',
         format=file_type,
     )
     plt.close()
-    # plt.show()
 
 

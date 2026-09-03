@@ -753,5 +753,6 @@ def correlate_preserve_calibration_objects(
         plots_for_all_images=not plot_only_reference_starmap,
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
+        label_2="Calibration stars",
     )
 

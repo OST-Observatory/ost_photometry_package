@@ -92,6 +92,8 @@ _XY_CANDIDATES = (
     ("x_fit", "y_fit"),
     ("x_centroid", "y_centroid"),
     ("xcentroid", "ycentroid"),
+    ("xfit", "yfit"),
+    ("x", "y"),
 )
 _FINDER_QUALITY_COLUMNS = (
     "sharpness",

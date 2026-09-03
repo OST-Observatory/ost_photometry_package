@@ -83,9 +83,13 @@ def prepare_and_plot_starmap(
 
     #   Prepare table
     n_stars = len(tbl)
+    if "id" in tbl.colnames:
+        ids = np.asarray(tbl["id"])
+    else:
+        ids = np.arange(0, n_stars)
     tbl_xy = Table(
         names=['id', 'x_centroid', 'y_centroid'],
-        data=[np.arange(0, n_stars), tbl[x_name], tbl[y_name]],
+        data=[ids, tbl[x_name], tbl[y_name]],
     )
 
     #   Title may include image basename; filename stem must not.
@@ -145,6 +149,7 @@ def prepare_and_plot_starmap_from_observation(
         style_name='NORMAL',
     )
 
+    jobs: list[mp.Process] = []
     for filter_ in filter_list:
         rts = 'final version'
 
@@ -162,14 +167,16 @@ def prepare_and_plot_starmap_from_observation(
             ),
             kwargs={
                 'rts': rts,
-                'label': f'Stars identified in {filter_list[0]} and '
-                         f'{filter_list[1]} filter',
+                'label': f'Stars identified in {filter_} filter',
                 'wcs_image': image.wcs,
                 'use_wcs_projection': use_wcs_projection_for_star_maps,
                 'file_type': file_type_plots,
             }
         )
         p.start()
+        jobs.append(p)
+    for proc in jobs:
+        proc.join()
     terminal_output.print_to_terminal('')
 
 
@@ -178,7 +185,8 @@ def prepare_and_plot_starmap_from_image_series(
         calib_xs: np.ndarray | list[float], calib_ys: np.ndarray | list[float],
         plots_for_all_images: bool = False,
         use_wcs_projection_for_star_maps: bool = True,
-        file_type_plots: str = 'pdf') -> None:
+        file_type_plots: str = 'pdf',
+        label_2: str = 'Protected objects') -> None:
     """
     Creates a star map using information from an image series
 
@@ -207,6 +215,10 @@ def prepare_and_plot_starmap_from_image_series(
     file_type_plots
         Type of plot file to be created
         Default is ``pdf``.
+
+    label_2
+        Legend for the overlay positions (OOI, calibrators, or both).
+        Default is ``Protected objects``.
     """
     terminal_output.print_to_terminal(
         "Plot star map with objects identified on all images",
@@ -218,12 +230,14 @@ def prepare_and_plot_starmap_from_image_series(
     img_ids = image_series.get_image_ids()
 
     #   Make new table with the position of the calibration stars
+    xs = np.asarray(calib_xs, dtype=float).ravel()
+    ys = np.asarray(calib_ys, dtype=float).ravel()
     tbl_xy_calib = Table(
         names=['x_centroid', 'y_centroid'],
-        data=[[calib_xs], [calib_ys]]
+        data=[xs, ys],
     )
 
-    #   Make the plot using multiprocessing
+    jobs: list[mp.Process] = []
     for j, image_id in enumerate(img_ids):
         if not plots_for_all_images and j != image_series.reference_image_index:
             continue
@@ -248,15 +262,17 @@ def prepare_and_plot_starmap_from_image_series(
                 'rts': rts,
                 'filename_suffix': filename_suffix,
                 'label': 'Stars identified in all images',
-                # 'label_2': 'Calibration stars',
-                'label_2': 'Objects of interest',
+                'label_2': label_2,
                 'wcs_image': image_series.wcs,
                 'use_wcs_projection': use_wcs_projection_for_star_maps,
                 'file_type': file_type_plots,
             }
         )
         p.start()
+        jobs.append(p)
         terminal_output.print_to_terminal('')
+    for proc in jobs:
+        proc.join()
 
 
 __all__ = [

@@ -27,6 +27,30 @@ are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
 Former top-level plot folders (`calibration/`, `lightcurve/`, `extinction_fit/`,
 `compare/`, `scatter/`, `wcs_images/`, `subtract/`) are no longer written.
 
+## Starmaps
+
+QC overlays are written to `<output>/diagnostics/<step>/starmaps/` (not
+`results/`). Extraction, correlation, and cluster membership each get their
+own subdirectory. Simbad-annotated maps stay in `<output>/results/starmaps/`.
+The HiPS subtraction pair is `<output>/work/subtract/img_comparison.*`
+(titles **Science** / **HiPS**).
+
+On a two-table overlay, **purple** markers are the primary catalog (detections,
+or all photometry on the cluster map) and **green** markers are the second
+table: ePSF stars, objects of interest / calibrators (“Protected objects”
+when both are shown), or Gaia cluster members. IDs are labelled on the green
+set, and on the purple set only when there are at most 40 sources (unless
+`mode='mags'` or `'list'`).
+
+Galaxies, open/globular clusters, and nebulae on the annotated map use SIMBAD
+`galdim_*` / `dimensions` as an ellipse (a circle if only a diameter is
+given). If that size is larger than about three times the image diagonal, the
+ellipse is omitted and only a larger type marker is drawn — typical for nearby
+H II regions that would otherwise be an invisible giant ring. The Gaia
+membership map adds a 2σ covariance ellipse from member pixels when there are
+enough members and the ellipse fits in the same way. Magnitude cuts for Simbad
+markers are applied in the query, not a second time when plotting.
+
 This page explains the **magnitude vs. uncertainty** plots
 (`photometry_mag_vs_error_*`), the **inter-filter residual geometry**
 figures that sit next to the correlation separation histograms, the
