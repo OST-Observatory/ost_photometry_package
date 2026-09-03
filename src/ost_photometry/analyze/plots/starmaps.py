@@ -171,6 +171,23 @@ def _xy_columns(tbl: Table, which: str) -> tuple[str, str]:
     return cols
 
 
+def _ellipse_center(patch) -> tuple[float, float]:
+    """Pixel center of an Ellipse (``center``, not Rectangle-style ``xy``)."""
+    center = getattr(patch, "center", None)
+    if center is None:
+        getter = getattr(patch, "get_center", None)
+        if getter is not None:
+            center = getter()
+        else:
+            center = getattr(patch, "xy", None)
+    arr = np.asarray(center, dtype=float).ravel()
+    if arr.size < 2:
+        raise AttributeError(
+            f"{type(patch).__name__} has no 2-D center (got {center!r})"
+        )
+    return float(arr[0]), float(arr[1])
+
+
 def _ellipse_fits_image(ellipse: Ellipse, image_shape: tuple[int, ...]) -> bool:
     ny, nx = int(image_shape[0]), int(image_shape[1])
     diag = float(np.hypot(nx, ny))
@@ -418,7 +435,7 @@ def starmap(
         if patch is None:
             continue
         drawn = Ellipse(
-            xy=tuple(np.asarray(patch.xy, dtype=float).ravel()[:2]),
+            _ellipse_center(patch),
             width=float(patch.width),
             height=float(patch.height),
             angle=float(getattr(patch, "angle", 0.0)),

@@ -292,3 +292,39 @@ def test_covariance_ellipse_pixels_requires_points_and_fov():
         image_shape=(20, 20),
     )
     assert huge is None
+
+
+@pytest.mark.skipif(not _plotting_stack_available(), reason="matplotlib/photutils")
+def test_starmap_draws_covariance_ellipse_without_xy_attr(tmp_path: Path):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from matplotlib.patches import Ellipse
+
+    from ost_photometry.analyze.plots.starmaps import (
+        covariance_ellipse_pixels,
+        starmap,
+    )
+
+    rng = np.random.default_rng(1)
+    x = 20.0 + rng.normal(0.0, 1.5, size=10)
+    y = 15.0 + rng.normal(0.0, 1.0, size=10)
+    ellipse = covariance_ellipse_pixels(x, y, image_shape=(40, 40))
+    assert ellipse is not None
+
+    tbl = Table({"id": [1], "x_centroid": [20.0], "y_centroid": [15.0]})
+    tbl_2 = Table({"id": np.arange(len(x)), "x_centroid": x, "y_centroid": y})
+    starmap(
+        str(tmp_path),
+        np.zeros((40, 40)),
+        "V",
+        tbl,
+        tbl_2=tbl_2,
+        extra_patches=[ellipse],
+        use_wcs_projection=False,
+        file_type="png",
+        rts=None,
+    )
+    assert any((tmp_path / "starmaps").glob("starmap_V*.png"))
+    # Ellipse constructor takes xy=center; the instance stores it as .center
+    assert isinstance(ellipse, Ellipse)
