@@ -17,14 +17,18 @@ def start_plot_process(
     target,
     args: tuple[Any, ...] = (),
     kwargs: dict[str, Any] | None = None,
-) -> mp.Process:
-    """Run a documentary plot in a child process without waiting.
+) -> mp.Process | None:
+    """Run a documentary plot without blocking the parent pipeline.
 
-    Use this after a reduction step is finished and the figure only
-    records the result. The parent continues; non-daemon children are
-    still joined when the interpreter exits.
+    Starts a child process when the caller is not a daemon. Pool workers
+    (``extract_multiprocessing``) are daemons and cannot spawn children, so
+    the plot then runs in the current process.
     """
-    process = mp.Process(target=target, args=args, kwargs=kwargs or {})
+    kwargs = kwargs or {}
+    if mp.current_process().daemon:
+        target(*args, **kwargs)
+        return None
+    process = mp.Process(target=target, args=args, kwargs=kwargs)
     process.start()
     return process
 

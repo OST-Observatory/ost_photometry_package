@@ -1484,13 +1484,13 @@ def extract_multiprocessing(
             },
         )
 
+    executor.wait()
     if executor.err is not None:
         raise RuntimeError(
             f"\n{style.Bcolors.FAIL}Extraction using multiprocessing failed "
             f"for {filter_} :({style.Bcolors.ENDC}"
         )
 
-    executor.wait()
     res = executor.res
 
     tmp_list = []
