@@ -393,6 +393,95 @@ def _robust_ratio_median(ratios: list[float], fluxes: list[float] | None = None)
     return float(np.median(arr))
 
 
+def _aperture_flux_pairs(
+    science: np.ndarray,
+    template: np.ndarray,
+    star_xy: np.ndarray,
+    *,
+    half: int,
+    aperture_radius: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Science and template aperture fluxes at ``star_xy`` (same sky treatment)."""
+    sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
+    fs_list: list[float] = []
+    ft_list: list[float] = []
+    for x, y in np.asarray(star_xy, dtype=float).reshape(-1, 2):
+        xt, yt = _shift_to_peak(tmpl, x, y, half, max_shift=float(min(half - 2, 10)))
+        s = _cutout(sci, x, y, half)
+        t = _cutout(tmpl, xt, yt, half)
+        if s is None or t is None:
+            continue
+        if _stamp_snr(s) < 2.5 or _stamp_snr(t) < 1.5:
+            continue
+        fs = _aperture_flux(s, radius=aperture_radius)
+        ft = _aperture_flux(t, radius=aperture_radius)
+        if abs(ft) > 1e-6 and abs(fs) > 1e-6 and np.isfinite(fs) and np.isfinite(ft):
+            fs_list.append(fs)
+            ft_list.append(ft)
+    if not fs_list:
+        return np.empty(0), np.empty(0)
+    return np.asarray(fs_list, dtype=float), np.asarray(ft_list, dtype=float)
+
+
+def _quadratic_photometry(fs: np.ndarray, ft: np.ndarray) -> tuple[float, float]:
+    """
+    Fit ``fs/ft ≈ α + β·(ft/median)``, i.e. ``fs ≈ a·ft + b·ft²``.
+
+    Photographic plates compress bright cores; a linear scale then over-subtracts
+    faint stars and under-subtracts bright ones. Fitting *ratios* vs brightness
+    keeps faint and bright stamps equally weighted.
+    """
+    linear = _robust_ratio_median(list(fs / ft), list(fs))
+    if len(ft) < 6:
+        return linear, 0.0
+    ft0 = float(np.median(np.abs(ft)))
+    if ft0 <= 0:
+        return linear, 0.0
+    ratio = fs / ft
+    x = ft / ft0
+    design = np.column_stack([np.ones(len(x)), x])
+    coef, *_ = np.linalg.lstsq(design, ratio, rcond=None)
+    alpha, beta = float(coef[0]), float(coef[1])
+    if not np.isfinite(alpha) or not np.isfinite(beta) or alpha <= 0:
+        return linear, 0.0
+    a = alpha
+    b = beta / ft0
+    # Keep the correction bounded so background pixels stay well behaved.
+    if abs(beta) > 1.5:
+        beta = float(np.clip(beta, -1.5, 1.5))
+        b = beta / ft0
+    return a, b
+
+
+def _core_residual_terciles(
+    residual: np.ndarray,
+    brightness: np.ndarray,
+    star_xy: np.ndarray,
+    half: int = 3,
+) -> tuple[float, float, float]:
+    """Median residual in a small core, split by brightness terciles (faint, mid, bright)."""
+    cores: list[float] = []
+    peaks: list[float] = []
+    for x, y in np.asarray(star_xy, dtype=float).reshape(-1, 2):
+        r = _cutout(residual, x, y, half)
+        b = _cutout(brightness, x, y, half)
+        if r is None or b is None:
+            continue
+        cores.append(float(np.nanmedian(r)))
+        peaks.append(float(np.nanmax(np.abs(b))))
+    if len(cores) < 3:
+        nan = float("nan")
+        return nan, nan, nan
+    cores_a = np.asarray(cores, dtype=float)
+    order = np.argsort(np.asarray(peaks, dtype=float))
+    n = len(order)
+    t = max(n // 3, 1)
+    faint = cores_a[order[:t]]
+    mid = cores_a[order[t : n - t]]
+    bright = cores_a[order[n - t :]]
+    return float(np.median(faint)), float(np.median(mid)), float(np.median(bright))
+
+
 def flux_scale_from_stamps(
     science: np.ndarray,
     template: np.ndarray,
@@ -687,30 +776,44 @@ def alard_lupton_difference(
             matched = fftconvolve(sci0, kernel, mode="same")
             left, right = matched, tmpl_s
         try:
-            phot = flux_scale_from_stamps(
-                left, right, xy_kernel, half=phot_half, aperture_radius=phot_radius
+            fs, ft = _aperture_flux_pairs(
+                left, right, xy, half=phot_half, aperture_radius=phot_radius
             )
-        except RuntimeError:
-            phot = 1.0
+            phot, phot_quad = _quadratic_photometry(fs, ft)
+        except Exception:
+            phot, phot_quad = 1.0, 0.0
         if not np.isfinite(phot) or abs(phot) < 1e-6 or abs(phot) > 1e3:
-            phot = 1.0
-        residual = left - phot * right
+            phot, phot_quad = 1.0, 0.0
+        eff = phot + phot_quad * np.clip(right, 0.0, None)
+        lo, hi = 0.25 * abs(phot), 4.0 * abs(phot)
+        eff = np.clip(eff, lo, hi)
+        residual = left - eff * right
         _, resid_sky, _ = sigma_clipped_stats(residual, sigma=3.0, maxiters=5)
         if not np.isfinite(resid_sky):
             resid_sky = 0.0
+        residual = residual - float(resid_sky)
+        faint_c, mid_c, bright_c = _core_residual_terciles(residual, left, xy)
         ksum = float(np.sum(kernel))
         seeing = ""
         if np.isfinite(sci_fw) and np.isfinite(tmpl_fw):
             seeing = f", seeing={sci_fw:.2f}/{tmpl_fw:.2f}px"
+        quad_note = f", quad={phot_quad:.3g}" if phot_quad != 0.0 else ""
         terminal_output.print_to_terminal(
             f"Alard–Lupton kernel ({n_used} stamps, ksize={ksize}, "
             f"sigmas={used_sigmas[0]:.1f}/{used_sigmas[1]:.1f}/{used_sigmas[2]:.1f}, "
-            f"flux_scale={scale:.4g}, phot_match={phot:.3f}, "
+            f"flux_scale={scale:.4g}, phot_match={phot:.3f}{quad_note}, "
             f"kernel_sum={ksum:.3f}, {which}{seeing})",
             indent=2,
             style_name="NORMAL",
         )
-        return residual - float(resid_sky), "alard_lupton"
+        if np.isfinite(faint_c) and np.isfinite(bright_c):
+            terminal_output.print_to_terminal(
+                f"Star-core residuals (faint/mid/bright tercile): "
+                f"{faint_c:+.3g} / {mid_c:+.3g} / {bright_c:+.3g}",
+                indent=2,
+                style_name="NORMAL",
+            )
+        return residual, "alard_lupton"
     except Exception as exc:
         terminal_output.print_to_terminal(
             f"Alard–Lupton kernel fit failed ({exc}); using flux-scale subtraction",

@@ -409,7 +409,7 @@ abort** the rest of the analysis.
 | Flag | Default | Role |
 |------|---------|------|
 | `hips_reference_subtraction_backend` | `auto` | `auto` / `hotpants` / `alard_lupton`. `auto` falls back to Alard–Lupton if HOTPANTS is missing; `hotpants` skips the step if the binary is absent |
-| `hips_reference_subtraction_hips_source` | `None` (auto) | Explicit HiPS id, or bandpass-matched (`B`/`U` → DSS2 blue, `V`/`R`/`I` → DSS2 red, `ugrizy` → PanSTARRS) |
+| `hips_reference_subtraction_hips_source` | `None` (auto) | Explicit HiPS id, or bandpass-matched (`B`/`U` → DSS2 blue, `V`/`R`/`I` → DSS2 red, `ugrizy` → PanSTARRS). DSS2 is photographic: a single flux scale cannot cancel both faint and bright stars. For a linear CCD template (recommended when the field is in the PanSTARRS footprint) set e.g. `CDS/P/PanSTARRS/DR1/g` |
 | `hips_reference_subtraction_use_cache` | `True` | Reuse cutouts under `work/subtract/` keyed by survey + WCS fingerprint |
 | `hips_reference_subtraction_retries` | `3` | Attempts per hips2fits server |
 | `hips_reference_subtraction_retry_backoff_s` | `1.5` | Exponential backoff between attempts |

@@ -262,6 +262,14 @@ def run_hips_reference_subtraction(
         indent=2,
         style_name="NORMAL",
     )
+    if "DSS" in str(source).upper():
+        terminal_output.print_to_terminal(
+            "DSS2 is a photographic plate: faint and bright stars will not share "
+            "one flux scale. For a linear CCD template (recommended) set "
+            "hips_reference_subtraction_hips_source='CDS/P/PanSTARRS/DR1/g'.",
+            indent=2,
+            style_name="WARNING",
+        )
 
     ccd_image = CCDData.read(science_image_path)
 

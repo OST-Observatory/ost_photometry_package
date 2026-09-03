@@ -159,6 +159,21 @@ def test_alard_lupton_fits_kernel_with_nan_hips_mask():
     assert abs(float(np.nanmedian(diff))) < 15.0
 
 
+def test_quadratic_photometry_on_saturating_fluxes():
+    from ost_photometry.analyze.subtraction_alard_lupton import _quadratic_photometry
+
+    flux = np.array([10.0, 20.0, 40.0, 80.0, 160.0, 320.0, 640.0, 1280.0])
+    fs = 1.5 * flux
+    ft = flux / (1.0 + flux / 400.0)
+    a, b = _quadratic_photometry(fs, ft)
+    assert b > 0
+    # Effective scale should rise toward the bright end.
+    faint_s = a + b * ft[0]
+    bright_s = a + b * ft[-1]
+    assert bright_s > faint_s
+    assert a > 0
+
+
 def test_flux_scale_from_stamps_accepts_photographic_dips():
     from ost_photometry.analyze.subtraction_alard_lupton import flux_scale_from_stamps
 
