@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import multiprocessing as mp
 from typing import TYPE_CHECKING
 
 import astropy.units as u
@@ -11,6 +10,7 @@ from astropy.table import Table
 from photutils.utils import ImageDepth
 
 from ... import terminal_output
+from ...core.parallel import start_plot_process
 from ...output_layout import extraction_plot_dir
 from .. import plots
 from ..post_processing.adapters import ensure_epoch_native_photometry_table
@@ -204,15 +204,15 @@ def _derive_limiting_magnitude_one_epoch(
     n_take = min(10, len(tbl_mag))
     tbl_faintest = tbl_mag[-n_take:] if n_take else tbl_mag
 
-    p = mp.Process(
-        target=plots.starmap,
-        args=(
+    start_plot_process(
+        plots.starmap,
+        (
             str(extraction_plot_dir(out_path_stub)),
             image_data,
             filter_,
             tbl_faintest,
         ),
-        kwargs={
+        {
             "label": f"{n_take} faintest objects" if n_take else "faintest objects",
             "rts": rts,
             "mode": "mags",
@@ -222,7 +222,6 @@ def _derive_limiting_magnitude_one_epoch(
             "file_type": file_type_plots,
         },
     )
-    p.start()
 
     terminal_output.print_to_terminal("")
     terminal_output.print_to_terminal(
@@ -299,12 +298,10 @@ def _derive_limiting_magnitude_one_epoch(
 
     _flux_limit, mag_limit = depth(depth_data, depth_mask)
 
-    plots.plot_limiting_mag_sky_apertures(
-        out_path_stub,
-        depth_data,
-        depth_mask,
-        depth,
-        file_type=file_type_plots,
+    start_plot_process(
+        plots.plot_limiting_mag_sky_apertures,
+        (out_path_stub, depth_data, depth_mask, depth),
+        {"file_type": file_type_plots},
     )
 
     mag_report = float(mag_limit) + image_depth_mag_offset

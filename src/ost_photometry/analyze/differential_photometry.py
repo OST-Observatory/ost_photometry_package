@@ -14,6 +14,7 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, vstack
 from astropy.time import Time
 
+from ..core.parallel import start_plot_process
 from .calibration.result import CalibrationResult, TransformationCoefficients
 from .calibration_sources import crossmatch_standard_catalog, fetch_standard_calibration_catalog
 from .extinction import (
@@ -426,12 +427,10 @@ class DifferentialPhotometer:
 
         if output_dir and plot_data:
             from . import plots
-            plots.plot_calibration_transformation(
-                output_dir,
-                epoch_id,
-                plot_data,
-                result.transformation,
-                file_type=file_type,
+            start_plot_process(
+                plots.plot_calibration_transformation,
+                (output_dir, epoch_id, plot_data, result.transformation),
+                {"file_type": file_type},
             )
 
         result.n_comparison_stars = int(np.sum(comparison_mask))
@@ -575,14 +574,19 @@ class DifferentialPhotometer:
                         stacklevel=2,
                     )
 
-            plots.plot_calibration_night_summary(
-                output_dir,
-                [fr.identifier for fr in epoch_results_sorted],
-                [fr.transformation for fr in epoch_results_sorted],
-                filters,
-                file_type=file_type,
-                combined_per_filter=combined,
-                x_jd=x_jd_plot,
+            start_plot_process(
+                plots.plot_calibration_night_summary,
+                (
+                    output_dir,
+                    [fr.identifier for fr in epoch_results_sorted],
+                    [fr.transformation for fr in epoch_results_sorted],
+                    filters,
+                ),
+                {
+                    "file_type": file_type,
+                    "combined_per_filter": combined,
+                    "x_jd": x_jd_plot,
+                },
             )
 
         night_result = CalibrationResult(identifier=night_id)
@@ -1174,15 +1178,20 @@ class PhotometryCalibrator:
                             stacklevel=2,
                         )
 
-                plots.plot_calibration_night_summary(
-                    output_dir,
-                    ordered_ids,
-                    [results[k].transformation for k in ordered_ids],
-                    filters,
-                    file_type=file_type,
-                    combined_per_filter=combined_preview,
-                    output_basename="calibration_per_image_summary",
-                    x_jd=x_jd_plot,
+                start_plot_process(
+                    plots.plot_calibration_night_summary,
+                    (
+                        output_dir,
+                        ordered_ids,
+                        [results[k].transformation for k in ordered_ids],
+                        filters,
+                    ),
+                    {
+                        "file_type": file_type,
+                        "combined_per_filter": combined_preview,
+                        "output_basename": "calibration_per_image_summary",
+                        "x_jd": x_jd_plot,
+                    },
                 )
         elif self.mode == CoefficientMode.PER_NIGHT:
             result = self.photometer.fit_transformation_night(

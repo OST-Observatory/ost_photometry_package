@@ -123,6 +123,7 @@ def fit_epochs(
         return None
 
     if output_dir:
+        from ....core.parallel import start_plot_process
         from ... import plots
         from ..engine import prepare_calibration_check_plots
 
@@ -147,23 +148,32 @@ def fit_epochs(
         ordered_ids = list(results.keys())
         if len(ordered_ids) >= 1:
             # Fit quality across epochs (slopes / RMS / n).
-            plots.plot_derive_transform_fit_overview(
-                output_dir,
-                ordered_ids,
-                [plot_coeffs[k] for k in ordered_ids],
-                [plot_metrics[k] for k in ordered_ids],
-                filters,
-                file_type=file_type,
-                output_basename="derive_transform_fit_overview",
+            start_plot_process(
+                plots.plot_derive_transform_fit_overview,
+                (
+                    output_dir,
+                    ordered_ids,
+                    [plot_coeffs[k] for k in ordered_ids],
+                    [plot_metrics[k] for k in ordered_ids],
+                    filters,
+                ),
+                {
+                    "file_type": file_type,
+                    "output_basename": "derive_transform_fit_overview",
+                },
             )
-            # Stability of applied c factors + median ZPs across epochs.
-            plots.plot_calibration_night_summary(
-                output_dir,
-                ordered_ids,
-                [results[k].transformation for k in ordered_ids],
-                filters,
-                file_type=file_type,
-                output_basename="derive_transform_summary",
+            start_plot_process(
+                plots.plot_calibration_night_summary,
+                (
+                    output_dir,
+                    ordered_ids,
+                    [results[k].transformation for k in ordered_ids],
+                    filters,
+                ),
+                {
+                    "file_type": file_type,
+                    "output_basename": "derive_transform_summary",
+                },
             )
 
     return results

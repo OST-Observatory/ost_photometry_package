@@ -233,9 +233,18 @@ def test_prepare_calibration_check_plots_array_shapes(
     def _capture_plot(_out, _eid, plot_data, _coeffs, **_kw):
         captured["plot_data"] = plot_data
 
-    with patch(
-        "ost_photometry.analyze.plots.plot_calibration_transformation",
-        side_effect=_capture_plot,
+    def _inline(target, args=(), kwargs=None):
+        target(*args, **(kwargs or {}))
+
+    with (
+        patch(
+            "ost_photometry.core.parallel.start_plot_process",
+            _inline,
+        ),
+        patch(
+            "ost_photometry.analyze.plots.plot_calibration_transformation",
+            side_effect=_capture_plot,
+        ),
     ):
         engine_mod.prepare_calibration_check_plots(
             str(tmp_path), epochs, results, ["B", "V"]

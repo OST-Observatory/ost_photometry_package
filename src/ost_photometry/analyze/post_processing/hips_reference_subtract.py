@@ -15,6 +15,7 @@ from astropy.nddata import CCDData
 from astroquery.hips2fits import hips2fitsClass
 
 from ... import checks, terminal_output
+from ...core.parallel import start_plot_process
 from ...utilities import Image, get_basename
 from ...wcs import find_wcs_for_image
 from .. import plots, subtraction
@@ -309,11 +310,12 @@ def run_hips_reference_subtraction(
     )
 
     if plot_comp:
-        plots.compare_images(
-            str(workdir),
-            ccd_image,
-            hips_hdus[0],
-            file_type=file_type_plots,
+        sci = np.array(ccd_image.data, copy=True, dtype=float)
+        ref = np.array(hips_hdus[0].data, copy=True, dtype=float)
+        start_plot_process(
+            plots.compare_images,
+            (str(workdir), sci, ref),
+            {"file_type": file_type_plots},
         )
 
     resolved_backend = subtraction.resolve_subtract_backend(

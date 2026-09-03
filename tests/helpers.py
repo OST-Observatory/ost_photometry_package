@@ -94,6 +94,20 @@ def ensure_stub_package(name: str, path: Path | str | None = None) -> types.Modu
     return mod
 
 
+def stub_plot_process() -> None:
+    """Dummy ``start_plot_process`` so isolated loads do not import ``core.parallel``."""
+    root = _PKG_SRC / "ost_photometry"
+    ensure_stub_package("ost_photometry", path=root)
+    ensure_stub_package("ost_photometry.core", path=root / "core")
+    mod = ensure_stub_package("ost_photometry.core.parallel")
+    if getattr(mod, "start_plot_process", None) is None:
+
+        def start_plot_process(target, args=(), kwargs=None):
+            target(*args, **(kwargs or {}))
+
+        mod.start_plot_process = start_plot_process
+
+
 def stub_analyze_package(*subpaths: str) -> Path:
     """Register ``ost_photometry.analyze`` without running package ``__init__`` files.
 
@@ -111,6 +125,7 @@ def stub_analyze_package(*subpaths: str) -> Path:
             f"ost_photometry.analyze.{sub}",
             path=analyze.joinpath(*sub.split(".")),
         )
+    stub_plot_process()
     return analyze
 
 

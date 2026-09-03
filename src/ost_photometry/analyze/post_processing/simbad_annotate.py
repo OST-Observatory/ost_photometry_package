@@ -14,6 +14,7 @@ from astroquery.exceptions import TableParseError
 from astroquery.simbad import Simbad
 
 from ... import terminal_output
+from ...core.parallel import start_plot_process
 from .. import plots
 
 # TAP / Simbad cone queries reject radii outside (0, 90] deg.
@@ -383,15 +384,15 @@ def mark_simbad_objects_on_image(
     plot_band = filter_mag
     if mag_limit is not None and not (plot_band or "").strip():
         plot_band = "V"
-    plots.plot_annotated_image(
-        image_data,
-        image_wcs,
-        simbad_objects,
-        output_dir,
-        filter_=filter_,
-        file_type=file_type,
-        filter_mag=plot_band,
-        mag_limit=mag_limit,
+    start_plot_process(
+        plots.plot_annotated_image,
+        (image_data, image_wcs, simbad_objects, output_dir),
+        {
+            "filter_": filter_,
+            "file_type": file_type,
+            "filter_mag": plot_band,
+            "mag_limit": mag_limit,
+        },
     )
 
 

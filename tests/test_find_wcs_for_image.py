@@ -124,6 +124,15 @@ def _hips_module(monkeypatch):
     ccdproc_mod.trim_image = lambda ccd: ccd
     monkeypatch.setitem(sys.modules, "ccdproc", ccdproc_mod)
 
+    ensure_stub_package("ost_photometry.core", path=src / "ost_photometry" / "core")
+    parallel_mod = types.ModuleType("ost_photometry.core.parallel")
+
+    def _start_plot_process(target, args=(), kwargs=None):
+        target(*args, **(kwargs or {}))
+
+    parallel_mod.start_plot_process = _start_plot_process
+    sys.modules["ost_photometry.core.parallel"] = parallel_mod
+
     return load_module_from_path(
         "ost_photometry.analyze.post_processing.hips_reference_subtract",
         src

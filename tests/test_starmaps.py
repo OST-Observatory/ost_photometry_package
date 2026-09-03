@@ -38,19 +38,8 @@ def _tan_wcs(nx: int = 80, ny: int = 60, scale_deg: float = 1.0 / 3600.0) -> WCS
     return w
 
 
-class _ImmediateProcess:
-    def __init__(self, target=None, args=(), kwargs=None):
-        self._target = target
-        self._args = args
-        self._kwargs = kwargs or {}
-        self.joined = False
-
-    def start(self):
-        if self._target is not None:
-            self._target(*self._args, **self._kwargs)
-
-    def join(self):
-        self.joined = True
+def _run_plot_inline(target, args=(), kwargs=None):
+    target(*args, **(kwargs or {}))
 
 
 def test_xy_column_names_prefers_x_fit_and_accepts_xfit():
@@ -83,9 +72,15 @@ def test_prepare_and_plot_starmap_keeps_photometry_ids(tmp_path: Path):
     def fake_starmap(_out, _data, _filt, tbl_xy, **_kwargs):
         captured["tbl"] = tbl_xy
 
-    with patch(
-        "ost_photometry.analyze.utils.starmaps.plots.starmap",
-        fake_starmap,
+    with (
+        patch(
+            "ost_photometry.analyze.utils.starmaps.start_plot_process",
+            _run_plot_inline,
+        ),
+        patch(
+            "ost_photometry.analyze.utils.starmaps.plots.starmap",
+            fake_starmap,
+        ),
     ):
         prepare_and_plot_starmap(
             image,
@@ -124,8 +119,8 @@ def test_calibrator_overlay_table_has_one_row_per_star(tmp_path: Path):
     ys = [11.0, 21.0, 31.0]
     with (
         patch(
-            "ost_photometry.analyze.utils.starmaps.mp.Process",
-            _ImmediateProcess,
+            "ost_photometry.analyze.utils.starmaps.start_plot_process",
+            _run_plot_inline,
         ),
         patch(
             "ost_photometry.analyze.utils.starmaps.plots.starmap",
@@ -153,12 +148,6 @@ def test_prepare_and_plot_starmap_from_observation_single_filter(tmp_path: Path)
         image_series_dict={"V": SimpleNamespace(reference_image=image)},
     )
     captured: dict = {}
-    joined: list[bool] = []
-
-    class _JoinProcess(_ImmediateProcess):
-        def join(self):
-            super().join()
-            joined.append(self.joined)
 
     def fake_starmap(*args, **kwargs):
         captured["args"] = args
@@ -166,8 +155,8 @@ def test_prepare_and_plot_starmap_from_observation_single_filter(tmp_path: Path)
 
     with (
         patch(
-            "ost_photometry.analyze.utils.starmaps.mp.Process",
-            _JoinProcess,
+            "ost_photometry.analyze.utils.starmaps.start_plot_process",
+            _run_plot_inline,
         ),
         patch(
             "ost_photometry.analyze.utils.starmaps.plots.starmap",
@@ -176,7 +165,6 @@ def test_prepare_and_plot_starmap_from_observation_single_filter(tmp_path: Path)
     ):
         prepare_and_plot_starmap_from_observation(observation, ["V"])
     assert captured["kwargs"]["label"] == "Stars identified in V filter"
-    assert joined == [True]
 
 
 @pytest.mark.skipif(not _plotting_stack_available(), reason="matplotlib/photutils")

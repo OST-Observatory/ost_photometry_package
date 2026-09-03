@@ -4,7 +4,6 @@ Photometry extraction: main_extract, extract_multiprocessing, and helpers.
 Extracted from analyze.py for modular reuse.
 """
 
-import multiprocessing as mp
 import os
 from collections import Counter
 
@@ -44,7 +43,7 @@ from photutils.psf import (
 
 from .. import checks, style, terminal_output
 from .. import utilities as base_utilities
-from ..core.parallel import Executor
+from ..core.parallel import Executor, start_plot_process
 from ..fits_headers import (
     cosmics_identified,
     mark_cosmics_identified,
@@ -937,14 +936,11 @@ def determine_epsf(
 
     #   Plot the brightest ePSF stars
     if multiprocess_plots:
-        p = mp.Process(
-            target=plots.plot_cutouts,
-            args=(output_dir, stars, string),
-            kwargs={
-                "file_type": file_type_plots,
-            },
+        start_plot_process(
+            plots.plot_cutouts,
+            (output_dir, stars, string),
+            {"file_type": file_type_plots},
         )
-        p.start()
     else:
         plots.plot_cutouts(
             output_dir,
@@ -1368,14 +1364,19 @@ def extraction_aperture(
     image.photometry = photometry_tbl
 
     if plot_aperture_positions:
-        plots.plot_apertures(
-            _extraction_qc_dir(image, gallery=False),
-            data,
-            aperture,
-            annulus_aperture,
-            f"{filter_}_{image.image_id}",
-            file_type=file_type_plots,
-            pixel_scale=image.pixel_scale,
+        start_plot_process(
+            plots.plot_apertures,
+            (
+                _extraction_qc_dir(image, gallery=False),
+                data,
+                aperture,
+                annulus_aperture,
+                f"{filter_}_{image.image_id}",
+            ),
+            {
+                "file_type": file_type_plots,
+                "pixel_scale": image.pixel_scale,
+            },
         )
 
     n_objects = len(flux)
@@ -1622,25 +1623,24 @@ def main_extract(
         )
 
         if plots_for_all_images or image.image_id == id_reference_image:
-            plots.starmap(
-                plot_dir,
-                image.get_data(),
-                image.filter_,
-                image.positions,
-                tbl_2=epsf_stars,
-                label="identified stars",
-                label_2="stars used to determine the ePSF",
-                rts=(
-                    f"Initial object identification [Image: {image.image_id}"
-                    f" ({image.filename})]"
-                ),
-                filename_suffix=(
-                    f"Initial object identification [Image: {image.image_id}]"
-                ),
-                wcs_image=image.wcs,
-                use_wcs_projection=use_wcs_projection_for_star_maps,
-                terminal_logger=terminal_logger,
-                file_type=file_type_plots,
+            start_plot_process(
+                plots.starmap,
+                (plot_dir, image.get_data(), image.filter_, image.positions),
+                {
+                    "tbl_2": epsf_stars,
+                    "label": "identified stars",
+                    "label_2": "stars used to determine the ePSF",
+                    "rts": (
+                        f"Initial object identification [Image: {image.image_id}"
+                        f" ({image.filename})]"
+                    ),
+                    "filename_suffix": (
+                        f"Initial object identification [Image: {image.image_id}]"
+                    ),
+                    "wcs_image": image.wcs,
+                    "use_wcs_projection": use_wcs_projection_for_star_maps,
+                    "file_type": file_type_plots,
+                },
             )
 
         determine_epsf(
@@ -1650,19 +1650,20 @@ def main_extract(
             oversampling_factor=oversampling_factor_epsf,
             max_n_iterations=max_n_iterations_epsf_determination,
             minimum_n_stars=minimum_n_eps_stars,
-            multiprocess_plots=False,
+            multiprocess_plots=True,
             terminal_logger=terminal_logger,
             file_type_plots=file_type_plots,
             plot_output_dir=plot_dir,
         )
 
-        plots.plot_epsf(
-            plot_dir,
-            {f"img-{image.image_id}-{image.filter_}": [image.epsf]},
-            terminal_logger=terminal_logger,
-            file_type=file_type_plots,
-            id_image=f"_{image.image_id}_{image.filter_}",
-            indent=2,
+        start_plot_process(
+            plots.plot_epsf,
+            (plot_dir, {f"img-{image.image_id}-{image.filter_}": [image.epsf]}),
+            {
+                "file_type": file_type_plots,
+                "id_image": f"_{image.image_id}_{image.filter_}",
+                "indent": 2,
+            },
         )
 
         extraction_epsf(
@@ -1684,13 +1685,14 @@ def main_extract(
             psf_find_in_residuals=psf_find_in_residuals,
         )
 
-        plots.plot_residual(
-            {f"{image.filter_}, Image ID: {image.image_id}": image.get_data()},
-            {f"{image.filter_}, Image ID: {image.image_id}": image.residual_image},
-            plot_dir,
-            terminal_logger=terminal_logger,
-            file_type=file_type_plots,
-            indent=2,
+        start_plot_process(
+            plots.plot_residual,
+            (
+                {f"{image.filter_}, Image ID: {image.image_id}": image.get_data()},
+                {f"{image.filter_}, Image ID: {image.image_id}": image.residual_image},
+                plot_dir,
+            ),
+            {"file_type": file_type_plots, "indent": 2},
         )
 
     elif photometry_extraction_method == "APER":

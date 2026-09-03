@@ -1,8 +1,7 @@
 """Photometry extraction step (single or multi image per filter)."""
 
-import multiprocessing as mp
-
 from .... import terminal_output
+from ....core.parallel import start_plot_process
 from ....output_layout import diagnostics_dir
 from ... import plots
 from ...diagnostic_plot_hooks import run_diagnostic_plots_phase
@@ -74,18 +73,20 @@ class ExtractionStep(base.PipelineStep):
                 if img.residual_image is not None:
                     residual_dict[key] = img.residual_image
 
-            p = mp.Process(
-                target=plots.plot_epsf,
-                args=(str(diagnostics_dir(context.output_dir, "extraction")), epsf_dict),
-                kwargs={"file_type": ext.file_type_plots},
+            start_plot_process(
+                plots.plot_epsf,
+                (str(diagnostics_dir(context.output_dir, "extraction")), epsf_dict),
+                {"file_type": ext.file_type_plots},
             )
-            p.start()
-            p = mp.Process(
-                target=plots.plot_residual,
-                args=(img_dict, residual_dict, str(diagnostics_dir(context.output_dir, "extraction"))),
-                kwargs={"file_type": ext.file_type_plots},
+            start_plot_process(
+                plots.plot_residual,
+                (
+                    img_dict,
+                    residual_dict,
+                    str(diagnostics_dir(context.output_dir, "extraction")),
+                ),
+                {"file_type": ext.file_type_plots},
             )
-            p.start()
 
         run_diagnostic_plots_phase(context, config, "extraction")
 

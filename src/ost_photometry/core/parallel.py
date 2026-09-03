@@ -13,6 +13,22 @@ from tqdm import tqdm
 from .. import terminal_output
 
 
+def start_plot_process(
+    target,
+    args: tuple[Any, ...] = (),
+    kwargs: dict[str, Any] | None = None,
+) -> mp.Process:
+    """Run a documentary plot in a child process without waiting.
+
+    Use this after a reduction step is finished and the figure only
+    records the result. The parent continues; non-daemon children are
+    still joined when the interpreter exits.
+    """
+    process = mp.Process(target=target, args=args, kwargs=kwargs or {})
+    process.start()
+    return process
+
+
 class Executor:
     """
     Class that handles the multiprocessing, using apply_async.

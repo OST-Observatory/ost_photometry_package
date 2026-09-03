@@ -151,6 +151,7 @@ def prepare_calibration_check_plots(
         appear as excluded). Otherwise all finite comparison stars are shown
         as used.
     """
+    from ...core.parallel import start_plot_process
     from .. import plots
     from .zp import comparison_mask_from_std_columns
 
@@ -207,14 +208,14 @@ def prepare_calibration_check_plots(
             delta_plot[~comparison] = np.nan
             plot_data[f] = (color_plot, delta_plot, used)
         if plot_data:
-            plots.plot_calibration_transformation(
-                output_dir,
-                epoch_id,
-                plot_data,
-                result.transformation,
-                file_type=file_type,
-                filename_prefix=filename_prefix,
-                title_prefix=title_prefix,
+            start_plot_process(
+                plots.plot_calibration_transformation,
+                (output_dir, epoch_id, plot_data, result.transformation),
+                {
+                    "file_type": file_type,
+                    "filename_prefix": filename_prefix,
+                    "title_prefix": title_prefix,
+                },
             )
 
 

@@ -63,6 +63,7 @@ def plot_starmap_from_imaging_context(
     file_type_plots: str = "pdf",
 ) -> None:
     """Overlay ``tbl`` (and optional ``tbl_2``) on the reference image."""
+    from ...core.parallel import start_plot_process
     from ...output_layout import diagnostics_dir
     from .. import plots
 
@@ -91,18 +92,23 @@ def plot_starmap_from_imaging_context(
             title_rts = f"{rts_pre}: {ctx.plot_reference_image_id} ({fname})"
         else:
             title_rts = filename_suffix
-    plots.starmap(
-        str(diagnostics_dir(ctx.out_path_stub, "cluster")),
-        data,
-        filter_,
-        tbl_xy,
-        tbl_2=tbl_xy_2,
-        label=label,
-        label_2=label_2,
-        rts=title_rts,
-        filename_suffix=filename_suffix,
-        wcs_image=ctx.wcs,
-        use_wcs_projection=use_wcs_projection_for_star_maps,
-        file_type=file_type_plots,
-        extra_patches=patches or None,
+    start_plot_process(
+        plots.starmap,
+        (
+            str(diagnostics_dir(ctx.out_path_stub, "cluster")),
+            data,
+            filter_,
+            tbl_xy,
+        ),
+        {
+            "tbl_2": tbl_xy_2,
+            "label": label,
+            "label_2": label_2,
+            "rts": title_rts,
+            "filename_suffix": filename_suffix,
+            "wcs_image": ctx.wcs,
+            "use_wcs_projection": use_wcs_projection_for_star_maps,
+            "file_type": file_type_plots,
+            "extra_patches": patches or None,
+        },
     )

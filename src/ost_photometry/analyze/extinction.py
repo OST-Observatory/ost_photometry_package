@@ -199,6 +199,7 @@ def fit_extinction_from_value_airmass(
         )
 
     if output_dir and result:
+        from ..core.parallel import start_plot_process
         from . import plots
         data_by_filter = {}
         for filter_, col in value_cols.items():
@@ -216,12 +217,10 @@ def fit_extinction_from_value_airmass(
             airmass_ok = airmass[ok]
             data_by_filter[filter_] = (airmass_ok, y)
         if data_by_filter:
-            plots.plot_extinction_fit_value_airmass(
-                output_dir,
-                data_by_filter,
-                result,
-                use_magnitude=use_magnitude,
-                file_type=file_type,
+            start_plot_process(
+                plots.plot_extinction_fit_value_airmass,
+                (output_dir, data_by_filter, result),
+                {"use_magnitude": use_magnitude, "file_type": file_type},
             )
 
     return result
@@ -449,12 +448,12 @@ def fit_extinction_from_comparison_stars(
 
     # Plots only for filters that got a successful fit (same arrays as used in linregress).
     if output_dir and data_by_filter:
+        from ..core.parallel import start_plot_process
         from . import plots
-        plots.plot_extinction_fit_comparison_stars(
-            output_dir,
-            data_by_filter,
-            result,
-            file_type=file_type,
+        start_plot_process(
+            plots.plot_extinction_fit_comparison_stars,
+            (output_dir, data_by_filter, result),
+            {"file_type": file_type},
         )
 
     if not result and epochs:

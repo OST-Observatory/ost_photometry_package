@@ -13,6 +13,7 @@ from helpers import (
     isolated_sys_modules,
     load_module_from_path,
     pkg_src,
+    stub_plot_process,
 )
 
 
@@ -41,6 +42,7 @@ def _limmag_helpers():
     analyze = root / "analyze"
     ensure_stub_package("ost_photometry", path=root)
     ensure_stub_package("ost_photometry.terminal_output")
+    stub_plot_process()
     ensure_stub_package("ost_photometry.analyze", path=analyze)
     ensure_stub_package("ost_photometry.analyze.plots")
     ensure_stub_package(

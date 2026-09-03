@@ -10,7 +10,13 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from helpers import ensure_stub_package, isolated_sys_modules, load_module_from_path, pkg_src
+from helpers import (
+    ensure_stub_package,
+    isolated_sys_modules,
+    load_module_from_path,
+    pkg_src,
+    stub_plot_process,
+)
 
 _PRESENT_WCS = object()
 _SRC = pkg_src() / "ost_photometry"
@@ -32,6 +38,7 @@ def _stub_simbad_deps(*, annotate=None) -> None:
     analyze = _SRC / "analyze"
     ensure_stub_package("ost_photometry", path=_SRC)
     ensure_stub_package("ost_photometry.analyze", path=analyze)
+    stub_plot_process()
     ensure_stub_package("ost_photometry.analyze.pipeline", path=analyze / "pipeline")
     ensure_stub_package(
         "ost_photometry.analyze.pipeline.steps",

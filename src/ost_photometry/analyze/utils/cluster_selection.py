@@ -13,6 +13,7 @@ from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
 
 from ... import terminal_output
+from ...core.parallel import start_plot_process
 from ..plots.cluster_membership import plot_cluster_membership_diagnostics
 from ..post_processing.coords import (
     plot_starmap_from_imaging_context,
@@ -216,21 +217,25 @@ def _plot_membership_diagnostics(
     simbad_pm_de: float | None,
     simbad_plx: float | None,
 ) -> None:
-    plot_cluster_membership_diagnostics(
-        output_dir=plot_stub,
-        file_type=file_type,
-        pm_ra=pm_ra,
-        pm_de=pm_de,
-        plx=plx,
-        p_mem=p_mem,
-        gmag=gmag,
-        pmem_min=pmem_min,
-        method=method,
-        cluster_component=cluster_component,
-        reason=reason,
-        simbad_pm_ra=simbad_pm_ra,
-        simbad_pm_de=simbad_pm_de,
-        simbad_plx=simbad_plx,
+    start_plot_process(
+        plot_cluster_membership_diagnostics,
+        (),
+        {
+            "output_dir": plot_stub,
+            "file_type": file_type,
+            "pm_ra": pm_ra,
+            "pm_de": pm_de,
+            "plx": plx,
+            "p_mem": p_mem,
+            "gmag": gmag,
+            "pmem_min": pmem_min,
+            "method": method,
+            "cluster_component": cluster_component,
+            "reason": reason,
+            "simbad_pm_ra": simbad_pm_ra,
+            "simbad_pm_de": simbad_pm_de,
+            "simbad_plx": simbad_plx,
+        },
     )
 
 

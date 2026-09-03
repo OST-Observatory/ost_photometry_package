@@ -15,6 +15,7 @@ import numpy as np
 from astropy.table import Table
 
 from .. import terminal_output
+from ..core.parallel import start_plot_process
 from ..output_layout import diagnostics_dir
 from . import correlate, plots
 
@@ -30,6 +31,10 @@ _QC_PLOT_COLUMNS = (
     "flags",
     "fwhm",
 )
+
+
+def _bg_plot(func, *args, **kwargs) -> None:
+    start_plot_process(func, args, kwargs)
 
 
 def _copy_qc_plot_columns(src: Table, dest: Table) -> None:
@@ -169,7 +174,8 @@ def _plot_catalog_extraction_checks(
         if used is not None:
             used_by_band[filt] = used
         if dp.calibration_instrumental_vs_catalog:
-            plots.plot_instrumental_vs_catalog_magnitudes(
+            _bg_plot(
+                plots.plot_instrumental_vs_catalog_magnitudes,
                 m_inst,
                 m_cat,
                 out_d,
@@ -182,7 +188,8 @@ def _plot_catalog_extraction_checks(
                 residual_label=r"$m_\mathrm{cat}-m_\mathrm{inst}-T\cdot c-\mathrm{ZP}$ [mag]",
             )
     if dp.calibration_zeropoint_residual_histogram and zp_residuals:
-        plots.plot_zeropoint_residual_distribution(
+        _bg_plot(
+            plots.plot_zeropoint_residual_distribution,
             None,
             out_d,
             file_type,
@@ -210,7 +217,8 @@ def _plot_catalog_extraction_checks(
                 used_masks = {
                     f: used_by_band[f] for f in by_band if f in used_by_band
                 }
-                plots.plot_zeropoint_residual_vs_color(
+                _bg_plot(
+                    plots.plot_zeropoint_residual_vs_color,
                     color,
                     None,
                     out_d,
@@ -254,7 +262,8 @@ def _plot_catalog_extraction_checks(
         stem = f"calibration_color_color_cal_stars_{epoch_id}"
         if len(pairs) > 1:
             stem = f"calibration_color_color_cal_stars_{f1}_{f2}_{epoch_id}"
-        plots.plot_calibration_color_color_cal_stars(
+        _bg_plot(
+            plots.plot_calibration_color_color_cal_stars,
             color,
             color_obs,
             out_d,
@@ -364,7 +373,8 @@ def _write_inter_filter_geometry(
         summaries.append(summary)
         if not write_figure:
             continue
-        plots.plot_inter_filter_correlation_geometry(
+        _bg_plot(
+            plots.plot_inter_filter_correlation_geometry,
             fr["x"],
             fr["y"],
             fr["dx"],
@@ -421,7 +431,8 @@ def run_diagnostic_plots_phase(
                     continue
                 try:
                     if dp.photometry_mag_vs_error_scatter:
-                        plots.plot_photometry_mag_vs_error(
+                        _bg_plot(
+                            plots.plot_photometry_mag_vs_error,
                             img.photometry,
                             out_d,
                             ft,
@@ -452,7 +463,8 @@ def run_diagnostic_plots_phase(
                             am = getattr(im, "air_mass", None)
                             airmasses.append(float(am) if am is not None else np.nan)
                         if len(mags) > 1:
-                            plots.plot_photometry_mag_vs_error_overview(
+                            _bg_plot(
+                                plots.plot_photometry_mag_vs_error_overview,
                                 mags,
                                 errs,
                                 out_d,
@@ -476,7 +488,8 @@ def run_diagnostic_plots_phase(
                         if rmax < 2.0:
                             continue
                         radii = np.linspace(0.75, min(25.0, rmax), 35)
-                        plots.plot_aperture_growth_curve(
+                        _bg_plot(
+                            plots.plot_aperture_growth_curve,
                             data,
                             x0,
                             y0,
@@ -526,7 +539,8 @@ def run_diagnostic_plots_phase(
                     if len(pair_tbl) > 0:
                         ecsv_path = out_d / "exposure_pairing_pairs.ecsv"
                         pair_tbl.write(ecsv_path, format="ascii.ecsv", overwrite=True)
-                        plots.plot_exposure_pairing_overview(
+                        _bg_plot(
+                            plots.plot_exposure_pairing_overview,
                             pair_tbl,
                             out_d,
                             ft,
@@ -553,7 +567,8 @@ def run_diagnostic_plots_phase(
                     )
                 )
                 if sep_ref.size:
-                    plots.plot_inter_filter_correlation_separations(
+                    _bg_plot(
+                        plots.plot_inter_filter_correlation_separations,
                         sep_ref,
                         out_d,
                         ft,
@@ -603,7 +618,8 @@ def run_diagnostic_plots_phase(
                     pair_labels.append(f"{i:03d}")
                     write_pair = max_pair_plots is None or n_written < max_pair_plots
                     if write_pair and max_pair_plots != 0:
-                        plots.plot_inter_filter_correlation_separations(
+                        _bg_plot(
+                            plots.plot_inter_filter_correlation_separations,
                             sep_i,
                             out_d,
                             ft,
@@ -642,7 +658,8 @@ def run_diagnostic_plots_phase(
                         )
 
                 if seps_by_pair:
-                    plots.plot_inter_filter_correlation_separations_overview(
+                    _bg_plot(
+                        plots.plot_inter_filter_correlation_separations_overview,
                         seps_by_pair,
                         pair_labels,
                         out_d,
@@ -652,7 +669,8 @@ def run_diagnostic_plots_phase(
                         pairing_mode=pairing_mode,
                     )
                     if geometry_summaries:
-                        plots.plot_inter_filter_correlation_geometry_overview(
+                        _bg_plot(
+                            plots.plot_inter_filter_correlation_geometry_overview,
                             geometry_summaries,
                             out_d,
                             ft,
@@ -711,7 +729,8 @@ def run_diagnostic_plots_phase(
                         and dp.calibration_crossmatch_separation_histogram
                         and sep_cal.size
                     ):
-                        plots.plot_calibration_crossmatch_separations(
+                        _bg_plot(
+                            plots.plot_calibration_crossmatch_separations,
                             sep_cal,
                             out_d,
                             ft,
@@ -727,7 +746,8 @@ def run_diagnostic_plots_phase(
                             if eid == first_eid
                             else f"calibration_crossmatch_diagnostics_{eid}"
                         )
-                        plots.plot_calibration_crossmatch_diagnostics(
+                        _bg_plot(
+                            plots.plot_calibration_crossmatch_diagnostics,
                             t,
                             out_d,
                             ft,
@@ -742,7 +762,8 @@ def run_diagnostic_plots_phase(
                                 if eid == first_eid
                                 else f"calibration_crossmatch_geometry_{eid}"
                             )
-                            plots.plot_inter_filter_correlation_geometry(
+                            _bg_plot(
+                                plots.plot_inter_filter_correlation_geometry,
                                 x,
                                 y,
                                 dx,
@@ -771,7 +792,8 @@ def run_diagnostic_plots_phase(
                                     0,
                                 )
                             )
-                        plots.plot_combined_separation_histograms(
+                        _bg_plot(
+                            plots.plot_combined_separation_histograms,
                             sep_inter,
                             sep_cal,
                             out_d,
@@ -800,7 +822,8 @@ def run_diagnostic_plots_phase(
                                 sub["y_fit"] = t["y"]
                             elif "y_fit" in t.colnames:
                                 sub["y_fit"] = t["y_fit"]
-                            plots.plot_photometry_mag_vs_error(
+                            _bg_plot(
+                            plots.plot_photometry_mag_vs_error,
                                 sub,
                                 out_d,
                                 ft,

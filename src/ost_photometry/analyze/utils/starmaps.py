@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import multiprocessing as mp
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -11,6 +10,7 @@ from astropy.table import Table
 
 from ... import terminal_output
 from ... import utilities as base_utilities
+from ...core.parallel import start_plot_process
 from ...output_layout import diagnostics_dir, extraction_plot_dir
 from .. import plots
 
@@ -103,19 +103,29 @@ def prepare_and_plot_starmap(
         else:
             title_rts = filename_suffix
 
-    #   Plot star map
-    plots.starmap(
-        str(extraction_plot_dir(image.out_path, gallery=gallery)),
-        data,
-        filter_,
-        tbl_xy,
-        label=label,
-        rts=title_rts,
-        filename_suffix=filename_suffix,
-        wcs_image=image.wcs,
-        use_wcs_projection=use_wcs_projection_for_star_maps,
-        terminal_logger=terminal_logger,
-        file_type=file_type_plots,
+    #   Plot star map (child process: extraction is already done)
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(
+            f"Plot {filter_} band image with stars overlaid ({title_rts})",
+            style_name='NORMAL',
+            indent=2,
+        )
+    start_plot_process(
+        plots.starmap,
+        (
+            str(extraction_plot_dir(image.out_path, gallery=gallery)),
+            data,
+            filter_,
+            tbl_xy,
+        ),
+        {
+            'label': label,
+            'rts': title_rts,
+            'filename_suffix': filename_suffix,
+            'wcs_image': image.wcs,
+            'use_wcs_projection': use_wcs_projection_for_star_maps,
+            'file_type': file_type_plots,
+        },
     )
 
 
@@ -149,34 +159,28 @@ def prepare_and_plot_starmap_from_observation(
         style_name='NORMAL',
     )
 
-    jobs: list[mp.Process] = []
     for filter_ in filter_list:
         rts = 'final version'
 
         #   Get reference image
         image = observation.image_series_dict[filter_].reference_image
 
-        #   Using multiprocessing to create the plot
-        p = mp.Process(
-            target=plots.starmap,
-            args=(
+        start_plot_process(
+            plots.starmap,
+            (
                 str(diagnostics_dir(image.out_path, "correlation")),
                 image.get_data(),
                 filter_,
                 image.photometry,
             ),
-            kwargs={
+            {
                 'rts': rts,
                 'label': f'Stars identified in {filter_} filter',
                 'wcs_image': image.wcs,
                 'use_wcs_projection': use_wcs_projection_for_star_maps,
                 'file_type': file_type_plots,
-            }
+            },
         )
-        p.start()
-        jobs.append(p)
-    for proc in jobs:
-        proc.join()
     terminal_output.print_to_terminal('')
 
 
@@ -237,7 +241,6 @@ def prepare_and_plot_starmap_from_image_series(
         data=[xs, ys],
     )
 
-    jobs: list[mp.Process] = []
     for j, image_id in enumerate(img_ids):
         if not plots_for_all_images and j != image_series.reference_image_index:
             continue
@@ -249,15 +252,15 @@ def prepare_and_plot_starmap_from_image_series(
             if fname
             else filename_suffix
         )
-        p = mp.Process(
-            target=plots.starmap,
-            args=(
+        start_plot_process(
+            plots.starmap,
+            (
                 str(diagnostics_dir(image_series.out_path, "correlation")),
                 img.get_data(),
                 image_series.filter_,
                 img.photometry,
             ),
-            kwargs={
+            {
                 'tbl_2': tbl_xy_calib,
                 'rts': rts,
                 'filename_suffix': filename_suffix,
@@ -266,13 +269,9 @@ def prepare_and_plot_starmap_from_image_series(
                 'wcs_image': image_series.wcs,
                 'use_wcs_projection': use_wcs_projection_for_star_maps,
                 'file_type': file_type_plots,
-            }
+            },
         )
-        p.start()
-        jobs.append(p)
         terminal_output.print_to_terminal('')
-    for proc in jobs:
-        proc.join()
 
 
 __all__ = [

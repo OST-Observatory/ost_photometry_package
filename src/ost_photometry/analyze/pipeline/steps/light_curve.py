@@ -7,6 +7,7 @@ from astropy.table import Table, vstack
 from astropy.time import Time
 
 from .... import terminal_output
+from ....core.parallel import start_plot_process
 from ....output_layout import results_dir, tables_dir
 from ... import calibration
 from ...ooi_ids import ooi_photometry_id
@@ -381,20 +382,20 @@ class LightCurveStep(base.PipelineStep):
                     )
                     tt = getattr(obj, "transit_time", None) if obj is not None else None
                     per = _parse_period(getattr(obj, "period", None) if obj else None)
-                    plot_from_light_curves_table(
-                        lc,
-                        oid,
-                        filter_,
-                        output_dir,
-                        name_object=name,
-                        file_type=file_type,
-                        transit_time=tt,
-                        period=per,
-                        binning_factor=config.light_curve_binning_factor,
-                        time_scale=config.light_curve_time_scale,
-                        phase_cycles=config.light_curve_phase_cycles,
-                        show_airmass=config.light_curve_show_airmass,
-                        magnitude_system=mag_sys,
+                    start_plot_process(
+                        plot_from_light_curves_table,
+                        (lc, oid, filter_, output_dir),
+                        {
+                            "name_object": name,
+                            "file_type": file_type,
+                            "transit_time": tt,
+                            "period": per,
+                            "binning_factor": config.light_curve_binning_factor,
+                            "time_scale": config.light_curve_time_scale,
+                            "phase_cycles": config.light_curve_phase_cycles,
+                            "show_airmass": config.light_curve_show_airmass,
+                            "magnitude_system": mag_sys,
+                        },
                     )
 
             if config.plot_light_curve_calibration_objects and cal_ids_all:
@@ -408,26 +409,29 @@ class LightCurveStep(base.PipelineStep):
                     n=config.light_curve_calibrator_qc_n,
                     exclude=ooi_set,
                 )
-                lc_plots.plot_check_star_qc(
-                    lc,
-                    output_dir,
-                    filter_=filter_,
-                    ooi_ids=ooi_pairs,
-                    calibrator_ids=top,
-                    file_type=file_type,
-                    time_scale=config.light_curve_time_scale,
-                    show_airmass=config.light_curve_show_airmass,
-                    magnitude_system=mag_sys,
+                start_plot_process(
+                    lc_plots.plot_check_star_qc,
+                    (lc, output_dir),
+                    {
+                        "filter_": filter_,
+                        "ooi_ids": ooi_pairs,
+                        "calibrator_ids": top,
+                        "file_type": file_type,
+                        "time_scale": config.light_curve_time_scale,
+                        "show_airmass": config.light_curve_show_airmass,
+                        "magnitude_system": mag_sys,
+                    },
                 )
-                lc_plots.plot_calibrator_variability(
-                    lc,
-                    stats,
-                    output_dir,
-                    filter_=filter_,
-                    top_ids=top,
-                    file_type=file_type,
-                    time_scale=config.light_curve_time_scale,
-                    magnitude_system=mag_sys,
+                start_plot_process(
+                    lc_plots.plot_calibrator_variability,
+                    (lc, stats, output_dir),
+                    {
+                        "filter_": filter_,
+                        "top_ids": top,
+                        "file_type": file_type,
+                        "time_scale": config.light_curve_time_scale,
+                        "magnitude_system": mag_sys,
+                    },
                 )
 
             if config.plot_light_curve_all_objects:
@@ -440,15 +444,17 @@ class LightCurveStep(base.PipelineStep):
                     else []
                 )
                 extra = [int(i) for i in extra]
-                lc_plots.plot_light_curve_overview(
-                    lc,
-                    output_dir,
-                    filter_=filter_,
-                    ooi_ids=ooi_pairs,
-                    extra_ids=extra,
-                    file_type=file_type,
-                    time_scale=config.light_curve_time_scale,
-                    magnitude_system=mag_sys,
+                start_plot_process(
+                    lc_plots.plot_light_curve_overview,
+                    (lc, output_dir),
+                    {
+                        "filter_": filter_,
+                        "ooi_ids": ooi_pairs,
+                        "extra_ids": extra,
+                        "file_type": file_type,
+                        "time_scale": config.light_curve_time_scale,
+                        "magnitude_system": mag_sys,
+                    },
                 )
 
         if stats_parts:
