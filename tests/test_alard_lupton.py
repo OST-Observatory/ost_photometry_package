@@ -108,8 +108,44 @@ def test_seeing_kernel_params_follows_absolute_psf():
 
 def test_kernel_basis_shape_and_normalization():
     bases = kernel_basis(15)
-    assert bases.shape == (10, 15, 15)
+    assert bases.shape == (5, 15, 15)
     assert np.all(np.isfinite(bases))
+
+
+def test_spatial_phot_recovers_flux_plane():
+    from ost_photometry.analyze.subtraction_alard_lupton import (
+        _eval_spatial_phot,
+        _fit_spatial_phot,
+        _norm_xy,
+    )
+
+    shape = (200, 200)
+    ratios = np.array(
+        [1.0 + 0.4 * _norm_xy(x, y, shape)[0] for x, y in _STAR_XY16],
+        dtype=float,
+    )
+    coeff = _fit_spatial_phot(_STAR_XY16, ratios, shape, order=1)
+    assert coeff.size == 3
+    assert abs(coeff[0] - 1.0) < 0.05
+    assert abs(coeff[1] - 0.4) < 0.08
+    phot = _eval_spatial_phot(coeff, shape)
+    assert float(phot[100, 20]) < float(phot[100, 180])
+
+
+def test_alard_lupton_spatial_phot_flattens_flux_gradient():
+    shape = (260, 260)
+    stars = _star_field(shape, _STAR_XY16, fwhm=3.0)
+    xx = np.indices(shape)[1]
+    gain = 0.75 + 0.5 * xx / (shape[1] - 1)
+    sci = gain * gaussian_filter(stars, sigma=0.8) + 10.0
+    tmpl = stars + 5.0
+    diff, method = alard_lupton_difference(sci, tmpl, star_xy=_STAR_XY16, fwhm=4.0)
+    assert method == "alard_lupton"
+    left = float(np.median(diff[:, :70]))
+    right = float(np.median(diff[:, -70:]))
+    assert abs(left) < 20.0
+    assert abs(right) < 20.0
+    assert abs(left - right) < 25.0
 
 
 def test_alard_lupton_cancels_convolved_template():

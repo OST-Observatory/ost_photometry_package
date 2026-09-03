@@ -12,10 +12,10 @@ from scipy.signal import fftconvolve
 
 from .. import terminal_output
 
-# Three Gaussians × polynomials (Alard & Lupton 1998). Keep the polynomial
-# degrees modest so the kernel cannot add an extra flux scale or negative rings.
+# Three Gaussians × polynomials (Alard & Lupton 1998). Degree 2 on the
+# narrowest Gaussian rings (donuts with a core spike); keep this modest.
 _DEFAULT_SIGMA_SCALE = (0.7, 1.5, 3.0)
-_DEFAULT_DEGREES = (2, 1, 0)
+_DEFAULT_DEGREES = (1, 0, 0)
 
 
 def _as_2d(data) -> np.ndarray:
@@ -428,11 +428,12 @@ def _aperture_flux_pairs(
     *,
     half: int,
     aperture_radius: float,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Science and template aperture fluxes at ``star_xy`` (same sky treatment)."""
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
     fs_list: list[float] = []
     ft_list: list[float] = []
+    xy_list: list[tuple[float, float]] = []
     for x, y in np.asarray(star_xy, dtype=float).reshape(-1, 2):
         xt, yt = _shift_to_peak(tmpl, x, y, half, max_shift=float(min(half - 2, 10)))
         s = _cutout(sci, x, y, half)
@@ -446,9 +447,15 @@ def _aperture_flux_pairs(
         if abs(ft) > 1e-6 and abs(fs) > 1e-6 and np.isfinite(fs) and np.isfinite(ft):
             fs_list.append(fs)
             ft_list.append(ft)
+            xy_list.append((float(x), float(y)))
     if not fs_list:
-        return np.empty(0), np.empty(0)
-    return np.asarray(fs_list, dtype=float), np.asarray(ft_list, dtype=float)
+        empty = np.empty(0, dtype=float)
+        return empty, empty, np.empty((0, 2), dtype=float)
+    return (
+        np.asarray(fs_list, dtype=float),
+        np.asarray(ft_list, dtype=float),
+        np.asarray(xy_list, dtype=float),
+    )
 
 
 def _core_residual_terciles(
@@ -586,6 +593,70 @@ def _spatial_n_poly(spatial_order: int, n_stamps: int) -> int:
     if order >= 1 and used >= 8:
         return 3
     return 1
+
+
+def _fit_spatial_phot(
+    xy: np.ndarray,
+    ratios: np.ndarray,
+    shape: tuple[int, int],
+    *,
+    order: int = 1,
+) -> np.ndarray:
+    """Robust polynomial ``science/template`` vs position; constant if too few stamps."""
+    xy_a = np.asarray(xy, dtype=float).reshape(-1, 2)
+    r = np.asarray(ratios, dtype=float).ravel()
+    n = min(len(xy_a), len(r))
+    if n == 0:
+        return np.array([1.0])
+    xy_a = xy_a[:n]
+    r = r[:n]
+    ok = np.isfinite(r) & np.isfinite(xy_a).all(axis=1) & (r > 0.05) & (r < 20.0)
+    xy_a = xy_a[ok]
+    r = r[ok]
+    if r.size == 0:
+        return np.array([1.0])
+    if r.size >= 8:
+        lo, hi = np.percentile(r, [16.0, 84.0])
+        clip = (r >= lo) & (r <= hi)
+        if int(np.count_nonzero(clip)) >= 8:
+            xy_a, r = xy_a[clip], r[clip]
+    n_poly = _spatial_n_poly(order, len(r))
+    if n_poly == 1:
+        return np.array([float(np.median(r))])
+    design = np.array(
+        [_spatial_poly(*_norm_xy(x, y, shape), n_poly) for x, y in xy_a],
+        dtype=np.float64,
+    )
+    coeff, *_ = np.linalg.lstsq(design, r, rcond=None)
+    return np.asarray(coeff, dtype=np.float64)
+
+
+def _eval_spatial_phot(coeff: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    """Evaluate a photometric polynomial on the full frame; clipped to a sane range."""
+    ny, nx = int(shape[0]), int(shape[1])
+    c = np.asarray(coeff, dtype=np.float64).ravel()
+    if c.size <= 1:
+        val = float(c[0]) if c.size else 1.0
+        if not np.isfinite(val) or abs(val) < 1e-6 or abs(val) > 1e3:
+            val = 1.0
+        return np.full((ny, nx), val, dtype=np.float64)
+    yy, xx = np.indices((ny, nx))
+    xn = 2.0 * xx / max(nx - 1, 1) - 1.0
+    yn = 2.0 * yy / max(ny - 1, 1) - 1.0
+    terms = _spatial_poly(xn, yn, int(c.size))
+    out = np.zeros((ny, nx), dtype=np.float64)
+    for a, t in zip(c, terms, strict=True):
+        out += a * t
+    return np.clip(out, 0.15, 8.0)
+
+
+def _phot_log_note(coeff: np.ndarray) -> str:
+    c = np.asarray(coeff, dtype=float).ravel()
+    if c.size <= 1:
+        return f"phot_match={float(c[0]) if c.size else 1.0:.3f}"
+    if c.size == 3:
+        return f"phot_match={c[0]:.3f}{c[1]:+.3f}x{c[2]:+.3f}y"
+    return f"phot_match=quad({c[0]:.3f})"
 
 
 class SpatialKernel:
@@ -897,27 +968,40 @@ def alard_lupton_difference(
             matched = kernel.apply(sci0)
             left, right = matched, tmpl_s
         try:
-            fs, ft = _aperture_flux_pairs(
+            fs, ft, xy_phot = _aperture_flux_pairs(
                 left, right, xy_kernel, half=phot_half, aperture_radius=phot_radius
             )
             ratios = fs / ft
-            phot = _robust_ratio_median(list(ratios), list(fs))
+            phot_coeff = _fit_spatial_phot(xy_phot, ratios, left.shape, order=1)
             p16, p84 = np.percentile(ratios, [16.0, 84.0])
         except Exception:
-            phot, p16, p84, ratios = 1.0, 1.0, 1.0, np.array([1.0])
-        if not np.isfinite(phot) or abs(phot) < 1e-6 or abs(phot) > 1e3:
-            phot = 1.0
-        spread = float(p84 / max(abs(p16), 1e-6))
-        if spread > 2.0:
-            terminal_output.print_to_terminal(
-                f"Aperture flux ratios are too scattered (p84/p16={spread:.2f}); "
-                "keeping the kernel flux scale (phot_match=1). Crowding and "
-                "B vs PanSTARRS-g colour both limit a single factor.",
-                indent=2,
-                style_name="WARNING",
-            )
-            phot = 1.0
-        residual = left - phot * right
+            phot_coeff, p16, p84, ratios = np.array([1.0]), 1.0, 1.0, np.array([1.0])
+        if phot_coeff.size <= 1:
+            phot0 = float(phot_coeff[0]) if phot_coeff.size else 1.0
+            if not np.isfinite(phot0) or abs(phot0) < 1e-6 or abs(phot0) > 1e3:
+                phot_coeff = np.array([1.0])
+            spread = float(p84 / max(abs(p16), 1e-6))
+            if spread > 2.0:
+                terminal_output.print_to_terminal(
+                    f"Aperture flux ratios are too scattered (p84/p16={spread:.2f}); "
+                    "keeping the kernel flux scale (phot_match=1). Crowding and "
+                    "B vs PanSTARRS-g colour both limit a single factor.",
+                    indent=2,
+                    style_name="WARNING",
+                )
+                phot_coeff = np.array([1.0])
+        else:
+            spread = float(p84 / max(abs(p16), 1e-6))
+            if spread > 2.0:
+                terminal_output.print_to_terminal(
+                    f"Aperture flux ratios are too scattered (p84/p16={spread:.2f}); "
+                    "applying a spatial flux plane (kernel sum stays 1). Crowding "
+                    "and B vs PanSTARRS-g colour still limit a single factor.",
+                    indent=2,
+                    style_name="WARNING",
+                )
+        phot_map = _eval_spatial_phot(phot_coeff, left.shape)
+        residual = left - phot_map * right
         _, resid_sky, _ = sigma_clipped_stats(residual, sigma=3.0, maxiters=5)
         if not np.isfinite(resid_sky):
             resid_sky = 0.0
@@ -938,7 +1022,7 @@ def alard_lupton_difference(
         terminal_output.print_to_terminal(
             f"Alard–Lupton kernel ({n_used} stamps, ksize={ksize}, "
             f"sigmas={used_sigmas[0]:.1f}/{used_sigmas[1]:.1f}/{used_sigmas[2]:.1f}, "
-            f"{spatial_note}, flux_scale={scale:.4g}, phot_match={phot:.3f} "
+            f"{spatial_note}, flux_scale={scale:.4g}, {_phot_log_note(phot_coeff)} "
             f"(p16={p16:.3f}, p84={p84:.3f}, n={len(ratios)}), "
             f"kernel_sum={ksum:.3f}, {which}{seeing})",
             indent=2,
