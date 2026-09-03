@@ -48,6 +48,12 @@ def epoch_native_mag_err_columns(tbl: Table, filter_: str) -> tuple[str, str] | 
     return None
 
 
+def epoch_has_catalog_calibrated_mags(tbl: Table, filter_: str) -> bool:
+    """True if ``tbl`` has ``mag_cal_<filter>`` / ``err_cal_<filter>``."""
+    mc, ec = f"mag_cal_{filter_}", f"err_cal_{filter_}"
+    return mc in tbl.colnames and ec in tbl.colnames
+
+
 def is_epoch_native_photometry_table(
     data: Table,
     filter_: str,

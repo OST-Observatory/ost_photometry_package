@@ -16,6 +16,7 @@ from ...post_processing.light_curve import (
     build_light_curves_table,
     build_light_curves_table_from_flux,
     calibrator_variability_stats,
+    epoch_has_catalog_calibrated_mags,
     ids_excluding,
     is_epoch_native_photometry_table,
     plot_from_light_curves_table,
@@ -93,8 +94,8 @@ class LightCurveStep(base.PipelineStep):
     After calibration, write ``tables/light_curves.ecsv`` and plot views.
 
     Primary path: epoch-native ``table_magnitudes`` with ``mag_cal_*`` /
-    ``err_cal_*``. Flux fallback fills the same long table from normalized
-    ``ImageSeries`` flux when no epoch-native mag/flux columns exist.
+    ``err_cal_*``. Bands without catalog calibration (e.g. Clear) use the
+    flux fallback: epoch quasi-ZP then per-star continuum ≈ 1.
     """
 
     name = "light_curve"
@@ -120,10 +121,16 @@ class LightCurveStep(base.PipelineStep):
             )
 
         for filter_ in context.filter_list:
-            if jd_ok and is_epoch_native_photometry_table(
-                tbl,
-                filter_,
-                quantity=config.light_curve_quantity,
+            if jd_ok and (
+                (
+                    config.light_curve_quantity == "magnitude"
+                    and epoch_has_catalog_calibrated_mags(tbl, filter_)
+                )
+                or is_epoch_native_photometry_table(
+                    tbl,
+                    filter_,
+                    quantity=config.light_curve_quantity,
+                )
             ):
                 return False
 
@@ -181,13 +188,10 @@ class LightCurveStep(base.PipelineStep):
         parts: list[Table] = []
         for filter_ in context.filter_list:
             use_table = (
-                has_tbl
+                config.light_curve_quantity == "magnitude"
+                and has_tbl
                 and jd_ok
-                and is_epoch_native_photometry_table(
-                    tbl,
-                    filter_,
-                    quantity=config.light_curve_quantity,
-                )
+                and epoch_has_catalog_calibrated_mags(tbl, filter_)
             )
             image_series = obs.image_series_dict.get(filter_)
             use_flux = bool(
@@ -229,8 +233,8 @@ class LightCurveStep(base.PipelineStep):
                     style_name="OKBLUE",
                 )
                 terminal_output.print_to_terminal(
-                    "No ``mag_cal_*`` light-curve path for this filter. "
-                    "Using normalized flux for the light-curve table.",
+                    "No catalog-calibrated magnitudes for this filter. "
+                    "Using relative flux (epoch quasi-ZP, per-star continuum ≈ 1).",
                     indent=2,
                     style_name="WARNING",
                 )

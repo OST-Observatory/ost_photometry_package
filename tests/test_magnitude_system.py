@@ -257,3 +257,26 @@ def test_target_filter_system_alias():
     assert ms.apply_target_filter_system_alias("SDSS") == ("sdss", "ab")
     assert ms.apply_target_filter_system_alias("AB") == (None, "ab")
     assert ms.apply_target_filter_system_alias("BESSELL") == ("bessell", "vega")
+
+
+def test_clear_filter_does_not_expect_catalog_standards():
+    ms = _ms_mod()
+    assert ms.filter_expects_catalog_standards("V")
+    assert ms.filter_expects_catalog_standards("g")
+    assert not ms.filter_expects_catalog_standards("Clear")
+    assert not ms.filter_expects_catalog_standards("C")
+    assert not ms.filter_expects_catalog_standards("luminance")
+
+
+def test_partition_catalog_fit_skips_clear_without_aborting():
+    ms = _ms_mod()
+    cat = Table({"mag_std_V": np.array([12.0, 13.0]), "mag_std_B": np.array([12.5, 13.5])})
+    covered, missing = ms.partition_catalog_fit_filters(["V", "Clear"], cat)
+    assert covered == ["V"]
+    assert missing == ["Clear"]
+    covered_none, missing_none = ms.partition_catalog_fit_filters(["Clear"], None)
+    assert covered_none == []
+    assert missing_none == ["Clear"]
+    with pytest.raises(ValueError, match="missing columns"):
+        ms.require_catalog_bands_for_filters(cat, ["V", "Clear"])
+    ms.require_catalog_bands_for_filters(cat, ["V"])

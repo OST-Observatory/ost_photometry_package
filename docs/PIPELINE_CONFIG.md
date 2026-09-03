@@ -310,6 +310,10 @@ Catalog systems (examples): APASS/Stetson → Vega; SDSS DR → AB. See `CATALOG
 | `median_zp`  | One ZP per exposure (e.g. stacked fields)  | One ZP per night                | One ZP for all data     | Apply preset ZP   |
 | `linear_fit` | T/ZP per exposure; rolling smooth optional | One T/ZP per night (default for time series) | One T/ZP for all nights | Apply preset T/ZP |
 
+Filters without catalog standards (Clear, luminance, white, …) skip the catalog
+download and ZP fit. Mixed campaigns (e.g. V + Clear) still calibrate V; Clear
+keeps instrumental flux and gets a relative light curve (continuum ≈ 1).
+
 
 
 
@@ -386,7 +390,7 @@ The step writes `tables/light_curves.ecsv` and plots views of that table.
 | `plot_light_curve_calibration_objects` | False | Check-star QC (OOI vs K most variable **catalog** calibrators; OOI ids are dropped from that pool) and ensemble variability under `diagnostics/lightcurves/` |
 | `plot_light_curve_all_objects` | False | Overview raster (OOI + `light_curve_overview_n` random stars), not one PDF per star |
 | `light_curve_calibrator_qc_n` | 3 | How many calibrators (largest excess RMS, excluding OOI) appear on the QC panel |
-| `light_curve_quantity` | `magnitude` | `mag_cal_*` vs normalized flux fallback |
+| `light_curve_quantity` | `magnitude` | Use `mag_cal_*` when present; otherwise the normalized-flux fallback (Clear / no catalog ZP). `flux` forces that fallback even when `mag_cal_*` exist. |
 | `light_curve_color` | None | e.g. `B-V` colour rows and colour light curve |
 | `light_curve_time_scale` | `bjd_tdb` | Barycentric JD when RA/Dec + site exist; else `jd` |
 | `light_curve_outlier_sigma` | 5 | Per-source sigma clip; `None` disables. Flags stay in the table |

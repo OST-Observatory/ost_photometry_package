@@ -37,6 +37,22 @@ META_CONVERSION_NOTE = "ost_photometry.magnitude_conversion"
 BESSELL_FILTERS = frozenset({"U", "B", "V", "R", "I"})
 SDSS_FILTERS = frozenset({"u", "g", "r", "i", "z", "u`", "g`", "r`", "i`", "z`", "z-s`"})
 
+# Unfiltered / luminance / white glass: no catalog ZP. Case-insensitive aliases.
+UNCALIBRATED_BROADBAND_ALIASES = frozenset({
+    "c",
+    "clear",
+    "l",
+    "lum",
+    "luminance",
+    "nofilter",
+    "no_filter",
+    "none",
+    "open",
+    "unfiltered",
+    "w",
+    "white",
+})
+
 # m_AB = m_Vega + offset  (Bessell / Johnson–Cousins; Blanton & Roweis 2007 style)
 # SDSS ugriz are defined on (nearly) the AB system → offset 0 when already AB.
 VEGA_TO_AB_OFFSET: dict[str, float] = {
@@ -371,6 +387,55 @@ def table_magnitude_system(tbl: Table | None) -> str:
     return str(tbl.meta.get(META_MAGNITUDE_SYSTEM, "vega"))
 
 
+def filter_expects_catalog_standards(filter_: str) -> bool:
+    """True for Bessell UBVRI / SDSS ugriz; False for Clear, luminance, white, …"""
+    key = normalize_filter_name(filter_).strip()
+    if key.lower() in UNCALIBRATED_BROADBAND_ALIASES:
+        return False
+    return key in BESSELL_FILTERS or key in SDSS_FILTERS or str(filter_).strip() in SDSS_FILTERS
+
+
+def _catalog_std_column_is_usable(
+    standard_table: Table,
+    filter_: str,
+    *,
+    std_prefix: str = "mag_std_",
+) -> bool:
+    import numpy as np
+
+    col = f"{std_prefix}{filter_}"
+    if col not in standard_table.colnames:
+        return False
+    vals = np.asarray(standard_table[col], dtype=float)
+    return bool(np.any(np.isfinite(vals)))
+
+
+def partition_catalog_fit_filters(
+    filters: Sequence[str],
+    standard_table: Table | None,
+    *,
+    std_prefix: str = "mag_std_",
+) -> tuple[list[str], list[str]]:
+    """
+    Split ``filters`` into those with a usable ``mag_std_*`` column and the rest.
+
+    A custom catalog that *does* provide ``mag_std_Clear`` still counts as covered.
+    """
+    covered: list[str] = []
+    missing: list[str] = []
+    if standard_table is None or len(standard_table) == 0:
+        return [], [str(f) for f in filters]
+    for f in filters:
+        name = str(f)
+        if _catalog_std_column_is_usable(
+            standard_table, name, std_prefix=std_prefix
+        ):
+            covered.append(name)
+        else:
+            missing.append(name)
+    return covered, missing
+
+
 def require_catalog_bands_for_filters(
     standard_table: Table,
     filters: Sequence[str],
@@ -464,14 +529,17 @@ __all__ = [
     "OutputFilterSet",
     "OutputMagnitudeSystem",
     "SDSS_FILTERS",
+    "UNCALIBRATED_BROADBAND_ALIASES",
     "VEGA_TO_AB_OFFSET",
     "annotate_table_magnitude_meta",
     "apply_target_filter_system_alias",
+    "filter_expects_catalog_standards",
     "format_magnitude_output_label",
     "infer_filter_set",
     "log_magnitude_output",
     "magnitude_system_axis_suffix",
     "normalize_filter_name",
+    "partition_catalog_fit_filters",
     "require_catalog_bands_for_filters",
     "resolve_catalog_magnitude_system",
     "resolve_effective_output",

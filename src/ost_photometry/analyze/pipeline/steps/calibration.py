@@ -7,6 +7,7 @@ from __future__ import annotations
 import warnings
 
 import numpy as np
+from astropy.table import Table
 
 from .... import terminal_output
 from ...calibration import CalibrationEngine, prepare_calibration_check_plots
@@ -95,7 +96,10 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
     """Attach ``mag_std_*`` from the calibration catalog to each epoch table."""
     from astropy.coordinates import SkyCoord
 
-    from ...post_processing.magnitude_systems import require_catalog_bands_for_filters
+    from ...post_processing.magnitude_systems import (
+        filter_expects_catalog_standards,
+        require_catalog_bands_for_filters,
+    )
 
     catalog = context.calibration_catalog
     first_tbl = next(iter(epochs.values()))
@@ -104,7 +108,12 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
         np.mean(first_tbl["dec"]),
         unit="deg",
     )
-    if catalog is None:
+    needs_catalog = any(
+        filter_expects_catalog_standards(f) for f in context.filter_list
+    )
+    if catalog is None and (
+        needs_catalog or bool(config.path_calibration_file)
+    ):
         catalog = fetch_standard_calibration_catalog(
             context.filter_list,
             field_center,
@@ -115,6 +124,13 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
             path_calibration_file=config.path_calibration_file,
             exclude_known_variables=config.exclude_known_variables,
             exclude_known_variables_radius=config.exclude_known_variables_radius,
+        )
+    elif catalog is None:
+        terminal_output.print_to_terminal(
+            "Skipping calibration-catalog download: no standard photometric "
+            f"bands in {list(context.filter_list)}.",
+            indent=2,
+            style_name="INFO",
         )
     elif (
         config.exclude_known_variables
@@ -130,7 +146,11 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
         )
     context.calibration_catalog = catalog
     if catalog is not None and len(catalog) > 0 and context.filter_list:
-        require_catalog_bands_for_filters(catalog, context.filter_list)
+        expected = [
+            f for f in context.filter_list if filter_expects_catalog_standards(f)
+        ]
+        if expected:
+            require_catalog_bands_for_filters(catalog, expected)
     out = {}
     for epoch_id, tbl in epochs.items():
         if catalog is not None and len(catalog) > 0:
@@ -180,6 +200,21 @@ class CalibrationStep(base.PipelineStep):
         epochs = _crossmatch_epochs(epochs, context, config)
         context.calibration_epochs = epochs
 
+        from ...post_processing.magnitude_systems import partition_catalog_fit_filters
+
+        filters_for_fit, missing_std = partition_catalog_fit_filters(
+            filter_list, context.calibration_catalog
+        )
+        if missing_std:
+            terminal_output.print_to_terminal(
+                "No catalog standards for "
+                f"{missing_std}; skipping catalog zero-point / colour-term fit "
+                "for those bands. Light curves use relative flux "
+                "(epoch quasi-ZP, per-star continuum ≈ 1).",
+                indent=2,
+                style_name="WARNING",
+            )
+
         jd_map = _calibration_summary_jd_by_epoch_id(context, config)
         file_type = config.file_type_plots
         calibrator = None
@@ -191,107 +226,113 @@ class CalibrationStep(base.PipelineStep):
             color_indices=color_indices,
             extinction_corrector=extinction_corrector,
         )
+        results: dict = {}
+        calibrated = Table()
 
-        if strategy == "linear_fit" and not config.derive_transform_from_data:
-            ext_coeffs = None
-            if config.extinction_mode == "from_value_airmass":
-                ext_coeffs = context.extinction_coefficients
-                if not ext_coeffs:
-                    warnings.warn(
-                        "extinction_mode='from_value_airmass' but no coefficients "
-                        "from ExtinctionFitStep; using tabulated defaults.",
-                        category=OstPhotometryAnalyzeWarning,
-                        stacklevel=1,
-                    )
-            calibrator = build_calibrator(
-                config,
-                color_indices=color_indices,
-                extinction_coefficients=ext_coeffs,
-            )
-            photometer = calibrator.photometer
-            for epoch_id, tbl in epochs.items():
-                meta = context.calibration_epoch_meta.get(epoch_id, {})
-                filter_obstimes = {}
-                jd_by_f = meta.get("jd_by_filter") or meta.get("filter_jds") or {}
-                for f, jd in jd_by_f.items():
-                    if jd is not None:
-                        filter_obstimes[f] = Time(jd, format="jd")
-                calibrator.add_epoch(
-                    epoch_id,
-                    tbl,
-                    filter_obstimes=filter_obstimes if filter_obstimes else None,
+        if filters_for_fit:
+            if strategy == "linear_fit" and not config.derive_transform_from_data:
+                ext_coeffs = None
+                if config.extinction_mode == "from_value_airmass":
+                    ext_coeffs = context.extinction_coefficients
+                    if not ext_coeffs:
+                        warnings.warn(
+                            "extinction_mode='from_value_airmass' but no coefficients "
+                            "from ExtinctionFitStep; using tabulated defaults.",
+                            category=OstPhotometryAnalyzeWarning,
+                            stacklevel=1,
+                        )
+                calibrator = build_calibrator(
+                    config,
+                    color_indices=color_indices,
+                    extinction_coefficients=ext_coeffs,
                 )
-            epochs = dict(calibrator.epochs)
+                photometer = calibrator.photometer
+                for epoch_id, tbl in epochs.items():
+                    meta = context.calibration_epoch_meta.get(epoch_id, {})
+                    filter_obstimes = {}
+                    jd_by_f = meta.get("jd_by_filter") or meta.get("filter_jds") or {}
+                    for f, jd in jd_by_f.items():
+                        if jd is not None:
+                            filter_obstimes[f] = Time(jd, format="jd")
+                    calibrator.add_epoch(
+                        epoch_id,
+                        tbl,
+                        filter_obstimes=filter_obstimes if filter_obstimes else None,
+                    )
+                epochs = dict(calibrator.epochs)
 
-        results = CalibrationEngine.fit(
-            epochs,
-            config,
-            filter_list,
-            calibrator=calibrator,
-            color_indices=color_indices,
-            output_dir=context.output_dir,
-            file_type=file_type,
-            calibration_summary_x_jd=jd_map if jd_map else None,
-        )
-        context.calibration_results = results
-
-        clip = config.fit_sigma_clip
-        from ...calibration_sources.flags import mark_used_calibrators
-
-        for epoch_id, tbl in epochs.items():
-            res = results.get(epoch_id)
-            mark_used_calibrators(
-                tbl,
-                filter_list,
-                transformations=None if res is None else res.transformation,
-                sigma_clip=clip,
-                exact_masks=None if res is None else res.calibrator_mask_by_filter,
-            )
-        context.calibration_epochs = epochs
-
-        # linear_fit writes per-epoch plots inside PhotometryCalibrator or derive_transform backend
-        if context.output_dir and strategy != "linear_fit":
-            prepare_calibration_check_plots(
-                context.output_dir,
+            results = CalibrationEngine.fit(
                 epochs,
-                results,
-                filter_list,
+                config,
+                filters_for_fit,
+                calibrator=calibrator,
+                color_indices=color_indices,
+                output_dir=context.output_dir,
                 file_type=file_type,
+                calibration_summary_x_jd=jd_map if jd_map else None,
             )
+            context.calibration_results = results
 
-        if (
-            strategy == "linear_fit"
-            and config.derive_transform_from_data
-            and len(filter_list) == 2
-        ):
-            from ...calibration.derive_transform import apply_derive_transform_epochs
+            clip = config.fit_sigma_clip
+            from ...calibration_sources.flags import mark_used_calibrators
 
-            calibrated = apply_derive_transform_epochs(
-                epochs,
-                results,
-                filter_list,
-            )
-        elif strategy == "linear_fit" and calibrator is not None:
-            photometer = calibrator.photometer
-            calibrated = calibrator.get_calibrated_photometry(output_prefix="mag_cal_")
+            for epoch_id, tbl in epochs.items():
+                res = results.get(epoch_id)
+                mark_used_calibrators(
+                    tbl,
+                    filters_for_fit,
+                    transformations=None if res is None else res.transformation,
+                    sigma_clip=clip,
+                    exact_masks=None if res is None else res.calibrator_mask_by_filter,
+                )
+            context.calibration_epochs = epochs
+
+            # linear_fit writes per-epoch plots inside PhotometryCalibrator or derive_transform backend
+            if context.output_dir and strategy != "linear_fit":
+                prepare_calibration_check_plots(
+                    context.output_dir,
+                    epochs,
+                    results,
+                    filters_for_fit,
+                    file_type=file_type,
+                )
+
+            if (
+                strategy == "linear_fit"
+                and config.derive_transform_from_data
+                and len(filters_for_fit) == 2
+            ):
+                from ...calibration.derive_transform import apply_derive_transform_epochs
+
+                calibrated = apply_derive_transform_epochs(
+                    epochs,
+                    results,
+                    filters_for_fit,
+                )
+            elif strategy == "linear_fit" and calibrator is not None:
+                photometer = calibrator.photometer
+                calibrated = calibrator.get_calibrated_photometry(output_prefix="mag_cal_")
+            else:
+                calibrated = CalibrationEngine.apply(
+                    epochs,
+                    results,
+                    filters_for_fit,
+                    photometer=photometer,
+                )
+
+            if len(calibrated) > 0 and config.uncertainty_mode != "fit_errors":
+                from ...calibration.uncertainty import apply_uncertainty_mode_to_calibrated_table
+
+                calibrated = apply_uncertainty_mode_to_calibrated_table(
+                    calibrated,
+                    results,
+                    filters_for_fit,
+                    uncertainty_mode=config.uncertainty_mode,
+                    distribution_samples=config.distribution_samples,
+                )
         else:
-            calibrated = CalibrationEngine.apply(
-                epochs,
-                results,
-                filter_list,
-                photometer=photometer,
-            )
-
-        if len(calibrated) > 0 and config.uncertainty_mode != "fit_errors":
-            from ...calibration.uncertainty import apply_uncertainty_mode_to_calibrated_table
-
-            calibrated = apply_uncertainty_mode_to_calibrated_table(
-                calibrated,
-                results,
-                filter_list,
-                uncertainty_mode=config.uncertainty_mode,
-                distribution_samples=config.distribution_samples,
-            )
+            context.calibration_results = {}
+            context.calibration_epochs = epochs
 
         if len(calibrated) > 0:
             table_native = ensure_epoch_native_photometry_table(calibrated)
@@ -371,10 +412,18 @@ class CalibrationStep(base.PipelineStep):
                     photometry_extraction_method=config.photometry_extraction_method,
                     file_stem="extracted_magnitudes",
                 )
-                terminal_output.print_to_terminal(
-                    f"Calibration produced no rows; wrote instrumental table: {out_path}",
-                    style_name="WARNING",
-                )
+                if not filters_for_fit:
+                    terminal_output.print_to_terminal(
+                        "Wrote instrumental photometry (no catalog ZP): "
+                        f"{out_path.name} ({len(inst)} rows)",
+                        indent=2,
+                        style_name="INFO",
+                    )
+                else:
+                    terminal_output.print_to_terminal(
+                        f"Calibration produced no rows; wrote instrumental table: {out_path}",
+                        style_name="WARNING",
+                    )
             else:
                 warnings.warn(
                     "Calibration produced no rows and no instrumental fallback table.",

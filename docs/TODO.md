@@ -109,15 +109,22 @@ function with a `mode=` switch that shares defaults.
 | Product | Scale | What it is for |
 |---------|--------|----------------|
 | **Catalog-transformed** | Calibrated magnitudes (`mag_cal_*`, Vega/AB as labelled) | Absolute level, colour, comparison to catalogs / other nights / other sites. ZP, colour term, and catalog \(\sigma\) stay in the error budget. |
-| **Differential** | Relative magnitude (OOI minus a quiet field ensemble) | Eclipse/pulsation **depth** with the smallest extra scatter. No catalog magnitudes in the comparison; catalog ZP must not enter the differential points or their uncertainties. |
+| **Relative / differential** | Flux ratio (OOI vs a comparison; continuum ≈ 1) | Shape and **depth** without a catalog ZP. Store **flux** (or a flux ratio). \(\Delta m = -2.5\log_{10}(F/F_{\mathrm{ref}})\) is only a display transform — do not difference `mag_cal_*`. |
 
-Today only the first exists (`mag_cal_*` in `light_curves.ecsv`). The quiet
-ensemble below is the second product, not a post-hoc tweak of the first.
+Today the catalog-transformed curve exists (`mag_cal_*` in `light_curves.ecsv`).
+Bands with **no catalog standards** (Clear, luminance, white, …) already use
+the flux fallback: epoch quasi-ZP (field median) then per-star median so the
+continuum sits at 1. That is **not** yet the quiet-ensemble product below.
 
 **Direction:** both live on the long table (e.g. `mag` / `mag_err` for the
-transformed curve; `dmag` / `dmag_err` or `quantity="differential"` rows for
-the relative curve). Plots and C7 scripts say which product they show. Do not
-silently subtract the ensemble from `mag_cal_*` and still call it calibrated.
+transformed curve; `flux` / `flux_err` with `quantity="flux"` or dedicated
+`dflux` rows for the relative curve). Plots and C7 scripts say which product
+they show. Do not silently subtract the ensemble from `mag_cal_*` and still
+call it calibrated.
+
+A magnitude-valued “differential” column is optional later for quoting eclipse
+depth in mag; it must be \(-2.5\log_{10}\) of the **same** flux ratio
+(instrumental or quasi-ZP), never catalog-calibrated magnitudes.
 
 ### Quiet comparison ensemble — differential product (P1)
 
@@ -125,17 +132,22 @@ A C7 light curve whose **relative depth** can be defended against check stars
 needs the opposite of today’s QC ranking: the **quietest** \(N\) field stars
 (smallest excess RMS, similar brightness to the OOI) as a comparison ensemble.
 Their median residual is the common mode (cloud, tracking, extinction).
-Subtract that from the OOI in **instrumental** (or quasi-ZP) magnitudes so
-catalog \(\sigma\) never enters `dmag_err`.
+Divide the OOI by that ensemble in **flux** (or subtract in instrumental /
+quasi-ZP magnitudes — the same ratio). Catalog \(\sigma\) must not enter
+`flux_err` / `dmag_err`.
+
+Today’s Clear-filter path only removes a **global** epoch median (all stars)
+and then sets each star’s own continuum to 1. The quiet-ensemble product
+restricts that common mode to the quietest similar-mag stars.
 
 This is not a replacement for the catalog-transformed curve: that one keeps
 `mag_cal_*` and catalog systematics on purpose.
 
 **Direction:** select quiet stars from `calibrator_lc_stats.ecsv` (and/or
 similar-mag field stars, not only catalog calibrators); write ensemble
-residual and OOI-minus-ensemble on `light_curves.ecsv` as the differential
-product. Keep the “most variable” QC panel as a separate diagnostic of the
-transformed set.
+residual and OOI/ensemble flux ratio on `light_curves.ecsv` as the
+differential product. Keep the “most variable” QC panel as a separate
+diagnostic of the transformed set.
 
 ### Global bad-epoch flags (P1)
 

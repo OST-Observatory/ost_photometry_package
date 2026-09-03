@@ -295,6 +295,13 @@ The pipeline writes one long table `tables/light_curves.ecsv` (source × filter 
 epoch). JD and folded figures under `results/lightcurves/` are views of that
 table. QC lives under `diagnostics/lightcurves/`.
 
+**Catalog bands** (Bessell UBVRI, SDSS ugriz) use `mag_cal_*` after the ZP /
+colour-term fit. **Unfiltered bands** (Clear, luminance, white, …) have no
+catalog standards: calibration skips the catalog download and ZP fit, and
+`LightCurveStep` writes **relative flux** (epoch quasi-ZP, then each star
+divided by its own median so the continuum sits at ≈ 1). The long table then
+has `quantity="flux"` for those rows.
+
 Time is `BJD_TDB − 2450000` when barycentric correction succeeds (observatory
 location + RA/Dec), otherwise `JD − 2450000`. Grey bands mark local nights
 (`floor(JD − 0.5)`). Outlier epochs stay in the table (`flag_outlier`) and are

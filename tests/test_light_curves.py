@@ -354,3 +354,27 @@ def test_jd_and_folded_plots_write_files(tmp_path):
             binning_factor=0.2,
         )
         assert folded.is_file()
+
+
+def test_epoch_has_catalog_calibrated_mags_ignores_instrumental():
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        cal = Table(
+            {
+                "id": [0],
+                "epoch_id": ["epoch_000"],
+                "mag_cal_V": [12.0],
+                "err_cal_V": [0.01],
+            }
+        )
+        inst = Table(
+            {
+                "id": [0],
+                "epoch_id": ["epoch_000"],
+                "mag_inst_Clear": [14.0],
+                "err_inst_Clear": [0.02],
+            }
+        )
+        assert mod.epoch_has_catalog_calibrated_mags(cal, "V")
+        assert not mod.epoch_has_catalog_calibrated_mags(inst, "Clear")
+        assert not mod.epoch_has_catalog_calibrated_mags(cal, "Clear")
