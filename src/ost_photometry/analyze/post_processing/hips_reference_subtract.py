@@ -86,24 +86,26 @@ def hips_timeout_seconds(timeout_ms: int | float) -> float:
 def _wcs_cache_fingerprint(wcs_obj, shape: tuple[int, ...]) -> str:
     parts = [str(tuple(int(n) for n in shape))]
     try:
-        hdr = wcs_obj.to_header()
-        for key in (
-            "CTYPE1",
-            "CTYPE2",
-            "CRVAL1",
-            "CRVAL2",
-            "CRPIX1",
-            "CRPIX2",
-            "CDELT1",
-            "CDELT2",
-            "CD1_1",
-            "CD1_2",
-            "CD2_1",
-            "CD2_2",
-            "NAXIS1",
-            "NAXIS2",
-        ):
-            if key in hdr:
+        hdr = wcs_obj.to_header(relax=True)
+        for key in sorted(hdr.keys()):
+            if key.startswith(
+                (
+                    "CTYPE",
+                    "CRVAL",
+                    "CRPIX",
+                    "CDELT",
+                    "CD",
+                    "PC",
+                    "PV",
+                    "A_",
+                    "B_",
+                    "AP_",
+                    "BP_",
+                    "LONPOLE",
+                    "LATPOLE",
+                    "NAXIS",
+                )
+            ):
                 parts.append(f"{key}={hdr[key]}")
     except Exception:
         parts.append(repr(wcs_obj))
@@ -119,6 +121,28 @@ def hips_cache_filename(hips_source: str, wcs_obj, shape: tuple[int, ...]) -> st
         .replace(":", "_")
     )
     return f"hips_{safe}_{_wcs_cache_fingerprint(wcs_obj, shape)}.fits"
+
+
+class _Hips2fitsWcs:
+    """WCS wrapper so hips2fits gets SIP cards and NAXIS.
+
+    astroquery calls ``wcs.to_header()`` with default ``relax=False``, which
+    drops SIP. The science grid then has distortion the HiPS cutout does not,
+    and star residuals grow away from CRPIX.
+    """
+
+    def __init__(self, wcs_obj, shape: tuple[int, ...]):
+        ny, nx = int(shape[-2]), int(shape[-1])
+        inner = wcs_obj.deepcopy() if hasattr(wcs_obj, "deepcopy") else wcs_obj
+        inner.pixel_shape = (nx, ny)
+        self._inner = inner
+        self.pixel_shape = (nx, ny)
+
+    def to_header(self, *args, **kwargs):
+        hdr = self._inner.to_header(relax=True)
+        hdr["NAXIS1"] = int(self.pixel_shape[0])
+        hdr["NAXIS2"] = int(self.pixel_shape[1])
+        return hdr
 
 
 def _server_list(primary: str, fallbacks: Sequence[str] | None) -> list[str]:
@@ -186,7 +210,7 @@ def fetch_hips_cutout(
                 hips_instance.server = server_url
                 hdus = hips_instance.query_with_wcs(
                     hips=hips_source,
-                    wcs=wcs_obj,
+                    wcs=_Hips2fitsWcs(wcs_obj, shape),
                     get_query_payload=False,
                     format="fits",
                     verbose=verbose,

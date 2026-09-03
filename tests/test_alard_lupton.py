@@ -112,40 +112,30 @@ def test_kernel_basis_shape_and_normalization():
     assert np.all(np.isfinite(bases))
 
 
-def test_spatial_phot_recovers_flux_plane():
+def test_align_template_affine_removes_scale():
+    from scipy.ndimage import map_coordinates
+
     from ost_photometry.analyze.subtraction_alard_lupton import (
-        _eval_spatial_phot,
-        _fit_spatial_phot,
-        _norm_xy,
+        _align_template_to_stars,
+        _collect_peak_offsets,
     )
 
-    shape = (200, 200)
-    ratios = np.array(
-        [1.0 + 0.4 * _norm_xy(x, y, shape)[0] for x, y in _STAR_XY16],
-        dtype=float,
-    )
-    coeff = _fit_spatial_phot(_STAR_XY16, ratios, shape, order=1)
-    assert coeff.size == 3
-    assert abs(coeff[0] - 1.0) < 0.05
-    assert abs(coeff[1] - 0.4) < 0.08
-    phot = _eval_spatial_phot(coeff, shape)
-    assert float(phot[100, 20]) < float(phot[100, 180])
-
-
-def test_alard_lupton_spatial_phot_flattens_flux_gradient():
     shape = (260, 260)
-    stars = _star_field(shape, _STAR_XY16, fwhm=3.0)
-    xx = np.indices(shape)[1]
-    gain = 0.75 + 0.5 * xx / (shape[1] - 1)
-    sci = gain * gaussian_filter(stars, sigma=0.8) + 10.0
-    tmpl = stars + 5.0
-    diff, method = alard_lupton_difference(sci, tmpl, star_xy=_STAR_XY16, fwhm=4.0)
-    assert method == "alard_lupton"
-    left = float(np.median(diff[:, :70]))
-    right = float(np.median(diff[:, -70:]))
-    assert abs(left) < 20.0
-    assert abs(right) < 20.0
-    assert abs(left - right) < 25.0
+    sci = _star_field(shape, _STAR_XY16, fwhm=3.0)
+    ny, nx = shape
+    yy, xx = np.indices(shape)
+    # ~0.8 % plate-scale error: template stars recede from the centre.
+    x_src = (xx - (nx - 1) / 2.0) / 1.008 + (nx - 1) / 2.0
+    y_src = (yy - (ny - 1) / 2.0) / 1.008 + (ny - 1) / 2.0
+    tmpl = map_coordinates(sci, np.stack([y_src, x_src]), order=1, mode="nearest")
+    _xy, dx0, dy0 = _collect_peak_offsets(tmpl, _STAR_XY16, half=12)
+    rms0 = float(np.sqrt(np.mean(dx0**2 + dy0**2)))
+    aligned, _dx, _dy, note = _align_template_to_stars(tmpl, _STAR_XY16, half=12)
+    assert "affine" in note
+    _xy, dx1, dy1 = _collect_peak_offsets(aligned, _STAR_XY16, half=12)
+    rms1 = float(np.sqrt(np.mean(dx1**2 + dy1**2)))
+    assert rms0 > 0.3
+    assert rms1 < 0.5 * rms0
 
 
 def test_alard_lupton_cancels_convolved_template():

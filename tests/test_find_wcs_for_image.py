@@ -482,3 +482,39 @@ def test_run_hips_maps_v_filter_to_panstarrs_r(monkeypatch, tmp_path: Path):
 
     assert result.hips_source == "CDS/P/PanSTARRS/DR1/r"
     assert _FakeHips.last_hips == "CDS/P/PanSTARRS/DR1/r"
+
+
+def test_hips2fits_wcs_header_keeps_sip():
+    from ost_photometry.analyze.post_processing.hips_reference_subtract import (
+        _Hips2fitsWcs,
+    )
+
+    header = fits.Header()
+    header["NAXIS"] = 2
+    header["NAXIS1"] = 100
+    header["NAXIS2"] = 80
+    header["CTYPE1"] = "RA---TAN-SIP"
+    header["CTYPE2"] = "DEC--TAN-SIP"
+    header["CRPIX1"] = 50.0
+    header["CRPIX2"] = 40.0
+    header["CRVAL1"] = 10.0
+    header["CRVAL2"] = 20.0
+    header["CD1_1"] = -0.001
+    header["CD1_2"] = 0.0
+    header["CD2_1"] = 0.0
+    header["CD2_2"] = 0.001
+    header["A_ORDER"] = 2
+    header["A_2_0"] = 1.0e-6
+    header["A_0_2"] = 1.0e-6
+    header["A_1_1"] = 0.0
+    header["B_ORDER"] = 2
+    header["B_2_0"] = 0.0
+    header["B_0_2"] = 1.0e-6
+    header["B_1_1"] = 0.0
+    wcs_obj = astropy_wcs.WCS(header)
+    assert "A_ORDER" not in wcs_obj.to_header()
+    wrapped = _Hips2fitsWcs(wcs_obj, (80, 100))
+    sent = wrapped.to_header()
+    assert sent["A_ORDER"] == 2
+    assert sent["NAXIS1"] == 100
+    assert sent["NAXIS2"] == 80

@@ -253,37 +253,125 @@ def _stamp_fwhm(data: np.ndarray, star_xy: np.ndarray, half: int = 11) -> float:
     return float(np.median(fwhms))
 
 
+def _collect_peak_offsets(
+    data: np.ndarray,
+    star_xy: np.ndarray,
+    half: int = 11,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Science ``(x, y)`` vs template-peak offsets ``(dx, dy)``."""
+    xs: list[float] = []
+    ys: list[float] = []
+    dxs: list[float] = []
+    dys: list[float] = []
+    xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
+    for x, y in xy[:80]:
+        xt, yt = _shift_to_peak(data, x, y, half, max_shift=float(min(half - 2, 10)))
+        dx, dy = xt - x, yt - y
+        if abs(dx) > 8.0 or abs(dy) > 8.0:
+            continue
+        xs.append(float(x))
+        ys.append(float(y))
+        dxs.append(float(dx))
+        dys.append(float(dy))
+    if len(xs) < 3:
+        return (
+            np.empty((0, 2), dtype=float),
+            np.empty(0, dtype=float),
+            np.empty(0, dtype=float),
+        )
+    return (
+        np.column_stack([xs, ys]),
+        np.asarray(dxs, dtype=float),
+        np.asarray(dys, dtype=float),
+    )
+
+
 def _median_peak_offset(
     data: np.ndarray,
     star_xy: np.ndarray,
     half: int = 11,
 ) -> tuple[float, float]:
     """Median ``(dx, dy)`` from given positions to the local template peak."""
-    dxs: list[float] = []
-    dys: list[float] = []
-    xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
-    for x, y in xy[:40]:
-        xt, yt = _shift_to_peak(data, x, y, half, max_shift=float(min(half - 2, 10)))
-        dxs.append(xt - x)
-        dys.append(yt - y)
+    _xy, dxs, dys = _collect_peak_offsets(data, star_xy, half=half)
     if len(dxs) < 3:
         return 0.0, 0.0
     return float(np.median(dxs)), float(np.median(dys))
+
+
+def _fit_affine_offsets(
+    xy: np.ndarray, dx: np.ndarray, dy: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Least-squares ``d = a + b x + c y`` for each axis."""
+    design = np.column_stack([np.ones(len(xy)), xy[:, 0], xy[:, 1]])
+    cx, *_ = np.linalg.lstsq(design, dx, rcond=None)
+    cy, *_ = np.linalg.lstsq(design, dy, rcond=None)
+    return np.asarray(cx, dtype=float), np.asarray(cy, dtype=float)
+
+
+def _warp_by_affine(
+    image: np.ndarray, coeff_x: np.ndarray, coeff_y: np.ndarray
+) -> np.ndarray:
+    """Sample ``image`` at ``(x+dx, y+dy)`` so template peaks move onto science xy."""
+    from scipy.ndimage import map_coordinates
+
+    ny, nx = image.shape
+    yy, xx = np.indices((ny, nx))
+    dx_map = coeff_x[0] + coeff_x[1] * xx + coeff_x[2] * yy
+    dy_map = coeff_y[0] + coeff_y[1] * xx + coeff_y[2] * yy
+    coords = np.stack([yy + dy_map, xx + dx_map])
+    warped = map_coordinates(
+        image, coords, order=1, mode="nearest", prefilter=False
+    )
+    return np.ascontiguousarray(warped, dtype=np.float64)
 
 
 def _align_template_to_stars(
     template: np.ndarray,
     star_xy: np.ndarray,
     half: int = 11,
-) -> tuple[np.ndarray, float, float]:
-    """Shift ``template`` so its stars land on ``star_xy`` (science positions)."""
+) -> tuple[np.ndarray, float, float, str]:
+    """Align the template: affine warp if the residual is field-dependent, else a shift."""
     from scipy.ndimage import shift as nd_shift
 
-    dx, dy = _median_peak_offset(template, star_xy, half=half)
-    if abs(dx) < 0.05 and abs(dy) < 0.05:
-        return template, 0.0, 0.0
-    aligned = nd_shift(template, shift=(-dy, -dx), order=1, mode="nearest")
-    return np.ascontiguousarray(aligned, dtype=np.float64), dx, dy
+    xy, dxs, dys = _collect_peak_offsets(template, star_xy, half=half)
+    if len(dxs) < 3:
+        return template, 0.0, 0.0, ""
+    dx_med = float(np.median(dxs))
+    dy_med = float(np.median(dys))
+    resid0 = np.hypot(dxs - dx_med, dys - dy_med)
+    rms0 = float(np.sqrt(np.mean(resid0**2)))
+    note_shift = f"Δx={dx_med:+.2f}, Δy={dy_med:+.2f} px"
+    use_affine = len(dxs) >= 8 and rms0 > 0.25
+    if use_affine:
+        cx, cy = _fit_affine_offsets(xy, dxs, dys)
+        pred_x = cx[0] + cx[1] * xy[:, 0] + cx[2] * xy[:, 1]
+        pred_y = cy[0] + cy[1] * xy[:, 0] + cy[2] * xy[:, 1]
+        resid1 = np.hypot(dxs - pred_x, dys - pred_y)
+        rms1 = float(np.sqrt(np.mean(resid1**2)))
+        ny, nx = template.shape
+        corners = np.array(
+            [[0.0, 0.0], [nx - 1.0, 0.0], [0.0, ny - 1.0], [nx - 1.0, ny - 1.0]]
+        )
+        cdx = cx[0] + cx[1] * corners[:, 0] + cx[2] * corners[:, 1]
+        cdy = cy[0] + cy[1] * corners[:, 0] + cy[2] * corners[:, 1]
+        corner = float(np.max(np.hypot(cdx, cdy)))
+        if rms1 < 0.9 * rms0 or corner > 0.6:
+            aligned = _warp_by_affine(template, cx, cy)
+            note = (
+                f"{note_shift}, affine residual rms {rms0:.2f}→{rms1:.2f} px, "
+                f"corner shift {corner:.2f} px"
+            )
+            return aligned, dx_med, dy_med, note
+    if abs(dx_med) < 0.05 and abs(dy_med) < 0.05:
+        return template, 0.0, 0.0, ""
+    aligned = nd_shift(template, shift=(-dy_med, -dx_med), order=1, mode="nearest")
+    extra = f", field rms {rms0:.2f} px" if rms0 > 0.2 else ""
+    return (
+        np.ascontiguousarray(aligned, dtype=np.float64),
+        dx_med,
+        dy_med,
+        note_shift + extra,
+    )
 
 
 def find_kernel_stars(
@@ -428,16 +516,14 @@ def _aperture_flux_pairs(
     *,
     half: int,
     aperture_radius: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """Science and template aperture fluxes at ``star_xy`` (same sky treatment)."""
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
     fs_list: list[float] = []
     ft_list: list[float] = []
-    xy_list: list[tuple[float, float]] = []
     for x, y in np.asarray(star_xy, dtype=float).reshape(-1, 2):
-        xt, yt = _shift_to_peak(tmpl, x, y, half, max_shift=float(min(half - 2, 10)))
         s = _cutout(sci, x, y, half)
-        t = _cutout(tmpl, xt, yt, half)
+        t = _cutout(tmpl, x, y, half)
         if s is None or t is None:
             continue
         if _stamp_snr(s) < 2.5 or _stamp_snr(t) < 1.5:
@@ -447,15 +533,9 @@ def _aperture_flux_pairs(
         if abs(ft) > 1e-6 and abs(fs) > 1e-6 and np.isfinite(fs) and np.isfinite(ft):
             fs_list.append(fs)
             ft_list.append(ft)
-            xy_list.append((float(x), float(y)))
     if not fs_list:
-        empty = np.empty(0, dtype=float)
-        return empty, empty, np.empty((0, 2), dtype=float)
-    return (
-        np.asarray(fs_list, dtype=float),
-        np.asarray(ft_list, dtype=float),
-        np.asarray(xy_list, dtype=float),
-    )
+        return np.empty(0, dtype=float), np.empty(0, dtype=float)
+    return np.asarray(fs_list, dtype=float), np.asarray(ft_list, dtype=float)
 
 
 def _core_residual_terciles(
@@ -595,70 +675,6 @@ def _spatial_n_poly(spatial_order: int, n_stamps: int) -> int:
     return 1
 
 
-def _fit_spatial_phot(
-    xy: np.ndarray,
-    ratios: np.ndarray,
-    shape: tuple[int, int],
-    *,
-    order: int = 1,
-) -> np.ndarray:
-    """Robust polynomial ``science/template`` vs position; constant if too few stamps."""
-    xy_a = np.asarray(xy, dtype=float).reshape(-1, 2)
-    r = np.asarray(ratios, dtype=float).ravel()
-    n = min(len(xy_a), len(r))
-    if n == 0:
-        return np.array([1.0])
-    xy_a = xy_a[:n]
-    r = r[:n]
-    ok = np.isfinite(r) & np.isfinite(xy_a).all(axis=1) & (r > 0.05) & (r < 20.0)
-    xy_a = xy_a[ok]
-    r = r[ok]
-    if r.size == 0:
-        return np.array([1.0])
-    if r.size >= 8:
-        lo, hi = np.percentile(r, [16.0, 84.0])
-        clip = (r >= lo) & (r <= hi)
-        if int(np.count_nonzero(clip)) >= 8:
-            xy_a, r = xy_a[clip], r[clip]
-    n_poly = _spatial_n_poly(order, len(r))
-    if n_poly == 1:
-        return np.array([float(np.median(r))])
-    design = np.array(
-        [_spatial_poly(*_norm_xy(x, y, shape), n_poly) for x, y in xy_a],
-        dtype=np.float64,
-    )
-    coeff, *_ = np.linalg.lstsq(design, r, rcond=None)
-    return np.asarray(coeff, dtype=np.float64)
-
-
-def _eval_spatial_phot(coeff: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
-    """Evaluate a photometric polynomial on the full frame; clipped to a sane range."""
-    ny, nx = int(shape[0]), int(shape[1])
-    c = np.asarray(coeff, dtype=np.float64).ravel()
-    if c.size <= 1:
-        val = float(c[0]) if c.size else 1.0
-        if not np.isfinite(val) or abs(val) < 1e-6 or abs(val) > 1e3:
-            val = 1.0
-        return np.full((ny, nx), val, dtype=np.float64)
-    yy, xx = np.indices((ny, nx))
-    xn = 2.0 * xx / max(nx - 1, 1) - 1.0
-    yn = 2.0 * yy / max(ny - 1, 1) - 1.0
-    terms = _spatial_poly(xn, yn, int(c.size))
-    out = np.zeros((ny, nx), dtype=np.float64)
-    for a, t in zip(c, terms, strict=True):
-        out += a * t
-    return np.clip(out, 0.15, 8.0)
-
-
-def _phot_log_note(coeff: np.ndarray) -> str:
-    c = np.asarray(coeff, dtype=float).ravel()
-    if c.size <= 1:
-        return f"phot_match={float(c[0]) if c.size else 1.0:.3f}"
-    if c.size == 3:
-        return f"phot_match={c[0]:.3f}{c[1]:+.3f}x{c[2]:+.3f}y"
-    return f"phot_match=quad({c[0]:.3f})"
-
-
 class SpatialKernel:
     """Alard–Lupton kernel with optional spatial variation.
 
@@ -769,9 +785,8 @@ def fit_alard_lupton_kernel(
     packed: list[tuple[list[np.ndarray], np.ndarray, float, float]] = []
     xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
     for x, y in xy:
-        xt, yt = _shift_to_peak(tmpl, x, y, half_stamp, max_shift=10.0)
         s = _cutout(sci, x, y, half_stamp)
-        t = _cutout(tmpl, xt, yt, half_stamp)
+        t = _cutout(tmpl, x, y, half_stamp)
         if s is None or t is None:
             continue
         s = _replace_nonfinite(s)
@@ -864,10 +879,10 @@ def alard_lupton_difference(
                 indent=2,
                 style_name="WARNING",
             )
-        tmpl0, dx, dy = _align_template_to_stars(tmpl0, xy, half=16)
-        if abs(dx) > 0.05 or abs(dy) > 0.05:
+        tmpl0, _, _, align_note = _align_template_to_stars(tmpl0, xy, half=16)
+        if align_note:
             terminal_output.print_to_terminal(
-                f"Aligned template to science stars (Δx={dx:+.2f}, Δy={dy:+.2f} px)",
+                f"Aligned template to science stars ({align_note})",
                 indent=2,
                 style_name="NORMAL",
             )
@@ -968,40 +983,27 @@ def alard_lupton_difference(
             matched = kernel.apply(sci0)
             left, right = matched, tmpl_s
         try:
-            fs, ft, xy_phot = _aperture_flux_pairs(
+            fs, ft = _aperture_flux_pairs(
                 left, right, xy_kernel, half=phot_half, aperture_radius=phot_radius
             )
             ratios = fs / ft
-            phot_coeff = _fit_spatial_phot(xy_phot, ratios, left.shape, order=1)
+            phot = _robust_ratio_median(list(ratios), list(fs))
             p16, p84 = np.percentile(ratios, [16.0, 84.0])
         except Exception:
-            phot_coeff, p16, p84, ratios = np.array([1.0]), 1.0, 1.0, np.array([1.0])
-        if phot_coeff.size <= 1:
-            phot0 = float(phot_coeff[0]) if phot_coeff.size else 1.0
-            if not np.isfinite(phot0) or abs(phot0) < 1e-6 or abs(phot0) > 1e3:
-                phot_coeff = np.array([1.0])
-            spread = float(p84 / max(abs(p16), 1e-6))
-            if spread > 2.0:
-                terminal_output.print_to_terminal(
-                    f"Aperture flux ratios are too scattered (p84/p16={spread:.2f}); "
-                    "keeping the kernel flux scale (phot_match=1). Crowding and "
-                    "B vs PanSTARRS-g colour both limit a single factor.",
-                    indent=2,
-                    style_name="WARNING",
-                )
-                phot_coeff = np.array([1.0])
-        else:
-            spread = float(p84 / max(abs(p16), 1e-6))
-            if spread > 2.0:
-                terminal_output.print_to_terminal(
-                    f"Aperture flux ratios are too scattered (p84/p16={spread:.2f}); "
-                    "applying a spatial flux plane (kernel sum stays 1). Crowding "
-                    "and B vs PanSTARRS-g colour still limit a single factor.",
-                    indent=2,
-                    style_name="WARNING",
-                )
-        phot_map = _eval_spatial_phot(phot_coeff, left.shape)
-        residual = left - phot_map * right
+            phot, p16, p84, ratios = 1.0, 1.0, 1.0, np.array([1.0])
+        if not np.isfinite(phot) or abs(phot) < 1e-6 or abs(phot) > 1e3:
+            phot = 1.0
+        spread = float(p84 / max(abs(p16), 1e-6))
+        if spread > 2.0:
+            terminal_output.print_to_terminal(
+                f"Aperture flux ratios are too scattered (p84/p16={spread:.2f}); "
+                "keeping the kernel flux scale (phot_match=1). Crowding and "
+                "B vs PanSTARRS-g colour both limit a single factor.",
+                indent=2,
+                style_name="WARNING",
+            )
+            phot = 1.0
+        residual = left - phot * right
         _, resid_sky, _ = sigma_clipped_stats(residual, sigma=3.0, maxiters=5)
         if not np.isfinite(resid_sky):
             resid_sky = 0.0
@@ -1022,7 +1024,7 @@ def alard_lupton_difference(
         terminal_output.print_to_terminal(
             f"Alard–Lupton kernel ({n_used} stamps, ksize={ksize}, "
             f"sigmas={used_sigmas[0]:.1f}/{used_sigmas[1]:.1f}/{used_sigmas[2]:.1f}, "
-            f"{spatial_note}, flux_scale={scale:.4g}, {_phot_log_note(phot_coeff)} "
+            f"{spatial_note}, flux_scale={scale:.4g}, phot_match={phot:.3f} "
             f"(p16={p16:.3f}, p84={p84:.3f}, n={len(ratios)}), "
             f"kernel_sum={ksum:.3f}, {which}{seeing})",
             indent=2,

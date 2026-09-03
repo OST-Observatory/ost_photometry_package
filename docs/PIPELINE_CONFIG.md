@@ -406,9 +406,10 @@ template is PanSTARRS DR1 (linear CCD). `backend="auto"`
 uses HOTPANTS when the binary is on `PATH`, otherwise a Python Alard–Lupton
 kernel (numpy/scipy/photutils). With enough stamps the Python kernel is
 quadratic in \(x,y\) (HOTPANTS-like); 8–15 stamps stay linear, fewer stay
-spatially constant. The kernel is flux-conserving (sum 1); a linear spatial
-flux scale is applied afterwards so a photometric gradient is not forced
-into PSF ringing. A failed HiPS download or subtraction **does not
+spatially constant. The HiPS cutout is requested with SIP (not TAN-only) and
+the template is affinely aligned to science stars before the kernel fit, so
+a field-dependent WCS residual is not mistaken for PSF variation. A failed
+HiPS download or subtraction **does not
 abort** the rest of the analysis.
 
 | Flag | Default | Role |
