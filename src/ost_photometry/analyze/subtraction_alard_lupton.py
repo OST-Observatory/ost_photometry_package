@@ -348,20 +348,24 @@ def _align_template_to_stars(
         pred_y = cy[0] + cy[1] * xy[:, 0] + cy[2] * xy[:, 1]
         resid1 = np.hypot(dxs - pred_x, dys - pred_y)
         rms1 = float(np.sqrt(np.mean(resid1**2)))
-        ny, nx = template.shape
-        corners = np.array(
-            [[0.0, 0.0], [nx - 1.0, 0.0], [0.0, ny - 1.0], [nx - 1.0, ny - 1.0]]
-        )
-        cdx = cx[0] + cx[1] * corners[:, 0] + cx[2] * corners[:, 1]
-        cdy = cy[0] + cy[1] * corners[:, 0] + cy[2] * corners[:, 1]
-        corner = float(np.max(np.hypot(cdx, cdy)))
-        if rms1 < 0.9 * rms0 or corner > 0.6:
+        if rms1 < 0.9 * rms0:
+            ny, nx = template.shape
+            corners = np.array(
+                [[0.0, 0.0], [nx - 1.0, 0.0], [0.0, ny - 1.0], [nx - 1.0, ny - 1.0]]
+            )
+            cdx = cx[0] + cx[1] * corners[:, 0] + cx[2] * corners[:, 1]
+            cdy = cy[0] + cy[1] * corners[:, 0] + cy[2] * corners[:, 1]
+            corner = float(np.max(np.hypot(cdx, cdy)))
             aligned = _warp_by_affine(template, cx, cy)
             note = (
                 f"{note_shift}, affine residual rms {rms0:.2f}→{rms1:.2f} px, "
                 f"corner shift {corner:.2f} px"
             )
             return aligned, dx_med, dy_med, note
+        note_shift += (
+            f", affine does not help ({rms0:.2f}→{rms1:.2f} px); "
+            f"star-to-star scatter {rms0:.2f} px"
+        )
     if abs(dx_med) < 0.05 and abs(dy_med) < 0.05:
         return template, 0.0, 0.0, ""
     aligned = nd_shift(template, shift=(-dy_med, -dx_med), order=1, mode="nearest")
@@ -785,8 +789,9 @@ def fit_alard_lupton_kernel(
     packed: list[tuple[list[np.ndarray], np.ndarray, float, float]] = []
     xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
     for x, y in xy:
+        xt, yt = _shift_to_peak(tmpl, x, y, half_stamp, max_shift=10.0)
         s = _cutout(sci, x, y, half_stamp)
-        t = _cutout(tmpl, x, y, half_stamp)
+        t = _cutout(tmpl, xt, yt, half_stamp)
         if s is None or t is None:
             continue
         s = _replace_nonfinite(s)
@@ -919,6 +924,22 @@ def alard_lupton_difference(
             v for v in (sci_fw, tmpl_fw, fwhm) if np.isfinite(v) and v > 0
         )
         phot_half, phot_radius = _phot_geometry(wide_fw)
+        seeing_ratio = 1.0
+        if np.isfinite(sci_fw) and np.isfinite(tmpl_fw) and min(sci_fw, tmpl_fw) > 0.5:
+            seeing_ratio = max(sci_fw, tmpl_fw) / min(sci_fw, tmpl_fw)
+        # Similar seeing: a spatially varying kernel fits stamp noise, not PSF.
+        if seeing_ratio >= 1.25:
+            spatial_order = 2
+        elif seeing_ratio >= 1.12:
+            spatial_order = 1
+        else:
+            spatial_order = 0
+            terminal_output.print_to_terminal(
+                f"Seeing almost equal ({sci_fw:.1f}/{tmpl_fw:.1f} px); "
+                "using a spatially constant kernel.",
+                indent=2,
+                style_name="NORMAL",
+            )
         scale = flux_scale_from_stamps(
             sci0, tmpl0, xy, half=phot_half, aperture_radius=phot_radius
         )
@@ -964,6 +985,7 @@ def alard_lupton_difference(
                         ksize=k_try,
                         sigmas=sig_try,
                         n_stars=n_stars,
+                        spatial_order=spatial_order,
                     )
                     ksize = k_try
                     used_sigmas = sig_try
