@@ -206,13 +206,13 @@ def test_run_hips_reference_subtraction_reuses_image_wcs(
 
     assert calls == []
     assert result.difference_fits == workdir / "diff.fits"
-    assert result.hips_source == "CDS/P/DSS2/blue"
+    assert result.hips_source == "CDS/P/PanSTARRS/DR1/g"
     assert result.hips_from_cache is False
     assert result.subtract_backend == "alard_lupton"
     assert captured["science_ccd"].wcs.wcs.crval[0] == pytest.approx(180.0)
     assert captured["science_ccd"].wcs.wcs.crval[1] == pytest.approx(45.0)
     assert _FakeHips.last_timeout == pytest.approx(120.0)
-    assert _FakeHips.last_hips == "CDS/P/DSS2/blue"
+    assert _FakeHips.last_hips == "CDS/P/PanSTARRS/DR1/g"
 
 
 def test_run_hips_reference_subtraction_solves_wcs_for_single_image(
@@ -268,17 +268,17 @@ def test_run_hips_reference_subtraction_solves_wcs_for_single_image(
 def test_hips_source_for_filter_bandpass_map(monkeypatch):
     hips_mod = _hips_module(monkeypatch)
     fn = hips_mod.hips_source_for_filter
-    assert fn("B") == "CDS/P/DSS2/blue"
-    assert fn("U") == "CDS/P/DSS2/blue"
-    assert fn("V") == "CDS/P/DSS2/red"
-    assert fn("R") == "CDS/P/DSS2/red"
-    assert fn("I") == "CDS/P/DSS2/red"
+    assert fn("B") == "CDS/P/PanSTARRS/DR1/g"
+    assert fn("U") == "CDS/P/PanSTARRS/DR1/g"
+    assert fn("V") == "CDS/P/PanSTARRS/DR1/r"
+    assert fn("R") == "CDS/P/PanSTARRS/DR1/i"
+    assert fn("I") == "CDS/P/PanSTARRS/DR1/z"
     assert fn("g") == "CDS/P/PanSTARRS/DR1/g"
     assert fn("r") == "CDS/P/PanSTARRS/DR1/r"
-    assert fn("unknown") == "CDS/P/DSS2/red"
-    assert fn("V", explicit="CDS/P/PanSTARRS/DR1/g") == "CDS/P/PanSTARRS/DR1/g"
-    assert fn("V", explicit="auto") == "CDS/P/DSS2/red"
-    assert fn("V", explicit=None) == "CDS/P/DSS2/red"
+    assert fn("unknown") == "CDS/P/PanSTARRS/DR1/r"
+    assert fn("V", explicit="CDS/P/DSS2/red") == "CDS/P/DSS2/red"
+    assert fn("V", explicit="auto") == "CDS/P/PanSTARRS/DR1/r"
+    assert fn("V", explicit=None) == "CDS/P/PanSTARRS/DR1/r"
 
 
 def test_hips_timeout_seconds_converts_milliseconds(monkeypatch):
@@ -444,7 +444,7 @@ def test_fetch_hips_cutout_raises_after_all_servers_fail(monkeypatch, tmp_path: 
         )
 
 
-def test_run_hips_maps_v_filter_to_dss2_red(monkeypatch, tmp_path: Path):
+def test_run_hips_maps_v_filter_to_panstarrs_r(monkeypatch, tmp_path: Path):
     hips_mod = _hips_module(monkeypatch)
     science_path = tmp_path / "science.fit"
     _write_science_fits(science_path)
@@ -480,5 +480,5 @@ def test_run_hips_maps_v_filter_to_dss2_red(monkeypatch, tmp_path: Path):
         plot_comp=False,
     )
 
-    assert result.hips_source == "CDS/P/DSS2/red"
-    assert _FakeHips.last_hips == "CDS/P/DSS2/red"
+    assert result.hips_source == "CDS/P/PanSTARRS/DR1/r"
+    assert _FakeHips.last_hips == "CDS/P/PanSTARRS/DR1/r"

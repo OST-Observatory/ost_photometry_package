@@ -388,7 +388,7 @@ class HipsConfig:
     hips_reference_subtraction_image_index: int = 0
     hips_reference_subtraction_wcs_method: WcsMethod | None = None
     hips_reference_subtraction_plot_comp: bool = True
-    # None / "auto" → bandpass-matched survey (DSS2 blue/red, PanSTARRS ugrizy).
+    # None / "auto" → bandpass-matched PanSTARRS DR1 (linear CCD).
     hips_reference_subtraction_hips_source: str | None = None
     hips_reference_subtraction_trim: tuple[int, int, int, int] | None = None
     hips_reference_subtraction_reuse_pipeline_wcs: bool = True

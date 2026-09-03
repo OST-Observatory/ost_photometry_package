@@ -31,13 +31,14 @@ DEFAULT_HIPS_FALLBACK_SERVERS: tuple[str, ...] = (
 # Optional fixed trim matching an older one-off workflow (cropped 1599×2501).
 LEGACY_SUBTRACT_TRIM: tuple[int, int, int, int] = (0, 1599, 0, 2501)
 
-# Bessell → DSS2 photographic plates; SDSS-like → PanSTARRS (closer bandpass).
+# Linear CCD templates (PanSTARRS DR1). Bessell filters use the nearest PS1
+# band; DSS2 remains available via hips_reference_subtraction_hips_source.
 _HIPS_SOURCE_FOR_FILTER: dict[str, str] = {
-    "U": "CDS/P/DSS2/blue",
-    "B": "CDS/P/DSS2/blue",
-    "V": "CDS/P/DSS2/red",
-    "R": "CDS/P/DSS2/red",
-    "I": "CDS/P/DSS2/red",
+    "U": "CDS/P/PanSTARRS/DR1/g",
+    "B": "CDS/P/PanSTARRS/DR1/g",
+    "V": "CDS/P/PanSTARRS/DR1/r",
+    "R": "CDS/P/PanSTARRS/DR1/i",
+    "I": "CDS/P/PanSTARRS/DR1/z",
     "u": "CDS/P/PanSTARRS/DR1/g",
     "g": "CDS/P/PanSTARRS/DR1/g",
     "r": "CDS/P/PanSTARRS/DR1/r",
@@ -45,7 +46,7 @@ _HIPS_SOURCE_FOR_FILTER: dict[str, str] = {
     "z": "CDS/P/PanSTARRS/DR1/z",
     "y": "CDS/P/PanSTARRS/DR1/y",
 }
-_HIPS_SOURCE_FALLBACK = "CDS/P/DSS2/red"
+_HIPS_SOURCE_FALLBACK = "CDS/P/PanSTARRS/DR1/r"
 
 
 @dataclass(frozen=True)
@@ -265,8 +266,8 @@ def run_hips_reference_subtraction(
     if "DSS" in str(source).upper():
         terminal_output.print_to_terminal(
             "DSS2 is a photographic plate: faint and bright stars will not share "
-            "one flux scale. For a linear CCD template (recommended) set "
-            "hips_reference_subtraction_hips_source='CDS/P/PanSTARRS/DR1/g'.",
+            "one flux scale. The default template is PanSTARRS; set "
+            "hips_reference_subtraction_hips_source explicitly only if you want DSS2.",
             indent=2,
             style_name="WARNING",
         )
