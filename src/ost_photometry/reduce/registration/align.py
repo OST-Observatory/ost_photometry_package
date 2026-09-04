@@ -65,18 +65,8 @@ def align_images(
         Default is ``False``.
 
     shift_method
-        Method to use for image alignment.
-        Possibilities: 'aa'      = astroalign module only accounting for
-                                   xy shifts
-                       'aa_true' = astroalign module with corresponding
-                                   transformation
-                       'own'     = own correlation routine based on
-                                   phase correlation, applying fft to
-                                   the images
-                       'skimage' = phase correlation with skimage
-                       'wcs'     = reproject each frame onto the
-                                   reference image WCS (solve with
-                                   ``wcs_method`` if the header has none)
+        Alignment backend. Names and roles:
+        :data:`~ost_photometry.reduce.registration.SHIFT_METHODS`.
         Default is ``aa_true``.
 
     n_cores_multiprocessing
@@ -292,19 +282,8 @@ def align_image_main(
         Path to save the image transformation matrices
 
     shift_method
-        Method to use for image alignment.
-        Possibilities: 'aa'      = astroalign module only accounting for
-                                   xy shifts
-                       'aa_true' = astroalign module with corresponding
-                                   transformation
-                       'own'     = own correlation routine based on
-                                   phase correlation, applying fft to
-                                   the images
-                       'skimage' = phase correlation implemented by
-                                   skimage
-                       'flow'    = image registration using optical flow
-                                   implementation by skimage
-                       'wcs'     = reproject onto the reference WCS
+        Alignment backend. See
+        :data:`~ost_photometry.reduce.registration.SHIFT_METHODS`.
         Default is ``aa_true``.
 
     n_cores_multiprocessing

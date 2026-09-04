@@ -137,17 +137,8 @@ def reduce_main(
         Default is ``True``.
 
     shift_method
-        Method to use for image alignment.
-        Possibilities: 'aa'      = astroalign module only accounting for
-                                   xy shifts
-                       'aa_true' = astroalign module with corresponding
-                                   transformation
-                       'own'     = own correlation routine based on
-                                   phase correlation, applying fft to
-                                   the images
-                       'skimage' = phase correlation with skimage
-                       'wcs'     = reproject onto the reference WCS
-                                   (solves with ``wcs_method`` if needed)
+        Alignment backend. See
+        :data:`~ost_photometry.reduce.registration.SHIFT_METHODS`.
         Default is ``aa_true``.
 
     n_cores_multiprocessing

@@ -83,6 +83,129 @@ Do **not** run ASTAP twice: alignment writes WCS onto the reduced frames;
 (same as ``aa_true``). Keep ``aa_true`` for N2 cluster stacks unless WCS
 align is clearly better on that dataset.
 
+### Registration follow-ups (P2)
+
+From the method comparison (`compare_registration`). Do these before
+starting drizzle.
+
+1. **Silent drop of failed frames (P1/P2).** `aa_true` and `wcs` warn and
+   `return` when a frame cannot be aligned. Stacking continues with fewer
+   images and there is no summary of the form “n of N aligned, skipped:
+   …”. Count successes and failures in `align_images` / `align_image_main`
+   and report the skipped file names.
+
+2. **Stale WCS after `aa_true` (P2).** `astro_align` builds a new
+   `CCDData` **without** `wcs=` and keeps the unwarped header. Pixels sit
+   on the reference grid; the WCS does not. `reduce_main` later
+   overwrites or copies WCS, but `aligned_lights/` is wrong if it is read
+   in between. Copy the **reference WCS** onto the warped CCD (as
+   `wcs_project` already does).
+
+3. **Dispatcher duplication (P2).** `align_image_main` is a long
+   `if`/`elif` with repeated `Executor` boilerplate. A small backend
+   protocol (`fit` → `apply` → diagnostic YAML) would unify `wcs` and
+   `aa_true` (and later drizzle) without copying the worker loop.
+
+4. **Thin the method zoo (P3).** Keep `aa_true` (default) and `wcs`.
+   `skimage` / `aa` stay as translation-only options. Mark `own` (slow
+   nested-loop FFT) and `flow` (bad for stacking) as not recommended /
+   explicit-only. Canonical names live in
+   `ost_photometry.reduce.registration.SHIFT_METHODS`.
+
+5. **Tests (P2).** Only trim and WCS-reproject tests exist. Missing:
+   `(dx, dy)` vs Python axes, `aa_true` on a synthetic shift, outlier
+   logic, skipped-frame accounting.
+
+### Unify alignment backends (P2 pragmatic; P3 optional global grid)
+
+Today there are **two backend families** and **two workflow stages**.
+
+- **Stage 1** (`shift_all=False`, N2): align lights **per filter** onto that
+  filter’s reference, then stack.
+- **Stage 2:** align those stacks **across filters**. Arrays must share a
+  shape, so `reduce_main` pads with `make_big_images` unless
+  `shift_method` is `aa_true` or `wcs` (those already warp/reproject onto
+  the reference grid).
+
+Translation-only methods (`aa`, `skimage`, `own`) still trim to overlap
+and need the pad; `aa_true` / `wcs` skip it. That fork is the debt.
+
+#### Pragmatic path (P2) — do this
+
+Give every backend the same contract: `fit` → `apply` → diagnostic YAML,
+and **apply puts the frame on the reference pixel grid** (same shape and
+origin as the reference; mask uncovered pixels). Drop `make_big_images`
+from `reduce_main` and the
+`if shift_method not in ("aa_true", "wcs")` branch. **Keep** the
+filter-then-inter-filter two-pass so N2 still writes
+`combined_trimmed_filter_*.fit` after stage 2.
+
+Do this together with the backend protocol (follow-up 3), after
+skipped-frame reporting, WCS-after-`aa_true`, and the registration tests.
+Translation-only methods resample or pad **inside** `apply`;
+`make_big_images` may remain as a private helper. Drizzle later plugs into
+the same contract.
+
+**Advantages:**
+
+- One code path: no pad-then-trim vs warp split, fewer silent size bugs.
+- `wcs` / `aa_true` / later drizzle look the same; a new backend only
+  implements the protocol.
+- Masks/NaNs instead of 0-borders (cleaner median stacks and photometry).
+- Course flow and output names stay: stack per filter, then align stacks.
+- `make_big_images` is no longer a workflow special case that only some
+  methods hit.
+
+**Disadvantages:**
+
+- Translation-only must resample or pad internally; pure integer
+  shift+trim is no longer the apply path (it can stay as a helper).
+- Small extra cost vs today’s integer trim for `skimage` / `aa`.
+- The two-pass is still two `align_images` calls; inter-filter offsets
+  are not folded into stage 1.
+- Dispatcher rewrite is required before this pays off (do not pad-remove
+  without the protocol).
+
+#### Optional: global single-grid alignment (P3)
+
+After the pragmatic path: one reference (one filter or one celestial WCS)
+for **all** lights *before* stacking. Stage 2 and the
+`shift_all` vs N2 fork collapse. Do **not** start this until course
+filenames and “which image is the global reference” are agreed.
+
+**Advantages:**
+
+- One alignment, one grid; colour products and multi-filter photometry
+  share pixels without a second pass.
+- `shift_all=True` and the N2 two-pass become the same path.
+- Natural target for drizzle (drizzle wants a single output WCS).
+- No second chance to drop frames at inter-filter time; accounting is
+  simpler.
+
+**Disadvantages:**
+
+- Didactic N2 split (sharp per-filter stack, then coarse inter-filter
+  shift) becomes one step and is harder to teach.
+- Scripts that expect `combined_trimmed_filter_*.fit` **after** stage 2
+  break unless names are kept as aliases.
+- A per-filter reference can be better when distortions differ by
+  filter; one global WCS can be a worse warp for some bands.
+- Mixing dither (stage 1) and inter-filter offset (stage 2) in one
+  transform is a different scientific choice, not just a refactor.
+- Larger behaviour change; easy to regress stacking and WCS headers.
+
+### Drizzle as a future alignment method (P3)
+
+Add `shift_method="drizzle"` (e.g. `drizzlepac` / `astrodrizzle`) after
+skipped-frame reporting, WCS-after-`aa_true`, the registration tests, and
+the **pragmatic** backend unification above. Do **not** start drizzle
+while those are open. Drizzle belongs on the same “put this frame on the
+reference pixel grid” path as `wcs` / `aa_true` (no `make_big_images`
+pad), and should reuse the backend protocol once that exists. Global
+single-grid alignment (optional P3) is the nicer drizzle target but is
+not a prerequisite if the two-pass already emits a common grid per
+filter.
+
 ---
 
 ## Diagnostic plots
@@ -520,20 +643,23 @@ Archived Image-based ZP/plot helpers outside ``src/`` are gone. Do not restore.
 ## Suggested order
 
 1. **P1:** Light curves — two products (catalog-transformed mag scale vs differential depth without catalog \(\sigma\)); quiet ensemble + `flag_epoch`; then inflate \(\sigma\) and residuals vs airmass/FWHM/sky/\(x,y\).
-2. **P2:** Difference images — internal night template + detection/linking + `diff_candidates.ecsv` (HiPS fetch hardening is done; do not start with legacy trim or extra survey strings).
-3. **P2:** Light curves — period search (Lomb–Scargle / BLS) from `light_curves.ecsv`; colour vs phase; simple \(\chi^2\) shape overlay.
-4. **P2:** Overhaul isochrone handling (refresh grids, fetch+cache, named-column loaders) **and** split `plots/cmds.py` in the same pass.
-5. **P2:** Split `extraction.py` only when touching that area; keep script-facing APIs stable.
-6. **P3:** Light curves — APER vs PSF amplitude, mag/colour-matched ensemble, aperture blend fraction.
-7. **P3:** Difference images — ZOGY backend; RASA field-wise HiPS cache / tiles; separate monitoring preset.
-8. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
-9. **P3:** OST filter throughput → synphot Vega↔AB offsets.
-10. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter; drop related legacy meta helpers.
-11. **P3:** Remove `differential_photometry` deprecation shim once imports use `analyze.calibration`.
-12. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
-13. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
-14. **P3:** Hess / density underlay on crowded CMDs (default off).
-15. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
-16. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
-17. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
-18. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.
+2. **P2:** Registration — skipped-frame reporting, copy reference WCS after `aa_true`, tests for shifts / outliers / skip accounting. Do **not** start drizzle while these are open.
+3. **P2:** Registration — backend protocol (`fit` → `apply` → YAML) and pragmatic unification: every method on the reference grid; drop `make_big_images` from the workflow; **keep** filter-then-inter-filter.
+4. **P2:** Difference images — internal night template + detection/linking + `diff_candidates.ecsv` (HiPS fetch hardening is done; do not start with legacy trim or extra survey strings).
+5. **P2:** Light curves — period search (Lomb–Scargle / BLS) from `light_curves.ecsv`; colour vs phase; simple \(\chi^2\) shape overlay.
+6. **P2:** Overhaul isochrone handling (refresh grids, fetch+cache, named-column loaders) **and** split `plots/cmds.py` in the same pass.
+7. **P2:** Split `extraction.py` only when touching that area; keep script-facing APIs stable.
+8. **P3:** Light curves — APER vs PSF amplitude, mag/colour-matched ensemble, aperture blend fraction.
+9. **P3:** Difference images — ZOGY backend; RASA field-wise HiPS cache / tiles; separate monitoring preset.
+10. **P3:** Registration — thin method zoo; then `shift_method="drizzle"`; optional global single-grid alignment (only after the pragmatic path, and only if course filenames are agreed).
+11. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
+12. **P3:** OST filter throughput → synphot Vega↔AB offsets.
+13. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter; drop related legacy meta helpers.
+14. **P3:** Remove `differential_photometry` deprecation shim once imports use `analyze.calibration`.
+15. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
+16. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
+17. **P3:** Hess / density underlay on crowded CMDs (default off).
+18. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
+19. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
+20. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
+21. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.

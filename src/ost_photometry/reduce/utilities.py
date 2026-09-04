@@ -41,6 +41,7 @@ from .wcs_reduce import determine_wcs_all_images
 
 __all__ = [
     "adjust_edian_compatibility",
+    "adjust_endian_compatibility",
     "bin_image",
     "check_exposure_times",
     "check_filter_keywords",
@@ -868,7 +869,7 @@ def detect_outlier(
     return np.argwhere(score > threshold)
 
 
-def adjust_edian_compatibility(ccd_data: CCDData) -> CCDData:
+def adjust_endian_compatibility(ccd_data: CCDData) -> CCDData:
     """
     This function adapts the endianness of the supplied image files to those
     of the system.
@@ -895,3 +896,6 @@ def adjust_edian_compatibility(ccd_data: CCDData) -> CCDData:
         ccd_data.uncertainty = StdDevUncertainty(u_img)
 
     return ccd_data
+
+
+adjust_edian_compatibility = adjust_endian_compatibility

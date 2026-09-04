@@ -159,16 +159,9 @@ def trim_image(
         Shift of this specific image in X and Y direction
 
     correlation_method
-        Method to use for image alignment.
-        Possibilities: 'aa'      = astroalign module only accounting for
-                                   xy shifts
-                       'aa_true' = astroalign module with corresponding
-                                   transformation
-                       'own'     = own correlation routine based on
-                                   phase correlation, applying fft to
-                                   the images
-                       'skimage' = phase correlation with skimage
-        Default is ``aa_true``.
+        Translation-only backend used with :func:`trim_image`
+        (``aa``, ``own``, ``skimage``). See
+        :data:`~ost_photometry.reduce.registration.SHIFT_METHODS`.
 
     verbose
         If True additional output will be printed to the command line.

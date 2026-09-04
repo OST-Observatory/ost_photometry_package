@@ -1,6 +1,7 @@
 """Image registration: alignment, shifts, and trim helpers."""
 
 from .align import align_image_main, align_images, make_big_images
+from .shift_methods import SHIFT_METHODS, SUPPORTED_SHIFT_METHODS
 from .shifts import (
     apply_astro_align,
     apply_optical_flow,
@@ -28,6 +29,8 @@ from .wcs_align import (
 )
 
 __all__ = [
+    "SHIFT_METHODS",
+    "SUPPORTED_SHIFT_METHODS",
     "align_image_main",
     "align_images",
     "apply_astro_align",

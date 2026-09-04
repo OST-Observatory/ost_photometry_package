@@ -14,8 +14,8 @@ from astropy.io import fits
 
 from helpers import ensure_stub_package, isolated_sys_modules, load_module_from_path, pkg_src
 from ost_photometry.wcs import (
-    _wcs_maps_distinct_sky_positions,
     find_wcs_for_image,
+    wcs_maps_distinct_sky_positions,
 )
 
 
@@ -54,7 +54,7 @@ def test_find_wcs_for_image_reuses_header_wcs(tmp_path: Path):
 
     resolved = find_wcs_for_image(image, method="astrometry", indent=2)
 
-    assert _wcs_maps_distinct_sky_positions(resolved, (64, 64))
+    assert wcs_maps_distinct_sky_positions(resolved, (64, 64))
     assert resolved.wcs.crval[0] == expected.wcs.crval[0]
     assert resolved.wcs.crval[1] == expected.wcs.crval[1]
 

@@ -49,15 +49,9 @@ def apply_xy_image_shift(
         Path to the output directory
 
     shift_method
-        Method to use for image alignment.
-        Possibilities: 'aa'      = astroalign module only accounting for
-                                   xy shifts
-                       'own'     = own correlation routine based on
-                                   phase correlation, applying fft to
-                                   the images
-                       'skimage' = phase correlation implemented by
-                                   skimage
-        Default is ``aa_true``.
+        Alignment backend for translation-only apply. Allowed: ``own``,
+        ``skimage``, ``aa``. See
+        :data:`~ost_photometry.reduce.registration.SHIFT_METHODS`.
 
     modify_file_name
         It true the trimmed image will be saved, using a modified file
@@ -113,7 +107,7 @@ def apply_xy_image_shift(
     if rm_enlarged_keyword:
         output_image.meta.remove('enlarged')
 
-    file_name = current_image_name.split('/')[-1]
+    file_name = Path(current_image_name).name
     if modify_file_name:
         filter_ = output_image.meta['filter']
         file_name = 'combined_trimmed_filter_{}.fit'.format(
@@ -185,7 +179,7 @@ def apply_optical_flow(
         output_image.meta.remove('enlarged')
 
     #   Get file name
-    file_name = current_image_name.split('/')[-1]
+    file_name = Path(current_image_name).name
 
     if modify_file_name:
         #   Get filter
@@ -260,7 +254,7 @@ def apply_astro_align(
         return
 
     #   Get file name
-    file_name = current_image_name.split('/')[-1]
+    file_name = Path(current_image_name).name
 
     if modify_file_name:
         #   Get filter
@@ -397,13 +391,9 @@ def calculate_xy_image_shifts_core(
         ID of the image
 
     correlation_method
-        Method to use for image alignment.
-        Possibilities: 'own'     = own correlation routine based on
-                                   phase correlation, applying fft to
-                                   the images
-                       'skimage' = phase correlation with skimage'
-                       'aa'      = astroalign module
-        Default is 'aa_true'.
+        Translation-only backend (``own``, ``skimage``, ``aa``). See
+        :data:`~ost_photometry.reduce.registration.SHIFT_METHODS`.
+        Default is ``aa_true``.
 
     Returns
     -------
@@ -501,8 +491,8 @@ def calculate_xy_image_shifts_core(
 
 
         #   Adjust endianness
-        image_ccd = utilities.adjust_edian_compatibility(image_ccd)
-        reference_ccd = utilities.adjust_edian_compatibility(reference_ccd)
+        image_ccd = utilities.adjust_endian_compatibility(image_ccd)
+        reference_ccd = utilities.adjust_endian_compatibility(reference_ccd)
 
         #   Determine transformation between the images
         try:
@@ -534,7 +524,7 @@ def calculate_xy_image_shifts_core(
             f'{style.Bcolors.FAIL}Image correlation method '
             f'{correlation_method} not known\n {style.Bcolors.ENDC}'
         )
-    file_name = current_file_name.split('/')[-1]
+    file_name = Path(current_file_name).name
     terminal_output.print_to_terminal(
         f'\t{image_id}\t{image_shift[1]:+.1f}\t{image_shift[0]:+.1f}'
         f'\t{file_name}',
@@ -566,13 +556,9 @@ def calculate_xy_image_shifts(
         calculated
 
     correlation_method
-        Method to use for image alignment.
-        Possibilities: 'own'     = own correlation routine based on
-                                   phase correlation, applying fft to
-                                   the images
-                       'skimage' = phase correlation with skimage'
-                       'aa'      = astroalign module
-        Default is 'aa_true'.
+        Translation-only backend (``own``, ``skimage``, ``aa``). See
+        :data:`~ost_photometry.reduce.registration.SHIFT_METHODS`.
+        Default is ``aa_true``.
 
     n_cores_multiprocessing
         Number of cores to use during multiprocessing.
@@ -670,8 +656,8 @@ def astro_align(
         Aligned image
     """
     #   Adjust endianness
-    current_ccd = utilities.adjust_edian_compatibility(current_ccd)
-    reference_ccd = utilities.adjust_edian_compatibility(reference_ccd)
+    current_ccd = utilities.adjust_endian_compatibility(current_ccd)
+    reference_ccd = utilities.adjust_endian_compatibility(reference_ccd)
 
     #   Determine transformation between the images
     transformation_coefficients, (_, _) = aa.find_transform(
@@ -683,13 +669,14 @@ def astro_align(
     #   Transform image data. ``footprint_mask`` is True where the warped frame
     #   has no coverage; ``propagate_mask=True`` also warps ``current_ccd.mask``
     #   into that footprint so both stay excluded from later 2D background /
-    #   photometry (no separate extra mask).
+    #   photometry (no separate extra mask). Uncovered pixels are NaN, not 0,
+    #   so they are not treated as fake sky.
     image_data, footprint_mask = aa.apply_transform(
         transformation_coefficients,
         current_ccd,
         reference_ccd,
         propagate_mask=True,
-        fill_value=0.,
+        fill_value=np.nan,
     )
 
     #   Transform uncertainty array
@@ -697,8 +684,12 @@ def astro_align(
         transformation_coefficients,
         current_ccd.uncertainty.array,
         reference_ccd.uncertainty.array,
-        fill_value=0.,
+        fill_value=np.nan,
     )
+
+    footprint_mask = np.asarray(footprint_mask, dtype=bool)
+    footprint_mask |= ~np.isfinite(image_data)
+    footprint_mask |= ~np.isfinite(image_uncertainty)
 
     #   Build new CCDData object
     new_ccd = CCDData(

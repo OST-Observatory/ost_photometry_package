@@ -14,7 +14,7 @@ from ost_photometry.wcs import (
     _needs_astap_preprocessing,
     _prepare_astap_fits,
     _scale_image_for_astap,
-    _wcs_maps_distinct_sky_positions,
+    wcs_maps_distinct_sky_positions,
 )
 
 
@@ -118,7 +118,7 @@ def test_apply_wcs_to_fits_replaces_conflicting_keywords(tmp_path: Path):
 
   with fits.open(source) as hdul:
     reloaded = astropy_wcs.WCS(hdul[0].header)
-    assert _wcs_maps_distinct_sky_positions(reloaded, (64, 64))
+    assert wcs_maps_distinct_sky_positions(reloaded, (64, 64))
     assert hdul[0].header["CRVAL1"] == solved_header["CRVAL1"]
     assert hdul[0].header["CDELT1"] == solved_header["CDELT1"]
 

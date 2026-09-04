@@ -180,7 +180,7 @@ def _collect_wcs_header_cards(header: fits.Header) -> fits.Header:
     return fits.Header(cards)
 
 
-def _wcs_maps_distinct_sky_positions(
+def wcs_maps_distinct_sky_positions(
     wcs_obj: wcs.WCS,
     shape_xy: tuple[int, int],
     min_corner_separation_arcsec: float = 30.0,
@@ -197,6 +197,9 @@ def _wcs_maps_distinct_sky_positions(
         return False
 
     return corner_a.separation(corner_b).arcsec > min_corner_separation_arcsec
+
+
+_wcs_maps_distinct_sky_positions = wcs_maps_distinct_sky_positions
 
 
 def _apply_wcs_to_fits(
@@ -225,7 +228,7 @@ def _apply_wcs_to_fits(
             ny, nx = hdul[0].data.shape
             image_shape = (nx, ny)
 
-    if image_shape is not None and not _wcs_maps_distinct_sky_positions(
+    if image_shape is not None and not wcs_maps_distinct_sky_positions(
         reloaded_wcs,
         image_shape,
     ):
@@ -646,7 +649,7 @@ def check_wcs_exists(
     wcs_original_type = wcs_original.get_axis_types()[0]["coordinate_type"]
 
     if wcs_original_type == "celestial":
-        if _wcs_maps_distinct_sky_positions(wcs_original, (nx, ny)):
+        if wcs_maps_distinct_sky_positions(wcs_original, (nx, ny)):
             terminal_output.print_to_terminal(
                 "Image contains already a valid WCS.",
                 indent=indent,
@@ -689,7 +692,7 @@ def check_wcs_exists(
 
             if (
                 wcs_astronomy_net_type == "celestial"
-                and _wcs_maps_distinct_sky_positions(wcs_astronomy_net, (nx, ny))
+                and wcs_maps_distinct_sky_positions(wcs_astronomy_net, (nx, ny))
             ):
                 terminal_output.print_to_terminal(
                     "Image found in wcs_dir with a valid WCS.",

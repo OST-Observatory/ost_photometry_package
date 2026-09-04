@@ -13,7 +13,7 @@ from astropy.wcs import WCS
 from ... import terminal_output
 from ... import utilities as base_utilities
 from ...fits_headers import wcs_from_header
-from ...wcs import _wcs_maps_distinct_sky_positions, find_wcs_for_image
+from ...wcs import find_wcs_for_image, wcs_maps_distinct_sky_positions
 
 
 def celestial_wcs_from_ccd(ccd: CCDData) -> WCS | None:
@@ -42,6 +42,15 @@ def pixel_offset_on_reference(
     """
     Pixel of the source-image centre on the destination grid, minus the
     source-centre pixel. Same-shape frames: this is the bulk (dx, dy) shift.
+
+    ``(dx, dy)`` uses FITS/WCS pixel axes (x along NAXIS1, y along NAXIS2):
+    destination pixel of the source centre minus the source-centre pixel.
+    That is **not** the ``ndi.shift`` convention of “how much to shift the
+    other image onto the reference”. A source that sits 3 pixels left of
+    the reference reports ``dx = +3`` here, because its centre maps to a
+    larger x on the destination grid. YAML ``dx_pix`` / ``dy_pix`` follow
+    this definition so they stay consistent with the WCS path; do not flip
+    the sign silently.
     """
     ny, nx = int(src_shape[0]), int(src_shape[1])
     x0 = (nx - 1) / 2.0
@@ -66,7 +75,7 @@ def fits_has_celestial_wcs(path: str | Path) -> bool:
     if data is None:
         return False
     ny, nx = data.shape
-    return _wcs_maps_distinct_sky_positions(wcs_obj, (nx, ny))
+    return wcs_maps_distinct_sky_positions(wcs_obj, (nx, ny))
 
 
 def ensure_celestial_wcs_on_fits(
@@ -212,7 +221,7 @@ def apply_wcs_align(
                 dst_wcs,
                 tuple(int(n) for n in reference_ccd.data.shape),
             )
-        except Exception as exc:
+        except (ValueError, TypeError, ImportError) as exc:
             terminal_output.print_to_terminal(
                 f"WCS reproject failed for {current_path.name}: {exc}. Skip.",
                 indent=2,
