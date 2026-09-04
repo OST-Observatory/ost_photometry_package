@@ -20,6 +20,7 @@ from .shifts import (
     apply_xy_image_shift,
     calculate_xy_image_shifts,
 )
+from .wcs_align import apply_wcs_align, ensure_celestial_wcs_on_fits
 
 
 def align_images(
@@ -35,6 +36,8 @@ def align_images(
         terminal_alignment_comment: str | None = None,
         modify_file_name: bool = False,
         align_filter_wise: bool = False,
+        wcs_method: str = "astap",
+        force_wcs_determination: bool = False,
     ) -> None:
     """
     Calculate shift between images and trim those to the save field of
@@ -71,6 +74,9 @@ def align_images(
                                    phase correlation, applying fft to
                                    the images
                        'skimage' = phase correlation with skimage
+                       'wcs'     = reproject each frame onto the
+                                   reference image WCS (solve with
+                                   ``wcs_method`` if the header has none)
         Default is ``aa_true``.
 
     n_cores_multiprocessing
@@ -121,6 +127,14 @@ def align_images(
 
     align_filter_wise
         If ``True'', only the images that belong to the same filter will be aligned.
+        Default is ``False``.
+
+    wcs_method
+        Solver used when ``shift_method='wcs'`` and a frame has no celestial
+        WCS yet (``astap``, ``astrometry``). Default is ``astap``.
+
+    force_wcs_determination
+        Re-solve WCS even if a celestial solution is already in the header.
         Default is ``False``.
     """
     #   Sanitize the provided paths
@@ -204,6 +218,8 @@ def align_images(
                 threshold=threshold,
                 verbose=debug,
                 save_only_transformation=save_only_transformation,
+                wcs_method=wcs_method,
+                force_wcs_determination=force_wcs_determination,
             )
     else:
         if enlarged_only:
@@ -231,6 +247,8 @@ def align_images(
             threshold=threshold,
             verbose=debug,
             save_only_transformation=save_only_transformation,
+            wcs_method=wcs_method,
+            force_wcs_determination=force_wcs_determination,
         )
 
     #   Remove reduced files if they exist, but only if they are no longer
@@ -255,6 +273,8 @@ def align_image_main(
         rm_outliers: bool = True, filter_window: int = 25,
         threshold: int | float = 10., instrument: str | None = None,
         verbose: bool = False, save_only_transformation: bool = False,
+        wcs_method: str = "astap",
+        force_wcs_determination: bool = False,
     ) -> None:
     """
     Core steps of the image shift calculations and trimming to a
@@ -284,6 +304,7 @@ def align_image_main(
                                    skimage
                        'flow'    = image registration using optical flow
                                    implementation by skimage
+                       'wcs'     = reproject onto the reference WCS
         Default is ``aa_true``.
 
     n_cores_multiprocessing
@@ -330,6 +351,13 @@ def align_image_main(
 
     save_only_transformation
         If ``True'', only the transformation matrix is saved, not the transformed image itself.
+        Default is ``False``.
+
+    wcs_method
+        Solver used when ``shift_method='wcs'``. Default is ``astap``.
+
+    force_wcs_determination
+        Re-solve WCS even if a celestial solution is already present.
         Default is ``False``.
     """
     if terminal_alignment_comment is None:
@@ -497,10 +525,79 @@ def align_image_main(
 
         #   Close multiprocessing pool and wait until it finishes
         executor.wait()
+
+    elif shift_method == "wcs":
+        files = list(image_file_collection.files)
+        if not files:
+            return
+        ref_index = int(reference_image_index)
+        if ref_index < 0 or ref_index >= len(files):
+            raise ValueError(
+                f"reference_image_index {reference_image_index} is out of "
+                f"range for {len(files)} images"
+            )
+        reference_file_name = files[ref_index]
+        terminal_output.print_to_terminal(
+            f"{terminal_alignment_comment} WCS reproject "
+            f"(solver={wcs_method})",
+            indent=2,
+        )
+        if not ensure_celestial_wcs_on_fits(
+            reference_file_name,
+            output_path,
+            wcs_method=wcs_method,
+            force=force_wcs_determination,
+        ):
+            raise RuntimeError(
+                f"{style.Bcolors.FAIL}Reference image has no celestial WCS "
+                f"({reference_file_name}); cannot use shift_method='wcs'. "
+                f"Check ASTAP / wcs_method.{style.Bcolors.ENDC}"
+            )
+        for path in files:
+            if path == reference_file_name:
+                continue
+            ensure_celestial_wcs_on_fits(
+                path,
+                output_path,
+                wcs_method=wcs_method,
+                force=force_wcs_determination,
+            )
+
+        executor = Executor(
+            n_cores_multiprocessing,
+            n_tasks=len(files),
+            add_progress_bar=True,
+        )
+        for current_image_name in files:
+            executor.schedule(
+                apply_wcs_align,
+                args=(
+                    current_image_name,
+                    reference_file_name,
+                    output_path,
+                    output_path_transformation,
+                ),
+                kwargs={
+                    "modify_file_name": modify_file_name,
+                    "rm_enlarged_keyword": rm_enlarged_keyword,
+                    "instrument": instrument,
+                    "save_only_transformation": save_only_transformation,
+                    "wcs_method": wcs_method,
+                    "force_wcs_determination": False,
+                },
+            )
+        if executor.err is not None:
+            raise RuntimeError(
+                f"\n{style.Bcolors.FAIL}WCS alignment could not be applied. "
+                f"It was not possible to recover from this error."
+                f"{style.Bcolors.ENDC}"
+            )
+        executor.wait()
+
     else:
         raise ValueError(
-            f'{style.Bcolors.FAIL}Method {shift_method} not known '
-            f'-> EXIT {style.Bcolors.ENDC}'
+            f"{style.Bcolors.FAIL}Method {shift_method} not known "
+            f"-> EXIT {style.Bcolors.ENDC}"
         )
 
 

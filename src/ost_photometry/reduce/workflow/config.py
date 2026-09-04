@@ -25,6 +25,7 @@ class ReduceConfig:
     reference_image_index: int = 0
     enforce_bias: bool = False
     add_hot_bad_pixel_mask: bool = True
+    # aa / aa_true / own / skimage / flow / wcs (reproject onto reference WCS)
     shift_method: str = "aa_true"
     n_cores_multiprocessing: int | None = None
     stack_images: bool = True

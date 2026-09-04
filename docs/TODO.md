@@ -69,6 +69,20 @@ Steps are already modular via config. What is missing is **persist and continue 
 
 Facade plus reduction-specific helpers; already delegates to `exposure`, `instrument`, `masks`, `wcs_reduce`, …. Incremental only when touching the affected area.
 
+### WCS-based registration (`shift_method="wcs"`)
+
+Optional alignment backend: solve a celestial WCS per frame if missing
+(``wcs_method``, default ASTAP) and **reproject onto the reference image
+WCS**. Default remains ``aa_true`` (star-triangle / astroalign) for dense
+fields and sub-pixel stacks. Use ``wcs`` for large dithers, sparse fields,
+filter-to-filter stacks, or as a fallback when astroalign fails.
+
+Do **not** run ASTAP twice: alignment writes WCS onto the reduced frames;
+``find_wcs_of_all_images`` is skipped after ``shift_method="wcs"`` unless
+``force_wcs_determination``. ``make_big_images`` is skipped for ``wcs``
+(same as ``aa_true``). Keep ``aa_true`` for N2 cluster stacks unless WCS
+align is clearly better on that dataset.
+
 ---
 
 ## Diagnostic plots

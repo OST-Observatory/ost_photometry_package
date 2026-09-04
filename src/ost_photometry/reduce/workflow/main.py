@@ -146,6 +146,8 @@ def reduce_main(
                                    phase correlation, applying fft to
                                    the images
                        'skimage' = phase correlation with skimage
+                       'wcs'     = reproject onto the reference WCS
+                                   (solves with ``wcs_method`` if needed)
         Default is ``aa_true``.
 
     n_cores_multiprocessing
@@ -643,6 +645,8 @@ def _run_reduction(cfg: ReduceConfig) -> None:
         image_output_directory="aligned_lights",
         save_only_transformation=cfg.save_only_transformation,
         align_filter_wise=not cfg.shift_all,
+        wcs_method=cfg.wcs_method,
+        force_wcs_determination=cfg.force_wcs_determination,
     )
 
     #   Set the image directory depending on whether we have aligned images or
@@ -653,16 +657,23 @@ def _run_reduction(cfg: ReduceConfig) -> None:
         image_directory = "aligned_lights"
 
     if cfg.find_wcs and cfg.find_wcs_of_all_images:
-        ###
-        #   Determine WCS and add it to all reduced images
-        #
-        terminal_output.print_to_terminal("Determine WCS ...", indent=1)
-        utilities.determine_wcs_all_images(
-            output_path / image_directory,
-            output_path / image_directory,
-            wcs_method=cfg.wcs_method,
-            force_wcs_determination=cfg.force_wcs_determination,
-        )
+        if cfg.shift_method == "wcs" and not cfg.force_wcs_determination:
+            terminal_output.print_to_terminal(
+                "WCS already solved during alignment (shift_method='wcs'); "
+                "skipping a second per-image solve.",
+                indent=1,
+            )
+        else:
+            ###
+            #   Determine WCS and add it to all reduced images
+            #
+            terminal_output.print_to_terminal("Determine WCS ...", indent=1)
+            utilities.determine_wcs_all_images(
+                output_path / image_directory,
+                output_path / image_directory,
+                wcs_method=cfg.wcs_method,
+                force_wcs_determination=cfg.force_wcs_determination,
+            )
 
     if cfg.estimate_fwhm:
         ###
@@ -715,7 +726,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
             #   cross correlation
             #
             enlarged: bool = False
-            if cfg.shift_method != "aa_true":
+            if cfg.shift_method not in ("aa_true", "wcs"):
                 registration.make_big_images(
                     output_path,
                     output_path,
@@ -745,6 +756,8 @@ def _run_reduction(cfg: ReduceConfig) -> None:
                 enlarged_only=enlarged,
                 terminal_alignment_comment="\tDisplacement between the images of the different filters",
                 modify_file_name=True,
+                wcs_method=cfg.wcs_method,
+                force_wcs_determination=cfg.force_wcs_determination,
             )
 
     else:

@@ -37,6 +37,7 @@ dependencies = [
     "pandas>=2.0",
     "bottleneck>=1.3",
     "tqdm>=4.60",
+    "reproject>=0.13",
 ]
 
 [project.optional-dependencies]
