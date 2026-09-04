@@ -17,13 +17,16 @@
   "cameras": {
     "qhy5iii462": {
       "display_name": "QHY5III462",
-      "chip_mm": null,
+      "chip_mm": [
+        5.57,
+        3.13
+      ],
       "defaults": {},
       "camera_info_quantities": [
         "system_gain",
         "readout_noise"
       ],
-      "notes": "Single readout mode. Source CSVs follow GAIN vs quantity.",
+      "notes": "Single readout mode. IMX462 1920\u00d71080 at 2.9 \u03bcm.",
       "curves": [
         {
           "quantity": "system_gain",
@@ -2644,13 +2647,16 @@
     },
     "qhy5iii485c": {
       "display_name": "QHY5III485C",
-      "chip_mm": null,
+      "chip_mm": [
+        11.21,
+        6.32
+      ],
       "defaults": {},
       "camera_info_quantities": [
         "system_gain",
         "readout_noise"
       ],
-      "notes": "QE wavelength is stored in nm (digitized values ~400\u20131000).",
+      "notes": "IMX485 3864\u00d72180 at 2.9 \u03bcm. QE wavelength stored as nm (~400\u20131000).",
       "curves": [
         {
           "quantity": "qe",

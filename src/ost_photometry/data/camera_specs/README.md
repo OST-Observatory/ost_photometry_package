@@ -83,10 +83,9 @@ Optional later: QE, full well, dynamic range, linearity.
 | QHY600M | all 6 modes | all 6 modes | yes | yes | yes | all 6 modes | all 6 modes | yes |
 | QHY268M/C | **missing (all modes)** | all 6 modes | yes | yes | yes | missing photography (+ 2CMS); other modes yes | no | no |
 | STF-8300 | n/a (use EGAIN) | scalar 9.3 e- | yes | yes | yes | no | no | yes |
-| QHY5III485C | mode 0 and 1 | mode 0 and 1 | **missing** | **missing** | RGB | **axes unclear** | **y looks like full well** | no |
-| QHY5III462 | single mode | single mode | **missing** | **missing** | **missing** | single mode | single mode | no |
+| QHY5III485C | mode 0 and 1 | mode 0 and 1 | **missing** | 11.21×6.32 (3864×2180 @ 2.9 µm) | RGB | **axes unclear** | **y looks like full well** | no |
+| QHY5III462C | single mode | single mode | **missing** | 5.57×3.13 (1920×1080 @ 2.9 µm) | **missing** | single mode | single mode | no |
 | ASI2600 | yes (`stats_pink`) | yes (`stats_red`) | **missing** (file was empty) | IMX571 = 268 | RGB | **missing** | yes (`stats_blue`) | no |
 
 Highest priority for a new digitization: **QHY268 system gain vs GAIN** (every
-readout mode), then dark current for 485C / 462 / ASI2600, then chip sizes
-for the QHY5III cameras.
+readout mode), then dark current for 485C / 462 / ASI2600.

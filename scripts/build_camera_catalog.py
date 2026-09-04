@@ -35,6 +35,10 @@ _CHIP_MM = {
     "stf8300": [17.96, 13.52],
     # IMX571, same optical format as QHY268.
     "asi2600": [23.45, 15.7],
+    # IMX485, 3864×2180 at 2.9 μm.
+    "qhy5iii485c": [11.21, 6.32],
+    # IMX462, 1920×1080 at 2.9 μm.
+    "qhy5iii462": [5.57, 3.13],
 }
 
 _CAMERA_INFO_QUANTITIES = {
@@ -126,8 +130,8 @@ _UNUSABLE = {
 
 _CAMERA_NOTES = {
     "qhy268": "QHY268M uses the QHY268MC (IMX571) traces. No system-gain CSV in the drop.",
-    "qhy5iii462": "Single readout mode. Source CSVs follow GAIN vs quantity.",
-    "qhy5iii485c": "QE wavelength is stored in nm (digitized values ~400–1000).",
+    "qhy5iii462": "Single readout mode. IMX462 1920×1080 at 2.9 μm.",
+    "qhy5iii485c": "IMX485 3864×2180 at 2.9 μm. QE wavelength stored as nm (~400–1000).",
     "asi2600": "stats_red = RN, stats_pink = e-/ADU, stats_blue = DR. Dark CSV was empty and removed.",
 }
 

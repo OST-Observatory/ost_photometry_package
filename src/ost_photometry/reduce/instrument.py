@@ -346,6 +346,8 @@ def get_instrument_info(
             instrument = "QHY268M"
         elif x_dimension_physical == 3864 and y_dimension_physical in [2180, 2178]:
             instrument = "QHY485C"
+        elif x_dimension_physical == 1920 and y_dimension_physical in [1080, 1078]:
+            instrument = "QHY5III462C"
         else:
             instrument = ""
 

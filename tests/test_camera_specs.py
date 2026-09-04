@@ -187,6 +187,11 @@ def test_get_chip_dimensions_returns_width_height():
     assert (width, height) == (32.0, 24.0)
 
 
+def test_qhy5iii_chip_sizes_from_pixel_pitch():
+    assert get_chip_dimensions("QHY485C") == (11.21, 6.32)
+    assert get_chip_dimensions("QHY5III462C") == (5.57, 3.13)
+
+
 def test_camera_info_stf8300_uses_catalog_defaults():
     rn, gain, dark, width, height = camera_info(
         "SBIG STF-8300 CCD Camera",
