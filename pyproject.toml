@@ -55,6 +55,15 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ost_photometry"]
+# Source plots are provenance; the wheel ships cameras.json instead.
+exclude = [
+    "ost_photometry/data/camera_specs/*.jpg",
+    "ost_photometry/data/camera_specs/*.jpeg",
+    "ost_photometry/data/camera_specs/*.png",
+]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/ost_photometry/data" = "ost_photometry/data"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

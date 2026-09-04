@@ -11,6 +11,8 @@ __pycache__
 .pytest_cache/
 .venv/
 .cursor
+# Scratch dump at the repo root; packaged traces live in src/ost_photometry/data/.
+/camera_specs/
 
 ost_photometry_package.code-workspace
 
