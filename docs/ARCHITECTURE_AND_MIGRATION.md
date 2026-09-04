@@ -33,9 +33,9 @@ config prefixes are removed. Use **one epoch-native calibration path**:
 | `linear_fit_per_night` | `linear_fit` | `per_night` | `none` | Multi-epoch light curves |
 | `linear_fit_per_night_extinction` | `linear_fit` | `per_night` | `from_comparison_stars` | Multi-epoch light curves with significant airmass range |
 
-Deprecated aliases (still accepted): `n2_stack` → `median_zp_per_image`, `c7_variable` → `linear_fit_per_night`, `c7_variable_extinction` → `linear_fit_per_night_extinction`, `mk_calib_trans` → `extract_protect_calibrators`, `mk_calib_calibrate` → `linear_fit_ensemble`, `ost_site` → `tabulated_extinction`.
-
 Additional presets: `extract_protect_calibrators` (extract/intra-correlate, protect calibrators, skip apply), `linear_fit_ensemble` (ensemble derive-transform), `tabulated_extinction` (site extinction table).
+
+Removed aliases (use the canonical name): `n2_stack` → `median_zp_per_image`, `c7_variable` → `linear_fit_per_night`, `c7_variable_extinction` → `linear_fit_per_night_extinction`, `mk_calib_trans` → `extract_protect_calibrators`, `mk_calib_calibrate` → `linear_fit_ensemble`, `ost_site` → `tabulated_extinction`.
 
 ### Removed (breaking)
 
@@ -164,7 +164,7 @@ Calibration catalog download and normalization live in
 
 | Removed / old | New |
 |---------------|-----|
-| `analyze.calibration_differential_catalog` | `analyze.differential_photometry` |
+| `analyze.calibration_differential_catalog` / `analyze.differential_photometry` | `analyze.calibration.calibrator` / `analyze.calibration.photometer` |
 | `PipelineConfig.magnitude_range` | `calibration_catalog_mag_range` |
 | `PhotometryCalibrator.setup_apass(...)` | `setup_calibration_source(...)` |
 | `APASSCatalog` (public) | `fetch_standard_calibration_catalog` + `crossmatch_standard_catalog` |

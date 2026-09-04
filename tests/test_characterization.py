@@ -82,7 +82,7 @@ def test_extinction_corrector_first_order():
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_differential_photometer_zp_only(synthetic_calibration_epoch_table):
     diff_mod = __import__(
-        "ost_photometry.analyze.differential_photometry",
+        "ost_photometry.analyze.calibration.photometer",
         fromlist=["DifferentialPhotometer"],
     )
     DifferentialPhotometer = diff_mod.DifferentialPhotometer

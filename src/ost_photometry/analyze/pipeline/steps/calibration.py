@@ -10,7 +10,11 @@ import numpy as np
 from astropy.table import Table
 
 from .... import terminal_output
-from ...calibration import CalibrationEngine, prepare_calibration_check_plots
+from ...calibration import (
+    CalibrationEngine,
+    DifferentialPhotometer,
+    prepare_calibration_check_plots,
+)
 from ...calibration.backends.linear import build_calibrator
 from ...calibration_sources import (
     crossmatch_standard_catalog,
@@ -20,7 +24,6 @@ from ...calibration_sources.known_variables import (
     KNOWN_VARIABLES_EXCLUDED_META,
     drop_catalog_rows_near_known_variables,
 )
-from ...differential_photometry import DifferentialPhotometer
 from ...extinction_io import build_extinction_corrector
 from ...post_processing.adapters import ensure_epoch_native_photometry_table
 from ...post_processing.io import write_epoch_native_magnitudes

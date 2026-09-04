@@ -79,8 +79,8 @@ def test_linear_fit_per_night_extinction_preset():
     assert cfg_va.extinction_mode == "from_value_airmass"
 
 
-def test_deprecated_preset_aliases_still_resolve():
-    import warnings
+def test_unknown_preset_raises():
+    import pytest
 
     cfg_mod = load_module_from_path(
         "ost_photometry.analyze.pipeline.config",
@@ -88,37 +88,31 @@ def test_deprecated_preset_aliases_still_resolve():
     )
     PipelineConfig = cfg_mod.PipelineConfig
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        cfg = PipelineConfig.from_preset("c7_variable")
-    assert cfg.calibration_strategy == "linear_fit"
-    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+    with pytest.raises(ValueError, match="Unknown calibration preset"):
+        PipelineConfig.from_preset("c7_variable")
+    with pytest.raises(ValueError, match="Unknown calibration preset"):
+        PipelineConfig.from_preset("n2_stack")
 
-    with warnings.catch_warnings(record=True):
-        warnings.simplefilter("ignore", DeprecationWarning)
-        n2 = PipelineConfig.from_preset("n2_stack")
-        assert n2.calibration_strategy == "median_zp"
-        assert n2.exposure_pairing == "index"
-        assert (
-            PipelineConfig.from_preset("median_zp_per_image").exposure_pairing
-            == "index"
-        )
-        assert (
-            PipelineConfig.from_preset(
-                "c7_variable_extinction"
-            ).extinction_mode
-            == "from_comparison_stars"
-        )
-        assert PipelineConfig.from_preset(
-            "mk_calib_trans"
-        ).protect_calibration_objects is True
-        assert (
-            PipelineConfig.from_preset("mk_calib_calibrate").calibration_grouping
-            == "ensemble"
-        )
-        assert (
-            PipelineConfig.from_preset("ost_site").extinction_mode == "tabulated"
-        )
+    n2 = PipelineConfig.from_preset("median_zp_per_image")
+    assert n2.calibration_strategy == "median_zp"
+    assert n2.exposure_pairing == "index"
+    assert (
+        PipelineConfig.from_preset(
+            "linear_fit_per_night_extinction"
+        ).extinction_mode
+        == "from_comparison_stars"
+    )
+    assert PipelineConfig.from_preset(
+        "extract_protect_calibrators"
+    ).protect_calibration_objects is True
+    assert (
+        PipelineConfig.from_preset("linear_fit_ensemble").calibration_grouping
+        == "ensemble"
+    )
+    assert (
+        PipelineConfig.from_preset("tabulated_extinction").extinction_mode
+        == "tabulated"
+    )
 
 
 def test_calibration_field_names():

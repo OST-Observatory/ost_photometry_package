@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 from astropy.table import Table
 
-from ..differential_photometry import DifferentialPhotometer, PhotometryCalibrator
 from .apply import apply_calibration_epochs
 from .backends import linear as linear_backend
 from .backends import median as median_backend
+from .calibrator import PhotometryCalibrator
+from .photometer import DifferentialPhotometer
 from .result import CalibrationResult, TransformationCoefficients
 from .zp import comparison_mask_from_std_columns, zp_subsample_statistic
 

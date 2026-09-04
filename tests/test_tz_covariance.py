@@ -93,11 +93,11 @@ def test_calibrated_magnitude_variance_includes_cov_term():
 
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_apply_transform_uses_cov_tz():
+    from ost_photometry.analyze.calibration import DifferentialPhotometer
     from ost_photometry.analyze.calibration.result import (
         CalibrationResult,
         TransformationCoefficients,
     )
-    from ost_photometry.analyze.differential_photometry import DifferentialPhotometer
 
     tc = TransformationCoefficients(
         filter_name="V",
@@ -129,7 +129,7 @@ def test_apply_transform_uses_cov_tz():
 
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
 def test_fit_epoch_stores_cov_tz(synthetic_calibration_epoch_table):
-    from ost_photometry.analyze.differential_photometry import DifferentialPhotometer
+    from ost_photometry.analyze.calibration import DifferentialPhotometer
 
     tbl = synthetic_calibration_epoch_table
     mask = np.asarray(tbl["is_comparison"], dtype=bool)

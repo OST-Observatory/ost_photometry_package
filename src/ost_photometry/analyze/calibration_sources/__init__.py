@@ -6,7 +6,7 @@ catalogs used by:
 
 * **Protect-calibrators / correlation** — :func:`fetch_standard_calibration_catalog`
   (standard schema) via :mod:`ost_photometry.analyze.correlate.protection`.
-* **Epoch-native calibration** — :class:`~ost_photometry.analyze.differential_photometry.PhotometryCalibrator`
+* **Epoch-native calibration** — :class:`~ost_photometry.analyze.calibration.PhotometryCalibrator`
   (via :class:`~ost_photometry.analyze.calibration.CalibrationEngine`) keeps the
   catalog in **standard schema** and cross-matches via :func:`crossmatch_standard_catalog`.
 

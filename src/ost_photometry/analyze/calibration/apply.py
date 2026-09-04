@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from astropy.table import Table
 
-from ..differential_photometry import DifferentialPhotometer
+from .photometer import DifferentialPhotometer
 from .result import CalibrationResult
 
 

@@ -434,7 +434,64 @@ are removed.
 **Still kept (read old files):** ``legacy_wide_table_to_epoch_native`` /
 ``ensure_epoch_native_photometry_table`` accept wide tables with column ``i``.
 N2 ``2b_post_process.py`` prefers ECSV and converts a leftover ``.dat`` on
-input; it does not write wide tables.
+input; it does not write wide tables. Keep this dual-read until old course
+``.dat`` files no longer matter, then drop it (P3 below).
+
+---
+
+## Code health / structure
+
+Structural revision (not new science features). Prefer touching these when
+already working in the area; do not block P1 light curves on a pure cleanup
+sprint.
+
+### `plots/cmds.py` monolith (P2)
+
+``MakeCMDs`` / ``plot_absolute_cmd`` (~1700-line module) still mixes plotting,
+isochrone I/O, χ² scoring, and diagnostics. Couples tightly to the brittle
+isochrone YAML loader.
+
+**Direction:** split plot helpers, isochrone scoring, and diagnostics writers
+alongside the **isochrone handling overhaul** above — not a drive-by rename.
+Keep the public ``plot_cmds_from_table`` / ``MakeCMDs`` entry points stable for
+course scripts.
+
+### `extraction.py` size (P2)
+
+``analyze/extraction.py`` (~1700+ lines) is the photometry kernel (APER/PSF,
+masks, ePSF, growth). Hard to test and change in isolation.
+
+**Direction:** extract cohesive pieces (e.g. aperture vs PSF path, ePSF
+selection, diagnostic hooks) when changing that area. Do not rewrite the
+detection API for N2/C7 scripts.
+
+### `subtraction_alard_lupton.py` vs difference-image layers (P2)
+
+The Python Alard–Lupton subtractor is large and will grow with night templates
+and detection. Keep subtractor code separate from HiPS fetch and from
+``diff_candidates`` linking — see **Difference images** above.
+
+### Drop ``differential_photometry`` shim (P3)
+
+Live code is ``calibration/photometer.py`` (``DifferentialPhotometer``) and
+``calibration/calibrator.py`` (``PhotometryCalibrator``).
+``analyze/differential_photometry.py`` is only a ``DeprecationWarning`` re-export.
+
+**Direction:** remove the shim once external scripts import from
+``ost_photometry.analyze.calibration``.
+
+### Small compatibility leftovers (P3)
+
+- Re-export stubs such as ``analyze/utils/simbad_annotate.py`` → real module in
+  ``post_processing``.
+- ``populate_legacy_calibration_epoch_meta`` / legacy column helpers used only
+  for old wide tables — remove with the legacy-wide **read** drop.
+- Deprecated preset aliases (``n2_stack``, ``c7_variable``, …) are **already
+  removed**; use canonical preset names only.
+
+### `old_legacy_function/` — removed
+
+Archived Image-based ZP/plot helpers outside ``src/`` are gone. Do not restore.
 
 ---
 
@@ -451,16 +508,18 @@ input; it does not write wide tables.
 1. **P1:** Light curves — two products (catalog-transformed mag scale vs differential depth without catalog \(\sigma\)); quiet ensemble + `flag_epoch`; then inflate \(\sigma\) and residuals vs airmass/FWHM/sky/\(x,y\).
 2. **P2:** Difference images — internal night template + detection/linking + `diff_candidates.ecsv` (HiPS fetch hardening is done; do not start with legacy trim or extra survey strings).
 3. **P2:** Light curves — period search (Lomb–Scargle / BLS) from `light_curves.ecsv`; colour vs phase; simple \(\chi^2\) shape overlay.
-4. **P2:** Overhaul isochrone handling (refresh grids, fetch+cache, named-column loaders).
-5. **P3:** Light curves — APER vs PSF amplitude, mag/colour-matched ensemble, aperture blend fraction.
-6. **P3:** Difference images — ZOGY backend; RASA field-wise HiPS cache / tiles; separate monitoring preset.
-7. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
-8. **P3:** OST filter throughput → synphot Vega↔AB offsets.
-9. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter.
-10. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
-11. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
-12. **P3:** Hess / density underlay on crowded CMDs (default off).
-13. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
-14. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
-15. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
-16. **On utilities changes:** extract only the affected area.
+4. **P2:** Overhaul isochrone handling (refresh grids, fetch+cache, named-column loaders) **and** split `plots/cmds.py` in the same pass.
+5. **P2:** Split `extraction.py` only when touching that area; keep script-facing APIs stable.
+6. **P3:** Light curves — APER vs PSF amplitude, mag/colour-matched ensemble, aperture blend fraction.
+7. **P3:** Difference images — ZOGY backend; RASA field-wise HiPS cache / tiles; separate monitoring preset.
+8. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
+9. **P3:** OST filter throughput → synphot Vega↔AB offsets.
+10. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter; drop related legacy meta helpers.
+11. **P3:** Remove `differential_photometry` deprecation shim once imports use `analyze.calibration`.
+12. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
+13. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
+14. **P3:** Hess / density underlay on crowded CMDs (default off).
+15. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
+16. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
+17. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
+18. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.

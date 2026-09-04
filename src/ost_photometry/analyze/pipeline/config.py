@@ -76,15 +76,6 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
     },
 }
 
-# Deprecated aliases → canonical preset names.
-CALIBRATION_PRESET_ALIASES: dict[str, str] = {
-    "n2_stack": "median_zp_per_image",
-    "c7_variable": "linear_fit_per_night",
-    "c7_variable_extinction": "linear_fit_per_night_extinction",
-    "mk_calib_trans": "extract_protect_calibrators",
-    "mk_calib_calibrate": "linear_fit_ensemble",
-    "ost_site": "tabulated_extinction",
-}
 
 @dataclass
 class DiagnosticPlots:
@@ -474,25 +465,14 @@ class PipelineConfig:
     ) -> PipelineConfig:
         """Build config from a named calibration preset.
 
-        Canonical names describe the mode, e.g. ``median_zp_per_image``,
+        Names describe the mode, e.g. ``median_zp_per_image``,
         ``linear_fit_per_night``, ``extract_protect_calibrators``,
-        ``linear_fit_ensemble``, ``tabulated_extinction``. Deprecated aliases
-        (``n2_stack``, ``c7_variable``, ``mk_calib_trans``, ``ost_site``, …)
-        still work and emit ``DeprecationWarning``.
+        ``linear_fit_ensemble``, ``tabulated_extinction``.
         """
-        import warnings
-
-        resolved = CALIBRATION_PRESET_ALIASES.get(preset, preset)
-        if resolved != preset:
-            warnings.warn(
-                f"Calibration preset {preset!r} is deprecated; use {resolved!r}.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        if resolved not in CALIBRATION_PRESETS:
+        if preset not in CALIBRATION_PRESETS:
             known = ", ".join(sorted(CALIBRATION_PRESETS))
             raise ValueError(f"Unknown calibration preset {preset!r}; known: {known}")
-        kw = dict(CALIBRATION_PRESETS[resolved])
+        kw = dict(CALIBRATION_PRESETS[preset])
         if overrides:
             kw.update(overrides)
         return cls(**kw)

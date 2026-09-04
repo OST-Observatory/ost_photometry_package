@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...differential_photometry import PhotometryCalibrator
 from ...extinction import CoefficientMode, ExtinctionCoefficients, ExtinctionOrder
 from ...extinction_io import (
     finalize_pipeline_extinction_coefficients,
     resolve_pipeline_extinction_coefficients,
     resolve_pipeline_extinction_order,
 )
+from ..calibrator import PhotometryCalibrator
 from ..quality import calibrator_candidate_mask
 from ..result import CalibrationResult
 

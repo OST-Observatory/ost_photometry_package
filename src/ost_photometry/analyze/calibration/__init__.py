@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .calibrator import PhotometryCalibrator
 from .flux_normalize import (
     flux_normalization_flux_distribution,
     flux_normalization_image_series,
@@ -17,13 +18,16 @@ from .mk_calib import (
     load_field_transformation_record,
     write_trans_para_table,
 )
+from .photometer import DifferentialPhotometer
 from .result import CalibrationResult, TransformationCoefficients
 from .second_order_extinction import SecondOrderFitResult, run_second_order_campaign
 
 __all__ = [
     "CalibrationEngine",
     "CalibrationResult",
+    "DifferentialPhotometer",
     "FieldTransformationRecord",
+    "PhotometryCalibrator",
     "SecondOrderFitResult",
     "TransformCoefficient",
     "TransformationCoefficients",
@@ -40,7 +44,7 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    # Engine imports differential_photometry; that module imports calibration.result,
+    # Engine imports photometer/calibrator; those import calibration.result,
     # which loads this package. Importing engine here would loop.
     if name in {"CalibrationEngine", "prepare_calibration_check_plots"}:
         from .engine import CalibrationEngine, prepare_calibration_check_plots

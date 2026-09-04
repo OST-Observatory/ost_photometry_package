@@ -58,7 +58,7 @@ def _differential_fit_zp_t(
     color_term_fit: str = "auto",
     extinction_order: str = "none",
 ) -> tuple[float, float]:
-    diff_mod = _import_submodule("ost_photometry.analyze.differential_photometry")
+    diff_mod = _import_submodule("ost_photometry.analyze.calibration.photometer")
     DifferentialPhotometer = diff_mod.DifferentialPhotometer
     ExtinctionCorrector = _import_submodule(
         "ost_photometry.analyze.extinction"

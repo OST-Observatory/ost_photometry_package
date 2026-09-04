@@ -1,6 +1,6 @@
 """Photometry analysis module: extraction, calibration, light curves."""
 
-from .differential_photometry import PhotometryCalibrator
+from .calibration import PhotometryCalibrator
 from .extinction import (
     CoefficientMode,
     ExtinctionCorrector,
