@@ -33,6 +33,7 @@ config = PipelineConfig(
 | ------------------------------ | ------------------------------------------------------------------ | ------------------------------- | --------------------------------------------------------------- |
 | `wcs_method`                   | `astrometry`, `astap`, `twirl`                                     | WCS                             | Astrometric solution per image                                  |
 | `photometry_extraction_method` | `PSF`, `APER`                                                      | Extraction                      | PSF fitting vs aperture photometry                              |
+| `aperture_scale_with_fwhm`     | `True`, `False` (default `False`)                                  | Extraction (`APER`)             | If True, APER radii are `factor ×` image FWHM (pixels)          |
 | `cosmic_ray_removal`           | `auto`, `always`, `never` (bool `True`/`False` still accepted)     | Extraction                      | Skip lacosmic when reduction set `CRIDENT` / `cosmics_*`        |
 | `psf_find_in_residuals`        | `True`, `False` (default `False`)                                  | Extraction (PSF)                | If False, fit finder positions only (no residual re-find)       |
 | `finder_sharpness_range` / `finder_roundness_range` | tuples (defaults `(0.2, 1.0)` / `(-1.0, 1.0)`) | Extraction                      | Shared quality cuts. IRAF remaps a DAO-style signed roundness window to `(0, 0.5)` (IRAF ellipticity, not DAO ±1). |
@@ -77,10 +78,21 @@ WCS must succeed (or be copied from another filter) before extraction and correl
 | Value  | When to use                                        | Notes                                                                          |
 | ------ | -------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `PSF`  | Crowded fields, variable seeing, course default    | Needs enough PSF stars (`minimum_n_eps_stars`–`maximum_n_eps_stars`); ePSF path in single-image mode |
-| `APER` | Very sparse fields, quick checks, extended sources | Set `radius_aperture`, annulus radii; no ePSF build                            |
+| `APER` | Very sparse fields, quick checks, extended sources | Set `radius_aperture`, annulus radii; or `aperture_scale_with_fwhm=True` |
 
 
 Both methods feed the same downstream tables (`mag_<filter>`, `err_<filter>`). Choice does not change calibration strategy, but PSF is usually preferred when stars overlap.
+
+### `aperture_scale_with_fwhm`
+
+One **radius per image**, scaled to that frame’s FWHM — not a different aperture per star.
+
+| Value | Behaviour |
+| ----- | --------- |
+| `False` | Default. Use `radius_aperture`, `inner_annulus_radius`, `outer_annulus_radius` with `radii_unit` (`pixel` or `arcsec`). |
+| `True` | `r = aperture_fwhm_factor × FWHM` (pixels). Annulus: `inner_annulus_fwhm_factor` / `outer_annulus_fwhm_factor`. Defaults `2.0`, `2.8`, `4.0` (must stay `aperture < inner < outer`). Absolute radii are unused for extraction. |
+
+Use this when seeing changes between epochs and you stay on `APER`. For crowded fields prefer `PSF`. Aperture **correction** to a common total-flux scale is a separate optional item (growth curve); this flag only sizes the measuring aperture.
 
 ### `cosmic_ray_removal`
 
@@ -336,7 +348,7 @@ keeps instrumental flux and gets a relative light curve (continuum ≈ 1).
 | Condition                           | `photometry_extraction_method` | `correlation_method` | Other                                                   |
 | ----------------------------------- | ------------------------------ | -------------------- | ------------------------------------------------------- |
 | Stellar PSF, course / OST default   | `PSF`                          | `astropy`            | Ensure `minimum_n_eps_stars` met; dense fields capped by `maximum_n_eps_stars` (default 50; `None` = no cap). Auto-FWHM uses `fwhm_estimate_min`/`fwhm_estimate_max` (default 2–15 px). Finder roundness is method-aware (IRAF ellipticity vs DAO signed); `finder_fwhm_scale_range=(0.5, 2.0)` drops noise peaks without raising the detection threshold. Set `psf_find_in_residuals=False` (default) unless you need residual re-find. |
-| Quick test, very sparse field       | `APER`                         | `astropy`            | Widen aperture if SNR low                               |
+| Quick test, very sparse field       | `APER`                         | `astropy`            | Widen aperture if SNR low, or `aperture_scale_with_fwhm=True` |
 | Reproduce pre-2024 script behaviour | `PSF`                          | `own`                | Check `duplicate_handling_object_identification`        |
 | B/V not aligned by index            | either                         | `astropy`            | `exposure_pairing="jd_nearest"`, set `reference_filter` |
 

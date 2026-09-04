@@ -1213,6 +1213,46 @@ def compute_aperture_photometry_uncertainties(
     return flux_error
 
 
+def resolve_aperture_radii(
+    *,
+    scale_with_fwhm: bool,
+    fwhm_pix: float | None,
+    radius_aperture: float,
+    inner_annulus_radius: float,
+    outer_annulus_radius: float,
+    radii_unit: str,
+    aperture_fwhm_factor: float = 2.0,
+    inner_annulus_fwhm_factor: float = 2.8,
+    outer_annulus_fwhm_factor: float = 4.0,
+) -> tuple[float, float, float, str]:
+    """Return APER radii and unit, optionally scaled to the image FWHM.
+
+    When ``scale_with_fwhm`` is False the absolute radii and ``radii_unit``
+    are returned unchanged. When True the radii are
+    ``factor × fwhm_pix`` and the unit is always ``pixel``.
+    """
+    if not scale_with_fwhm:
+        return radius_aperture, inner_annulus_radius, outer_annulus_radius, radii_unit
+    if fwhm_pix is None or not np.isfinite(fwhm_pix) or float(fwhm_pix) <= 0:
+        raise ValueError(
+            "aperture_scale_with_fwhm requires a positive image FWHM in pixels."
+        )
+    if not (
+        aperture_fwhm_factor < inner_annulus_fwhm_factor < outer_annulus_fwhm_factor
+    ):
+        raise ValueError(
+            "FWHM factors must satisfy aperture_fwhm_factor < "
+            "inner_annulus_fwhm_factor < outer_annulus_fwhm_factor."
+        )
+    fwhm = float(fwhm_pix)
+    return (
+        aperture_fwhm_factor * fwhm,
+        inner_annulus_fwhm_factor * fwhm,
+        outer_annulus_fwhm_factor * fwhm,
+        "pixel",
+    )
+
+
 def define_apertures(
     image: AnalysisImage,
     aperture_radius: float,
@@ -1422,6 +1462,10 @@ def extract_multiprocessing(
     inner_annulus_radius: float = 7.0,
     outer_annulus_radius: float = 10.0,
     radii_unit: str = "arcsec",
+    aperture_scale_with_fwhm: bool = False,
+    aperture_fwhm_factor: float = 2.0,
+    inner_annulus_fwhm_factor: float = 2.8,
+    outer_annulus_fwhm_factor: float = 4.0,
     strict_epsf_checks: bool = True,
     plots_for_all_images: bool = False,
     use_wcs_projection_for_star_maps: bool = True,
@@ -1476,6 +1520,10 @@ def extract_multiprocessing(
                 "inner_annulus_radius": inner_annulus_radius,
                 "outer_annulus_radius": outer_annulus_radius,
                 "radii_unit": radii_unit,
+                "aperture_scale_with_fwhm": aperture_scale_with_fwhm,
+                "aperture_fwhm_factor": aperture_fwhm_factor,
+                "inner_annulus_fwhm_factor": inner_annulus_fwhm_factor,
+                "outer_annulus_fwhm_factor": outer_annulus_fwhm_factor,
                 "plots_for_all_images": plots_for_all_images,
                 "file_type_plots": file_type_plots,
                 "use_wcs_projection_for_star_maps": use_wcs_projection_for_star_maps,
@@ -1534,6 +1582,10 @@ def main_extract(
     inner_annulus_radius: float = 7.0,
     outer_annulus_radius: float = 10.0,
     radii_unit: str = "arcsec",
+    aperture_scale_with_fwhm: bool = False,
+    aperture_fwhm_factor: float = 2.0,
+    inner_annulus_fwhm_factor: float = 2.8,
+    outer_annulus_fwhm_factor: float = 4.0,
     strict_epsf_checks: bool = True,
     cosmic_ray_removal: bool | str = "auto",
     limiting_contrast_rm_cosmics: float = 5.0,
@@ -1701,12 +1753,42 @@ def main_extract(
         else:
             plot_aperture_positions = False
 
+        (
+            radius_aperture_use,
+            inner_annulus_use,
+            outer_annulus_use,
+            radii_unit_use,
+        ) = resolve_aperture_radii(
+            scale_with_fwhm=aperture_scale_with_fwhm,
+            fwhm_pix=getattr(image, "fwhm", None),
+            radius_aperture=radius_aperture,
+            inner_annulus_radius=inner_annulus_radius,
+            outer_annulus_radius=outer_annulus_radius,
+            radii_unit=radii_unit,
+            aperture_fwhm_factor=aperture_fwhm_factor,
+            inner_annulus_fwhm_factor=inner_annulus_fwhm_factor,
+            outer_annulus_fwhm_factor=outer_annulus_fwhm_factor,
+        )
+        if aperture_scale_with_fwhm:
+            fwhm_pix = float(image.fwhm)
+            msg = (
+                f"APER radii from FWHM={fwhm_pix:.2f} px: "
+                f"r={radius_aperture_use:.2f} px, "
+                f"annulus={inner_annulus_use:.2f}–{outer_annulus_use:.2f} px "
+                f"(factors {aperture_fwhm_factor}, "
+                f"{inner_annulus_fwhm_factor}, {outer_annulus_fwhm_factor})"
+            )
+            if terminal_logger is not None:
+                terminal_logger.add_to_cache(msg, indent=3)
+            else:
+                terminal_output.print_to_terminal(msg, indent=3)
+
         extraction_aperture(
             image,
-            radius_aperture,
-            inner_annulus_radius,
-            outer_annulus_radius,
-            radii_unit=radii_unit,
+            radius_aperture_use,
+            inner_annulus_use,
+            outer_annulus_use,
+            radii_unit=radii_unit_use,
             plot_aperture_positions=plot_aperture_positions,
             terminal_logger=terminal_logger,
             file_type_plots=file_type_plots,

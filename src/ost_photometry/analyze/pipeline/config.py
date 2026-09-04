@@ -178,6 +178,13 @@ class ExtractionConfig:
     inner_annulus_radius: float = 7.0
     outer_annulus_radius: float = 10.0
     radii_unit: str = "arcsec"
+    #: If True, APER radii are ``factor × image FWHM`` in pixels (absolute
+    #: ``radius_aperture`` / annulus unused for extraction).
+    aperture_scale_with_fwhm: bool = False
+    #: Measurement aperture in units of the image FWHM. Typical 1.5–2.5.
+    aperture_fwhm_factor: float = 2.0
+    inner_annulus_fwhm_factor: float = 2.8
+    outer_annulus_fwhm_factor: float = 4.0
     strict_epsf_checks: bool = True
     transform_object_positions_to_reference: bool = False
     skip_extraction: bool = False
@@ -215,6 +222,10 @@ class ExtractionConfig:
             "inner_annulus_radius": self.inner_annulus_radius,
             "outer_annulus_radius": self.outer_annulus_radius,
             "radii_unit": self.radii_unit,
+            "aperture_scale_with_fwhm": self.aperture_scale_with_fwhm,
+            "aperture_fwhm_factor": self.aperture_fwhm_factor,
+            "inner_annulus_fwhm_factor": self.inner_annulus_fwhm_factor,
+            "outer_annulus_fwhm_factor": self.outer_annulus_fwhm_factor,
             "cosmic_ray_removal": normalize_cosmic_ray_removal(self.cosmic_ray_removal),
             "limiting_contrast_rm_cosmics": self.limiting_contrast_rm_cosmics,
             "read_noise": self.read_noise,

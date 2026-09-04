@@ -380,6 +380,30 @@ lower bound.
 run; store a column on the long table. Skip if crowding products are not
 worth the join.
 
+### Aperture correction from growth curve (P3)
+
+Image-adaptive APER (`aperture_scale_with_fwhm`) already uses **one** radius
+per frame, scaled to that image’s FWHM. What is still missing is a **common
+flux scale**: measure in a relatively small aperture (better SNR, less
+blend) and correct to total light from the growth curve of isolated bright
+stars (DAOPHOT `PHOT` style). One correction **per image**, optionally a
+mild magnitude-dependent curve — not a unique radius per star.
+
+The existing `photometry_radial_growth_curve` diagnostic is a plot of the
+brightest star, not a fitted encircled-energy curve applied to the table.
+
+**Advantages:** small measuring aperture (less neighbour light, less sky)
+while magnitudes stay comparable to catalog / other epochs; seeing changes
+are absorbed in the correction rather than in a huge raw aperture.
+
+**Disadvantages:** needs isolated bright stars and a stable PSF; crowded
+N2 fields are still better as `PSF`; a noisy growth curve injects a
+zero-point error into every star; light curves must freeze the correction
+(per night / visit), not refit from a different star each epoch.
+
+**Direction:** optional, default off. Do after image-adaptive APER is in
+use on a real APER run. Do **not** treat this as per-object Kron/`MAG_AUTO`.
+
 ---
 
 ## Difference images
@@ -662,4 +686,5 @@ Archived Image-based ZP/plot helpers outside ``src/`` are gone. Do not restore.
 18. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
 19. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
 20. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
-21. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.
+21. **P3:** Aperture correction from growth curve (optional APER; one correction per image, not per star).
+22. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.
