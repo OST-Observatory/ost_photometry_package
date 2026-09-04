@@ -65,6 +65,34 @@ Steps are already modular via config. What is missing is **persist and continue 
 
 ## Reduce
 
+### Camera catalog — missing manufacturer curves (P2)
+
+Runtime parameters live in `data/cameras.json` (built from
+`data/camera_specs/*.csv` via `scripts/build_camera_catalog.py`).
+`camera_info` interpolates **system gain**, **read noise**, and **dark
+current** when those traces exist; chip size is a scalar in the catalog.
+QE, full well, dynamic range, and linearity are stored only.
+
+Chip sizes for QHY5III485C and QHY5III462C are **done** (pixel count ×
+2.9 µm). What is still missing for reduction, or unusable until
+re-digitized:
+
+| Camera | Still needed |
+|--------|----------------|
+| **QHY268M/C** | **System gain vs GAIN for every readout mode** (today falls back to 1.292 e-/ADU). Photography full-well CSVs are unusable; no DR / linearity. |
+| **QHY5III485C** | Dark current vs temperature. Full well / DR traces have unclear axes (not used). No linearity. |
+| **QHY5III462C** | Dark current vs temperature. No QE. No linearity. |
+| **ASI2600** | Dark current (digitized CSV was all zeros and removed). No full well / linearity. |
+| **STF-8300** | No CMOS GAIN curve (expected; use FITS `EGAIN`). |
+
+**Direction:** digitize the **QHY268 system-gain** plots first (all six
+QHY modes), then dark-current vs T for 485C, 462, and ASI2600. Rebuild
+with `python scripts/build_camera_catalog.py`. Do **not** invent scalars
+to paper over missing curves. Optional later: confirm 485C full-well/DR
+axes; QE for 462 if synphot/throughput work starts (see Vega↔AB P3).
+
+See `src/ost_photometry/data/camera_specs/README.md`.
+
 ### `reduce/utilities.py` — optional further split (P3)
 
 Facade plus reduction-specific helpers; already delegates to `exposure`, `instrument`, `masks`, `wcs_reduce`, …. Incremental only when touching the affected area.
@@ -661,30 +689,32 @@ Archived Image-based ZP/plot helpers outside ``src/`` are gone. Do not restore.
 | Item | Notes |
 |------|-------|
 | **Site extinction seed** | `data/ost_potsdam_extinction.json` is a literature seed until a campaign updates it via `scripts/aggregate_site_extinction.py`. See [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md). |
+| **Camera manufacturer curves** | QHY268 system gain and remaining dark-current traces: digitize and rebuild `cameras.json`. See **Camera catalog** under Reduce. |
 
 ---
 
 ## Suggested order
 
 1. **P1:** Light curves — two products (catalog-transformed mag scale vs differential depth without catalog \(\sigma\)); quiet ensemble + `flag_epoch`; then inflate \(\sigma\) and residuals vs airmass/FWHM/sky/\(x,y\).
-2. **P2:** Registration — skipped-frame reporting, copy reference WCS after `aa_true`, tests for shifts / outliers / skip accounting. Do **not** start drizzle while these are open.
-3. **P2:** Registration — backend protocol (`fit` → `apply` → YAML) and pragmatic unification: every method on the reference grid; drop `make_big_images` from the workflow; **keep** filter-then-inter-filter.
-4. **P2:** Difference images — internal night template + detection/linking + `diff_candidates.ecsv` (HiPS fetch hardening is done; do not start with legacy trim or extra survey strings).
-5. **P2:** Light curves — period search (Lomb–Scargle / BLS) from `light_curves.ecsv`; colour vs phase; simple \(\chi^2\) shape overlay.
-6. **P2:** Overhaul isochrone handling (refresh grids, fetch+cache, named-column loaders) **and** split `plots/cmds.py` in the same pass.
-7. **P2:** Split `extraction.py` only when touching that area; keep script-facing APIs stable.
-8. **P3:** Light curves — APER vs PSF amplitude, mag/colour-matched ensemble, aperture blend fraction.
-9. **P3:** Difference images — ZOGY backend; RASA field-wise HiPS cache / tiles; separate monitoring preset.
-10. **P3:** Registration — thin method zoo; then `shift_method="drizzle"`; optional global single-grid alignment (only after the pragmatic path, and only if course filenames are agreed).
-11. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
-12. **P3:** OST filter throughput → synphot Vega↔AB offsets.
-13. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter; drop related legacy meta helpers.
-14. **P3:** Remove `differential_photometry` deprecation shim once imports use `analyze.calibration`.
-15. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
-16. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
-17. **P3:** Hess / density underlay on crowded CMDs (default off).
-18. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
-19. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
-20. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
-21. **P3:** Aperture correction from growth curve (optional APER; one correction per image, not per star).
-22. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.
+2. **P2:** Camera catalog — QHY268 system-gain vs GAIN (all readout modes), then dark current for 485C / 462 / ASI2600.
+3. **P2:** Registration — skipped-frame reporting, copy reference WCS after `aa_true`, tests for shifts / outliers / skip accounting. Do **not** start drizzle while these are open.
+4. **P2:** Registration — backend protocol (`fit` → `apply` → YAML) and pragmatic unification: every method on the reference grid; drop `make_big_images` from the workflow; **keep** filter-then-inter-filter.
+5. **P2:** Difference images — internal night template + detection/linking + `diff_candidates.ecsv` (HiPS fetch hardening is done; do not start with legacy trim or extra survey strings).
+6. **P2:** Light curves — period search (Lomb–Scargle / BLS) from `light_curves.ecsv`; colour vs phase; simple \(\chi^2\) shape overlay.
+7. **P2:** Overhaul isochrone handling (refresh grids, fetch+cache, named-column loaders) **and** split `plots/cmds.py` in the same pass.
+8. **P2:** Split `extraction.py` only when touching that area; keep script-facing APIs stable.
+9. **P3:** Light curves — APER vs PSF amplitude, mag/colour-matched ensemble, aperture blend fraction.
+10. **P3:** Difference images — ZOGY backend; RASA field-wise HiPS cache / tiles; separate monitoring preset.
+11. **P3:** Registration — thin method zoo; then `shift_method="drizzle"`; optional global single-grid alignment (only after the pragmatic path, and only if course filenames are agreed).
+12. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
+13. **P3:** OST filter throughput → synphot Vega↔AB offsets.
+14. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter; drop related legacy meta helpers.
+15. **P3:** Remove `differential_photometry` deprecation shim once imports use `analyze.calibration`.
+16. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
+17. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
+18. **P3:** Hess / density underlay on crowded CMDs (default off).
+19. **P3:** Parse isochrone headers — only if not already done by the loader overhaul.
+20. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
+21. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
+22. **P3:** Aperture correction from growth curve (optional APER; one correction per image, not per star).
+23. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.
