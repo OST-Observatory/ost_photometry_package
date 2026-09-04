@@ -579,7 +579,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
             image_type_dir,
             plot_plots=cfg.plot_flat_statistic_plots,
             debug=cfg.debug,
-            n_cores_multiprocessing=1,
+            n_cores_multiprocessing=cfg.n_cores_multiprocessing,
             dtype=cfg.dtype,
         )
 

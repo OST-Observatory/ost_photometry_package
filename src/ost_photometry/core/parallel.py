@@ -37,13 +37,16 @@ class Executor:
     """
     Class that handles the multiprocessing, using apply_async.
     Allows for easy catch of exceptions.
+
+    ``process_num`` of ``None`` or ``<= 0`` uses half the logical CPUs
+    (``cpu_count() // 2``).
     """
 
     def __init__(self, process_num: int | None, **kwargs: Any) -> None:
         if not mp.get_start_method(allow_none=True):
             mp.set_start_method("spawn")
 
-        if not process_num:
+        if process_num is None or process_num <= 0:
             process_num = int(mp.cpu_count() / 2)
 
         #   Get max_tasks_per_child parameter

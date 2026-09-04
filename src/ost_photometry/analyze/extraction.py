@@ -1434,7 +1434,7 @@ def extraction_aperture(
 
 def extract_multiprocessing(
     image_series: ImageSeries,
-    n_cores_multiprocessing: int,
+    n_cores_multiprocessing: int | None = None,
     fwhm_object_psf: dict[str, float] | None = None,
     sigma_value_background_clipping: float = 5.0,
     multiplier_background_rms: float = 5.0,

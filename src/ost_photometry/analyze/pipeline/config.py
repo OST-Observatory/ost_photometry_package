@@ -119,7 +119,8 @@ class WcsConfig:
 @dataclass
 class ExtractionConfig:
     extraction_mode: Literal["single", "multi", "auto"] = "auto"
-    n_cores_multiprocessing: int = 6
+    #: Worker processes for multi-image extraction. ``None`` → half the CPUs.
+    n_cores_multiprocessing: int | None = None
     reference_image_index: int = 0
     fwhm_object_psf: dict[str, float] | None = None
     #: Accepted FWHM range in pixels for automatic estimation (per-star filter).

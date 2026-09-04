@@ -20,6 +20,7 @@ def test_pipeline_config_flat_and_nested_access():
     assert cfg.calibration_strategy == "linear_fit"
 
     ext = ExtractionConfig()
+    assert ext.n_cores_multiprocessing is None
     kw = ext.main_extract_kwargs(fwhm=3.5)
     assert kw["fwhm_object_psf"] == 3.5
     assert kw["cosmic_ray_removal"] == "auto"
