@@ -109,6 +109,25 @@ def test_distance_modulus():
         assert mod.distance_modulus("?", 1.0) == pytest.approx(10.0)
 
 
+def test_distance_modulus_uncertainty():
+    with isolated_sys_modules():
+        mod = _prepare()
+        assert mod.distance_modulus_uncertainty("?", "?", m_m_err=0.1) is None
+        assert mod.distance_modulus_uncertainty(10.0, "?", m_m_err=0.15) == pytest.approx(
+            0.15
+        )
+        # m_M set → distance_err ignored
+        assert mod.distance_modulus_uncertainty(
+            10.0, 1.0, m_m_err=None, distance_err_kpc=0.1
+        ) is None
+        # distance path: σ_μ = (5/ln10)·(σ_d/d)
+        sigma = mod.distance_modulus_uncertainty(
+            "?", 2.0, distance_err_kpc=0.2
+        )
+        assert sigma == pytest.approx((5.0 / np.log(10.0)) * (0.2 / 2.0))
+        assert mod.distance_modulus_uncertainty("?", 2.0, distance_err_kpc=0.0) is None
+
+
 def test_load_cmd_table_ecsv(tmp_path):
     with isolated_sys_modules():
         mod = _prepare()

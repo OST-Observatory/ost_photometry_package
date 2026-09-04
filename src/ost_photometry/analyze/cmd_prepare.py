@@ -103,6 +103,46 @@ def distance_modulus(
     return 0.0
 
 
+def distance_modulus_uncertainty(
+    m_m: str | float | None,
+    distance_kpc: str | float | None,
+    *,
+    m_m_err: float | None = None,
+    distance_err_kpc: float | None = None,
+) -> float | None:
+    """
+    1-σ uncertainty on the distance modulus used for the CMD.
+
+    Mirrors :func:`distance_modulus`: if ``m_m`` is set, only ``m_m_err``
+    applies; if distance in kpc is used instead, ``distance_err_kpc`` is
+    converted via ``σ_μ = (5 / ln(10)) · (σ_d / d)``. Returns ``None`` when
+    no usable uncertainty is given.
+    """
+    if not _is_unset(m_m):
+        if m_m_err is None:
+            return None
+        try:
+            sigma = float(m_m_err)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(sigma) or sigma <= 0.0:
+            return None
+        return sigma
+
+    if _is_unset(distance_kpc) or distance_err_kpc is None:
+        return None
+    try:
+        distance = float(distance_kpc)
+        sigma_d = float(distance_err_kpc)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(distance) or distance <= 0.0:
+        return None
+    if not np.isfinite(sigma_d) or sigma_d <= 0.0:
+        return None
+    return float((5.0 / np.log(10.0)) * (sigma_d / distance))
+
+
 def _native_mag_column(tbl: Table, filter_: str) -> str:
     cal = f"mag_cal_{filter_}"
     inst = f"mag_inst_{filter_}"
@@ -621,6 +661,7 @@ __all__ = [
     "cluster_member_flags",
     "cmd_series_from_table",
     "distance_modulus",
+    "distance_modulus_uncertainty",
     "fiducial_fit_sigma",
     "flag_cluster_members",
     "format_isochrone_annotation",

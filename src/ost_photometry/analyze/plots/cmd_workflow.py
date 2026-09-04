@@ -10,6 +10,7 @@ from ... import terminal_output
 from ..cmd_prepare import (
     cmd_series_from_table,
     distance_modulus,
+    distance_modulus_uncertainty,
     load_isochrone_config,
     mask_cmd_series,
 )
@@ -46,6 +47,7 @@ def plot_cmds_from_table(
     e_b_v_err: float | None = None,
     rv_err: float | None = None,
     m_m_err: float | None = None,
+    distance_err: float | None = None,
     figure_size_x: str | float = "?",
     figure_size_y: str | float = "?",
     x_plot_range_apparent: Sequence[_RangePair] | None = None,
@@ -77,6 +79,12 @@ def plot_cmds_from_table(
 
     file_name, file_type = check_variable_apparent_cmd(file_name, file_type)
     mu = distance_modulus(m_m, distance)
+    mu_err = distance_modulus_uncertainty(
+        m_m,
+        distance,
+        m_m_err=m_m_err,
+        distance_err_kpc=distance_err,
+    )
 
     for filter_id, color_name in enumerate(filter_color_combinations):
         parts = color_name.split("-")
@@ -167,7 +175,7 @@ def plot_cmds_from_table(
             rv=rv,
             e_b_v_err=e_b_v_err if do_error_bars else None,
             rv_err=rv_err if do_error_bars else None,
-            m_m_err=m_m_err if do_error_bars else None,
+            m_m_err=mu_err if do_error_bars else None,
             figure_size_x=figure_size_x,
             figure_size_y=figure_size_y,
             y_plot_range_max=y_overlay[1],
