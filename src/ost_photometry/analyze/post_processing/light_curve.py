@@ -1061,6 +1061,242 @@ def slice_light_curve(
     return lc[(ids == int(source_id)) & (filts == str(filter_))]
 
 
+def resolve_light_curves_ecsv_path(path: str | Path) -> Path:
+    """Return ``light_curves.ecsv`` from a file path or an output directory."""
+    p = Path(path)
+    if p.is_file():
+        return p
+    candidate = p / "tables" / "light_curves.ecsv"
+    if candidate.is_file():
+        return candidate
+    raise FileNotFoundError(
+        f"No light-curve table at {p} or {candidate}. "
+        "Run ``2_obtain_flux.py`` with skip_light_curve=False first."
+    )
+
+
+def resolve_light_curve_source_id(
+    tbl: Table,
+    *,
+    object_id: int | None = None,
+    coord: SkyCoord | None = None,
+    object_name: str | None = None,
+) -> int:
+    """Resolve ``id`` from explicit id, sky position, or ``object_name``."""
+    if object_id is not None:
+        return int(object_id)
+    if coord is not None:
+        return object_id_from_epoch_native_sky(tbl, coord)
+    names = (
+        np.asarray(tbl["object_name"]).astype(str)
+        if "object_name" in tbl.colnames
+        else None
+    )
+    want = (object_name or "").strip()
+    if names is not None and want and want not in {"?", ""}:
+        want_key = want.replace(" ", "_")
+        for sid, nm in zip(
+            np.asarray(tbl["id"]).astype(int),
+            names,
+            strict=False,
+        ):
+            if str(nm).strip() == want or str(nm).strip().replace(" ", "_") == want_key:
+                return int(sid)
+    raise ValueError(
+        "Set object_id, sky coordinates, or object_name matching the table."
+    )
+
+
+def apply_nightly_zero_point(tbl: Table) -> Table:
+    """Subtract (mag) or divide (flux) the per-night median continuum."""
+    if len(tbl) == 0:
+        return tbl
+    out = tbl.copy()
+    if "night_id" not in out.colnames:
+        out["night_id"] = night_id_from_jd(out["jd"])
+    nid = np.asarray(out["night_id"]).astype(np.int64)
+    qty = "magnitude"
+    if "quantity" in out.colnames:
+        qarr = np.asarray(out["quantity"]).astype(str)
+        if np.any(qarr == "flux"):
+            qty = "flux"
+    if qty == "flux":
+        y = np.asarray(out["flux"], dtype=float)
+        e = np.asarray(out["flux_err"], dtype=float) if "flux_err" in out.colnames else None
+        for night in np.unique(nid):
+            m = nid == int(night)
+            if int(night) < 0 or not np.any(m):
+                continue
+            fin = y[m]
+            med = float(np.nanmedian(fin[np.isfinite(fin)])) if np.any(np.isfinite(fin)) else np.nan
+            if not np.isfinite(med) or med == 0.0:
+                continue
+            y[m] = y[m] / med
+            if e is not None:
+                e[m] = e[m] / med
+        out["flux"] = y
+        if e is not None:
+            out["flux_err"] = e
+    else:
+        y = np.asarray(out["mag"], dtype=float)
+        for night in np.unique(nid):
+            m = nid == int(night)
+            if int(night) < 0 or not np.any(m):
+                continue
+            fin = y[m]
+            med = float(np.nanmedian(fin[np.isfinite(fin)])) if np.any(np.isfinite(fin)) else np.nan
+            if not np.isfinite(med):
+                continue
+            y[m] = y[m] - med
+        out["mag"] = y
+    return out
+
+
+def combine_light_curve_night_tables(
+    paths: list[str | Path],
+    filter_: str,
+    *,
+    object_id: int | None = None,
+    coord: SkyCoord | None = None,
+    object_name: str | None = None,
+    common_id: int = 0,
+) -> Table:
+    """Load one or more ``light_curves.ecsv`` files and slice the same source.
+
+    Each path may be the ECSV itself or a pipeline ``output_dir``. Source
+    ``id`` is resolved per file (ids need not match across nights). Rows
+    are stacked with ``night_id`` from JD.
+    """
+    if not paths:
+        raise ValueError("combine_light_curve_night_tables: no paths given.")
+    parts: list[Table] = []
+    for i, raw in enumerate(paths):
+        path = resolve_light_curves_ecsv_path(raw)
+        tbl = Table.read(path)
+        sid = resolve_light_curve_source_id(
+            tbl,
+            object_id=object_id,
+            coord=coord,
+            object_name=object_name,
+        )
+        sub = slice_light_curve(tbl, sid, filter_)
+        if len(sub) == 0:
+            terminal_output.print_to_terminal(
+                f"No rows for id={sid}, filter={filter_!r} in {path}.",
+                style_name="WARNING",
+            )
+            continue
+        sub = sub.copy()
+        sub["id"] = np.full(len(sub), int(common_id), dtype=np.int64)
+        if "epoch_id" in sub.colnames:
+            stem = path.parent.parent.name or path.stem
+            sub["epoch_id"] = np.array(
+                [f"{stem}:{i}:{eid}" for eid in np.asarray(sub["epoch_id"]).astype(str)],
+                dtype=str,
+            )
+        if "night_id" not in sub.colnames or not np.any(
+            np.asarray(sub["night_id"]).astype(np.int64) >= 0
+        ):
+            sub["night_id"] = night_id_from_jd(sub["jd"])
+        parts.append(sub)
+    if not parts:
+        raise ValueError(
+            f"No light-curve rows for filter={filter_!r} in the given night tables."
+        )
+    return vstack(parts, metadata_conflicts="silent")
+
+
+def plot_nights_compare_from_table(
+    lc: Table,
+    source_id: int,
+    filter_: str,
+    output_dir: str,
+    *,
+    name_object: str | None = None,
+    file_type: str = "pdf",
+    subdirectory: str = "",
+    transit_time: str | None = None,
+    period: float | None = None,
+    time_scale: str = "bjd_tdb",
+    phase_cycles: int = 1,
+    magnitude_system: str | None = None,
+    align_nightly_zero: bool = False,
+) -> None:
+    """Overlay and panel plots comparing local nights for one source/filter."""
+    from .. import plots
+    from .magnitude_systems import table_magnitude_system
+
+    sub = slice_light_curve(lc, source_id, filter_)
+    if len(sub) == 0:
+        terminal_output.print_to_terminal(
+            f"No light-curve rows for id={source_id}, filter={filter_!r}.",
+            style_name="WARNING",
+        )
+        return
+    if "night_id" not in sub.colnames:
+        sub = sub.copy()
+        sub["night_id"] = night_id_from_jd(sub["jd"])
+    nid = np.asarray(sub["night_id"]).astype(np.int64)
+    n_nights = int(np.unique(nid[nid >= 0]).size) if np.any(nid >= 0) else 0
+    if n_nights < 2:
+        terminal_output.print_to_terminal(
+            "Only one night in the table; overlay plots still written.",
+            style_name="WARNING",
+        )
+    if align_nightly_zero:
+        sub = apply_nightly_zero_point(sub)
+    name = name_object or str(sub["object_name"][0] or source_id)
+    mag_sys = magnitude_system or table_magnitude_system(lc)
+    ylabel = None
+    if align_nightly_zero:
+        qty = "flux" if "quantity" in sub.colnames and np.any(
+            np.asarray(sub["quantity"]).astype(str) == "flux"
+        ) else "magnitude"
+        ylabel = (
+            f"{filter_} [flux] (night median = 1)"
+            if qty == "flux"
+            else f"{filter_} Δmag (night median = 0)"
+        )
+    plots.light_curve_nights_jd_from_table(
+        sub,
+        output_dir,
+        name_object=name,
+        filter_=filter_,
+        file_type=file_type,
+        subdirectory=subdirectory,
+        time_scale=time_scale,
+        magnitude_system=mag_sys,
+        ylabel=ylabel,
+    )
+    plots.light_curve_nights_panels_from_table(
+        sub,
+        output_dir,
+        name_object=name,
+        filter_=filter_,
+        file_type=file_type,
+        subdirectory=subdirectory,
+        time_scale=time_scale,
+        magnitude_system=mag_sys,
+        ylabel=ylabel,
+    )
+    per = _as_positive_period(period)
+    if per is not None and transit_time not in (None, "?"):
+        plots.light_curve_nights_fold_from_table(
+            sub,
+            output_dir,
+            transit_time=str(transit_time),
+            period=float(per),
+            name_object=name,
+            filter_=filter_,
+            file_type=file_type,
+            subdirectory=subdirectory,
+            time_scale=time_scale,
+            phase_cycles=phase_cycles,
+            magnitude_system=mag_sys,
+            ylabel=ylabel,
+        )
+
+
 def build_check_star_qc_panels(
     lc: Table,
     filter_: str,

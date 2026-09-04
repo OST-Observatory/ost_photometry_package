@@ -395,6 +395,8 @@ config_mk = PipelineConfig.from_preset("extract_protect_calibrators", overrides=
 
 `LightCurveStep` is off by default (`skip_light_curve=True`). C7 sets it False.
 The step writes `tables/light_curves.ecsv` and plots views of that table.
+Replot one night with `3_plot_lightcurve.py`; overlay nights with
+`5_compare_nights.py`.
 
 | Flag | Default | Role |
 |------|---------|------|

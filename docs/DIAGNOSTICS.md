@@ -314,12 +314,18 @@ drawn as open grey points.
 | `check_star_qc_<filter>` | OOI vs the **K most variable catalog calibrators** (excess RMS, not raw RMS). OOI `id`s are removed from the calibrator pool even if they have `mag_std_*`. |
 | `calibrator_variability_<filter>` | Catalog calibrators only (OOI excluded): excess RMS vs magnitude, residual LCs (top-K in colour). |
 | `lightcurve_overview_<filter>` | OOI + N random field stars (only if `plot_light_curve_all_objects`). |
+| `lightcurve_nights_jd_<name>_<filter>` | Same source, colour/marker per local night (C7 `5_compare_nights.py`). |
+| `lightcurve_nights_folded_<name>_<filter>` | Folded overlay of those nights (needs period + `transit_time`). |
+| `lightcurve_nights_panels_<name>_<filter>` | One JD panel per night, shared y-limits. |
 
 **Excess RMS** is \(\sqrt{\max(0,\mathrm{RMS}^2-\mathrm{median}(\sigma_m)^2)}\)
 on unflagged points. Faint, noisy stars have large raw RMS but little excess;
 a calibrator that is actually variable ranks high. Stats:
 `tables/calibrator_lc_stats.ecsv`. Replot from the long table with the C7
 script `3_plot_lightcurve.py` (`tables/epoch_meta.json` is written at
-calibration).
+calibration). Compare nights with `5_compare_nights.py` (one ECSV that
+already spans several nights, or a list of per-night output directories).
+Match the variable by `object_id`, sky coordinates, or `object_name` — ids
+need not agree across separate pipeline runs.
 
 

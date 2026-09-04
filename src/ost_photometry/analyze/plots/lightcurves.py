@@ -21,6 +21,7 @@ _FIGSIZE = (10.0, 4.8)
 _TITLE_FS = 12
 _LABEL_FS = 11
 _TICK_FS = 10
+_NIGHT_MARKERS = (".", "o", "s", "D", "^", "v", "P", "X")
 
 
 def _sanitize_filename(name: str) -> str:
@@ -179,6 +180,313 @@ def _scatter_with_flags(
         )
     lo_hi = y_limits_for_quantity(y[good] if np.any(good) else y, quantity=quantity)
     ax.set_ylim(*lo_hi)
+
+
+def night_date_label(jd_values: np.ndarray) -> str:
+    """UTC calendar date of the median finite JD (``YYYY-MM-DD``)."""
+    arr = np.asarray(jd_values, dtype=float)
+    fin = arr[np.isfinite(arr)]
+    if fin.size == 0:
+        return "unknown"
+    t = Time(float(np.median(fin)), format="jd", scale="utc")
+    return t.iso[:10]
+
+
+def unique_night_ids(tbl: Table) -> np.ndarray:
+    """Sorted ``night_id`` values, skipping the missing-night sentinel ``-1``."""
+    if "night_id" not in tbl.colnames:
+        return np.array([], dtype=np.int64)
+    nid = np.asarray(tbl["night_id"]).astype(np.int64)
+    vals = np.unique(nid[nid >= 0])
+    return vals
+
+
+def _night_color(index: int) -> tuple:
+    cmap = plt.get_cmap("tab10")
+    return cmap(int(index) % 10)
+
+
+def _night_marker(index: int) -> str:
+    return _NIGHT_MARKERS[int(index) % len(_NIGHT_MARKERS)]
+
+
+def _scatter_nights(
+    ax,
+    x,
+    y,
+    yerr,
+    night_id,
+    flag,
+    *,
+    quantity: str,
+    night_order: np.ndarray,
+    labels: dict[int, str],
+) -> None:
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    e = _nonnegative_errorbar_yerr(yerr)
+    nid = np.asarray(night_id).astype(np.int64)
+    if flag is None:
+        flag = np.zeros(x.size, dtype=bool)
+    else:
+        flag = np.asarray(flag, dtype=bool)
+    for i, night in enumerate(night_order):
+        m = nid == int(night)
+        if not np.any(m):
+            continue
+        color = _night_color(i)
+        marker = _night_marker(i)
+        good = m & ~flag
+        bad = m & flag
+        if np.any(good):
+            ax.errorbar(
+                x[good],
+                y[good],
+                yerr=e[good],
+                marker=marker,
+                markersize=5 if marker != "." else 4,
+                linestyle="none",
+                capsize=2,
+                color=color,
+                ecolor=color,
+                zorder=3,
+                label=labels.get(int(night), str(int(night))),
+            )
+        if np.any(bad):
+            ax.errorbar(
+                x[bad],
+                y[bad],
+                yerr=e[bad],
+                marker=marker,
+                markersize=4,
+                linestyle="none",
+                capsize=2,
+                color="0.55",
+                ecolor="0.7",
+                markerfacecolor="none",
+                zorder=2,
+                label="outlier" if i == 0 else None,
+            )
+    good_y = y[~flag] if np.any(~flag) else y
+    ax.set_ylim(*y_limits_for_quantity(good_y, quantity=quantity))
+
+
+def _night_labels_from_table(tbl: Table, night_order: np.ndarray) -> dict[int, str]:
+    jd = np.asarray(tbl["jd"], dtype=float)
+    nid = np.asarray(tbl["night_id"]).astype(np.int64)
+    out: dict[int, str] = {}
+    for night in night_order:
+        out[int(night)] = night_date_label(jd[nid == int(night)])
+    return out
+
+
+def light_curve_nights_jd_from_table(
+    tbl: Table,
+    output_dir: str,
+    *,
+    name_object: str,
+    filter_: str,
+    file_type: str = "pdf",
+    subdirectory: str = "",
+    time_scale: str = "bjd_tdb",
+    magnitude_system: str = "vega",
+    ylabel: str | None = None,
+) -> Path:
+    """JD light curve with one colour/marker per local night."""
+    y, e, qty = _series_y(tbl)
+    x, xlabel = _plot_time_and_label(tbl, time_scale)
+    flag = np.asarray(tbl["flag_outlier"], dtype=bool) if "flag_outlier" in tbl.colnames else None
+    nights = unique_night_ids(tbl)
+    if nights.size == 0:
+        return light_curve_jd_from_table(
+            tbl,
+            output_dir,
+            name_object=name_object,
+            filter_=filter_,
+            file_type=file_type,
+            subdirectory=subdirectory,
+            time_scale=time_scale,
+            show_airmass=False,
+            magnitude_system=magnitude_system,
+        )
+    labels = _night_labels_from_table(tbl, nights)
+    nid = np.asarray(tbl["night_id"])
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    _scatter_nights(
+        ax, x, y, e, nid, flag, quantity=qty, night_order=nights, labels=labels
+    )
+    ax.set_xlabel(xlabel, fontsize=_LABEL_FS)
+    ax.set_ylabel(ylabel or _ylabel(filter_, qty, magnitude_system), fontsize=_LABEL_FS)
+    ax.set_title(
+        f"Nights — {_sanitize_filename(name_object)} ({filter_})",
+        fontsize=_TITLE_FS,
+    )
+    ax.tick_params(labelsize=_TICK_FS)
+    ax.grid(True, color="lightgray", linestyle="--")
+    ax.legend(loc="best", fontsize=8, frameon=False, ncol=min(4, int(nights.size)))
+    fig.tight_layout()
+    plot_dir = _lightcurve_dir(output_dir, subdirectory)
+    path = plot_dir / (
+        f"lightcurve_nights_jd_{_sanitize_filename(name_object)}"
+        f"_{_sanitize_filename(filter_)}.{file_type}"
+    )
+    fig.savefig(path, bbox_inches="tight", format=file_type)
+    plt.close(fig)
+    return path
+
+
+def light_curve_nights_fold_from_table(
+    tbl: Table,
+    output_dir: str,
+    *,
+    transit_time: str,
+    period: float,
+    name_object: str,
+    filter_: str,
+    file_type: str = "pdf",
+    subdirectory: str = "",
+    time_scale: str = "bjd_tdb",
+    phase_cycles: int = 1,
+    magnitude_system: str = "vega",
+    ylabel: str | None = None,
+) -> Path:
+    """Folded light curve with one colour/marker per local night."""
+    y, e, qty = _series_y(tbl)
+    jd = np.asarray(tbl["jd"], dtype=float)
+    bjd = (
+        np.asarray(tbl["bjd_tdb"], dtype=float)
+        if "bjd_tdb" in tbl.colnames
+        else np.full(len(tbl), np.nan)
+    )
+    if time_scale == "bjd_tdb" and np.any(np.isfinite(bjd)):
+        t_use = np.where(np.isfinite(bjd), bjd, jd)
+    else:
+        t_use = jd
+    t0 = Time(transit_time, format="isot", scale="utc")
+    t0_jd = float(t0.tdb.jd) if time_scale == "bjd_tdb" else float(t0.jd)
+    phase = fold_phase(t_use, t0_jd, period)
+    flag = np.asarray(tbl["flag_outlier"], dtype=bool) if "flag_outlier" in tbl.colnames else None
+    nights = unique_night_ids(tbl)
+    labels = _night_labels_from_table(tbl, nights) if nights.size else {}
+    nid = np.asarray(tbl["night_id"]) if "night_id" in tbl.colnames else np.zeros(len(tbl), dtype=int)
+    cycles = 2 if int(phase_cycles) >= 2 else 1
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.axvline(0.0, color="0.4", linestyle=":", linewidth=1.0, zorder=1)
+    if cycles == 2:
+        ax.axvline(1.0, color="0.4", linestyle=":", linewidth=1.0, zorder=1)
+    if nights.size == 0:
+        _scatter_with_flags(ax, phase, y, e, flag, quantity=qty)
+        if cycles == 2:
+            _scatter_with_flags(ax, phase + 1.0, y, e, flag, quantity=qty)
+    else:
+        for wrap in range(cycles):
+            _scatter_nights(
+                ax,
+                phase + wrap,
+                y,
+                e,
+                nid,
+                flag,
+                quantity=qty,
+                night_order=nights,
+                labels=labels if wrap == 0 else {int(n): "_nolegend_" for n in nights},
+            )
+    ax.set_xlim(-0.02, float(cycles) + 0.02)
+    ax.set_xlabel("Phase", fontsize=_LABEL_FS)
+    ax.set_ylabel(ylabel or _ylabel(filter_, qty, magnitude_system), fontsize=_LABEL_FS)
+    ax.set_title(
+        f"Nights folded — {_sanitize_filename(name_object)} ({filter_}); "
+        f"P = {float(period):.6g} d",
+        fontsize=_TITLE_FS,
+    )
+    ax.tick_params(labelsize=_TICK_FS)
+    ax.grid(True, color="lightgray", linestyle="--")
+    ax.legend(loc="best", fontsize=8, frameon=False, ncol=min(4, max(1, int(nights.size))))
+    fig.tight_layout()
+    plot_dir = _lightcurve_dir(output_dir, subdirectory)
+    path = plot_dir / (
+        f"lightcurve_nights_folded_{_sanitize_filename(name_object)}"
+        f"_{_sanitize_filename(filter_)}.{file_type}"
+    )
+    fig.savefig(path, bbox_inches="tight", format=file_type)
+    plt.close(fig)
+    return path
+
+
+def light_curve_nights_panels_from_table(
+    tbl: Table,
+    output_dir: str,
+    *,
+    name_object: str,
+    filter_: str,
+    file_type: str = "pdf",
+    subdirectory: str = "",
+    time_scale: str = "bjd_tdb",
+    magnitude_system: str = "vega",
+    ylabel: str | None = None,
+) -> Path:
+    """One JD panel per night, shared magnitude/flux limits."""
+    y, e, qty = _series_y(tbl)
+    nights = unique_night_ids(tbl)
+    if nights.size == 0:
+        return light_curve_nights_jd_from_table(
+            tbl,
+            output_dir,
+            name_object=name_object,
+            filter_=filter_,
+            file_type=file_type,
+            subdirectory=subdirectory,
+            time_scale=time_scale,
+            magnitude_system=magnitude_system,
+            ylabel=ylabel,
+        )
+    labels = _night_labels_from_table(tbl, nights)
+    nid = np.asarray(tbl["night_id"]).astype(np.int64)
+    flag_all = (
+        np.asarray(tbl["flag_outlier"], dtype=bool)
+        if "flag_outlier" in tbl.colnames
+        else np.zeros(len(tbl), dtype=bool)
+    )
+    ylim = y_limits_for_quantity(y[~flag_all] if np.any(~flag_all) else y, quantity=qty)
+    n = int(nights.size)
+    fig, axes = plt.subplots(
+        n,
+        1,
+        figsize=(10.0, max(3.0, 2.6 * n)),
+        sharey=True,
+        squeeze=False,
+    )
+    y_lab = ylabel or _ylabel(filter_, qty, magnitude_system)
+    x_label = None
+    for ax, night in zip(axes[:, 0], nights, strict=True):
+        m = nid == int(night)
+        sub = tbl[m]
+        x, x_label = _plot_time_and_label(sub, time_scale)
+        yi, ei, _qty = _series_y(sub)
+        fl = np.asarray(sub["flag_outlier"], dtype=bool) if "flag_outlier" in sub.colnames else None
+        _scatter_with_flags(ax, x, yi, ei, fl, quantity=qty)
+        ax.set_ylim(*ylim)
+        ax.set_ylabel(y_lab, fontsize=9)
+        ax.set_title(labels[int(night)], fontsize=10, loc="left")
+        ax.tick_params(labelsize=9)
+        ax.grid(True, color="lightgray", linestyle="--")
+    axes[-1, 0].set_xlabel(x_label or "", fontsize=_LABEL_FS)
+    fig.suptitle(
+        f"Nights — {_sanitize_filename(name_object)} ({filter_})",
+        fontsize=_TITLE_FS,
+        y=1.01,
+    )
+    fig.tight_layout()
+    plot_dir = _lightcurve_dir(output_dir, subdirectory)
+    path = plot_dir / (
+        f"lightcurve_nights_panels_{_sanitize_filename(name_object)}"
+        f"_{_sanitize_filename(filter_)}.{file_type}"
+    )
+    fig.savefig(path, bbox_inches="tight", format=file_type)
+    plt.close(fig)
+    return path
 
 
 def light_curve_jd_from_table(
@@ -688,8 +996,13 @@ __all__ = [
     "light_curve_fold_from_table",
     "light_curve_jd",
     "light_curve_jd_from_table",
+    "light_curve_nights_fold_from_table",
+    "light_curve_nights_jd_from_table",
+    "light_curve_nights_panels_from_table",
+    "night_date_label",
     "plot_calibrator_variability",
     "plot_check_star_qc",
     "plot_light_curve_overview",
+    "unique_night_ids",
     "y_limits_for_quantity",
 ]
