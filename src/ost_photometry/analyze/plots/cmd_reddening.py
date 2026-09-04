@@ -119,19 +119,36 @@ def reddening_for_absolute_cmd(
 def cmd_correction_offsets(
         a_filter_2: float, relative_extinction: float, m_m: float,
         *, apply_to: str = "observation",
-    ) -> tuple[float, float, float, float]:
+        a_filter_2_err: float = 0.0,
+        relative_extinction_err: float = 0.0,
+        m_m_err: float | None = None,
+    ) -> tuple[float, float, float, float, float, float]:
     """
-    Signed offsets ``(dmag_obs, dcolor_obs, dmag_iso, dcolor_iso)``.
+    Signed offsets and their 1-σ uncertainties.
+
+    Returns ``(dmag_obs, dcolor_obs, dmag_iso, dcolor_iso,
+    dmag_err, dcolor_err)`` where ``dmag_err`` / ``dcolor_err``
+    are the combined (reddening + distance) uncertainties that
+    should be added in quadrature to the photometric errors on
+    whichever side the correction was applied.
 
     ``observation`` (default): subtract extinction and distance from the stars.
     ``isochrone``: add the same terms to theoretical isochrones so they sit on
     the apparent CMD.
     """
+    sigma_mm = _optional_sigma(m_m_err)
+    # magnitude: σ² = σ_A² + σ_μ²   (extinction + distance, independent)
+    dmag_err_val = _rss(a_filter_2_err, sigma_mm)
+    dmag_err = 0.0 if dmag_err_val is None else float(dmag_err_val)
+    dcolor_err = float(relative_extinction_err)
+
     target = str(apply_to).strip().lower()
     if target in ("observation", "data", "stars"):
-        return (-(a_filter_2 + m_m), -relative_extinction, 0.0, 0.0)
+        return (-(a_filter_2 + m_m), -relative_extinction, 0.0, 0.0,
+                dmag_err, dcolor_err)
     if target in ("isochrone", "isochrones"):
-        return (0.0, 0.0, a_filter_2 + m_m, relative_extinction)
+        return (0.0, 0.0, a_filter_2 + m_m, relative_extinction,
+                dmag_err, dcolor_err)
     raise ValueError(
         f"apply_to must be 'observation' or 'isochrone', got {apply_to!r}"
     )

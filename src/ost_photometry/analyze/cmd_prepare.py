@@ -443,6 +443,7 @@ def format_isochrone_annotation(
     e_b_v: float | None = None,
     rv: float | None = None,
     m_m: float | None = None,
+    m_m_err: float | None = None,
     apply_corrections_to: str = "observation",
     best_age: float | None = None,
     best_age_unit: str | None = None,
@@ -478,8 +479,12 @@ def format_isochrone_annotation(
     if rv_txt is not None:
         cluster.append(rf"$R_V={rv_txt}$")
     mm_txt = _fmt_annotation_number(m_m, digits=4)
+    mm_err_txt = _fmt_annotation_number(m_m_err, digits=4)
     if mm_txt is not None:
-        cluster.append(rf"$(m-M)={mm_txt}$")
+        if mm_err_txt is not None:
+            cluster.append(rf"$(m-M)={mm_txt}\pm{mm_err_txt}$")
+        else:
+            cluster.append(rf"$(m-M)={mm_txt}$")
     if cluster:
         lines.append(", ".join(cluster))
 

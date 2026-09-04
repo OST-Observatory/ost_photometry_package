@@ -230,9 +230,21 @@ def test_format_isochrone_annotation_includes_present_fields():
         assert r"$E(B-V)=0.12$" in text
         assert r"$R_V=3.1$" in text
         assert r"$(m-M)=14.5$" in text
+        assert r"\pm" not in text  # no m_m_err → no ±
         assert "Corrections: isochrones" in text
         assert r"Best age: $12$ Gyr" in text
         assert r"$\chi^2=1.23$" in text
+
+
+def test_format_isochrone_annotation_m_m_err():
+    with isolated_sys_modules():
+        mod = _prepare()
+        text = mod.format_isochrone_annotation(
+            m_m=10.5,
+            m_m_err=0.15,
+            apply_corrections_to="observation",
+        )
+        assert r"$(m-M)=10.5\pm0.15$" in text
 
 
 _GRID_SHARED = """

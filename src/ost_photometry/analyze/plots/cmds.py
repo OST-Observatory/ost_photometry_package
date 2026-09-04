@@ -779,7 +779,9 @@ class MakeCMDs:
             y_plot_range_max: str = '', y_plot_range_min: str = '',
             x_plot_range_max: str = '', x_plot_range_min: str = '',
             rv: float = 3.1, e_b_v_err: float | None = None,
-            rv_err: float | None = None, fit_isochrone: bool = False,
+            rv_err: float | None = None,
+            m_m_err: float | None = None,
+            fit_isochrone: bool = False,
             magnitude_fit_range: tuple[float | None, float | None] = (None, None),
             n_bin_observation: int = 40,
             fiduciary_points_observation: bool | None = None,
@@ -842,6 +844,12 @@ class MakeCMDs:
             correction (and, except for B-V, into the colour excess) and
             combined in quadrature with the photometric errors.
             Default is ``None`` (photometric errors only).
+
+        m_m_err                     : `float` or `None`, optional
+            1-sigma uncertainty on the distance modulus. Propagated into the
+            magnitude axis only (distance does not change colour) and combined
+            in quadrature with the reddening and photometric errors.
+            Default is ``None``.
 
         figure_size_x               : `float`, optional
             Figure size in cm (x direction)
@@ -929,11 +937,15 @@ class MakeCMDs:
                 rv_err=rv_err,
             )
         )
-        dmag_obs, dcolor_obs, dmag_iso, dcolor_iso = cmd_correction_offsets(
+        (dmag_obs, dcolor_obs, dmag_iso, dcolor_iso,
+         correction_mag_err, correction_color_err) = cmd_correction_offsets(
             a_filter_2,
             relative_extinction,
             m_m,
             apply_to=apply_corrections_to,
+            a_filter_2_err=a_filter_2_err,
+            relative_extinction_err=relative_extinction_err,
+            m_m_err=m_m_err,
         )
         apply_to_iso = str(apply_corrections_to).strip().lower() in (
             "isochrone",
@@ -949,11 +961,11 @@ class MakeCMDs:
         else:
             magnitude_filter_2_err = combine_cmd_error_bars(
                 self.magnitude_filter_2_err,
-                a_filter_2_err,
+                correction_mag_err,
             )
             magnitude_color_err = combine_cmd_error_bars(
                 self.magnitude_color_err,
-                relative_extinction_err,
+                correction_color_err,
             )
 
         def _shift_isochrone(mag, color):
@@ -1640,6 +1652,7 @@ class MakeCMDs:
             e_b_v=e_b_v,
             rv=rv,
             m_m=m_m,
+            m_m_err=m_m_err,
             apply_corrections_to=apply_corrections_to,
             best_age=best_age,
             best_age_unit=best_age_unit,
