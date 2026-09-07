@@ -160,6 +160,19 @@ def test_y_limits_follow_quantity_not_median():
         assert flo < fhi
 
 
+def test_y_limits_include_flux_eclipse_dip():
+    with isolated_sys_modules():
+        plots = _load_plots()
+        flux = np.concatenate([np.ones(20), np.full(5, 0.55)])
+        lo, hi = plots.y_limits_for_quantity(flux, quantity="flux")
+        assert lo < 0.55 < hi
+        assert lo < 1.0 < hi
+        mag = np.concatenate([np.full(20, 12.0), np.full(5, 12.8)])
+        hi_m, lo_m = plots.y_limits_for_quantity(mag, quantity="magnitude")
+        assert lo_m < 12.0 < hi_m
+        assert lo_m < 12.8 < hi_m
+
+
 def test_fold_phase_in_unit_interval():
     with isolated_sys_modules():
         plots = _load_plots()

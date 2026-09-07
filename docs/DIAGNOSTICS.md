@@ -309,7 +309,7 @@ and are drawn as open grey points; a coherent eclipse dip is not flagged.
 
 | File (stem) | Content |
 |-------------|---------|
-| `lightcurve_jd_<name>_<filter>` | Science light curve (OOI). Magnitudes inverted; limits from median ± MAD. |
+| `lightcurve_jd_<name>_<filter>` | Science light curve (OOI). Magnitudes inverted; y-limits span unflagged points (eclipse dips stay in view). |
 | `lightcurve_folded_<name>_<filter>` | Phase \(0\ldots 1\) (optionally two cycles), marker at phase 0. |
 | `check_star_qc_<filter>` | OOI vs the **K most variable catalog calibrators** (excess RMS, not raw RMS). OOI `id`s are removed from the calibrator pool even if they have `mag_std_*`. |
 | `calibrator_variability_<filter>` | Catalog calibrators only (OOI excluded): excess RMS vs magnitude, residual LCs (top-K in colour). |

@@ -53,11 +53,14 @@ def y_limits_for_quantity(
     y: np.ndarray,
     *,
     quantity: str = "magnitude",
-    n_sigma: float = 5.5,
-    min_half: float = 0.05,
+    pad_frac: float = 0.08,
+    min_pad: float = 0.05,
 ) -> tuple[float, float]:
     """
-    Axis limits from median ± MAD (not min/max outliers).
+    Axis limits spanning the data (plus padding), not median ± MAD.
+
+    Callers should pass unflagged points so isolated cosmics do not stretch
+    the axis; a coherent eclipse dip must remain inside the window.
 
     Magnitudes return ``(hi, lo)`` so callers can ``set_ylim`` inverted.
     Flux returns ``(lo, hi)``.
@@ -66,14 +69,11 @@ def y_limits_for_quantity(
     fin = arr[np.isfinite(arr)]
     if fin.size == 0:
         return (1.0, 0.0) if quantity != "flux" else (0.0, 1.0)
-    center = float(np.median(fin))
-    mad = float(np.median(np.abs(fin - center)))
-    scale = 1.4826 * mad
-    if not np.isfinite(scale) or scale <= 0.0:
-        lo_c, hi_c = np.percentile(fin, [10.0, 90.0])
-        scale = max(0.5 * (float(hi_c) - float(lo_c)), 0.0)
-    half = max(float(min_half), float(n_sigma) * scale)
-    lo, hi = center - half, center + half
+    y_lo = float(np.min(fin))
+    y_hi = float(np.max(fin))
+    span = y_hi - y_lo
+    pad = max(float(min_pad), float(pad_frac) * span)
+    lo, hi = y_lo - pad, y_hi + pad
     if quantity == "flux":
         return lo, hi
     return hi, lo
