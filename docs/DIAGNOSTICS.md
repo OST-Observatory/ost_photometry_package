@@ -124,7 +124,8 @@ One panel per available quality column (`qfit`, `cfit`, `sharpness`,
 exist, the fallback is distance to the image edge or offset from the field
 centre. After calibration, stars used in the fit are open stars; catalog
 matches rejected by the quality cuts are grey crosses (overplotted on each
-quality panel). Used stars should sit on the \(\sigma\) ridge and inside the
+quality panel). Each panel has its own instrumental-magnitude x-axis. Used
+stars should sit on the \(\sigma\) ridge and inside the
 qfit/shape windows. Remaining outliers in the used sample mean a cut was
 skipped (`calibrator_min_keep`) or the column was absent.
 

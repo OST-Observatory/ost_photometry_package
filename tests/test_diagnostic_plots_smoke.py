@@ -169,14 +169,28 @@ def test_mag_vs_error_qc_plots(tmp_path):
                 "roundness": np.linspace(-0.2, 0.4, 80),
             }
         )
-        path_q = qc.plot_photometry_mag_vs_error(
-            rich,
-            tmp_path,
-            "pdf",
-            filename_stem="photometry_mag_vs_error_quality",
-            image_shape=(200, 160),
-        )
+        from unittest.mock import patch
+
+        from matplotlib.figure import Figure
+
+        mag_xlabels: list[str] = []
+        real_savefig = Figure.savefig
+
+        def _savefig(self, *args, **kwargs):
+            mag_xlabels[:] = [ax.get_xlabel() for ax in self.axes if ax.get_xlabel()]
+            return real_savefig(self, *args, **kwargs)
+
+        with patch.object(Figure, "savefig", _savefig):
+            path_q = qc.plot_photometry_mag_vs_error(
+                rich,
+                tmp_path,
+                "pdf",
+                filename_stem="photometry_mag_vs_error_quality",
+                image_shape=(200, 160),
+            )
         assert path_q is not None and path_q.is_file()
+        assert len(mag_xlabels) >= 2
+        assert all(lab == "Instrumental magnitude [mag]" for lab in mag_xlabels)
 
         calib = Table(
             {

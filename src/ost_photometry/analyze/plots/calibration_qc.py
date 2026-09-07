@@ -1407,12 +1407,12 @@ def plot_photometry_mag_vs_error(
     if n_extra:
         n_cols = 1 if n_extra == 1 else 2
         n_q_rows = ceil(n_extra / n_cols)
-        fig = plt.figure(figsize=(6.8 if n_cols == 1 else 11.2, 5.2 + 3.5 * n_q_rows))
+        fig = plt.figure(figsize=(6.8 if n_cols == 1 else 11.2, 5.4 + 3.8 * n_q_rows))
         gs = fig.add_gridspec(
             1 + n_q_rows,
             n_cols,
             height_ratios=[1.45] + [1.0] * n_q_rows,
-            hspace=0.38,
+            hspace=0.55,
             wspace=0.28,
         )
         ax0 = fig.add_subplot(gs[0, :])
@@ -1422,7 +1422,6 @@ def plot_photometry_mag_vs_error(
             span_row = n_extra % n_cols == 1 and i == n_extra - 1 and n_cols == 2
             ax = fig.add_subplot(gs[row, :] if span_row else gs[row, col], sharex=ax0)
             extra_axes.append(ax)
-        plt.setp(ax0.get_xticklabels(), visible=False)
     else:
         fig, ax0 = plt.subplots(figsize=(6.4, 4.8))
 
@@ -1449,11 +1448,9 @@ def plot_photometry_mag_vs_error(
     if band_label:
         ttl += f" ({band_label})"
     ax0.set_title(ttl)
+    ax0.set_xlabel(x_label)
+    ax0.tick_params(axis="x", labelbottom=True)
 
-    last_row_start = 0
-    if extra_axes:
-        n_cols_extra = 1 if n_extra <= 1 else 2
-        last_row_start = ((n_extra - 1) // n_cols_extra) * n_cols_extra
     for i, ax1 in enumerate(extra_axes):
         quality, quality_label = extra_panels[i]
         if quality is not None:
@@ -1487,12 +1484,8 @@ def plot_photometry_mag_vs_error(
         ax1.set_ylabel(r"$\sigma_m$ [mag]")
         ax1.grid(True, which="both", alpha=0.3)
         ax1.set_title(quality_label, fontsize=10, pad=8)
-        if i >= last_row_start:
-            ax1.set_xlabel(x_label)
-        else:
-            plt.setp(ax1.get_xticklabels(), visible=False)
-    if not extra_axes:
-        ax0.set_xlabel(x_label)
+        ax1.set_xlabel(x_label)
+        ax1.tick_params(axis="x", labelbottom=True)
 
     path = _diagnostic_plot_path(output_dir, stem, file_type)
     fig.savefig(path, bbox_inches="tight", format=file_type.lstrip("."))
