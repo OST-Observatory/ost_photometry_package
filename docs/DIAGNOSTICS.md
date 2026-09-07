@@ -35,6 +35,10 @@ own subdirectory. Simbad-annotated maps stay in `<output>/results/starmaps/`.
 The HiPS subtraction pair is `<output>/work/subtract/img_comparison.*`
 (titles **Science** / **HiPS**).
 
+Extraction **aperture** maps (`diagnostics/extraction/aperture/`) show only
+stars that remain after the edge cut (outer annulus must fit on the chip) and
+the positive-flux cut — the same set as the extraction starmap.
+
 On a two-table overlay, **purple** markers are the primary catalog (detections,
 or all photometry on the cluster map) and **green** markers are the second
 table: ePSF stars, objects of interest / calibrators (“Protected objects”

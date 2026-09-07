@@ -1292,6 +1292,30 @@ def define_apertures(
     return aperture, annulus_aperture
 
 
+def apertures_from_xy(
+    x,
+    y,
+    radius_aperture: float,
+    inner_annulus_radius: float,
+    outer_annulus_radius: float,
+) -> tuple[CircularAperture, CircularAnnulus] | None:
+    """Circular + annulus apertures at finite ``(x, y)`` (pixel radii)."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y)
+    if not np.any(ok):
+        return None
+    positions = list(zip(x[ok], y[ok], strict=True))
+    return (
+        CircularAperture(positions, r=float(radius_aperture)),
+        CircularAnnulus(
+            positions,
+            r_in=float(inner_annulus_radius),
+            r_out=float(outer_annulus_radius),
+        ),
+    )
+
+
 def extraction_aperture(
     image: AnalysisImage,
     radius_aperture: float,
@@ -1404,20 +1428,31 @@ def extraction_aperture(
     image.photometry = photometry_tbl
 
     if plot_aperture_positions:
-        start_plot_process(
-            plots.plot_apertures,
-            (
-                _extraction_qc_dir(image, gallery=False),
-                data,
-                aperture,
-                annulus_aperture,
-                f"{filter_}_{image.image_id}",
-            ),
-            {
-                "file_type": file_type_plots,
-                "pixel_scale": image.pixel_scale,
-            },
+        r_ap_pix = float(np.atleast_1d(aperture.r)[0])
+        r_in_pix = float(np.atleast_1d(annulus_aperture.r_in)[0])
+        r_out_pix = float(np.atleast_1d(annulus_aperture.r_out)[0])
+        plot_aps = apertures_from_xy(
+            photometry_tbl["x_fit"],
+            photometry_tbl["y_fit"],
+            r_ap_pix,
+            r_in_pix,
+            r_out_pix,
         )
+        if plot_aps is not None:
+            start_plot_process(
+                plots.plot_apertures,
+                (
+                    _extraction_qc_dir(image, gallery=False),
+                    data,
+                    plot_aps[0],
+                    plot_aps[1],
+                    f"{filter_}_{image.image_id}",
+                ),
+                {
+                    "file_type": file_type_plots,
+                    "pixel_scale": image.pixel_scale,
+                },
+            )
 
     n_objects = len(flux)
     if terminal_logger is not None:
@@ -1842,6 +1877,8 @@ def main_extract(
 
 
 __all__ = [
+    "apertures_from_xy",
     "main_extract",
     "extract_multiprocessing",
+    "resolve_aperture_radii",
 ]

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from helpers import load_module_from_path, pkg_src
-from ost_photometry.analyze.extraction import resolve_aperture_radii
+from ost_photometry.analyze.extraction import apertures_from_xy, resolve_aperture_radii
 
 
 def test_resolve_aperture_radii_passthrough():
@@ -82,3 +82,19 @@ def test_extraction_config_passes_aperture_scale_kwargs():
     assert cfg.extraction.aperture_scale_with_fwhm is True
     assert cfg.aperture_fwhm_factor == 1.8
     assert cfg.extraction.main_extract_kwargs()["aperture_fwhm_factor"] == 1.8
+
+
+def test_apertures_from_xy_matches_surviving_positions():
+    aps = apertures_from_xy(
+        [5.0, 50.0, 95.0],
+        [50.0, 50.0, np.nan],
+        radius_aperture=4.0,
+        inner_annulus_radius=7.0,
+        outer_annulus_radius=10.0,
+    )
+    assert aps is not None
+    aperture, annulus = aps
+    assert aperture.positions.shape[0] == 2
+    assert annulus.positions.shape[0] == 2
+    np.testing.assert_allclose(aperture.positions[1], [50.0, 50.0])
+    assert apertures_from_xy([], [], 4.0, 7.0, 10.0) is None
