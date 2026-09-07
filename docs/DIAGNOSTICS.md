@@ -299,9 +299,10 @@ distance \(d=1/\varpi\). Figures land under `diagnostics/cluster/`.
 
 The pipeline GMM (or HDBSCAN fallback) writes `is_cluster_member` and
 `cluster_p_mem` on the full post-processed ECSV. The **student** extract
-script uses hard μ (and optional π / RUWE) boxes instead: that is a teaching
-cut, not \(P_\mathrm{mem}\). A star on the edge of the box can be a member in
-the supervisor table and field in the student CMD, or the other way around.
+script uses a **parallax window** on Gaia \(G\) vs \(\varpi\) (optional μ box
+and RUWE). That is a teaching cut, not \(P_\mathrm{mem}\). A star on the edge
+of the window can be a member in the supervisor table and field in the student
+CMD, or the other way around.
 
 ## Light curves
 
