@@ -242,6 +242,31 @@ def test_outlier_flag_on_injected_spike():
         assert np.any(np.asarray(v2["flag_outlier"], dtype=bool))
 
 
+def test_eclipse_dip_not_flagged_isolated_spike_is():
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        n = 20
+        rng = np.random.default_rng(0)
+        mag = 12.0 + rng.normal(0.0, 0.01, n)
+        mag[8:13] = 12.6 + rng.normal(0.0, 0.01, 5)
+        mag[16] = 14.5
+        tbl = Table(
+            {
+                "id": np.zeros(n, dtype=np.int64),
+                "filter": np.full(n, "V", dtype="U8"),
+                "quantity": np.full(n, "magnitude", dtype="U16"),
+                "mag": mag,
+                "flux": np.full(n, np.nan),
+                "jd": 2459000.4 + np.arange(n) * 0.01,
+            }
+        )
+        out = mod.flag_outliers_in_light_curves(tbl, sigma=5.0)
+        flag = np.asarray(out["flag_outlier"], dtype=bool)
+        assert not np.any(flag[8:13])
+        assert flag[16]
+        assert int(np.count_nonzero(flag)) == 1
+
+
 def test_excess_rms_ranking_not_raw_rms():
     with isolated_sys_modules():
         mod = _load_light_curve()

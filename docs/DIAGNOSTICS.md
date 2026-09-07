@@ -304,8 +304,8 @@ has `quantity="flux"` for those rows.
 
 Time is `BJD_TDB − 2450000` when barycentric correction succeeds (observatory
 location + RA/Dec), otherwise `JD − 2450000`. Grey bands mark local nights
-(`floor(JD − 0.5)`). Outlier epochs stay in the table (`flag_outlier`) and are
-drawn as open grey points.
+(`floor(JD − 0.5)`). Isolated outlier epochs stay in the table (`flag_outlier`)
+and are drawn as open grey points; a coherent eclipse dip is not flagged.
 
 | File (stem) | Content |
 |-------------|---------|

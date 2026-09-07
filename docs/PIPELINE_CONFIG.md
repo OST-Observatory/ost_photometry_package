@@ -408,7 +408,7 @@ Replot one night with `3_plot_lightcurve.py`; overlay nights with
 | `light_curve_quantity` | `magnitude` | Use `mag_cal_*` when present; otherwise the normalized-flux fallback (Clear / no catalog ZP). `flux` forces that fallback even when `mag_cal_*` exist. |
 | `light_curve_color` | None | e.g. `B-V` colour rows and colour light curve |
 | `light_curve_time_scale` | `bjd_tdb` | Barycentric JD when RA/Dec + site exist; else `jd` |
-| `light_curve_outlier_sigma` | 5 | Per-source sigma clip; `None` disables. Flags stay in the table |
+| `light_curve_outlier_sigma` | 5 | Per-source MAD clip of **isolated** points only (a coherent eclipse dip is kept). `None` disables. Flags stay in the table |
 | `light_curve_binning_factor` | None | Folded-curve phase bin width (0–1) or number of bins (≥ 1) |
 
 See [DIAGNOSTICS.md](DIAGNOSTICS.md#light-curves).

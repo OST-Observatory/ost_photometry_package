@@ -697,48 +697,94 @@ def _rows_from_epoch_native_source(
     )
 
 
+def _time_sort_order(times: np.ndarray) -> np.ndarray:
+    """Stable argsort; non-finite times keep relative order at the end."""
+    t = np.asarray(times, dtype=float)
+    if t.size == 0 or not np.any(np.isfinite(t)):
+        return np.arange(t.size, dtype=int)
+    keys = np.where(np.isfinite(t), t, np.inf)
+    return np.argsort(keys, kind="stable")
+
+
+def _clip_candidates(y: np.ndarray, sigma: float) -> np.ndarray:
+    """MAD (or iterative) clip vs the series median. Does not require isolation."""
+    cand = np.zeros(len(y), dtype=bool)
+    ok = np.isfinite(y)
+    if int(np.count_nonzero(ok)) < 4:
+        return cand
+    y_ok = y[ok]
+    center = float(np.median(y_ok))
+    mad = float(np.median(np.abs(y_ok - center)))
+    scale = 1.4826 * mad
+    if not np.isfinite(scale) or scale <= 0.0:
+        from astropy.stats import sigma_clip
+
+        clipped = sigma_clip(y_ok, sigma=sigma, masked=True)
+        cand[ok] = np.asarray(clipped.mask, dtype=bool)
+    else:
+        cand[ok] = np.abs(y_ok - center) > sigma * scale
+    return cand
+
+
+def _isolated_in_time_order(candidate: np.ndarray, order: np.ndarray) -> np.ndarray:
+    """True only for candidates that form a run of length 1 in ``order``."""
+    out = np.zeros(len(candidate), dtype=bool)
+    seq = np.asarray(candidate, dtype=bool)[order]
+    i = 0
+    n = int(seq.size)
+    while i < n:
+        if not seq[i]:
+            i += 1
+            continue
+        j = i + 1
+        while j < n and seq[j]:
+            j += 1
+        if j - i == 1:
+            out[int(order[i])] = True
+        i = j
+    return out
+
+
 def flag_outliers_in_light_curves(
     tbl: Table,
     sigma: float | None = 5.0,
 ) -> Table:
-    """Per ``(id, filter)`` sigma-clip on mag or flux. Flags stay in the table."""
+    """Per ``(id, filter)`` MAD clip on mag or flux; only isolated points.
+
+    A point is ``flag_outlier`` when it is a MAD (or iterative) outlier **and**
+    neither time-neighbour is. Coherent dips (eclipses) stay unflagged. Flags
+    remain in the table. ``sigma=None`` disables clipping.
+    """
     out = tbl.copy()
     n = len(out)
     flag = np.zeros(n, dtype=bool)
     if sigma is None or n == 0:
         out["flag_outlier"] = flag
         return out
-    from astropy.stats import sigma_clip
 
     ids = np.asarray(out["id"]).astype(int)
     filts = np.asarray(out["filter"]).astype(str)
     qty = np.asarray(out["quantity"]).astype(str)
     mag = np.asarray(out["mag"], dtype=float)
     flux = np.asarray(out["flux"], dtype=float)
+    if "jd" in out.colnames:
+        times_all = np.asarray(out["jd"], dtype=float)
+    elif "bjd_tdb" in out.colnames:
+        times_all = np.asarray(out["bjd_tdb"], dtype=float)
+    else:
+        times_all = np.full(n, np.nan)
     sig = float(sigma)
     for sid in np.unique(ids):
         for filt in np.unique(filts[ids == sid]):
             m = (ids == sid) & (filts == filt)
+            idx = np.flatnonzero(m)
             q = qty[m]
-            if np.any(q == "flux"):
-                y = flux[m]
-            else:
-                y = mag[m]
-            ok = np.isfinite(y)
-            if int(np.count_nonzero(ok)) < 4:
+            y = flux[m] if np.any(q == "flux") else mag[m]
+            cand = _clip_candidates(y, sig)
+            if not np.any(cand):
                 continue
-            y_ok = y[ok]
-            center = float(np.median(y_ok))
-            mad = float(np.median(np.abs(y_ok - center)))
-            scale = 1.4826 * mad
-            if not np.isfinite(scale) or scale <= 0.0:
-                clipped = sigma_clip(y_ok, sigma=sig, masked=True)
-                local = np.zeros(int(np.count_nonzero(m)), dtype=bool)
-                local[ok] = np.asarray(clipped.mask, dtype=bool)
-            else:
-                local = np.zeros(int(np.count_nonzero(m)), dtype=bool)
-                local[ok] = np.abs(y_ok - center) > sig * scale
-            flag[m] = local
+            isolated = _isolated_in_time_order(cand, _time_sort_order(times_all[m]))
+            flag[idx] = isolated
     out["flag_outlier"] = flag
     return out
 
