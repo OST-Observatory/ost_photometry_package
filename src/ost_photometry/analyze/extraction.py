@@ -62,6 +62,67 @@ from .models import ImageSeries
 from .utils.epsf_selection import n_epsf_stars_to_select
 
 
+class ExtractionSkipError(RuntimeError):
+    """This frame cannot be extracted; multi-image runs skip it and continue."""
+
+
+def _skip_extraction_result(
+    image: AnalysisImage,
+    err: ExtractionSkipError,
+    terminal_logger: terminal_output.TerminalLog | None,
+    multiprocessing: bool,
+) -> tuple[int, None] | None:
+    msg = f"Skipping image {image.image_id} ({image.filter_}): {err}"
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(msg, style_name="WARNING")
+        terminal_logger.print_to_terminal("")
+    else:
+        terminal_output.print_to_terminal(msg, style_name="WARNING")
+    if multiprocessing:
+        return image.image_id, None
+    raise err
+
+
+def _merge_extraction_results(
+    image_series: ImageSeries,
+    res: list[tuple[int, Table | None]],
+) -> list[int]:
+    """Attach photometry from workers; drop skipped frames. Return skipped ids."""
+    by_id: dict[int, Table | None] = {}
+    for img_id, tbl in res:
+        by_id[int(img_id)] = tbl
+    ref_idx = int(image_series.reference_image_index)
+    ref_id = int(image_series.image_list[ref_idx].image_id)
+    kept: list[AnalysisImage] = []
+    skipped: list[int] = []
+    for img in image_series.image_list:
+        tbl = by_id.get(int(img.image_id))
+        if tbl is None:
+            skipped.append(int(img.image_id))
+            continue
+        img.photometry = tbl
+        kept.append(img)
+    if not kept:
+        raise RuntimeError(
+            f"\n{style.Bcolors.FAIL}Extraction failed for all "
+            f"{image_series.filter_} images.{style.Bcolors.ENDC}"
+        )
+    image_series.image_list = kept
+    for i, img in enumerate(kept):
+        if int(img.image_id) == ref_id:
+            image_series.reference_image_index = i
+            break
+    else:
+        image_series.reference_image_index = 0
+        terminal_output.print_to_terminal(
+            f"Reference image {ref_id} was skipped; "
+            f"using image {kept[0].image_id} as the new reference.",
+            style_name="WARNING",
+        )
+    image_series.reference_image = kept[image_series.reference_image_index]
+    return skipped
+
+
 def _extraction_qc_dir(image: AnalysisImage, *, gallery: bool) -> str:
     return str(extraction_plot_dir(image.out_path, gallery=gallery))
 
@@ -628,15 +689,17 @@ def check_epsf_stars(
     """
     #   Get object positions
     tbl_positions = image.positions
+    identification_string = f"{image.image_id}. {image.filter_}"
+    if tbl_positions is None or len(tbl_positions) == 0:
+        raise ExtractionSkipError(
+            f"No sources identified in the {identification_string} band image."
+        )
 
     #   Number of objects
     n_stars = len(tbl_positions)
 
     #   Get image data
     image_data = image.get_data()
-
-    #   Combine identification string
-    identification_string = f"{image.image_id}. {image.filter_}"
 
     #   Useful information
     out_string = (
@@ -677,10 +740,9 @@ def check_epsf_stars(
     if (
         id_percentile_99 - available_epsf_stars < minimum_n_stars and strict_epsf_checks
     ) or (id_percentile_99 - available_epsf_stars < 1 and not strict_epsf_checks):
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNot enough stars ("
-            f"{id_percentile_99 - available_epsf_stars}) found to determine "
-            f"the ePSF in the {identification_string} band{style.Bcolors.ENDC}"
+        raise ExtractionSkipError(
+            f"Not enough stars ({id_percentile_99 - available_epsf_stars}) "
+            f"found to determine the ePSF in the {identification_string} band."
         )
 
     #   Resize table -> limit it to the suitable stars
@@ -711,15 +773,11 @@ def check_epsf_stars(
     if (n_useful_epsf_stars < minimum_n_stars and strict_epsf_checks) or (
         n_useful_epsf_stars < 1 and not strict_epsf_checks
     ):
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNot enough stars ({n_useful_epsf_stars}) "
-            f"for the ePSF determination in the {identification_string} band "
-            "image. Too many potential ePSF stars have been removed, because "
-            "they are too close to the image border. Check first that enough "
-            "stars have been identified, using the starmap_?.pdf files.\n If "
-            "that is the case, shrink extraction region or raise "
-            "fraction_epsf_stars / maximum_n_eps_stars "
-            f"(size_epsf_region). {style.Bcolors.ENDC}"
+        raise ExtractionSkipError(
+            f"Not enough stars ({n_useful_epsf_stars}) for the ePSF "
+            f"determination in the {identification_string} band image. "
+            "Too many potential ePSF stars have been removed because they "
+            "are too close to the image border."
         )
 
     image_mask = image.get_mask()
@@ -744,11 +802,11 @@ def check_epsf_stars(
     if (n_useful_epsf_stars < minimum_n_stars and strict_epsf_checks) or (
         n_useful_epsf_stars < 1 and not strict_epsf_checks
     ):
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNot enough stars ({n_useful_epsf_stars}) "
-            f"for the ePSF determination in the {identification_string} band "
-            "image. Too many potential ePSF stars have been removed because "
-            "their cutouts contain non-finite pixels. {style.Bcolors.ENDC}"
+        raise ExtractionSkipError(
+            f"Not enough stars ({n_useful_epsf_stars}) for the ePSF "
+            f"determination in the {identification_string} band image. "
+            "Too many potential ePSF stars have been removed because their "
+            "cutouts contain non-finite pixels."
         )
 
     #   Find all potential ePSF stars with close neighbors
@@ -790,15 +848,11 @@ def check_epsf_stars(
     if (n_useful_epsf_stars < minimum_n_stars and strict_epsf_checks) or (
         n_useful_epsf_stars < 1 and not strict_epsf_checks
     ):
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nNot enough stars ({n_useful_epsf_stars}) "
-            f" for the ePSF determination in the {identification_string} band "
-            "image. Too many potential ePSF stars have been removed, because "
-            "other stars are in the extraction region. Check first that enough"
-            " stars have been identified, using the starmap_?.pdf files.\n"
-            "If that is the case, shrink extraction region or raise "
-            "fraction_epsf_stars / maximum_n_eps_stars "
-            f"(size_epsf_region). {style.Bcolors.ENDC}"
+        raise ExtractionSkipError(
+            f"Not enough stars ({n_useful_epsf_stars}) for the ePSF "
+            f"determination in the {identification_string} band image. "
+            "Too many potential ePSF stars have been removed because other "
+            "stars are in the extraction region."
         )
 
     #   Return ePSF stars
@@ -880,10 +934,9 @@ def determine_epsf(
         else:
             terminal_output.print_to_terminal(msg, indent=indent, style_name="WARNING")
     if len(epsf_star_positions) < 1:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL}No ePSF stars remain after rejecting "
-            f"non-finite cutouts (image {image.image_id}, filter "
-            f"{image.filter_}). {style.Bcolors.ENDC}"
+        raise ExtractionSkipError(
+            f"No ePSF stars remain after rejecting non-finite cutouts "
+            f"(image {image.image_id}, filter {image.filter_})."
         )
 
     #   Number of ePSF stars
@@ -1158,11 +1211,9 @@ def extraction_epsf(
     try:
         n_stars = len(result_tbl["flux_fit"].data)
     except KeyError as err:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nTable produced by "
-            "IterativePSFPhotometry is empty after cleaning up "
-            "of objects with negative pixel coordinates and negative "
-            f"uncertainties {style.Bcolors.ENDC}"
+        raise ExtractionSkipError(
+            "PSF photometry table is empty after cleaning objects with "
+            "negative pixel coordinates or uncertainties."
         ) from err
 
     out_str = f"{n_stars} good stars extracted from the image"
@@ -1572,18 +1623,15 @@ def extract_multiprocessing(
         raise RuntimeError(
             f"\n{style.Bcolors.FAIL}Extraction using multiprocessing failed "
             f"for {filter_} :({style.Bcolors.ENDC}"
+        ) from executor.err
+
+    skipped = _merge_extraction_results(image_series, executor.res)
+    if skipped:
+        terminal_output.print_to_terminal(
+            f"Skipped {len(skipped)} {filter_} image(s) "
+            f"(ids: {', '.join(str(i) for i in skipped)}).",
+            style_name="WARNING",
         )
-
-    res = executor.res
-
-    tmp_list = []
-    for img in image_series.image_list:
-        for img_id, tbl in res:
-            if img_id == img.image_id:
-                img.photometry = tbl
-                tmp_list.append(img)
-
-    image_series.image_list = tmp_list
 
 
 def main_extract(
@@ -1632,7 +1680,7 @@ def main_extract(
     use_wcs_projection_for_star_maps: bool = True,
     fwhm_estimate_min: float = 2.0,
     fwhm_estimate_max: float = 15.0,
-) -> None | tuple[int, Table]:
+) -> None | tuple[int, Table | None]:
     """
     Main function to extract the information from the individual images
     """
@@ -1695,177 +1743,203 @@ def main_extract(
     gallery = image.image_id != id_reference_image
     plot_dir = _extraction_qc_dir(image, gallery=gallery)
 
-    if photometry_extraction_method == "PSF":
-        if size_epsf_region % 2 == 0:
-            size_epsf_region = size_epsf_region + 1
+    try:
+        if photometry_extraction_method == "PSF":
+            if size_epsf_region % 2 == 0:
+                size_epsf_region = size_epsf_region + 1
 
-        epsf_stars = check_epsf_stars(
-            image,
-            size_epsf_region=size_epsf_region,
-            minimum_n_stars=minimum_n_eps_stars,
-            fraction_epsf_stars=fraction_epsf_stars,
-            maximum_n_stars=maximum_n_eps_stars,
-            terminal_logger=terminal_logger,
-            strict_epsf_checks=strict_epsf_checks,
-        )
+            epsf_stars = check_epsf_stars(
+                image,
+                size_epsf_region=size_epsf_region,
+                minimum_n_stars=minimum_n_eps_stars,
+                fraction_epsf_stars=fraction_epsf_stars,
+                maximum_n_stars=maximum_n_eps_stars,
+                terminal_logger=terminal_logger,
+                strict_epsf_checks=strict_epsf_checks,
+            )
 
-        if plots_for_all_images or image.image_id == id_reference_image:
+            if plots_for_all_images or image.image_id == id_reference_image:
+                start_plot_process(
+                    plots.starmap,
+                    (plot_dir, image.get_data(), image.filter_, image.positions),
+                    {
+                        "tbl_2": epsf_stars,
+                        "label": "identified stars",
+                        "label_2": "stars used to determine the ePSF",
+                        "rts": (
+                            f"Initial object identification [Image: {image.image_id}"
+                            f" ({image.filename})]"
+                        ),
+                        "filename_suffix": (
+                            f"Initial object identification [Image: {image.image_id}]"
+                        ),
+                        "wcs_image": image.wcs,
+                        "use_wcs_projection": use_wcs_projection_for_star_maps,
+                        "file_type": file_type_plots,
+                    },
+                )
+
+            determine_epsf(
+                image,
+                epsf_stars,
+                size_epsf_region=size_epsf_region,
+                oversampling_factor=oversampling_factor_epsf,
+                max_n_iterations=max_n_iterations_epsf_determination,
+                minimum_n_stars=minimum_n_eps_stars,
+                multiprocess_plots=True,
+                terminal_logger=terminal_logger,
+                file_type_plots=file_type_plots,
+                plot_output_dir=plot_dir,
+            )
+
             start_plot_process(
-                plots.starmap,
-                (plot_dir, image.get_data(), image.filter_, image.positions),
+                plots.plot_epsf,
+                (plot_dir, {f"img-{image.image_id}-{image.filter_}": [image.epsf]}),
                 {
-                    "tbl_2": epsf_stars,
-                    "label": "identified stars",
-                    "label_2": "stars used to determine the ePSF",
-                    "rts": (
-                        f"Initial object identification [Image: {image.image_id}"
-                        f" ({image.filename})]"
-                    ),
-                    "filename_suffix": (
-                        f"Initial object identification [Image: {image.image_id}]"
-                    ),
-                    "wcs_image": image.wcs,
-                    "use_wcs_projection": use_wcs_projection_for_star_maps,
                     "file_type": file_type_plots,
+                    "id_image": f"_{image.image_id}_{image.filter_}",
+                    "indent": 2,
                 },
             )
 
-        determine_epsf(
-            image,
-            epsf_stars,
-            size_epsf_region=size_epsf_region,
-            oversampling_factor=oversampling_factor_epsf,
-            max_n_iterations=max_n_iterations_epsf_determination,
-            minimum_n_stars=minimum_n_eps_stars,
-            multiprocess_plots=True,
-            terminal_logger=terminal_logger,
-            file_type_plots=file_type_plots,
-            plot_output_dir=plot_dir,
-        )
-
-        start_plot_process(
-            plots.plot_epsf,
-            (plot_dir, {f"img-{image.image_id}-{image.filter_}": [image.epsf]}),
-            {
-                "file_type": file_type_plots,
-                "id_image": f"_{image.image_id}_{image.filter_}",
-                "indent": 2,
-            },
-        )
-
-        extraction_epsf(
-            image,
-            rms_background,
-            sigma_background=sigma_value_background_clipping,
-            use_initial_positions=use_initial_positions_epsf,
-            finder_method=object_finder_method,
-            size_extraction_region=size_extraction_region_epsf,
-            epsf_fitter=epsf_fitter,
-            n_iterations_eps_extraction=n_iterations_eps_extraction,
-            multiplier_background_rms=multiplier_background_rms_epsf,
-            multiplier_grouper=multiplier_grouper_epsf,
-            strict_cleaning_results=strict_cleaning_epsf_results,
-            terminal_logger=terminal_logger,
-            finder_sharpness_range=finder_sharpness_range,
-            finder_roundness_range=finder_roundness_range,
-            finder_min_separation_fwhm=finder_min_separation_fwhm,
-            psf_find_in_residuals=psf_find_in_residuals,
-        )
-
-        start_plot_process(
-            plots.plot_residual,
-            (
-                {f"{image.filter_}, Image ID: {image.image_id}": image.get_data()},
-                {f"{image.filter_}, Image ID: {image.image_id}": image.residual_image},
-                plot_dir,
-            ),
-            {"file_type": file_type_plots, "indent": 2},
-        )
-
-    elif photometry_extraction_method == "APER":
-        if image.image_id == id_reference_image:
-            plot_aperture_positions = True
-        else:
-            plot_aperture_positions = False
-
-        (
-            radius_aperture_use,
-            inner_annulus_use,
-            outer_annulus_use,
-            radii_unit_use,
-        ) = resolve_aperture_radii(
-            scale_with_fwhm=aperture_scale_with_fwhm,
-            fwhm_pix=getattr(image, "fwhm", None),
-            radius_aperture=radius_aperture,
-            inner_annulus_radius=inner_annulus_radius,
-            outer_annulus_radius=outer_annulus_radius,
-            radii_unit=radii_unit,
-            aperture_fwhm_factor=aperture_fwhm_factor,
-            inner_annulus_fwhm_factor=inner_annulus_fwhm_factor,
-            outer_annulus_fwhm_factor=outer_annulus_fwhm_factor,
-        )
-        if aperture_scale_with_fwhm:
-            fwhm_pix = float(image.fwhm)
-            msg = (
-                f"APER radii from FWHM={fwhm_pix:.2f} px: "
-                f"r={radius_aperture_use:.2f} px, "
-                f"annulus={inner_annulus_use:.2f}–{outer_annulus_use:.2f} px "
-                f"(factors {aperture_fwhm_factor}, "
-                f"{inner_annulus_fwhm_factor}, {outer_annulus_fwhm_factor})"
+            extraction_epsf(
+                image,
+                rms_background,
+                sigma_background=sigma_value_background_clipping,
+                use_initial_positions=use_initial_positions_epsf,
+                finder_method=object_finder_method,
+                size_extraction_region=size_extraction_region_epsf,
+                epsf_fitter=epsf_fitter,
+                n_iterations_eps_extraction=n_iterations_eps_extraction,
+                multiplier_background_rms=multiplier_background_rms_epsf,
+                multiplier_grouper=multiplier_grouper_epsf,
+                strict_cleaning_results=strict_cleaning_epsf_results,
+                terminal_logger=terminal_logger,
+                finder_sharpness_range=finder_sharpness_range,
+                finder_roundness_range=finder_roundness_range,
+                finder_min_separation_fwhm=finder_min_separation_fwhm,
+                psf_find_in_residuals=psf_find_in_residuals,
             )
-            if terminal_logger is not None:
-                terminal_logger.add_to_cache(msg, indent=3)
+
+            start_plot_process(
+                plots.plot_residual,
+                (
+                    {f"{image.filter_}, Image ID: {image.image_id}": image.get_data()},
+                    {
+                        f"{image.filter_}, Image ID: {image.image_id}": (
+                            image.residual_image
+                        )
+                    },
+                    plot_dir,
+                ),
+                {"file_type": file_type_plots, "indent": 2},
+            )
+
+        elif photometry_extraction_method == "APER":
+            if image.positions is None or len(image.positions) == 0:
+                raise ExtractionSkipError(
+                    f"No sources identified in the {image.image_id}. "
+                    f"{image.filter_} band image."
+                )
+            if image.image_id == id_reference_image:
+                plot_aperture_positions = True
             else:
-                terminal_output.print_to_terminal(msg, indent=3)
+                plot_aperture_positions = False
 
-        extraction_aperture(
-            image,
-            radius_aperture_use,
-            inner_annulus_use,
-            outer_annulus_use,
-            radii_unit=radii_unit_use,
-            plot_aperture_positions=plot_aperture_positions,
-            terminal_logger=terminal_logger,
-            file_type_plots=file_type_plots,
-            indent=3,
+            (
+                radius_aperture_use,
+                inner_annulus_use,
+                outer_annulus_use,
+                radii_unit_use,
+            ) = resolve_aperture_radii(
+                scale_with_fwhm=aperture_scale_with_fwhm,
+                fwhm_pix=getattr(image, "fwhm", None),
+                radius_aperture=radius_aperture,
+                inner_annulus_radius=inner_annulus_radius,
+                outer_annulus_radius=outer_annulus_radius,
+                radii_unit=radii_unit,
+                aperture_fwhm_factor=aperture_fwhm_factor,
+                inner_annulus_fwhm_factor=inner_annulus_fwhm_factor,
+                outer_annulus_fwhm_factor=outer_annulus_fwhm_factor,
+            )
+            if aperture_scale_with_fwhm:
+                fwhm_pix = float(image.fwhm)
+                msg = (
+                    f"APER radii from FWHM={fwhm_pix:.2f} px: "
+                    f"r={radius_aperture_use:.2f} px, "
+                    f"annulus={inner_annulus_use:.2f}–{outer_annulus_use:.2f} px "
+                    f"(factors {aperture_fwhm_factor}, "
+                    f"{inner_annulus_fwhm_factor}, {outer_annulus_fwhm_factor})"
+                )
+                if terminal_logger is not None:
+                    terminal_logger.add_to_cache(msg, indent=3)
+                else:
+                    terminal_output.print_to_terminal(msg, indent=3)
+
+            extraction_aperture(
+                image,
+                radius_aperture_use,
+                inner_annulus_use,
+                outer_annulus_use,
+                radii_unit=radii_unit_use,
+                plot_aperture_positions=plot_aperture_positions,
+                terminal_logger=terminal_logger,
+                file_type_plots=file_type_plots,
+                indent=3,
+            )
+
+        else:
+            raise RuntimeError(
+                f"{style.Bcolors.FAIL} \nExtraction method "
+                f"({photometry_extraction_method}) not "
+                f"valid: use either APER or PSF {style.Bcolors.ENDC}"
+            )
+
+        if image.photometry is None or len(image.photometry) == 0:
+            raise ExtractionSkipError(
+                f"No photometric measurements remain for image {image.image_id} "
+                f"({image.filter_})."
+            )
+
+        magnitudes, magnitudes_error = utilities.flux_to_magnitudes(
+            image.photometry["flux_fit"],
+            image.photometry["flux_err"],
         )
 
-    else:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nExtraction method "
-            f"({photometry_extraction_method}) not "
-            f"valid: use either APER or PSF {style.Bcolors.ENDC}"
+        image.photometry["mags_fit"] = magnitudes
+        image.photometry["mags_unc"] = magnitudes_error
+        image.photometry = utilities.attach_finder_quality(
+            image.photometry,
+            image.positions,
         )
-    magnitudes, magnitudes_error = utilities.flux_to_magnitudes(
-        image.photometry["flux_fit"],
-        image.photometry["flux_err"],
-    )
-
-    image.photometry["mags_fit"] = magnitudes
-    image.photometry["mags_unc"] = magnitudes_error
-    image.photometry = utilities.attach_finder_quality(
-        image.photometry,
-        image.positions,
-    )
-    image.photometry = utilities.attach_sky_coords_from_wcs(
-        image.photometry,
-        getattr(image, "wcs", None),
-    )
-
-    method_label = {
-        "APER": "aperture photometry",
-        "PSF": "PSF photometry",
-    }.get(str(photometry_extraction_method).upper(), str(photometry_extraction_method))
-
-    if plots_for_all_images or image.image_id == id_reference_image:
-        utilities.prepare_and_plot_starmap(
-            image,
-            terminal_logger=terminal_logger,
-            file_type_plots=file_type_plots,
-            label=f"Stars with photometric extractions ({method_label})",
-            use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
-            gallery=gallery,
+        image.photometry = utilities.attach_sky_coords_from_wcs(
+            image.photometry,
+            getattr(image, "wcs", None),
         )
+
+        method_label = {
+            "APER": "aperture photometry",
+            "PSF": "PSF photometry",
+        }.get(
+            str(photometry_extraction_method).upper(),
+            str(photometry_extraction_method),
+        )
+
+        if plots_for_all_images or image.image_id == id_reference_image:
+            utilities.prepare_and_plot_starmap(
+                image,
+                terminal_logger=terminal_logger,
+                file_type_plots=file_type_plots,
+                label=f"Stars with photometric extractions ({method_label})",
+                use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
+                gallery=gallery,
+            )
+    except ExtractionSkipError as err:
+        skipped = _skip_extraction_result(
+            image, err, terminal_logger, multiprocessing
+        )
+        if skipped is not None:
+            return skipped
 
     if multiprocessing:
         terminal_logger.print_to_terminal("")
@@ -1877,6 +1951,7 @@ def main_extract(
 
 
 __all__ = [
+    "ExtractionSkipError",
     "apertures_from_xy",
     "main_extract",
     "extract_multiprocessing",

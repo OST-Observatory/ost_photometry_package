@@ -39,6 +39,11 @@ Extraction **aperture** maps (`diagnostics/extraction/aperture/`) show only
 stars that remain after the edge cut (outer annulus must fit on the chip) and
 the positive-flux cut — the same set as the extraction starmap.
 
+In **multi-image** extraction, frames that fail ePSF construction (too few
+stars after NaN/border cuts, empty photometry) are skipped rather than aborting
+the night. Look for `Skipping image …` / `Skipped N … image(s)` in the
+terminal log; those ids are missing from later light-curve epochs.
+
 On a two-table overlay, **purple** markers are the primary catalog (detections,
 or all photometry on the cluster map) and **green** markers are the second
 table: ePSF stars, objects of interest / calibrators (“Protected objects”

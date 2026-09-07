@@ -84,6 +84,8 @@ WCS must succeed (or be copied from another filter) before extraction and correl
 
 Both methods feed the same downstream tables (`mag_<filter>`, `err_<filter>`). Choice does not change calibration strategy, but PSF is usually preferred when stars overlap.
 
+**Unusable frames in multi-image extraction** (`extraction_mode="multi"`, C7): if a frame cannot determine an ePSF (too few usable stars, NaN/inf cutouts, empty photometry table) it is **skipped** with a warning and the rest of the series continues. If the reference image is skipped, the first remaining frame becomes the reference. If **every** frame fails, extraction still raises. Single-image mode (`extraction_mode="single"`, typical N2) still fails immediately on that image.
+
 ### `aperture_scale_with_fwhm`
 
 One **radius per image**, scaled to that frame’s FWHM — not a different aperture per star.
