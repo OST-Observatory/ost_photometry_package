@@ -142,8 +142,9 @@ def reduce_main(
         Default is ``aa_true``.
 
     n_cores_multiprocessing
-        Number of cores to use during calculation of the image shifts.
-        Default is ``None``.
+        Worker processes for alignment, stacking, and calibration-frame
+        combination. ``None`` or ``<= 0`` uses half the logical CPUs
+        (``cpu_count() // 2``). Default is ``None``.
 
     stack_images
         If True the individual images of each filter will be stacked and

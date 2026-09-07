@@ -12,6 +12,7 @@ upgrade paths. **Current options and decision tables** live in
 2. [Calibration epochs](#2-calibration-epochs)
 3. [Calibration catalog sources](#3-calibration-catalog-sources)
 4. [Post-processing](#4-post-processing)
+5. [Reduction](#5-reduction)
 
 ---
 
@@ -223,3 +224,27 @@ region/Gaia/PM on first `epoch_id`, then expand surviving `id` to all epochs.
 
 `legacy_wide_table_to_epoch_native` / `ensure_epoch_native_photometry_table` convert
 between legacy wide rows and epoch-native long form.
+
+---
+
+## 5. Reduction
+
+Not a breaking rename of `reduce_main`. Behaviour that landed on `develop` before
+this release:
+
+- **Alignment.** Canonical names are
+  `ost_photometry.reduce.registration.SHIFT_METHODS`. Default remains
+  `aa_true` (astroalign similarity). `shift_method="wcs"` solves a celestial
+  WCS if missing and reprojects onto the reference image WCS. Translation-only
+  methods (`aa`, `skimage`) still pad with `make_big_images`; `aa_true` / `wcs`
+  skip that pad.
+- **Camera catalog.** `camera_info` interpolates system gain, read noise, and
+  dark current from `data/cameras.json` (rebuilt from provenance CSVs under
+  `data/camera_specs/`). Chip size is a scalar in the catalog. Override
+  `gain` / `read_noise` / `dark_rate` on `reduce_main` when a FITS header or
+  the catalog is wrong.
+- **Workers.** `n_cores_multiprocessing=None` (or `<= 0`) uses half the
+  logical CPUs in `Executor` — reduce *and* multi-image extraction.
+
+Current decision tables: [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md#reduction-reduce_main).
+Registration follow-ups: [TODO.md](TODO.md#reduce).

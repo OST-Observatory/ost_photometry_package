@@ -32,6 +32,7 @@ config = PipelineConfig(
 | Config field                   | Values                                                             | Pipeline step                   | Role                                                            |
 | ------------------------------ | ------------------------------------------------------------------ | ------------------------------- | --------------------------------------------------------------- |
 | `wcs_method`                   | `astrometry`, `astap`, `twirl`                                     | WCS                             | Astrometric solution per image                                  |
+| `n_cores_multiprocessing`      | `int` or `None` (default `None` → half the CPUs)                   | Extraction (multi-image)        | Worker processes; `None` or `<= 0` uses `cpu_count() // 2`      |
 | `photometry_extraction_method` | `PSF`, `APER`                                                      | Extraction                      | PSF fitting vs aperture photometry                              |
 | `aperture_scale_with_fwhm`     | `True`, `False` (default `False`)                                  | Extraction (`APER`)             | If True, APER radii are `factor ×` image FWHM (pixels)          |
 | `cosmic_ray_removal`           | `auto`, `always`, `never` (bool `True`/`False` still accepted)     | Extraction                      | Skip lacosmic when reduction set `CRIDENT` / `cosmics_*`        |
@@ -396,7 +397,7 @@ config_mk = PipelineConfig.from_preset("extract_protect_calibrators", overrides=
 `LightCurveStep` is off by default (`skip_light_curve=True`). C7 sets it False.
 The step writes `tables/light_curves.ecsv` and plots views of that table.
 Replot one night with `3_plot_lightcurve.py`; overlay nights with
-`5_compare_nights.py`.
+`4_compare_nights.py`.
 
 | Flag | Default | Role |
 |------|---------|------|
@@ -442,10 +443,33 @@ Cutouts are cached; `diff.fits` is a single output name (one image per run).
 Night templates, detection, and candidate tables are not in
 this step — see [TODO.md](TODO.md#difference-images).
 
+## Reduction (`reduce_main`)
+
+CCD reduction is **not** a `PipelineConfig` step. Course scripts call
+`ost_photometry.reduce.redu.reduce_main(...)`. Keywords live on
+[`workflow/main.py`](../src/ost_photometry/reduce/workflow/main.py).
+
+| Keyword | Default | Role |
+|---------|---------|------|
+| `shift_method` | `aa_true` | Alignment backend. Canonical names: `ost_photometry.reduce.registration.SHIFT_METHODS`. |
+| `wcs_method` | `astap` | Solver after stacking, and during align when `shift_method="wcs"`. |
+| `n_cores_multiprocessing` | `None` | Worker processes for calibration frames, alignment, and stacking. `None` or `<= 0` → half the logical CPUs. |
+| `find_wcs` | `True` | Solve WCS on reduced / stacked frames. Skipped after `shift_method="wcs"` unless `force_wcs_determination`. |
+| `gain` / `read_noise` / `dark_rate` | `None` | Electronics overrides. If unset, `camera_info` interpolates from `data/cameras.json` (system gain, read noise, dark current, chip size). |
+
+| `shift_method` | When to use |
+|----------------|-------------|
+| `aa_true` | Default. Astroalign similarity; dense fields and sub-pixel stacks. |
+| `wcs` | Reproject onto the reference celestial WCS. Large dithers, sparse fields, filter-to-filter stacks, or when astroalign fails. |
+| `aa` / `skimage` | Translation only (then pad with `make_big_images`). |
+| `own` / `flow` | Not recommended (`own` is slow; `flow` is a poor stacking warp). |
+
+Analysis WCS (`PipelineConfig.wcs_method`) is independent and still defaults to ASTAP. A full `reduce_main` option catalogue is a documentation follow-up — see [TODO.md](TODO.md#documentation).
+
 ## Further reading
 
 - [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) — site extinction table and dedicated-night best practices
 - [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md) — breaking changes and epoch-native architecture
-- [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) — site extinction table
-- Source of truth for defaults: `[pipeline/config.py](../src/ost_photometry/analyze/pipeline/config.py)`
+- [DIAGNOSTICS.md](DIAGNOSTICS.md) — QC plot layout
+- Source of truth for analysis defaults: [`pipeline/config.py`](../src/ost_photometry/analyze/pipeline/config.py)
 

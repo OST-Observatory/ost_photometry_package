@@ -1,6 +1,6 @@
 # Script compatibility matrix
 
-**Stand:** Juli 2026 — epoch-native pipeline, calibration convergence release, site extinction table.
+**Stand:** September 2026 — epoch-native pipeline, WCS registration, camera catalog, default worker pools at N/2 CPUs.
 
 For pipeline options see [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md). For breaking API
 changes see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
@@ -14,10 +14,11 @@ changes see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
 | `c7/1_reduce_images.py` | ✅ | `reduce.redu.reduce_main`; optional `validate_inputs`, `fail_on_missing_flat` (defaults on) |
 | `c7/2_obtain_flux.py` | ✅ | `run_pipeline`, `PipelineConfig` (`preset`/`custom`), `extraction_mode="multi"` |
 | `c7/3_plot_lightcurve.py` | ✅ | `analyze.plots`, epoch-native ECSV input |
+| `c7/4_compare_nights.py` | ✅ | Multi-night overlay of `tables/light_curves.ecsv` (replaces retired `4_plot_lightcurve_from_ecsv.py`) |
 | `n1_baches/1_masterimages.py` | ✅ | `reduce.utilities`, `reduce.registration`, `checks` |
 | `n2/1_add_images.py` | ✅ | `reduce.redu.reduce_main` (stacking via MP per filter) |
 | `n2/3_plot_cmd.py` | ✅ | `load_cmd_table`, `plot_cmds_from_table`, `style.Bcolors` |
-D
+
 **Hinweis N2:** In `reduction_scripts_students/n2/` gibt es **kein** `2_obtain_flux.py`.
 Die Photometrie-Extraktion für N2 läuft über die Supervisor-Skripte (Abschnitt 2).
 
@@ -75,6 +76,9 @@ Es gilt **`ost_photometry.style.Bcolors`** (großes „B“). Kein `style.bcolor
 - `calibration_strategy`, `calibration_grouping`, `extinction_mode`, `color_term_fit`
 - `path_extinction_coefficients` für `extinction_mode="tabulated"`
 - `mk_file_list(..., add_path_to_file_names=...)`
-- `reduce_main`-Keyword-Argumente (`validate_inputs`, `fail_on_missing_flat`, `sanity_check_sample_size`)
+- `reduce_main`-Keyword-Argumente (`validate_inputs`, `fail_on_missing_flat`, `sanity_check_sample_size`, `shift_method`, `n_cores_multiprocessing`)
+- `shift_method` / `ost_photometry.reduce.registration.SHIFT_METHODS` (inkl. `wcs`)
+- `n_cores_multiprocessing`: `None` oder `<= 0` → `cpu_count() // 2` (Reduce und Extraktion)
+- `camera_info` / `data/cameras.json` (Systemgewinn, Ausleserauschen, Dunkelstrom, Chipgröße)
 - Öffentliche Reduktions-API: `reduce.redu.reduce_main` (Implementierung in `ost_photometry.reduce.workflow`, intern modularisiert)
 - Epoch-native ECSV (legacy wide `.dat` is read-only via `legacy_wide_table_to_epoch_native`)

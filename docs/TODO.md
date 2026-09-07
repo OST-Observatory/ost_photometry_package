@@ -684,6 +684,33 @@ Archived Image-based ZP/plot helpers outside ``src/`` are gone. Do not restore.
 
 ---
 
+## Documentation
+
+Small option tables for `reduce_main` live in
+[PIPELINE_CONFIG.md](PIPELINE_CONFIG.md#reduction-reduce_main). The items
+below are larger pages that should not block a code release.
+
+### Reduce user guide (P2)
+
+Cover every `reduce_main` keyword (not only `shift_method` / cores / cameras):
+trims, cosmic flags, stacking (`shift_all`, `stack_method`), WCS skip rules
+after `shift_method="wcs"`, `validate_inputs` / `fail_on_missing_flat`, and
+how `camera_info` maps FITS `INSTRUME` / `GAIN` / `READOUTM` / `CCD-TEMP` to
+`cameras.json`. Keep `SHIFT_METHODS` as the name source of truth.
+
+### CHANGELOG / GitHub releases (P2)
+
+There is no `CHANGELOG.md` and no documented tag process. Add a changelog
+(or GitHub Releases notes) starting at the next version bump, and record
+how `main` is tagged.
+
+### Python 3.13 in CI (P2)
+
+Classifiers already list 3.13; the GitHub Actions matrix is still 3.11 and
+3.12. Add 3.13 after a local `pytest tests -m "not slow"` on 3.13.
+
+---
+
 ## Operational (not code debt)
 
 | Item | Notes |
@@ -717,4 +744,5 @@ Archived Image-based ZP/plot helpers outside ``src/`` are gone. Do not restore.
 20. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
 21. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
 22. **P3:** Aperture correction from growth curve (optional APER; one correction per image, not per star).
-23. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.
+23. **P2:** Reduce user guide (`reduce_main` option catalogue); CHANGELOG / GitHub release notes; add Python 3.13 to CI after a local 3.13 run.
+24. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.

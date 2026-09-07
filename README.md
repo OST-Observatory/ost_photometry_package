@@ -28,8 +28,11 @@ the calibrated image series via an `Observation` object and `run_pipeline()`.
 
 ## Capabilities
 
-**Reduction (`reduce`)** — standard CCD stack building, image alignment, cosmic-ray
-handling hooks, and WCS helpers used by the analysis layer.
+**Reduction (`reduce`)** — CCD stack building, image alignment, cosmic-ray
+handling, and WCS helpers. Default alignment is star-triangle (`shift_method="aa_true"`);
+`shift_method="wcs"` reprojects onto the reference celestial WCS (large dithers /
+sparse fields). Camera gain, read noise, and dark current are interpolated from
+the bundled `data/cameras.json` catalog. Worker pools default to half the CPUs.
 
 **Analysis pipeline (`analyze.pipeline`)** — configurable step sequence driven by
 [`PipelineConfig`](src/ost_photometry/analyze/pipeline/config.py):
@@ -82,10 +85,11 @@ The alternative `astrometry` method needs a local
 | Topic | Document |
 |-------|----------|
 | Pipeline options and decision tables | [docs/PIPELINE_CONFIG.md](docs/PIPELINE_CONFIG.md) |
+| Diagnostic plot layout | [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) |
 | Site extinction table and observation campaigns | [docs/EXTINCTION_COEFFICIENTS.md](docs/EXTINCTION_COEFFICIENTS.md) |
 | Breaking changes and architecture (archive) | [docs/ARCHITECTURE_AND_MIGRATION.md](docs/ARCHITECTURE_AND_MIGRATION.md) |
 | Script compatibility matrix | [docs/COMPATIBILITY_REPORT.md](docs/COMPATIBILITY_REPORT.md) |
-| Known follow-ups | [docs/TECHNICAL_DEBT.md](docs/TECHNICAL_DEBT.md) |
+| Known follow-ups | [docs/TODO.md](docs/TODO.md) |
 
 Config defaults and all pipeline fields:
 [`src/ost_photometry/analyze/pipeline/config.py`](src/ost_photometry/analyze/pipeline/config.py).
