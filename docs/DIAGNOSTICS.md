@@ -80,7 +80,11 @@ Two kinds of figure, on purpose:
 \(\sigma_m\) is the **1σ magnitude uncertainty** (always plotted positive, log
 y-axis). After a new extraction it is
 \((2.5 / \ln 10)\,\sigma_F / |F|\). Older tables that still stored the signed
-derivative are shown with \(|\sigma|\).
+derivative are shown with \(|\sigma|\). For **PSF**, \(\sigma_F\) is the
+photutils fit error from the per-pixel uncertainty map; for **APER** it is the
+DAOPHOT-style aperture formula. A PSF ridge at many-tenths of a magnitude for
+bright stars is not expected — that used to happen when the pixel-error map
+was accidentally flattened to \(\max(\sigma)\) before the fit.
 
 Finder quality (`sharpness`, `roundness*`) and PSF-fit quality (`qfit`, `cfit`,
 `flags`) are copied onto the photometry table at extraction so both figures can

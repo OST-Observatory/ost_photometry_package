@@ -1015,6 +1015,22 @@ def determine_epsf(
     image.epsf = epsf
 
 
+def _sanitize_pixel_error(error: np.ndarray) -> np.ndarray:
+    """Copy pixel σ; replace non-finite / non-positive values, keep the rest.
+
+    PSF flux errors come from this map (photutils fitter covariance). An earlier
+    cleanup inverted the NaN mask and set *every* finite pixel to ``max(σ)``,
+    which inflated CMD error bars for ``photometry_extraction_method="PSF"``.
+    """
+    out = np.array(error, dtype=float, copy=True)
+    valid = np.isfinite(out) & (out > 0.0)
+    if not np.any(valid):
+        out[:] = 1.0
+        return out
+    out[~valid] = float(np.max(out[valid]))
+    return out
+
+
 def extraction_epsf(
     image: AnalysisImage,
     background_rms: float,
@@ -1135,18 +1151,7 @@ def extraction_epsf(
             aperture_radius=aperture_radius,
         )
 
-    #   Check if error is finite
-    finite_error_mask = np.isfinite(error)
-    error[np.invert(finite_error_mask)] = np.max(error[finite_error_mask])
-    finite_error_mask = np.isfinite(error)
-
-    #   Check if error is negative
-    negative_error_mask = error < 0.0
-    error[negative_error_mask] = np.max(error[np.invert(negative_error_mask)])
-
-    #   Check if error is nan
-    nan_error_mask = np.isnan(error)
-    error[np.invert(nan_error_mask)] = np.max(error[np.invert(nan_error_mask)])
+    error = _sanitize_pixel_error(error)
 
     if use_initial_positions:
         result_tbl = photometry(
