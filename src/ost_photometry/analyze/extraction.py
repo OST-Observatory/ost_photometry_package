@@ -1254,19 +1254,49 @@ def extraction_epsf(
 
 
 def compute_aperture_photometry_uncertainties(
-    flux_variance: np.ndarray,
-    aperture_area: float,
-    annulus_area: float,
-    uncertainty_background: np.ndarray,
-    gain: float = 1.0,
+    aperture_sum_err: np.ndarray,
+    sky_subtraction_err: np.ndarray,
 ) -> np.ndarray:
-    """Compute flux errors for aperture photometry using DAOPHOT-style computation."""
-    bg_variance_terms = (aperture_area * uncertainty_background**2.0) * (
-        1.0 + aperture_area / annulus_area
-    )
-    variance = flux_variance / gain + bg_variance_terms
-    flux_error = variance**0.5
-    return flux_error
+    """1σ net-flux error from the aperture sum and the scaled sky subtraction.
+
+    Both arguments are **standard deviations in flux units**, not variances.
+    Photutils ``aperture_sum_err`` is already ``√Σ σ_pix²`` over the aperture;
+    ``sky_subtraction_err`` is the uncertainty of the background already
+    scaled to the same aperture (``aper_bkg_err``, or
+    ``σ_sky · n_pix / √n_sky`` when the annulus supplies a per-pixel σ).
+
+    Combines as ``hypot(σ_sum, σ_sky)``. An earlier helper treated
+    ``aperture_sum_err`` as a variance and multiplied the sky term by the
+    aperture area again, which inflated APER (and CMD colour) error bars.
+    """
+    src = np.asarray(aperture_sum_err, dtype=float)
+    sky = np.asarray(sky_subtraction_err, dtype=float)
+    return np.sqrt(np.maximum(src, 0.0) ** 2 + np.maximum(sky, 0.0) ** 2)
+
+
+def sky_subtraction_error(
+    sky_err: np.ndarray,
+    *,
+    per_pixel: bool,
+    aperture_area: np.ndarray | float | None = None,
+    annulus_area: np.ndarray | float | None = None,
+) -> np.ndarray:
+    """Sky uncertainty in aperture-flux units.
+
+    When ``per_pixel`` is False, ``sky_err`` is already ``σ(aper_bkg)``.
+    When True it is the annulus per-pixel σ, converted with
+    ``n_pix · σ / √n_sky``.
+    """
+    err = np.asarray(sky_err, dtype=float)
+    if not per_pixel:
+        return err
+    if aperture_area is None or annulus_area is None:
+        raise ValueError(
+            "per-pixel sky errors need aperture_area and annulus_area."
+        )
+    n_pix = np.asarray(aperture_area, dtype=float)
+    n_sky = np.maximum(np.asarray(annulus_area, dtype=float), 1e-12)
+    return err * n_pix / np.sqrt(n_sky)
 
 
 def resolve_aperture_radii(
@@ -1443,17 +1473,22 @@ def extraction_aperture(
     photometry_tbl["flux_fit"] = (
         photometry_tbl["aperture_sum"] - photometry_tbl["aper_bkg"]
     )
-    
+
     if uncertainty is not None:
-        err_column = photometry_tbl["aperture_sum_err"]
+        aperture_sum_err = photometry_tbl["aperture_sum_err"]
     else:
-        err_column = photometry_tbl["flux_fit"] ** 0.5
+        aperture_sum_err = np.sqrt(
+            np.maximum(np.asarray(photometry_tbl["flux_fit"], dtype=float), 0.0)
+        )
 
     photometry_tbl["flux_err"] = compute_aperture_photometry_uncertainties(
-        err_column,
-        aperture_area,
-        annulus_aperture_area,
-        bkg_err,
+        aperture_sum_err,
+        sky_subtraction_error(
+            bkg_err,
+            per_pixel=background_estimate_simple,
+            aperture_area=aperture_area,
+            annulus_area=annulus_aperture_area,
+        ),
     )
 
     photometry_tbl.rename_column("x_center", "x_fit")

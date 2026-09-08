@@ -81,10 +81,13 @@ Two kinds of figure, on purpose:
 y-axis). After a new extraction it is
 \((2.5 / \ln 10)\,\sigma_F / |F|\). Older tables that still stored the signed
 derivative are shown with \(|\sigma|\). For **PSF**, \(\sigma_F\) is the
-photutils fit error from the per-pixel uncertainty map; for **APER** it is the
-DAOPHOT-style aperture formula. A PSF ridge at many-tenths of a magnitude for
-bright stars is not expected — that used to happen when the pixel-error map
-was accidentally flattened to \(\max(\sigma)\) before the fit.
+photutils fit error from the per-pixel uncertainty map; for **APER** it is
+\(\sqrt{\sigma_\mathrm{sum}^{2}+\sigma_\mathrm{sky}^{2}}\) (photutils aperture-sum
+error plus the scaled annulus subtraction). Treating the photutils σ as a
+variance and multiplying the sky term by the aperture area used to inflate
+APER — and therefore CMD colour — error bars. A PSF ridge at many-tenths of a
+magnitude for bright stars is not expected — that used to happen when the
+pixel-error map was accidentally flattened to \(\max(\sigma)\) before the fit.
 
 Finder quality (`sharpness`, `roundness*`) and PSF-fit quality (`qfit`, `cfit`,
 `flags`) are copied onto the photometry table at extraction so both figures can
