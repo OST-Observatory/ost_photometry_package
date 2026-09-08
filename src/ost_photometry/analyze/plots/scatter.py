@@ -294,7 +294,8 @@ def scatter(
         y_errors: list[np.ndarray | None] | None = None,
         dataset_label: list[str] | None = None, name_object: str | None = None,
         fits: list[fitting] | None = None, one_to_one: bool = False,
-        file_type: str = 'pdf') -> None:
+        file_type: str = 'pdf',
+        x_lim: tuple[float, float] | None = None) -> None:
     """
     Plot magnitudes
 
@@ -345,6 +346,11 @@ def scatter(
     file_type
         Type of plot file to be created
         Default is ``pdf``.
+
+    x_lim
+        If given, x-axis limits ``(xmin, xmax)`` and vertical lines at
+        both bounds (e.g. a parallax membership window).
+        Default is ``None``.
     """
     out = diagnostics_dir(output_dir, "cluster")
 
@@ -439,6 +445,13 @@ def scatter(
     #   Set x and y axis label
     plt.ylabel(name_y)
     plt.xlabel(name_x)
+
+    if x_lim is not None:
+        x0, x1 = float(x_lim[0]), float(x_lim[1])
+        ax = plt.gca()
+        ax.axvline(x0, color='C0', ls='--', lw=1.2, zorder=1)
+        ax.axvline(x1, color='C0', ls='--', lw=1.2, zorder=1)
+        ax.set_xlim(x0, x1)
 
     #   Save plot
     plt.savefig(
