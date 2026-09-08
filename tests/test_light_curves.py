@@ -280,6 +280,60 @@ def test_eclipse_dip_not_flagged_isolated_spike_is():
         assert int(np.count_nonzero(flag)) == 1
 
 
+def test_two_consecutive_spikes_flagged_eclipse_kept():
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        plots = _load_plots()
+        n = 24
+        rng = np.random.default_rng(1)
+        mag = 12.0 + rng.normal(0.0, 0.01, n)
+        mag[6:11] = 12.7 + rng.normal(0.0, 0.01, 5)
+        mag[18:20] = 15.0
+        tbl = Table(
+            {
+                "id": np.zeros(n, dtype=np.int64),
+                "filter": np.full(n, "Clear", dtype="U8"),
+                "quantity": np.full(n, "magnitude", dtype="U16"),
+                "mag": mag,
+                "flux": np.full(n, np.nan),
+                "jd": 2459000.4 + np.arange(n) * 0.01,
+            }
+        )
+        out = mod.flag_outliers_in_light_curves(tbl, sigma=5.0)
+        flag = np.asarray(out["flag_outlier"], dtype=bool)
+        assert not np.any(flag[6:11])
+        assert np.all(flag[18:20])
+        good = mag[~flag]
+        hi, lo = plots.y_limits_for_quantity(good, quantity="magnitude")
+        assert lo < 12.0 < hi
+        assert lo < 12.7 < hi
+        assert not (lo < 15.0 < hi)
+
+
+def test_bright_spike_run_is_flagged():
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        n = 20
+        rng = np.random.default_rng(2)
+        mag = 12.0 + rng.normal(0.0, 0.01, n)
+        mag[4:9] = 10.5
+        tbl = Table(
+            {
+                "id": np.zeros(n, dtype=np.int64),
+                "filter": np.full(n, "V", dtype="U8"),
+                "quantity": np.full(n, "magnitude", dtype="U16"),
+                "mag": mag,
+                "flux": np.full(n, np.nan),
+                "jd": 2459000.4 + np.arange(n) * 0.01,
+            }
+        )
+        out = mod.flag_outliers_in_light_curves(tbl, sigma=5.0)
+        flag = np.asarray(out["flag_outlier"], dtype=bool)
+        assert np.all(flag[4:9])
+        assert not np.any(flag[:4])
+        assert not np.any(flag[9:])
+
+
 def test_excess_rms_ranking_not_raw_rms():
     with isolated_sys_modules():
         mod = _load_light_curve()

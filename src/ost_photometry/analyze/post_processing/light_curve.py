@@ -707,7 +707,7 @@ def _time_sort_order(times: np.ndarray) -> np.ndarray:
 
 
 def _clip_candidates(y: np.ndarray, sigma: float) -> np.ndarray:
-    """MAD (or iterative) clip vs the series median. Does not require isolation."""
+    """MAD clip vs the series median. Does not require isolation."""
     cand = np.zeros(len(y), dtype=bool)
     ok = np.isfinite(y)
     if int(np.count_nonzero(ok)) < 4:
@@ -717,19 +717,34 @@ def _clip_candidates(y: np.ndarray, sigma: float) -> np.ndarray:
     mad = float(np.median(np.abs(y_ok - center)))
     scale = 1.4826 * mad
     if not np.isfinite(scale) or scale <= 0.0:
-        from astropy.stats import sigma_clip
-
-        clipped = sigma_clip(y_ok, sigma=sigma, masked=True)
-        cand[ok] = np.asarray(clipped.mask, dtype=bool)
+        cand[ok] = np.abs(y_ok - center) > 0.0
     else:
         cand[ok] = np.abs(y_ok - center) > sigma * scale
     return cand
 
 
-def _isolated_in_time_order(candidate: np.ndarray, order: np.ndarray) -> np.ndarray:
-    """True only for candidates that form a run of length 1 in ``order``."""
+def _flag_candidate_runs(
+    y: np.ndarray,
+    candidate: np.ndarray,
+    order: np.ndarray,
+    *,
+    bright_is_high: bool,
+    max_faint_run: int = 2,
+) -> np.ndarray:
+    """Flag short faint runs and any bright-side run; keep longer faint dips.
+
+    Isolation of length 1 was too weak: two consecutive cosmics still
+    stretched the light-curve y-axis. Eclipses are coherent *faint* runs
+    longer than ``max_faint_run`` (default 2). Bright spikes (flux up /
+    mag down) are never a transit and are always flagged.
+    """
     out = np.zeros(len(candidate), dtype=bool)
     seq = np.asarray(candidate, dtype=bool)[order]
+    y = np.asarray(y, dtype=float)
+    finite = y[np.isfinite(y)]
+    if finite.size == 0:
+        return out
+    center = float(np.median(finite))
     i = 0
     n = int(seq.size)
     while i < n:
@@ -739,8 +754,18 @@ def _isolated_in_time_order(candidate: np.ndarray, order: np.ndarray) -> np.ndar
         j = i + 1
         while j < n and seq[j]:
             j += 1
-        if j - i == 1:
-            out[int(order[i])] = True
+        run_idx = np.asarray(order[i:j], dtype=int)
+        run_y = y[run_idx]
+        run_fin = run_y[np.isfinite(run_y)]
+        if run_fin.size:
+            run_med = float(np.median(run_fin))
+            is_bright = (
+                run_med > center if bright_is_high else run_med < center
+            )
+        else:
+            is_bright = False
+        if is_bright or (j - i) <= int(max_faint_run):
+            out[run_idx] = True
         i = j
     return out
 
@@ -748,12 +773,16 @@ def _isolated_in_time_order(candidate: np.ndarray, order: np.ndarray) -> np.ndar
 def flag_outliers_in_light_curves(
     tbl: Table,
     sigma: float | None = 5.0,
+    *,
+    max_faint_run: int = 2,
 ) -> Table:
-    """Per ``(id, filter)`` MAD clip on mag or flux; only isolated points.
+    """Per ``(id, filter)`` MAD clip on mag or flux.
 
-    A point is ``flag_outlier`` when it is a MAD (or iterative) outlier **and**
-    neither time-neighbour is. Coherent dips (eclipses) stay unflagged. Flags
-    remain in the table. ``sigma=None`` disables clipping.
+    A point is ``flag_outlier`` when it is a MAD outlier and
+    either (1) the run of such points is at most ``max_faint_run`` epochs, or
+    (2) the run is on the bright side of the series median. Coherent faint
+    dips longer than that (eclipses) stay unflagged. Flags remain in the
+    table. ``sigma=None`` disables clipping.
     """
     out = tbl.copy()
     n = len(out)
@@ -779,12 +808,19 @@ def flag_outliers_in_light_curves(
             m = (ids == sid) & (filts == filt)
             idx = np.flatnonzero(m)
             q = qty[m]
-            y = flux[m] if np.any(q == "flux") else mag[m]
+            use_flux = bool(np.any(q == "flux"))
+            y = flux[m] if use_flux else mag[m]
             cand = _clip_candidates(y, sig)
             if not np.any(cand):
                 continue
-            isolated = _isolated_in_time_order(cand, _time_sort_order(times_all[m]))
-            flag[idx] = isolated
+            flagged = _flag_candidate_runs(
+                y,
+                cand,
+                _time_sort_order(times_all[m]),
+                bright_is_high=use_flux,
+                max_faint_run=max_faint_run,
+            )
+            flag[idx] = flagged
     out["flag_outlier"] = flag
     return out
 

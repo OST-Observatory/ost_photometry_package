@@ -383,7 +383,7 @@ class LightCurveConfig:
     light_curve_calibration_rows: Literal["auto", "transformed", "simple"] = "auto"
     light_curve_overview_n: int = 8
     light_curve_calibrator_qc_n: int = 3
-    #: MAD clip of isolated points only (coherent eclipse dips stay). ``None`` off.
+    #: MAD clip: short faint runs (1–2 epochs) and bright spikes; eclipse dips stay.
     light_curve_outlier_sigma: float | None = 5.0
     light_curve_color: str | None = None
     light_curve_time_scale: Literal["bjd_tdb", "jd"] = "bjd_tdb"

@@ -316,8 +316,8 @@ diagnostic of the transformed set.
 
 ### Global bad-epoch flags (P1)
 
-`flag_outlier` is per source and **isolated** (run length 1 in time): a
-coherent eclipse dip is not flagged. A cloud hits everyone. Use the median residual of
+`flag_outlier` is per source: short faint runs (1–2 epochs) and bright
+spikes are flagged; a coherent eclipse dip is not. A cloud hits everyone. Use the median residual of
 the **quiet** ensemble per epoch; if that common mode is large, the epoch is
 bad, not the OOI.
 

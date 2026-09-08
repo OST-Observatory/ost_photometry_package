@@ -59,7 +59,7 @@ def y_limits_for_quantity(
     """
     Axis limits spanning the data (plus padding), not median ± MAD.
 
-    Callers should pass unflagged points so isolated cosmics do not stretch
+    Callers should pass unflagged points so short spikes do not stretch
     the axis; a coherent eclipse dip must remain inside the window.
 
     Magnitudes return ``(hi, lo)`` so callers can ``set_ylim`` inverted.
