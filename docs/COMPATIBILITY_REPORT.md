@@ -12,7 +12,7 @@ changes see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
 | Skript | Status | Kurznotiz |
 |--------|--------|-----------|
 | `c7/1_reduce_images.py` | ✅ | `reduce.redu.reduce_main`; optional `validate_inputs`, `fail_on_missing_flat` (defaults on) |
-| `c7/2_obtain_flux.py` | ✅ | `run_pipeline`, `PipelineConfig` (`preset`/`custom`), `extraction_mode="multi"` |
+| `c7/2_obtain_flux.py` | ✅ | `run_pipeline`, `PipelineConfig`, Preset `linear_fit_per_image` / `_extinction` / custom |
 | `c7/3_plot_lightcurve.py` | ✅ | `analyze.plots`, epoch-native ECSV input |
 | `c7/4_compare_nights.py` | ✅ | Multi-night overlay of `tables/light_curves.ecsv` (replaces retired `4_plot_lightcurve_from_ecsv.py`) |
 | `n1_baches/1_masterimages.py` | ✅ | `reduce.utilities`, `reduce.registration`, `checks` |
@@ -30,7 +30,7 @@ Legacy `Observation.extract_flux` / `extract_flux_multi` entfallen zugunsten von
 
 | Skript | Status | Kurznotiz |
 |--------|--------|-----------|
-| `n2/2_extract_data_supervisors.py` | ✅ | `run_pipeline`, `PipelineConfig`, Preset `median_zp_per_image` / custom |
+| `n2/2_extract_data_supervisors.py` | ✅ | `run_pipeline`, `PipelineConfig`, Preset `linear_fit_per_image` / custom |
 | `n2/2_extract_data_students.py` | ✅ | Wie supervisors; student-facing variant |
 | `n2/3_plot_cmd_supervisors.py` | ✅ | wie `n2/3_plot_cmd` (plus Fit/Cali/E(B-V)-Fehler) |
 | `n2/2b_post_process.py` | ✅ | `post_processing`, `analyze.utilities`, `checks` |

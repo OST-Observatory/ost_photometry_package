@@ -47,7 +47,7 @@ the bundled `data/cameras.json` catalog. Worker pools default to half the CPUs.
 
 **Calibration** — catalog cross-match (APASS, VizieR, custom tables), extinction
 correction, `PhotometryCalibrator` / `CalibrationEngine`, and named presets
-(`median_zp_per_image`, `linear_fit_per_night`, …).
+(`linear_fit_per_image`, `linear_fit_per_night`, …).
 
 **Libraries usable outside the pipeline** — `main_extract`, `PhotometryCalibrator`,
 `ExtinctionCorrector`, correlation helpers, plotting, image subtraction, and

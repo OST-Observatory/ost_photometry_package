@@ -26,7 +26,7 @@ ColorTermFit = Literal["always", "auto", "never"]
 UncertaintyMode = Literal["fit_errors", "flux_monte_carlo", "both"]
 
 CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
-    # Median zero-point per exposure (e.g. stacked multi-filter fields).
+    # Median zero-point per exposure (stacked fields without a color term).
     "median_zp_per_image": {
         "calibration_strategy": "median_zp",
         "calibration_grouping": "per_image",
@@ -37,7 +37,27 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         # Stacked B/V (N2) are sequential, not simultaneous — pair by file order.
         "exposure_pairing": "index",
     },
-    # Nightly linear color term + ZP (e.g. multi-epoch light curves).
+    # Linear T+ZP per epoch (no derive-transform). Pairing is not part of this
+    # preset: N2 stacks set ``exposure_pairing="index"`` in the script; C7
+    # visits keep the package default ``jd_nearest``.
+    "linear_fit_per_image": {
+        "calibration_strategy": "linear_fit",
+        "calibration_grouping": "per_image",
+        "extinction_mode": "none",
+        "color_term_fit": "auto",
+        "derive_transform_from_data": False,
+        "zp_subsample_statistic": False,
+    },
+    # Same as linear_fit_per_image, plus extinction from comparison stars.
+    "linear_fit_per_image_extinction": {
+        "calibration_strategy": "linear_fit",
+        "calibration_grouping": "per_image",
+        "extinction_mode": "from_comparison_stars",
+        "color_term_fit": "auto",
+        "derive_transform_from_data": False,
+        "zp_subsample_statistic": False,
+    },
+    # Nightly linear color term + ZP (combine visits; e.g. derive-transform).
     "linear_fit_per_night": {
         "calibration_strategy": "linear_fit",
         "calibration_grouping": "per_night",
@@ -52,6 +72,8 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "calibration_grouping": "per_night",
         "extinction_mode": "from_comparison_stars",
         "color_term_fit": "auto",
+        "derive_transform_from_data": True,
+        "zp_subsample_statistic": False,
     },
     # WCS + extraction + intra-filter correlation; protect calibrators; no apply.
     "extract_protect_calibrators": {
@@ -478,7 +500,8 @@ class PipelineConfig:
     ) -> PipelineConfig:
         """Build config from a named calibration preset.
 
-        Names describe the mode, e.g. ``median_zp_per_image``,
+        Names describe the mode, e.g. ``linear_fit_per_image``,
+        ``linear_fit_per_image_extinction``, ``median_zp_per_image``,
         ``linear_fit_per_night``, ``extract_protect_calibrators``,
         ``linear_fit_ensemble``, ``tabulated_extinction``.
         """

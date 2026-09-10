@@ -23,16 +23,18 @@ config prefixes are removed. Use **one epoch-native calibration path**:
 
 - **Step:** `CalibrationStep` + `CalibrationEngine`
 - **Config:** `calibration_strategy`, `calibration_grouping`, `extinction_mode`, …
-- **Presets:** `PipelineConfig.from_preset("median_zp_per_image" | "linear_fit_per_night" | …)`
+- **Presets:** `PipelineConfig.from_preset("linear_fit_per_image" | "linear_fit_per_night" | …)`
 - **Results:** `context.calibration_results`
 
 ### Presets
 
 | Preset | strategy | grouping | extinction_mode | Use case |
 |--------|----------|----------|-----------------|----------|
-| `median_zp_per_image` | `median_zp` | `per_image` | `none` | Stacked multi-filter fields, cluster photometry |
-| `linear_fit_per_night` | `linear_fit` | `per_night` | `none` | Multi-epoch light curves |
-| `linear_fit_per_night_extinction` | `linear_fit` | `per_night` | `from_comparison_stars` | Multi-epoch light curves with significant airmass range |
+| `linear_fit_per_image` | `linear_fit` | `per_image` | `none` | T+ZP each epoch (N2 stacks / C7 visits) |
+| `linear_fit_per_image_extinction` | `linear_fit` | `per_image` | `from_comparison_stars` | Same, plus extinction from comparison stars |
+| `median_zp_per_image` | `median_zp` | `per_image` | `none` | Same geometry, median ZP only (no color term) |
+| `linear_fit_per_night` | `linear_fit` | `per_night` | `none` | Combine visits; derive-transform |
+| `linear_fit_per_night_extinction` | `linear_fit` | `per_night` | `from_comparison_stars` | Same, plus extinction from comparison stars |
 
 Additional presets: `extract_protect_calibrators` (extract/intra-correlate, protect calibrators, skip apply), `linear_fit_ensemble` (ensemble derive-transform), `tabulated_extinction` (site extinction table).
 
@@ -68,13 +70,13 @@ Both supervisor (N2) and student (C7) flux scripts support `calibration_config_m
 
 ```python
 calibration_config_mode = "preset"   # or "custom"
-calibration_preset = "median_zp_per_image"      # or "linear_fit_per_night", "linear_fit_per_night_extinction"
+calibration_preset = "linear_fit_per_image"      # or "_extinction", "median_zp_per_image", "linear_fit_per_night"
 
 # custom mode:
-calibration_strategy = "median_zp"   # or "linear_fit"
+calibration_strategy = "linear_fit"  # or "median_zp"
 calibration_grouping = "per_image"   # per_image | per_night | ensemble | fixed
 extinction_mode = "none"             # none | tabulated | from_comparison_stars | from_value_airmass
-color_term_fit = "never"             # always | auto | never  (linear_fit only)
+color_term_fit = "auto"              # always | auto | never  (linear_fit only)
 derive_transform_from_data = False   # catalog-color derive-transform (linear_fit, 2 filters)
 ```
 

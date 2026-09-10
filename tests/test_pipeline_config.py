@@ -72,8 +72,10 @@ def test_linear_fit_per_night_extinction_preset():
 
     cfg = PipelineConfig.from_preset("linear_fit_per_night_extinction")
     assert cfg.calibration_strategy == "linear_fit"
+    assert cfg.calibration_grouping == "per_night"
     assert cfg.extinction_mode == "from_comparison_stars"
     assert cfg.color_term_fit == "auto"
+    assert cfg.derive_transform_from_data is True
     assert not hasattr(cfg, "fit_extinction_from_data")
 
     cfg_va = PipelineConfig(extinction_mode="from_value_airmass")
@@ -94,15 +96,23 @@ def test_unknown_preset_raises():
     with pytest.raises(ValueError, match="Unknown calibration preset"):
         PipelineConfig.from_preset("n2_stack")
 
-    n2 = PipelineConfig.from_preset("median_zp_per_image")
-    assert n2.calibration_strategy == "median_zp"
-    assert n2.exposure_pairing == "index"
-    assert (
-        PipelineConfig.from_preset(
-            "linear_fit_per_night_extinction"
-        ).extinction_mode
-        == "from_comparison_stars"
-    )
+    n2 = PipelineConfig.from_preset("linear_fit_per_image")
+    assert n2.calibration_strategy == "linear_fit"
+    assert n2.calibration_grouping == "per_image"
+    assert n2.color_term_fit == "auto"
+    assert n2.derive_transform_from_data is False
+    assert n2.exposure_pairing == "jd_nearest"
+    ext = PipelineConfig.from_preset("linear_fit_per_image_extinction")
+    assert ext.calibration_grouping == "per_image"
+    assert ext.extinction_mode == "from_comparison_stars"
+    assert ext.derive_transform_from_data is False
+    median = PipelineConfig.from_preset("median_zp_per_image")
+    assert median.calibration_strategy == "median_zp"
+    assert median.exposure_pairing == "index"
+    night_ext = PipelineConfig.from_preset("linear_fit_per_night_extinction")
+    assert night_ext.calibration_grouping == "per_night"
+    assert night_ext.extinction_mode == "from_comparison_stars"
+    assert night_ext.derive_transform_from_data is True
     assert PipelineConfig.from_preset(
         "extract_protect_calibrators"
     ).protect_calibration_objects is True

@@ -2,7 +2,7 @@
 
 Analysis scripts pass a `[PipelineConfig](../src/ost_photometry/analyze/pipeline/config.py)` to `Observation.run_pipeline()`. The options below are the main **typed choices** that control WCS, extraction, correlation, and calibration. They are independent of the N2/C7 course scripts; use this guide to pick settings for any field, survey, or lab run.
 
-For breaking renames and named presets (`median_zp_per_image`, `linear_fit_per_night`, …) see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
+For breaking renames and named presets (`linear_fit_per_image`, `linear_fit_per_night`, …) see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
 
 ## Quick start
 
@@ -174,7 +174,7 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 **Related (not in the Literal list but coupled):**
 
 - `derive_transform_from_data` — only with `linear_fit`, exactly **two** filters; alternative to `PhotometryCalibrator` linear fit (catalog-color slopes + median ZP). Preset `linear_fit_per_night` enables this. Incompatible with using `color_term_fit` on the standard calibrator path (derive path bypasses it). Writes QC under `<output>/diagnostics/calibration/`: `derive_transform_<epoch>_<filter>.*` (catalog-color slope fits), `derive_transform_fit_overview_*.*` (T/ZP/RMS/n vs epoch), and `derive_transform_summary_*.*` (applied `c`/ZP vs epoch). Outlier rejection uses `fit_sigma_clip` (default `2.5`; lower = stricter) on both `zp_sum` and fit residuals — gray points on the QC plots are excluded stars.
-- `exposure_pairing` (`jd_nearest` / `index`) and `reference_filter` — build multi-band epochs before calibration. `jd_nearest` is for variable-star series (C7) when B and V of a visit should be close in time. Stacked cluster fields (N2, one image per filter) are paired by file order; the ΔJD window is not applied. Preset `median_zp_per_image` sets `exposure_pairing="index"`.
+- `exposure_pairing` (`jd_nearest` / `index`) and `reference_filter` — build multi-band epochs before calibration. `jd_nearest` is for variable-star series (C7) when B and V of a visit should be close in time. Stacked cluster fields (N2, one image per filter) are paired by file order; the ΔJD window is not applied. Preset `median_zp_per_image` sets `exposure_pairing="index"`. `linear_fit_per_image` does not: N2 stacks pass `index` in the script, C7 keeps `jd_nearest`.
 - `zp_subsample_statistic` — extra ZP stability reporting for `median_zp` only.
 - `calibration_match_radius` — on-sky radius for matching detections to the calibration catalog (default `2 arcsec`). Independent of `separation_limit`. Tightening this cuts the tail on `differential_catalog_crossmatch_separations` in crowded fields.
 - **Known variables** — before the fit, catalog stars that coincide with [VSX](https://cdsarc.cds.unistra.fr/viz-bin/cat/B/vsx) (default `1 arcsec`) are dropped so they never get `mag_std_*`. Matching uses CDS **xMatch** of the catalog positions (not a Vizier cone of the whole field). Disable with `exclude_known_variables=False`. A failed query leaves the catalog unchanged and does not abort calibration.
@@ -379,9 +379,11 @@ keeps instrumental flux and gets a relative light curve (continuum ≈ 1).
 
 | Preset                   | Key settings                                                                                                 | Typical use                                                                                   |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `median_zp_per_image`               | `median_zp`, `per_image`, `extinction_mode="none"`, `exposure_pairing="index"` | Stacked multi-filter fields / cluster photometry                                                     |
-| `linear_fit_per_night`            | `linear_fit`, `per_night`, `derive_transform_from_data=True`                                                 | Multi-epoch light curves                                                            |
-| `linear_fit_per_night_extinction` | `linear_fit`, `per_night`, `from_comparison_stars`                                                           | Light curves with significant airmass range                                                      |
+| `linear_fit_per_image`              | `linear_fit`, `per_image`, `color_term_fit="auto"`, no derive-transform | T+ZP each epoch (N2 stacks / C7 visits; pairing is not in the preset) |
+| `linear_fit_per_image_extinction`   | same + `from_comparison_stars` | Light curves with airmass range, still per visit |
+| `median_zp_per_image`               | `median_zp`, `per_image`, `extinction_mode="none"`, `exposure_pairing="index"` | Same geometry, median ZP only (no color term) |
+| `linear_fit_per_night`            | `linear_fit`, `per_night`, `derive_transform_from_data=True` | Combine visits; derive-transform |
+| `linear_fit_per_night_extinction` | same + `from_comparison_stars` | Combine visits, plus extinction from comparison stars |
 | `extract_protect_calibrators` | `protect_calibration_objects=True`, `skip_calibration`, `skip_correlation_inter` | Extract + intra-correlate while protecting catalog calibrators (no apply) |
 | `linear_fit_ensemble` | `linear_fit`, `derive_transform_from_data=True`, `calibration_grouping="ensemble"` | Single ensemble transform / derive-transform over all epochs |
 | `tabulated_extinction` | `extinction_mode="tabulated"`, bundled site JSON when path is `None` | Apply a site extinction table |

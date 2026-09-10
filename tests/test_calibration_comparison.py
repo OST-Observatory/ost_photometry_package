@@ -147,15 +147,27 @@ def test_pipeline_config_presets():
     )
     PipelineConfig = cfg_mod.PipelineConfig
 
-    n2 = PipelineConfig.from_preset("median_zp_per_image")
-    assert n2.calibration_strategy == "median_zp"
-    assert n2.calibration_grouping == "per_image"
-    assert n2.extinction_mode == "none"
+    per_image = PipelineConfig.from_preset("linear_fit_per_image")
+    assert per_image.calibration_strategy == "linear_fit"
+    assert per_image.calibration_grouping == "per_image"
+    assert per_image.extinction_mode == "none"
+    assert per_image.color_term_fit == "auto"
+    assert per_image.derive_transform_from_data is False
+    assert per_image.exposure_pairing == "jd_nearest"
 
-    c7 = PipelineConfig.from_preset("linear_fit_per_night")
-    assert c7.calibration_strategy == "linear_fit"
-    assert c7.calibration_grouping == "per_night"
-    assert c7.extinction_mode == "none"
+    per_image_ext = PipelineConfig.from_preset("linear_fit_per_image_extinction")
+    assert per_image_ext.calibration_grouping == "per_image"
+    assert per_image_ext.extinction_mode == "from_comparison_stars"
+
+    n2_median = PipelineConfig.from_preset("median_zp_per_image")
+    assert n2_median.calibration_strategy == "median_zp"
+    assert n2_median.calibration_grouping == "per_image"
+    assert n2_median.extinction_mode == "none"
+
+    c7_night = PipelineConfig.from_preset("linear_fit_per_night")
+    assert c7_night.calibration_strategy == "linear_fit"
+    assert c7_night.calibration_grouping == "per_night"
+    assert c7_night.extinction_mode == "none"
 
 
 @pytest.mark.comparison
