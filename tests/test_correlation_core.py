@@ -302,3 +302,58 @@ def test_correlation_astropy_sequential_adds_new_track(core):
     col = int(new_cols[0])
     assert index_array[1, col] >= 0
     assert index_array[2, col] >= 0
+
+
+def test_sequential_seeds_from_reference_dataset(core):
+    wcs_obj = _simple_wcs()
+    x0 = _pixel_positions([10.0])
+    y0 = _pixel_positions([10.0])
+    x1 = _pixel_positions([10.0, 20.0, 30.0])
+    y1 = _pixel_positions([10.0, 20.0, 30.0])
+    x2 = _pixel_positions([10.0, 20.0])
+    y2 = _pixel_positions([10.0, 20.0])
+
+    index_array, rejected = core.correlation_astropy(
+        [x0, x1, x2],
+        [y0, y1, y2],
+        wcs_obj,
+        reference_dataset_id=1,
+        advanced_cleanup=False,
+        require_complete_intersection=False,
+        n_allowed_non_detections_object=5,
+        min_detection_fraction=0.3,
+        correlation_link_mode="sequential",
+        separation_limit=2.0 * u.arcsec,
+    )
+    assert rejected.size == 0
+    np.testing.assert_array_equal(index_array[1, :3], [0, 1, 2])
+    assert index_array.shape[1] >= 3
+
+
+def test_sequential_drops_chain_walk_off_anchor(core):
+    """Neighbour-to-neighbour links that walk > separation_limit from origin are cut."""
+    wcs_obj = _simple_wcs()
+    # 0.001 deg/pixel ≈ 3.6"/px; 5" keeps a 1-pixel hop, not a 2-pixel hop.
+    x0 = _pixel_positions([10.0])
+    y0 = _pixel_positions([10.0])
+    x1 = _pixel_positions([11.0])
+    y1 = _pixel_positions([10.0])
+    x2 = _pixel_positions([12.0])
+    y2 = _pixel_positions([10.0])
+
+    index_array, rejected = core.correlation_astropy(
+        [x0, x1, x2],
+        [y0, y1, y2],
+        wcs_obj,
+        advanced_cleanup=False,
+        require_complete_intersection=False,
+        n_allowed_non_detections_object=5,
+        min_detection_fraction=0.3,
+        correlation_link_mode="sequential",
+        separation_limit=5.0 * u.arcsec,
+    )
+    assert rejected.size == 0
+    orig = int(np.flatnonzero(index_array[0] >= 0)[0])
+    assert index_array[0, orig] == 0
+    assert index_array[1, orig] == 0
+    assert index_array[2, orig] == -1

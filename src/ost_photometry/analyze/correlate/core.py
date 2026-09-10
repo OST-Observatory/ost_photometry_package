@@ -97,6 +97,130 @@ def _match_two_datasets_sky(
     return index_reference, index_current
 
 
+def _sky_coords_for_dataset(
+    dataset_id: int,
+    x_pixel_positions: list,
+    y_pixel_positions: list,
+    current_wcs: wcs.WCS,
+    wcs_list: list[wcs.WCS | None] | None,
+) -> SkyCoord | None:
+    x = _ravel_pixels(x_pixel_positions[dataset_id])
+    y = _ravel_pixels(y_pixel_positions[dataset_id])
+    if x.size == 0:
+        return None
+    w = _wcs_for_dataset(dataset_id, current_wcs, wcs_list)
+    return SkyCoord.from_pixel(x, y, w)
+
+
+def _extend_tracks_to_neighbour(
+    index_array: np.ndarray,
+    prev_i: int,
+    cur_i: int,
+    x_pixel_positions: list,
+    y_pixel_positions: list,
+    current_wcs: wcs.WCS,
+    wcs_list: list[wcs.WCS | None] | None,
+    separation_limit: u.Quantity,
+) -> np.ndarray:
+    """Link frame ``cur_i`` to tracks already set on ``prev_i``; append new tracks."""
+    idx_prev, idx_cur = _match_two_datasets_sky(
+        x_pixel_positions[prev_i],
+        y_pixel_positions[prev_i],
+        _wcs_for_dataset(prev_i, current_wcs, wcs_list),
+        x_pixel_positions[cur_i],
+        y_pixel_positions[cur_i],
+        _wcs_for_dataset(cur_i, current_wcs, wcs_list),
+        separation_limit,
+    )
+    n_prev = len(_ravel_pixels(x_pixel_positions[prev_i]))
+    n_cur = len(_ravel_pixels(x_pixel_positions[cur_i]))
+    prev_det_to_track = np.full(n_prev, -1, dtype=int)
+    for tid in range(index_array.shape[1]):
+        det = int(index_array[prev_i, tid])
+        if 0 <= det < n_prev:
+            prev_det_to_track[det] = tid
+    matched_cur = np.zeros(n_cur, dtype=bool)
+    claimed_tid: set[int] = set()
+    for p, c in zip(idx_prev.tolist(), idx_cur.tolist(), strict=False):
+        p_i = int(p)
+        c_i = int(c)
+        if p_i < 0 or p_i >= prev_det_to_track.size:
+            continue
+        tid = int(prev_det_to_track[p_i])
+        if tid < 0 or tid in claimed_tid:
+            continue
+        if int(index_array[cur_i, tid]) >= 0:
+            continue
+        index_array[cur_i, tid] = c_i
+        claimed_tid.add(tid)
+        if 0 <= c_i < n_cur:
+            matched_cur[c_i] = True
+    unmatched = np.flatnonzero(~matched_cur)
+    if unmatched.size:
+        extra = np.full((index_array.shape[0], unmatched.size), -1, dtype=int)
+        extra[cur_i, :] = unmatched
+        index_array = np.hstack([index_array, extra])
+    return index_array
+
+
+def _drop_track_members_off_anchor(
+    index_array: np.ndarray,
+    x_pixel_positions: list,
+    y_pixel_positions: list,
+    current_wcs: wcs.WCS,
+    wcs_list: list[wcs.WCS | None] | None,
+    reference_dataset_id: int,
+    separation_limit: u.Quantity,
+) -> np.ndarray:
+    """Drop sequential chain-walks: keep only members near the track sky anchor.
+
+    The anchor is the reference-frame detection when present, otherwise the
+    first frame that has the track. Neighbour-to-neighbour matching can walk
+    onto a different star; that star is usually still within ``separation_limit``
+    of the *previous* frame, but not of the origin.
+    """
+    n_images, n_tracks = index_array.shape
+    if n_images == 0 or n_tracks == 0:
+        return index_array
+    coords: list[SkyCoord | None] = [
+        _sky_coords_for_dataset(i, x_pixel_positions, y_pixel_positions, current_wcs, wcs_list)
+        for i in range(n_images)
+    ]
+    out = index_array.copy()
+    ref = int(reference_dataset_id)
+    if ref < 0 or ref >= n_images:
+        ref = 0
+    for k in range(n_tracks):
+        anchor_i = -1
+        det_ref = int(out[ref, k]) if 0 <= ref < n_images else -1
+        if (
+            det_ref >= 0
+            and coords[ref] is not None
+            and det_ref < len(coords[ref])
+        ):
+            anchor_i = ref
+            anchor_det = det_ref
+        else:
+            for i in range(n_images):
+                d = int(out[i, k])
+                if d >= 0 and coords[i] is not None and d < len(coords[i]):
+                    anchor_i = i
+                    anchor_det = d
+                    break
+        if anchor_i < 0:
+            continue
+        anchor = coords[anchor_i][anchor_det]
+        for i in range(n_images):
+            if i == anchor_i:
+                continue
+            d = int(out[i, k])
+            if d < 0 or coords[i] is None or d >= len(coords[i]):
+                continue
+            if coords[i][d].separation(anchor) > separation_limit:
+                out[i, k] = -1
+    return out
+
+
 def _special_track_columns(
     index_array: np.ndarray,
     reference_dataset_id: int,
@@ -206,8 +330,8 @@ def correlate_datasets(
 
     correlation_link_mode
         ``to_reference`` matches every dataset to the reference.
-        ``sequential`` chain-matches dataset ``i`` to ``i-1`` and may add
-        tracks for new detections.
+        ``sequential`` chain-matches from the reference in both directions
+        and rejects members that walk off the track's sky anchor.
 
     separation_limit
         Allowed separation between objects.
@@ -417,45 +541,51 @@ def _match_sequential(
     wcs_list: list[wcs.WCS | None] | None,
     n_datasets: int,
     separation_limit: u.Quantity,
+    reference_dataset_id: int = 0,
 ) -> np.ndarray:
-    n0 = len(_ravel_pixels(x_pixel_positions[0]))
-    index_array = np.full((n_datasets, n0), -1, dtype=int)
-    index_array[0, :] = np.arange(n0)
-    prev_det_to_track = np.arange(n0, dtype=int)
-    for i in range(1, n_datasets):
-        idx_prev, idx_cur = _match_two_datasets_sky(
-            x_pixel_positions[i - 1],
-            y_pixel_positions[i - 1],
-            _wcs_for_dataset(i - 1, current_wcs, wcs_list),
-            x_pixel_positions[i],
-            y_pixel_positions[i],
-            _wcs_for_dataset(i, current_wcs, wcs_list),
+    """Chain-match from the reference frame in both time directions.
+
+    Seeding from image 0 walks identity errors through the whole series
+    (typical C7 night boundary). Seeding from ``reference_dataset_id``
+    (often ``auto``) keeps the best frame as the track origin.
+    """
+    ref = int(reference_dataset_id)
+    if ref < 0 or ref >= n_datasets:
+        ref = 0
+    n_ref = len(_ravel_pixels(x_pixel_positions[ref]))
+    index_array = np.full((n_datasets, n_ref), -1, dtype=int)
+    index_array[ref, :] = np.arange(n_ref)
+    for i in range(ref + 1, n_datasets):
+        index_array = _extend_tracks_to_neighbour(
+            index_array,
+            i - 1,
+            i,
+            x_pixel_positions,
+            y_pixel_positions,
+            current_wcs,
+            wcs_list,
             separation_limit,
         )
-        n_cur = len(_ravel_pixels(x_pixel_positions[i]))
-        matched_cur = np.zeros(n_cur, dtype=bool)
-        for p, c in zip(idx_prev.tolist(), idx_cur.tolist(), strict=False):
-            p_i = int(p)
-            c_i = int(c)
-            if p_i < 0 or p_i >= prev_det_to_track.size:
-                continue
-            tid = int(prev_det_to_track[p_i])
-            if tid < 0:
-                continue
-            index_array[i, tid] = c_i
-            if 0 <= c_i < n_cur:
-                matched_cur[c_i] = True
-        unmatched = np.flatnonzero(~matched_cur)
-        if unmatched.size:
-            extra = np.full((n_datasets, unmatched.size), -1, dtype=int)
-            extra[i, :] = unmatched
-            index_array = np.hstack([index_array, extra])
-        prev_det_to_track = np.full(n_cur, -1, dtype=int)
-        for tid in range(index_array.shape[1]):
-            det = int(index_array[i, tid])
-            if 0 <= det < n_cur:
-                prev_det_to_track[det] = tid
-    return index_array
+    for i in range(ref - 1, -1, -1):
+        index_array = _extend_tracks_to_neighbour(
+            index_array,
+            i + 1,
+            i,
+            x_pixel_positions,
+            y_pixel_positions,
+            current_wcs,
+            wcs_list,
+            separation_limit,
+        )
+    return _drop_track_members_off_anchor(
+        index_array,
+        x_pixel_positions,
+        y_pixel_positions,
+        current_wcs,
+        wcs_list,
+        ref,
+        separation_limit,
+    )
 
 
 def _drop_tracks_exceeding_miss_limit(
@@ -540,7 +670,10 @@ def correlation_astropy(
         Per-dataset WCS; ``None`` uses ``current_wcs`` for every frame.
 
     correlation_link_mode
-        ``to_reference`` or ``sequential``.
+        ``to_reference`` or ``sequential``. Sequential seeds tracks on
+        ``reference_dataset_id`` and chain-matches both directions, then
+        drops members that have walked farther than ``separation_limit``
+        from that anchor.
     """
     if special_object_ids is None or special_object_ids == [None]:
         special_object_ids = []
@@ -557,6 +690,7 @@ def correlation_astropy(
             wcs_list,
             n_datasets,
             separation_limit,
+            reference_dataset_id=reference_dataset_id,
         )
     else:
         index_array = _match_to_reference(

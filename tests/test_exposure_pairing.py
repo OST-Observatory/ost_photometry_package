@@ -159,3 +159,16 @@ def test_merge_epoch_on_id_keeps_partial_detections():
         assert list(merged["id"]) == [0, 1]
         assert merged["mag_B"][0] == 12.5
         assert np.isnan(merged["mag_B"][1])
+
+
+def test_epoch_wcs_prefers_image_wcs_not_series():
+    with isolated_sys_modules():
+        bridge = _load_bridge()
+        image_wcs = object()
+        series_wcs = object()
+        image = SimpleNamespace(wcs=image_wcs)
+        series = SimpleNamespace(wcs=series_wcs)
+        assert bridge._wcs_for_epoch_image(image, series) is image_wcs
+        image_none = SimpleNamespace(wcs=None)
+        assert bridge._wcs_for_epoch_image(image_none, series) is series_wcs
+        assert bridge._wcs_for_epoch_image(image_none, None) is None

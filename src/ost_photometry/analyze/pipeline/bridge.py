@@ -53,6 +53,14 @@ def _copy_qc_columns(src: Table, dest: Table) -> None:
         dest[name] = arr
 
 
+def _wcs_for_epoch_image(image, series):
+    """Sky projection for one exposure: frame WCS, else series reference WCS."""
+    wcs_obj = getattr(image, "wcs", None)
+    if wcs_obj is not None:
+        return wcs_obj
+    return getattr(series, "wcs", None) if series is not None else None
+
+
 def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Table | None:
     """One band: id, ra, dec, x, y, mag_<f>, err_<f>, flux_<f>, flux_err_<f>. Returns None if unusable."""
     if image.photometry is None:
@@ -560,7 +568,7 @@ def observation_to_calibration_epochs(
                 failed = True
                 break
             series = context.image_series_dict.get(f)
-            wcs_obj = getattr(series, "wcs", None) if series is not None else None
+            wcs_obj = _wcs_for_epoch_image(im, series)
             if wcs_obj is None:
                 failed = True
                 skipped.append({"reason": "no_wcs", "filter": f})
