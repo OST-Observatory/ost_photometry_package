@@ -17,7 +17,7 @@ from astropy.coordinates import SkyCoord
 from ... import terminal_output
 from ... import utilities as base_utilities
 from .. import utilities
-from ..ooi_ids import set_ooi_correlated_ids_from_filter
+from ..ooi_ids import bind_ooi_ids_from_photometry
 from ..warnings_types import OstPhotometryAnalyzeWarning
 from .core import correlate_datasets, correlation_own
 from .intra import correlate_image_series_images
@@ -43,9 +43,10 @@ def assign_global_correlated_object_ids(
     (e.g. differential calibration on epoch-native vstack tables)
     can match objects by ``id``.
 
-    Objects of interest store the same index as ``correlated_id`` after
-    alignment. Per-filter ``id_in_image_series`` is only the pre-alignment
-    row map.
+    Objects of interest store the photometry ``id`` (track) as
+    ``correlated_id`` after alignment. Per-filter ``id_in_image_series`` is
+    the pre-alignment row map until :func:`~ost_photometry.analyze.ooi_ids.bind_ooi_ids_from_photometry`
+    rewrites it to that same ``id``.
 
     Parameters
     ----------
@@ -305,7 +306,10 @@ def correlate_image_series(
             require_complete_intersection=require_complete_intersection,
         )
 
-    #   Re-identify position of objects of interest
+    if require_complete_intersection:
+        assign_global_correlated_object_ids(observation, list(image_series_dict.keys()))
+
+    #   Re-identify after apply/id assignment so OOI ids are photometry ``id``.
     objects_of_interest = observation.objects_of_interest
     if objects_of_interest:
         terminal_output.print_to_terminal(
@@ -315,10 +319,11 @@ def correlate_image_series(
 
         series = image_series_dict[reference_filter]
         reference_image_index = series.reference_image_index
+        ref_phot = series.image_list[reference_image_index].photometry
         identify_object_of_interest_in_dataset(
-            series.image_list[reference_image_index].photometry['x_fit'],
-            series.image_list[reference_image_index].photometry['y_fit'],
-            series.image_list[reference_image_index].photometry['flux_fit'],
+            ref_phot['x_fit'],
+            ref_phot['y_fit'],
+            ref_phot['flux_fit'],
             objects_of_interest,
             reference_filter,
             series.wcs,
@@ -330,13 +335,14 @@ def correlate_image_series(
             duplicate_handling=duplicate_handling_object_identification,
             indent=indent + 1,
         )
-
-        set_ooi_correlated_ids_from_filter(objects_of_interest, reference_filter)
+        bind_ooi_ids_from_photometry(
+            objects_of_interest,
+            reference_filter,
+            ref_phot,
+            set_correlated_id=True,
+        )
 
     terminal_output.print_to_terminal('')
-
-    if require_complete_intersection:
-        assign_global_correlated_object_ids(observation, list(image_series_dict.keys()))
 
     if debug_verify_ooi_global_ids:
         verify_objects_of_interest_global_correlated_ids(

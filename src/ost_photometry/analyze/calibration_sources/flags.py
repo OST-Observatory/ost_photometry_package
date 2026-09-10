@@ -79,4 +79,38 @@ def mark_used_calibrators(
     return table
 
 
-__all__ = ["flag_comparison_stars", "mark_used_calibrators"]
+def strip_catalog_standards_for_object_ids(
+    table: Table,
+    object_ids: set[int] | list[int] | tuple[int, ...],
+) -> int:
+    """Clear catalog-match columns so these photometry ``id``s cannot enter the fit.
+
+    Objects of interest must still be *calibrated*, but they must not define
+    T/ZP. Returns the number of rows whose catalog values were cleared.
+    """
+    if not object_ids or "id" not in table.colnames or len(table) == 0:
+        return 0
+    wanted = np.fromiter((int(i) for i in object_ids), dtype=np.int64)
+    ids = np.asarray(table["id"], dtype=np.int64)
+    hit = np.isin(ids, wanted)
+    n_hit = int(np.count_nonzero(hit))
+    if n_hit == 0:
+        return 0
+    if "match_sep_arcsec" in table.colnames:
+        sep = np.asarray(table["match_sep_arcsec"], dtype=float)
+        sep[hit] = np.nan
+        table["match_sep_arcsec"] = sep
+    for col in list(table.colnames):
+        name = str(col)
+        if name.startswith("mag_std_") or name.startswith("err_std_"):
+            vals = np.asarray(table[col], dtype=float)
+            vals[hit] = np.nan
+            table[col] = vals
+    return n_hit
+
+
+__all__ = [
+    "flag_comparison_stars",
+    "mark_used_calibrators",
+    "strip_catalog_standards_for_object_ids",
+]

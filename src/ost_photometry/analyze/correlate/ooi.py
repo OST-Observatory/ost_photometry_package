@@ -490,9 +490,10 @@ def verify_objects_of_interest_global_correlated_ids(
     indent: int = 1,
 ) -> None:
     """
-    After :func:`assign_global_correlated_object_ids`, re-run sky / srcor matching
-    on every image and compare to ``ObjectOfInterest.correlated_id`` (falling
-    back to ``id_in_image_series``).
+    After correlation apply, re-run sky / srcor matching on every image and
+    compare to ``ObjectOfInterest.correlated_id`` (falling back to
+    ``id_in_image_series``). The stored value is the photometry ``id``
+    (track), not necessarily the current table row.
 
     Prints mismatches and a short summary to ``terminal_output``.
     """
@@ -515,7 +516,6 @@ def verify_objects_of_interest_global_correlated_ids(
     n_ok = 0
     n_mismatch = 0
     n_no_sky = 0
-    n_bad_id_col = 0
 
     for filter_ in filter_list:
         series = observation.image_series_dict.get(filter_)
@@ -597,32 +597,26 @@ def verify_objects_of_interest_global_correlated_ids(
                     )
                     continue
 
-                if k != stored_i:
+                if "id" in phot.colnames:
+                    found_id = int(np.asarray(phot["id"][k]))
+                else:
+                    found_id = k
+                if found_id != stored_i:
                     n_mismatch += 1
                     terminal_output.print_to_terminal(
                         f"  MISMATCH {object_.name!r} {filter_} {im_label}: "
-                        f"stored id={stored_i}, reidentified row={k}",
+                        f"stored id={stored_i}, reidentified "
+                        f"photometry id={found_id} (row={k})",
                         style_name="WARNING",
                         indent=indent,
                     )
                     continue
 
                 n_ok += 1
-                if "id" in phot.colnames:
-                    id_at = int(np.asarray(phot["id"][k]))
-                    if id_at != stored_i:
-                        n_bad_id_col += 1
-                        terminal_output.print_to_terminal(
-                            f"  id column != stored at row {k} "
-                            f"{object_.name!r} {filter_} {im_label}: "
-                            f"photometry['id']={id_at}, stored={stored_i}",
-                            style_name="WARNING",
-                            indent=indent,
-                        )
 
     terminal_output.print_to_terminal(
-        f"OOI id verify summary: {n_ok} row matches, {n_mismatch} mismatches, "
-        f"{n_no_sky} no re-match, {n_bad_id_col} id-column mismatches",
+        f"OOI id verify summary: {n_ok} id matches, {n_mismatch} mismatches, "
+        f"{n_no_sky} no re-match",
         style_name="OKGREEN" if n_mismatch == 0 and n_no_sky == 0 else "WARNING",
         indent=indent,
     )

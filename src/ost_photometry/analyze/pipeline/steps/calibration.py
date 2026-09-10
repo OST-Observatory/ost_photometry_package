@@ -20,11 +20,16 @@ from ...calibration_sources import (
     crossmatch_standard_catalog,
     fetch_standard_calibration_catalog,
 )
+from ...calibration_sources.flags import (
+    mark_used_calibrators,
+    strip_catalog_standards_for_object_ids,
+)
 from ...calibration_sources.known_variables import (
     KNOWN_VARIABLES_EXCLUDED_META,
     drop_catalog_rows_near_known_variables,
 )
 from ...extinction_io import build_extinction_corrector
+from ...ooi_ids import ooi_photometry_ids
 from ...post_processing.adapters import ensure_epoch_native_photometry_table
 from ...post_processing.io import write_epoch_native_magnitudes
 from ...post_processing.light_curve import attach_observation_jd_column, write_epoch_meta_json
@@ -191,6 +196,19 @@ class CalibrationStep(base.PipelineStep):
         filter_list = list(context.filter_list)
         color_indices = config.color_indices
         epochs = _crossmatch_epochs(epochs, context, config)
+        ooi_ids = ooi_photometry_ids(context.objects_of_interest or [])
+        if ooi_ids:
+            n_cleared = 0
+            for tbl in epochs.values():
+                n_cleared += strip_catalog_standards_for_object_ids(tbl, ooi_ids)
+            if n_cleared:
+                terminal_output.print_to_terminal(
+                    "Excluded object(s) of interest from the calibrator pool "
+                    f"({len(set(ooi_ids))} id(s), {n_cleared} epoch-row catalog "
+                    "match(es) cleared).",
+                    indent=2,
+                    style_name="INFO",
+                )
         context.calibration_epochs = epochs
 
         from ...post_processing.magnitude_systems import partition_catalog_fit_filters
@@ -267,7 +285,6 @@ class CalibrationStep(base.PipelineStep):
             context.calibration_results = results
 
             clip = config.fit_sigma_clip
-            from ...calibration_sources.flags import mark_used_calibrators
 
             for epoch_id, tbl in epochs.items():
                 res = results.get(epoch_id)

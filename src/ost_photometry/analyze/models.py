@@ -54,9 +54,11 @@ class ObjectOfInterest:
         #   Set object_name
         self.name = name
 
-        #   ID of object in the image series (pre-alignment photometry rows).
-        #   Syntax: {'filter': row index}. After tables are aligned, prefer
-        #   ``correlated_id`` (same as photometry table ``id``).
+        #   ID of object in the image series. Syntax: {'filter': value}.
+        #   Before correlation this is the native photometry row. After
+        #   bind_ooi_ids_from_photometry it is photometry table ``id``
+        #   (sparse track or dense row). Prefer ``correlated_id`` once
+        #   tables share ids across filters.
         self.id_in_image_series: dict[str, int | None] = {}
         self.correlated_id: int | None = None
 

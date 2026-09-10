@@ -162,6 +162,26 @@ def test_flag_comparison_stars_from_std_and_separation():
     np.testing.assert_array_equal(flagged["is_comparison"], [False, False])
 
 
+def test_strip_catalog_standards_for_object_ids_clears_ooi_row():
+    mod = _flag_comparison()
+    tbl = Table(
+        {
+            "id": np.array([2, 0, 5]),
+            "mag_std_V": np.array([12.0, 13.0, 14.0]),
+            "err_std_V": np.array([0.01, 0.02, 0.03]),
+            "match_sep_arcsec": np.array([0.2, 0.3, 0.4]),
+        }
+    )
+    n = mod.strip_catalog_standards_for_object_ids(tbl, {0})
+    assert n == 1
+    assert np.isnan(tbl["mag_std_V"][1])
+    assert np.isnan(tbl["err_std_V"][1])
+    assert np.isnan(tbl["match_sep_arcsec"][1])
+    assert tbl["mag_std_V"][0] == 12.0
+    out = mod.flag_comparison_stars(tbl)
+    np.testing.assert_array_equal(out["is_comparison"], [True, False, True])
+
+
 def test_mark_used_calibrators_prefers_exact_mask_and_clip():
     mod = _flag_comparison()
 

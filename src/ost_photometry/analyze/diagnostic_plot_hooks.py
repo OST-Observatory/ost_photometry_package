@@ -18,6 +18,7 @@ from .. import terminal_output
 from ..core.parallel import start_plot_process
 from ..output_layout import diagnostics_dir
 from . import correlate, plots
+from .correlate.tracks import resolved_series_reference_index
 
 _QC_PLOT_COLUMNS = (
     "is_comparison",
@@ -339,9 +340,7 @@ def _reference_image(context: Any, config: Any):
     images = getattr(series, "image_list", None) if series is not None else None
     if not images:
         return None
-    idx = int(getattr(config, "reference_image_index", 0) or 0)
-    if idx < 0 or idx >= len(images):
-        idx = 0
+    idx = resolved_series_reference_index(series, config)
     return images[idx]
 
 
@@ -419,11 +418,11 @@ def run_diagnostic_plots_phase(
 
     try:
         if phase == "extraction":
-            ref_id = int(getattr(config, "reference_image_index", 0))
             for filter_ in context.filter_list:
                 series = context.image_series_dict.get(filter_)
                 if series is None:
                     continue
+                ref_id = resolved_series_reference_index(series, config)
                 if ref_id >= len(series.image_list):
                     continue
                 img = series.image_list[ref_id]

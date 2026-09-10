@@ -70,6 +70,17 @@ def coerce_reference_image_index(
     return idx
 
 
+def resolved_series_reference_index(series, config=None) -> int:
+    """Integer reference frame: series index after auto-pick, else config."""
+    images = getattr(series, "image_list", None) or []
+    n = len(images)
+    series_idx = getattr(series, "reference_image_index", None)
+    if isinstance(series_idx, (int, np.integer)) and n and 0 <= int(series_idx) < n:
+        return int(series_idx)
+    cfg_val = 0 if config is None else getattr(config, "reference_image_index", 0)
+    return coerce_reference_image_index(cfg_val, n)
+
+
 def apply_sparse_track_ids_to_table(
     photometry: Table,
     row_index: np.ndarray,
@@ -199,4 +210,5 @@ __all__ = [
     "flux_arrays_from_photometry_tables",
     "pick_auto_reference_image",
     "remap_series_ids_from_reference_index",
+    "resolved_series_reference_index",
 ]

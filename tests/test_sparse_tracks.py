@@ -48,6 +48,29 @@ def test_apply_sparse_track_ids_sets_id_and_drops_unmatched():
         assert list(np.asarray(out["x_fit"])) == [1.0, 2.0]
 
 
+def test_sparse_apply_then_bind_ooi_uses_track_id_not_table_row():
+    """Identify writes the remaining-table row; LC/calibration join on track id."""
+    with isolated_sys_modules():
+        tracks = _tracks_module()
+        ooi = load_module_from_path(
+            "ost_photometry.analyze.ooi_ids",
+            pkg_src() / "ost_photometry" / "analyze" / "ooi_ids.py",
+        )
+        phot = Table(
+            {
+                "x_fit": [1.0, 2.0, 3.0],
+                "flux_fit": [10.0, 20.0, 30.0],
+            }
+        )
+        # Track 0 → native row 1, track 2 → native row 0; native row 2 dropped.
+        out = tracks.apply_sparse_track_ids_to_table(phot, np.array([1, -1, 0]))
+        obj = SimpleNamespace(correlated_id=None, id_in_image_series={"V": 0})
+        ooi.bind_ooi_ids_from_photometry([obj], "V", out)
+        assert list(out["id"]) == [2, 0]
+        assert obj.correlated_id == 2
+        assert ooi.ooi_photometry_id(obj, filter_="V") == 2
+
+
 def test_flux_arrays_from_photometry_tables_pad_on_id():
     with isolated_sys_modules():
         tracks = _tracks_module()
@@ -85,3 +108,14 @@ def test_pick_auto_reference_image_prefers_most_detections():
         )
         series = SimpleNamespace(image_list=[img0, img1])
         assert tracks.pick_auto_reference_image(series) == 1
+
+
+def test_resolved_series_reference_index_uses_series_not_auto_config():
+    with isolated_sys_modules():
+        tracks = _tracks_module()
+        series = SimpleNamespace(image_list=[0, 1, 2], reference_image_index=2)
+        config = SimpleNamespace(reference_image_index="auto")
+        assert tracks.resolved_series_reference_index(series, config) == 2
+        series_auto = SimpleNamespace(image_list=[0, 1], reference_image_index="auto")
+        assert tracks.resolved_series_reference_index(series_auto, config) == 0
+        assert tracks.coerce_reference_image_index("auto", 4) == 0
