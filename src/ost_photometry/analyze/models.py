@@ -157,6 +157,7 @@ class ImageSeries:
 
         #   Set reference image
         self.reference_image = self.image_list[reference_image_index]
+        self.share_pixel_grid: bool = False
 
         #   Set field of view
         self.field_of_view_x: float | None = getattr(

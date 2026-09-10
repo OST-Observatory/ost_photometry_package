@@ -172,3 +172,13 @@ def test_epoch_wcs_prefers_image_wcs_not_series():
         image_none = SimpleNamespace(wcs=None)
         assert bridge._wcs_for_epoch_image(image_none, series) is series_wcs
         assert bridge._wcs_for_epoch_image(image_none, None) is None
+
+
+def test_epoch_wcs_uses_series_when_share_pixel_grid():
+    with isolated_sys_modules():
+        bridge = _load_bridge()
+        image_wcs = object()
+        series_wcs = object()
+        image = SimpleNamespace(wcs=image_wcs)
+        series = SimpleNamespace(wcs=series_wcs, share_pixel_grid=True)
+        assert bridge._wcs_for_epoch_image(image, series) is series_wcs

@@ -63,6 +63,8 @@ class CorrelationIntraStep(base.PipelineStep):
                 require_complete_intersection=config.require_complete_intersection,
                 min_detection_fraction=config.min_detection_fraction,
                 correlation_link_mode=config.correlation_link_mode,
+                correlation_coordinates=config.correlation_coordinates,
+                ooi_separation_limit=config.ooi_separation_limit,
             )
 
         context.correlation_intra_done = True

@@ -55,6 +55,10 @@ def _copy_qc_columns(src: Table, dest: Table) -> None:
 
 def _wcs_for_epoch_image(image, series):
     """Sky projection for one exposure: frame WCS, else series reference WCS."""
+    if series is not None and getattr(series, "share_pixel_grid", False):
+        wcs_obj = getattr(series, "wcs", None)
+        if wcs_obj is not None:
+            return wcs_obj
     wcs_obj = getattr(image, "wcs", None)
     if wcs_obj is not None:
         return wcs_obj

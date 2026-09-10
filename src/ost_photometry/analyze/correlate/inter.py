@@ -23,6 +23,7 @@ from .core import correlate_datasets, correlation_own
 from .intra import correlate_image_series_images
 from .ooi import (
     identify_object_of_interest_in_dataset,
+    resolve_ooi_separation_limit,
     verify_objects_of_interest_global_correlated_ids,
 )
 from .protection import resolve_calibration_object_ids
@@ -116,6 +117,7 @@ def correlate_image_series(
         require_complete_intersection: bool = True,
         min_detection_fraction: float | None = None,
         correlation_link_mode: str = "to_reference",
+        ooi_separation_limit: u.quantity.Quantity | None = None,
 ) -> None:
     """
     Correlate star lists from the stacked images of all filters to find
@@ -319,15 +321,19 @@ def correlate_image_series(
 
         series = image_series_dict[reference_filter]
         reference_image_index = series.reference_image_index
-        ref_phot = series.image_list[reference_image_index].photometry
+        ref_im = series.image_list[reference_image_index]
+        ref_phot = ref_im.photometry
+        identify_wcs = getattr(ref_im, "wcs", None) or series.wcs
         identify_object_of_interest_in_dataset(
             ref_phot['x_fit'],
             ref_phot['y_fit'],
             ref_phot['flux_fit'],
             objects_of_interest,
             reference_filter,
-            series.wcs,
-            separation_limit=separation_limit,
+            identify_wcs,
+            separation_limit=resolve_ooi_separation_limit(
+                separation_limit, ooi_separation_limit
+            ),
             max_pixel_between_objects=max_pixel_between_objects,
             ooi_correlation_strategy=ooi_correlation_strategy,
             verbose=verbose,

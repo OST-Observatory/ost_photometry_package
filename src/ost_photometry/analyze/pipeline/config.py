@@ -286,11 +286,15 @@ class CorrelationConfig:
     #: Sparse tracks: keep objects detected on at least this fraction of frames.
     min_detection_fraction: float | None = None
     correlation_link_mode: CorrelationLinkMode = "to_reference"
+    #: ``auto`` uses pixel matching when frames look registered (``aa_true``).
+    correlation_coordinates: Literal["auto", "sky", "pixel"] = "auto"
     protect_ooi: bool = True
     protect_calibration_objects: bool = False
     protected_object_ids: list[int] | None = None
     correlation_method: CorrelationMethod = "astropy"
     separation_limit: u.Quantity = 2.0 * u.arcsec
+    #: OOI sky match. ``None`` → at least 5 arcsec (WCS residuals).
+    ooi_separation_limit: u.Quantity | None = None
     duplicate_handling_object_identification: dict[str, str] | None = None
     verbose: bool = False
     skip_correlation_intra: bool = False

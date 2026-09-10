@@ -357,3 +357,67 @@ def test_sequential_drops_chain_walk_off_anchor(core):
     assert index_array[0, orig] == 0
     assert index_array[1, orig] == 0
     assert index_array[2, orig] == -1
+
+
+def test_pixel_matching_keeps_identity_when_wcs_differs(core):
+    wcs_a = _simple_wcs()
+    wcs_b = wcs.WCS(
+        {
+            "CTYPE1": "RA---TAN",
+            "CTYPE2": "DEC--TAN",
+            "CRVAL1": 180.0,
+            "CRVAL2": 0.0,
+            "CRPIX1": 60.0,
+            "CRPIX2": 50.0,
+            "CDELT1": -0.001,
+            "CDELT2": 0.001,
+        }
+    )
+    x = _pixel_positions([50.0, 40.0, 30.0])
+    y = _pixel_positions([50.0, 40.0, 30.0])
+    index_px, rejected = core.correlation_astropy(
+        [x, x],
+        [y, y],
+        wcs_a,
+        wcs_list=[wcs_a, wcs_b],
+        advanced_cleanup=False,
+        require_complete_intersection=True,
+        separation_limit=2.0 * u.arcsec,
+        coordinate_frame="pixel",
+        pixel_separation=3.0,
+    )
+    assert rejected.size == 0
+    np.testing.assert_array_equal(index_px[1], [0, 1, 2])
+
+
+def test_auto_correlation_coordinates_choose_pixel_when_aligned(core):
+    x0 = _pixel_positions([10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0])
+    y0 = _pixel_positions([10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0])
+    x1 = _pixel_positions([10.2, 20.1, 30.0, 40.3, 49.9, 60.1, 70.0, 80.2])
+    y1 = _pixel_positions([10.1, 20.0, 30.2, 40.0, 50.1, 60.0, 69.9, 80.0])
+    frame, shift = core.resolve_correlation_coordinates(
+        "auto",
+        [x0, x1, x1],
+        [y0, y1, y1],
+        0,
+    )
+    assert frame == "pixel"
+    assert shift is not None and shift < 1.0
+
+
+def test_resolve_ooi_separation_limit_floors_at_five_arcsec(core):
+    src = pkg_src()
+    load_module_from_path(
+        "ost_photometry.analyze.ooi_ids",
+        src / "ost_photometry" / "analyze" / "ooi_ids.py",
+    )
+    ooi = load_module_from_path(
+        "ost_photometry.analyze.correlate.ooi",
+        src / "ost_photometry" / "analyze" / "correlate" / "ooi.py",
+    )
+    tight = ooi.resolve_ooi_separation_limit(2.0 * u.arcsec)
+    assert tight.to(u.arcsec).value == pytest.approx(5.0)
+    wide = ooi.resolve_ooi_separation_limit(8.0 * u.arcsec)
+    assert wide.to(u.arcsec).value == pytest.approx(8.0)
+    custom = 3.0 * u.arcsec
+    assert ooi.resolve_ooi_separation_limit(2.0 * u.arcsec, custom) is custom

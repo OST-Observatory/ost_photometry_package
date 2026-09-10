@@ -16,8 +16,8 @@ from ... import terminal_output
 from .. import utilities
 from ..ooi_ids import bind_ooi_ids_from_photometry
 from ..warnings_types import OstPhotometryAnalyzeWarning
-from .core import correlate_datasets
-from .ooi import identify_object_of_interest_in_dataset
+from .core import correlate_datasets, resolve_correlation_coordinates
+from .ooi import identify_object_of_interest_in_dataset, resolve_ooi_separation_limit
 from .tracks import (
     apply_correlation_index_to_images,
     pick_auto_reference_image,
@@ -69,6 +69,7 @@ def correlate_image_series_images(
         require_complete_intersection: bool = True,
         min_detection_fraction: float | None = None,
         correlation_link_mode: str = "to_reference",
+        correlation_coordinates: str = "auto",
 ) -> None:
     """
     Correlate object positions from all stars in an image series to
@@ -146,6 +147,10 @@ def correlate_image_series_images(
 
     correlation_link_mode
         ``to_reference`` or ``sequential``.
+
+    correlation_coordinates
+        ``auto``, ``pixel``, or ``sky``. ``auto`` uses pixel matching when
+        the series looks registered to one grid.
     """
     #   Number of images
     n_images = len(image_series.image_list)
@@ -167,6 +172,30 @@ def correlate_image_series_images(
 
     #   Extract pixel positions of the objects
     x, y, n_objects = image_series.get_object_positions_pixel()
+
+    coordinate_frame, pixel_shift = resolve_correlation_coordinates(
+        correlation_coordinates,
+        x,
+        y,
+        image_series.reference_image_index,
+    )
+    image_series.share_pixel_grid = coordinate_frame == "pixel"
+    if coordinate_frame == "pixel":
+        shift_txt = (
+            f"{pixel_shift:.2f} px median shift vs reference"
+            if pixel_shift is not None
+            else "forced pixel frame"
+        )
+        terminal_output.print_to_terminal(
+            f"Intra-filter matching in pixel coordinates ({shift_txt})",
+            indent=1,
+        )
+    elif pixel_shift is not None:
+        terminal_output.print_to_terminal(
+            f"Intra-filter matching on sky "
+            f"(median pixel shift {pixel_shift:.1f} px vs reference)",
+            indent=1,
+        )
 
     from .protection import merge_protected_object_ids
 
@@ -197,6 +226,8 @@ def correlate_image_series_images(
         min_detection_fraction=min_detection_fraction,
         wcs_list=wcs_list,
         correlation_link_mode=correlation_link_mode,
+        coordinate_frame=coordinate_frame,
+        pixel_separation=float(max_pixel_between_objects),
     )
 
     #   Remove "bad" images from image IDs
@@ -247,6 +278,8 @@ def correlate_preserve_objects(
         require_complete_intersection: bool = True,
         min_detection_fraction: float | None = None,
         correlation_link_mode: str = "to_reference",
+        correlation_coordinates: str = "auto",
+        ooi_separation_limit: u.Quantity | None = None,
 ) -> None:
     """
     Correlate exposures within one filter while keeping protected objects.
@@ -273,9 +306,18 @@ def correlate_preserve_objects(
         reference_image_index = int(reference_image_index)
     image_series.reference_image_index = reference_image_index
     image_series.reference_image = image_series.image_list[reference_image_index]
-    ref_wcs = getattr(image_series.image_list[reference_image_index], "wcs", None)
+    ref_im = image_series.image_list[reference_image_index]
+    ref_wcs = getattr(ref_im, "wcs", None)
     if ref_wcs is not None:
         image_series.set_wcs(ref_wcs, broadcast=False)
+    identify_wcs = ref_wcs if ref_wcs is not None else image_series.wcs
+    ooi_sep = resolve_ooi_separation_limit(separation_limit, ooi_separation_limit)
+    if protect_ooi and objects_of_interest and ooi_sep != separation_limit:
+        terminal_output.print_to_terminal(
+            f"OOI identification radius {ooi_sep} "
+            f"(track matching uses separation_limit={separation_limit})",
+            indent=1,
+        )
 
     if protect_ooi and objects_of_interest:
         terminal_output.print_to_terminal(
@@ -283,13 +325,13 @@ def correlate_preserve_objects(
             indent=1,
         )
         identify_object_of_interest_in_dataset(
-            image_series.image_list[reference_image_index].photometry['x_fit'],
-            image_series.image_list[reference_image_index].photometry['y_fit'],
-            image_series.image_list[reference_image_index].photometry['flux_fit'],
+            ref_im.photometry['x_fit'],
+            ref_im.photometry['y_fit'],
+            ref_im.photometry['flux_fit'],
             objects_of_interest,
             filter_,
-            image_series.wcs,
-            separation_limit=separation_limit,
+            identify_wcs,
+            separation_limit=ooi_sep,
             max_pixel_between_objects=max_pixel_between_objects,
             ooi_correlation_strategy=ooi_correlation_strategy,
             duplicate_handling=duplicate_handling_object_identification,
@@ -327,6 +369,7 @@ def correlate_preserve_objects(
         require_complete_intersection=require_complete_intersection,
         min_detection_fraction=min_detection_fraction,
         correlation_link_mode=correlation_link_mode,
+        correlation_coordinates=correlation_coordinates,
     )
 
     if protect_ooi and objects_of_interest:
@@ -334,14 +377,16 @@ def correlate_preserve_objects(
             "Re-identify the variable star",
             indent=1,
         )
+        ref_after = image_series.image_list[image_series.reference_image_index]
+        re_wcs = getattr(ref_after, "wcs", None) or identify_wcs
         identify_object_of_interest_in_dataset(
-            image_series.image_list[image_series.reference_image_index].photometry['x_fit'],
-            image_series.image_list[image_series.reference_image_index].photometry['y_fit'],
-            image_series.image_list[image_series.reference_image_index].photometry['flux_fit'],
+            ref_after.photometry['x_fit'],
+            ref_after.photometry['y_fit'],
+            ref_after.photometry['flux_fit'],
             objects_of_interest,
             filter_,
-            image_series.wcs,
-            separation_limit=separation_limit,
+            re_wcs,
+            separation_limit=ooi_sep,
             max_pixel_between_objects=max_pixel_between_objects,
             ooi_correlation_strategy=ooi_correlation_strategy,
             duplicate_handling=duplicate_handling_object_identification,
@@ -406,6 +451,8 @@ def correlate_preserve_variable(
         require_complete_intersection: bool = True,
         min_detection_fraction: float | None = None,
         correlation_link_mode: str = "to_reference",
+        correlation_coordinates: str = "auto",
+        ooi_separation_limit: u.Quantity | None = None,
 ) -> None:
     """Correlate while preserving objects of interest (legacy wrapper)."""
     correlate_preserve_objects(
@@ -431,4 +478,6 @@ def correlate_preserve_variable(
         require_complete_intersection=require_complete_intersection,
         min_detection_fraction=min_detection_fraction,
         correlation_link_mode=correlation_link_mode,
+        correlation_coordinates=correlation_coordinates,
+        ooi_separation_limit=ooi_separation_limit,
     )

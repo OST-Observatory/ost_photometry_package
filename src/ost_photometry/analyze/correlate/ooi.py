@@ -19,6 +19,30 @@ from ..ooi_ids import ooi_photometry_id
 from .core import correlation_own
 
 
+def resolve_ooi_separation_limit(
+    separation_limit: u.Quantity,
+    ooi_separation_limit: u.Quantity | None = None,
+) -> u.Quantity:
+    """Radius for identifying the science target; not the track-match radius.
+
+    Catalog WCS residuals are often a few arcsec. Tightening
+    ``separation_limit`` for crowding must not hide the OOI. ``None`` uses
+    at least 5 arcsec, or ``separation_limit`` if that is larger.
+    """
+    if ooi_separation_limit is not None:
+        return ooi_separation_limit
+    sep = separation_limit
+    if not isinstance(sep, u.Quantity):
+        sep = float(sep) * u.arcsec
+    floor = 5.0 * u.arcsec
+    try:
+        sep_arcsec = sep.to(u.arcsec)
+        floor_arcsec = floor.to(u.arcsec)
+        return sep if sep_arcsec >= floor_arcsec else floor
+    except (u.UnitConversionError, ValueError, TypeError):
+        return floor
+
+
 def find_objects_of_interest_astropy(
         x_pixel_position_dataset: np.ndarray,
         y_pixel_position_dataset: np.ndarray, flux: np.ndarray,

@@ -97,6 +97,126 @@ def _match_two_datasets_sky(
     return index_reference, index_current
 
 
+def _match_two_datasets_pixel(
+    x_reference: object,
+    y_reference: object,
+    x_current: object,
+    y_current: object,
+    max_pixels: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Nearest-neighbour match in pixel space (aligned / warped series)."""
+    from scipy.spatial import cKDTree
+
+    x_ref = _ravel_pixels(x_reference)
+    y_ref = _ravel_pixels(y_reference)
+    x_cur = _ravel_pixels(x_current)
+    y_cur = _ravel_pixels(y_current)
+    if x_ref.size == 0 or x_cur.size == 0:
+        return np.array([], dtype=int), np.array([], dtype=int)
+    radius = float(max_pixels)
+    tree = cKDTree(np.column_stack([x_cur, y_cur]))
+    dist, idx_cur = tree.query(
+        np.column_stack([x_ref, y_ref]),
+        k=1,
+        distance_upper_bound=radius,
+    )
+    ok = np.isfinite(dist) & (np.asarray(idx_cur) < x_cur.size)
+    index_reference = np.flatnonzero(ok).astype(int)
+    index_current = np.asarray(idx_cur, dtype=int)[ok]
+    distance = np.asarray(dist, dtype=float)[ok]
+    if index_reference.size == 0:
+        return index_reference, index_current
+    index_reference, distance, index_current = utilities.clear_duplicates(
+        index_reference,
+        distance,
+        index_current,
+    )
+    index_current, _, index_reference = utilities.clear_duplicates(
+        index_current,
+        distance,
+        index_reference,
+    )
+    return index_reference, index_current
+
+
+def _match_pair(
+    x_a: object,
+    y_a: object,
+    x_b: object,
+    y_b: object,
+    *,
+    coordinate_frame: str,
+    wcs_a: wcs.WCS,
+    wcs_b: wcs.WCS,
+    separation_limit: u.Quantity,
+    pixel_separation: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    if str(coordinate_frame).strip().lower() == "pixel":
+        return _match_two_datasets_pixel(x_a, y_a, x_b, y_b, pixel_separation)
+    return _match_two_datasets_sky(x_a, y_a, wcs_a, x_b, y_b, wcs_b, separation_limit)
+
+
+def median_pixel_shift_to_reference(
+    x_pixel_positions: list,
+    y_pixel_positions: list,
+    reference_dataset_id: int,
+    *,
+    max_pixels: float = 20.0,
+) -> float | None:
+    """Median nearest-neighbour pixel offset vs the reference frame.
+
+    ``None`` if too few frames have matches (series is probably not registered).
+    """
+    ref = int(reference_dataset_id)
+    if ref < 0 or ref >= len(x_pixel_positions):
+        return None
+    xr = _ravel_pixels(x_pixel_positions[ref])
+    yr = _ravel_pixels(y_pixel_positions[ref])
+    if xr.size < 8:
+        return None
+    shifts: list[float] = []
+    n_frames = 0
+    for i in range(len(x_pixel_positions)):
+        if i == ref:
+            continue
+        n_frames += 1
+        idx_r, idx_c = _match_two_datasets_pixel(
+            xr, yr, x_pixel_positions[i], y_pixel_positions[i], max_pixels
+        )
+        if idx_r.size < 5:
+            continue
+        dx = _ravel_pixels(x_pixel_positions[i])[idx_c] - xr[idx_r]
+        dy = _ravel_pixels(y_pixel_positions[i])[idx_c] - yr[idx_r]
+        shifts.append(float(np.median(np.hypot(dx, dy))))
+    if not shifts or len(shifts) < 0.5 * max(n_frames, 1):
+        return None
+    return float(np.median(shifts))
+
+
+def resolve_correlation_coordinates(
+    requested: str,
+    x_pixel_positions: list,
+    y_pixel_positions: list,
+    reference_dataset_id: int,
+    *,
+    aligned_shift_px: float = 4.0,
+) -> tuple[str, float | None]:
+    """``auto`` → ``pixel`` when the series looks registered to one grid."""
+    mode = str(requested or "auto").strip().lower()
+    if mode not in ("auto", "sky", "pixel"):
+        mode = "auto"
+    shift = median_pixel_shift_to_reference(
+        x_pixel_positions,
+        y_pixel_positions,
+        reference_dataset_id,
+    )
+    if mode in ("sky", "pixel"):
+        return mode, shift
+    if shift is not None and shift <= float(aligned_shift_px):
+        return "pixel", shift
+    return "sky", shift
+
+
 def _sky_coords_for_dataset(
     dataset_id: int,
     x_pixel_positions: list,
@@ -121,16 +241,21 @@ def _extend_tracks_to_neighbour(
     current_wcs: wcs.WCS,
     wcs_list: list[wcs.WCS | None] | None,
     separation_limit: u.Quantity,
+    *,
+    coordinate_frame: str = "sky",
+    pixel_separation: float = 3.0,
 ) -> np.ndarray:
     """Link frame ``cur_i`` to tracks already set on ``prev_i``; append new tracks."""
-    idx_prev, idx_cur = _match_two_datasets_sky(
+    idx_prev, idx_cur = _match_pair(
         x_pixel_positions[prev_i],
         y_pixel_positions[prev_i],
-        _wcs_for_dataset(prev_i, current_wcs, wcs_list),
         x_pixel_positions[cur_i],
         y_pixel_positions[cur_i],
-        _wcs_for_dataset(cur_i, current_wcs, wcs_list),
-        separation_limit,
+        coordinate_frame=coordinate_frame,
+        wcs_a=_wcs_for_dataset(prev_i, current_wcs, wcs_list),
+        wcs_b=_wcs_for_dataset(cur_i, current_wcs, wcs_list),
+        separation_limit=separation_limit,
+        pixel_separation=pixel_separation,
     )
     n_prev = len(_ravel_pixels(x_pixel_positions[prev_i]))
     n_cur = len(_ravel_pixels(x_pixel_positions[cur_i]))
@@ -171,52 +296,68 @@ def _drop_track_members_off_anchor(
     wcs_list: list[wcs.WCS | None] | None,
     reference_dataset_id: int,
     separation_limit: u.Quantity,
+    *,
+    coordinate_frame: str = "sky",
+    pixel_separation: float = 3.0,
 ) -> np.ndarray:
-    """Drop sequential chain-walks: keep only members near the track sky anchor.
-
-    The anchor is the reference-frame detection when present, otherwise the
-    first frame that has the track. Neighbour-to-neighbour matching can walk
-    onto a different star; that star is usually still within ``separation_limit``
-    of the *previous* frame, but not of the origin.
-    """
+    """Drop sequential chain-walks: keep only members near the track anchor."""
     n_images, n_tracks = index_array.shape
     if n_images == 0 or n_tracks == 0:
         return index_array
-    coords: list[SkyCoord | None] = [
-        _sky_coords_for_dataset(i, x_pixel_positions, y_pixel_positions, current_wcs, wcs_list)
-        for i in range(n_images)
-    ]
+    pixel_mode = str(coordinate_frame).strip().lower() == "pixel"
+    coords: list[SkyCoord | None] = []
+    if not pixel_mode:
+        coords = [
+            _sky_coords_for_dataset(
+                i, x_pixel_positions, y_pixel_positions, current_wcs, wcs_list
+            )
+            for i in range(n_images)
+        ]
     out = index_array.copy()
     ref = int(reference_dataset_id)
     if ref < 0 or ref >= n_images:
         ref = 0
+
+    def _valid_det(i: int, d: int) -> bool:
+        if d < 0:
+            return False
+        n = len(_ravel_pixels(x_pixel_positions[i]))
+        if d >= n:
+            return False
+        if pixel_mode:
+            return True
+        return coords[i] is not None and d < len(coords[i])
+
     for k in range(n_tracks):
         anchor_i = -1
+        anchor_det = -1
         det_ref = int(out[ref, k]) if 0 <= ref < n_images else -1
-        if (
-            det_ref >= 0
-            and coords[ref] is not None
-            and det_ref < len(coords[ref])
-        ):
+        if _valid_det(ref, det_ref):
             anchor_i = ref
             anchor_det = det_ref
         else:
             for i in range(n_images):
                 d = int(out[i, k])
-                if d >= 0 and coords[i] is not None and d < len(coords[i]):
+                if _valid_det(i, d):
                     anchor_i = i
                     anchor_det = d
                     break
         if anchor_i < 0:
             continue
-        anchor = coords[anchor_i][anchor_det]
+        ax = _ravel_pixels(x_pixel_positions[anchor_i])[anchor_det]
+        ay = _ravel_pixels(y_pixel_positions[anchor_i])[anchor_det]
         for i in range(n_images):
             if i == anchor_i:
                 continue
             d = int(out[i, k])
-            if d < 0 or coords[i] is None or d >= len(coords[i]):
+            if not _valid_det(i, d):
                 continue
-            if coords[i][d].separation(anchor) > separation_limit:
+            if pixel_mode:
+                xi = _ravel_pixels(x_pixel_positions[i])[d]
+                yi = _ravel_pixels(y_pixel_positions[i])[d]
+                if float(np.hypot(xi - ax, yi - ay)) > float(pixel_separation):
+                    out[i, k] = -1
+            elif coords[i][d].separation(coords[anchor_i][anchor_det]) > separation_limit:
                 out[i, k] = -1
     return out
 
@@ -259,6 +400,8 @@ def correlate_datasets(
         min_detection_fraction: float | None = None,
         wcs_list: list[wcs.WCS | None] | None = None,
         correlation_link_mode: str = "to_reference",
+        coordinate_frame: str = "sky",
+        pixel_separation: float = 3.0,
         ) -> tuple[np.ndarray, int, np.ndarray, int]:
     """
     Correlate the pixel positions from different dataset such as
@@ -411,6 +554,8 @@ def correlate_datasets(
             min_detection_fraction=min_detection_fraction,
             wcs_list=wcs_list,
             correlation_link_mode=correlation_link_mode,
+            coordinate_frame=coordinate_frame,
+            pixel_separation=pixel_separation,
         )
         n_common_objects = correlation_index.shape[1]
 
@@ -513,6 +658,9 @@ def _match_to_reference(
     reference_dataset_id: int,
     n_datasets: int,
     separation_limit: u.Quantity,
+    *,
+    coordinate_frame: str = "sky",
+    pixel_separation: float = 3.0,
 ) -> np.ndarray:
     n_ref = len(_ravel_pixels(x_pixel_positions[reference_dataset_id]))
     index_array = np.full((n_datasets, n_ref), -1, dtype=int)
@@ -521,14 +669,16 @@ def _match_to_reference(
     for i in range(n_datasets):
         if i == reference_dataset_id:
             continue
-        idx_ref, idx_cur = _match_two_datasets_sky(
+        idx_ref, idx_cur = _match_pair(
             x_pixel_positions[reference_dataset_id],
             y_pixel_positions[reference_dataset_id],
-            wcs_ref,
             x_pixel_positions[i],
             y_pixel_positions[i],
-            _wcs_for_dataset(i, current_wcs, wcs_list),
-            separation_limit,
+            coordinate_frame=coordinate_frame,
+            wcs_a=wcs_ref,
+            wcs_b=_wcs_for_dataset(i, current_wcs, wcs_list),
+            separation_limit=separation_limit,
+            pixel_separation=pixel_separation,
         )
         index_array[i, idx_ref] = idx_cur
     return index_array
@@ -542,6 +692,9 @@ def _match_sequential(
     n_datasets: int,
     separation_limit: u.Quantity,
     reference_dataset_id: int = 0,
+    *,
+    coordinate_frame: str = "sky",
+    pixel_separation: float = 3.0,
 ) -> np.ndarray:
     """Chain-match from the reference frame in both time directions.
 
@@ -555,6 +708,10 @@ def _match_sequential(
     n_ref = len(_ravel_pixels(x_pixel_positions[ref]))
     index_array = np.full((n_datasets, n_ref), -1, dtype=int)
     index_array[ref, :] = np.arange(n_ref)
+    extend_kw = {
+        "coordinate_frame": coordinate_frame,
+        "pixel_separation": pixel_separation,
+    }
     for i in range(ref + 1, n_datasets):
         index_array = _extend_tracks_to_neighbour(
             index_array,
@@ -565,6 +722,7 @@ def _match_sequential(
             current_wcs,
             wcs_list,
             separation_limit,
+            **extend_kw,
         )
     for i in range(ref - 1, -1, -1):
         index_array = _extend_tracks_to_neighbour(
@@ -576,6 +734,7 @@ def _match_sequential(
             current_wcs,
             wcs_list,
             separation_limit,
+            **extend_kw,
         )
     return _drop_track_members_off_anchor(
         index_array,
@@ -585,6 +744,8 @@ def _match_sequential(
         wcs_list,
         ref,
         separation_limit,
+        coordinate_frame=coordinate_frame,
+        pixel_separation=pixel_separation,
     )
 
 
@@ -624,6 +785,8 @@ def correlation_astropy(
         min_detection_fraction: float | None = None,
         wcs_list: list[wcs.WCS | None] | None = None,
         correlation_link_mode: str = "to_reference",
+        coordinate_frame: str = "sky",
+        pixel_separation: float = 3.0,
         ) -> tuple[np.ndarray, np.ndarray]:
     """
     Correlate data sets with astropy ``search_around_sky``.
@@ -674,6 +837,13 @@ def correlation_astropy(
         ``reference_dataset_id`` and chain-matches both directions, then
         drops members that have walked farther than ``separation_limit``
         from that anchor.
+
+    coordinate_frame
+        ``sky`` matches with per-frame WCS. ``pixel`` matches on the
+        detector grid (aligned / ``aa_true`` series).
+
+    pixel_separation
+        Maximum pixel distance when ``coordinate_frame="pixel"``.
     """
     if special_object_ids is None or special_object_ids == [None]:
         special_object_ids = []
@@ -682,6 +852,13 @@ def correlation_astropy(
 
     n_datasets = len(x_pixel_positions)
     link_mode = str(correlation_link_mode).strip().lower()
+    frame = str(coordinate_frame).strip().lower()
+    if frame not in ("sky", "pixel"):
+        frame = "sky"
+    match_kw = {
+        "coordinate_frame": frame,
+        "pixel_separation": float(pixel_separation),
+    }
     if link_mode == "sequential":
         index_array = _match_sequential(
             x_pixel_positions,
@@ -691,6 +868,7 @@ def correlation_astropy(
             n_datasets,
             separation_limit,
             reference_dataset_id=reference_dataset_id,
+            **match_kw,
         )
     else:
         index_array = _match_to_reference(
@@ -701,6 +879,7 @@ def correlation_astropy(
             reference_dataset_id,
             n_datasets,
             separation_limit,
+            **match_kw,
         )
 
     special_columns = _special_track_columns(

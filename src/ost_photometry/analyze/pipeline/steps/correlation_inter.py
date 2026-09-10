@@ -65,6 +65,7 @@ class CorrelationInterStep(base.PipelineStep):
             require_complete_intersection=config.require_complete_intersection,
             min_detection_fraction=config.min_detection_fraction,
             correlation_link_mode=config.correlation_link_mode,
+            ooi_separation_limit=config.ooi_separation_limit,
         )
 
         if len(context.filter_list) > 1:

@@ -51,6 +51,8 @@ def test_pipeline_config_flat_and_nested_access():
     assert cfg.require_complete_intersection is True
     assert cfg.min_detection_fraction is None
     assert cfg.correlation_link_mode == "to_reference"
+    assert cfg.correlation_coordinates == "auto"
+    assert cfg.ooi_separation_limit is None
     assert cfg.wcs_solve_all_images is False
 
 
