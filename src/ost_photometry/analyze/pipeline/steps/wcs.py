@@ -34,11 +34,15 @@ class WcsStep(base.PipelineStep):
             image_series = context.image_series_dict[filter_]
 
             try:
+                ref_idx = config.reference_image_index
+                if ref_idx == "auto":
+                    ref_idx = 0
                 find_wcs(
                     image_series,
-                    reference_image_index=config.reference_image_index,
+                    reference_image_index=int(ref_idx),
                     method=config.wcs_method,
                     force_wcs_determination=config.force_wcs_determination,
+                    solve_all_images=config.wcs_solve_all_images,
                     indent=3,
                 )
             except RuntimeError as e:

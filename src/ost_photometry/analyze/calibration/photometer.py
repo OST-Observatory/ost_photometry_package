@@ -14,6 +14,7 @@ from typing import Literal
 import numpy as np
 from astropy.table import Table
 
+from ... import terminal_output
 from ...core.parallel import start_plot_process
 from ..extinction import ExtinctionCorrector, extinction_airmass_ready
 from ..warnings_types import OstPhotometryAnalyzeWarning
@@ -542,6 +543,16 @@ class DifferentialPhotometer:
         epoch_results_sorted = sorted(
             epoch_results, key=lambda fr: str(fr.identifier)
         )
+        for fr in epoch_results_sorted:
+            parts = []
+            for filter_ in filters:
+                tc = fr.transformation.get(filter_)
+                n_used = int(tc.n_stars_used) if tc is not None else 0
+                parts.append(f"{filter_}={n_used}")
+            terminal_output.print_to_terminal(
+                f"Calibrators in epoch {fr.identifier}: {', '.join(parts)}",
+                indent=2,
+            )
         combined = self.combine_epoch_calibration_results(
             epoch_results_sorted,
             filters,

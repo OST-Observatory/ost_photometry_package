@@ -60,6 +60,9 @@ class CorrelationIntraStep(base.PipelineStep):
                 verbose=config.verbose,
                 duplicate_handling_object_identification=config.duplicate_handling_object_identification,
                 plots_for_all_images=config.plots_for_all_images,
+                require_complete_intersection=config.require_complete_intersection,
+                min_detection_fraction=config.min_detection_fraction,
+                correlation_link_mode=config.correlation_link_mode,
             )
 
         context.correlation_intra_done = True

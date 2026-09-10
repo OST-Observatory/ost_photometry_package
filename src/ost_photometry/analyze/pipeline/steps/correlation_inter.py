@@ -62,6 +62,9 @@ class CorrelationInterStep(base.PipelineStep):
             duplicate_handling_object_identification=config.duplicate_handling_object_identification,
             debug_verify_ooi_global_ids=config.debug_verify_ooi_global_ids,
             verbose=config.verbose,
+            require_complete_intersection=config.require_complete_intersection,
+            min_detection_fraction=config.min_detection_fraction,
+            correlation_link_mode=config.correlation_link_mode,
         )
 
         if len(context.filter_list) > 1:

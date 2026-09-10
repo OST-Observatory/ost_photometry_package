@@ -210,3 +210,95 @@ def test_correlation_astropy_afterburner_removes_dataset_for_protected_miss(
     assert 2 in rejected_images
     assert index_array.shape[1] == 3
     assert index_array[0, 2] == 2
+
+
+def test_correlation_astropy_sparse_keeps_incomplete_track(core):
+    wcs_obj = _simple_wcs()
+    ref_x = _pixel_positions([10.0, 20.0, 30.0])
+    ref_y = _pixel_positions([10.0, 20.0, 30.0])
+    cur_x = _pixel_positions([10.0, 20.0])
+    cur_y = _pixel_positions([10.0, 20.0])
+    miss_x = _pixel_positions([10.0, 20.0, 99.0])
+    miss_y = _pixel_positions([10.0, 20.0, 99.0])
+
+    index_array, rejected_images = core.correlation_astropy(
+        [ref_x, cur_x, miss_x],
+        [ref_y, cur_y, miss_y],
+        wcs_obj,
+        special_object_ids=[2],
+        protect_special_objects=True,
+        advanced_cleanup=False,
+        require_complete_intersection=False,
+        n_allowed_non_detections_object=5,
+        min_detection_fraction=0.3,
+        separation_limit=2.0 * u.arcsec,
+    )
+
+    assert rejected_images.size == 0
+    assert index_array.shape == (3, 3)
+    assert index_array[1, 2] == -1
+    assert index_array[0, 2] == 2
+    assert index_array[2, 2] == -1
+
+
+def test_correlation_astropy_uses_per_frame_wcs(core):
+    wcs_a = _simple_wcs()
+    wcs_b = wcs.WCS(
+        {
+            "CTYPE1": "RA---TAN",
+            "CTYPE2": "DEC--TAN",
+            "CRVAL1": 180.0,
+            "CRVAL2": 0.0,
+            "CRPIX1": 60.0,
+            "CRPIX2": 50.0,
+            "CDELT1": -0.001,
+            "CDELT2": 0.001,
+        }
+    )
+    ref_x = _pixel_positions([50.0, 40.0])
+    ref_y = _pixel_positions([50.0, 40.0])
+    cur_x = _pixel_positions([60.0, 50.0])
+    cur_y = _pixel_positions([50.0, 40.0])
+
+    index_array, rejected = core.correlation_astropy(
+        [ref_x, cur_x],
+        [ref_y, cur_y],
+        wcs_a,
+        wcs_list=[wcs_a, wcs_b],
+        advanced_cleanup=False,
+        require_complete_intersection=True,
+        separation_limit=2.0 * u.arcsec,
+    )
+    assert rejected.size == 0
+    np.testing.assert_array_equal(index_array[1], [0, 1])
+
+
+def test_correlation_astropy_sequential_adds_new_track(core):
+    wcs_obj = _simple_wcs()
+    x0 = _pixel_positions([10.0, 20.0, 30.0])
+    y0 = _pixel_positions([10.0, 20.0, 30.0])
+    x1 = _pixel_positions([10.0, 20.0, 40.0])
+    y1 = _pixel_positions([10.0, 20.0, 40.0])
+    x2 = _pixel_positions([10.0, 40.0])
+    y2 = _pixel_positions([10.0, 40.0])
+
+    index_array, rejected = core.correlation_astropy(
+        [x0, x1, x2],
+        [y0, y1, y2],
+        wcs_obj,
+        advanced_cleanup=False,
+        require_complete_intersection=False,
+        n_allowed_non_detections_object=5,
+        min_detection_fraction=0.3,
+        correlation_link_mode="sequential",
+        separation_limit=2.0 * u.arcsec,
+    )
+    assert rejected.size == 0
+    assert index_array.shape[0] == 3
+    assert index_array.shape[1] >= 4
+    # Star at 40 appears first on frame 1 and continues on frame 2.
+    new_cols = np.flatnonzero(index_array[0] == -1)
+    assert new_cols.size >= 1
+    col = int(new_cols[0])
+    assert index_array[1, col] >= 0
+    assert index_array[2, col] >= 0

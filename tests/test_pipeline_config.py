@@ -48,6 +48,10 @@ def test_pipeline_config_flat_and_nested_access():
     cfg.apply_overrides(calibrator_photon_factor=None, calibrator_qfit_max=0.15)
     assert cfg.calibrator_photon_factor is None
     assert cfg.calibration.calibrator_qfit_max == 0.15
+    assert cfg.require_complete_intersection is True
+    assert cfg.min_detection_fraction is None
+    assert cfg.correlation_link_mode == "to_reference"
+    assert cfg.wcs_solve_all_images is False
 
 
 def test_pipeline_config_from_preset_overrides():

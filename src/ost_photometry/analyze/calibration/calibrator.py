@@ -15,6 +15,7 @@ from astropy.coordinates import SkyCoord
 from astropy.table import Table, vstack
 from astropy.time import Time
 
+from ... import terminal_output
 from ...core.parallel import start_plot_process
 from ..calibration_sources import crossmatch_standard_catalog, fetch_standard_calibration_catalog
 from ..extinction import (
@@ -326,6 +327,17 @@ class PhotometryCalibrator:
                 results[epoch_id] = result
 
             ordered_ids = sorted(self.epochs.keys(), key=str)
+            for epoch_id in ordered_ids:
+                result = results[epoch_id]
+                parts = []
+                for filter_ in filters:
+                    tc = result.transformation.get(filter_)
+                    n_used = int(tc.n_stars_used) if tc is not None else 0
+                    parts.append(f"{filter_}={n_used}")
+                terminal_output.print_to_terminal(
+                    f"Calibrators in epoch {epoch_id}: {', '.join(parts)}",
+                    indent=2,
+                )
             ct_mode = _resolve_per_image_rolling_mode(
                 per_image_rolling_median_color_term,
                 per_image_rolling_mean_color_term,

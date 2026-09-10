@@ -96,8 +96,10 @@ def resolve_calibration_object_ids(
     from ..calibration_sources import fetch_standard_calibration_catalog
     from .inter import determine_object_position
 
-    if reference_image_index is None:
+    if reference_image_index is None or reference_image_index == "auto":
         reference_image_index = image_series.reference_image_index
+    else:
+        reference_image_index = int(reference_image_index)
 
     image = image_series.image_list[reference_image_index]
     center = image.coordinates_image_center

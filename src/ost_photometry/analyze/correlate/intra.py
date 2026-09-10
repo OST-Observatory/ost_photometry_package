@@ -18,6 +18,10 @@ from ..ooi_ids import set_ooi_correlated_ids_from_filter
 from ..warnings_types import OstPhotometryAnalyzeWarning
 from .core import correlate_datasets
 from .ooi import identify_object_of_interest_in_dataset
+from .tracks import (
+    apply_correlation_index_to_images,
+    pick_auto_reference_image,
+)
 
 
 def assign_correlated_object_ids_single_series(
@@ -61,7 +65,11 @@ def correlate_image_series_images(
         n_allowed_non_detections_object: int = 1,
         expected_bad_image_fraction: float = 1.0,
         correlation_method: str = 'astropy',
-        separation_limit: u.Quantity = 2. * u.arcsec) -> None:
+        separation_limit: u.Quantity = 2. * u.arcsec,
+        require_complete_intersection: bool = True,
+        min_detection_fraction: float | None = None,
+        correlation_link_mode: str = "to_reference",
+) -> None:
     """
     Correlate object positions from all stars in an image series to
     identify those objects that are visible on all images
@@ -111,7 +119,7 @@ def correlate_image_series_images(
     n_allowed_non_detections_object
         Maximum number of times an object may not be detected in an image.
         When this limit is reached, the object will be removed.
-        Default is ``i``.
+        Default is ``1``.
 
     expected_bad_image_fraction
         Fraction of low quality images, i.e. those images for which a
@@ -127,6 +135,17 @@ def correlate_image_series_images(
     separation_limit
         Allowed separation between objects.
         Default is ``2.*u.arcsec``.
+
+    require_complete_intersection
+        If ``True``, keep only objects detected on every remaining frame.
+        If ``False``, keep incomplete tracks and tag photometry ``id``.
+
+    min_detection_fraction
+        Sparse-track minimum detection fraction (ignored when intersection
+        is required).
+
+    correlation_link_mode
+        ``to_reference`` or ``sequential``.
     """
     #   Number of images
     n_images = len(image_series.image_list)
@@ -139,8 +158,12 @@ def correlate_image_series_images(
         indent=1,
     )
 
-    #   Get WCS
+    #   Get WCS (series handle = reference; matching uses per-frame WCS)
     current_wcs = image_series.wcs
+    wcs_list = [
+        img.wcs if getattr(img, "wcs", None) is not None else current_wcs
+        for img in image_series.image_list
+    ]
 
     #   Extract pixel positions of the objects
     x, y, n_objects = image_series.get_object_positions_pixel()
@@ -170,6 +193,10 @@ def correlate_image_series_images(
         ooi_correlation_strategy=ooi_correlation_strategy,
         cross_identification_limit=cross_identification_limit,
         correlation_method=correlation_method,
+        require_complete_intersection=require_complete_intersection,
+        min_detection_fraction=min_detection_fraction,
+        wcs_list=wcs_list,
+        correlation_link_mode=correlation_link_mode,
     )
 
     #   Remove "bad" images from image IDs
@@ -178,12 +205,18 @@ def correlate_image_series_images(
     #   Remove images that are rejected (bad images) during the correlation process.
     image_series.image_list = [image_series.image_list[i] for i in image_ids_arr]
     image_series.reference_image_index = new_reference_image_index
+    if image_series.image_list:
+        image_series.reference_image = image_series.image_list[
+            new_reference_image_index
+        ]
 
-    #   Limit the photometry tables to common objects.
-    for j, image in enumerate(image_series.image_list):
-        image.photometry = image.photometry[correlation_index[j, :]]
-
-    assign_correlated_object_ids_single_series(image_series)
+    apply_correlation_index_to_images(
+        image_series.image_list,
+        correlation_index,
+        require_complete_intersection=require_complete_intersection,
+    )
+    if require_complete_intersection:
+        assign_correlated_object_ids_single_series(image_series)
 
 
 def correlate_preserve_objects(
@@ -193,7 +226,7 @@ def correlate_preserve_objects(
         max_pixel_between_objects: int = 3,
         ooi_correlation_strategy: int = 1,
         cross_identification_limit: int = 1,
-        reference_image_index: int = 0,
+        reference_image_index: int | str = 0,
         n_allowed_non_detections_object: int = 1,
         expected_bad_image_fraction: float = 1.0,
         protected_object_ids: list[int] | None = None,
@@ -211,6 +244,9 @@ def correlate_preserve_objects(
         plot_only_reference_starmap: bool = True,
         use_wcs_projection_for_star_maps: bool = True,
         file_type_plots: str = 'pdf',
+        require_complete_intersection: bool = True,
+        min_detection_fraction: float | None = None,
+        correlation_link_mode: str = "to_reference",
 ) -> None:
     """
     Correlate exposures within one filter while keeping protected objects.
@@ -225,6 +261,21 @@ def correlate_preserve_objects(
 
     image_series = observation.image_series_dict[filter_]
     objects_of_interest = observation.objects_of_interest
+
+    if reference_image_index == "auto" or reference_image_index is None:
+        reference_image_index = pick_auto_reference_image(image_series)
+        terminal_output.print_to_terminal(
+            f"Auto reference image: index {reference_image_index} "
+            f"(id={image_series.image_list[reference_image_index].image_id})",
+            indent=1,
+        )
+    else:
+        reference_image_index = int(reference_image_index)
+    image_series.reference_image_index = reference_image_index
+    image_series.reference_image = image_series.image_list[reference_image_index]
+    ref_wcs = getattr(image_series.image_list[reference_image_index], "wcs", None)
+    if ref_wcs is not None:
+        image_series.set_wcs(ref_wcs, broadcast=False)
 
     if protect_ooi and objects_of_interest:
         terminal_output.print_to_terminal(
@@ -273,6 +324,9 @@ def correlate_preserve_objects(
         expected_bad_image_fraction=expected_bad_image_fraction,
         correlation_method=correlation_method,
         separation_limit=separation_limit,
+        require_complete_intersection=require_complete_intersection,
+        min_detection_fraction=min_detection_fraction,
+        correlation_link_mode=correlation_link_mode,
     )
 
     if protect_ooi and objects_of_interest:
@@ -343,7 +397,11 @@ def correlate_preserve_variable(
         duplicate_handling_object_identification: dict[str, str] | None = None,
         plots_for_all_images: bool = False,
         use_wcs_projection_for_star_maps: bool = True,
-        file_type_plots: str = 'pdf') -> None:
+        file_type_plots: str = 'pdf',
+        require_complete_intersection: bool = True,
+        min_detection_fraction: float | None = None,
+        correlation_link_mode: str = "to_reference",
+) -> None:
     """Correlate while preserving objects of interest (legacy wrapper)."""
     correlate_preserve_objects(
         observation,
@@ -365,4 +423,7 @@ def correlate_preserve_variable(
         plot_only_reference_starmap=not plots_for_all_images,
         use_wcs_projection_for_star_maps=use_wcs_projection_for_star_maps,
         file_type_plots=file_type_plots,
+        require_complete_intersection=require_complete_intersection,
+        min_detection_fraction=min_detection_fraction,
+        correlation_link_mode=correlation_link_mode,
     )

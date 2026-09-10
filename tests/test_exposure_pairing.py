@@ -128,3 +128,34 @@ def test_multi_epoch_still_enforces_jd_tolerance():
         )
         assert pairs == []
         assert skipped and skipped[0]["reason"] == "jd_exceeds_tolerance"
+
+
+def test_merge_epoch_on_id_keeps_partial_detections():
+    import numpy as np
+    from astropy.table import Table
+
+    with isolated_sys_modules():
+        bridge = _load_bridge()
+        v = Table(
+            {
+                "id": [0, 1],
+                "mag_V": [12.0, 13.0],
+                "err_V": [0.01, 0.02],
+            }
+        )
+        b = Table(
+            {
+                "id": [0],
+                "mag_B": [12.5],
+                "err_B": [0.03],
+            }
+        )
+        merged = bridge._merge_epoch_on_id(
+            {"V": v, "B": b},
+            "V",
+            ["V", "B"],
+            {"V": 1.1, "B": 1.2},
+        )
+        assert list(merged["id"]) == [0, 1]
+        assert merged["mag_B"][0] == 12.5
+        assert np.isnan(merged["mag_B"][1])

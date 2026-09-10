@@ -9,6 +9,7 @@ from astropy.coordinates import SkyCoord, matching
 
 from ... import style, terminal_output
 from .. import utilities
+from .tracks import effective_miss_limit
 
 
 def _dataset_positions_identical(
@@ -38,6 +39,81 @@ def _drop_protected_from_rejected_object_ids(
     return rejected[~np.isin(rejected, special)]
 
 
+def _ravel_pixels(arr: object) -> np.ndarray:
+    """Pixel coordinates as a 1-D float array (Quantity, Column, or ndarray)."""
+    value = getattr(arr, "value", arr)
+    return np.asarray(value).ravel()
+
+
+def _wcs_for_dataset(
+    dataset_id: int,
+    current_wcs: wcs.WCS,
+    wcs_list: list[wcs.WCS | None] | None,
+) -> wcs.WCS:
+    if wcs_list is None or dataset_id >= len(wcs_list):
+        return current_wcs
+    frame_wcs = wcs_list[dataset_id]
+    return current_wcs if frame_wcs is None else frame_wcs
+
+
+def _match_two_datasets_sky(
+    x_reference: object,
+    y_reference: object,
+    wcs_reference: wcs.WCS,
+    x_current: object,
+    y_current: object,
+    wcs_current: wcs.WCS,
+    separation_limit: u.Quantity,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``(index_reference, index_current)`` after duplicate cleanup."""
+    x_ref = _ravel_pixels(x_reference)
+    y_ref = _ravel_pixels(y_reference)
+    x_cur = _ravel_pixels(x_current)
+    y_cur = _ravel_pixels(y_current)
+    try:
+        reference_coordinates = SkyCoord.from_pixel(x_ref, y_ref, wcs_reference)
+        current_coordinates = SkyCoord.from_pixel(x_cur, y_cur, wcs_current)
+        index_reference, index_current, distance, _ = matching.search_around_sky(
+            reference_coordinates,
+            current_coordinates,
+            separation_limit,
+        )
+    except (ValueError, TypeError, IndexError):
+        if _dataset_positions_identical(x_ref, y_ref, x_cur, y_cur):
+            n = len(x_ref)
+            return np.arange(n, dtype=int), np.arange(n, dtype=int)
+        raise
+
+    index_reference, distance, index_current = utilities.clear_duplicates(
+        index_reference,
+        distance,
+        index_current,
+    )
+    index_current, _, index_reference = utilities.clear_duplicates(
+        index_current,
+        distance,
+        index_reference,
+    )
+    return index_reference, index_current
+
+
+def _special_track_columns(
+    index_array: np.ndarray,
+    reference_dataset_id: int,
+    special_object_ids: np.ndarray | list[int],
+) -> np.ndarray:
+    """Map protected *reference-row* IDs to track (column) indexes."""
+    special = np.asarray(special_object_ids, dtype=int).ravel()
+    if special.size == 0:
+        return special
+    ref_rows = np.asarray(index_array[reference_dataset_id], dtype=int)
+    cols: list[int] = []
+    for sid in special:
+        hits = np.flatnonzero(ref_rows == int(sid))
+        cols.extend(int(c) for c in hits)
+    return np.asarray(cols, dtype=int)
+
+
 def correlate_datasets(
         x_pixel_positions: list[np.ndarray],
         y_pixel_positions: list[np.ndarray],
@@ -54,7 +130,11 @@ def correlate_datasets(
         max_pixel_between_objects: float = 3.,
         expected_bad_image_fraction: float = 1.0,
         ooi_correlation_strategy: int = 1, cross_identification_limit: int = 1,
-        correlation_method: str = 'astropy'
+        correlation_method: str = 'astropy',
+        require_complete_intersection: bool = True,
+        min_detection_fraction: float | None = None,
+        wcs_list: list[wcs.WCS | None] | None = None,
+        correlation_link_mode: str = "to_reference",
         ) -> tuple[np.ndarray, int, np.ndarray, int]:
     """
     Correlate the pixel positions from different dataset such as
@@ -108,7 +188,26 @@ def correlate_datasets(
     n_allowed_non_detections_object
         Maximum number of times an object may not be detected in an image.
         When this limit is reached, the object will be removed.
-        Default is ``i`.
+        Default is ``1``.
+
+    require_complete_intersection
+        If ``True`` (default), drop any track that misses a remaining dataset
+        (legacy afterburner). If ``False``, keep incomplete tracks.
+
+    min_detection_fraction
+        Minimum fraction of datasets a track must appear on when
+        ``require_complete_intersection`` is ``False``. Combined with
+        ``n_allowed_non_detections_object`` via
+        :func:`effective_miss_limit`. ``None`` uses only the miss count.
+
+    wcs_list
+        Optional per-dataset WCS. Matching uses each frame's WCS when given;
+        ``current_wcs`` is the fallback.
+
+    correlation_link_mode
+        ``to_reference`` matches every dataset to the reference.
+        ``sequential`` chain-matches dataset ``i`` to ``i-1`` and may add
+        tracks for new detections.
 
     separation_limit
         Allowed separation between objects.
@@ -180,12 +279,16 @@ def correlate_datasets(
             current_wcs,
             reference_dataset_id=reference_dataset_id,
             special_object_ids=special_object_ids,
-            expected_bad_image_fraction=n_allowed_non_detections_object,
+            n_allowed_non_detections_object=n_allowed_non_detections_object,
             protect_special_objects=protect_special_objects,
             separation_limit=separation_limit,
             advanced_cleanup=advanced_cleanup,
+            require_complete_intersection=require_complete_intersection,
+            min_detection_fraction=min_detection_fraction,
+            wcs_list=wcs_list,
+            correlation_link_mode=correlation_link_mode,
         )
-        n_common_objects = len(correlation_index[0])
+        n_common_objects = correlation_index.shape[1]
 
     elif correlation_method == 'own':
         #   'Own' correlation method requires positions to be in a numpy array
@@ -228,8 +331,18 @@ def correlate_datasets(
             f"found!{style.Bcolors.ENDC}"
         )
     else:
+        n_complete = int(np.sum(np.all(correlation_index >= 0, axis=0)))
+        if require_complete_intersection:
+            msg = (
+                f"{n_common_objects} objects identified on all {dataset_type}s"
+            )
+        else:
+            msg = (
+                f"{n_common_objects} object tracks "
+                f"({n_complete} detected on all {dataset_type}s)"
+            )
         terminal_output.print_to_terminal(
-            f"{n_common_objects} objects identified on all {dataset_type}s",
+            msg,
             style_name='GOOD',
             indent=2,
         )
@@ -268,258 +381,295 @@ def correlate_datasets(
     return correlation_index, new_reference_dataset_id, rejected_datasets, n_common_objects
 
 
+def _match_to_reference(
+    x_pixel_positions: list,
+    y_pixel_positions: list,
+    current_wcs: wcs.WCS,
+    wcs_list: list[wcs.WCS | None] | None,
+    reference_dataset_id: int,
+    n_datasets: int,
+    separation_limit: u.Quantity,
+) -> np.ndarray:
+    n_ref = len(_ravel_pixels(x_pixel_positions[reference_dataset_id]))
+    index_array = np.full((n_datasets, n_ref), -1, dtype=int)
+    index_array[reference_dataset_id, :] = np.arange(n_ref)
+    wcs_ref = _wcs_for_dataset(reference_dataset_id, current_wcs, wcs_list)
+    for i in range(n_datasets):
+        if i == reference_dataset_id:
+            continue
+        idx_ref, idx_cur = _match_two_datasets_sky(
+            x_pixel_positions[reference_dataset_id],
+            y_pixel_positions[reference_dataset_id],
+            wcs_ref,
+            x_pixel_positions[i],
+            y_pixel_positions[i],
+            _wcs_for_dataset(i, current_wcs, wcs_list),
+            separation_limit,
+        )
+        index_array[i, idx_ref] = idx_cur
+    return index_array
+
+
+def _match_sequential(
+    x_pixel_positions: list,
+    y_pixel_positions: list,
+    current_wcs: wcs.WCS,
+    wcs_list: list[wcs.WCS | None] | None,
+    n_datasets: int,
+    separation_limit: u.Quantity,
+) -> np.ndarray:
+    n0 = len(_ravel_pixels(x_pixel_positions[0]))
+    index_array = np.full((n_datasets, n0), -1, dtype=int)
+    index_array[0, :] = np.arange(n0)
+    prev_det_to_track = np.arange(n0, dtype=int)
+    for i in range(1, n_datasets):
+        idx_prev, idx_cur = _match_two_datasets_sky(
+            x_pixel_positions[i - 1],
+            y_pixel_positions[i - 1],
+            _wcs_for_dataset(i - 1, current_wcs, wcs_list),
+            x_pixel_positions[i],
+            y_pixel_positions[i],
+            _wcs_for_dataset(i, current_wcs, wcs_list),
+            separation_limit,
+        )
+        n_cur = len(_ravel_pixels(x_pixel_positions[i]))
+        matched_cur = np.zeros(n_cur, dtype=bool)
+        for p, c in zip(idx_prev.tolist(), idx_cur.tolist(), strict=False):
+            p_i = int(p)
+            c_i = int(c)
+            if p_i < 0 or p_i >= prev_det_to_track.size:
+                continue
+            tid = int(prev_det_to_track[p_i])
+            if tid < 0:
+                continue
+            index_array[i, tid] = c_i
+            if 0 <= c_i < n_cur:
+                matched_cur[c_i] = True
+        unmatched = np.flatnonzero(~matched_cur)
+        if unmatched.size:
+            extra = np.full((n_datasets, unmatched.size), -1, dtype=int)
+            extra[i, :] = unmatched
+            index_array = np.hstack([index_array, extra])
+        prev_det_to_track = np.full(n_cur, -1, dtype=int)
+        for tid in range(index_array.shape[1]):
+            det = int(index_array[i, tid])
+            if 0 <= det < n_cur:
+                prev_det_to_track[det] = tid
+    return index_array
+
+
+def _drop_tracks_exceeding_miss_limit(
+    index_array: np.ndarray,
+    special_columns: np.ndarray,
+    n_allowed_non_detections_object: int,
+    min_detection_fraction: float | None,
+    protect_special_objects: bool,
+) -> np.ndarray:
+    n_images = index_array.shape[0]
+    if n_images == 0 or index_array.shape[1] == 0:
+        return index_array
+    misses = np.sum(index_array == -1, axis=0)
+    limit = effective_miss_limit(
+        n_images,
+        n_allowed_non_detections_object,
+        min_detection_fraction,
+    )
+    drop = misses >= limit
+    if protect_special_objects and special_columns.size:
+        drop[special_columns[special_columns < drop.size]] = False
+    return np.delete(index_array, np.flatnonzero(drop), 1)
+
+
 def correlation_astropy(
         x_pixel_positions: list[np.ndarray],
         y_pixel_positions: list[np.ndarray], current_wcs: wcs.WCS,
         reference_dataset_id: int = 0,
         special_object_ids: list[int] | None = None,
         expected_bad_image_fraction: int = 1,
+        n_allowed_non_detections_object: int | None = None,
         protect_special_objects: bool = True,
         separation_limit: u.Quantity = 2. * u.arcsec,
-        advanced_cleanup: bool = True) -> tuple[np.ndarray, np.ndarray]:
+        advanced_cleanup: bool = True,
+        require_complete_intersection: bool = True,
+        min_detection_fraction: float | None = None,
+        wcs_list: list[wcs.WCS | None] | None = None,
+        correlation_link_mode: str = "to_reference",
+        ) -> tuple[np.ndarray, np.ndarray]:
     """
-    The function correlates data sets based on astropy matching algorithm
+    Correlate data sets with astropy ``search_around_sky``.
 
     Parameters
     ----------
-    x_pixel_positions
-        Object positions in pixel coordinates. X direction.
-
-    y_pixel_positions
-        Object positions in pixel coordinates. Y direction.
+    x_pixel_positions, y_pixel_positions
+        Object positions in pixel coordinates.
 
     current_wcs
-        WCS information
+        Fallback WCS when ``wcs_list`` has no entry for a dataset.
 
     reference_dataset_id
-        ID of the reference dataset
-        Default is ``0``.
+        ID of the reference dataset. Default is ``0``.
 
     special_object_ids
-        IDs of the special objects. The special objects will not be
-        removed from the list of objects.
-        Default is ``None``.
+        Reference-image row IDs that should not be dropped.
 
     expected_bad_image_fraction
-        Maximum number of times an object may not be detected in an image.
-        When this limit is reached, the object will be removed.
-        Default is ``1``.
+        Legacy alias for the miss-count threshold on this path (used when
+        ``n_allowed_non_detections_object`` is omitted).
+
+    n_allowed_non_detections_object
+        Maximum number of misses before a track is dropped.
 
     protect_special_objects
-        If ``False`` also special objects will be rejected, if they do
-        not fulfill all criteria.
-        Default is ``True``.
+        If ``True``, keep protected tracks even when they miss datasets.
 
     separation_limit
-        Allowed separation between objects.
-        Default is ``2.*u.arcsec``.
+        Allowed on-sky separation. Default is ``2.*u.arcsec``.
 
     advanced_cleanup
-        If ``True`` a multilevel cleanup of the results will be
-        attempted. If ``False`` only the minimal necessary removal of
-        objects that are not on all datasets will be performed.
-        Default is ``True``.
+        If ``True``, drop rare tracks and (in intersection mode) poor
+        datasets before the afterburner.
 
-    Returns
-    -------
-    index_array
-        IDs of the correlated objects
+    require_complete_intersection
+        If ``True`` (default), delete any track with a remaining ``-1``.
+        If ``False``, keep incomplete tracks.
 
-    rejected_images
-        IDs of the images that were rejected because of insufficient quality
+    min_detection_fraction
+        Minimum detection fraction for sparse tracks.
+
+    wcs_list
+        Per-dataset WCS; ``None`` uses ``current_wcs`` for every frame.
+
+    correlation_link_mode
+        ``to_reference`` or ``sequential``.
     """
-    #   Sanitize special object
     if special_object_ids is None or special_object_ids == [None]:
         special_object_ids = []
+    if n_allowed_non_detections_object is None:
+        n_allowed_non_detections_object = int(expected_bad_image_fraction)
 
-    #   Number of datasets/images
     n_datasets = len(x_pixel_positions)
-
-    #   Create reference SkyCoord object
-    x_pixel_positions_reference = x_pixel_positions[reference_dataset_id].value.ravel()
-    y_pixel_positions_reference = y_pixel_positions[reference_dataset_id].value.ravel()
-    reference_coordinates = SkyCoord.from_pixel(
-        x_pixel_positions_reference,
-        y_pixel_positions_reference,
-        current_wcs,
-    )
-
-    #   Prepare index array and fill in values for the reference dataset
-    index_array = np.ones(
-        (n_datasets, len(x_pixel_positions[reference_dataset_id])),
-        dtype=int
-    )
-    index_array *= -1
-    index_array[reference_dataset_id, :] = np.arange(
-        len(x_pixel_positions[reference_dataset_id])
-    )
-
-    #   Loop over datasets
-    for i in range(0, n_datasets):
-        #   Do nothing for the reference dataset
-        if i != reference_dataset_id:
-            x_pixel_positions_reference = x_pixel_positions[
-                reference_dataset_id
-            ].value.ravel()
-            y_pixel_positions_reference = y_pixel_positions[
-                reference_dataset_id
-            ].value.ravel()
-            x_pixel_positions_current = x_pixel_positions[i].value.ravel()
-            y_pixel_positions_current = y_pixel_positions[i].value.ravel()
-
-            try:
-                current_coordinates = SkyCoord.from_pixel(
-                    x_pixel_positions_current,
-                    y_pixel_positions_current,
-                    current_wcs,
-                )
-                index_reference, index_current, distance, _ = (
-                    matching.search_around_sky(
-                        reference_coordinates,
-                        current_coordinates,
-                        separation_limit,
-                    )
-                )
-            except (ValueError, TypeError, IndexError):
-                if _dataset_positions_identical(
-                    x_pixel_positions_reference,
-                    y_pixel_positions_reference,
-                    x_pixel_positions_current,
-                    y_pixel_positions_current,
-                ):
-                    index_array[i, :] = index_array[reference_dataset_id, :]
-                    continue
-                raise
-
-            #   Identify and remove duplicate indexes
-            index_reference, distance, index_current = utilities.clear_duplicates(
-                index_reference,
-                distance,
-                index_current,
-            )
-            index_current, _, index_reference = utilities.clear_duplicates(
-                index_current,
-                distance,
-                index_reference,
-            )
-
-            #   Fill ID array
-            index_array[i, index_reference] = index_current
-
-    #   Cleanup: Remove "bad" objects and datasets
-    #
-    #   1. Remove bad objects (pre burner) -> Useful to remove bad objects
-    #                                         that may spoil the correct
-    #                                        identification of bad datasets.
-    if advanced_cleanup:
-        #   Identify objects that were not identified in all datasets
-        rows_to_rm = np.where(index_array == -1)
-
-        #   Reduce to unique objects
-        objects_to_rm, n_times_to_rm = np.unique(
-            rows_to_rm[1],
-            return_counts=True,
+    link_mode = str(correlation_link_mode).strip().lower()
+    if link_mode == "sequential":
+        index_array = _match_sequential(
+            x_pixel_positions,
+            y_pixel_positions,
+            current_wcs,
+            wcs_list,
+            n_datasets,
+            separation_limit,
         )
-
-        #   Identify objects that are not in >= "expected_bad_image_fraction"
-        #   of all images
-        ids_rejected_objects = np.argwhere(
-            n_times_to_rm >= expected_bad_image_fraction
-        ).ravel()
-        rejected_object_ids = objects_to_rm[ids_rejected_objects]
-
-        #   Check if special objects are within the "bad" objects
-        if protect_special_objects and np.any(
-            np.isin(rejected_object_ids, special_object_ids)
-        ):
-            rejected_object_ids = _drop_protected_from_rejected_object_ids(
-                rejected_object_ids,
-                special_object_ids,
-            )
-
-        #   Remove "bad" objects
-        index_array = np.delete(index_array, rejected_object_ids, 1)
-
-        #   Calculate new special object position
-        if not isinstance(special_object_ids, np.ndarray):
-            special_object_ids = np.array(special_object_ids)
-        for index, special_object_id in np.ndenumerate(special_object_ids):
-            object_shift = np.argwhere(rejected_object_ids < special_object_id).ravel()
-            n_shift = len(object_shift)
-            special_object_ids[index] = special_object_id - n_shift
-
-        #   2. Remove bad images
-
-        #   Identify objects that were not identified in all datasets
-        rows_to_rm = np.where(index_array == -1)
-
-        #   Reduce to unique objects
-        images_to_rm, n_times_to_rm = np.unique(
-            rows_to_rm[0],
-            return_counts=True,
-        )
-
-        #   Create mask -> Identify all datasets as bad that contain less
-        #                  than 98% of all objects from the reference dataset.
-        mask = n_times_to_rm > 0.02 * len(x_pixel_positions[reference_dataset_id])
-        rejected_images = images_to_rm[mask]
-
-        #   Remove those datasets
-        index_array = np.delete(index_array, rejected_images, 0)
-
     else:
-        rejected_images = np.array([], dtype=int)
+        index_array = _match_to_reference(
+            x_pixel_positions,
+            y_pixel_positions,
+            current_wcs,
+            wcs_list,
+            reference_dataset_id,
+            n_datasets,
+            separation_limit,
+        )
 
-    #   3. Remove remaining objects that are not on all datasets
-    #      (afterburner)
-    #
-    #   Identify objects that were not identified in all datasets
-    rows_to_rm = np.where(index_array == -1)
+    special_columns = _special_track_columns(
+        index_array,
+        reference_dataset_id if link_mode != "sequential" else min(
+            reference_dataset_id, n_datasets - 1
+        ),
+        special_object_ids,
+    )
 
-    if protect_special_objects:
-        #   Check if special objects are within the "bad" objects
-        ref_is_in = np.isin(rows_to_rm[1], special_object_ids)
-
-        #   If YES remove special objects from "bad" objects and remove
-        #   the datasets on which they were not detected instead.
-        if np.any(ref_is_in):
-            if n_datasets <= 2:
-                raise RuntimeError(
-                    f"{style.Bcolors.FAIL} \nSpecial objects found on only"
-                    f"one image or not at all. This is not sufficient. "
-                    f"=> Exit {style.Bcolors.ENDC}"
-                )
-            rejected_object_ids = rows_to_rm[1]
-            rejected_object_ids = np.unique(rejected_object_ids)
-            rejected_object_ids = _drop_protected_from_rejected_object_ids(
-                rejected_object_ids,
-                special_object_ids,
-            )
-
-            #   Remove remaining bad objects
-            index_array = np.delete(index_array, rejected_object_ids, 1)
-
-            #   Remove datasets
+    if require_complete_intersection:
+        if advanced_cleanup:
             rows_to_rm = np.where(index_array == -1)
-            rejected_images_two = np.unique(rows_to_rm[0])
-            index_array = np.delete(index_array, rejected_images_two, 0)
-
-            rejected_images_two_old = []
-            for images_in_two in rejected_images_two:
-                for images_in_one in rejected_images:
-                    if images_in_one <= images_in_two:
-                        images_in_two += 1
-                rejected_images_two_old.append(images_in_two)
-
-            rejected_images = np.concatenate(
-                (rejected_images, np.array(rejected_images_two_old))
+            objects_to_rm, n_times_to_rm = np.unique(
+                rows_to_rm[1],
+                return_counts=True,
             )
+            ids_rejected_objects = np.argwhere(
+                n_times_to_rm >= n_allowed_non_detections_object
+            ).ravel()
+            rejected_object_ids = objects_to_rm[ids_rejected_objects]
+            if protect_special_objects and np.any(
+                np.isin(rejected_object_ids, special_columns)
+            ):
+                rejected_object_ids = _drop_protected_from_rejected_object_ids(
+                    rejected_object_ids,
+                    special_columns,
+                )
+            index_array = np.delete(index_array, rejected_object_ids, 1)
+            special_columns = np.asarray(special_columns, dtype=int)
+            for index, special_object_id in np.ndenumerate(special_columns):
+                object_shift = np.argwhere(
+                    rejected_object_ids < special_object_id
+                ).ravel()
+                special_columns[index] = special_object_id - len(object_shift)
 
-            return index_array, rejected_images
+            rows_to_rm = np.where(index_array == -1)
+            images_to_rm, n_times_to_rm = np.unique(
+                rows_to_rm[0],
+                return_counts=True,
+            )
+            n_ref = len(_ravel_pixels(x_pixel_positions[reference_dataset_id]))
+            mask = n_times_to_rm > 0.02 * n_ref
+            rejected_images = images_to_rm[mask]
+            index_array = np.delete(index_array, rejected_images, 0)
+        else:
+            rejected_images = np.array([], dtype=int)
 
-    #   Remove bad objects
-    index_array = np.delete(index_array, rows_to_rm[1], 1)
+        rows_to_rm = np.where(index_array == -1)
+        if protect_special_objects:
+            ref_is_in = np.isin(rows_to_rm[1], special_columns)
+            if np.any(ref_is_in):
+                if n_datasets <= 2:
+                    raise RuntimeError(
+                        f"{style.Bcolors.FAIL} \nSpecial objects found on only"
+                        f"one image or not at all. This is not sufficient. "
+                        f"=> Exit {style.Bcolors.ENDC}"
+                    )
+                rejected_object_ids = np.unique(rows_to_rm[1])
+                rejected_object_ids = _drop_protected_from_rejected_object_ids(
+                    rejected_object_ids,
+                    special_columns,
+                )
+                index_array = np.delete(index_array, rejected_object_ids, 1)
+                rows_to_rm = np.where(index_array == -1)
+                rejected_images_two = np.unique(rows_to_rm[0])
+                index_array = np.delete(index_array, rejected_images_two, 0)
+                rejected_images_two_old = []
+                for images_in_two in rejected_images_two:
+                    for images_in_one in rejected_images:
+                        if images_in_one <= images_in_two:
+                            images_in_two += 1
+                    rejected_images_two_old.append(images_in_two)
+                rejected_images = np.concatenate(
+                    (rejected_images, np.array(rejected_images_two_old))
+                )
+                return index_array, rejected_images
 
+        index_array = np.delete(index_array, rows_to_rm[1], 1)
+        return index_array, rejected_images
+
+    rejected_images = np.array([], dtype=int)
+    if advanced_cleanup:
+        index_array = _drop_tracks_exceeding_miss_limit(
+            index_array,
+            special_columns,
+            n_allowed_non_detections_object,
+            min_detection_fraction,
+            protect_special_objects,
+        )
+        special_columns = _special_track_columns(
+            index_array,
+            min(reference_dataset_id, max(index_array.shape[0] - 1, 0)),
+            special_object_ids,
+        )
+    else:
+        index_array = _drop_tracks_exceeding_miss_limit(
+            index_array,
+            special_columns,
+            n_allowed_non_detections_object,
+            min_detection_fraction,
+            protect_special_objects,
+        )
     return index_array, rejected_images
 
 

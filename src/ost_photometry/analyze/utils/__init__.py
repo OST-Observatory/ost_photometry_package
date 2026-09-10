@@ -16,7 +16,7 @@ from .photometry import (
     flux_to_magnitudes,
     rm_edge_objects,
 )
-from .series_wcs import find_wcs
+from .series_wcs import ensure_image_wcs, find_wcs
 from .starmaps import (
     prepare_and_plot_starmap,
     prepare_and_plot_starmap_from_image_series,
@@ -39,6 +39,7 @@ __all__ = [
     "find_cluster",
     "find_filter_for_magnitude_transformation",
     "find_wcs",
+    "ensure_image_wcs",
     "flux_to_magnitudes",
     "attach_finder_quality",
     "attach_sky_coords_from_wcs",

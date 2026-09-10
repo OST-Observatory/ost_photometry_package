@@ -72,7 +72,7 @@ class ImageSeries:
     """
 
     def __init__(
-        self, filter_: str, path: str, output_dir: str, reference_image_index: int = 0
+        self, filter_: str, path: str, output_dir: str, reference_image_index: int | str = 0
     ):
         #   Setup file list
         if os.path.isdir(path):
@@ -106,6 +106,16 @@ class ImageSeries:
                 f"{style.Bcolors.FAIL} ERROR: No FITS image detected in "
                 f"{path}! -> EXIT {style.Bcolors.ENDC}"
             )
+
+        if isinstance(reference_image_index, str):
+            if reference_image_index != "auto":
+                raise ValueError(
+                    f"reference_image_index must be an int or 'auto', "
+                    f"got {reference_image_index!r}"
+                )
+            reference_image_index = 0
+        else:
+            reference_image_index = int(reference_image_index)
 
         #   Check if the id of the reference image is valid
         if reference_image_index > len(self.file_list):
@@ -187,13 +197,19 @@ class ImageSeries:
         #   Set wcs default
         self.wcs: wcs.WCS | None = None
 
-    def set_wcs(self, w: wcs.WCS) -> None:
+    def set_wcs(self, w: wcs.WCS, *, broadcast: bool = True) -> None:
         from ost_photometry.wcs import sync_image_coordinates_from_wcs
 
         self.wcs = w
-        for img in self.image_list:
-            img.wcs = w
-            sync_image_coordinates_from_wcs(img, w)
+        if broadcast:
+            for img in self.image_list:
+                img.wcs = w
+                sync_image_coordinates_from_wcs(img, w)
+            return
+        if self.image_list:
+            ref = self.image_list[self.reference_image_index]
+            ref.wcs = w
+            sync_image_coordinates_from_wcs(ref, w)
 
     def get_photometry(self) -> dict[str, object]:
 
@@ -266,13 +282,7 @@ class ImageSeries:
         return flux_list
 
     def get_flux_array(self) -> tuple[np.ndarray, np.ndarray]:
+        from .correlate.tracks import flux_arrays_from_photometry_tables
+
         tbl_s = list(self.get_photometry().values())
-        n_images = len(tbl_s)
-        n_objects = len(tbl_s[0])
-        flux = np.zeros((n_images, n_objects))
-        flux_err = np.zeros((n_images, n_objects))
-        for i, tbl in enumerate(tbl_s):
-            if tbl is not None:
-                flux[i] = tbl["flux_fit"]
-                flux_err[i] = tbl["flux_err"]
-        return flux, flux_err
+        return flux_arrays_from_photometry_tables(tbl_s)

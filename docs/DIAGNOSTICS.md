@@ -287,6 +287,13 @@ The transformation panels under `<output>/diagnostics/calibration/` are the fit 
 with the line \(T\cdot c+\mathrm{ZP}\). These diagnostic figures must agree
 with that residual, not invent a second one.
 
+**Calibrators per epoch** — `calibration_night_summary_*.pdf` (and
+`calibration_per_image_summary_*.pdf`) plot T, ZP, **and n stars used in the
+fit** vs epoch. The terminal prints `Calibrators in epoch …: V=12, B=11`. A
+drop in n on later visits is the old intra-correlation intersection (star must
+be on every frame). Sparse tracks (`require_complete_intersection=False`)
+should keep n roughly stable if the catalog is still in the field.
+
 ## Cluster membership (Gaia)
 
 Supervisor post-processing (`identify_cluster_gaia_data`) selects members in

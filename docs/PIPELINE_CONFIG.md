@@ -71,7 +71,7 @@ config = PipelineConfig(
 | `twirl`      | Small fields with Gaia-visible stars           | Internet for catalog query                                   |
 
 
-WCS must succeed (or be copied from another filter) before extraction and correlation. `hips_reference_subtraction_wcs_method` can override `wcs_method` for the optional HiPS subtraction step only.
+WCS must succeed (or be copied from another filter) before extraction and correlation. `hips_reference_subtraction_wcs_method` can override `wcs_method` for the optional HiPS subtraction step only. Default solves the reference image and copies that WCS onto every frame (`image_series.set_wcs(..., broadcast=True)`). Set `wcs_solve_all_images=True` for native (unaligned) series so each `image.wcs` is solved; `image_series.wcs` stays the reference-frame solution for plots and FOV.
 
 ### `photometry_extraction_method`
 
@@ -126,6 +126,12 @@ Reduction writes `CRIDENT=True` plus `cosmics_rm` (interpolated) or `cosmics_msk
 
 
 Requires a valid WCS. Affects intra-filter tracking (same object across exposures) and inter-filter matching (B with V on the same night). Tune `separation_limit`, `max_pixel_between_objects`, and `exposure_pairing` if matches fail. Catalog matching uses the separate `calibration_match_radius` (default 2″).
+
+**Intersection vs sparse tracks** — default `require_complete_intersection=True` keeps only stars found on every remaining frame (mk_calib / stacked N2). Long C7 visits should set `require_complete_intersection=False` and `min_detection_fraction` (e.g. 0.3). Then `n_allowed_non_detections_object` is a real miss-count floor; on a long series it is raised to `(1 − fraction) × N` so a value like `5` does not force near-completeness. Photometry tables keep native rows and a shared `id`; light curves drop non-finite epochs.
+
+**Frame WCS** — matching uses `image.wcs` per frame. `image_series.wcs` is the reference-image WCS (plots, FOV, catalog cone). `wcs_solve_all_images=True` solves every frame and does **not** broadcast that solution. After a successful `aa_true` / `wcs` warp, copying the reference WCS onto aligned frames is the current solution for that grid. `correlation_link_mode="sequential"` chain-matches neighbours (C7 drift); `"to_reference"` is the default.
+
+**Reference image** — `reference_image_index=0` or `"auto"` (most finite detections, then smallest FWHM) after extraction. C7 uses `"auto"`; N2 stays `0`.
 
 **Protected objects during correlation** — sources are combined (deduplicated) into one set of reference-image row indices:
 
@@ -354,6 +360,7 @@ keeps instrumental flux and gets a relative light curve (continuum ≈ 1).
 | Quick test, very sparse field       | `APER`                         | `astropy`            | Widen aperture if SNR low, or `aperture_scale_with_fwhm=True` |
 | Reproduce pre-2024 script behaviour | `PSF`                          | `own`                | Check `duplicate_handling_object_identification`        |
 | B/V not aligned by index            | either                         | `astropy`            | `exposure_pairing="jd_nearest"`, set `reference_filter` |
+| Long C7 visits, some missed frames  | either                         | `astropy`            | `require_complete_intersection=False`, `min_detection_fraction=0.3`, `wcs_solve_all_images=True`, `reference_image_index="auto"` |
 
 
 

@@ -31,6 +31,7 @@ from .protection import (
     resolve_protected_object_ids_for_inter,
     resolve_protected_object_ids_for_intra,
 )
+from .tracks import pick_auto_reference_image
 
 __all__ = [
     "assign_correlated_object_ids_single_series",
@@ -53,6 +54,7 @@ __all__ = [
     "inter_filter_pair_image_label",
     "inter_filter_pair_title_suffix",
     "merge_protected_object_ids",
+    "pick_auto_reference_image",
     "resolve_calibration_object_ids",
     "resolve_protected_object_ids_for_intra",
     "resolve_protected_object_ids_for_inter",

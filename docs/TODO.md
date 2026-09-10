@@ -122,12 +122,10 @@ starting drizzle.
    …”. Count successes and failures in `align_images` / `align_image_main`
    and report the skipped file names.
 
-2. **Stale WCS after `aa_true` (P2).** `astro_align` builds a new
-   `CCDData` **without** `wcs=` and keeps the unwarped header. Pixels sit
-   on the reference grid; the WCS does not. `reduce_main` later
-   overwrites or copies WCS, but `aligned_lights/` is wrong if it is read
-   in between. Copy the **reference WCS** onto the warped CCD (as
-   `wcs_project` already does).
+2. **Stale WCS after `aa_true` (P2, photometry path done).** `astro_align`
+   now copies the **reference WCS** onto the warped `CCDData`. Remaining
+   work: skipped-frame reporting and tests for shifts / outliers. Do not
+   start drizzle while those are open.
 
 3. **Dispatcher duplication (P2).** `align_image_main` is a long
    `if`/`elif` with repeated `Executor` boilerplate. A small backend
@@ -233,6 +231,17 @@ pad), and should reuse the backend protocol once that exists. Global
 single-grid alignment (optional P3) is the nicer drizzle target but is
 not a prerequisite if the two-pass already emits a common grid per
 filter.
+
+### Series WCS as a view (optional P3)
+
+`image_series.wcs` is still a stored copy of the reference-image WCS.
+Matching uses `image.wcs`. A later cleanup can make the series handle a
+property/view of `image_list[reference_image_index].wcs` so the two cannot
+diverge. Not required for photometry.
+
+Sparse tracks (`require_complete_intersection=False`) are a C7 script
+setting; the package default stays dense for mk_calib. Other multi-image
+courses can opt in later.
 
 ---
 
@@ -725,7 +734,7 @@ Classifiers already list 3.13; the GitHub Actions matrix is still 3.11 and
 
 1. **P1:** Light curves — two products (catalog-transformed mag scale vs differential depth without catalog \(\sigma\)); quiet ensemble + `flag_epoch`; then inflate \(\sigma\) and residuals vs airmass/FWHM/sky/\(x,y\).
 2. **P2:** Camera catalog — QHY268 system-gain vs GAIN (all readout modes), then dark current for 485C / 462 / ASI2600.
-3. **P2:** Registration — skipped-frame reporting, copy reference WCS after `aa_true`, tests for shifts / outliers / skip accounting. Do **not** start drizzle while these are open.
+3. **P2:** Registration — skipped-frame reporting, tests for shifts / outliers / skip accounting. Reference WCS is copied after `aa_true`. Do **not** start drizzle while those are open.
 4. **P2:** Registration — backend protocol (`fit` → `apply` → YAML) and pragmatic unification: every method on the reference grid; drop `make_big_images` from the workflow; **keep** filter-then-inter-filter.
 5. **P2:** Difference images — internal night template + detection/linking + `diff_candidates.ecsv` (HiPS fetch hardening is done; do not start with legacy trim or extra survey strings).
 6. **P2:** Light curves — period search (Lomb–Scargle / BLS) from `light_curves.ecsv`; colour vs phase; simple \(\chi^2\) shape overlay.

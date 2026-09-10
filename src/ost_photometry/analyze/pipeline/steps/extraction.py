@@ -31,6 +31,8 @@ class ExtractionStep(base.PipelineStep):
         ext = config.extraction
         mode = context.get_extraction_mode(config)
         ref_id = ext.reference_image_index
+        if ref_id == "auto":
+            ref_id = 0
         fwhm_dict = ext.fwhm_object_psf
 
         for filter_ in context.filter_list:

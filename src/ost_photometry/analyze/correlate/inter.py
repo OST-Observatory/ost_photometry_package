@@ -26,6 +26,7 @@ from .ooi import (
     verify_objects_of_interest_global_correlated_ids,
 )
 from .protection import resolve_calibration_object_ids
+from .tracks import remap_series_ids_from_reference_index
 from .wcs_residuals import residual_vectors_on_reference_wcs
 
 
@@ -111,6 +112,9 @@ def correlate_image_series(
         duplicate_handling_object_identification: dict[str, str] | None = None,
         indent: int = 1,
         debug_verify_ooi_global_ids: bool = False,
+        require_complete_intersection: bool = True,
+        min_detection_fraction: float | None = None,
+        correlation_link_mode: str = "to_reference",
 ) -> None:
     """
     Correlate star lists from the stacked images of all filters to find
@@ -283,16 +287,23 @@ def correlate_image_series(
         ooi_correlation_strategy=ooi_correlation_strategy,
         cross_identification_limit=cross_identification_limit,
         correlation_method=correlation_method,
+        require_complete_intersection=require_complete_intersection,
+        min_detection_fraction=min_detection_fraction,
+        wcs_list=wcs_list_image_series,
+        correlation_link_mode=correlation_link_mode,
     )
 
     #   Remove "bad"/rejected image series
     for series_rejected in rejected_series:
         image_series_dict.pop(image_series_keys[series_rejected])
 
-    #   Limit the photometry tables object_ids to common objects.
     for j, series in enumerate(image_series_dict.values()):
-        for image in series.image_list:
-            image.photometry = image.photometry[correlation_index[j, :]]
+        remap_series_ids_from_reference_index(
+            series.image_list,
+            series.reference_image_index,
+            correlation_index[j, :],
+            require_complete_intersection=require_complete_intersection,
+        )
 
     #   Re-identify position of objects of interest
     objects_of_interest = observation.objects_of_interest
@@ -324,8 +335,8 @@ def correlate_image_series(
 
     terminal_output.print_to_terminal('')
 
-    # Global object id = row index after correlation (for cross-filter pipelines)
-    assign_global_correlated_object_ids(observation, list(image_series_dict.keys()))
+    if require_complete_intersection:
+        assign_global_correlated_object_ids(observation, list(image_series_dict.keys()))
 
     if debug_verify_ooi_global_ids:
         verify_objects_of_interest_global_correlated_ids(
@@ -340,6 +351,47 @@ def correlate_image_series(
         )
 
 
+def _frame_wcs(image, series):
+    wcs_obj = getattr(image, "wcs", None)
+    if wcs_obj is not None:
+        return wcs_obj
+    return getattr(series, "wcs", None)
+
+
+def _photometry_aligned_on_id(
+    ref_phot,
+    other_phot,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None:
+    """Return (x_ref, y_ref, x_other, y_other) for rows sharing ``id``."""
+    if ref_phot is None or other_phot is None:
+        return None
+    if len(ref_phot) == 0 or len(other_phot) == 0:
+        return None
+    if "id" in ref_phot.colnames and "id" in other_phot.colnames:
+        ref_ids = np.asarray(ref_phot["id"], dtype=np.int64)
+        other_ids = np.asarray(other_phot["id"], dtype=np.int64)
+        common, i_ref, i_other = np.intersect1d(
+            ref_ids, other_ids, return_indices=True
+        )
+        if common.size == 0:
+            return None
+        return (
+            np.asarray(ref_phot["x_fit"], dtype=float)[i_ref],
+            np.asarray(ref_phot["y_fit"], dtype=float)[i_ref],
+            np.asarray(other_phot["x_fit"], dtype=float)[i_other],
+            np.asarray(other_phot["y_fit"], dtype=float)[i_other],
+        )
+    n = min(len(ref_phot), len(other_phot))
+    if n == 0:
+        return None
+    return (
+        np.asarray(ref_phot["x_fit"], dtype=float)[:n],
+        np.asarray(ref_phot["y_fit"], dtype=float)[:n],
+        np.asarray(other_phot["x_fit"], dtype=float)[:n],
+        np.asarray(other_phot["y_fit"], dtype=float)[:n],
+    )
+
+
 def inter_filter_correlation_separations_for_images(
     observation: analyze.Observation,
     filter_list: list[str] | set[str],
@@ -350,8 +402,8 @@ def inter_filter_correlation_separations_for_images(
     """
     On-sky separations (arcsec) between a specific image per filter.
 
-    Rows are assumed aligned (same length / correlated object order) as after
-    :func:`correlate_image_series`.
+    Rows are joined on photometry ``id`` when present; otherwise they are
+    assumed to share correlated row order (dense intersection).
     """
     fl = list(filter_list)
     if len(fl) < 2:
@@ -363,14 +415,9 @@ def inter_filter_correlation_separations_for_images(
     sref = observation.image_series_dict[ref]
     if ref_img.photometry is None or len(ref_img.photometry) == 0:
         return np.array([]), ref, []
-    if sref.wcs is None:
+    wcs_ref = _frame_wcs(ref_img, sref)
+    if wcs_ref is None:
         return np.array([]), ref, []
-    n = len(ref_img.photometry)
-    c_ref = SkyCoord.from_pixel(
-        ref_img.photometry["x_fit"],
-        ref_img.photometry["y_fit"],
-        sref.wcs,
-    )
     chunks: list[np.ndarray] = []
     others: list[str] = []
     for f in fl:
@@ -380,13 +427,13 @@ def inter_filter_correlation_separations_for_images(
         if img is None or f not in observation.image_series_dict:
             continue
         ser = observation.image_series_dict[f]
-        if img.photometry is None or len(img.photometry) != n or ser.wcs is None:
+        aligned = _photometry_aligned_on_id(ref_img.photometry, img.photometry)
+        wcs_f = _frame_wcs(img, ser)
+        if aligned is None or wcs_f is None:
             continue
-        c_f = SkyCoord.from_pixel(
-            img.photometry["x_fit"],
-            img.photometry["y_fit"],
-            ser.wcs,
-        )
+        x_ref, y_ref, x_f, y_f = aligned
+        c_ref = SkyCoord.from_pixel(x_ref, y_ref, wcs_ref)
+        c_f = SkyCoord.from_pixel(x_f, y_f, wcs_f)
         chunks.append(np.asarray(c_ref.separation(c_f).arcsec, dtype=float))
         others.append(f)
     if not chunks:
@@ -402,7 +449,7 @@ def inter_filter_correlation_residual_frames(
     reference_filter: str | None = None,
 ) -> list[dict]:
     """
-    Per-(ref, other) residual vectors for aligned photometry rows.
+    Per-(ref, other) residual vectors for photometry rows joined on ``id``.
 
     Each dict has ``reference_filter``, ``other_filter``, pixel positions on
     the reference image (``x``, ``y``), residuals ``dx``/``dy`` (reference
@@ -418,11 +465,9 @@ def inter_filter_correlation_residual_frames(
     sref = observation.image_series_dict[ref]
     if ref_img.photometry is None or len(ref_img.photometry) == 0:
         return []
-    if sref.wcs is None:
+    wcs_ref = _frame_wcs(ref_img, sref)
+    if wcs_ref is None:
         return []
-    n = len(ref_img.photometry)
-    x_ref = np.asarray(ref_img.photometry["x_fit"], dtype=float)
-    y_ref = np.asarray(ref_img.photometry["y_fit"], dtype=float)
     frames: list[dict] = []
     for f in fl:
         if f == ref:
@@ -431,15 +476,18 @@ def inter_filter_correlation_residual_frames(
         if img is None or f not in observation.image_series_dict:
             continue
         ser = observation.image_series_dict[f]
-        if img.photometry is None or len(img.photometry) != n or ser.wcs is None:
+        aligned = _photometry_aligned_on_id(ref_img.photometry, img.photometry)
+        wcs_f = _frame_wcs(img, ser)
+        if aligned is None or wcs_f is None:
             continue
+        x_ref, y_ref, x_f, y_f = aligned
         dx, dy, sep = residual_vectors_on_reference_wcs(
             x_ref,
             y_ref,
-            sref.wcs,
-            img.photometry["x_fit"],
-            img.photometry["y_fit"],
-            ser.wcs,
+            wcs_ref,
+            x_f,
+            y_f,
+            wcs_f,
         )
         frames.append(
             {

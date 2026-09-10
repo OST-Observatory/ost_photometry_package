@@ -691,13 +691,15 @@ def astro_align(
     footprint_mask |= ~np.isfinite(image_data)
     footprint_mask |= ~np.isfinite(image_uncertainty)
 
-    #   Build new CCDData object
+    #   Build new CCDData object. Pixels sit on the reference grid, so the
+    #   current WCS is the reference WCS (not the unwarped input header).
     new_ccd = CCDData(
         image_data,
         mask=footprint_mask,
         meta=current_ccd.meta,
         unit=current_ccd.unit,
         uncertainty=StdDevUncertainty(image_uncertainty),
+        wcs=getattr(reference_ccd, "wcs", None),
     )
     return new_ccd, transformation_coefficients
 

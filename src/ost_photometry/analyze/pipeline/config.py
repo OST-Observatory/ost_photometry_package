@@ -12,6 +12,7 @@ from ...fits_headers import CosmicRayRemovalMode, normalize_cosmic_ray_removal
 
 WcsMethod = Literal["astrometry", "astap", "twirl"]
 CorrelationMethod = Literal["astropy", "own"]
+CorrelationLinkMode = Literal["to_reference", "sequential"]
 PhotometryExtractionMethod = Literal["PSF", "APER"]
 CalibrationStrategy = Literal["median_zp", "linear_fit"]
 CalibrationGrouping = Literal["per_image", "per_night", "ensemble", "fixed"]
@@ -136,6 +137,8 @@ class WcsConfig:
     wcs_method: WcsMethod = "astap"
     force_wcs_determination: bool = False
     skip_wcs: bool = False
+    #: Solve a WCS for every frame instead of broadcasting the reference solution.
+    wcs_solve_all_images: bool = False
 
 
 @dataclass
@@ -143,7 +146,7 @@ class ExtractionConfig:
     extraction_mode: Literal["single", "multi", "auto"] = "auto"
     #: Worker processes for multi-image extraction. ``None`` → half the CPUs.
     n_cores_multiprocessing: int | None = None
-    reference_image_index: int = 0
+    reference_image_index: int | Literal["auto"] = 0
     fwhm_object_psf: dict[str, float] | None = None
     #: Accepted FWHM range in pixels for automatic estimation (per-star filter).
     fwhm_estimate_min: float = 2.0
@@ -278,6 +281,11 @@ class CorrelationConfig:
     cross_identification_limit: int = 1
     n_allowed_non_detections_object: int = 1
     expected_bad_image_fraction: float = 1.0
+    #: If True, drop tracks that miss any remaining frame (mk_calib / N2).
+    require_complete_intersection: bool = True
+    #: Sparse tracks: keep objects detected on at least this fraction of frames.
+    min_detection_fraction: float | None = None
+    correlation_link_mode: CorrelationLinkMode = "to_reference"
     protect_ooi: bool = True
     protect_calibration_objects: bool = False
     protected_object_ids: list[int] | None = None

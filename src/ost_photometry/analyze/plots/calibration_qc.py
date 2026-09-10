@@ -352,8 +352,9 @@ def plot_calibration_night_summary(
     Plot T and ZP across calibration epochs (night- or per-image-style fits).
 
     Shows stability of transformation coefficients over the run.
-    One column of subplots: per filter, color term (T) above zero point (ZP);
-    epoch index or Julian Date on the shared x-axis (better on narrow displays).
+    One column of subplots: per filter, color term (T), zero point (ZP),
+    then n stars used in the fit; epoch index or Julian Date on the shared
+    x-axis (better on narrow displays).
 
     Filters without any finite fitted zero point across epochs are omitted. If
     none remain (e.g. Clear-only without catalog standards), no file is written.
@@ -429,27 +430,31 @@ def plot_calibration_night_summary(
             )
         x_plot = np.arange(n_ep, dtype=float)
 
-    # Single column: T then ZP for each filter (stacked vertically)
+    # Single column: T, ZP, then n calibrators for each filter
     fig_w = max(8.0, min(14.0, 6.0 + 0.22 * n_ep))
-    n_ax = 2 * n_filt
-    fig_h = min(42.0, 2.65 * n_ax)
+    n_ax = 3 * n_filt
+    fig_h = min(48.0, 2.2 * n_ax)
     fig, axes = plt.subplots(n_ax, 1, figsize=(fig_w, fig_h), sharex=True)
     axes = np.atleast_1d(axes)
 
     for i, filter_ in enumerate(filters):
         T_vals = []
         ZP_vals = []
+        n_vals = []
         for cf in coefficients_per_epoch:
             tc = cf.get(filter_)
             if tc is not None:
                 T_vals.append(tc.color_term)
                 ZP_vals.append(tc.zero_point)
+                n_vals.append(float(getattr(tc, "n_stars_used", np.nan)))
             else:
                 T_vals.append(np.nan)
                 ZP_vals.append(np.nan)
+                n_vals.append(np.nan)
 
-        ax_t = axes[2 * i]
-        ax_zp = axes[2 * i + 1]
+        ax_t = axes[3 * i]
+        ax_zp = axes[3 * i + 1]
+        ax_n = axes[3 * i + 2]
 
         ax_t.plot(x_plot, T_vals, "o-", color="C0", markersize=6, label="per epoch")
         ax_t.set_ylabel(f"T ({filter_})")
@@ -460,6 +465,11 @@ def plot_calibration_night_summary(
         ax_zp.set_ylabel(f"ZP ({filter_})")
         ax_zp.grid(True, alpha=0.3)
         ax_zp.set_title("Zero point")
+
+        ax_n.plot(x_plot, n_vals, "D-", color="C3", markersize=5, label="per epoch")
+        ax_n.set_ylabel(f"n ({filter_})")
+        ax_n.grid(True, alpha=0.3)
+        ax_n.set_title("Calibrators used")
 
         if combined_per_filter:
             tc_mean = combined_per_filter.get(filter_)
