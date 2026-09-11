@@ -49,6 +49,10 @@ def _load_plots():
         / "post_processing"
         / "magnitude_systems.py",
     )
+    load_module_from_path(
+        "ost_photometry.analyze.post_processing.light_curve",
+        pkg_src() / "ost_photometry" / "analyze" / "post_processing" / "light_curve.py",
+    )
     return load_module_from_path(
         "ost_photometry.analyze.plots.lightcurves",
         pkg_src() / "ost_photometry" / "analyze" / "plots" / "lightcurves.py",
@@ -360,6 +364,28 @@ def test_excess_rms_ranking_not_raw_rms():
         y = np.asarray(noisy["mag"], dtype=float)
         raw = float(np.sqrt(np.mean((y - np.median(y)) ** 2)))
         assert raw > exc[3]
+
+
+def test_position_scatter_flags_mixed_track():
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        ra = np.array([120.0, 120.0, 120.0 + 5.0 / 3600.0 / np.cos(np.deg2rad(30.0))])
+        dec = np.array([30.0, 30.0 + 0.1 / 3600.0, 30.0])
+        rms, worst = mod.position_scatter_arcsec(ra, dec)
+        assert 4.9 < worst < 5.1
+        assert rms < worst
+        assert np.isnan(mod.position_scatter_arcsec([1.0], [1.0])[1])
+
+
+def test_calibrator_stats_report_position_scatter():
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        phot = _mini_photometry()
+        tbl = mod.build_light_curves_table(phot, ["V"], calibrator_ids={1, 2, 3})
+        stats = mod.calibrator_variability_stats(tbl, {1, 2, 3}, "V")
+        assert "pos_max_arcsec" in stats.colnames
+        assert "pos_rms_arcsec" in stats.colnames
+        assert len(stats) == 3
 
 
 def test_ids_excluding_drops_ooi_from_calibrator_pool():

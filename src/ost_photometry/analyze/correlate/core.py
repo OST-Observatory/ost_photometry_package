@@ -232,60 +232,93 @@ def _sky_coords_for_dataset(
     return SkyCoord.from_pixel(x, y, w)
 
 
-def _extend_tracks_to_neighbour(
-    index_array: np.ndarray,
-    prev_i: int,
-    cur_i: int,
-    x_pixel_positions: list,
-    y_pixel_positions: list,
-    current_wcs: wcs.WCS,
-    wcs_list: list[wcs.WCS | None] | None,
+def _match_sky_coord_sets(
+    coords_a: SkyCoord,
+    coords_b: SkyCoord,
     separation_limit: u.Quantity,
-    *,
-    coordinate_frame: str = "sky",
-    pixel_separation: float = 3.0,
-) -> np.ndarray:
-    """Link frame ``cur_i`` to tracks already set on ``prev_i``; append new tracks."""
-    idx_prev, idx_cur = _match_pair(
-        x_pixel_positions[prev_i],
-        y_pixel_positions[prev_i],
-        x_pixel_positions[cur_i],
-        y_pixel_positions[cur_i],
-        coordinate_frame=coordinate_frame,
-        wcs_a=_wcs_for_dataset(prev_i, current_wcs, wcs_list),
-        wcs_b=_wcs_for_dataset(cur_i, current_wcs, wcs_list),
-        separation_limit=separation_limit,
-        pixel_separation=pixel_separation,
+) -> tuple[np.ndarray, np.ndarray]:
+    """One-to-one sky match (closest pair wins) → ``(index_a, index_b)``."""
+    if len(coords_a) == 0 or len(coords_b) == 0:
+        return np.array([], dtype=int), np.array([], dtype=int)
+    index_a, index_b, distance, _ = matching.search_around_sky(
+        coords_a,
+        coords_b,
+        separation_limit,
     )
-    n_prev = len(_ravel_pixels(x_pixel_positions[prev_i]))
-    n_cur = len(_ravel_pixels(x_pixel_positions[cur_i]))
-    prev_det_to_track = np.full(n_prev, -1, dtype=int)
-    for tid in range(index_array.shape[1]):
-        det = int(index_array[prev_i, tid])
-        if 0 <= det < n_prev:
-            prev_det_to_track[det] = tid
-    matched_cur = np.zeros(n_cur, dtype=bool)
-    claimed_tid: set[int] = set()
-    for p, c in zip(idx_prev.tolist(), idx_cur.tolist(), strict=False):
-        p_i = int(p)
-        c_i = int(c)
-        if p_i < 0 or p_i >= prev_det_to_track.size:
-            continue
-        tid = int(prev_det_to_track[p_i])
-        if tid < 0 or tid in claimed_tid:
-            continue
-        if int(index_array[cur_i, tid]) >= 0:
-            continue
-        index_array[cur_i, tid] = c_i
-        claimed_tid.add(tid)
-        if 0 <= c_i < n_cur:
-            matched_cur[c_i] = True
-    unmatched = np.flatnonzero(~matched_cur)
-    if unmatched.size:
-        extra = np.full((index_array.shape[0], unmatched.size), -1, dtype=int)
-        extra[cur_i, :] = unmatched
-        index_array = np.hstack([index_array, extra])
-    return index_array
+    if index_a.size == 0:
+        return np.asarray(index_a, dtype=int), np.asarray(index_b, dtype=int)
+    index_a, distance, index_b = utilities.clear_duplicates(index_a, distance, index_b)
+    index_b, _, index_a = utilities.clear_duplicates(index_b, distance, index_a)
+    return np.asarray(index_a, dtype=int), np.asarray(index_b, dtype=int)
+
+
+class _TrackChain:
+    """Sequential track state: per-track last known detection (frame, row).
+
+    Linking from the *last known* detection instead of the previous frame
+    bridges single-frame misses; otherwise one non-detection ends a track
+    and its later detections start a new, short track.
+    """
+
+    def __init__(
+        self,
+        x_pixel_positions: list,
+        y_pixel_positions: list,
+        current_wcs: wcs.WCS,
+        wcs_list: list[wcs.WCS | None] | None,
+        *,
+        pixel_mode: bool,
+    ) -> None:
+        self.pixel_mode = pixel_mode
+        self.xs = [_ravel_pixels(v) for v in x_pixel_positions]
+        self.ys = [_ravel_pixels(v) for v in y_pixel_positions]
+        self.ra: list[np.ndarray | None] = []
+        self.dec: list[np.ndarray | None] = []
+        if not pixel_mode:
+            for i in range(len(self.xs)):
+                coords = _sky_coords_for_dataset(
+                    i, x_pixel_positions, y_pixel_positions, current_wcs, wcs_list
+                )
+                self.ra.append(None if coords is None else np.asarray(coords.ra.deg))
+                self.dec.append(None if coords is None else np.asarray(coords.dec.deg))
+
+    def track_positions(
+        self, last_frame: np.ndarray, last_det: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        n = last_frame.size
+        ax = np.full(n, np.nan)
+        ay = np.full(n, np.nan)
+        for f in np.unique(last_frame):
+            m = last_frame == f
+            det = last_det[m]
+            if self.pixel_mode:
+                ax[m] = self.xs[f][det]
+                ay[m] = self.ys[f][det]
+            else:
+                ax[m] = self.ra[f][det]
+                ay[m] = self.dec[f][det]
+        return ax, ay
+
+    def match(
+        self,
+        last_frame: np.ndarray,
+        last_det: np.ndarray,
+        cur: int,
+        separation_limit: u.Quantity,
+        pixel_separation: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        ax, ay = self.track_positions(last_frame, last_det)
+        if self.pixel_mode:
+            return _match_two_datasets_pixel(
+                ax, ay, self.xs[cur], self.ys[cur], pixel_separation
+            )
+        if self.ra[cur] is None:
+            return np.array([], dtype=int), np.array([], dtype=int)
+        return _match_sky_coord_sets(
+            SkyCoord(ax, ay, unit="deg"),
+            SkyCoord(self.ra[cur], self.dec[cur], unit="deg"),
+            separation_limit,
+        )
 
 
 def _drop_track_members_off_anchor(
@@ -700,42 +733,62 @@ def _match_sequential(
 
     Seeding from image 0 walks identity errors through the whole series
     (typical C7 night boundary). Seeding from ``reference_dataset_id``
-    (often ``auto``) keeps the best frame as the track origin.
+    (often ``auto``) keeps the best frame as the track origin. Every frame
+    is linked from each track's *last known* detection, so a miss on one
+    frame does not end the track. Detections that match no track start a
+    new one. Members that drift farther than the match radius from the
+    track anchor are cut afterwards.
     """
     ref = int(reference_dataset_id)
     if ref < 0 or ref >= n_datasets:
         ref = 0
-    n_ref = len(_ravel_pixels(x_pixel_positions[ref]))
+    pixel_mode = str(coordinate_frame).strip().lower() == "pixel"
+    chain = _TrackChain(
+        x_pixel_positions,
+        y_pixel_positions,
+        current_wcs,
+        wcs_list,
+        pixel_mode=pixel_mode,
+    )
+    n_ref = chain.xs[ref].size
     index_array = np.full((n_datasets, n_ref), -1, dtype=int)
     index_array[ref, :] = np.arange(n_ref)
-    extend_kw = {
-        "coordinate_frame": coordinate_frame,
-        "pixel_separation": pixel_separation,
-    }
-    for i in range(ref + 1, n_datasets):
-        index_array = _extend_tracks_to_neighbour(
-            index_array,
-            i - 1,
-            i,
-            x_pixel_positions,
-            y_pixel_positions,
-            current_wcs,
-            wcs_list,
-            separation_limit,
-            **extend_kw,
+    last_frame = np.full(n_ref, ref, dtype=int)
+    last_det = np.arange(n_ref, dtype=int)
+
+    def _restart_from_reference() -> None:
+        """Before walking backwards: anchor each track on its frame nearest ``ref``."""
+        nonlocal last_frame, last_det
+        if index_array.shape[1] == 0:
+            return
+        has = index_array >= 0
+        first = np.argmax(has, axis=0)
+        last_frame = first.astype(int)
+        last_det = index_array[first, np.arange(index_array.shape[1])].astype(int)
+
+    order = list(range(ref + 1, n_datasets)) + list(range(ref - 1, -1, -1))
+    for cur in order:
+        if cur == ref - 1:
+            _restart_from_reference()
+        n_cur = chain.xs[cur].size
+        if n_cur == 0:
+            continue
+        idx_track, idx_cur = chain.match(
+            last_frame, last_det, cur, separation_limit, pixel_separation
         )
-    for i in range(ref - 1, -1, -1):
-        index_array = _extend_tracks_to_neighbour(
-            index_array,
-            i + 1,
-            i,
-            x_pixel_positions,
-            y_pixel_positions,
-            current_wcs,
-            wcs_list,
-            separation_limit,
-            **extend_kw,
-        )
+        matched_cur = np.zeros(n_cur, dtype=bool)
+        if idx_track.size:
+            index_array[cur, idx_track] = idx_cur
+            last_frame[idx_track] = cur
+            last_det[idx_track] = idx_cur
+            matched_cur[idx_cur] = True
+        unmatched = np.flatnonzero(~matched_cur)
+        if unmatched.size:
+            extra = np.full((n_datasets, unmatched.size), -1, dtype=int)
+            extra[cur, :] = unmatched
+            index_array = np.hstack([index_array, extra])
+            last_frame = np.concatenate([last_frame, np.full(unmatched.size, cur)])
+            last_det = np.concatenate([last_det, unmatched])
     return _drop_track_members_off_anchor(
         index_array,
         x_pixel_positions,

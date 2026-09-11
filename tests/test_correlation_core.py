@@ -330,6 +330,62 @@ def test_sequential_seeds_from_reference_dataset(core):
     assert index_array.shape[1] >= 3
 
 
+def test_sequential_bridges_single_frame_miss(core):
+    """A star missing on one frame keeps its track on later frames."""
+    wcs_obj = _simple_wcs()
+    x0 = _pixel_positions([10.0, 20.0, 30.0])
+    y0 = _pixel_positions([10.0, 20.0, 30.0])
+    x1 = _pixel_positions([10.0, 20.0])  # star at 30 missing
+    y1 = _pixel_positions([10.0, 20.0])
+    x2 = _pixel_positions([30.2, 10.0, 20.0])
+    y2 = _pixel_positions([30.1, 10.0, 20.0])
+    x3 = _pixel_positions([20.0, 30.0, 10.0])
+    y3 = _pixel_positions([20.0, 30.0, 10.0])
+
+    index_array, rejected = core.correlation_astropy(
+        [x0, x1, x2, x3],
+        [y0, y1, y2, y3],
+        wcs_obj,
+        advanced_cleanup=False,
+        require_complete_intersection=False,
+        n_allowed_non_detections_object=5,
+        min_detection_fraction=0.3,
+        correlation_link_mode="sequential",
+        coordinate_frame="pixel",
+        pixel_separation=3.0,
+    )
+    assert rejected.size == 0
+    # exactly three tracks: no fragment was started for the returning star
+    assert index_array.shape == (4, 3)
+    assert index_array[1, 2] == -1
+    assert index_array[2, 2] == 0
+    assert index_array[3, 2] == 1
+
+
+def test_sequential_backward_walk_restarts_from_reference(core):
+    wcs_obj = _simple_wcs()
+    # reference is frame 2; frame 1 misses star B, frame 0 has it again
+    xa = _pixel_positions([10.0, 20.0])
+    ya = _pixel_positions([10.0, 20.0])
+    xb = _pixel_positions([10.0])
+    yb = _pixel_positions([10.0])
+    index_array, _ = core.correlation_astropy(
+        [xa, xb, xa, xa],
+        [ya, yb, ya, ya],
+        wcs_obj,
+        reference_dataset_id=2,
+        advanced_cleanup=False,
+        require_complete_intersection=False,
+        n_allowed_non_detections_object=5,
+        min_detection_fraction=0.3,
+        correlation_link_mode="sequential",
+        coordinate_frame="pixel",
+        pixel_separation=3.0,
+    )
+    assert index_array.shape == (4, 2)
+    np.testing.assert_array_equal(index_array[:, 1], [1, -1, 1, 1])
+
+
 def test_sequential_drops_chain_walk_off_anchor(core):
     """Neighbour-to-neighbour links that walk > separation_limit from origin are cut."""
     wcs_obj = _simple_wcs()

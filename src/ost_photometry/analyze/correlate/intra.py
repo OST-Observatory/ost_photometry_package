@@ -21,6 +21,7 @@ from .ooi import identify_object_of_interest_in_dataset, resolve_ooi_separation_
 from .tracks import (
     apply_correlation_index_to_images,
     pick_auto_reference_image,
+    track_pixel_scatter,
 )
 
 
@@ -248,6 +249,35 @@ def correlate_image_series_images(
     )
     if require_complete_intersection:
         assign_correlated_object_ids_single_series(image_series)
+
+    if coordinate_frame == "pixel":
+        _report_track_pixel_scatter(image_series, float(max_pixel_between_objects))
+
+
+def _report_track_pixel_scatter(
+    image_series: analyze.ImageSeries,
+    max_offset_px: float,
+) -> None:
+    """Identity QC on a shared grid: a track spreading over several pixels mixes stars."""
+    qc = track_pixel_scatter(image_series.image_list, max_offset_px=max_offset_px)
+    n_bad = len(qc["suspect_ids"])
+    terminal_output.print_to_terminal(
+        f"Track position QC: {qc['n_tracks']} tracks, median RMS "
+        f"{qc['median_rms_px']:.2f} px, {n_bad} track(s) spread > "
+        f"{max_offset_px:.1f} px",
+        indent=2,
+        style_name="GOOD" if n_bad == 0 else "WARNING",
+    )
+    if n_bad:
+        worst = sorted(
+            qc["suspect_max_offset_px"].items(), key=lambda kv: -kv[1]
+        )[:8]
+        listing = ", ".join(f"id {i} ({d:.1f} px)" for i, d in worst)
+        terminal_output.print_to_terminal(
+            f"Suspect tracks (id, max offset): {listing}",
+            indent=3,
+            style_name="WARNING",
+        )
 
 
 def correlate_preserve_objects(

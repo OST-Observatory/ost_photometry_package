@@ -95,6 +95,20 @@ def test_flux_arrays_from_photometry_tables_pad_on_id():
         assert err[0, 0] == 0.1
 
 
+def test_track_pixel_scatter_flags_mixed_track():
+    with isolated_sys_modules():
+        tracks = _tracks_module()
+        good = Table({"id": [0, 1], "x_fit": [10.0, 50.0], "y_fit": [10.0, 50.0]})
+        jitter = Table({"id": [0, 1], "x_fit": [10.3, 50.2], "y_fit": [9.8, 50.1]})
+        mixed = Table({"id": [0, 1], "x_fit": [10.1, 58.0], "y_fit": [10.0, 50.0]})
+        images = [SimpleNamespace(photometry=t) for t in (good, jitter, mixed)]
+        qc = tracks.track_pixel_scatter(images, max_offset_px=3.0)
+        assert qc["n_tracks"] == 2
+        assert qc["suspect_ids"] == [1]
+        assert qc["suspect_max_offset_px"][1] > 3.0
+        assert qc["median_rms_px"] < 3.0
+
+
 def test_pick_auto_reference_image_prefers_most_detections():
     with isolated_sys_modules():
         tracks = _tracks_module()

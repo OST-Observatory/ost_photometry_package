@@ -11,6 +11,7 @@ from astropy.time import Time
 from astropy.timeseries import TimeSeries
 
 from ...output_layout import diagnostics_dir, results_dir
+from ..post_processing.light_curve import position_scatter_arcsec
 from ..post_processing.magnitude_systems import magnitude_system_axis_suffix
 
 plt.switch_backend("Agg")
@@ -701,14 +702,22 @@ def plot_check_star_qc(
         if qty != "flux" and np.any(np.isfinite(y)):
             fin = y[np.isfinite(y)]
             rms = float(np.sqrt(np.mean((fin - np.median(fin)) ** 2)))
+            note = f"RMS = {rms:.4f} mag"
+            if "ra" in sub.colnames and "dec" in sub.colnames:
+                _p_rms, p_max = position_scatter_arcsec(sub["ra"], sub["dec"])
+                if np.isfinite(p_max):
+                    note += f" | position max offset {p_max:.1f}\""
+                    if p_max > 3.0:
+                        note += " (several stars in one id?)"
             ax.text(
                 0.99,
                 0.05,
-                f"RMS = {rms:.4f} mag",
+                note,
                 transform=ax.transAxes,
                 ha="right",
                 va="bottom",
                 fontsize=8,
+                color="C3" if "(several" in note else "black",
             )
         if show_airmass and "airmass" in sub.colnames:
             am = np.asarray(sub["airmass"], dtype=float)

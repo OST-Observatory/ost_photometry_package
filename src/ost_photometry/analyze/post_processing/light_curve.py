@@ -1025,12 +1025,42 @@ def write_light_curves_table(tbl: Table, output_dir: str | Path) -> Path:
     return path
 
 
+def position_scatter_arcsec(
+    ra_deg: np.ndarray,
+    dec_deg: np.ndarray,
+) -> tuple[float, float]:
+    """``(rms, max)`` offset in arcsec of epoch positions from their median.
+
+    On a correlated series one ``id`` is one star, so its per-epoch sky
+    position should only jitter by the centroid error. A max offset of
+    several arcsec means the track mixes different stars (identity error),
+    which shows up as level jumps in the light curve.
+    """
+    ra = np.asarray(ra_deg, dtype=float)
+    dec = np.asarray(dec_deg, dtype=float)
+    ok = np.isfinite(ra) & np.isfinite(dec)
+    if int(np.count_nonzero(ok)) < 2:
+        return np.nan, np.nan
+    ra = ra[ok]
+    dec = dec[ok]
+    dec0 = float(np.median(dec))
+    dra = (ra - np.median(ra)) * np.cos(np.deg2rad(dec0)) * 3600.0
+    ddec = (dec - dec0) * 3600.0
+    off = np.hypot(dra, ddec)
+    return float(np.sqrt(np.mean(off**2))), float(np.max(off))
+
+
 def calibrator_variability_stats(
     lc: Table,
     calibrator_ids: set[int] | list[int],
     filter_: str,
 ) -> Table:
-    """Per-calibrator RMS / excess-RMS / χ²/ν in one filter (unflagged points)."""
+    """Per-calibrator RMS / excess-RMS / χ²/ν in one filter (unflagged points).
+
+    Also reports the sky-position scatter of the track (``pos_rms_arcsec``,
+    ``pos_max_arcsec``) so identity errors can be told apart from real
+    variability or calibration problems.
+    """
     cal = {int(i) for i in calibrator_ids}
     if len(lc) == 0 or not cal:
         return Table(
@@ -1042,6 +1072,8 @@ def calibrator_variability_stats(
                 "rms": np.array([], dtype=float),
                 "excess_rms": np.array([], dtype=float),
                 "chi2_nu": np.array([], dtype=float),
+                "pos_rms_arcsec": np.array([], dtype=float),
+                "pos_max_arcsec": np.array([], dtype=float),
             }
         )
     ids = np.asarray(lc["id"]).astype(int)
@@ -1052,12 +1084,17 @@ def calibrator_variability_stats(
     flux = np.asarray(lc["flux"], dtype=float)
     flux_err = np.asarray(lc["flux_err"], dtype=float)
     qty = np.asarray(lc["quantity"]).astype(str)
+    has_pos = "ra" in lc.colnames and "dec" in lc.colnames
+    ra_all = np.asarray(lc["ra"], dtype=float) if has_pos else None
+    dec_all = np.asarray(lc["dec"], dtype=float) if has_pos else None
     rec_id: list[int] = []
     rec_n: list[int] = []
     rec_med: list[float] = []
     rec_rms: list[float] = []
     rec_exc: list[float] = []
     rec_chi: list[float] = []
+    rec_pos_rms: list[float] = []
+    rec_pos_max: list[float] = []
     for sid in sorted(cal):
         m = (ids == sid) & (filts == str(filter_)) & (~flag)
         if not np.any(m):
@@ -1082,12 +1119,18 @@ def calibrator_variability_stats(
             chi = float(np.nansum(((y - med) / e_pos) ** 2) / max(n - 1, 1))
         else:
             chi = np.nan
+        if has_pos:
+            p_rms, p_max = position_scatter_arcsec(ra_all[m], dec_all[m])
+        else:
+            p_rms = p_max = np.nan
         rec_id.append(int(sid))
         rec_n.append(n)
         rec_med.append(med)
         rec_rms.append(rms)
         rec_exc.append(exc)
         rec_chi.append(chi)
+        rec_pos_rms.append(p_rms)
+        rec_pos_max.append(p_max)
     return Table(
         {
             "id": np.asarray(rec_id, dtype=np.int64),
@@ -1097,6 +1140,8 @@ def calibrator_variability_stats(
             "rms": np.asarray(rec_rms, dtype=float),
             "excess_rms": np.asarray(rec_exc, dtype=float),
             "chi2_nu": np.asarray(rec_chi, dtype=float),
+            "pos_rms_arcsec": np.asarray(rec_pos_rms, dtype=float),
+            "pos_max_arcsec": np.asarray(rec_pos_max, dtype=float),
         }
     )
 

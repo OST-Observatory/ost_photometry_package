@@ -259,9 +259,13 @@ class DifferentialPhotometer:
         Parameters
         ----------
         color_term_fit : {"always", "auto", "never"}
-            ``never`` — median ZP, T=0, no extinction correction before ZP.
+            ``never`` — median ZP, T=0.
             ``always`` — always attempt linear T/ZP when color columns exist.
             ``auto`` — linear when color spread > 0.1 mag, else median ZP (default).
+            Extinction (when a corrector with a non-``NONE`` order is set) is
+            removed before the fit in every mode, exactly as
+            :meth:`apply_transform_to_table` does before adding T/ZP; a ZP
+            fitted without that correction would be off by ``k'·X`` on apply.
         output_dir : str, optional
             If provided, save transformation fit plots to output_dir/diagnostics/calibration/.
         file_type : str
@@ -281,10 +285,8 @@ class DifferentialPhotometer:
             self.calibrations[epoch_id] = result
             return result
 
-        if (
-            color_term_fit != "never"
-            and self.extinction is not None
-            and extinction_airmass_ready(data, filters_use, fallback_airmass_col)
+        if self.extinction is not None and extinction_airmass_ready(
+            data, filters_use, fallback_airmass_col
         ):
             data = self.extinction.correct(
                 data,

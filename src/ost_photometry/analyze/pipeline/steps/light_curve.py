@@ -79,6 +79,34 @@ def _ooi_id_name_pairs(objects_of_interest: list, filter_: str) -> list[tuple[in
     return pairs
 
 
+def _log_position_scatter(stats: Table, filter_: str, limit_arcsec: float = 3.0) -> None:
+    """Identity QC: calibrators whose sky position wanders between epochs."""
+    if "pos_max_arcsec" not in stats.colnames or len(stats) == 0:
+        return
+    pos = np.asarray(stats["pos_max_arcsec"], dtype=float)
+    ids = np.asarray(stats["id"]).astype(int)
+    ok = np.isfinite(pos)
+    if not np.any(ok):
+        return
+    bad = ok & (pos > limit_arcsec)
+    n_bad = int(np.count_nonzero(bad))
+    terminal_output.print_to_terminal(
+        f"Track identity QC ({filter_}): {int(np.count_nonzero(ok))} calibrators, "
+        f"median position scatter {np.nanmedian(np.asarray(stats['pos_rms_arcsec'], dtype=float)):.2f}\", "
+        f"{n_bad} with epochs > {limit_arcsec:.0f}\" off their median position",
+        indent=1,
+        style_name="INFO" if n_bad == 0 else "WARNING",
+    )
+    if n_bad:
+        order = np.argsort(-np.where(bad, pos, -np.inf))[:8]
+        listing = ", ".join(f"id {ids[i]} ({pos[i]:.1f}\")" for i in order if bad[i])
+        terminal_output.print_to_terminal(
+            f"Several stars share one id (correlation identity error): {listing}",
+            indent=2,
+            style_name="WARNING",
+        )
+
+
 def _parse_period(raw) -> float | None:
     if raw is None or raw == "?":
         return None
@@ -408,6 +436,7 @@ class LightCurveStep(base.PipelineStep):
                 stats = calibrator_variability_stats(lc, cal_for_qc, filter_)
                 if len(stats) > 0:
                     stats_parts.append(stats)
+                    _log_position_scatter(stats, filter_)
                 top = top_variable_calibrator_ids(
                     stats,
                     n=config.light_curve_calibrator_qc_n,

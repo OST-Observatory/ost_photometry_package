@@ -162,6 +162,56 @@ def remap_series_ids_from_reference_index(
         image.photometry = out[new_ids >= 0]
 
 
+def track_pixel_scatter(
+    image_list: list[AnalysisImage],
+    *,
+    max_offset_px: float,
+    min_detections: int = 3,
+) -> dict[str, object]:
+    """Per-track pixel scatter on a shared grid (identity QC after correlation).
+
+    On a registered series the same star sits at the same pixel on every
+    frame (up to jitter). A track whose members spread by more than
+    ``max_offset_px`` from the track median mixes several stars.
+    Returns ``n_tracks``, ``median_rms_px``, ``suspect_ids`` (sorted list) and
+    ``suspect_max_offset_px`` (dict id → max offset).
+    """
+    xs: dict[int, list[float]] = {}
+    ys: dict[int, list[float]] = {}
+    for image in image_list:
+        phot = getattr(image, "photometry", None)
+        if phot is None or len(phot) == 0 or "id" not in phot.colnames:
+            continue
+        ids = np.asarray(phot["id"], dtype=np.int64)
+        x = np.asarray(getattr(phot["x_fit"], "value", phot["x_fit"]), dtype=float)
+        y = np.asarray(getattr(phot["y_fit"], "value", phot["y_fit"]), dtype=float)
+        for i, sid in enumerate(ids):
+            if sid < 0:
+                continue
+            xs.setdefault(int(sid), []).append(float(x[i]))
+            ys.setdefault(int(sid), []).append(float(y[i]))
+    rms: list[float] = []
+    suspects: dict[int, float] = {}
+    for sid, xv in xs.items():
+        if len(xv) < min_detections:
+            continue
+        xa = np.asarray(xv)
+        ya = np.asarray(ys[sid])
+        dx = xa - np.median(xa)
+        dy = ya - np.median(ya)
+        off = np.hypot(dx, dy)
+        rms.append(float(np.sqrt(np.mean(off**2))))
+        worst = float(np.max(off))
+        if worst > float(max_offset_px):
+            suspects[sid] = worst
+    return {
+        "n_tracks": len(xs),
+        "median_rms_px": float(np.median(rms)) if rms else float("nan"),
+        "suspect_ids": sorted(suspects),
+        "suspect_max_offset_px": suspects,
+    }
+
+
 def flux_arrays_from_photometry_tables(
     tables: list[Table | None],
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -211,4 +261,5 @@ __all__ = [
     "pick_auto_reference_image",
     "remap_series_ids_from_reference_index",
     "resolved_series_reference_index",
+    "track_pixel_scatter",
 ]
