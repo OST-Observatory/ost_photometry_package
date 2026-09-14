@@ -15,7 +15,7 @@ from skimage.transform import SimilarityTransform, warp
 from ... import style, terminal_output
 from ... import utilities as base_utilities
 from ...core.parallel import Executor
-from ...core.pixel_masks import fill_masked_pixels, resample_mask
+from ...core.pixel_masks import fill_masked_pixels, resample_mask, warn_if_mask_too_large
 from ...terminal_output import print_to_terminal
 from .. import plots, utilities
 from .trim import trim_image
@@ -722,6 +722,10 @@ def astro_align(
         unit=current_ccd.unit,
         uncertainty=StdDevUncertainty(image_uncertainty),
         wcs=getattr(reference_ccd, "wcs", None),
+    )
+    warn_if_mask_too_large(
+        footprint_mask,
+        label="astroalign registration",
     )
     return new_ccd, transformation_coefficients
 

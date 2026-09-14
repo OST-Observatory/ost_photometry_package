@@ -8,8 +8,10 @@ import pytest
 from ost_photometry.core.pixel_masks import (
     aperture_masked_fraction,
     fill_masked_pixels,
+    interior_mask_fraction,
     negative_outlier_mask,
     resample_mask,
+    warn_if_mask_too_large,
 )
 
 
@@ -58,6 +60,39 @@ def test_resample_mask_keeps_area_with_nearest_semantics():
     grown = shift(mask.astype(float), (0.4, -0.7), order=1) > 0
     assert grown.sum() >= 3 * mask.sum()
     assert resample_mask(None, lambda m: m) is None
+
+
+def test_interior_mask_fraction_ignores_edge_footprint():
+    mask = np.zeros((80, 80), dtype=bool)
+    mask[:5] = True
+    mask[-5:] = True
+    assert interior_mask_fraction(mask, border_px=10) == 0.0
+    mask[40:50, 40:50] = True
+    assert interior_mask_fraction(mask, border_px=10) == pytest.approx(
+        100 / (60 * 60)
+    )
+    assert interior_mask_fraction(None) is None
+
+
+def test_warn_if_mask_too_large_only_when_interior_exceeds_limit(monkeypatch):
+    messages: list[str] = []
+
+    def _capture(string, indent=1, style_name="BOLD"):
+        messages.append((string, style_name))
+
+    monkeypatch.setattr(
+        "ost_photometry.core.pixel_masks.terminal_output.print_to_terminal",
+        _capture,
+    )
+    mask = np.zeros((80, 80), dtype=bool)
+    assert warn_if_mask_too_large(mask, label="ok") == 0.0
+    assert messages == []
+    mask[20:60, 20:60] = True  # 40×40 in the 40×40 interior at border 20
+    frac = warn_if_mask_too_large(mask, label="grown-mask", limit=0.10)
+    assert frac == pytest.approx(1.0)
+    assert len(messages) == 1
+    assert "grown-mask" in messages[0][0]
+    assert messages[0][1] == "WARNING"
 
 
 def test_aperture_masked_fraction():

@@ -16,8 +16,10 @@ from .. import terminal_output
 __all__ = [
     "aperture_masked_fraction",
     "fill_masked_pixels",
+    "interior_mask_fraction",
     "negative_outlier_mask",
     "resample_mask",
+    "warn_if_mask_too_large",
 ]
 
 
@@ -116,6 +118,56 @@ def resample_mask(
     values = resample(np.asarray(mask, dtype=float))
     values = np.asarray(values, dtype=float)
     return np.where(np.isfinite(values), values > float(threshold), False)
+
+
+def interior_mask_fraction(
+    mask: np.ndarray | None,
+    border_px: int = 20,
+) -> float | None:
+    """Masked fraction of the frame interior (``None`` if there is no mask).
+
+    The outer ``border_px`` are ignored so a legitimate alignment footprint
+    (NaNs along the edge after a shift or reproject) does not dominate.
+    """
+    if mask is None:
+        return None
+    values = np.asarray(mask, dtype=bool)
+    if values.size == 0:
+        return None
+    border = max(int(border_px), 0)
+    if values.ndim != 2 or min(values.shape) <= 2 * border:
+        return float(values.mean())
+    interior = values[border:-border, border:-border]
+    return float(interior.mean())
+
+
+def warn_if_mask_too_large(
+    mask: np.ndarray | None,
+    *,
+    label: str,
+    limit: float = 0.10,
+    border_px: int = 20,
+    indent: int = 2,
+) -> float | None:
+    """Log a warning when the interior mask exceeds ``limit`` (default 10 %).
+
+    A grown mask (every ``data < 0`` pixel plus bilinear resampling) punched
+    holes into apertures and inflated the instrumental scatter. Edge-only
+    footprints from registration are excluded via ``border_px``.
+    """
+    frac = interior_mask_fraction(mask, border_px=border_px)
+    if frac is None or frac <= float(limit):
+        return frac
+    terminal_output.print_to_terminal(
+        f"WARNING: {label}: {frac:.1%} of interior pixels are masked "
+        f"(limit {float(limit):.0%}). Aperture photometry will drop a "
+        "changing set of pixels from each star. Typical causes: masking "
+        "every negative pixel after dark subtraction, or bilinear "
+        "resampling of the mask during alignment.",
+        style_name="WARNING",
+        indent=indent,
+    )
+    return frac
 
 
 def aperture_masked_fraction(

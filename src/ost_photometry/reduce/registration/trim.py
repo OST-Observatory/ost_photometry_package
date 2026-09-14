@@ -10,7 +10,7 @@ from astropy.nddata import CCDData
 from scipy.ndimage import shift as shift_scipy
 
 from ... import checks, style, terminal_output
-from ...core.pixel_masks import fill_masked_pixels, resample_mask
+from ...core.pixel_masks import fill_masked_pixels, resample_mask, warn_if_mask_too_large
 from ..image_collection import image_file_collection as make_image_file_collection
 from ..trim_slices import aa_common_trim_margins, ccd_trim_slices
 
@@ -213,6 +213,10 @@ def trim_image(
         )
         if shifted_mask is not None:
             image.mask = shifted_mask
+        warn_if_mask_too_large(
+            getattr(image, "mask", None),
+            label=f"aa shift image {image_id}",
+        )
         if aa_trim_margins is None:
             aa_trim_margins = aa_common_trim_margins(image_shift)
         x_start, x_end, y_start, y_end = aa_trim_margins

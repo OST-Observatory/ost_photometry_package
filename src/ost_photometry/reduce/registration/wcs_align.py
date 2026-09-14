@@ -12,6 +12,7 @@ from astropy.wcs import WCS
 
 from ... import terminal_output
 from ... import utilities as base_utilities
+from ...core.pixel_masks import warn_if_mask_too_large
 from ...fits_headers import wcs_from_header
 from ...wcs import find_wcs_for_image, wcs_maps_distinct_sky_positions
 
@@ -258,6 +259,11 @@ def apply_wcs_align(
             current_ccd.data.shape,
             dst_wcs,
         )
+
+    warn_if_mask_too_large(
+        getattr(output_image, "mask", None),
+        label=f"WCS align {current_path.name}",
+    )
 
     file_name = current_path.name
     if modify_file_name:
