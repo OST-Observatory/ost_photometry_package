@@ -44,6 +44,7 @@ from photutils.psf import (
 from .. import checks, style, terminal_output
 from .. import utilities as base_utilities
 from ..core.parallel import Executor, start_plot_process
+from ..core.pixel_masks import aperture_masked_fraction, fill_masked_pixels
 from ..fits_headers import (
     cosmics_identified,
     mark_cosmics_identified,
@@ -1439,19 +1440,35 @@ def extraction_aperture(
         radii_unit,
     )
 
+    #   ``aperture_photometry`` silently drops masked pixels from the sum, so
+    #   a defect (or a mask grown by resampling) inside the aperture removes
+    #   star flux. Fill masked pixels with the local median for the sum and
+    #   keep the masked fraction per object as a quality flag; pixels that are
+    #   NaN (no coverage) stay excluded.
+    source_mask = None if ccd.mask is None else np.asarray(ccd.mask, dtype=bool)
+    no_coverage = ~np.isfinite(np.asarray(data, dtype=float))
+    masked_fraction = aperture_masked_fraction(aperture, data, source_mask)
+    if source_mask is not None and source_mask.any():
+        defects = source_mask & ~no_coverage
+        data = fill_masked_pixels(data, defects)
+    phot_mask = no_coverage if no_coverage.any() else None
+
     photometry_tbl = aperture_photometry(
         data,
         aperture,
-        mask=ccd.mask,
+        mask=phot_mask,
         error=uncertainty,
     )
+    photometry_tbl["aperture_masked_fraction"] = masked_fraction
 
-    aperture_area = aperture.area_overlap(data, mask=ccd.mask)
-    annulus_aperture_area = annulus_aperture.area_overlap(data, mask=ccd.mask)
+    aperture_area = aperture.area_overlap(data, mask=phot_mask)
+    annulus_aperture_area = annulus_aperture.area_overlap(data, mask=phot_mask)
 
     if background_estimate_simple:
         sigma_clip = SigmaClip(sigma=3.0, maxiters=10)
-        bkg_stats = ApertureStats(data, annulus_aperture, sigma_clip=sigma_clip)
+        bkg_stats = ApertureStats(
+            data, annulus_aperture, mask=phot_mask, sigma_clip=sigma_clip
+        )
         bkg_median = bkg_stats.median
         bkg_err = bkg_stats.std
         photometry_tbl["annulus_median"] = bkg_median
@@ -1460,7 +1477,7 @@ def extraction_aperture(
         bkg_phot = aperture_photometry(
             data,
             annulus_aperture,
-            mask=ccd.mask,
+            mask=phot_mask,
             error=uncertainty,
         )
         photometry_tbl["aper_bkg"] = (
@@ -1493,6 +1510,20 @@ def extraction_aperture(
 
     photometry_tbl.rename_column("x_center", "x_fit")
     photometry_tbl.rename_column("y_center", "y_fit")
+
+    if masked_fraction.size and float(np.nanmedian(masked_fraction)) > 0.01:
+        msg = (
+            f"{float(np.nanmedian(masked_fraction)):.1%} of the aperture area is "
+            f"masked on the median object ({filter_} image); masked pixels were "
+            "filled with the local median. Check the bad-pixel mask of the "
+            "reduced frames."
+        )
+        if terminal_logger is not None:
+            terminal_logger.add_to_cache(msg, style_name="WARNING", indent=indent)
+        else:
+            terminal_output.print_to_terminal(
+                msg, style_name="WARNING", indent=indent
+            )
 
     if radii_unit == "pixel":
         required_distance_to_edge = int(outer_annulus_radius)

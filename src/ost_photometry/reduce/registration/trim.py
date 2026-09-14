@@ -10,6 +10,7 @@ from astropy.nddata import CCDData
 from scipy.ndimage import shift as shift_scipy
 
 from ... import checks, style, terminal_output
+from ...core.pixel_masks import fill_masked_pixels, resample_mask
 from ..image_collection import image_file_collection as make_image_file_collection
 from ..trim_slices import aa_common_trim_margins, ccd_trim_slices
 
@@ -189,13 +190,29 @@ def trim_image(
             image_id,
         )
     elif correlation_method == 'aa':
-        #   Shift image on sub pixel basis
+        #   Shift image on sub pixel basis. Defects are filled with the local
+        #   median first so the bilinear shift does not smear them, and the
+        #   mask is shifted nearest-neighbour: ``transform_image`` would pass
+        #   the boolean mask through ``scipy.ndimage.shift(order=1)``, which
+        #   returns an all-False array, i.e. the bad-pixel mask was lost.
+        source_mask = None if image.mask is None else np.asarray(image.mask, dtype=bool)
+        if source_mask is not None and source_mask.any():
+            image = image.copy()
+            image.data = fill_masked_pixels(image.data, source_mask)
+            image.mask = None
+        shift_vector = image_shift[:, image_id]
         image = ccdp.transform_image(
             image,
             shift_scipy,
-            shift=image_shift[:, image_id],
+            shift=shift_vector,
             order=1,
         )
+        shifted_mask = resample_mask(
+            source_mask,
+            lambda values: shift_scipy(values, shift=shift_vector, order=0, cval=1.0),
+        )
+        if shifted_mask is not None:
+            image.mask = shifted_mask
         if aa_trim_margins is None:
             aa_trim_margins = aa_common_trim_margins(image_shift)
         x_start, x_end, y_start, y_end = aa_trim_margins

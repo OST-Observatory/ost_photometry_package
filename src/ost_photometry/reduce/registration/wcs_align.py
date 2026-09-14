@@ -128,11 +128,24 @@ def reproject_ccd_onto_wcs(
 ) -> CCDData:
     """Reproject ``ccd`` onto ``target_wcs`` / ``target_shape`` (bilinear)."""
     from ccdproc import wcs_project
+    from reproject import reproject_interp
+
+    from ...core.pixel_masks import fill_masked_pixels, resample_mask
 
     src_wcs = celestial_wcs_from_ccd(ccd)
     if src_wcs is None:
         raise ValueError("CCD has no celestial WCS to reproject from.")
     ccd.wcs = src_wcs
+
+    #   Bilinear resampling smears every masked defect into its neighbours,
+    #   so fill defects with the local median first. The mask is resampled
+    #   separately below; ``wcs_project`` would flag every output pixel with
+    #   *any* masked contribution (``> 1e-8``) and grow the mask several-fold.
+    source_mask = None if ccd.mask is None else np.asarray(ccd.mask, dtype=bool)
+    if source_mask is not None and source_mask.any():
+        ccd = ccd.copy()
+        ccd.data = fill_masked_pixels(ccd.data, source_mask)
+        ccd.mask = None
 
     projected = wcs_project(
         ccd,
@@ -141,9 +154,21 @@ def reproject_ccd_onto_wcs(
         order="bilinear",
     )
 
+    def _nearest(values: np.ndarray) -> np.ndarray:
+        out, _ = reproject_interp(
+            (values, src_wcs),
+            target_wcs,
+            shape_out=target_shape,
+            order="nearest-neighbor",
+        )
+        return out
+
+    footprint = ~np.isfinite(np.asarray(projected.data, dtype=float))
+    warped_mask = resample_mask(source_mask, _nearest)
+    projected.mask = footprint if warped_mask is None else (footprint | warped_mask)
+
     if ccd.uncertainty is not None:
         from astropy.wcs.utils import proj_plane_pixel_area
-        from reproject import reproject_interp
 
         unc_in = np.asarray(ccd.uncertainty.array, dtype=float)
         unc_raw, _ = reproject_interp(

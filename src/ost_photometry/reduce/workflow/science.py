@@ -10,6 +10,7 @@ from astropy.nddata import CCDData
 from ... import checks, style, terminal_output
 from ... import utilities as base_utilities
 from ...core.parallel import Executor
+from ...core.pixel_masks import negative_outlier_mask
 from ...fits_headers import mark_cosmics_identified
 from .. import utilities, validation
 from .constants import (
@@ -488,9 +489,13 @@ def reduce_light_image(
         scale=rm_bias,
     )
 
-    #   Mask negative pixel
-    mask = reduced.data < 0.0
-    reduced.mask = reduced.mask | mask
+    #   Mask significantly negative pixels (defects / dark mismatch). Plain
+    #   ``data < 0`` masked up to half of a faint sky through ordinary noise,
+    #   which biased the background high and — after the mask was resampled
+    #   by ``wcs`` / ``aa_true`` registration — removed pixels from the
+    #   aperture sums (0.05–0.5 mag errors on individual frames).
+    mask = negative_outlier_mask(reduced.data)
+    reduced.mask = mask if reduced.mask is None else (reduced.mask | mask)
 
     #   Check if the "FILTER" keyword is set in Header
     if "filter" not in reduced.header:

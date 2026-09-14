@@ -15,6 +15,7 @@ from skimage.transform import SimilarityTransform, warp
 from ... import style, terminal_output
 from ... import utilities as base_utilities
 from ...core.parallel import Executor
+from ...core.pixel_masks import fill_masked_pixels, resample_mask
 from ...terminal_output import print_to_terminal
 from .. import plots, utilities
 from .trim import trim_image
@@ -666,16 +667,22 @@ def astro_align(
         detection_sigma=3,
     )
 
-    #   Transform image data. ``footprint_mask`` is True where the warped frame
-    #   has no coverage; ``propagate_mask=True`` also warps ``current_ccd.mask``
-    #   into that footprint so both stay excluded from later 2D background /
-    #   photometry (no separate extra mask). Uncovered pixels are NaN, not 0,
-    #   so they are not treated as fake sky.
+    #   Fill masked defects with the local median before the bicubic warp
+    #   (otherwise each hot pixel rings into its neighbours) and warp the data
+    #   *without* ``propagate_mask``: astroalign would NaN-fill every masked
+    #   source pixel, punching holes into the frame that later turn aperture
+    #   sums into NaN. The bad-pixel mask is warped separately with
+    #   nearest-neighbour semantics so it does not grow. ``footprint_mask`` is
+    #   True where the warped frame has no coverage; those pixels are NaN, not
+    #   0, so they are not treated as fake sky.
+    source_mask = None if current_ccd.mask is None else np.asarray(
+        current_ccd.mask, dtype=bool
+    )
+    image_in = fill_masked_pixels(np.asarray(current_ccd.data, dtype=float), source_mask)
     image_data, footprint_mask = aa.apply_transform(
         transformation_coefficients,
-        current_ccd,
-        reference_ccd,
-        propagate_mask=True,
+        image_in,
+        reference_ccd.data,
         fill_value=np.nan,
     )
 
@@ -690,6 +697,21 @@ def astro_align(
     footprint_mask = np.asarray(footprint_mask, dtype=bool)
     footprint_mask |= ~np.isfinite(image_data)
     footprint_mask |= ~np.isfinite(image_uncertainty)
+
+    def _warp_nearest(values: np.ndarray) -> np.ndarray:
+        return warp(
+            values,
+            inverse_map=transformation_coefficients.inverse,
+            output_shape=np.shape(reference_ccd.data),
+            order=0,
+            mode="constant",
+            cval=0.0,
+            preserve_range=True,
+        )
+
+    warped_mask = resample_mask(source_mask, _warp_nearest)
+    if warped_mask is not None:
+        footprint_mask |= warped_mask
 
     #   Build new CCDData object. Pixels sit on the reference grid, so the
     #   current WCS is the reference WCS (not the unwarped input header).
