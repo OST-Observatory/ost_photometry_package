@@ -496,9 +496,9 @@ def correlate_datasets(
 
     min_detection_fraction
         Minimum fraction of datasets a track must appear on when
-        ``require_complete_intersection`` is ``False``. Combined with
-        ``n_allowed_non_detections_object`` via
-        :func:`effective_miss_limit`. ``None`` uses only the miss count.
+        ``require_complete_intersection`` is ``False``. When set it replaces
+        ``n_allowed_non_detections_object`` (see :func:`effective_miss_limit`);
+        ``None`` uses only the miss count.
 
     wcs_list
         Optional per-dataset WCS. Matching uses each frame's WCS when given;

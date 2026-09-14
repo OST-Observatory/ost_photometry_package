@@ -19,17 +19,17 @@ def effective_miss_limit(
 ) -> int:
     """Miss count at which a track is dropped.
 
-    When ``min_detection_fraction`` is set, the limit is at least
-    ``int((1 - fraction) * n_images)`` so a small integer ``n_allowed`` does
-    not force near-completeness on long series.
+    When ``min_detection_fraction`` is set it is the only criterion: a track
+    must be detected on at least ``fraction × n_images`` frames, i.e. it is
+    dropped once it misses more than ``(1 - fraction) × n_images`` frames.
+    ``n_allowed_non_detections_object`` is used only when no fraction is given
+    (dense / complete-intersection mode).
     """
-    limit = max(int(n_allowed_non_detections_object), 0)
     if min_detection_fraction is not None:
-        frac = float(min_detection_fraction)
-        frac = min(max(frac, 0.0), 1.0)
-        frac_limit = int((1.0 - frac) * int(n_images))
-        limit = max(limit, frac_limit)
-    return limit
+        frac = min(max(float(min_detection_fraction), 0.0), 1.0)
+        # misses >= limit drops the track; a track with zero misses must survive
+        return max(int((1.0 - frac) * int(n_images)) + 1, 1)
+    return max(int(n_allowed_non_detections_object), 0)
 
 
 def pick_auto_reference_image(image_series: ImageSeries) -> int:

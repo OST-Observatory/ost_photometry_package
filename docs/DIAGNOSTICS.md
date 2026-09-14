@@ -8,7 +8,7 @@ are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
 <output>/
   diagnostics/
     extraction/      # mag–error, growth, starmaps, aperture, ePSF, residual
-    correlation/     # inter-filter separations/geometry, exposure pairing
+    correlation/     # track QC per filter, inter-filter separations/geometry, exposure pairing
     calibration/     # catalog match, fit panels, residuals, night summary
     extinction/      # k′ vs airmass
     cluster/         # Gaia μ–π membership (P_mem vs field)
@@ -159,6 +159,26 @@ as a **guide to the ridge**, not as a fitted camera characterisation.
 
 A source-Poisson term \(\propto 10^{0.2 m}\) is **not** fitted separately; it is
 only loosely absorbed into \(\sigma_0\) and \(c\).
+
+## Track QC (intra-filter correlation)
+
+`track_qc_<filter>` (+ `track_qc_<filter>.ecsv`; toggle `correlation_track_qc`)
+is written for every filter with more than one exposure, right after the
+tracks are built. It answers three questions: *are the frames registered?*,
+*are the tracks complete?*, *does each track follow one star?*
+
+| Panel | Content | What to look for |
+|-------|---------|------------------|
+| (a) | tracks matched per frame | dips = clouds, trailing, bad frames |
+| (b) | median Δx/Δy of each frame vs the reference (px) | inside the dotted match-radius band → registered grid, pixel matching; drifting → translation-only or unaligned series, matching on the sky needs per-frame WCS |
+| (c) | detections per track (fraction of frames) | the `min_detection_fraction` line; a bump at low completeness = faint stars or a bad reference frame |
+| (d) | max offset from the track median vs instrumental mag | above the dashed match radius (red) = the track jumped to another star |
+| (e) | RMS of the instrumental magnitude per track | per-frame offset (clouds) removed, so high RMS = identity error or variable; the object of interest is the orange star |
+| (f) | field map coloured by position RMS + residual vectors of the most shifted frame | rotation/scale pattern = the registration left more than a shift |
+
+The `.ecsv` lists per track `n_detections`, `detection_fraction`, `pos_rms_px`,
+`pos_max_px`, `pos_rms_arcsec`, `pos_max_arcsec`, `mag_inst_median`,
+`mag_inst_rms`, `suspect`, `is_ooi`.
 
 ## Inter-filter residual geometry
 

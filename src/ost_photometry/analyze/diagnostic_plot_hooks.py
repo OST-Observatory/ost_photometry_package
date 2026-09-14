@@ -278,6 +278,7 @@ def _plot_catalog_extraction_checks(
 
 _DIAGNOSTIC_PHASE_STEP = {
     "extraction": "extraction",
+    "correlation_intra": "correlation",
     "correlation_inter": "correlation",
     "calibration": "calibration",
     "calibration_differential": "calibration",
@@ -292,6 +293,8 @@ def _phase_requests_plots(dp: Any, phase: str) -> bool:
             or getattr(dp, "photometry_mag_vs_error_overview", False)
             or dp.photometry_radial_growth_curve
         )
+    if phase == "correlation_intra":
+        return bool(getattr(dp, "correlation_track_qc", False))
     if phase == "correlation_inter":
         return bool(
             dp.correlation_inter_filter_separation_plot
@@ -388,6 +391,61 @@ def _write_inter_filter_geometry(
             title_suffix=title_suffix,
         )
     return summaries
+
+
+def _run_track_qc(
+    context: Any,
+    config: Any,
+    out_root: Path | str,
+    out_d: Path,
+    file_type: str,
+    warn,
+) -> None:
+    """Per-filter track QC table + figure after intra-filter correlation."""
+    from .correlate.qc import collect_track_qc, track_qc_summary, track_qc_table
+
+    def _ooi_ids_for(filter_: str) -> list[int]:
+        # After intra-filter correlation ``id_in_image_series[filter_]`` holds
+        # the per-filter track id (``correlated_id`` is only set for one series).
+        ids: list[int] = []
+        for obj in getattr(context, "objects_of_interest", []) or []:
+            value = (getattr(obj, "id_in_image_series", None) or {}).get(filter_)
+            if value is not None:
+                ids.append(int(value))
+        return ids
+
+    sep = getattr(config, "separation_limit", None)
+    sep_arcsec = (
+        float(sep.to_value("arcsec")) if hasattr(sep, "to_value") else float(sep or 2.0)
+    )
+    for filter_ in context.filter_list:
+        series = context.image_series_dict.get(filter_)
+        if series is None or len(getattr(series, "image_list", [])) <= 1:
+            continue
+        try:
+            frame = "pixel" if getattr(series, "share_pixel_grid", False) else "sky"
+            qc = collect_track_qc(
+                series,
+                filter_=filter_,
+                coordinate_frame=frame,
+                pixel_radius=float(getattr(config, "max_pixel_between_objects", 3.0)),
+                separation_limit_arcsec=sep_arcsec,
+                min_detection_fraction=(
+                    getattr(config, "min_detection_fraction", None)
+                    if not getattr(config, "require_complete_intersection", True)
+                    else None
+                ),
+                ooi_ids=_ooi_ids_for(filter_),
+            )
+            terminal_output.print_to_terminal(track_qc_summary(qc), indent=1)
+            tbl = track_qc_table(qc)
+            if len(tbl):
+                tbl.write(
+                    out_d / f"track_qc_{filter_}.ecsv", format="ascii.ecsv", overwrite=True
+                )
+            _bg_plot(plots.plot_track_qc, qc, out_root, file_type)
+        except Exception as exc:
+            warn(f"Diagnostic plot (correlation_intra, {filter_}): {exc}")
 
 
 def run_diagnostic_plots_phase(
@@ -500,6 +558,8 @@ def run_diagnostic_plots_phase(
                 except Exception as exc:
                     _warn(f"Diagnostic plot (extraction, {filter_}): {exc}")
 
+        elif phase == "correlation_intra":
+            _run_track_qc(context, config, out_root, out_d, ft, _warn)
         elif phase == "correlation_inter":
             if obs is None or len(context.filter_list) < 2:
                 return

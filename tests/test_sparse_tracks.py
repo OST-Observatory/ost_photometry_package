@@ -26,11 +26,16 @@ def _tracks_module():
     )
 
 
-def test_effective_miss_limit_grows_with_series_length():
+def test_effective_miss_limit_uses_fraction_alone_when_given():
     with isolated_sys_modules():
         tracks = _tracks_module()
+        # no fraction: the plain miss count applies
         assert tracks.effective_miss_limit(10, 5, None) == 5
-        assert tracks.effective_miss_limit(80, 5, 0.3) == max(5, int(0.7 * 80))
+        # fraction given: n_allowed is ignored, 30 % of 80 frames = 24 detections
+        assert tracks.effective_miss_limit(80, 5, 0.3) == int(0.7 * 80) + 1
+        assert tracks.effective_miss_limit(80, 100, 0.3) == int(0.7 * 80) + 1
+        # a complete track (0 misses) survives even with fraction 1.0
+        assert tracks.effective_miss_limit(10, 1, 1.0) == 1
 
 
 def test_apply_sparse_track_ids_sets_id_and_drops_unmatched():

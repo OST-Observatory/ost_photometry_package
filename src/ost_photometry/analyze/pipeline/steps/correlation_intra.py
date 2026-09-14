@@ -68,4 +68,8 @@ class CorrelationIntraStep(base.PipelineStep):
             )
 
         context.correlation_intra_done = True
+
+        from ...diagnostic_plot_hooks import run_diagnostic_plots_phase
+
+        run_diagnostic_plots_phase(context, config, "correlation_intra")
         return context

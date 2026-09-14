@@ -121,6 +121,11 @@ class DiagnosticPlots:
     calibration_zeropoint_residual_vs_color: bool = True
     calibration_color_check_cal_stars: bool = True
     correlation_inter_filter_separation_plot: bool = True
+    #: Per-filter track QC after intra-filter correlation
+    #: (``diagnostics/correlation/track_qc_<filter>``): matched tracks and
+    #: pixel shift per frame, completeness, position and magnitude scatter per
+    #: track, field map with residual vectors. Plus ``track_qc_<filter>.ecsv``.
+    correlation_track_qc: bool = True
     #: Max individual inter-filter pair PDFs / geometry figures
     #: (``None`` = all; ``0`` = overview only). Geometry quiver plots share this cap.
     correlation_inter_filter_max_pair_plots: int | None = 25
@@ -279,11 +284,15 @@ class CorrelationConfig:
     max_pixel_between_objects: int = 3
     ooi_correlation_strategy: int = 1
     cross_identification_limit: int = 1
+    #: Dense mode (``require_complete_intersection=True``): objects missing on
+    #: this many frames are removed before bad frames are rejected. Ignored
+    #: when ``min_detection_fraction`` is set.
     n_allowed_non_detections_object: int = 1
     expected_bad_image_fraction: float = 1.0
     #: If True, drop tracks that miss any remaining frame (mk_calib / N2).
     require_complete_intersection: bool = True
     #: Sparse tracks: keep objects detected on at least this fraction of frames.
+    #: This is the only completeness criterion when set.
     min_detection_fraction: float | None = None
     correlation_link_mode: CorrelationLinkMode = "to_reference"
     #: ``auto`` uses pixel matching when frames look registered (``aa_true``).

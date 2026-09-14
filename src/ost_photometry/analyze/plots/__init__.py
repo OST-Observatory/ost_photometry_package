@@ -28,6 +28,7 @@ from .calibration_qc import (
 )
 from .cmd_workflow import plot_cmds_from_table
 from .cmds import MakeCMDs
+from .correlation_qc import plot_track_qc
 from .extraction import plot_apertures, plot_cutouts, plot_epsf, plot_residual
 from .lightcurves import (
     fold_phase,
@@ -115,6 +116,7 @@ __all__ = [
     "plot_photometry_mag_vs_error",
     "plot_photometry_mag_vs_error_overview",
     "plot_residual",
+    "plot_track_qc",
     "plot_zeropoint_residual_distribution",
     "plot_zeropoint_residual_vs_color",
     "residual_geometry_summary",
