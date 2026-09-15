@@ -35,6 +35,9 @@ section of this file.
 
 ### Fixed
 
+- Reduce yes/no prompts (reuse masters / previous science frames) time out
+  again after 30 s and default to ``no``, using stdlib ``select`` instead of
+  the optional ``pytimedinput`` package (without it, ``input()`` blocked forever).
 - Aperture uncertainty combination (hypotenuse of variances, not of sigmas).
 - PSF photometry non-finite pixel errors; extraction skip of unusable frames;
   light-curve outlier flagging around eclipse dips; Clear-filter light curves;

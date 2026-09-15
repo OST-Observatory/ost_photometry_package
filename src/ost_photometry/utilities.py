@@ -2,21 +2,17 @@
 #                               Libraries                                  #
 ############################################################################
 
+import io
 import json
 import os
 import random
+import select
 import string
+import sys
 import time
 from pathlib import Path
 
 import yaml
-
-try:
-    from pytimedinput import timedInput
-
-    use_timed_input = True
-except ImportError:
-    use_timed_input = False
 
 from . import checks, terminal_output
 from .image import Image
@@ -290,44 +286,125 @@ def read_params_from_yaml(yaml_file: str) -> dict:
     return _mapping_or_empty(data)
 
 
-def get_input(prompt: str, timeout: int = 30) -> tuple[str | None, bool]:
+def _stdin_fileno() -> int | None:
+    stdin = sys.stdin
+    if stdin is None or not hasattr(stdin, "fileno"):
+        return None
+    try:
+        return int(stdin.fileno())
+    except (ValueError, OSError, io.UnsupportedOperation):
+        return None
+
+
+def _normalize_input(raw: str | None) -> str:
+    return "" if raw is None else str(raw).strip().lower()
+
+
+def _timeout_reply() -> tuple[str, bool]:
+    terminal_output.print_to_terminal(
+        "The prompt timed out!",
+        indent=2,
+        style_name="WARNING",
+    )
+    return "no", True
+
+
+def get_input(prompt: str, timeout: int = 30) -> tuple[str, bool]:
+    """Ask for a line of input and give up after ``timeout`` seconds.
+
+    Uses :func:`select.select` on stdin (stdlib). On timeout, or if stdin
+    cannot be read, returns ``("no", True)`` so callers that treat only
+    ``yes``/``y`` as affirmative keep the previous default (rebuild masters /
+    re-reduce science frames). ``timeout <= 0`` waits indefinitely.
+
+    The old optional ``pytimedinput`` dependency is not required; without it
+    this used to fall back to blocking :func:`input` and never timed out.
     """
-    Prompt the user for input. Uses pytimedinput with a timeout if available,
-    otherwise falls back to the built-in input function.
+    try:
+        import termios
+        import tty
+    except ImportError:
+        termios = None  # type: ignore[assignment]
+        tty = None  # type: ignore[assignment]
 
-    Parameters
-    ----------
-    prompt (str):
-        The message displayed to the user.
+    shown = prompt
+    if timeout > 0 and "(timeout" not in prompt:
+        shown = f"{prompt.rstrip()} (timeout {int(timeout)}s, default no) "
+    sys.stdout.write(shown)
+    sys.stdout.flush()
 
-    timeout (int, optional):
-        Timeout in seconds for timed input. Only applies if pytimedinput is
-        installed.
-        Default is ``30``.
+    if timeout <= 0:
+        try:
+            return _normalize_input(sys.stdin.readline()), False
+        except EOFError:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+            return _timeout_reply()
 
-    Returns
-    -------
-    str | None:
-        The user's input as a string, or None if input timed out (only possible
-        with pytimedinput).
+    fd = _stdin_fileno()
+    if fd is None:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        return _timeout_reply()
 
-    boolean:
-        Returns `True` if the prompt timed out (only possible with
-        pytimedinput). When using the built-in input() function, `False` is
-        always returned.
-    """
-    if use_timed_input:
-        user_input, timed_out = timedInput(prompt, timeout=timeout)
-        if timed_out:
-            terminal_output.print_to_terminal(
-                "The prompt timed out!",
-                indent=2,
-                style_name="WARNING",
-            )
-            user_input: str = "no"
-        return user_input, timed_out
-    else:
-        return input(prompt), False
+    deadline = time.monotonic() + float(timeout)
+    old_term: list | None = None
+    use_cbreak = False
+    if termios is not None and tty is not None:
+        try:
+            old_term = termios.tcgetattr(fd)
+            tty.setcbreak(fd, termios.TCSADRAIN)
+            use_cbreak = True
+        except (termios.error, OSError, ValueError, AttributeError):
+            use_cbreak = False
+            old_term = None
+
+    try:
+        chars: list[str] = []
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return _timeout_reply()
+            ready, _, _ = select.select([sys.stdin], [], [], remaining)
+            if not ready:
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return _timeout_reply()
+            if not use_cbreak:
+                line = sys.stdin.readline()
+                if not line:
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    return _timeout_reply()
+                return _normalize_input(line), False
+            chunk = sys.stdin.read(1)
+            if chunk == "":
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return _timeout_reply()
+            if chunk in "\n\r":
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                return _normalize_input("".join(chars)), False
+            if chunk == "\x03":
+                raise KeyboardInterrupt
+            if chunk in ("\x7f", "\b"):
+                if chars:
+                    chars.pop()
+                    sys.stdout.write("\b \b")
+                    sys.stdout.flush()
+                continue
+            chars.append(chunk)
+            sys.stdout.write(chunk)
+            sys.stdout.flush()
+    finally:
+        if old_term is not None and termios is not None:
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_term)
+            except (termios.error, OSError):
+                pass
 
 
 def parse_cluster_selection_id(raw: str | None) -> int | None:
