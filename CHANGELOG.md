@@ -35,6 +35,9 @@ section of this file.
 
 ### Fixed
 
+- Clear / catalog-free light curves: the epoch quasi-ZP uses relative fluxes of
+  stars detected in most frames, so faint-star dropout no longer tilts the
+  continuum away from 1 (airmass-shaped 0.6–1.4 residual).
 - Reduce yes/no prompts (reuse masters / previous science frames) time out
   again after 30 s and default to ``no``, using stdlib ``select`` instead of
   the optional ``pytimedinput`` package (without it, ``input()`` blocked forever).

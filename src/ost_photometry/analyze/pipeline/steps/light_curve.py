@@ -123,7 +123,7 @@ class LightCurveStep(base.PipelineStep):
 
     Primary path: epoch-native ``table_magnitudes`` with ``mag_cal_*`` /
     ``err_cal_*``. Bands without catalog calibration (e.g. Clear) use the
-    flux fallback: epoch quasi-ZP then per-star continuum ≈ 1.
+    flux fallback: epoch common-mode (relative ensemble) then per-star continuum ≈ 1.
     """
 
     name = "light_curve"
@@ -262,7 +262,7 @@ class LightCurveStep(base.PipelineStep):
                 )
                 terminal_output.print_to_terminal(
                     "No catalog-calibrated magnitudes for this filter. "
-                    "Using relative flux (epoch quasi-ZP, per-star continuum ≈ 1).",
+                    "Using relative flux (ensemble common mode, per-star continuum ≈ 1).",
                     indent=2,
                     style_name="WARNING",
                 )
@@ -322,9 +322,12 @@ class LightCurveStep(base.PipelineStep):
         phot: Table | None,
     ) -> Table | None:
         dist_samples = config.distribution_samples
+        mdf = config.min_detection_fraction
+        ensemble_frac = 0.5 if mdf is None else max(0.5, float(mdf))
         quasi = calibration.quasi_flux_calibration_image_series(
             image_series,
             distribution_samples=dist_samples,
+            min_ensemble_fraction=ensemble_frac,
         )
         plot_quantity = calibration.flux_normalization_image_series(
             image_series,
