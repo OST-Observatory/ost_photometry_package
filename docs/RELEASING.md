@@ -45,6 +45,17 @@ Release whose notes are the matching section of [`CHANGELOG.md`](../CHANGELOG.md
    gh release create "vX.Y.Z" --title "vX.Y.Z" --notes-file /tmp/notes.md
    ```
 
+## PyPI
+
+Hatchling 1.32 writes Core Metadata 2.5; that needs **Twine 7+**
+(6.2.0 reports ``'2.5' is not a valid metadata version``). Then:
+
+```bash
+python -m build
+python -m twine check dist/*X.Y.Z*
+python -m twine upload dist/*X.Y.Z*
+```
+
 Do not retag. If the notes need a fix, edit the GitHub Release (and
 `CHANGELOG.md` on `develop`) rather than moving the tag.
 
