@@ -51,6 +51,23 @@ def test_changelog_section_missing_version():
         _load().changelog_section(_SAMPLE, "0.9.9")
 
 
+def test_pyproject_version_has_nonempty_changelog_section():
+    """The GitHub Release workflow prints this section for tag ``v<version>``."""
+    import tomllib
+
+    root = Path(__file__).resolve().parents[1]
+    version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
+        "project"
+    ]["version"]
+    body = _load().changelog_section(
+        (root / "CHANGELOG.md").read_text(encoding="utf-8"),
+        version,
+    )
+    assert body.strip()
+    assert "### " in body
+    assert "## [" not in body
+
+
 def test_main_accepts_v_prefix(tmp_path: Path, capsys):
     mod = _load()
     path = tmp_path / "CHANGELOG.md"

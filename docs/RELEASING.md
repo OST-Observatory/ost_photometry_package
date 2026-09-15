@@ -1,7 +1,7 @@
 # Releasing
 
 Version is the `version` field in [`pyproject.toml`](../pyproject.toml)
-(`0.4.4` as of this writing). There is no separate `__version__` module.
+(`0.5.0` as of this writing). There is no separate `__version__` module.
 
 ## Branches and tags
 
@@ -21,9 +21,10 @@ Release whose notes are the matching section of [`CHANGELOG.md`](../CHANGELOG.md
    patch / minor / major).
 2. In `CHANGELOG.md`, rename `## [Unreleased]` to
    `## [X.Y.Z] - YYYY-MM-DD`, leave a fresh empty `## [Unreleased]` above it,
-   and point the `[Unreleased]` / `[X.Y.Z]` links at the bottom of the file
-   (`compare/vX.Y.Z...HEAD` once the previous tag exists;
-   `compare/2648b88...vX.Y.Z` for the first tagged release after 0.4.4).
+   and point the `[Unreleased]` / `[X.Y.Z]` links at the bottom of the file.
+   After `v0.5.0` exists, that is `compare/v0.5.0...HEAD` and
+   `compare/v0.5.0...vX.Y.Z`. The 0.5.0 section itself used
+   `compare/2648b88...v0.5.0` because `0.4.4` was untagged.
 3. Open a PR `develop` → `main` (or merge locally if that is the usual flow).
    CI on `main` must be green.
 4. On `main`, after the merge:
