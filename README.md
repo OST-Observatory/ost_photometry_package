@@ -89,6 +89,8 @@ The alternative `astrometry` method needs a local
 | Site extinction table and observation campaigns | [docs/EXTINCTION_COEFFICIENTS.md](docs/EXTINCTION_COEFFICIENTS.md) |
 | Breaking changes and architecture (archive) | [docs/ARCHITECTURE_AND_MIGRATION.md](docs/ARCHITECTURE_AND_MIGRATION.md) |
 | Script compatibility matrix | [docs/COMPATIBILITY_REPORT.md](docs/COMPATIBILITY_REPORT.md) |
+| Changelog | [CHANGELOG.md](CHANGELOG.md) |
+| How `main` is tagged / GitHub Releases | [docs/RELEASING.md](docs/RELEASING.md) |
 | Known follow-ups | [docs/TODO.md](docs/TODO.md) |
 
 Config defaults and all pipeline fields:
@@ -106,4 +108,8 @@ pre-commit install
 ```
 
 Run the linter on demand with `ruff check src tests` (add `--fix` to apply
-safe fixes). Tests: `pytest tests -m "not slow"`.
+safe fixes). Tests: `pytest tests -m "not slow"`. CI runs that suite on
+Python 3.11, 3.12, and 3.13.
+
+Releases are annotated tags `vX.Y.Z` on `main`; see
+[docs/RELEASING.md](docs/RELEASING.md) and [CHANGELOG.md](CHANGELOG.md).

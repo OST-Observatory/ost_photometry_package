@@ -708,17 +708,6 @@ after `shift_method="wcs"`, `validate_inputs` / `fail_on_missing_flat`, and
 how `camera_info` maps FITS `INSTRUME` / `GAIN` / `READOUTM` / `CCD-TEMP` to
 `cameras.json`. Keep `SHIFT_METHODS` as the name source of truth.
 
-### CHANGELOG / GitHub releases (P2)
-
-There is no `CHANGELOG.md` and no documented tag process. Add a changelog
-(or GitHub Releases notes) starting at the next version bump, and record
-how `main` is tagged.
-
-### Python 3.13 in CI (P2)
-
-Classifiers already list 3.13; the GitHub Actions matrix is still 3.11 and
-3.12. Add 3.13 after a local `pytest tests -m "not slow"` on 3.13.
-
 ---
 
 ## Operational (not code debt)
@@ -754,5 +743,5 @@ Classifiers already list 3.13; the GitHub Actions matrix is still 3.11 and
 20. **P3:** Discrete age×\(Z\) map / MCMC, after the new loader exists.
 21. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
 22. **P3:** Aperture correction from growth curve (optional APER; one correction per image, not per star).
-23. **P2:** Reduce user guide (`reduce_main` option catalogue); CHANGELOG / GitHub release notes; add Python 3.13 to CI after a local 3.13 run.
+23. **P2:** Reduce user guide (`reduce_main` option catalogue).
 24. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.
