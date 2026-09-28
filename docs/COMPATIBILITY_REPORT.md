@@ -11,12 +11,12 @@ changes see [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_MIGRATION.md).
 
 | Skript | Status | Kurznotiz |
 |--------|--------|-----------|
-| `c7/1_reduce_images.py` | ✅ | `reduce.redu.reduce_main`; optional `validate_inputs`, `fail_on_missing_flat` (defaults on) |
+| `c7/1_reduce_images.py` | ✅ | `reduce.redu.reduce_main`; `measure_frame_quality`, optionales `frame_selection`, `reference_image_selection="best_fwhm"`; `validate_inputs`, `fail_on_missing_flat` bleiben Defaults |
 | `c7/2_obtain_flux.py` | ✅ | `run_pipeline`, `PipelineConfig`, Preset `linear_fit_per_image` / `_extinction` / custom |
 | `c7/3_plot_lightcurve.py` | ✅ | `analyze.plots`, epoch-native ECSV input |
 | `c7/4_compare_nights.py` | ✅ | Multi-night overlay of `tables/light_curves.ecsv` (replaces retired `4_plot_lightcurve_from_ecsv.py`) |
 | `n1_baches/1_masterimages.py` | ✅ | `reduce.utilities`, `reduce.registration`, `checks` |
-| `n2/1_add_images.py` | ✅ | `reduce.redu.reduce_main` (stacking via MP per filter) |
+| `n2/1_add_images.py` | ✅ | `reduce.redu.reduce_main` (stacking via MP per filter); `frame_selection`, `stack_weighting` (Default `none`), `reference_image_selection="best_fwhm"` |
 | `n2/3_plot_cmd.py` | ✅ | `load_cmd_table`, `plot_cmds_from_table`, `style.Bcolors` |
 
 **Hinweis N2:** In `reduction_scripts_students/n2/` gibt es **kein** `2_obtain_flux.py`.
@@ -31,7 +31,7 @@ Legacy `Observation.extract_flux` / `extract_flux_multi` entfallen zugunsten von
 | Skript | Status | Kurznotiz |
 |--------|--------|-----------|
 | `n2/2_extract_data_supervisors.py` | ✅ | `run_pipeline`, `PipelineConfig`, Preset `linear_fit_per_image` / custom |
-| `n2/2_extract_data_students.py` | ✅ | Wie supervisors; student-facing variant |
+| `n2/2_extract_data_students.py` | ✅ | Didaktische Schritt-für-Schritt-Variante: ruft `analyze.extraction.main_extract` auf zwei `Image`-Objekten direkt auf (kein `run_pipeline` / `PipelineConfig`) |
 | `n2/3_plot_cmd_supervisors.py` | ✅ | wie `n2/3_plot_cmd` (plus Fit/Cali/E(B-V)-Fehler) |
 | `n2/2b_post_process.py` | ✅ | `post_processing`, `analyze.utilities`, `checks` |
 
@@ -52,12 +52,26 @@ Legacy `Observation.extract_flux` / `extract_flux_multi` entfallen zugunsten von
 
 | Skript | Status | Kurznotiz |
 |--------|--------|-----------|
-| `1_reduce_images.py` | ✅ | `reduce.redu`, `reduce.utilities`, `reduce_main(...)` keywords |
+| `1_reduce_images.py` | ✅ | `reduce.redu`, `reduce.utilities`, `reduce_main(...)` keywords; Kameraparameter kommen aus `data/cameras.json` (kein Kamera-Block mehr) |
 | `2_mk_trans.py`, `2_mk_trans_add.py` | ✅ | `run_pipeline` (`extract_protect_calibrators`), `CalibrationEngine` via `mk_calib_pipeline.write_field_transformation_table` → `trans_para_*.dat` + `.json` |
 | `3_second_order_extinction.py`, `3_second_order_extinction_add.py` | ✅ | `run_second_order_campaign` (reads `.dat` or `.json` field tables) |
 | `new_pipeline/determine_extinction_coefficients.py` | ✅ | `extinction_mode="from_value_airmass"`, `protect_calibration_objects=True`, `skip_calibration=True`; siehe [EXTINCTION_COEFFICIENTS.md](EXTINCTION_COEFFICIENTS.md) |
 
-### 3.3 Sonstiges
+### 3.3 `astro_imaging/`
+
+| Skript | Status | Kurznotiz |
+|--------|--------|-----------|
+| `1_reduce_and_stack.py` | ✅ | `reduce_main(shift_all=True, frame_selection=..., stack_weighting=..., keep_aligned_lights=True)`; ein Pixelgitter für alle Filter, gewichteter Linear-Stack pro Filter |
+| `2_restack.py` | ✅ | `frame_selection.read_quality_table` / `mark_selection` / `stack_weights`, `workflow.stack.stack_filter_images` mit `weights` + `stack_meta`; neu stacken ohne Reduktion |
+| `frame_quality.py` | ✅ | Standalone-CLI: `quality.measure_directory_quality`, Auswahl, ECSV, optional Header / `--move-rejected` / `--plot` |
+
+### 3.4 `compare_registration/`
+
+| Skript | Status | Kurznotiz |
+|--------|--------|-----------|
+| `compare_registration_methods.py` | ✅ | `reduce_main(..., measure_frame_quality=False)` für den Methodenvergleich |
+
+### 3.5 Sonstiges
 
 Skripte unter `align_sun_imgs_mk_video/` nutzen ein lokales `aux`-Modul und sind
 nicht Teil dieser Matrix.
@@ -76,7 +90,7 @@ Es gilt **`ost_photometry.style.Bcolors`** (großes „B“). Kein `style.bcolor
 - `calibration_strategy`, `calibration_grouping`, `extinction_mode`, `color_term_fit`
 - `path_extinction_coefficients` für `extinction_mode="tabulated"`
 - `mk_file_list(..., add_path_to_file_names=...)`
-- `reduce_main`-Keyword-Argumente (`validate_inputs`, `fail_on_missing_flat`, `sanity_check_sample_size`, `shift_method`, `n_cores_multiprocessing`)
+- `reduce_main`-Keyword-Argumente (`validate_inputs`, `fail_on_missing_flat`, `sanity_check_sample_size`, `shift_method`, `n_cores_multiprocessing`, `measure_frame_quality`, `frame_selection`, `reference_image_selection`, `reference_image_index=None`, `stack_weighting`, `keep_aligned_lights`)
 - `shift_method` / `ost_photometry.reduce.registration.SHIFT_METHODS` (inkl. `wcs`)
 - `n_cores_multiprocessing`: `None` oder `<= 0` → `cpu_count() // 2` (Reduce und Extraktion)
 - `camera_info` / `data/cameras.json` (Systemgewinn, Ausleserauschen, Dunkelstrom, Chipgröße)

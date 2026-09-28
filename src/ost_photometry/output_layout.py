@@ -2,7 +2,7 @@
 
 ``<output>/``
 
-- ``diagnostics/<step>/`` — QC (extraction, correlation, calibration, extinction, cluster, cmds, lightcurves)
+- ``diagnostics/<step>/`` — QC (frame_quality, extraction, correlation, calibration, extinction, cluster, cmds, lightcurves)
 - ``results/<kind>/`` — science figures (lightcurves, cmds, starmaps)
 - ``tables/`` — ECSV / ASCII
 - ``work/<kind>/`` — scratch (wcs_images, extraction galleries, subtract)
@@ -19,6 +19,7 @@ TABLES_ROOT = "tables"
 
 DIAGNOSTIC_STEPS = frozenset(
     {
+        "frame_quality",
         "extraction",
         "correlation",
         "calibration",

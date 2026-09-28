@@ -24,3 +24,5 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+src/ost_photometry/.claude/ost_photometry.code-workspace
+src/ost_photometry/.claude/settings.json

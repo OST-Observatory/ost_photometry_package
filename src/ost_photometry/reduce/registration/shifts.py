@@ -18,6 +18,7 @@ from ...core.parallel import Executor
 from ...core.pixel_masks import fill_masked_pixels, resample_mask, warn_if_mask_too_large
 from ...terminal_output import print_to_terminal
 from .. import plots, utilities
+from .accounting import ApplyResult, apply_ok, apply_skipped, exception_note
 from .trim import trim_image
 
 
@@ -28,7 +29,7 @@ def apply_xy_image_shift(
         rm_enlarged_keyword: bool = False, instrument: str | None = None,
         verbose: bool = False,
         aa_trim_margins: tuple[int, int, int, int] | None = None,
-        ) -> None:
+        ) -> ApplyResult:
     """
     Apply shift to an individual image
 
@@ -117,13 +118,14 @@ def apply_xy_image_shift(
 
     #   Write trimmed image to disk
     output_image.write(output_path / file_name, overwrite=True)
+    return apply_ok(current_image_name)
 
 
 def apply_optical_flow(
         current_image_name: str, reference_image_name: str,
         output_path: Path, modify_file_name: bool = False,
         rm_enlarged_keyword: bool = False, instrument: str | None = None,
-    ) -> None:
+    ) -> ApplyResult:
     """
     Apply shift to an individual image
 
@@ -168,7 +170,7 @@ def apply_optical_flow(
             style_name='WARNING',
             indent=2,
         )
-        return
+        return apply_skipped(current_image_name, exception_note(e))
 
     #   Reset the device as it may have been updated
     if instrument is not None and instrument != '':
@@ -193,6 +195,7 @@ def apply_optical_flow(
 
     #   Write trimmed image to disk
     output_image.write(output_path / file_name, overwrite=True)
+    return apply_ok(current_image_name)
 
 
 def apply_astro_align(
@@ -200,7 +203,7 @@ def apply_astro_align(
         output_path: Path, output_path_transformation: Path,
         modify_file_name: bool = False, rm_enlarged_keyword: bool = False,
         instrument: str | None = None, save_only_transformation: bool = False,
-    ) -> None:
+    ) -> ApplyResult:
     """
     Apply shift to an individual image
 
@@ -252,7 +255,7 @@ def apply_astro_align(
             style_name='WARNING',
             indent=2,
         )
-        return
+        return apply_skipped(current_image_name, exception_note(e))
 
     #   Get file name
     file_name = Path(current_image_name).name
@@ -283,6 +286,7 @@ def apply_astro_align(
     base_name = base_utilities.get_basename(file_name)
     with open(output_path_transformation / f'{base_name}.yaml', 'w') as file:
         yaml.dump(similarity_transforma.params.tolist(), file)
+    return apply_ok(current_image_name)
 
 
 def own_image_cross_correlation(

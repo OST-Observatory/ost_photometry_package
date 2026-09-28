@@ -22,14 +22,28 @@ class ReduceConfig:
     limiting_contrast_rm_cosmic_rays: float = 5.0
     sigma_clipping_value_rm_cosmic_rays: float = 4.0
     scale_image_with_exposure_time: bool = True
-    reference_image_index: int = 0
+    # Explicit reference frame index (after sorting by time). ``None`` lets
+    # ``reference_image_selection`` decide.
+    reference_image_index: int | None = None
+    # See ost_photometry.reduce.frame_selection.REFERENCE_SELECTION
+    reference_image_selection: str = "best_fwhm"
     enforce_bias: bool = False
     add_hot_bad_pixel_mask: bool = True
     # See ost_photometry.reduce.registration.SHIFT_METHODS
     shift_method: str = "aa_true"
     n_cores_multiprocessing: int | None = None
     stack_images: bool = True
+    # Deprecated alias for ``measure_frame_quality`` (kept for old scripts).
     estimate_fwhm: bool = False
+    # Frame quality: per-frame FWHM / roundness / star count / background,
+    # written to ``frame_quality.ecsv`` and the FITS headers.
+    measure_frame_quality: bool = True
+    # Mapping or ``FrameSelection``; ``None`` measures only, rejects nothing.
+    frame_selection: object | None = None
+    # See ost_photometry.reduce.frame_selection.STACK_WEIGHTING
+    stack_weighting: str = "none"
+    # Keep ``aligned_lights/`` after stacking (re-stacking, export).
+    keep_aligned_lights: bool = False
     shift_all: bool = False
     exposure_time_tolerance: float = 0.5
     stack_method: str = "average"

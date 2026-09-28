@@ -1,12 +1,21 @@
 """Reduction workflow: main module."""
 
+import warnings
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
 
 from ... import calibration_parameters, checks, style, terminal_output
 from ... import utilities as base_utilities
-from .. import registration, utilities, validation
+from .. import quality, registration, utilities, validation
+from ..frame_selection import (
+    SUPPORTED_REFERENCE_SELECTION,
+    SUPPORTED_STACK_WEIGHTING,
+    FrameSelection,
+    merge_alignment_result,
+    write_quality_table,
+)
 from ..instrument import get_egain_from_collection, resolve_system_gain
 from .bias import master_bias
 from .config import ReduceConfig
@@ -29,13 +38,18 @@ def reduce_main(
     limiting_contrast_rm_cosmic_rays: float = 5.0,
     sigma_clipping_value_rm_cosmic_rays: float = 4.0,
     scale_image_with_exposure_time: bool = True,
-    reference_image_index: int = 0,
+    reference_image_index: int | None = None,
     enforce_bias: bool = False,
     add_hot_bad_pixel_mask: bool = True,
     shift_method: str = "aa_true",
     n_cores_multiprocessing: int | None = None,
     stack_images: bool = True,
     estimate_fwhm: bool = False,
+    measure_frame_quality: bool = True,
+    frame_selection: FrameSelection | Mapping[str, object] | None = None,
+    reference_image_selection: str = "best_fwhm",
+    stack_weighting: str = "none",
+    keep_aligned_lights: bool = False,
     shift_all: bool = False,
     exposure_time_tolerance: float = 0.5,
     stack_method: str = "average",
@@ -123,8 +137,10 @@ def reduce_main(
         Default is ``True``.
 
     reference_image_index
-        ID of the image that should be used as a reference
-        Default is ``0``.
+        ID of the image (after sorting by observation time) that should be
+        used as the alignment reference. An explicit index always wins;
+        ``None`` lets ``reference_image_selection`` decide.
+        Default is ``None``.
 
     enforce_bias
         If True the usage of bias frames during the reduction is
@@ -152,7 +168,46 @@ def reduce_main(
         Default is ``True``.
 
     estimate_fwhm
-        If True the FWHM of each image will be estimated.
+        Deprecated alias for ``measure_frame_quality=True``.
+        Default is ``False``.
+
+    measure_frame_quality
+        If True, FWHM, roundness, star count, sky background and masked
+        fraction are measured for every reduced science frame before the
+        alignment. Results go to ``<output>/frame_quality.ecsv`` and the
+        frame headers (``FWHM``, ``NSTARS``, ...). Required for
+        ``frame_selection``, ``stack_weighting`` and the ``best_fwhm``
+        reference selection.
+        Default is ``True``.
+
+    frame_selection
+        Frame rejection criteria as a mapping or
+        :class:`~ost_photometry.reduce.frame_selection.FrameSelection`, e.g.
+        ``{"fwhm_max": 4.0}`` (pixels), ``{"best_fraction": 0.8}`` (keep the
+        sharpest 80 % per filter), ``{"fwhm_sigma_clip": 3.0}``,
+        ``{"roundness_max": 0.3, "n_stars_min": 20, "min_frames": 5}``.
+        Rejected frames are moved to ``<output>/rejected_lights/`` with the
+        reason in their header (``QCREJ`` / ``QCREASON``). ``None`` measures
+        only and rejects nothing.
+        Default is ``None``.
+
+    reference_image_selection
+        How the alignment reference is chosen when ``reference_image_index``
+        is ``None``: ``best_fwhm`` (sharpest kept frame per filter, or one
+        global frame with ``shift_all``) or ``first``. See
+        :data:`~ost_photometry.reduce.frame_selection.REFERENCE_SELECTION`.
+        Default is ``best_fwhm``.
+
+    stack_weighting
+        Per-frame weights for ``stack_method="average"``: ``none``, ``fwhm``
+        (``(median FWHM / FWHM)^2``), ``n_stars`` or ``noise``
+        (``(median RMS / RMS)^2``), each normalised per filter. See
+        :data:`~ost_photometry.reduce.frame_selection.STACK_WEIGHTING`.
+        Default is ``none``.
+
+    keep_aligned_lights
+        Keep ``<output>/aligned_lights/`` after stacking, e.g. to re-stack
+        with a different selection or to export the registered frames.
         Default is ``False``.
 
     shift_all
@@ -264,6 +319,15 @@ def reduce_main(
         If ``True'', only the transformation matrix is saved, not the transformed image itself.
         Default is ``False``.
     """
+    if estimate_fwhm:
+        warnings.warn(
+            "reduce_main(estimate_fwhm=True) is deprecated; use "
+            "measure_frame_quality=True (now the default).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        measure_frame_quality = True
+
     cfg = ReduceConfig(
         image_path=Path(image_path),
         output_dir=Path(output_dir),
@@ -284,6 +348,11 @@ def reduce_main(
         n_cores_multiprocessing=n_cores_multiprocessing,
         stack_images=stack_images,
         estimate_fwhm=estimate_fwhm,
+        measure_frame_quality=measure_frame_quality,
+        frame_selection=frame_selection,
+        reference_image_selection=reference_image_selection,
+        stack_weighting=stack_weighting,
+        keep_aligned_lights=keep_aligned_lights,
         shift_all=shift_all,
         exposure_time_tolerance=exposure_time_tolerance,
         stack_method=stack_method,
@@ -329,6 +398,31 @@ def _run_reduction(cfg: ReduceConfig) -> None:
             style_name="WARNING",
         )
         cfg.save_only_transformation = False
+
+    if cfg.estimate_fwhm and not cfg.measure_frame_quality:
+        #   Direct ReduceConfig users may still set the deprecated flag.
+        cfg.measure_frame_quality = True
+    if cfg.stack_weighting not in SUPPORTED_STACK_WEIGHTING:
+        raise ValueError(
+            f"stack_weighting must be one of {SUPPORTED_STACK_WEIGHTING}, "
+            f"got {cfg.stack_weighting!r}"
+        )
+    if cfg.reference_image_selection not in SUPPORTED_REFERENCE_SELECTION:
+        raise ValueError(
+            f"reference_image_selection must be one of {SUPPORTED_REFERENCE_SELECTION}, "
+            f"got {cfg.reference_image_selection!r}"
+        )
+    #   Validate the selection early (unknown keys, ranges) and normalise it.
+    frame_selection = FrameSelection.from_mapping(cfg.frame_selection)
+    if not cfg.measure_frame_quality:
+        if frame_selection.is_active():
+            raise ValueError(
+                "frame_selection requires measure_frame_quality=True."
+            )
+        if cfg.stack_weighting != "none":
+            raise ValueError(
+                "stack_weighting requires measure_frame_quality=True."
+            )
 
     ###
     #   Prepare reduction
@@ -615,6 +709,38 @@ def _run_reduction(cfg: ReduceConfig) -> None:
     )
 
     ###
+    #   Frame quality: measure, select, weight, choose reference frames
+    #
+    quality_table = None
+    reference_files: dict[str, str] | None = None
+    quality_table_path = output_path / "frame_quality.ecsv"
+    use_best_fwhm = (
+        cfg.reference_image_index is None
+        and cfg.reference_image_selection == "best_fwhm"
+    )
+    if cfg.measure_frame_quality:
+        terminal_output.print_to_terminal("Assess frame quality...", indent=1)
+        quality_table, references = quality.assess_frame_quality(
+            output_path / "light",
+            image_type_list=image_type_dir["light"],
+            selection=frame_selection,
+            stack_weighting=cfg.stack_weighting,
+            per_filter_reference=not cfg.shift_all,
+            rejected_dir=output_path / "rejected_lights",
+            table_path=quality_table_path,
+            n_cores_multiprocessing=cfg.n_cores_multiprocessing,
+        )
+        if use_best_fwhm:
+            reference_files = references
+    elif use_best_fwhm:
+        terminal_output.print_to_terminal(
+            "Frame quality measurement is disabled, so the 'best_fwhm' "
+            "reference cannot be resolved; using the first frame (index 0).",
+            indent=1,
+            style_name="WARNING",
+        )
+
+    ###
     #   Calculate and apply image shifts
     #
     terminal_output.print_to_terminal(
@@ -622,11 +748,13 @@ def _run_reduction(cfg: ReduceConfig) -> None:
         indent=1,
     )
 
-    registration.align_images(
+    alignment_result = registration.align_images(
         output_path / "light",
         output_path,
         image_type_dir["light"],
-        reference_image_index=cfg.reference_image_index,
+        reference_image_index=(
+            cfg.reference_image_index if cfg.reference_image_index is not None else 0
+        ),
         shift_method=cfg.shift_method,
         n_cores_multiprocessing=cfg.n_cores_multiprocessing,
         rm_outliers=cfg.rm_outliers_image_shifts,
@@ -639,7 +767,17 @@ def _run_reduction(cfg: ReduceConfig) -> None:
         align_filter_wise=not cfg.shift_all,
         wcs_method=cfg.wcs_method,
         force_wcs_determination=cfg.force_wcs_determination,
+        reference_file_names=reference_files,
     )
+
+    if quality_table is not None and len(quality_table):
+        merge_alignment_result(quality_table, alignment_result)
+        write_quality_table(quality_table, quality_table_path)
+        quality.plot_frame_quality(
+            quality_table,
+            output_path,
+            selection=frame_selection,
+        )
 
     #   Set the image directory depending on whether we have aligned images or
     #   just the image transformation matrices.
@@ -667,18 +805,6 @@ def _run_reduction(cfg: ReduceConfig) -> None:
                 force_wcs_determination=cfg.force_wcs_determination,
             )
 
-    if cfg.estimate_fwhm:
-        ###
-        #   Estimate FWHM
-        #
-        terminal_output.print_to_terminal("Estimate FWHM ...", indent=1)
-        utilities.estimate_fwhm(
-            # output_path / 'aligned_lights',
-            output_path / image_directory,
-            output_path / "fwhm",
-            image_type_dir["light"],
-        )
-
     if cfg.stack_images:
         ###
         #   Stack images of the individual filters
@@ -695,6 +821,9 @@ def _run_reduction(cfg: ReduceConfig) -> None:
             dtype=cfg.dtype,
             debug=cfg.debug,
             n_cores_multiprocessing=cfg.n_cores_multiprocessing,
+            stack_weighting=cfg.stack_weighting,
+            quality_table=quality_table,
+            keep_input_frames=cfg.keep_aligned_lights,
         )
 
         if cfg.find_wcs and not cfg.find_wcs_of_all_images:

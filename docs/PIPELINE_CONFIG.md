@@ -479,6 +479,13 @@ CCD reduction is **not** a `PipelineConfig` step. Course scripts call
 | `n_cores_multiprocessing` | `None` | Worker processes for calibration frames, alignment, and stacking. `None` or `<= 0` → half the logical CPUs. |
 | `find_wcs` | `True` | Solve WCS on reduced / stacked frames. Skipped after `shift_method="wcs"` unless `force_wcs_determination`. |
 | `gain` / `read_noise` / `dark_rate` | `None` | Electronics overrides. If unset, `camera_info` interpolates from `data/cameras.json` (system gain, read noise, dark current, chip size). |
+| `measure_frame_quality` | `True` | Per-frame FWHM (Gaussian fits), roundness, star count, sky background and masked fraction, measured on the reduced lights **before** alignment. Written to `<output>/frame_quality.ecsv` and the frame headers (`FWHM`, `FWHMAS`, `ROUNDNES`, `NSTARS`, `BACKGRND`, `BKGRMS`, `MASKFRAC`, `QCSTAT`). Required by the three options below. |
+| `frame_selection` | `None` | Rejection criteria (mapping or `reduce.frame_selection.FrameSelection`), AND-combined and evaluated per filter: `fwhm_max` (+ `fwhm_unit` `px`/`arcsec`), `best_fraction`, `fwhm_sigma_clip`, `rank_by`, `roundness_max`, `n_stars_min`, `background_max`, `masked_fraction_max`, `min_frames`, `reject_no_stars`. Rejected frames move to `<output>/rejected_lights/` (`QCREJ` / `QCREASON` in the header). `None` measures only. |
+| `reference_image_selection` | `best_fwhm` | Alignment reference when `reference_image_index` is `None`: sharpest kept frame per filter (one global frame with `shift_all`), or `first`. |
+| `reference_image_index` | `None` | Explicit reference index (time-sorted); always wins over `reference_image_selection`. |
+| `stack_weighting` | `none` | Per-frame weights for `stack_method="average"` (see below). Stored as `FRMWGHT` in each frame; the stack records `WEIGHTNG`, `NFRAMES0`, `NREJECT`, `NALIGNFL`, `FWHMMED`, `FWHMMAX`. `median` ignores weights (ccdproc). |
+| `keep_aligned_lights` | `False` | Keep `<output>/aligned_lights/` after stacking (re-stack with another selection, export registered frames). |
+| `estimate_fwhm` | `False` | **Deprecated** alias for `measure_frame_quality=True`. |
 
 | `shift_method` | When to use |
 |----------------|-------------|
@@ -486,6 +493,23 @@ CCD reduction is **not** a `PipelineConfig` step. Course scripts call
 | `wcs` | Reproject onto the reference celestial WCS. Large dithers, sparse fields, filter-to-filter stacks, or when astroalign fails. |
 | `aa` / `skimage` | Translation only (then pad with `make_big_images`). |
 | `own` / `flow` | Not recommended (`own` is slow; `flow` is a poor stacking warp). |
+
+| `stack_weighting` | Formula (per filter, kept frames, mean 1, clipped to 0.1–10) |
+|-------------------|----------------------------------------------------------------|
+| `none` | equal weights |
+| `fwhm` | `(median FWHM / FWHM)²` — sharp frames dominate |
+| `n_stars` | `N_stars / median(N_stars)` — transparency proxy |
+| `noise` | `(median sky RMS / sky RMS)²` — inverse-variance-like |
+
+Siril equivalents: *stack frames below FWHM X* → `frame_selection={"fwhm_max": X}`;
+*best 80 %* → `{"best_fraction": 0.8}` (`rank_by="fwhm_weighted"` for Siril's
+wFWHM); *roundness* → `{"roundness_max": 0.3}`; *k-sigma* →
+`{"fwhm_sigma_clip": 3.0}`; *weighted by FWHM / number of stars / noise* →
+`stack_weighting="fwhm" | "n_stars" | "noise"`; *reference = best frame* is the
+default. Per-filter QC plots: `<output>/diagnostics/frame_quality/`
+([DIAGNOSTICS.md](DIAGNOSTICS.md#frame-quality-reduction)). The
+astro-imaging reference workflow (reduce, select, weighted stack, re-stack,
+standalone quality CLI) lives in `auxiliary_scripts/astro_imaging/`.
 
 Analysis WCS (`PipelineConfig.wcs_method`) is independent and still defaults to ASTAP. A full `reduce_main` option catalogue is a documentation follow-up — see [TODO.md](TODO.md#documentation).
 

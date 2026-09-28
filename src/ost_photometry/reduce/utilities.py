@@ -4,6 +4,7 @@
 
 import os
 import sys
+import warnings
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -393,7 +394,19 @@ def estimate_fwhm(
     indent
         Indentation for the console output lines.
         Default is ``2``.
+
+    .. deprecated::
+        Use :func:`ost_photometry.reduce.quality.measure_directory_quality`
+        (``reduce_main(measure_frame_quality=True)``), which also stores the
+        results in ``frame_quality.ecsv`` and the FITS headers.
     """
+    warnings.warn(
+        "reduce.utilities.estimate_fwhm is deprecated; use "
+        "reduce.quality.measure_directory_quality / "
+        "reduce_main(measure_frame_quality=True) instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
     out_path = checks.check_pathlib_path(output_dir)

@@ -25,6 +25,10 @@ def test_diagnostics_and_results_and_work_dirs(tmp_path):
     assert cmds == tmp_path / "diagnostics" / "cmds"
     assert cmds.is_dir()
 
+    fq = layout.diagnostics_dir(tmp_path, "frame_quality")
+    assert fq == tmp_path / "diagnostics" / "frame_quality"
+    assert fq.is_dir()
+
     lc = layout.results_dir(tmp_path, "lightcurves", "by_id")
     assert lc == tmp_path / "results" / "lightcurves" / "by_id"
     assert lc.is_dir()

@@ -15,6 +15,7 @@ from ... import utilities as base_utilities
 from ...core.pixel_masks import warn_if_mask_too_large
 from ...fits_headers import wcs_from_header
 from ...wcs import find_wcs_for_image, wcs_maps_distinct_sky_positions
+from .accounting import ApplyResult, apply_ok, apply_skipped, exception_note
 
 
 def celestial_wcs_from_ccd(ccd: CCDData) -> WCS | None:
@@ -196,8 +197,11 @@ def apply_wcs_align(
     save_only_transformation: bool = False,
     wcs_method: str = "astap",
     force_wcs_determination: bool = False,
-) -> None:
-    """Reproject one science frame onto the reference image WCS and write it."""
+) -> ApplyResult:
+    """Reproject one science frame onto the reference image WCS and write it.
+
+    Returns ``(basename, success, note)`` for the alignment accounting.
+    """
     current_path = Path(current_image_name)
     reference_path = Path(reference_image_name)
     output_path = Path(output_path)
@@ -209,7 +213,7 @@ def apply_wcs_align(
         wcs_method=wcs_method,
         force=force_wcs_determination,
     ):
-        return
+        return apply_skipped(current_path, "no celestial WCS")
     if not ensure_celestial_wcs_on_fits(
         reference_path,
         output_path,
@@ -222,7 +226,7 @@ def apply_wcs_align(
             indent=2,
             style_name="WARNING",
         )
-        return
+        return apply_skipped(current_path, "reference has no celestial WCS")
 
     current_ccd = CCDData.read(current_image_name)
     reference_ccd = CCDData.read(reference_image_name)
@@ -234,7 +238,7 @@ def apply_wcs_align(
             indent=2,
             style_name="WARNING",
         )
-        return
+        return apply_skipped(current_path, "missing celestial WCS after solve")
 
     same_file = current_path.resolve() == reference_path.resolve()
     if same_file:
@@ -253,7 +257,7 @@ def apply_wcs_align(
                 indent=2,
                 style_name="WARNING",
             )
-            return
+            return apply_skipped(current_path, exception_note(exc))
         dx, dy = pixel_offset_on_reference(
             src_wcs,
             current_ccd.data.shape,
@@ -297,6 +301,7 @@ def apply_wcs_align(
         f"WCS align {current_path.name}: dx={dx:+.2f} pix, dy={dy:+.2f} pix",
         indent=2,
     )
+    return apply_ok(current_path)
 
 
 __all__ = [

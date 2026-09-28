@@ -59,6 +59,53 @@ def mark_cosmics_identified(
         raise ValueError(f"Unknown cosmic handling {handling!r}")
 
 
+#: Frame-quality keywords written by ``reduce.quality`` (all <= 8 characters).
+FRAME_WEIGHT_KEY = "FRMWGHT"
+FRAME_REJECTED_KEY = "QCREJ"
+FRAME_REJECT_REASON_KEY = "QCREASON"
+FRAME_REFERENCE_KEY = "QCREF"
+
+
+def mark_frame_rejected(
+    header: MutableMapping[str, Any] | fits.Header,
+    *,
+    reason: str,
+) -> None:
+    """Flag a frame as rejected by the quality selection (``QCREJ`` / ``QCREASON``)."""
+    header[FRAME_REJECTED_KEY] = True
+    header[FRAME_REJECT_REASON_KEY] = str(reason)[:68]
+
+
+def frame_rejected(header: Mapping[str, Any] | fits.Header) -> bool:
+    """True if the frame carries the quality-rejection flag."""
+    return FRAME_REJECTED_KEY in header and _header_truthy(header.get(FRAME_REJECTED_KEY))
+
+
+def set_frame_weight(
+    header: MutableMapping[str, Any] | fits.Header,
+    weight: float,
+) -> None:
+    """Store the relative stack weight of a frame (``FRMWGHT``)."""
+    value = float(weight)
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError(f"frame weight must be finite and >= 0, got {weight!r}")
+    header[FRAME_WEIGHT_KEY] = value
+
+
+def frame_weight(header: Mapping[str, Any] | fits.Header) -> float | None:
+    """Relative stack weight from ``FRMWGHT``, or ``None`` if absent / unusable."""
+    value = header.get(FRAME_WEIGHT_KEY)
+    if value is None:
+        return None
+    try:
+        weight = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(weight) or weight < 0.0:
+        return None
+    return weight
+
+
 def normalize_cosmic_ray_removal(
     value: bool | CosmicRayRemovalMode | str,
 ) -> CosmicRayRemovalMode:

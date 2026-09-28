@@ -7,6 +7,7 @@ are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
 ```
 <output>/
   diagnostics/
+    frame_quality/   # reduction: FWHM / roundness / stars / sky per frame and filter
     extraction/      # mag–error, growth, starmaps, aperture, ePSF, residual
     correlation/     # track QC per filter, inter-filter separations/geometry, exposure pairing
     calibration/     # catalog match, fit panels, residuals, night summary
@@ -26,6 +27,20 @@ are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
 
 Former top-level plot folders (`calibration/`, `lightcurve/`, `extinction_fit/`,
 `compare/`, `scatter/`, `wcs_images/`, `subtract/`) are no longer written.
+
+## Frame quality (reduction)
+
+Written by `reduce_main(measure_frame_quality=True)` (default) after the
+alignment, one PDF per filter. The numbers behind the plot are in
+`<output>/frame_quality.ecsv`.
+
+| File (stem) | When | Content |
+|-------------|------|---------|
+| `frame_quality_<filter>` | After **alignment** in `reduce_main` | Four panels over the frame index (observation order): FWHM (px, or arcsec when the pixel scale is known), IRAF roundness, stars detected, sky background. Kept frames are filled dots, **rejected** frames red crosses (`reject_reason` in the table), the alignment **reference** a star marker, kept frames that failed alignment hollow dots. The `fwhm_max` threshold is drawn when set. |
+
+Use it to check whether a `frame_selection` cut sits where you expect
+(seeing trend, cloud passages as star-count dips, tracking as roundness
+spikes) before re-stacking with a tighter or looser selection.
 
 ## Starmaps
 

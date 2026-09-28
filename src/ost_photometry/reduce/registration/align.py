@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 
 import ccdproc as ccdp
@@ -12,8 +13,10 @@ from astropy.nddata import CCDData
 from ... import checks, style, terminal_output
 from ...core.parallel import Executor
 from .. import utilities
+from ..frame_selection import GLOBAL_REFERENCE_KEY
 from ..image_collection import image_file_collection as make_image_file_collection
 from ..trim_slices import aa_common_trim_margins
+from .accounting import AlignmentResult, FilterAlignment, resolve_reference_index
 from .shifts import (
     apply_astro_align,
     apply_optical_flow,
@@ -25,7 +28,7 @@ from .wcs_align import apply_wcs_align, ensure_celestial_wcs_on_fits
 
 def align_images(
         image_path: str | Path, output_dir: str | Path,
-        image_type_list: list[str], reference_image_index: int = 0,
+        image_type_list: list[str], reference_image_index: int | None = 0,
         enlarged_only: bool = False, shift_method: str = 'aa_true',
         n_cores_multiprocessing: int | None = None,
         rm_outliers: bool = True, filter_window: int = 25,
@@ -38,7 +41,8 @@ def align_images(
         align_filter_wise: bool = False,
         wcs_method: str = "astap",
         force_wcs_determination: bool = False,
-    ) -> None:
+        reference_file_names: Mapping[str, str] | None = None,
+    ) -> AlignmentResult:
     """
     Calculate shift between images and trim those to the save field of
     view
@@ -56,8 +60,16 @@ def align_images(
         shifts shall be determined
 
     reference_image_index
-        ID of the image that should be used as a reference
+        ID of the image that should be used as a reference (after sorting
+        by observation time). ``None`` means the first image. Ignored for a
+        group that has an entry in ``reference_file_names``.
         Default is ``0``.
+
+    reference_file_names
+        Reference frame per group, ``{filter: basename}`` when
+        ``align_filter_wise`` is ``True``, else
+        ``{GLOBAL_REFERENCE_KEY: basename}``. Typically the sharpest frame
+        from the frame-quality step. Default is ``None``.
 
     enlarged_only
         It true the file selection will be restricted to images with a
@@ -126,10 +138,17 @@ def align_images(
     force_wcs_determination
         Re-solve WCS even if a celestial solution is already in the header.
         Default is ``False``.
+
+    Returns
+    -------
+    result
+        Which frames were aligned and which were skipped, per group.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
     out_path = checks.check_pathlib_path(output_dir)
+    references = dict(reference_file_names or {})
+    result = AlignmentResult()
 
     #   Set output paths
     if image_output_directory is not None:
@@ -194,7 +213,7 @@ def align_images(
                 )
 
             #   Calculate image shifts and trim images accordingly
-            align_image_main(
+            outcome = align_image_main(
                 ifc_filtered,
                 aligned_path,
                 output_path_transformation,
@@ -210,7 +229,10 @@ def align_images(
                 save_only_transformation=save_only_transformation,
                 wcs_method=wcs_method,
                 force_wcs_determination=force_wcs_determination,
+                reference_file_name=references.get(str(filter_)),
+                label=f"filter {filter_}",
             )
+            result.add(outcome)
     else:
         if enlarged_only:
             #   Select only enlarged images
@@ -221,7 +243,7 @@ def align_images(
             ifc_filtered = ifc_image_type_filtered
 
         #   Calculate image shifts and trim images accordingly
-        align_image_main(
+        outcome = align_image_main(
             ifc_filtered,
             aligned_path,
             output_path_transformation,
@@ -239,6 +261,16 @@ def align_images(
             save_only_transformation=save_only_transformation,
             wcs_method=wcs_method,
             force_wcs_determination=force_wcs_determination,
+            reference_file_name=references.get(GLOBAL_REFERENCE_KEY),
+            label="all frames",
+        )
+        result.add(outcome)
+
+    for outcome in result.per_group.values():
+        terminal_output.print_to_terminal(
+            outcome.summary_line(),
+            indent=2,
+            style_name="WARNING" if outcome.skipped else "BOLD",
         )
 
     #   Remove reduced files if they exist, but only if they are no longer
@@ -251,13 +283,15 @@ def align_images(
     if not debug and not save_only_transformation and not enlarged_only:
         shutil.rmtree(file_path, ignore_errors=True)
 
+    return result
+
 
 def align_image_main(
         image_file_collection: ccdp.ImageFileCollection, output_path: Path,
         output_path_transformation: Path,
         shift_method: str = 'aa_true',
         n_cores_multiprocessing: int | None = None,
-        reference_image_index: int = 0,
+        reference_image_index: int | None = 0,
         terminal_alignment_comment: str | None = None,
         rm_enlarged_keyword: bool = False, modify_file_name: bool = False,
         rm_outliers: bool = True, filter_window: int = 25,
@@ -265,7 +299,9 @@ def align_image_main(
         verbose: bool = False, save_only_transformation: bool = False,
         wcs_method: str = "astap",
         force_wcs_determination: bool = False,
-    ) -> None:
+        reference_file_name: str | None = None,
+        label: str | None = None,
+    ) -> FilterAlignment:
     """
     Core steps of the image shift calculations and trimming to a
     common filed of view
@@ -291,8 +327,17 @@ def align_image_main(
         Default is ``None``.
 
     reference_image_index
-        ID of the image that should be used as a reference
+        ID of the image that should be used as a reference. ``None`` means
+        the first image. Ignored when ``reference_file_name`` is given.
         Default is ``0``.
+
+    reference_file_name
+        Basename of the reference frame; takes precedence over
+        ``reference_image_index``. Default is ``None``.
+
+    label
+        Group label used in the alignment summary (e.g. ``filter V``).
+        Default is ``None`` (``all frames``).
 
     terminal_alignment_comment
         Text string that is used to label the output.
@@ -338,6 +383,11 @@ def align_image_main(
     force_wcs_determination
         Re-solve WCS even if a celestial solution is already present.
         Default is ``False``.
+
+    Returns
+    -------
+    outcome
+        Aligned and skipped frames of this group.
     """
     if terminal_alignment_comment is None:
         terminal_alignment_comment = '\tImage displacement:'
@@ -349,6 +399,21 @@ def align_image_main(
             style_name='WARNING',
         )
         terminal_alignment_comment = '\tImage displacement:'
+
+    group_label = label or "all frames"
+    files = list(image_file_collection.files)
+    if not files:
+        return FilterAlignment(label=group_label, reference_file="", n_total=0)
+
+    #   Resolve the reference frame (explicit file wins over the index)
+    reference_image_index = resolve_reference_index(
+        files, reference_image_index, reference_file_name
+    )
+    reference_path_name = files[reference_image_index]
+    terminal_output.print_to_terminal(
+        f"Reference frame ({group_label}): {Path(reference_path_name).name}",
+        indent=2,
+    )
 
     #   Calculate image shifts
     if shift_method in ['own', 'skimage', 'aa']:
@@ -396,7 +461,12 @@ def align_image_main(
             if shift_method == 'aa'
             else None
         )
-        for current_image_id, current_image_name in enumerate(image_file_collection.files):
+        pre_skipped = [
+            (current_image_name, "shift outlier or shift determination failed")
+            for current_image_id, current_image_name in enumerate(files)
+            if np.isnan(image_shifts[1, current_image_id])
+        ]
+        for current_image_id, current_image_name in enumerate(files):
             #   Check for outliers and those images where the shift determination failed
             if not np.isnan(image_shifts[1, current_image_id]):
                 executor.schedule(
@@ -428,24 +498,25 @@ def align_image_main(
 
         #   Close multiprocessing pool and wait until it finishes
         executor.wait()
+        outcome = FilterAlignment.from_results(
+            group_label, reference_path_name, files, executor.res, pre_skipped=pre_skipped
+        )
 
     elif shift_method == 'flow':
-        reference_file_name = image_file_collection.files[reference_image_index]
-
         #   Initialize multiprocessing object
         executor = Executor(
             n_cores_multiprocessing,
-            n_tasks=len(image_file_collection.files),
+            n_tasks=len(files),
             add_progress_bar=True,
         )
 
         #   Trim all images
-        for current_image_name in image_file_collection.files:
+        for current_image_name in files:
             executor.schedule(
                 apply_optical_flow,
                 args=(
                     current_image_name,
-                    reference_file_name,
+                    reference_path_name,
                     output_path,
                 ),
                 kwargs={
@@ -465,24 +536,25 @@ def align_image_main(
 
         #   Close multiprocessing pool and wait until it finishes
         executor.wait()
+        outcome = FilterAlignment.from_results(
+            group_label, reference_path_name, files, executor.res
+        )
 
     elif shift_method == 'aa_true':
-        reference_file_name = image_file_collection.files[reference_image_index]
-
         #   Initialize multiprocessing object
         executor = Executor(
             n_cores_multiprocessing,
-            n_tasks=len(image_file_collection.files),
+            n_tasks=len(files),
             add_progress_bar=True,
         )
 
         #   Trim all images
-        for current_image_name in image_file_collection.files:
+        for current_image_name in files:
             executor.schedule(
                 apply_astro_align,
                 args=(
                     current_image_name,
-                    reference_file_name,
+                    reference_path_name,
                     output_path,
                     output_path_transformation,
                 ),
@@ -504,36 +576,29 @@ def align_image_main(
 
         #   Close multiprocessing pool and wait until it finishes
         executor.wait()
+        outcome = FilterAlignment.from_results(
+            group_label, reference_path_name, files, executor.res
+        )
 
     elif shift_method == "wcs":
-        files = list(image_file_collection.files)
-        if not files:
-            return
-        ref_index = int(reference_image_index)
-        if ref_index < 0 or ref_index >= len(files):
-            raise ValueError(
-                f"reference_image_index {reference_image_index} is out of "
-                f"range for {len(files)} images"
-            )
-        reference_file_name = files[ref_index]
         terminal_output.print_to_terminal(
             f"{terminal_alignment_comment} WCS reproject "
             f"(solver={wcs_method})",
             indent=2,
         )
         if not ensure_celestial_wcs_on_fits(
-            reference_file_name,
+            reference_path_name,
             output_path,
             wcs_method=wcs_method,
             force=force_wcs_determination,
         ):
             raise RuntimeError(
                 f"{style.Bcolors.FAIL}Reference image has no celestial WCS "
-                f"({reference_file_name}); cannot use shift_method='wcs'. "
+                f"({reference_path_name}); cannot use shift_method='wcs'. "
                 f"Check ASTAP / wcs_method.{style.Bcolors.ENDC}"
             )
         for path in files:
-            if path == reference_file_name:
+            if path == reference_path_name:
                 continue
             ensure_celestial_wcs_on_fits(
                 path,
@@ -552,7 +617,7 @@ def align_image_main(
                 apply_wcs_align,
                 args=(
                     current_image_name,
-                    reference_file_name,
+                    reference_path_name,
                     output_path,
                     output_path_transformation,
                 ),
@@ -572,12 +637,17 @@ def align_image_main(
                 f"{style.Bcolors.ENDC}"
             )
         executor.wait()
+        outcome = FilterAlignment.from_results(
+            group_label, reference_path_name, files, executor.res
+        )
 
     else:
         raise ValueError(
             f"{style.Bcolors.FAIL}Method {shift_method} not known "
             f"-> EXIT {style.Bcolors.ENDC}"
         )
+
+    return outcome
 
 
 def make_big_images(

@@ -116,11 +116,11 @@ align is clearly better on that dataset.
 From the method comparison (`compare_registration`). Do these before
 starting drizzle.
 
-1. **Silent drop of failed frames (P1/P2).** `aa_true` and `wcs` warn and
-   `return` when a frame cannot be aligned. Stacking continues with fewer
-   images and there is no summary of the form “n of N aligned, skipped:
-   …”. Count successes and failures in `align_images` / `align_image_main`
-   and report the skipped file names.
+1. **Silent drop of failed frames — done.** `align_images` returns an
+   `AlignmentResult` (`registration.accounting`); every `apply_*` worker
+   reports `(basename, success, note)`, the per-group summary “n of N
+   frames aligned; skipped: …” is printed, and skipped frames land in
+   `frame_quality.ecsv` (`aligned`, `align_note`).
 
 2. **Stale WCS after `aa_true` (P2, photometry path done).** `astro_align`
    now copies the **reference WCS** onto the warped `CCDData`. Remaining

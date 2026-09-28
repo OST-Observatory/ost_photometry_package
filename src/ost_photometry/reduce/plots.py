@@ -12,10 +12,226 @@ from photutils.psf import EPSFStars
 from scipy import stats
 
 from .. import checks, terminal_output
+from ..output_layout import diagnostics_dir
 
 ############################################################################
 #                           Routines & definitions                         #
 ############################################################################
+
+#   Frame-quality plot palette: one series hue for the metric, status colors
+#   for rejected frames, neutral ink for text / thresholds.
+_FQ_SERIES = "#2a78d6"
+_FQ_REJECTED = "#d03b3b"
+_FQ_REFERENCE = "#eda100"
+_FQ_INK = "#0b0b0b"
+_FQ_INK_SECONDARY = "#52514e"
+_FQ_GRID = "#e6e5e1"
+
+
+def _safe_filter_name(filter_: str) -> str:
+    return str(filter_).replace("''", "p").replace("/", "_").replace(" ", "_")
+
+
+def frame_quality_overview(
+    rows: dict[str, np.ndarray],
+    output_dir: str | Path,
+    filter_: str,
+    *,
+    fwhm_max: float | None = None,
+    fwhm_unit: str = "px",
+    alignment_known: bool = False,
+) -> Path:
+    """
+    Per-filter frame-quality overview: FWHM, roundness, star count and sky
+    background against the frame index, with rejected and reference frames
+    marked.
+
+    Parameters
+    ----------
+    rows
+        Plain arrays (no astropy Table, so the plot can run in a child
+        process): ``file`` (basenames), ``fwhm_px``, ``fwhm_arcsec``,
+        ``roundness``, ``n_stars``, ``background``, ``rejected`` (bool),
+        ``is_reference`` (bool), ``aligned`` (bool). Frames are plotted in
+        the given order (sorted by observation time upstream).
+
+    output_dir
+        Reduction output directory; the PDF goes to
+        ``<output_dir>/diagnostics/frame_quality/``.
+
+    filter_
+        Filter name (used in the title and file name).
+
+    fwhm_max
+        Optional rejection threshold drawn on the FWHM panel, in
+        ``fwhm_unit``.
+
+    fwhm_unit
+        ``px`` or ``arcsec``; selects which FWHM column is shown.
+
+    alignment_known
+        If ``True`` kept frames that could not be aligned are drawn as
+        hollow markers.
+
+    Returns
+    -------
+    path
+        Path of the written PDF.
+    """
+    files = [str(f) for f in rows["file"]]
+    n = len(files)
+    index = np.arange(n)
+    rejected = np.asarray(rows["rejected"], dtype=bool)
+    reference = np.asarray(rows["is_reference"], dtype=bool)
+    aligned = np.asarray(rows.get("aligned", np.ones(n, dtype=bool)), dtype=bool)
+    kept = ~rejected
+    not_aligned = kept & ~aligned if alignment_known else np.zeros(n, dtype=bool)
+
+    fwhm_column = "fwhm_arcsec" if fwhm_unit == "arcsec" else "fwhm_px"
+    fwhm_values = np.asarray(rows[fwhm_column], dtype=float)
+    if fwhm_unit == "arcsec" and not np.any(np.isfinite(fwhm_values)):
+        fwhm_values = np.asarray(rows["fwhm_px"], dtype=float)
+        fwhm_unit = "px"
+        fwhm_max = None
+    panels = [
+        ("FWHM [arcsec]" if fwhm_unit == "arcsec" else "FWHM [pixel]", fwhm_values),
+        ("roundness", np.asarray(rows["roundness"], dtype=float)),
+        ("stars detected", np.asarray(rows["n_stars"], dtype=float)),
+        ("sky background", np.asarray(rows["background"], dtype=float)),
+    ]
+
+    fig, axes = plt.subplots(
+        nrows=len(panels),
+        ncols=1,
+        sharex=True,
+        figsize=(max(7.0, min(0.28 * n + 3.0, 22.0)), 9.5),
+        constrained_layout=True,
+    )
+    fig.patch.set_facecolor("white")
+
+    for ax, (label, values) in zip(axes, panels, strict=True):
+        finite = np.isfinite(values)
+        ax.plot(
+            index[finite],
+            values[finite],
+            color=_FQ_SERIES,
+            linewidth=1.0,
+            alpha=0.5,
+            zorder=1,
+        )
+        ax.plot(
+            index[kept & finite & ~not_aligned],
+            values[kept & finite & ~not_aligned],
+            linestyle="none",
+            marker="o",
+            markersize=6,
+            color=_FQ_SERIES,
+            zorder=3,
+            label="kept",
+        )
+        if np.any(not_aligned & finite):
+            ax.plot(
+                index[not_aligned & finite],
+                values[not_aligned & finite],
+                linestyle="none",
+                marker="o",
+                markersize=6,
+                markerfacecolor="white",
+                markeredgecolor=_FQ_SERIES,
+                markeredgewidth=1.5,
+                zorder=3,
+                label="kept, not aligned",
+            )
+        if np.any(rejected & finite):
+            ax.plot(
+                index[rejected & finite],
+                values[rejected & finite],
+                linestyle="none",
+                marker="x",
+                markersize=8,
+                markeredgewidth=1.8,
+                color=_FQ_REJECTED,
+                zorder=4,
+                label="rejected",
+            )
+        if np.any(reference & finite):
+            ax.plot(
+                index[reference & finite],
+                values[reference & finite],
+                linestyle="none",
+                marker="*",
+                markersize=13,
+                markerfacecolor=_FQ_REFERENCE,
+                markeredgecolor=_FQ_INK,
+                markeredgewidth=0.8,
+                zorder=5,
+                label="reference",
+            )
+        ax.set_ylabel(label, color=_FQ_INK)
+        ax.grid(True, color=_FQ_GRID, linewidth=0.8, zorder=0)
+        ax.set_axisbelow(True)
+        for spine in ("top", "right"):
+            ax.spines[spine].set_visible(False)
+        for spine in ("left", "bottom"):
+            ax.spines[spine].set_color(_FQ_INK_SECONDARY)
+        ax.tick_params(colors=_FQ_INK_SECONDARY)
+
+    if fwhm_max is not None and np.isfinite(fwhm_max):
+        axes[0].axhline(
+            float(fwhm_max),
+            color=_FQ_INK_SECONDARY,
+            linestyle="--",
+            linewidth=1.2,
+            zorder=2,
+        )
+        axes[0].annotate(
+            f"fwhm_max = {float(fwhm_max):g} {fwhm_unit}",
+            xy=(0.995, float(fwhm_max)),
+            xycoords=("axes fraction", "data"),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="right",
+            va="bottom",
+            fontsize=8,
+            color=_FQ_INK_SECONDARY,
+        )
+
+    #   Legend once, on the top panel; entries de-duplicated.
+    handles, labels = axes[0].get_legend_handles_labels()
+    seen: dict[str, object] = {}
+    for handle, label in zip(handles, labels, strict=True):
+        seen.setdefault(label, handle)
+    axes[0].legend(
+        list(seen.values()),
+        list(seen.keys()),
+        loc="upper left",
+        fontsize=8,
+        frameon=False,
+        ncol=len(seen),
+        bbox_to_anchor=(0.0, 1.22),
+    )
+
+    #   Frame names as tick labels; thin them out for long series.
+    step = max(1, int(np.ceil(n / 40.0)))
+    axes[-1].set_xticks(index[::step])
+    axes[-1].set_xticklabels(files[::step], rotation=90, fontsize=7, color=_FQ_INK_SECONDARY)
+    axes[-1].set_xlabel("frame (observation order)", color=_FQ_INK)
+    axes[-1].set_xlim(-0.6, max(n - 0.4, 0.6))
+
+    n_rejected = int(np.count_nonzero(rejected))
+    fig.suptitle(
+        f"Frame quality, filter {filter_}: {n} frames, {n - n_rejected} kept, "
+        f"{n_rejected} rejected",
+        color=_FQ_INK,
+        fontsize=12,
+        y=1.03,
+    )
+
+    out_dir = diagnostics_dir(output_dir, "frame_quality")
+    path = out_dir / f"frame_quality_{_safe_filter_name(filter_)}.pdf"
+    fig.savefig(path, bbox_inches="tight", format="pdf")
+    plt.close(fig)
+    return path
 
 
 def cross_correlation_matrix(

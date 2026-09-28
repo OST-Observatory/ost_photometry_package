@@ -59,6 +59,12 @@ def test_reduce_config_is_dataclass():
     assert cfg.shift_method == "aa_true"
     assert cfg.wcs_method == "astap"
     assert cfg.image_path == Path("/tmp/in")
+    assert cfg.reference_image_index is None
+    assert cfg.reference_image_selection == "best_fwhm"
+    assert cfg.measure_frame_quality is True
+    assert cfg.frame_selection is None
+    assert cfg.stack_weighting == "none"
+    assert cfg.keep_aligned_lights is False
 
 
 def test_redu_facade_reexports_reduce_main():

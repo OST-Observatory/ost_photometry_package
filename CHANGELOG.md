@@ -11,6 +11,48 @@ section of this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Frame quality** in the reduction (`reduce.quality`, `reduce.frame_selection`):
+  per-frame FWHM (Gaussian fits of selected stars), roundness, star count, sky
+  background / RMS and masked fraction, measured on the reduced lights before
+  alignment. Results in `<output>/frame_quality.ecsv` and the frame headers
+  (`FWHM`, `FWHMAS`, `PIXSCALE`, `ROUNDNES`, `NSTARS`, `BACKGRND`, `BKGRMS`,
+  `MASKFRAC`, `QCSTAT`). `reduce_main(measure_frame_quality=True)` is the default.
+- **Frame selection** (`frame_selection=`): `fwhm_max` in px or arcsec,
+  `best_fraction` (Siril "best X %"), `fwhm_sigma_clip`, `roundness_max`,
+  `n_stars_min`, `background_max`, `masked_fraction_max`, `min_frames` floor,
+  `rank_by="fwhm_weighted"` (wFWHM analogue). Rejected frames are moved to
+  `<output>/rejected_lights/` with `QCREJ` / `QCREASON`, never deleted.
+- **Reference frame = sharpest frame** (`reference_image_selection="best_fwhm"`,
+  default; per filter, or one global frame with `shift_all`). An explicit
+  `reference_image_index` still wins.
+- **Weighted stacking** (`stack_weighting="fwhm" | "n_stars" | "noise"`) for
+  `stack_method="average"`; weights live in `FRMWGHT`, the stack records
+  `WEIGHTNG`, `NFRAMES0`, `NREJECT`, `NALIGNFL`, `FWHMMED`, `FWHMMAX`.
+  `keep_aligned_lights=True` keeps the registered frames for re-stacking.
+- **Alignment accounting**: `align_images` returns an `AlignmentResult`
+  ("n of N frames aligned; skipped: …"); skipped frames are recorded in the
+  quality table (`aligned`, `align_note`).
+- Frame-quality QC plots per filter under `diagnostics/frame_quality/`.
+
+### Changed
+
+- `reference_image_index` defaults to `None` (was `0`); with
+  `measure_frame_quality=True` the sharpest frame is the reference. Pass
+  `reference_image_index=0` or `reference_image_selection="first"` for the
+  old behaviour.
+- `apply_astro_align`, `apply_wcs_align`, `apply_optical_flow` and
+  `apply_xy_image_shift` return `(basename, success, note)` instead of `None`.
+- `stack_image` prints a per-filter summary and accepts `stack_weighting`,
+  `quality_table`, `keep_input_frames`; `stack_filter_images` accepts
+  `weights` and `stack_meta`.
+
+### Deprecated
+
+- `reduce_main(estimate_fwhm=True)` and `reduce.utilities.estimate_fwhm`
+  (use `measure_frame_quality` / `reduce.quality`).
+
 ## [0.5.0] - 2026-09-15
 
 First tagged release after `0.4.4`. This is the epoch-native pipeline: one

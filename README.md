@@ -33,6 +33,10 @@ handling, and WCS helpers. Default alignment is star-triangle (`shift_method="aa
 `shift_method="wcs"` reprojects onto the reference celestial WCS (large dithers /
 sparse fields). Camera gain, read noise, and dark current are interpolated from
 the bundled `data/cameras.json` catalog. Worker pools default to half the CPUs.
+Frame quality (FWHM, roundness, star count, sky) is measured per frame; frames
+can be rejected by threshold or "best X %" (`frame_selection`), the sharpest
+frame is the alignment reference, and stacks can be FWHM-, star-count- or
+noise-weighted (`stack_weighting`).
 
 **Analysis pipeline (`analyze.pipeline`)** — configurable step sequence driven by
 [`PipelineConfig`](src/ost_photometry/analyze/pipeline/config.py):
