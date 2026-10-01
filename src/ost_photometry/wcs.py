@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 import shlex
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -22,6 +24,13 @@ if TYPE_CHECKING:
     from .image import Image  # noqa: F401
 
 _ASTAP_UINT16_MAX = 60000
+
+#: Seconds before an ASTAP run is aborted (a frame without a solution can
+#: otherwise search for many minutes).
+ASTAP_TIMEOUT_SECONDS = 300
+
+#: Search radius in degrees when no pointing hint is available (blind solve).
+ASTAP_BLIND_RADIUS_DEG = 180.0
 
 
 def _astap_field_of_view_degrees(image: Image) -> float:
@@ -249,7 +258,7 @@ def persist_wcs_to_fits(image: Image) -> wcs.WCS:
             f"{image.path}{style.Bcolors.ENDC}"
         )
 
-    ny, nx = image.get_shape()
+    nx, ny = _image_shape_xy(image)
     derived_wcs = _apply_wcs_to_fits(
         Path(image.path),
         image.wcs,
@@ -273,18 +282,198 @@ def _sync_image_coordinates_from_wcs(image: Image, derived_wcs: wcs.WCS) -> None
     sync_image_coordinates_from_wcs(image, derived_wcs)
 
 
+def _image_shape_xy(image: Image) -> tuple[int, int]:
+    """``(NAXIS1, NAXIS2)`` of the image file, independent of ``get_shape``.
+
+    ``Image.get_shape`` returns the numpy order for an open CCD but the
+    header order otherwise; reading the header avoids the ambiguity.
+    """
+    header = image.get_header()
+    return int(header.get("NAXIS1", 0)), int(header.get("NAXIS2", 0))
+
+
+def _header_has_pointing(header: fits.Header) -> bool:
+    """True if the header carries a real pointing (not a default placeholder)."""
+    return bool(str(header.get("OBJCTRA", "")).strip()) and bool(
+        str(header.get("OBJCTDEC", "")).strip()
+    )
+
+
 def _astap_search_hint_arguments(image: Image) -> list[str]:
-    """Return optional ASTAP search-center arguments from the image metadata."""
+    """Return optional ASTAP search-center arguments from the image metadata.
+
+    ``Image`` falls back to RA = Dec = 0 when ``OBJCTRA``/``OBJCTDEC`` are
+    missing; passing that placeholder to ASTAP with a 3 degree radius makes
+    the solve fail. Without a real pointing no hint is returned and the
+    caller widens the search radius instead.
+    """
     coordinates = image.coordinates_image_center
-    if coordinates is None:
+    if coordinates is None or not _header_has_pointing(image.get_header()):
         return []
 
+    return astap_pointing_arguments(coordinates.ra.deg, coordinates.dec.deg)
+
+
+def astap_pointing_arguments(ra_deg: float | None, dec_deg: float | None) -> list[str]:
+    """ASTAP ``-ra`` (hours) / ``-spd`` (south pole distance) arguments."""
+    if ra_deg is None or dec_deg is None:
+        return []
+    if not (math.isfinite(ra_deg) and math.isfinite(dec_deg)):
+        return []
     return [
         "-ra",
-        f"{coordinates.ra.hour:.10g}",
+        f"{(ra_deg % 360.0) / 15.0:.10g}",
         "-spd",
-        f"{coordinates.dec.deg + 90.0:.10g}",
+        f"{dec_deg + 90.0:.10g}",
     ]
+
+
+def astap_command(
+    path: str | Path,
+    *,
+    fov_deg: float | None,
+    ra_deg: float | None = None,
+    dec_deg: float | None = None,
+    radius_deg: float = 3.0,
+    update: bool = True,
+) -> list[str]:
+    """Build the ``astap_cli`` command line.
+
+    Without a pointing hint the search radius is widened to
+    :data:`ASTAP_BLIND_RADIUS_DEG` (blind solve). ``fov_deg=None`` or ``0``
+    lets ASTAP take the field of view from the header.
+    """
+    hint = astap_pointing_arguments(ra_deg, dec_deg)
+    radius = float(radius_deg) if hint else ASTAP_BLIND_RADIUS_DEG
+    fov = 0.0 if fov_deg is None or not math.isfinite(fov_deg) else float(fov_deg)
+    cmd = [
+        "astap_cli",
+        "-f",
+        str(path),
+        "-r",
+        f"{radius:.10g}",
+        "-fov",
+        f"{fov:.10g}",
+        *hint,
+    ]
+    if update:
+        cmd.append("-update")
+    return cmd
+
+
+def _run_astap(cmd: list[str], timeout: float | None) -> subprocess.CompletedProcess:
+    """Run ASTAP; a timeout is reported like an unsolved frame."""
+    try:
+        return subprocess.run(
+            cmd,
+            shell=False,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return subprocess.CompletedProcess(
+            cmd,
+            returncode=-1,
+            stdout=(exc.stdout or "") if isinstance(exc.stdout, str) else "",
+            stderr=f"ASTAP timed out after {timeout} s",
+        )
+
+
+def _astap_solved(result: subprocess.CompletedProcess) -> bool:
+    return result.returncode == 0 and "Solution found:" in (result.stdout or "")
+
+
+def solve_astap_copy(
+    path: str | Path,
+    *,
+    work_dir: str | Path,
+    fov_deg: float | None = None,
+    ra_deg: float | None = None,
+    dec_deg: float | None = None,
+    radius_deg: float = 3.0,
+    timeout: float | None = ASTAP_TIMEOUT_SECONDS,
+) -> wcs.WCS | None:
+    """Plate-solve ``path`` with ASTAP without touching the file.
+
+    ASTAP runs on a private copy in a temporary directory below
+    ``work_dir`` (16-bit converted when needed); the copy and ASTAP's
+    ``.ini``/``.wcs`` side files are removed afterwards. Returns the
+    celestial WCS, or ``None`` when no solution was found (including
+    timeouts and degenerate solutions).
+    """
+    source = Path(path)
+    base = Path(work_dir)
+    base.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="astap_", dir=base) as tmp:
+        tmp_dir = Path(tmp)
+        try:
+            prepared, is_temporary = _prepare_astap_fits(source, tmp_dir)
+        except RuntimeError:
+            return None
+        if not is_temporary:
+            prepared = tmp_dir / source.name
+            shutil.copyfile(source, prepared)
+            with fits.open(prepared, mode="update") as hdul:
+                _strip_wcs_keywords(hdul[0].header)
+                hdul.flush()
+        cmd = astap_command(
+            prepared,
+            fov_deg=fov_deg,
+            ra_deg=ra_deg,
+            dec_deg=dec_deg,
+            radius_deg=radius_deg,
+            update=True,
+        )
+        result = _run_astap(cmd, timeout)
+        if not _astap_solved(result):
+            return None
+        with fits.open(prepared) as hdul:
+            header = hdul[0].header
+            nx = int(header.get("NAXIS1", 0))
+            ny = int(header.get("NAXIS2", 0))
+            solved = wcs_from_header(header.copy())
+    if not solved.has_celestial or not wcs_maps_distinct_sky_positions(solved, (nx, ny)):
+        return None
+    return solved.celestial
+
+
+def cd_matrix(wcs_obj: wcs.WCS) -> np.ndarray:
+    """2x2 CD matrix (degrees per pixel) of a celestial WCS."""
+    celestial = wcs_obj.celestial
+    if celestial.wcs.has_cd():
+        return np.asarray(celestial.wcs.cd, dtype=float)
+    return np.asarray(celestial.wcs.get_pc(), dtype=float) * np.asarray(
+        celestial.wcs.cdelt, dtype=float
+    )[:, None]
+
+
+def position_angle_from_cd(cd: np.ndarray) -> tuple[float, str, float]:
+    """Camera orientation from a CD matrix.
+
+    Returns ``(pa_deg, parity, scale_arcsec)``: the position angle of the
+    image +y axis measured from north through east (0-360), ``"normal"``
+    (sky as seen on the sky, det < 0) or ``"flipped"``, and the mean pixel
+    scale. A meridian flip changes ``pa_deg`` by 180 degrees; compare
+    orientations modulo 180 to ignore it.
+    """
+    cd = np.asarray(cd, dtype=float).reshape(2, 2)
+    det = float(cd[0, 0] * cd[1, 1] - cd[0, 1] * cd[1, 0])
+    scale = math.sqrt(abs(det)) * 3600.0
+    pa = math.degrees(math.atan2(cd[0, 1], cd[1, 1])) % 360.0
+    parity = "normal" if det < 0 else "flipped"
+    return pa, parity, scale
+
+
+def position_angle_from_wcs(wcs_obj: wcs.WCS) -> tuple[float, str, float]:
+    """Camera orientation of a celestial WCS; see :func:`position_angle_from_cd`."""
+    return position_angle_from_cd(cd_matrix(wcs_obj))
+
+
+def orientation_difference_mod180(pa_a: float, pa_b: float) -> float:
+    """Smallest absolute difference of two orientations modulo 180 degrees."""
+    diff = (float(pa_a) - float(pa_b)) % 180.0
+    return min(diff, 180.0 - diff)
 
 
 def find_wcs_astrometry(
@@ -527,7 +716,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
     source_path = Path(image.path)
     working_dir = work_dir(image.out_path, "wcs_images")
     astap_path, is_temporary = _prepare_astap_fits(source_path, working_dir)
-    ny, nx = image.get_shape()
+    nx, ny = _image_shape_xy(image)
 
     if not is_temporary:
         with fits.open(astap_path, mode="update") as hdul:
@@ -541,29 +730,29 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
             style_name="WARNING",
         )
 
+    hint = _astap_search_hint_arguments(image)
+    if not hint:
+        terminal_output.print_to_terminal(
+            "No pointing (OBJCTRA/OBJCTDEC) in the header; ASTAP solves blind.",
+            indent=indent,
+            style_name="WARNING",
+        )
     cmd = [
         "astap_cli",
         "-f",
         str(astap_path),
         "-r",
-        "3",
+        "3" if hint else f"{ASTAP_BLIND_RADIUS_DEG:.10g}",
         "-fov",
         f"{field_of_view:.10g}",
-        *_astap_search_hint_arguments(image),
+        *hint,
         "-update",
     ]
 
     try:
-        command_result = subprocess.run(
-            cmd,
-            shell=False,
-            text=True,
-            capture_output=True,
-        )
+        command_result = _run_astap(cmd, ASTAP_TIMEOUT_SECONDS)
 
-        return_code = command_result.returncode
-        solution_found = command_result.stdout.find("Solution found:")
-        if return_code != 0 or solution_found == -1:
+        if not _astap_solved(command_result):
             raise RuntimeError(
                 f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
                 f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"

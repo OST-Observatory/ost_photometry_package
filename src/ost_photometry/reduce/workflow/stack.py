@@ -99,6 +99,20 @@ def _write_stack_meta(
         )
 
 
+def total_exposure_time(files: Sequence[str]) -> float | None:
+    """Sum of ``EXPTIME`` over ``files``; ``None`` if any frame lacks it."""
+    total = 0.0
+    for file_name in files:
+        try:
+            value = float(fits.getheader(file_name).get("EXPTIME"))
+        except (TypeError, ValueError, OSError):
+            return None
+        if not np.isfinite(value):
+            return None
+        total += value
+    return total
+
+
 def stack_filter_images(
     images_to_combine: list[str],
     stacking_method: str,
@@ -136,6 +150,7 @@ def stack_filter_images(
         combined_image,
         len(images_to_combine),
         new_target_name,
+        total_exptime=total_exposure_time(images_to_combine),
     )
     _write_stack_meta(combined_image, stack_meta, weight_array)
     file_name = "combined_filter_{}.fit".format(filter_.replace("''", "p"))
@@ -362,6 +377,7 @@ def stack_image(
 
 __all__ = [
     "STACK_META_KEYWORDS",
+    "total_exposure_time",
     "prepare_stack_weights",
     "stack_filter_images",
     "stack_image",

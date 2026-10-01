@@ -65,13 +65,21 @@ Legacy `Observation.extract_flux` / `extract_flux_multi` entfallen zugunsten von
 | `2_restack.py` | ✅ | `frame_selection.read_quality_table` / `mark_selection` / `stack_weights`, `workflow.stack.stack_filter_images` mit `weights` + `stack_meta`; neu stacken ohne Reduktion |
 | `frame_quality.py` | ✅ | Standalone-CLI: `quality.measure_directory_quality`, Auswahl, ECSV, optional Header / `--move-rejected` / `--plot` |
 
-### 3.4 `compare_registration/`
+### 3.4 `archive_pipeline/`
+
+| Skript | Status | Kurznotiz |
+|--------|--------|-----------|
+| `1_fetch.py` | ✅ | `archive.ArchiveClient`, `fetch_dataset` (Objekt oder Lauf, `targets`), `manifest_from_directory` für lokale Bäume |
+| `2_classify_and_group.py` | ✅ | `reduce.grouping.plan.build_calibration_plan`, `write_plan` / `read_overrides`, `plots.plot_night_timelines` |
+| `3_reduce_and_stack.py` | ✅ | `reduce.workflow.groups.reduce_planned`, `reduce.workflow.combine.stack_planned` |
+
+### 3.5 `compare_registration/`
 
 | Skript | Status | Kurznotiz |
 |--------|--------|-----------|
 | `compare_registration_methods.py` | ✅ | `reduce_main(..., measure_frame_quality=False)` für den Methodenvergleich |
 
-### 3.5 Sonstiges
+### 3.6 Sonstiges
 
 Skripte unter `align_sun_imgs_mk_video/` nutzen ein lokales `aux`-Modul und sind
 nicht Teil dieser Matrix.

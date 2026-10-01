@@ -15,6 +15,7 @@ from astropy.time import Time
 from regions import PixCoord, RectanglePixelRegion
 
 from . import calibration_parameters, style, terminal_output
+from .camera_specs import normalize_instrument_name
 from .fits_headers import ensure_mjd_obs_in_header
 
 
@@ -147,23 +148,9 @@ class Image:
         #   Set instrument
         instrument = header.get("INSTRUME", "")
 
-        if instrument in ["QHYCCD-Cameras-Capture", "QHYCCD-Cameras2-Capture"]:
-            #   Physical chip dimensions in pixel
-            physical_dimension_x = n_pixel_x * x_binning
-            physical_dimension_y = n_pixel_y * y_binning
-
-            #   Set instrument
-            if physical_dimension_x == 9576 and physical_dimension_y in [6387, 6388]:
-                instrument = "QHY600M"
-            elif physical_dimension_x in [6280, 6279] and physical_dimension_y in [
-                4210,
-                4209,
-            ]:
-                instrument = "QHY268M"
-            elif physical_dimension_x == 3864 and physical_dimension_y in [2180, 2178]:
-                instrument = "QHY485C"
-            else:
-                instrument = ""
+        instrument = normalize_instrument_name(
+            instrument, n_pixel_x, n_pixel_y, x_binning, y_binning
+        )
 
         #   Calculate chip size in mm
         if "XPIXSZ" in header:

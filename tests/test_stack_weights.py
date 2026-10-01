@@ -135,3 +135,58 @@ def test_stack_image_reads_frmwght_and_keeps_inputs(tmp_path):
 
     with pytest.raises(ValueError, match="stack_weighting"):
         stack.stack_image(aligned, tmp_path, ["LIGHT"], stack_weighting="seeing")
+
+
+def test_total_exposure_time_sums_mixed_exposures(tmp_path):
+    stack = _stack()
+    from astropy.io import fits
+
+    files = []
+    for i, exptime in enumerate((30.0, 60.0, 90.0)):
+        path = tmp_path / f"e{i}.fit"
+        _write_frame(path, 1.0, jd=2460000.0 + i)
+        with fits.open(path, mode="update") as hdul:
+            hdul[0].header["EXPTIME"] = exptime
+            hdul[0].header["INSTRUME"] = "QHY600M"
+            hdul.flush()
+        files.append(str(path))
+    assert stack.total_exposure_time(files) == pytest.approx(180.0)
+    name = stack.stack_filter_images(files, "average", None, "V", tmp_path, None)
+    header = fits.getheader(tmp_path / name)
+    assert header["EXPTIME"] == pytest.approx(180.0)
+    assert header["INSTRU"] == "QHY600M"
+
+
+def test_group_columns_for_weights_and_references():
+    pytest.importorskip("ccdproc")
+    from ost_photometry.reduce.frame_selection import (
+        quality_table_from_rows,
+        resolve_reference_frames,
+        stack_weights,
+    )
+
+    rows = []
+    for target in ("M57", "M104"):
+        for i, fwhm in enumerate((2.0, 4.0)):
+            rows.append({"file": f"{target}_{i}.fit", "filter": "V", "target": target,
+                         "fwhm_px": fwhm, "n_stars": 40})
+    table = quality_table_from_rows(rows)
+    table["target"] = np.array([str(f).split("_")[0] for f in table["file"]])
+    refs = resolve_reference_frames(table, group_columns=("target", "filter"))
+    assert refs == {"M57|V": "M57_0.fit", "M104|V": "M104_0.fit"}
+    w = stack_weights(table, "fwhm", group_columns=("target", "filter"))
+    for target in ("M57", "M104"):
+        sel = np.asarray(table["target"]) == target
+        assert w[sel].mean() == pytest.approx(1.0)
+
+
+def test_fwhm_weights_use_arcsec_for_mixed_pixel_scales():
+    from ost_photometry.reduce.frame_selection import quality_table_from_rows, stack_weights
+
+    # Same seeing (2 arcsec) seen by two cameras with different pixel scales.
+    rows = [
+        {"file": "a.fit", "filter": "V", "fwhm_px": 4.0, "pixel_scale": 0.5, "fwhm_arcsec": 2.0},
+        {"file": "b.fit", "filter": "V", "fwhm_px": 2.0, "pixel_scale": 1.0, "fwhm_arcsec": 2.0},
+    ]
+    w = stack_weights(quality_table_from_rows(rows), "fwhm")
+    assert w[0] == pytest.approx(w[1])

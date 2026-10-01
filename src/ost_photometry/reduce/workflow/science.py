@@ -43,6 +43,7 @@ def reduce_light(
     trim_y_start: int = 0,
     trim_y_end: int = 0,
     fail_on_missing_flat: bool = True,
+    interactive: bool = True,
 ) -> None:
     """
     Reduce the science images
@@ -232,7 +233,7 @@ def reduce_light(
 
     dir_empty = checks.check_if_directory_is_empty(light_path)
 
-    if not dir_empty:
+    if not dir_empty and interactive:
         user_input, timed_out = base_utilities.get_input(
             f"{style.Bcolors.OKBLUE}   Reduced images from a previous run "
             f"found. Should these be used? [yes/no] {style.Bcolors.ENDC}"
@@ -325,9 +326,14 @@ def reduce_light_image(
     trim_x_end: int = 0,
     trim_y_start: int = 0,
     trim_y_end: int = 0,
+    pixel_mask: np.ndarray | None = None,
 ) -> str:
     """
     Reduce an individual image
+
+    ``pixel_mask`` (bad + hot pixels, image shape) replaces the mask lookup
+    in ``out_path`` when given; the archive pipeline passes the mask of the
+    matching calibration group explicitly.
 
     Parameters
     ----------
@@ -523,10 +529,13 @@ def reduce_light_image(
 
     if add_hot_bad_pixel_mask:
         #   Get mask of bad and hot pixel
-        mask_available, bad_hot_pixel_mask = utilities.get_pixel_mask(
-            out_path,
-            reduced.shape,
-        )
+        if pixel_mask is not None and np.shape(pixel_mask) == reduced.shape:
+            mask_available, bad_hot_pixel_mask = True, np.asarray(pixel_mask, dtype=bool)
+        else:
+            mask_available, bad_hot_pixel_mask = utilities.get_pixel_mask(
+                out_path,
+                reduced.shape,
+            )
 
         #   Add bad pixel mask: If there was already a mask, keep it
         if mask_available:

@@ -35,6 +35,30 @@ section of this file.
   ("n of N frames aligned; skipped: …"); skipped frames are recorded in the
   quality table (`aligned`, `align_note`).
 - Frame-quality QC plots per filter under `diagnostics/frame_quality/`.
+- **Archive access** (`ost_photometry.archive`): `ArchiveClient` for the OST
+  data archive (session + CSRF login, runs, data files, object search,
+  checksum-verified downloads, rate limiting), content-addressed cache,
+  manifests from the archive or a local directory (`manifest_from_directory`),
+  `fetch_dataset` for an object or an observation run including calibration
+  candidates of neighbouring runs.
+- **Calibration grouping** (`reduce.grouping`): frame types from image
+  statistics (header types are often wrong; spectroscopy is recognised),
+  electronic setups for bias / darks, targets by sky position, camera
+  orientation from plate solving (archive WCS or local ASTAP, cached, with
+  bisection of changes), mount sessions, flat sets with a probability per
+  session (time prior, dust fingerprint, vignetting), reduction units and an
+  editable `calibration_plan.yaml` with overrides; timeline plots under
+  `diagnostics/calibration_groups/`. See `docs/ARCHIVE_PIPELINE.md`.
+- **Group-wise reduction and per-target stacking**
+  (`reduce.workflow.groups.reduce_planned`, `reduce.workflow.combine.stack_planned`):
+  masters per calibration group, lights per unit with explicit masters, one
+  grid per target, weighted stacks per camera and filter over all nights,
+  optional noise-weighted camera combination.
+- `wcs.solve_astap_copy` (plate solving without touching the file),
+  `wcs.position_angle_from_wcs`, `camera_specs.normalize_instrument_name`
+  (QHY268 6252×4176 and ZWO ASI2600 behind generic driver names),
+  `reduce_main(interactive=False)`, `reduce_light_image(pixel_mask=)`,
+  `masks.load_pixel_mask_files`, `workflow.main.resolve_camera_parameters`.
 
 ### Changed
 
@@ -47,6 +71,21 @@ section of this file.
 - `stack_image` prints a per-filter summary and accepts `stack_weighting`,
   `quality_table`, `keep_input_frames`; `stack_filter_images` accepts
   `weights` and `stack_meta`.
+- Stacks record the summed exposure time of the combined frames (`EXPTIME`)
+  instead of `n x` the first frame's; `INSTRU` follows `INSTRUME`; missing
+  `EGAIN` / `OBJECT` / `FILTER` no longer abort the header update.
+- Frame selection, weights and reference choice accept `group_columns`
+  (e.g. camera and filter); FWHM weighting uses arcsec when pixel scales are
+  mixed.
+- `find_wcs_astap` solves blind (radius 180°) when the header has no
+  pointing instead of searching around RA = Dec = 0, runs with a timeout,
+  and uses the correct image shape for the corner check.
+- `requests` and `pyyaml` are declared dependencies.
+
+### Fixed
+
+- `check_exposure_times` checked only the first exposure time and named the
+  wrong file in its error message.
 
 ### Deprecated
 

@@ -10,8 +10,8 @@ selection criterion is evaluated per filter.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, fields
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import asdict, dataclass, fields, is_dataclass
 from pathlib import Path
 
 import numpy as np
@@ -34,7 +34,7 @@ REFERENCE_SELECTION: dict[str, str] = {
 SUPPORTED_REFERENCE_SELECTION = tuple(REFERENCE_SELECTION)
 
 FRAME_QUALITY_STATUS = ("ok", "no_stars", "fwhm_failed")
-RANK_KEYS = ("fwhm_px", "fwhm_weighted")
+RANK_KEYS = ("fwhm_px", "fwhm_weighted", "fwhm_arcsec")
 FWHM_UNITS = ("px", "arcsec")
 
 #: Global reference key used by :func:`resolve_reference_frames` when one
@@ -129,6 +129,9 @@ class FrameSelection:
             return cls()
         if isinstance(value, cls):
             return value
+        if is_dataclass(value) and not isinstance(value, type):
+            # Same dataclass loaded twice (e.g. module reloaded in tests).
+            value = asdict(value)
         if not isinstance(value, Mapping):
             raise TypeError(
                 f"frame_selection must be a mapping or FrameSelection, got {type(value).__name__}"
@@ -227,7 +230,9 @@ def quality_table_from_rows(rows: Iterable[Mapping[str, object]]) -> Table:
     return table
 
 
-def compute_fwhm_weighted(table: Table) -> None:
+def compute_fwhm_weighted(
+    table: Table, group_columns: Sequence[str] = ("filter",)
+) -> None:
     """Siril-like wFWHM: ``fwhm_px * max(n_stars in filter) / n_stars``.
 
     Penalises frames that show fewer stars than the best frame of the same
@@ -239,7 +244,7 @@ def compute_fwhm_weighted(table: Table) -> None:
     fwhm = np.asarray(table["fwhm_px"], dtype=float)
     n_stars = np.asarray(table["n_stars"], dtype=float)
     weighted = np.full(len(table), np.nan)
-    for _filt, idx in group_indices_by_filter(table).items():
+    for _key, idx in group_indices(table, group_columns).items():
         n_max = np.max(n_stars[idx]) if idx.size else 0.0
         if n_max <= 0:
             continue
@@ -249,13 +254,31 @@ def compute_fwhm_weighted(table: Table) -> None:
     table["fwhm_weighted"] = weighted
 
 
+#: Separator of composite group keys such as ``"M57|qhy600m|V"``.
+GROUP_KEY_SEPARATOR = "|"
+
+
+def group_keys(table: Table, columns: Sequence[str] = ("filter",)) -> list[str]:
+    """Composite group key per row (column values joined by ``|``)."""
+    if not len(table):
+        return []
+    cols = [[str(v) for v in table[c]] for c in columns]
+    return [GROUP_KEY_SEPARATOR.join(values) for values in zip(*cols, strict=True)]
+
+
+def group_indices(
+    table: Table, columns: Sequence[str] = ("filter",)
+) -> dict[str, np.ndarray]:
+    """Row indices per group of ``columns``, in order of first appearance."""
+    groups: dict[str, list[int]] = {}
+    for i, key in enumerate(group_keys(table, columns)):
+        groups.setdefault(key, []).append(i)
+    return {key: np.asarray(idx, dtype=int) for key, idx in groups.items()}
+
+
 def group_indices_by_filter(table: Table) -> dict[str, np.ndarray]:
     """Row indices per filter, in order of first appearance."""
-    filters = [str(f) for f in table["filter"]] if len(table) else []
-    groups: dict[str, list[int]] = {}
-    for i, filt in enumerate(filters):
-        groups.setdefault(filt, []).append(i)
-    return {filt: np.asarray(idx, dtype=int) for filt, idx in groups.items()}
+    return group_indices(table, ("filter",))
 
 
 def rank_frames(table: Table, idx: np.ndarray, key: str = "fwhm_px") -> np.ndarray:
@@ -287,6 +310,7 @@ def select_frames(
     selection: FrameSelection,
     *,
     indent: int = 2,
+    group_columns: Sequence[str] = ("filter",),
 ) -> tuple[np.ndarray, list[str]]:
     """Evaluate ``selection`` per filter.
 
@@ -307,7 +331,7 @@ def select_frames(
     background = np.asarray(table["background"], dtype=float)
     masked = np.asarray(table["masked_fraction"], dtype=float)
 
-    for filt, idx in group_indices_by_filter(table).items():
+    for filt, idx in group_indices(table, group_columns).items():
         if selection.reject_no_stars:
             for i in idx[status[idx] != "ok"]:
                 reasons[i].append(str(status[i]))
@@ -394,9 +418,17 @@ def select_frames(
     return keep, ["; ".join(r) for r in reasons]
 
 
-def mark_selection(table: Table, selection: FrameSelection, *, indent: int = 2) -> Table:
+def mark_selection(
+    table: Table,
+    selection: FrameSelection,
+    *,
+    indent: int = 2,
+    group_columns: Sequence[str] = ("filter",),
+) -> Table:
     """Apply :func:`select_frames` in place: sets ``rejected`` / ``reject_reason``."""
-    keep, reasons = select_frames(table, selection, indent=indent)
+    keep, reasons = select_frames(
+        table, selection, indent=indent, group_columns=group_columns
+    )
     table["rejected"] = ~keep
     set_string_column(table, "reject_reason", reasons)
     return table
@@ -407,18 +439,21 @@ def resolve_reference_frames(
     *,
     per_filter: bool = True,
     indent: int = 2,
+    group_columns: Sequence[str] = ("filter",),
+    rank_key: str = "fwhm_px",
 ) -> dict[str, str]:
-    """Sharpest kept frame per filter (or one global frame).
+    """Sharpest kept frame per group (default: per filter) or one global frame.
 
-    Returns ``{filter: file}`` or ``{GLOBAL_REFERENCE_KEY: file}``. Filters
+    Returns ``{group_key: file}`` or ``{GLOBAL_REFERENCE_KEY: file}``. Groups
     without a finite FWHM are omitted; the caller falls back to index 0.
+    ``rank_key="fwhm_arcsec"`` compares frames of different pixel scales.
     """
     if len(table) == 0:
         return {}
     kept = ~np.asarray(table["rejected"], dtype=bool)
-    fwhm = np.asarray(table["fwhm_px"], dtype=float)
+    fwhm = np.asarray(table[rank_key], dtype=float)
     files = [str(f) for f in table["file"]]
-    groups = group_indices_by_filter(table) if per_filter else {
+    groups = group_indices(table, group_columns) if per_filter else {
         GLOBAL_REFERENCE_KEY: np.arange(len(table))
     }
     result: dict[str, str] = {}
@@ -433,7 +468,7 @@ def resolve_reference_frames(
                 style_name="WARNING",
             )
             continue
-        best = int(rank_frames(table, candidates, key="fwhm_px")[0])
+        best = int(rank_frames(table, candidates, key=rank_key)[0])
         result[key] = files[best]
     return result
 
@@ -449,12 +484,28 @@ def mark_reference_frames(table: Table, references: Mapping[str, str]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def stack_weights(table: Table, method: str, *, indent: int = 2) -> np.ndarray:
-    """Per-frame stack weights for the kept frames of every filter.
+def _mixed_pixel_scales(scales: np.ndarray, tolerance: float = 0.01) -> bool:
+    finite = scales[np.isfinite(scales) & (scales > 0)]
+    if finite.size < 2:
+        return False
+    return float(np.max(finite) / np.min(finite)) > 1.0 + tolerance
 
-    Weights are relative within a filter, clipped to :data:`WEIGHT_CLIP`, and
-    normalised to a mean of one over the kept frames. Frames whose metric is
-    not finite get the median weight. Rejected frames receive ``nan``.
+
+def stack_weights(
+    table: Table,
+    method: str,
+    *,
+    indent: int = 2,
+    group_columns: Sequence[str] = ("filter",),
+) -> np.ndarray:
+    """Per-frame stack weights for the kept frames of every group.
+
+    Groups default to the filter. Weights are relative within a group,
+    clipped to :data:`WEIGHT_CLIP`, and normalised to a mean of one over the
+    kept frames. Frames whose metric is not finite get the median weight.
+    Rejected frames receive ``nan``. For ``fwhm`` weighting, a group that
+    mixes pixel scales (several cameras / binnings) is weighted by
+    ``fwhm_arcsec`` when that is available for the kept frames.
     """
     if method not in STACK_WEIGHTING:
         raise ValueError(
@@ -471,12 +522,24 @@ def stack_weights(table: Table, method: str, *, indent: int = 2) -> np.ndarray:
 
     column = {"fwhm": "fwhm_px", "n_stars": "n_stars", "noise": "background_rms"}[method]
     metric = np.asarray(table[column], dtype=float)
+    scales = np.asarray(table["pixel_scale"], dtype=float)
+    fwhm_arcsec = np.asarray(table["fwhm_arcsec"], dtype=float)
 
-    for filt, idx in group_indices_by_filter(table).items():
+    for filt, idx in group_indices(table, group_columns).items():
         kept = idx[~rejected[idx]]
         if kept.size == 0:
             continue
         vals = metric[kept]
+        if method == "fwhm" and _mixed_pixel_scales(scales[kept]):
+            if np.all(np.isfinite(fwhm_arcsec[kept])):
+                vals = fwhm_arcsec[kept]
+            else:
+                terminal_output.print_to_terminal(
+                    f"Group {filt}: mixed pixel scales but no FWHM in arcsec for "
+                    "every frame; weighting by FWHM in pixels.",
+                    indent=indent,
+                    style_name="WARNING",
+                )
         finite = np.isfinite(vals) & (vals > 0)
         if not np.any(finite):
             terminal_output.print_to_terminal(
@@ -646,7 +709,10 @@ __all__ = [
     "FrameSelection",
     "compute_fwhm_weighted",
     "empty_quality_table",
+    "GROUP_KEY_SEPARATOR",
+    "group_indices",
     "group_indices_by_filter",
+    "group_keys",
     "mark_reference_frames",
     "mark_selection",
     "merge_alignment_result",

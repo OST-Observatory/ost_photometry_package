@@ -510,6 +510,9 @@ default. Per-filter QC plots: `<output>/diagnostics/frame_quality/`
 ([DIAGNOSTICS.md](DIAGNOSTICS.md#frame-quality-reduction)). The
 astro-imaging reference workflow (reduce, select, weighted stack, re-stack,
 standalone quality CLI) lives in `auxiliary_scripts/astro_imaging/`.
+Data from the archive with changing instruments: group-wise calibration and
+per-target stacking in `auxiliary_scripts/archive_pipeline/`, see
+[ARCHIVE_PIPELINE.md](ARCHIVE_PIPELINE.md).
 
 Analysis WCS (`PipelineConfig.wcs_method`) is independent and still defaults to ASTAP. A full `reduce_main` option catalogue is a documentation follow-up — see [TODO.md](TODO.md#documentation).
 

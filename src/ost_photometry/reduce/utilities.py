@@ -756,7 +756,10 @@ def bin_image(
 
 
 def update_header_information(
-    image: CCDData, n_image_stacked: int = 1, new_target_name: str | None = None
+    image: CCDData,
+    n_image_stacked: int = 1,
+    new_target_name: str | None = None,
+    total_exptime: float | None = None,
 ) -> None:
     """
     Updates Header information. Adds among other Header keywords required
@@ -775,12 +778,21 @@ def update_header_information(
         Name of the target. If not None, this target name will be written
         to the FITS header.
         Default is ``None``.
+
+    total_exptime
+        Sum of the exposure times of the stacked frames. Used for
+        ``EXPTIME`` instead of ``n_image_stacked`` times the first frame's
+        exposure, which is wrong for mixed exposure times.
+        Default is ``None``.
     """
     #   Add Header keyword to mark the file as stacked
     if n_image_stacked > 1:
         image.meta["COMBINED"] = True
         image.meta["N-IMAGES"] = n_image_stacked
-        image.meta["EXPTIME"] = n_image_stacked * image.meta["EXPTIME"]
+        if total_exptime is not None and np.isfinite(total_exptime):
+            image.meta["EXPTIME"] = float(total_exptime)
+        else:
+            image.meta["EXPTIME"] = n_image_stacked * image.meta["EXPTIME"]
 
         #  GRANDMA
         image.meta["STACK"] = 1
@@ -818,8 +830,9 @@ def update_header_information(
         )
 
     #   Add gain using a second keyword (GRANDMA)
-    gain = image.meta["EGAIN"]
-    image.meta["GAIN"] = gain
+    gain = image.meta.get("EGAIN")
+    if gain is not None:
+        image.meta["GAIN"] = gain
 
     #   Add target name using a second keyword
     if new_target_name is not None:
@@ -828,15 +841,15 @@ def update_header_information(
         image.meta["TARGET"] = new_target_name
     else:
         #   GRANDMA
-        target = image.meta["OBJECT"]
+        target = image.meta.get("OBJECT", "")
         image.meta["TARGET"] = target
 
     #   Username and instrument string (GRANDMA)
     image.meta["USERNAME"] = "OST"
-    image.meta["INSTRU"] = "CDK"
+    image.meta["INSTRU"] = str(image.meta.get("INSTRUME", "") or "CDK")
 
     #   Add filter system to the Header
-    filter_ = image.meta["FILTER"]
+    filter_ = image.meta.get("FILTER", "")
     try:
         filter_system = calibration_parameters.filter_systems[filter_]
         image.meta["FILTER-S"] = filter_system

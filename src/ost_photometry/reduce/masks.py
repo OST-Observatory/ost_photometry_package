@@ -97,6 +97,27 @@ def get_pixel_mask(out_path: Path, shape: np.ndarray) -> tuple[bool, CCDData]:
     return success, mask
 
 
+def load_pixel_mask_files(
+    paths: list[str | Path], shape: tuple[int, ...]
+) -> np.ndarray | None:
+    """OR-combine the given mask files (hot / bad pixel) that match ``shape``.
+
+    Returns ``None`` when no file matches. Unlike :func:`get_pixel_mask`,
+    nothing is searched in an output directory, so masks of different
+    cameras or calibration groups cannot be mixed up.
+    """
+    combined: np.ndarray | None = None
+    for path in paths:
+        try:
+            data = CCDData.read(path, unit="adu").data
+        except (FileNotFoundError, OSError, ValueError):
+            continue
+        if data.shape != tuple(shape):
+            continue
+        mask = np.asarray(data).astype(bool)
+        combined = mask if combined is None else (combined | mask)
+    return combined
+
 def make_hot_pixel_mask(
     dark_image: CCDData,
     gain: float | None,

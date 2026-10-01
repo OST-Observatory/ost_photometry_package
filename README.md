@@ -36,7 +36,11 @@ the bundled `data/cameras.json` catalog. Worker pools default to half the CPUs.
 Frame quality (FWHM, roundness, star count, sky) is measured per frame; frames
 can be rejected by threshold or "best X %" (`frame_selection`), the sharpest
 frame is the alignment reference, and stacks can be FWHM-, star-count- or
-noise-weighted (`stack_weighting`).
+noise-weighted (`stack_weighting`). The archive pipeline (`ost_photometry.archive`,
+`reduce.grouping`) fetches an object or observation run from the OST data
+archive, groups calibration frames by mount session (camera orientation from
+plate solving) with flat probabilities, reduces per group and stacks every
+target — see [docs/ARCHIVE_PIPELINE.md](docs/ARCHIVE_PIPELINE.md).
 
 **Analysis pipeline (`analyze.pipeline`)** — configurable step sequence driven by
 [`PipelineConfig`](src/ost_photometry/analyze/pipeline/config.py):

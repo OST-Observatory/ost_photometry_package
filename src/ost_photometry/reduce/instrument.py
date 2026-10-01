@@ -6,6 +6,7 @@ from astropy.stats import sigma_clip
 from astropy.table import Table
 
 from .. import style, terminal_output
+from ..camera_specs import GENERIC_INSTRUMENT_NAMES, normalize_instrument_name
 
 _QHY_CAMERAS = frozenset({"QHY600M", "QHY268M"})
 
@@ -20,6 +21,22 @@ def _get_summary_column(
     if column_name not in summary.colnames:
         return None
     return summary[column_name]
+
+
+def _unique_summary_value(
+    image_file_collection: ccdp.ImageFileCollection, column_name: str, label: str
+) -> int | float | None:
+    """Single value of a summary column; raise if several values are present."""
+    column = _get_summary_column(image_file_collection, column_name)
+    if column is None:
+        return 1 if "bin" in column_name else None
+    values = set(column[np.invert(np.ma.getmaskarray(column))])
+    if len(values) > 1:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Multiple {label} values detected.\n"
+            f"This is not supported -> EXIT \n{style.Bcolors.ENDC}"
+        )
+    return next(iter(values)) if values else None
 
 
 def _get_unique_header_value(
@@ -296,60 +313,16 @@ def get_instrument_info(
             )
     instrument = list(instruments)[0]
 
-    if "QHY268M" in instrument:
-        instrument = "QHY268M"
-    if "QHY600M" in instrument:
-        instrument = "QHY600M"
-
-    if instrument in ["QHYCCD-Cameras-Capture", "QHYCCD-Cameras2-Capture"]:
-        x_dimensions = set(image_file_collection.summary["naxis1"])
-        if len(x_dimensions) > 1:
-            raise RuntimeError(
-                f"{style.Bcolors.FAIL}Multiple image dimensions detected.\n"
-                f"This is not supported -> EXIT \n{style.Bcolors.ENDC}"
-            )
-        x_dimension = list(x_dimensions)[0]
-
-        y_dimensions = set(image_file_collection.summary["naxis2"])
-        if len(y_dimensions) > 1:
-            raise RuntimeError(
-                f"{style.Bcolors.FAIL}Multiple image dimensions detected.\n"
-                f"This is not supported -> EXIT \n{style.Bcolors.ENDC}"
-            )
-        y_dimension = list(y_dimensions)[0]
-
-        x_bins = set(image_file_collection.summary["xbinning"])
-        if len(x_bins) > 1:
-            raise RuntimeError(
-                f"{style.Bcolors.FAIL}Multiple binning values detected.\n"
-                f"This is not supported -> EXIT \n{style.Bcolors.ENDC}"
-            )
-        x_bin = list(x_bins)[0]
-
-        y_bins = set(image_file_collection.summary["ybinning"])
-        if len(y_bins) > 1:
-            raise RuntimeError(
-                f"{style.Bcolors.FAIL}Multiple binning values detected.\n"
-                f"This is not supported -> EXIT \n{style.Bcolors.ENDC}"
-            )
-        y_bin = list(y_bins)[0]
-
-        x_dimension_physical = x_dimension * x_bin
-        y_dimension_physical = y_dimension * y_bin
-
-        if x_dimension_physical == 9576 and y_dimension_physical in [6388, 6387]:
-            instrument = "QHY600M"
-        elif x_dimension_physical in [6280, 6279] and y_dimension_physical in [
-            4210,
-            4209,
-        ]:
-            instrument = "QHY268M"
-        elif x_dimension_physical == 3864 and y_dimension_physical in [2180, 2178]:
-            instrument = "QHY485C"
-        elif x_dimension_physical == 1920 and y_dimension_physical in [1080, 1078]:
-            instrument = "QHY5III462C"
-        else:
-            instrument = ""
+    if instrument in GENERIC_INSTRUMENT_NAMES:
+        x_dimension = _unique_summary_value(image_file_collection, "naxis1", "image dimension")
+        y_dimension = _unique_summary_value(image_file_collection, "naxis2", "image dimension")
+        x_bin = _unique_summary_value(image_file_collection, "xbinning", "binning")
+        y_bin = _unique_summary_value(image_file_collection, "ybinning", "binning")
+        instrument = normalize_instrument_name(
+            instrument, x_dimension, y_dimension, x_bin, y_bin
+        )
+    else:
+        instrument = normalize_instrument_name(instrument)
 
     readout_mode = resolve_readout_mode(
         image_file_collection,

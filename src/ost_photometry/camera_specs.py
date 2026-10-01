@@ -138,6 +138,65 @@ def normalize_camera_id(camera: str) -> str | None:
     return None
 
 
+#: Driver names that do not identify the camera model; the model is derived
+#: from the physical chip size (NAXIS x binning) instead.
+GENERIC_INSTRUMENT_NAMES = frozenset(
+    {
+        "QHYCCD-Cameras-Capture",
+        "QHYCCD-Cameras2-Capture",
+        "ASI Camera (1)",
+        "ASI Camera (2)",
+    }
+)
+
+#: ``(model, allowed physical widths, allowed physical heights)``; several
+#: values cover overscan / driver cropping variants seen in the archive.
+PHYSICAL_CHIP_SIZES: tuple[tuple[str, tuple[int, ...], tuple[int, ...]], ...] = (
+    ("QHY600M", (9576, 9600), (6388, 6387, 6422)),
+    ("QHY268M", (6280, 6279, 6252), (4210, 4209, 4176)),
+    ("QHY485C", (3864,), (2180, 2178)),
+    ("QHY5III462C", (1920,), (1080, 1078)),
+    ("ZWO ASI2600", (6248,), (4176,)),
+)
+
+
+def _as_int(value: object, default: int) -> int:
+    try:
+        number = int(float(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else default
+
+
+def normalize_instrument_name(
+    instrume: str | None,
+    naxis1: object = None,
+    naxis2: object = None,
+    xbinning: object = 1,
+    ybinning: object = 1,
+) -> str:
+    """Camera model from the ``INSTRUME`` keyword and the chip geometry.
+
+    Names that already contain ``QHY600M`` / ``QHY268M`` are shortened to
+    the model. Generic driver names (:data:`GENERIC_INSTRUMENT_NAMES`) are
+    resolved through the physical chip size; an unknown size returns ``""``.
+    Any other name is returned stripped and unchanged.
+    """
+    name = str(instrume or "").strip()
+    if "QHY268M" in name:
+        return "QHY268M"
+    if "QHY600M" in name:
+        return "QHY600M"
+    if name not in GENERIC_INSTRUMENT_NAMES:
+        return name
+    nx = _as_int(naxis1, 0) * _as_int(xbinning, 1)
+    ny = _as_int(naxis2, 0) * _as_int(ybinning, 1)
+    for model, widths, heights in PHYSICAL_CHIP_SIZES:
+        if nx in widths and ny in heights:
+            return model
+    return ""
+
+
 def normalize_readout_mode(readout_mode: str | None) -> str | None:
     if readout_mode is None:
         return None

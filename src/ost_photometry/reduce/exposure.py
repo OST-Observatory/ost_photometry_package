@@ -239,8 +239,9 @@ def check_exposure_times(
     scale_necessary
         True if dark scaling is possible
     """
-    #   Loop over exposure times
-    for image_id, time in enumerate(exposure_times):
+    scale_necessary = False
+    #   Check every exposure time (not only the first one)
+    for time in exposure_times:
         #   Find nearest dark frame
         valid, closest_dark = find_nearest_exposure_time(
             time,
@@ -249,13 +250,31 @@ def check_exposure_times(
         )
         #   In case there is no valid dark, check if scaling is possible
         if not valid:
-            scale_necessary = check_dark_scaling_possible(
+            scale_necessary |= check_dark_scaling_possible(
                 image_file_collection,
-                image_id,
+                _file_index_for_exposure(image_file_collection, image_type, time),
                 image_type,
                 time,
                 np.max(dark_times),
                 bias_available,
             )
-            return scale_necessary
-        return False
+    return scale_necessary
+
+
+def _file_index_for_exposure(
+    image_file_collection: ccdp.ImageFileCollection,
+    image_type: list[str],
+    exposure_time: float,
+) -> int:
+    """Summary row of the first frame of ``image_type`` with ``exposure_time``.
+
+    Used for error messages; falls back to row 0.
+    """
+    summary = image_file_collection.summary
+    try:
+        types = np.asarray(summary["imagetyp"]).astype(str)
+        times = np.asarray(summary["exptime"], dtype=float)
+    except (KeyError, TypeError, ValueError):
+        return 0
+    match = np.flatnonzero(np.isin(types, list(image_type)) & np.isclose(times, exposure_time))
+    return int(match[0]) if match.size else 0

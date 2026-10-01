@@ -142,3 +142,32 @@ def test_files_filtered_truthiness_uses_list_not_array():
 
     empty = list(_FakeCollection().files_filtered(imagetyp="MISSING")[:0])
     assert bool(empty) is False
+
+
+def test_check_exposure_times_checks_every_exposure():
+    """Regression: only the first exposure time used to be checked."""
+    try:
+        exposure = load_module_from_path(
+            "ost_photometry.reduce.exposure",
+            pkg_src() / "ost_photometry" / "reduce" / "exposure.py",
+        )
+    except (ModuleNotFoundError, AttributeError):
+        pytest.skip("ccdproc not available")
+    from astropy.table import Table
+
+    class _Collection:
+        summary = Table(
+            {
+                "file": ["a.fit", "b.fit"],
+                "imagetyp": ["LIGHT", "LIGHT"],
+                "exptime": [60.0, 30.0],
+            }
+        )
+
+    # 60 s has a matching dark; 30 s needs scaling from the 60 s dark.
+    assert exposure.check_exposure_times(
+        _Collection(), ["LIGHT"], [60.0, 30.0], [60.0], True
+    ) is True
+    # Without bias frames the 30 s exposure cannot be scaled -> error names b.fit.
+    with pytest.raises(RuntimeError, match="b.fit"):
+        exposure.check_exposure_times(_Collection(), ["LIGHT"], [60.0, 30.0], [60.0], False)

@@ -70,5 +70,7 @@ class ReduceConfig:
     validate_inputs: bool = True
     sanity_check_sample_size: int = 3
     fail_on_missing_flat: bool = True
+    # False: never prompt about reusing masters / reduced frames.
+    interactive: bool = True
 
 

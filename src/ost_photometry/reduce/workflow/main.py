@@ -2,6 +2,7 @@
 
 import warnings
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -76,6 +77,7 @@ def reduce_main(
     validate_inputs: bool = True,
     sanity_check_sample_size: int = 3,
     fail_on_missing_flat: bool = True,
+    interactive: bool = True,
 ) -> None:
     """
     Main reduction routine: Creates master images for bias, darks,
@@ -318,6 +320,11 @@ def reduce_main(
     save_only_transformation
         If ``True'', only the transformation matrix is saved, not the transformed image itself.
         Default is ``False``.
+
+    interactive
+        If ``False``, never ask whether existing masters / reduced frames
+        should be reused (they are recomputed). For unattended pipelines.
+        Default is ``True``.
     """
     if estimate_fwhm:
         warnings.warn(
@@ -379,8 +386,86 @@ def reduce_main(
         validate_inputs=validate_inputs,
         sanity_check_sample_size=sanity_check_sample_size,
         fail_on_missing_flat=fail_on_missing_flat,
+        interactive=interactive,
     )
     return _run_reduction(cfg)
+
+
+@dataclass(frozen=True)
+class CameraParameters:
+    """Camera electronics resolved for one homogeneous set of frames."""
+
+    instrument: str
+    readout_mode: str
+    gain_setting: int | float | None
+    pixel_bit_value: int
+    temperature: float
+    gain: float | None
+    read_noise: float | None
+    dark_rate: float | dict | None
+    saturation_level: float | None
+
+
+def resolve_camera_parameters(image_file_collection, cfg: ReduceConfig) -> CameraParameters:
+    """Instrument, readout mode, gain, read noise, dark rate, saturation level.
+
+    Header values (via :func:`~ost_photometry.reduce.instrument.get_instrument_info`)
+    are combined with the camera catalog; explicit values in ``cfg`` win.
+    The collection must hold one instrument / readout mode / gain setting.
+    """
+    instrument, readout_mode, gain_setting, pixel_bit_value, temperature = (
+        utilities.get_instrument_info(
+            image_file_collection,
+            cfg.temperature_tolerance,
+            ignore_readout_mode_mismatch=cfg.ignore_readout_mode_mismatch,
+            ignore_instrument_mismatch=cfg.ignore_instrument_mismatch,
+        )
+    )
+
+    gain = cfg.gain
+    read_noise = cfg.read_noise
+    dark_rate = cfg.dark_rate
+    saturation_level = cfg.saturation_level
+    egain = get_egain_from_collection(image_file_collection)
+    calibration_gain = None
+    if (
+        read_noise is None
+        or gain is None
+        or dark_rate is None
+        or saturation_level is None
+    ):
+        camera_info = calibration_parameters.camera_info(
+            instrument,
+            readout_mode,
+            temperature,
+            gain_setting=gain_setting,
+        )
+        if read_noise is None:
+            read_noise = camera_info[0]
+        calibration_gain = camera_info[1]
+        if dark_rate is None:
+            dark_rate = camera_info[2]
+        if saturation_level is None:
+            saturation_level = pow(2, pixel_bit_value) - 1
+
+    gain = resolve_system_gain(
+        instrument,
+        gain_setting,
+        egain,
+        calibration_gain,
+        user_gain=cfg.gain,
+    )
+    return CameraParameters(
+        instrument=instrument,
+        readout_mode=readout_mode,
+        gain_setting=gain_setting,
+        pixel_bit_value=pixel_bit_value,
+        temperature=temperature,
+        gain=gain,
+        read_noise=read_noise,
+        dark_rate=dark_rate,
+        saturation_level=saturation_level,
+    )
 
 
 def _run_reduction(cfg: ReduceConfig) -> None:
@@ -505,51 +590,12 @@ def _run_reduction(cfg: ReduceConfig) -> None:
     ###
     #   Get camera specific parameters
     #
-    image_parameters = utilities.get_instrument_info(
-        image_file_collection,
-        cfg.temperature_tolerance,
-        ignore_readout_mode_mismatch=cfg.ignore_readout_mode_mismatch,
-        ignore_instrument_mismatch=cfg.ignore_instrument_mismatch,
-    )
-    instrument = image_parameters[0]
-    readout_mode = image_parameters[1]
-    gain_setting = image_parameters[2]
-    pixel_bit_value = image_parameters[3]
-    temperature = image_parameters[4]
-
-    gain = cfg.gain
-    read_noise = cfg.read_noise
-    dark_rate = cfg.dark_rate
-    saturation_level = cfg.saturation_level
-    egain = get_egain_from_collection(image_file_collection)
-    calibration_gain = None
-    if (
-        read_noise is None
-        or gain is None
-        or dark_rate is None
-        or saturation_level is None
-    ):
-        camera_info = calibration_parameters.camera_info(
-            instrument,
-            readout_mode,
-            temperature,
-            gain_setting=gain_setting,
-        )
-        if read_noise is None:
-            read_noise = camera_info[0]
-        calibration_gain = camera_info[1]
-        if dark_rate is None:
-            dark_rate = camera_info[2]
-        if saturation_level is None:
-            saturation_level = pow(2, pixel_bit_value) - 1
-
-    gain = resolve_system_gain(
-        instrument,
-        gain_setting,
-        egain,
-        calibration_gain,
-        user_gain=cfg.gain,
-    )
+    camera = resolve_camera_parameters(image_file_collection, cfg)
+    instrument = camera.instrument
+    gain = camera.gain
+    read_noise = camera.read_noise
+    dark_rate = camera.dark_rate
+    saturation_level = camera.saturation_level
 
     ###
     #   Check master files on disk
@@ -570,7 +616,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
     )
 
     mk_new_master_files = True
-    if master_available:
+    if master_available and cfg.interactive:
         user_input, timed_out = base_utilities.get_input(
             f"{style.Bcolors.OKBLUE}   Master files are already calculated."
             f" Should these files be used? [yes/no] {style.Bcolors.ENDC}"
@@ -706,6 +752,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
         trim_y_start=cfg.trim_y_start,
         trim_y_end=cfg.trim_y_end,
         fail_on_missing_flat=cfg.fail_on_missing_flat,
+        interactive=cfg.interactive,
     )
 
     ###

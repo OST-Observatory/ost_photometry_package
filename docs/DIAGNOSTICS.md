@@ -8,6 +8,7 @@ are listed in [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md).
 <output>/
   diagnostics/
     frame_quality/   # reduction: FWHM / roundness / stars / sky per frame and filter
+    calibration_groups/  # archive pipeline: orientation, sessions, frames per night
     extraction/      # mag–error, growth, starmaps, aperture, ePSF, residual
     correlation/     # track QC per filter, inter-filter separations/geometry, exposure pairing
     calibration/     # catalog match, fit panels, residuals, night summary
@@ -37,6 +38,19 @@ alignment, one PDF per filter. The numbers behind the plot are in
 | File (stem) | When | Content |
 |-------------|------|---------|
 | `frame_quality_<filter>` | After **alignment** in `reduce_main` | Four panels over the frame index (observation order): FWHM (px, or arcsec when the pixel scale is known), IRAF roundness, stars detected, sky background. Kept frames are filled dots, **rejected** frames red crosses (`reject_reason` in the table), the alignment **reference** a star marker, kept frames that failed alignment hollow dots. The `fwhm_max` threshold is drawn when set. |
+
+## Calibration groups (archive pipeline)
+
+Written by `2_classify_and_group.py` (`reduce.grouping.plots.plot_night_timelines`)
+into `<workspace>/diagnostics/calibration_groups/`.
+
+| File (stem) | When | Content |
+|-------------|------|---------|
+| `timeline_<night>_<telescope>` | After the grouping | Top: camera orientation (mod 180°) of plate-solved lights over the night, mount sessions shaded and labelled. Bottom: lights (coloured by target), flats (labelled with filter and the best session probability), darks, bias, spectroscopy and frames of other cameras over time. |
+
+Check that orientation jumps line up with session boundaries and that flats
+sit inside or next to the session they are assigned to; correct with the
+`overrides` block of `calibration_plan.yaml`.
 
 Use it to check whether a `frame_selection` cut sits where you expect
 (seeing trend, cloud passages as star-count dips, tracking as roundness
