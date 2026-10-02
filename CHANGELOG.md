@@ -114,6 +114,13 @@ section of this file.
   noise for cosmic rays (13 % of an Hα frame masked, sky 12 % too low). The
   catalog read noise is now scaled with `sqrt(xbin * ybin)` for digitally
   binning cameras.
+- **Weighted average stacks** (`stack_weighting != "none"` with
+  `stack_method="average"`, and the camera combination) were too dark
+  wherever some frames were masked or clipped: ccdproc divides by the
+  weights of the rejected values too. Holes and dark columns in the
+  background, star flux about 1 % low. Now computed by
+  `reduce.weighted_combine.weighted_average_combine` (mask-aware, in row
+  blocks of at most 2 GB); see `docs/TODO.md` for the ccdproc check.
 - **L.A.Cosmic saturation in the reduction** was the raw ADU limit applied to
   calibrated electrons; it is now `(saturation - bias) x gain / brightest
   flat`, so saturated star cores are protected.

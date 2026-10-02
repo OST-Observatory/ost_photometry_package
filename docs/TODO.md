@@ -93,6 +93,27 @@ axes; QE for 462 if synphot/throughput work starts (see Vega↔AB P3).
 
 See `src/ost_photometry/data/camera_specs/README.md`.
 
+### ccdproc weighted average — check every ccdproc release (P1)
+
+ccdproc (confirmed up to 2.5.1) divides a weighted average by the sum of
+**all** weights, including those of masked or sigma-clipped values
+(`Combiner._weighted_sum` / `average_combine`). Pixels masked in some
+frames come out too dark: holes and dark columns in weighted stacks, star
+cores too faint (NGC 7789 V: 2.5 % of the pixels > 5σ too low, star flux
+−1.4 %). Unweighted averages and the median are fine.
+
+Workaround: `reduce.weighted_combine.weighted_average_combine`, used by
+`stack_filter_images` (weighted `average`) and `combine_camera_stacks`.
+
+- **On every ccdproc update:** run
+  `pytest tests/test_weighted_combine.py::test_ccdproc_weighted_average_bug`.
+  It is a strict `xfail`; an XPASS means ccdproc is fixed. Then switch both
+  call sites back to `ccdproc.combine`, delete the module and its tests, and
+  update `CCDPROC_CHECKED_VERSION` / this entry.
+- Report upstream (astropy/ccdproc) with the minimal example from that
+  test: three 4×4 frames of value 10, one masked pixel, weights 1, 2, 3 →
+  8.33 instead of 10. Link the issue here.
+
 ### `reduce/utilities.py` — optional further split (P3)
 
 Facade plus reduction-specific helpers; already delegates to `exposure`, `instrument`, `masks`, `wcs_reduce`, …. Incremental only when touching the affected area.

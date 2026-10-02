@@ -31,6 +31,7 @@ from ..detector_noise import (
 )
 from ..frame_selection import SUPPORTED_STACK_WEIGHTING
 from ..storage import cast_like, file_float_dtype
+from ..weighted_combine import weighted_average_combine
 
 #: Stack header keywords written from ``stack_meta``: key -> (meta field, comment).
 STACK_META_KEYWORDS: dict[str, tuple[str, str]] = {
@@ -51,7 +52,12 @@ def prepare_stack_weights(
     label: str = "",
     indent: int = 2,
 ) -> np.ndarray | None:
-    """Validate per-image weights for :func:`ccdproc.combine`.
+    """Validate per-image weights for the stack.
+
+    Weighted averages go through
+    :func:`~ost_photometry.reduce.weighted_combine.weighted_average_combine`
+    (ccdproc's weighted average mishandles masked pixels), weighted sums
+    through :func:`ccdproc.combine`.
 
     Returns ``None`` when no weighting is needed (``weights`` is ``None``,
     all weights are equal, or the method is ``median``, which ignores
@@ -179,18 +185,30 @@ def stack_filter_images(
     weight_array = prepare_stack_weights(
         weights, stacking_method, len(images_to_combine), label=f"filter {filter_}"
     )
-    combined_image = ccdp.combine(
-        images_to_combine,
-        method=stacking_method,
-        weights=weight_array,
-        sigma_clip=True,
-        sigma_clip_low_thresh=5,
-        sigma_clip_high_thresh=5,
-        sigma_clip_func=np.ma.median,
-        sigma_clip_dev_func=mad_std,
-        mem_limit=15e9,
-        dtype=dtype,
-    )
+    if weight_array is not None and stacking_method == "average":
+        #   ccdproc's weighted average counts the weights of masked / clipped
+        #   values (see ost_photometry.reduce.weighted_combine)
+        combined_image = weighted_average_combine(
+            images_to_combine,
+            weight_array,
+            sigma_clip=True,
+            sigma_clip_low_thresh=5,
+            sigma_clip_high_thresh=5,
+            dtype=dtype,
+        )
+    else:
+        combined_image = ccdp.combine(
+            images_to_combine,
+            method=stacking_method,
+            weights=weight_array,
+            sigma_clip=True,
+            sigma_clip_low_thresh=5,
+            sigma_clip_high_thresh=5,
+            sigma_clip_func=np.ma.median,
+            sigma_clip_dev_func=mad_std,
+            mem_limit=15e9,
+            dtype=dtype,
+        )
     utilities.update_header_information(
         combined_image,
         len(images_to_combine),

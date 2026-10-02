@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import astropy.units as u
-import ccdproc as ccdp
 import numpy as np
 from astropy.io import fits
 from astropy.nddata import CCDData
@@ -52,6 +51,7 @@ from ..quality import (
     write_weights_to_headers,
 )
 from ..storage import cast_like
+from ..weighted_combine import weighted_average_combine
 from .stack import stack_filter_images, stack_meta_for_filter
 
 CAMERA_COMBINATIONS = ("separate", "combine")
@@ -147,8 +147,7 @@ def combine_camera_stacks(
             var = (1.4826 * float(np.nanmedian(np.abs(data - np.nanmedian(data))))) ** 2
         weights.append(1.0 / var if var > 0 and math.isfinite(var) else 1.0)
     weights = np.asarray(weights) / np.mean(weights)
-    combined = ccdp.combine(ccds, method="average", weights=weights, sigma_clip=False,
-                            mem_limit=15e9)
+    combined = weighted_average_combine(ccds, weights, sigma_clip=False)
     combined.meta = ccds[0].meta.copy()
     combined.meta["EXPTIME"] = float(sum(float(c.meta.get("EXPTIME", 0.0)) for c in ccds))
     combined.meta["N-IMAGES"] = int(sum(int(c.meta.get("N-IMAGES", 1)) for c in ccds))
