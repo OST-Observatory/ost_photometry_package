@@ -24,7 +24,7 @@ counted as photon noise.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +35,7 @@ from astropy.nddata import CCDData, StdDevUncertainty
 from astropy.stats import sigma_clip
 
 from ..camera_specs import binning_mode as catalog_binning_mode
+from ..fits_headers import READ_NOISE_KEY, SATURATION_KEY
 
 #: Values of ``camera_noise_source``.
 NOISE_SOURCES = ("catalog", "measured")
@@ -303,6 +304,82 @@ def measure_detector_noise(
 
 
 # ---------------------------------------------------------------------------
+# Header values for later steps (L.A.Cosmic in the analysis)
+# ---------------------------------------------------------------------------
+
+
+def saturation_in_electrons(
+    saturation_adu: float,
+    pedestal_adu: float,
+    gain: float,
+    flat_max: float = 1.0,
+) -> float:
+    """Lowest value a saturated raw pixel can have after the calibration.
+
+    A pixel at ``saturation_adu`` loses the bias / dark ``pedestal_adu``, is
+    converted with ``gain`` and divided by the normalised flat (at most
+    ``flat_max``), so every saturated pixel ends up at or above the result.
+    """
+    return max(float(saturation_adu) - float(pedestal_adu), 0.0) * float(gain) \
+        / max(float(flat_max), 1e-6)
+
+
+def stack_noise_values(
+    headers: Sequence[Mapping],
+    weights: Sequence[float] | None,
+    *,
+    rate_images: bool,
+    total_exptime: float | None,
+) -> tuple[float | None, float | None]:
+    """``RDNOISE`` and ``SATLEVEL`` of a weighted mean of frames.
+
+    For images in e-/s the stack is the weighted mean of the rates and is
+    later scaled with the total exposure ``T``; a frame of exposure ``t_i``
+    contributes ``RDNOISE_i / t_i`` to the rate noise, so
+    ``RDNOISE = T * sqrt(sum (w_i RDNOISE_i / t_i)^2) / sum w_i`` and
+    ``SATLEVEL = T * min(SATLEVEL_i / t_i)`` (the lowest rate at which any
+    frame saturates). For images in electrons ``t_i = T = 1``. Returns
+    ``None`` for values missing in any frame.
+    """
+    n = len(headers)
+    if n == 0:
+        return None, None
+    w = np.ones(n) if weights is None else np.asarray(weights, dtype=float)
+    if rate_images:
+        t = np.array([float(h.get("EXPTIME", np.nan)) for h in headers], dtype=float)
+        total = float(total_exptime) if total_exptime else float(np.nansum(t))
+    else:
+        t = np.ones(n)
+        total = 1.0
+    if not np.all(np.isfinite(t) & (t > 0)) or w.shape != (n,) or w.sum() <= 0:
+        return None, None
+
+    def values(key: str) -> np.ndarray | None:
+        try:
+            out = np.array([float(h[key]) for h in headers], dtype=float)
+        except (KeyError, TypeError, ValueError):
+            return None
+        return out if np.all(np.isfinite(out)) else None
+
+    read_noise = values(READ_NOISE_KEY)
+    saturation = values(SATURATION_KEY)
+    rn = None if read_noise is None else \
+        total * float(np.sqrt(np.sum((w * read_noise / t) ** 2))) / float(w.sum())
+    sat = None if saturation is None else total * float(np.min(saturation / t))
+    return rn, sat
+
+
+def write_noise_header(header, read_noise: float | None, saturation: float | None) -> None:
+    """Write ``RDNOISE`` / ``SATLEVEL`` (skips ``None``)."""
+    if read_noise is not None and math.isfinite(read_noise):
+        header[READ_NOISE_KEY] = (round(float(read_noise), 4),
+                                  "[e-] read noise per pixel at EXPTIME")
+    if saturation is not None and math.isfinite(saturation):
+        header[SATURATION_KEY] = (round(float(saturation), 2),
+                                  "[e-] lowest saturated pixel value at EXPTIME")
+
+
+# ---------------------------------------------------------------------------
 # Uncertainty
 # ---------------------------------------------------------------------------
 
@@ -332,6 +409,8 @@ def add_signal_uncertainty(ccd: CCDData, *, gain: float, read_noise: float) -> C
 __all__ = [
     "BINNING_MODES",
     "NOISE_SOURCES",
+    "READ_NOISE_KEY",
+    "SATURATION_KEY",
     "NoiseMeasurement",
     "add_signal_uncertainty",
     "binned_read_noise",
@@ -342,4 +421,7 @@ __all__ = [
     "pair_noise_adu",
     "resolve_binning_mode",
     "robust_std",
+    "saturation_in_electrons",
+    "stack_noise_values",
+    "write_noise_header",
 ]

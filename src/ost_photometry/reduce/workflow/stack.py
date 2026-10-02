@@ -6,16 +6,29 @@ import shutil
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import astropy.units as u
 import ccdproc as ccdp
 import numpy as np
 from astropy.io import fits
+from astropy.nddata import CCDData
 from astropy.stats import mad_std
 from astropy.table import Table
 
 from ... import checks, style, terminal_output
 from ...core.parallel import Executor
-from ...fits_headers import frame_weight
+from ...fits_headers import (
+    clear_cosmics_identified,
+    cosmics_identified,
+    frame_weight,
+    mark_cosmics_identified,
+)
 from .. import utilities
+from ..detector_noise import (
+    READ_NOISE_KEY,
+    SATURATION_KEY,
+    stack_noise_values,
+    write_noise_header,
+)
 from ..frame_selection import SUPPORTED_STACK_WEIGHTING
 
 #: Stack header keywords written from ``stack_meta``: key -> (meta field, comment).
@@ -113,6 +126,37 @@ def total_exposure_time(files: Sequence[str]) -> float | None:
     return total
 
 
+#: From this many frames the sigma clipping of the stack rejects cosmic rays.
+MIN_FRAMES_COSMIC_CLIPPING = 3
+
+
+def _write_stack_noise(
+    combined_image: CCDData,
+    images: Sequence[str],
+    weights: np.ndarray | None,
+) -> None:
+    """``RDNOISE`` / ``SATLEVEL`` of the stack and its cosmic-ray flag.
+
+    The keywords inherited from the first frame are replaced (or removed
+    when a frame lacks them); see
+    :func:`~ost_photometry.reduce.detector_noise.stack_noise_values`.
+    """
+    meta = combined_image.meta
+    headers = [fits.getheader(name) for name in images]
+    rate_images = combined_image.unit == u.electron / u.s
+    read_noise, saturation = stack_noise_values(
+        headers, weights, rate_images=rate_images, total_exptime=meta.get("EXPTIME")
+    )
+    for key in (READ_NOISE_KEY, SATURATION_KEY):
+        if key in meta:
+            del meta[key]
+    write_noise_header(meta, read_noise, saturation)
+    if len(images) >= MIN_FRAMES_COSMIC_CLIPPING:
+        mark_cosmics_identified(meta, handling="clipped")
+    elif not all(cosmics_identified(h) for h in headers):
+        clear_cosmics_identified(meta)
+
+
 def stack_filter_images(
     images_to_combine: list[str],
     stacking_method: str,
@@ -153,6 +197,7 @@ def stack_filter_images(
         total_exptime=total_exposure_time(images_to_combine),
     )
     _write_stack_meta(combined_image, stack_meta, weight_array)
+    _write_stack_noise(combined_image, images_to_combine, weight_array)
     file_name = "combined_filter_{}.fit".format(filter_.replace("''", "p"))
     combined_image.write(out_path / file_name, overwrite=True)
     return file_name

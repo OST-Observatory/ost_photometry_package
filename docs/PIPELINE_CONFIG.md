@@ -106,7 +106,9 @@ Use this when seeing changes between epochs and you stay on `APER`. For crowded 
 | `always` | Force lacosmic even if reduction already ran     | Bool `True` maps here |
 | `never`  | Never run lacosmic in analysis                   | Bool `False` maps here; use when you handle cosmics elsewhere |
 
-Reduction writes `CRIDENT=True` plus `cosmics_rm` (interpolated) or `cosmics_msk` (mask-only). The finder still respects the image mask.
+Reduction writes `CRIDENT=True` plus `cosmics_rm` (interpolated) or `cosmics_msk` (mask-only); stacks of at least three frames add `CRCLIP` (rejected by the sigma clipping). The finder still respects the image mask.
+
+When lacosmic runs, `read_noise` and `saturation_level` (`None` by default) come from the header keywords `RDNOISE` and `SATLEVEL` that the reduction writes: electrons per pixel for the image times `EXPTIME`, converted for stacks (read noise of the weighted mean at the total exposure, lowest saturating rate). Images without them fall back to 8 e- / 65535 with a note; explicit values always win.
 
 ### `psf_find_in_residuals`
 

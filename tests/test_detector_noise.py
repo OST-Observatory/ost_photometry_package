@@ -206,3 +206,57 @@ def test_stacked_frame_counts():
     plan = {"units": {"u1": {"lights": ["1", "2", "3", "4"]}, "u2": {"lights": ["5"]}},
             "targets": {"T1": {"stack": True}, "T2": {"stack": False}}}
     assert stacked_frame_counts(plan, frames) == {"1": 3, "2": 3, "5": 3, "3": 1, "4": 0}
+
+
+def test_saturation_in_electrons():
+    from ost_photometry.reduce.detector_noise import saturation_in_electrons
+
+    assert saturation_in_electrons(65535, 735, 1.3, 1.0) == pytest.approx(64800 * 1.3)
+    assert saturation_in_electrons(65535, 735, 1.3, 1.2) == pytest.approx(64800 * 1.3 / 1.2)
+    assert saturation_in_electrons(100, 735, 1.3) == 0.0
+
+
+def test_stack_noise_values():
+    from ost_photometry.reduce.detector_noise import stack_noise_values
+
+    headers = [{"EXPTIME": 60.0, "RDNOISE": 17.0, "SATLEVEL": 80000.0} for _ in range(4)]
+    rn, sat = stack_noise_values(headers, None, rate_images=True, total_exptime=240.0)
+    assert rn == pytest.approx(17.0 * 2)  # electrons summed over 4 frames
+    assert sat == pytest.approx(4 * 80000.0)
+    # Mixed exposures: the short frame dominates the rate noise; the long
+    # frames saturate at the lowest rate.
+    headers[0] = {"EXPTIME": 10.0, "RDNOISE": 17.0, "SATLEVEL": 80000.0}
+    rn, sat = stack_noise_values(headers, [1, 1, 1, 1], rate_images=True, total_exptime=190.0)
+    rate_noise = np.sqrt((17 / 10) ** 2 + 3 * (17 / 60) ** 2) / 4
+    assert rn == pytest.approx(190.0 * rate_noise)
+    assert sat == pytest.approx(190.0 * 80000.0 / 60.0)
+    # Images in electrons: mean of the frames.
+    rn, sat = stack_noise_values(headers, None, rate_images=False, total_exptime=None)
+    assert rn == pytest.approx(17.0 / 2) and sat == pytest.approx(80000.0)
+    # A frame without the keywords: unknown.
+    assert stack_noise_values([*headers, {"EXPTIME": 60.0}], None, rate_images=True,
+                              total_exptime=250.0) == (None, None)
+
+
+def test_cosmic_header_flags():
+    from ost_photometry.fits_headers import (
+        clear_cosmics_identified,
+        cosmics_identified,
+        mark_cosmics_identified,
+    )
+
+    header = fits.Header()
+    mark_cosmics_identified(header, handling="clipped")
+    assert cosmics_identified(header) and header["CRCLIP"]
+    clear_cosmics_identified(header)
+    assert not cosmics_identified(header) and "CRCLIP" not in header
+
+
+def test_analysis_cosmic_parameters_from_header():
+    from ost_photometry.analyze.extraction import cosmic_ray_noise_parameters
+
+    header = fits.Header({"RDNOISE": 45.0, "SATLEVEL": 5e5})
+    assert cosmic_ray_noise_parameters(header) == (45.0, 5e5, [])
+    assert cosmic_ray_noise_parameters(header, 10.0, 6e4)[:2] == (10.0, 6e4)
+    rn, sat, notes = cosmic_ray_noise_parameters(fits.Header())
+    assert (rn, sat) == (8.0, 65535.0) and len(notes) == 2

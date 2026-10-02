@@ -14,7 +14,11 @@ from ...core.parallel import Executor
 from ...core.pixel_masks import negative_outlier_mask
 from ...fits_headers import mark_cosmics_identified
 from .. import utilities, validation
-from ..detector_noise import add_signal_uncertainty
+from ..detector_noise import (
+    add_signal_uncertainty,
+    saturation_in_electrons,
+    write_noise_header,
+)
 from .constants import (
     REDUCE_STATUS_REDUCED,
     REDUCE_STATUS_SKIP_NO_FILTER,
@@ -118,7 +122,9 @@ def reduce_light(
         Default is ``8`` e-.
 
     saturation_level
-        Saturation limit of the camera chip.
+        Saturation limit of the camera chip in raw ADU. Converted to the
+        calibrated electrons for L.A.Cosmic and written as ``SATLEVEL``
+        (with ``RDNOISE``) into the reduced frames.
         Default is ``65535``.
 
     limiting_contrast_rm_cosmic_rays
@@ -469,7 +475,9 @@ def reduce_light_image(
         Default is ``4.5``.
 
     saturation_level
-        Saturation limit of the camera chip.
+        Saturation limit of the camera chip in raw ADU. Converted to the
+        calibrated electrons for L.A.Cosmic and written as ``SATLEVEL``
+        (with ``RDNOISE``) into the reduced frames.
         Default is ``65535``.
 
     mask_cosmics
@@ -619,6 +627,27 @@ def reduce_light_image(
     #   Gain correct data
     reduced = ccdp.gain_correct(reduced, gain * u.electron / u.adu)
 
+    #   Saturation in the calibrated electrons: the raw limit minus the
+    #   subtracted bias (or bias-containing dark), times the gain, divided by
+    #   the brightest part of the normalised flat
+    if saturation_level is None:
+        terminal_output.print_to_terminal(
+            "Saturation level not specified. Assume 16bit == 65535",
+            indent=1,
+            style_name="WARNING",
+        )
+        saturation_level = 65535
+    pedestal = combined_bias if rm_bias else combined_darks[closest_dark_exposure_time]
+    flat_data = np.asarray(flat_master.data, dtype=float)
+    flat_max = float(np.nanpercentile(flat_data, 99.9) / np.nanmean(flat_data))
+    saturation_electrons = saturation_in_electrons(
+        saturation_level,
+        float(np.nanmedian(pedestal.data)),
+        gain,
+        flat_max,
+    )
+    write_noise_header(reduced.meta, read_noise, saturation_electrons)
+
     #   Remove cosmic rays
     if rm_cosmic_rays:
         if verbose:
@@ -626,21 +655,12 @@ def reduce_light_image(
                 f"Remove cosmic rays from image {file_name}"
             )
 
-        #   Sanitize saturation level
-        if saturation_level is None:
-            terminal_output.print_to_terminal(
-                "Saturation level not specified. Assume 16bit == 65535",
-                indent=1,
-                style_name="WARNING",
-            )
-            saturation_level = 65535
-
         reduced_without_cosmics = ccdp.cosmicray_lacosmic(
             reduced,
             objlim=limiting_contrast_rm_cosmic_rays,
             readnoise=read_noise,
             sigclip=sigma_clipping_value_rm_cosmic_rays,
-            satlevel=saturation_level,
+            satlevel=saturation_electrons,
             verbose=verbose,
         )
 

@@ -46,6 +46,8 @@ from .. import utilities as base_utilities
 from ..core.parallel import Executor, start_plot_process
 from ..core.pixel_masks import aperture_masked_fraction, fill_masked_pixels
 from ..fits_headers import (
+    READ_NOISE_KEY,
+    SATURATION_KEY,
     cosmics_identified,
     mark_cosmics_identified,
     normalize_cosmic_ray_removal,
@@ -128,12 +130,48 @@ def _extraction_qc_dir(image: AnalysisImage, *, gallery: bool) -> str:
     return str(extraction_plot_dir(image.out_path, gallery=gallery))
 
 
+#: Fallbacks for images without ``RDNOISE`` / ``SATLEVEL`` in the header.
+DEFAULT_COSMIC_READ_NOISE = 8.0
+DEFAULT_COSMIC_SATURATION = 65535.0
+
+
+def cosmic_ray_noise_parameters(
+    header,
+    read_noise: float | None = None,
+    saturation_level: float | None = None,
+) -> tuple[float, float, list[str]]:
+    """Read noise and saturation for L.A.Cosmic on a reduced image.
+
+    Explicit values win. Otherwise the header keywords ``RDNOISE`` /
+    ``SATLEVEL`` written by the reduction are used (electrons per pixel for
+    the image times ``EXPTIME``; for stacks already converted to the
+    stacked image). Missing keywords fall back to 8 e- / 65535 with a note.
+    """
+    notes: list[str] = []
+    if read_noise is None:
+        value = header.get(READ_NOISE_KEY)
+        if value is None:
+            read_noise = DEFAULT_COSMIC_READ_NOISE
+            notes.append(f"{READ_NOISE_KEY} not in header: read noise {read_noise} e- assumed")
+        else:
+            read_noise = float(value)
+    if saturation_level is None:
+        value = header.get(SATURATION_KEY)
+        if value is None:
+            saturation_level = DEFAULT_COSMIC_SATURATION
+            notes.append(f"{SATURATION_KEY} not in header: saturation {saturation_level:.0f} "
+                         "assumed")
+        else:
+            saturation_level = float(value)
+    return float(read_noise), float(saturation_level), notes
+
+
 def rm_cosmic_rays(
     image: AnalysisImage,
     limiting_contrast: float = 5.0,
-    read_noise: float = 8.0,
+    read_noise: float | None = None,
     sigma_clipping_value: float = 4.5,
-    saturation_level: float = 65535.0,
+    saturation_level: float | None = None,
     verbose: bool = False,
     add_mask: bool = True,
     terminal_logger: terminal_output.TerminalLog | None = None,
@@ -145,6 +183,10 @@ def rm_cosmic_rays(
 
     Skips lacosmic when ``CRIDENT`` / ``cosmics_rm`` / ``cosmics_msk`` /
     legacy ``cosmic_mas`` is set, unless ``force=True``.
+
+    ``read_noise`` (e-) and ``saturation_level`` refer to the image in
+    electrons (times ``EXPTIME`` for e-/s images); ``None`` takes them from
+    the header (:func:`cosmic_ray_noise_parameters`).
     """
     ccd = image.read_image()
     already = cosmics_identified(ccd.meta)
@@ -160,10 +202,14 @@ def rm_cosmic_rays(
             terminal_output.print_to_terminal(msg)
         return
 
-    if terminal_logger is not None:
-        terminal_logger.add_to_cache("Remove cosmic rays ...")
-    else:
-        terminal_output.print_to_terminal("Remove cosmic rays ...")
+    read_noise, saturation_level, notes = cosmic_ray_noise_parameters(
+        ccd.meta, read_noise, saturation_level
+    )
+    for msg in ("Remove cosmic rays ...", *notes):
+        if terminal_logger is not None:
+            terminal_logger.add_to_cache(msg)
+        else:
+            terminal_output.print_to_terminal(msg)
 
     #   Get exposure time
     exposure_time = ccd.meta.get("exptime", 1.0)
@@ -1743,9 +1789,9 @@ def main_extract(
     strict_epsf_checks: bool = True,
     cosmic_ray_removal: bool | str = "auto",
     limiting_contrast_rm_cosmics: float = 5.0,
-    read_noise: float = 8.0,
+    read_noise: float | None = None,
     sigma_clipping_value: float = 4.5,
-    saturation_level: float = 65535.0,
+    saturation_level: float | None = None,
     plots_for_all_images: bool = False,
     file_type_plots: str = "pdf",
     use_wcs_projection_for_star_maps: bool = True,

@@ -16,6 +16,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+import astropy.units as u
 import ccdproc as ccdp
 import numpy as np
 from astropy.io import fits
@@ -23,7 +24,14 @@ from astropy.nddata import CCDData
 from astropy.table import Table
 
 from ...archive.cache import safe_name
+from ...fits_headers import clear_cosmics_identified, cosmics_identified
 from .. import registration
+from ..detector_noise import (
+    READ_NOISE_KEY,
+    SATURATION_KEY,
+    stack_noise_values,
+    write_noise_header,
+)
 from ..frame_selection import (
     GLOBAL_REFERENCE_KEY,
     FrameSelection,
@@ -123,6 +131,16 @@ def combine_camera_stacks(
     combined.meta = ccds[0].meta.copy()
     combined.meta["EXPTIME"] = float(sum(float(c.meta.get("EXPTIME", 0.0)) for c in ccds))
     combined.meta["N-IMAGES"] = int(sum(int(c.meta.get("N-IMAGES", 1)) for c in ccds))
+    read_noise, saturation = stack_noise_values(
+        [c.meta for c in ccds], weights, rate_images=combined.unit == u.electron / u.s,
+        total_exptime=combined.meta["EXPTIME"],
+    )
+    for key in (READ_NOISE_KEY, SATURATION_KEY):
+        if key in combined.meta:
+            del combined.meta[key]
+    write_noise_header(combined.meta, read_noise, saturation)
+    if not all(cosmics_identified(c.meta) for c in ccds):
+        clear_cosmics_identified(combined.meta)
     combined.meta["NCAMERAS"] = (len(ccds), "Cameras combined")
     combined.meta["CAMERAS"] = (",".join(cameras)[:68], "Cameras combined")
     combined.meta.add_history(

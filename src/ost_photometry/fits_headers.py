@@ -13,8 +13,15 @@ from astropy.wcs import WCS, FITSFixedWarning
 
 _DATFIX_FILTER_INSTALLED = False
 
-CosmicHandling = Literal["interpolated", "masked"]
+CosmicHandling = Literal["interpolated", "masked", "clipped"]
 CosmicRayRemovalMode = Literal["auto", "always", "never"]
+
+#: Read noise per pixel (e-) of a reduced image, for the data times
+#: ``EXPTIME`` when the image is in e-/s; written by the reduction.
+READ_NOISE_KEY = "RDNOISE"
+
+#: Lowest value of a saturated pixel, in the same units as ``RDNOISE``.
+SATURATION_KEY = "SATLEVEL"
 
 # Canonical + legacy keys that mean cosmics were already identified.
 _COSMIC_IDENTIFIED_KEYS = ("CRIDENT", "cosmics_rm", "cosmics_msk", "cosmic_mas")
@@ -40,6 +47,13 @@ def cosmics_identified(header: Mapping[str, Any] | fits.Header) -> bool:
     return False
 
 
+def clear_cosmics_identified(header: MutableMapping[str, Any] | fits.Header) -> None:
+    """Remove all cosmic-ray identification keywords."""
+    for key in (*_COSMIC_IDENTIFIED_KEYS, "CRCLIP"):
+        if key in header:
+            del header[key]
+
+
 def mark_cosmics_identified(
     header: MutableMapping[str, Any] | fits.Header,
     *,
@@ -48,13 +62,16 @@ def mark_cosmics_identified(
     """Set cosmic-ray identification keywords on a FITS header / CCD meta.
 
     Always sets ``CRIDENT=True``. Additionally sets ``cosmics_rm`` when
-    cosmics were interpolated out, or ``cosmics_msk`` when only masked.
+    cosmics were interpolated out, ``cosmics_msk`` when only masked, or
+    ``CRCLIP`` when the sigma clipping of a stack rejected them.
     """
     header["CRIDENT"] = True
     if handling == "interpolated":
         header["cosmics_rm"] = True
     elif handling == "masked":
         header["cosmics_msk"] = True
+    elif handling == "clipped":
+        header["CRCLIP"] = (True, "Cosmic rays rejected by the stack's sigma clipping")
     else:
         raise ValueError(f"Unknown cosmic handling {handling!r}")
 

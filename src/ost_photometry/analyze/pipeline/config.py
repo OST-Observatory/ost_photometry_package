@@ -159,9 +159,12 @@ class ExtractionConfig:
     #: ``auto`` skips lacosmic when reduction already set CRIDENT / cosmics_*.
     cosmic_ray_removal: bool | CosmicRayRemovalMode = "auto"
     limiting_contrast_rm_cosmics: float = 5.0
-    read_noise: float = 8.0
+    #: L.A.Cosmic read noise (e-) and saturation for the image in electrons;
+    #: ``None`` uses ``RDNOISE`` / ``SATLEVEL`` from the reduction header
+    #: (fallback 8 e- / 65535).
+    read_noise: float | None = None
     sigma_clipping_value: float = 4.5
-    saturation_level: float = 65535.0
+    saturation_level: float | None = None
     plots_for_all_images: bool = False
     file_type_plots: str = "pdf"
     use_wcs_projection_for_star_maps: bool = True

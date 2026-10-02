@@ -66,6 +66,9 @@ section of this file.
 - `binning_mode` (`auto` / `digital` / `charge`) and the catalog field
   `binning_mode` in `data/cameras.json` (`camera_specs.binning_mode`).
 - `rm_cosmic_rays="auto"` with `cosmic_ray_auto_min_frames` (default 7).
+- Header keywords `RDNOISE` / `SATLEVEL` (electrons for the image times
+  `EXPTIME`) on reduced frames, stacks and camera combinations; sigma-clipped
+  stacks of at least three frames are marked `CRIDENT` / `CRCLIP`.
 
 ### Changed
 
@@ -101,6 +104,13 @@ section of this file.
   noise for cosmic rays (13 % of an Hα frame masked, sky 12 % too low). The
   catalog read noise is now scaled with `sqrt(xbin * ybin)` for digitally
   binning cameras.
+- **L.A.Cosmic saturation in the reduction** was the raw ADU limit applied to
+  calibrated electrons; it is now `(saturation - bias) x gain / brightest
+  flat`, so saturated star cores are protected.
+- **L.A.Cosmic in the analysis** used 8 e- and 65535 for every image,
+  including stacks whose read noise and saturation scale with the number of
+  frames. `read_noise` / `saturation_level` default to `None` and come from
+  `RDNOISE` / `SATLEVEL`.
 - **Uncertainty maps** of lights, flats and darks counted the bias pedestal
   as photon noise (`create_deviation` before the bias subtraction), which
   overestimated the pixel noise by 17–66 % on the OST test data. The

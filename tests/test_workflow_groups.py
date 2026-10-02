@@ -60,6 +60,10 @@ def test_reduce_planned_end_to_end(dataset, tmp_path):  # noqa: F811
         # ~ 0.25 e-/s; counting the 730 ADU bias as photons gave ~ 0.52.
         assert 0.2 < float(np.nanmedian(ccd.uncertainty.array)) < 0.35
         assert ccd.mask is None or ccd.mask.mean() < 0.1
+        # For L.A.Cosmic in the analysis: read noise and the saturation of the
+        # calibrated electrons ((65535 - 730 bias) x gain 1 / brightest flat).
+        assert header["RDNOISE"] == pytest.approx(5.0)
+        assert 55000 < header["SATLEVEL"] < 64805
         by_unit.setdefault(unit, set()).add(header["SESSID"])
     assert len(by_unit) == 2 and all(len(v) == 1 for v in by_unit.values())
 
@@ -121,6 +125,13 @@ def test_stack_planned_per_target(dataset, tmp_path):  # noqa: F811
     m104 = fits.getheader(separate[0]["path"])
     assert m104["N-IMAGES"] == 7 and m104["EXPTIME"] == pytest.approx(420.0)
     assert m104["WEIGHTNG"] == "fwhm"
+    # Read noise of the stack at its total exposure: 5 e- x sqrt(7) for
+    # equal weights, a bit more for unequal FWHM weights.
+    assert 5.0 * np.sqrt(7) * 0.999 < m104["RDNOISE"] < 5.0 * 7
+    assert m104["SATLEVEL"] > 7 * 55000
+    assert m104["CRIDENT"] and m104["CRCLIP"]  # the analysis skips L.A.Cosmic
+    combined = [r for r in per_target["m104"] if r["camera"] == "combined"][0]
+    assert fits.getheader(combined["path"])["RDNOISE"] > 0
     m57 = [r for r in per_target["m57"] if r["camera"] != "combined"][0]
     assert fits.getheader(m57["path"])["N-IMAGES"] == 4
     assert (out / "stacks" / "summary.ecsv").is_file()
