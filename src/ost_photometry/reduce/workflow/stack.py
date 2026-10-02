@@ -30,6 +30,7 @@ from ..detector_noise import (
     write_noise_header,
 )
 from ..frame_selection import SUPPORTED_STACK_WEIGHTING
+from ..storage import cast_like, file_float_dtype
 
 #: Stack header keywords written from ``stack_meta``: key -> (meta field, comment).
 STACK_META_KEYWORDS: dict[str, tuple[str, str]] = {
@@ -198,6 +199,8 @@ def stack_filter_images(
     )
     _write_stack_meta(combined_image, stack_meta, weight_array)
     _write_stack_noise(combined_image, images_to_combine, weight_array)
+    #   Same floating type as the stacked frames (calculation in ``dtype``)
+    cast_like(combined_image, file_float_dtype(images_to_combine[0]))
     file_name = "combined_filter_{}.fit".format(filter_.replace("''", "p"))
     combined_image.write(out_path / file_name, overwrite=True)
     return file_name

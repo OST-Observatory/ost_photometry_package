@@ -13,6 +13,7 @@ from ... import checks, style, terminal_output
 from ...core.parallel import Executor
 from .. import plots, utilities
 from ..detector_noise import add_signal_uncertainty
+from ..storage import cast_for_storage
 
 
 def reduce_flat(
@@ -28,6 +29,7 @@ def reduce_flat(
     trim_x_end: int = 0,
     trim_y_start: int = 0,
     trim_y_end: int = 0,
+    storage_dtype: str | None = None,
     **kwargs,
 ) -> None:
     """
@@ -89,6 +91,11 @@ def reduce_flat(
         Number of pixels to trim from the end of the Y direction,
         e.g. to remove an overscan region.
         Default is ``0``.
+
+    storage_dtype
+        Floating type of the written images: ``float32`` or ``float64``
+        (see :mod:`ost_photometry.reduce.storage`). ``None`` = ``float32``.
+        Default is ``None``.
     """
     terminal_output.print_to_terminal("Reduce flats...", indent=2)
 
@@ -178,6 +185,7 @@ def reduce_flat(
                 "trim_x_end": trim_x_end,
                 "trim_y_start": trim_y_start,
                 "trim_y_end": trim_y_end,
+                "storage_dtype": storage_dtype,
             },
         )
 
@@ -205,6 +213,7 @@ def reduce_flat_image(
     trim_x_end: int = 0,
     trim_y_start: int = 0,
     trim_y_end: int = 0,
+    storage_dtype: str | None = None,
 ) -> None:
     """
     Reduce an individual image
@@ -311,6 +320,7 @@ def reduce_flat_image(
 
     #   Save the result
     file_name = flat_file_name.split("/")[-1]
+    cast_for_storage(flat, storage_dtype)
     flat.write(flat_path / file_name, overwrite=True)
 
 
@@ -323,6 +333,7 @@ def master_flat(
     debug: bool = False,
     n_cores_multiprocessing: int | None = None,
     dtype: str | np.dtype | None = None,
+    storage_dtype: str | None = None,
     **kwargs,
 ) -> None:
     """
@@ -363,6 +374,11 @@ def master_flat(
     dtype
         Data type used in the ccdproc calculations
         Default is ''None''. -> None is equivalent to float64
+
+    storage_dtype
+        Floating type of the written images: ``float32`` or ``float64``
+        (see :mod:`ost_photometry.reduce.storage`). ``None`` = ``float32``.
+        Default is ``None``.
     """
     terminal_output.print_to_terminal("Stack flats...", indent=2)
 
@@ -403,6 +419,7 @@ def master_flat(
             kwargs={
                 "plot_plots": plot_plots,
                 "dtype": dtype,
+                "storage_dtype": storage_dtype,
             },
         )
 
@@ -440,6 +457,7 @@ def stack_flat_images(
     out_path: Path,
     plot_plots: bool = False,
     dtype: str | np.dtype | None = None,
+    storage_dtype: str | None = None,
 ) -> np.ndarray:
     """
     Stack flats for the individual filters
@@ -500,6 +518,7 @@ def stack_flat_images(
 
     #   Define name and write file to disk
     flat_file_name = "combined_flat_filter_{}.fit".format(filter_.replace("''", "p"))
+    cast_for_storage(combined_flat, storage_dtype)
     combined_flat.write(out_path / flat_file_name, overwrite=True)
 
     #   Plot flat medians and means

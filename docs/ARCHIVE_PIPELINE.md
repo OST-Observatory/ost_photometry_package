@@ -120,6 +120,15 @@ catalog read noise to the binned pixel (`binning_mode`). With
 (target × camera × filter) has fewer than `cosmic_ray_auto_min_frames`
 frames, or whose target is not stacked.
 
+## Disk space
+
+Masters, reduced and aligned frames and stacks are float32
+(`ReductionSettings.storage_dtype`). With `StackSettings.keep_aligned_lights`
+(default) the reduced frame of every aligned frame is deleted after the
+target is stacked (`keep_reduced_lights=False`), so each frame is stored once;
+`reduction_report.ecsv` then lists paths that no longer exist. A new stacking
+run needs a new reduction (`3_reduce_and_stack.py` always does both).
+
 ## Limits
 
 - Spectroscopy frames are excluded (archive classification, or spectral

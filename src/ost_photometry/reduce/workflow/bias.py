@@ -8,6 +8,7 @@ from astropy.stats import mad_std
 
 from ... import checks
 from .. import utilities
+from ..storage import cast_for_storage
 
 
 def master_bias(
@@ -19,6 +20,7 @@ def master_bias(
     trim_y_start: int = 0,
     trim_y_end: int = 0,
     dtype: str | np.dtype | None = None,
+    storage_dtype: str | None = None,
 ) -> None:
     """
     This function calculates master biases from individual bias images
@@ -59,6 +61,11 @@ def master_bias(
     dtype
         Data type used in the ccdproc calculations
         Default is ''None''. -> None is equivalent to float64
+
+    storage_dtype
+        Floating type of the written images: ``float32`` or ``float64``
+        (see :mod:`ost_photometry.reduce.storage`). ``None`` = ``float32``.
+        Default is ``None``.
     """
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(bias_path)
@@ -110,6 +117,7 @@ def master_bias(
     combined_bias.meta["combined"] = True
 
     #   Write file to disk
+    cast_for_storage(combined_bias, storage_dtype)
     combined_bias.write(out_path / "combined_bias.fit", overwrite=True)
 
 

@@ -18,6 +18,7 @@ from ...core.parallel import Executor
 from ...core.pixel_masks import fill_masked_pixels, resample_mask, warn_if_mask_too_large
 from ...terminal_output import print_to_terminal
 from .. import plots, utilities
+from ..storage import cast_like
 from .accounting import ApplyResult, apply_ok, apply_skipped, exception_note
 from .trim import trim_image
 
@@ -116,7 +117,8 @@ def apply_xy_image_shift(
             filter_.replace("''", "p")
         )
 
-    #   Write trimmed image to disk
+    #   Write trimmed image to disk (keeping the input's float type)
+    cast_like(output_image, current_image_ccd)
     output_image.write(output_path / file_name, overwrite=True)
     return apply_ok(current_image_name)
 
@@ -193,7 +195,8 @@ def apply_optical_flow(
             filter_.replace("''", "p")
         )
 
-    #   Write trimmed image to disk
+    #   Write trimmed image to disk (keeping the input's float type)
+    cast_like(output_image, current_image_ccd)
     output_image.write(output_path / file_name, overwrite=True)
     return apply_ok(current_image_name)
 
@@ -279,7 +282,8 @@ def apply_astro_align(
         if rm_enlarged_keyword:
             output_image.meta.remove('enlarged')
 
-        #   Write trimmed image to disk
+        #   Write trimmed image to disk (keeping the input's float type)
+        cast_like(output_image, current_image_ccd)
         output_image.write(output_path / file_name, overwrite=True)
 
     #   Save similarity transformation matrix

@@ -26,6 +26,7 @@ from ..frame_selection import (
     write_quality_table,
 )
 from ..instrument import get_egain_from_collection, resolve_system_gain
+from ..storage import check_storage_dtype
 from .bias import master_bias
 from .config import ReduceConfig
 from .dark import master_dark, reduce_dark
@@ -89,6 +90,7 @@ def reduce_main(
     sanity_check_sample_size: int = 3,
     fail_on_missing_flat: bool = True,
     interactive: bool = True,
+    storage_dtype: str = "float32",
 ) -> None:
     """
     Main reduction routine: Creates master images for bias, darks,
@@ -365,6 +367,13 @@ def reduce_main(
         If ``False``, never ask whether existing masters / reduced frames
         should be reused (they are recomputed). For unattended pipelines.
         Default is ``True``.
+
+    storage_dtype
+        Floating type of the written masters, reduced and aligned frames
+        and stacks: ``float32`` (half the disk space; its rounding is far
+        below the pixel noise) or ``float64``. Calculations run in float64
+        regardless. See :mod:`ost_photometry.reduce.storage`.
+        Default is ``float32``.
     """
     if estimate_fwhm:
         warnings.warn(
@@ -430,6 +439,7 @@ def reduce_main(
         sanity_check_sample_size=sanity_check_sample_size,
         fail_on_missing_flat=fail_on_missing_flat,
         interactive=interactive,
+        storage_dtype=storage_dtype,
     )
     return _run_reduction(cfg)
 
@@ -660,6 +670,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
     check_noise_source(cfg.camera_noise_source)
     check_binning_mode(cfg.binning_mode)
     check_cosmic_ray_mode(cfg.rm_cosmic_rays)
+    check_storage_dtype(cfg.storage_dtype)
     if cfg.stack_weighting not in SUPPORTED_STACK_WEIGHTING:
         raise ValueError(
             f"stack_weighting must be one of {SUPPORTED_STACK_WEIGHTING}, "
@@ -818,6 +829,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
                 trim_y_start=cfg.trim_y_start,
                 trim_y_end=cfg.trim_y_end,
                 dtype=cfg.dtype,
+                storage_dtype=cfg.storage_dtype,
             )
 
         ###
@@ -838,6 +850,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
                 trim_x_end=cfg.trim_x_end,
                 trim_y_start=cfg.trim_y_start,
                 trim_y_end=cfg.trim_y_end,
+                storage_dtype=cfg.storage_dtype,
             )
 
             #   Set dark path
@@ -862,6 +875,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
             trim_y_start=cfg.trim_y_start,
             trim_y_end=cfg.trim_y_end,
             dtype=cfg.dtype,
+            storage_dtype=cfg.storage_dtype,
         )
 
         ###
@@ -884,6 +898,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
             trim_x_end=cfg.trim_x_end,
             trim_y_start=cfg.trim_y_start,
             trim_y_end=cfg.trim_y_end,
+            storage_dtype=cfg.storage_dtype,
         )
 
         #   Create master flat
@@ -895,6 +910,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
             debug=cfg.debug,
             n_cores_multiprocessing=cfg.n_cores_multiprocessing,
             dtype=cfg.dtype,
+            storage_dtype=cfg.storage_dtype,
         )
 
     ###
@@ -909,6 +925,7 @@ def _run_reduction(cfg: ReduceConfig) -> None:
         rm_cosmic_rays=cfg.rm_cosmic_rays,
         cosmic_ray_auto_min_frames=cfg.cosmic_ray_auto_min_frames,
         frames_are_stacked=cfg.stack_images,
+        storage_dtype=cfg.storage_dtype,
         mask_cosmics=cfg.mask_cosmic_rays,
         gain=gain,
         read_noise=read_noise,

@@ -19,6 +19,7 @@ from ..detector_noise import (
     saturation_in_electrons,
     write_noise_header,
 )
+from ..storage import cast_for_storage
 from .constants import (
     REDUCE_STATUS_REDUCED,
     REDUCE_STATUS_SKIP_NO_FILTER,
@@ -83,6 +84,7 @@ def reduce_light(
     interactive: bool = True,
     cosmic_ray_auto_min_frames: int = 7,
     frames_are_stacked: bool = False,
+    storage_dtype: str | None = None,
 ) -> None:
     """
     Reduce the science images
@@ -203,6 +205,11 @@ def reduce_light(
         Whether the reduced frames will be stacked per filter (for
         ``rm_cosmic_rays="auto"``).
         Default is ``False``.
+
+    storage_dtype
+        Floating type of the reduced frames: ``float32`` or ``float64``
+        (see :mod:`ost_photometry.reduce.storage`). ``None`` = ``float32``.
+        Default is ``None``.
     """
     terminal_output.print_to_terminal("Reduce light images...", indent=2)
     check_cosmic_ray_mode(rm_cosmic_rays)
@@ -365,6 +372,7 @@ def reduce_light(
                 "trim_x_end": trim_x_end,
                 "trim_y_start": trim_y_start,
                 "trim_y_end": trim_y_end,
+                "storage_dtype": storage_dtype,
             },
         )
 
@@ -408,6 +416,7 @@ def reduce_light_image(
     trim_y_start: int = 0,
     trim_y_end: int = 0,
     pixel_mask: np.ndarray | None = None,
+    storage_dtype: str | None = None,
 ) -> str:
     """
     Reduce an individual image
@@ -513,6 +522,11 @@ def reduce_light_image(
         Number of pixels to trim from the end of the Y direction,
         e.g. to remove an overscan region.
         Default is ``0``.
+
+    storage_dtype
+        Floating type of the written frame: ``float32`` or ``float64``.
+        ``None`` = ``float32``.
+        Default is ``None``.
     """
     #   Read light image
     light = CCDData.read(light_file_name, unit="adu")
@@ -703,6 +717,7 @@ def reduce_light_image(
         reduced.unit = u.electron / u.s
 
     #   Write reduced science image to disk
+    cast_for_storage(reduced, storage_dtype)
     reduced.write(light_path / file_name, overwrite=True)
     return REDUCE_STATUS_REDUCED
 

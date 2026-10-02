@@ -80,5 +80,7 @@ class ReduceConfig:
     fail_on_missing_flat: bool = True
     # False: never prompt about reusing masters / reduced frames.
     interactive: bool = True
+    # Floating type of written images (ost_photometry.reduce.storage)
+    storage_dtype: str = "float32"
 
 

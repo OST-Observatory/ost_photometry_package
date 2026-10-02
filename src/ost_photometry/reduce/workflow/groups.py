@@ -35,6 +35,7 @@ from ..detector_noise import (
 from ..grouping.classify import BIAS, DARK, FLAT, LIGHT, header_frame_type
 from ..image_collection import image_file_collection
 from ..masks import load_pixel_mask_files
+from ..storage import check_storage_dtype
 from .bias import master_bias
 from .config import ReduceConfig
 from .constants import REDUCE_STATUS_REDUCED
@@ -71,6 +72,8 @@ class ReductionSettings:
     camera_noise_source: str = "catalog"
     #: "auto", "digital" or "charge" (read noise per binned pixel)
     binning_mode: str = "auto"
+    #: Floating type of written masters and reduced frames (float32 / float64)
+    storage_dtype: str = "float32"
 
 
 @dataclass
@@ -296,7 +299,8 @@ def build_masters(
         camera = _camera_parameters(input_dir, settings, types,
                                     noise.get(str(spec.get("electronic_id", ""))))
         if kind == BIAS:
-            master_bias(input_dir, mdir, types, dtype=settings.dtype)
+            master_bias(input_dir, mdir, types, dtype=settings.dtype,
+                        storage_dtype=settings.storage_dtype)
         elif kind == DARK:
             bias_dir = built.get(spec.get("bias_id", ""))
             rm_bias = bias_dir is not None
@@ -304,11 +308,13 @@ def build_masters(
                 _link_into(_master_files(bias_dir, "combined_bias.fit"), mdir)
                 reduce_dark(input_dir, mdir, types, gain=camera.gain,
                             read_noise=camera.read_noise,
-                            n_cores_multiprocessing=settings.n_cores_multiprocessing)
+                            n_cores_multiprocessing=settings.n_cores_multiprocessing,
+                            storage_dtype=settings.storage_dtype)
             master_dark(mdir / "dark" if rm_bias else input_dir, mdir, types, gain=camera.gain,
                         read_noise=camera.read_noise, dark_rate=camera.dark_rate,
                         n_cores_multiprocessing=settings.n_cores_multiprocessing,
-                        rm_bias=rm_bias, dtype=settings.dtype)
+                        rm_bias=rm_bias, dtype=settings.dtype,
+                        storage_dtype=settings.storage_dtype)
         else:
             bias_dir = built.get(spec.get("bias_id", ""))
             dark_dir = built.get(spec.get("dark_id", ""))
@@ -322,10 +328,11 @@ def build_masters(
             reduce_flat(input_dir, mdir, types, gain=camera.gain, read_noise=camera.read_noise,
                         rm_bias=rm_bias,
                         exposure_time_tolerance=settings.exposure_time_tolerance,
-                        n_cores_multiprocessing=settings.n_cores_multiprocessing)
+                        n_cores_multiprocessing=settings.n_cores_multiprocessing,
+                        storage_dtype=settings.storage_dtype)
             master_flat(mdir / "flat", mdir, types,
                         n_cores_multiprocessing=settings.n_cores_multiprocessing,
-                        dtype=settings.dtype)
+                        dtype=settings.dtype, storage_dtype=settings.storage_dtype)
         shutil.rmtree(input_dir, ignore_errors=True)
         if _master_files(mdir, done_pattern):
             built[mid] = mdir
@@ -458,6 +465,7 @@ def reduce_unit(
                 "saturation_level": camera.saturation_level,
                 "mask_cosmics": settings.mask_cosmic_rays,
                 "pixel_mask": mask if mask is not None else np.zeros(shape, dtype=bool),
+                "storage_dtype": settings.storage_dtype,
             },
         )
         scheduled.append((row, reduced_dir / path.name))
@@ -515,6 +523,7 @@ def reduce_planned(
     check_noise_source(settings.camera_noise_source)
     check_binning_mode(settings.binning_mode)
     check_cosmic_ray_mode(settings.rm_cosmic_rays)
+    check_storage_dtype(settings.storage_dtype)
     out_dir = Path(out_dir)
     noise = (measure_plan_noise(frames, saturation_level=settings.saturation_level, log=log)
              if settings.camera_noise_source == "measured" else {})

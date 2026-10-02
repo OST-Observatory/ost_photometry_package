@@ -66,6 +66,11 @@ section of this file.
 - `binning_mode` (`auto` / `digital` / `charge`) and the catalog field
   `binning_mode` in `data/cameras.json` (`camera_specs.binning_mode`).
 - `rm_cosmic_rays="auto"` with `cosmic_ray_auto_min_frames` (default 7).
+- `storage_dtype` (`reduce_main`, `ReductionSettings`; module `reduce.storage`):
+  floating type of written masters, reduced / aligned frames and stacks.
+- Archive pipeline: `StackSettings.keep_reduced_lights` (default `False`)
+  deletes the reduced frame of every aligned frame that is kept, so each
+  frame is stored once.
 - Header keywords `RDNOISE` / `SATLEVEL` (electrons for the image times
   `EXPTIME`) on reduced frames, stacks and camera combinations; sigma-clipped
   stacks of at least three frames are marked `CRIDENT` / `CRCLIP`.
@@ -91,6 +96,11 @@ section of this file.
   pointing instead of searching around RA = Dec = 0, runs with a timeout,
   and uses the correct image shape for the corner check.
 - `requests` and `pyyaml` are declared dependencies.
+- Images are written as **float32** by default (`storage_dtype="float32"`,
+  was float64): half the disk space and I/O; the rounding (relative 6e-8)
+  is far below the pixel noise. Calculations still run in float64;
+  alignment and stacking keep the float type of their input. Pass
+  `storage_dtype="float64"` for the old behaviour.
 - `reduce_main(rm_cosmic_rays=)` defaults to `"auto"` (was `True`): with
   stacking, filters with at least 7 frames leave cosmic rays to the
   sigma-clipped stack. Pass `True` for the old behaviour.

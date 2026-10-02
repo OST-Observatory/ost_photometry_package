@@ -15,6 +15,7 @@ from ...core.parallel import Executor
 from .. import utilities
 from ..frame_selection import GLOBAL_REFERENCE_KEY
 from ..image_collection import image_file_collection as make_image_file_collection
+from ..storage import float_dtype
 from ..trim_slices import aa_common_trim_margins
 from .accounting import AlignmentResult, FilterAlignment, resolve_reference_index
 from .shifts import (
@@ -724,9 +725,10 @@ def make_big_images(
 
     for i, current_image in enumerate(image_list):
         #   Make big image ans mask
-        big_image = np.zeros((image_shape_y_max, image_shape_x_max))
+        float_type = float_dtype(current_image) or np.float64
+        big_image = np.zeros((image_shape_y_max, image_shape_x_max), dtype=float_type)
         big_mask = np.ones((image_shape_y_max, image_shape_x_max), dtype=bool)
-        big_uncertainty = np.zeros((image_shape_y_max, image_shape_x_max))
+        big_uncertainty = np.zeros((image_shape_y_max, image_shape_x_max), dtype=float_type)
 
         #   Fill image and mask
         big_image[0:image_shape_array_y[i], 0:image_shape_array_x[i]] = current_image.data

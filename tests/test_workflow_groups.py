@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 from astropy.io import fits
@@ -38,6 +40,10 @@ def test_reduce_planned_end_to_end(dataset, tmp_path):  # noqa: F811
     assert sum(len(r.reduced) for r in reports.values()) == 11
     assert all(s == "reduced" for s in table["status"])
     assert (out / "reduction_report.ecsv").is_file()
+    # Masters and reduced frames are written as float32 (storage_dtype).
+    assert fits.getheader(table["reduced_path"][0])["BITPIX"] == -32
+    assert all(fits.getheader(p)["BITPIX"] == -32
+               for p in (out / "masters").rglob("combined_*.fit"))
     masters = {p.name for p in (out / "masters").iterdir()}
     assert any(m.startswith("MF_") for m in masters)
     assert any(m.startswith("MB_") for m in masters) and any(m.startswith("MD_") for m in masters)
@@ -113,8 +119,10 @@ def test_stack_planned_per_target(dataset, tmp_path):  # noqa: F811
         log=lambda *_: None,
     )
     settings = StackSettings(stack_weighting="fwhm", shift_method="wcs",
-                             camera_combination="combine", n_cores_multiprocessing=2)
+                             camera_combination="combine", n_cores_multiprocessing=2,
+                             keep_reduced_lights=True)
     summary = stack_planned(data, frames, report, out, settings, log=lambda *_: None)
+    assert all(Path(p).is_file() for p in report["reduced_path"])
     per_target = {}
     for row in summary:
         per_target.setdefault(str(row["target_name"]).lower().replace(" ", ""), []).append(row)
@@ -123,6 +131,7 @@ def test_stack_planned_per_target(dataset, tmp_path):  # noqa: F811
     assert len(separate) == 1 and separate[0]["n_images"] == 7  # both nights in one stack
     assert any(r["camera"] == "combined" for r in per_target["m104"])
     m104 = fits.getheader(separate[0]["path"])
+    assert m104["BITPIX"] == -32  # same float type as the aligned frames
     assert m104["N-IMAGES"] == 7 and m104["EXPTIME"] == pytest.approx(420.0)
     assert m104["WEIGHTNG"] == "fwhm"
     # Read noise of the stack at its total exposure: 5 e- x sqrt(7) for
@@ -136,10 +145,17 @@ def test_stack_planned_per_target(dataset, tmp_path):  # noqa: F811
     assert fits.getheader(m57["path"])["N-IMAGES"] == 4
     assert (out / "stacks" / "summary.ecsv").is_file()
 
-    # Restrict to one target.
-    only = stack_planned(data, frames, report, tmp_path / "out2", settings, targets=["m57"],
+    # Restrict to one target; by default the reduced frames of the aligned
+    # (kept) frames are removed, those of the other target stay.
+    from dataclasses import replace
+
+    only = stack_planned(data, frames, report, tmp_path / "out2",
+                         replace(settings, keep_reduced_lights=False), targets=["m57"],
                          log=lambda *_: None)
     assert {str(n).lower() for n in only["target_name"]} == {"m57"}
+    target_of = {str(r["frame_id"]): str(r["target_name"]).lower() for r in frames}
+    for fid, path in zip(report["frame_id"], report["reduced_path"], strict=True):
+        assert Path(path).is_file() == (target_of[str(fid)] != "m57")
 
 
 def test_combine_camera_stacks_noise_weighting(tmp_path):

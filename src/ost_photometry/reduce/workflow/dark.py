@@ -12,6 +12,7 @@ from ... import checks, style, terminal_output
 from ...core.parallel import Executor
 from .. import plots, utilities
 from ..detector_noise import add_signal_uncertainty
+from ..storage import cast_for_storage
 
 
 def reduce_dark(
@@ -25,6 +26,7 @@ def reduce_dark(
     trim_x_end: int = 0,
     trim_y_start: int = 0,
     trim_y_end: int = 0,
+    storage_dtype: str | None = None,
 ) -> None:
     """
     Reduce dark images: This function reduces the raw dark frames
@@ -73,6 +75,11 @@ def reduce_dark(
         Number of pixels to trim from the end of the Y direction,
         e.g. to remove an overscan region.
         Default is ``0``.
+
+    storage_dtype
+        Floating type of the written images: ``float32`` or ``float64``
+        (see :mod:`ost_photometry.reduce.storage`). ``None`` = ``float32``.
+        Default is ``None``.
     """
     terminal_output.print_to_terminal("Reduce darks...", indent=2)
 
@@ -137,6 +144,7 @@ def reduce_dark(
                 "trim_x_end": trim_x_end,
                 "trim_y_start": trim_y_start,
                 "trim_y_end": trim_y_end,
+                "storage_dtype": storage_dtype,
             },
         )
 
@@ -161,6 +169,7 @@ def reduce_dark_image(
     trim_x_end: int = 0,
     trim_y_start: int = 0,
     trim_y_end: int = 0,
+    storage_dtype: str | None = None,
 ) -> None:
     """
     This function reduces the individual raw dark frame images
@@ -225,6 +234,7 @@ def reduce_dark_image(
 
     #   Save the result
     file_name = dark_file_name.split("/")[-1]
+    cast_for_storage(dark, storage_dtype)
     dark.write(dark_path / file_name, overwrite=True)
 
 
@@ -245,6 +255,7 @@ def master_dark(
     trim_y_start: int = 0,
     trim_y_end: int = 0,
     dtype: str | np.dtype | None = None,
+    storage_dtype: str | None = None,
     **kwargs,
 ) -> None:
     """
@@ -322,6 +333,11 @@ def master_dark(
     dtype
         Data type used in the ccdproc calculations
         Default is ''None''. -> None is equivalent to float64
+
+    storage_dtype
+        Floating type of the written images: ``float32`` or ``float64``
+        (see :mod:`ost_photometry.reduce.storage`). ``None`` = ``float32``.
+        Default is ``None``.
     """
     terminal_output.print_to_terminal("Stack darks...", indent=2)
 
@@ -432,6 +448,7 @@ def master_dark(
                 "trim_y_start": trim_y_start,
                 "trim_y_end": trim_y_end,
                 "dtype": dtype,
+                "storage_dtype": storage_dtype,
             },
         )
 
@@ -468,6 +485,7 @@ def master_dark_stacking(
     trim_y_start: int = 0,
     trim_y_end: int = 0,
     dtype: str | np.dtype | None = None,
+    storage_dtype: str | None = None,
 ) -> None:
     """
     This function stacks all dark images with the same exposure time.
@@ -580,6 +598,7 @@ def master_dark_stacking(
 
     #   Write file to disk
     dark_file_name = f"combined_dark_{exposure_time:4.2f}.fit"
+    cast_for_storage(combined_dark, storage_dtype)
     combined_dark.write(out_path / dark_file_name, overwrite=True)
 
     #   Set gain _> get it from Header if not provided

@@ -15,6 +15,7 @@ from ... import utilities as base_utilities
 from ...core.pixel_masks import warn_if_mask_too_large
 from ...fits_headers import wcs_from_header
 from ...wcs import find_wcs_for_image, wcs_maps_distinct_sky_positions
+from ..storage import cast_like
 from .accounting import ApplyResult, apply_ok, apply_skipped, exception_note
 
 
@@ -283,6 +284,7 @@ def apply_wcs_align(
         output_image.meta["ALIGNMTH"] = "wcs"
         if rm_enlarged_keyword and "enlarged" in output_image.meta:
             output_image.meta.remove("enlarged")
+        cast_like(output_image, current_ccd)
         output_image.write(output_path / file_name, overwrite=True)
 
     base_name = base_utilities.get_basename(file_name)

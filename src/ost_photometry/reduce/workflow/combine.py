@@ -51,6 +51,7 @@ from ..quality import (
     write_quality_to_headers,
     write_weights_to_headers,
 )
+from ..storage import cast_like
 from .stack import stack_filter_images, stack_meta_for_filter
 
 CAMERA_COMBINATIONS = ("separate", "combine")
@@ -66,6 +67,9 @@ class StackSettings:
     wcs_method: str = "astap"
     camera_combination: str = "separate"
     keep_aligned_lights: bool = True
+    #: With ``keep_aligned_lights``: False deletes the reduced frame (in
+    #: ``reduced/<unit>/``) of every aligned frame, so each is stored once.
+    keep_reduced_lights: bool = False
     min_frames: int = 1
     stack_below_min_frames: bool = False
     n_cores_multiprocessing: int | None = None
@@ -84,6 +88,23 @@ def _selected_targets(plan: Mapping, wanted: Sequence[str] | None) -> list[tuple
             continue
         targets.append((tid, dict(info)))
     return targets
+
+
+def remove_aligned_originals(originals: Mapping[str, str | Path], aligned_dir: str | Path) -> int:
+    """Delete the reduced frames whose aligned copy is kept.
+
+    ``originals`` maps the frame names in ``aligned_dir`` to the reduced
+    files they were made from. Returns the number removed; frames without
+    an aligned copy (alignment failed, rejected) are kept.
+    """
+    aligned_dir = Path(aligned_dir)
+    removed = 0
+    for name, original in originals.items():
+        original = Path(original)
+        if (aligned_dir / name).is_file() and original.is_file():
+            original.unlink()
+            removed += 1
+    return removed
 
 
 def _reference_file(table: Table) -> str | None:
@@ -147,6 +168,7 @@ def combine_camera_stacks(
         "Noise-weighted camera combination: "
         + ", ".join(f"{c}={w:.2f}" for c, w in zip(cameras, weights, strict=True))
     )
+    cast_like(combined, ccds[0])
     out_path = Path(out_path)
     combined.write(out_path, overwrite=True)
     return out_path
@@ -171,6 +193,7 @@ def stack_target(
     light_dir.mkdir(parents=True)
 
     file_rows: dict[str, dict] = {}
+    originals: dict[str, Path] = {}
     for row in frames:
         row = dict(zip(frames.colnames, row, strict=True))
         if str(row.get("target_id")) != target_id:
@@ -181,6 +204,7 @@ def stack_target(
         link = light_dir / Path(path).name
         link.symlink_to(Path(path).resolve())
         file_rows[link.name] = row
+        originals[link.name] = Path(path).resolve()
     if not file_rows:
         log(f"Target {name}: no reduced frames.")
         return []
@@ -281,6 +305,11 @@ def stack_target(
             })
     if not settings.keep_aligned_lights:
         shutil.rmtree(aligned_dir, ignore_errors=True)
+    elif not settings.keep_reduced_lights:
+        removed = remove_aligned_originals(originals, aligned_dir)
+        if removed:
+            log(f"Target {name}: {removed} reduced frame(s) removed, aligned copies kept "
+                f"in {aligned_dir}")
     log(f"Target {name}: {len(summary)} stack(s) written to {target_dir}")
     return summary
 
