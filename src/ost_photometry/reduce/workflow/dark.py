@@ -3,7 +3,6 @@
 import shutil
 from pathlib import Path
 
-import astropy.units as u
 import ccdproc as ccdp
 import numpy as np
 from astropy.nddata import CCDData
@@ -12,6 +11,7 @@ from astropy.stats import mad_std
 from ... import checks, style, terminal_output
 from ...core.parallel import Executor
 from .. import plots, utilities
+from ..detector_noise import add_signal_uncertainty
 
 
 def reduce_dark(
@@ -219,16 +219,9 @@ def reduce_dark_image(
         trim_x_start : image_shape[1] - trim_x_end,
     ]
 
-    #   Calculated uncertainty
-    dark = ccdp.create_deviation(
-        dark,
-        gain=gain * u.electron / u.adu,
-        readnoise=read_noise * u.electron,
-        disregard_nan=True,
-    )
-
-    # Subtract bias
+    # Subtract bias, then the uncertainty from the bias-free dark signal
     dark = ccdp.subtract_bias(dark, stacked_bias)
+    dark = add_signal_uncertainty(dark, gain=gain, read_noise=read_noise)
 
     #   Save the result
     file_name = dark_file_name.split("/")[-1]

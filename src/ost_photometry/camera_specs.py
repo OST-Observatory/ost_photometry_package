@@ -13,6 +13,7 @@ See ``data/camera_specs/README.md``.
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
@@ -320,6 +321,32 @@ def camera_defaults(camera: str) -> dict:
         return {}
     defaults = rec.get("defaults") or {}
     return dict(defaults)
+
+
+#: ``digital``: pixels are summed after the readout (CMOS), so the read noise
+#: of a binned pixel grows with ``sqrt(xbin * ybin)``. ``charge``: the charge
+#: is binned on the chip (CCD) and each binned pixel is read once.
+BINNING_MODES = ("digital", "charge")
+
+_DIGITAL_BINNING_NAME = re.compile(r"qhy|zwo|\basi(\b|\d)")
+_CHARGE_BINNING_NAME = re.compile(r"sbig|\bccd\b")
+
+
+def binning_mode(camera: str) -> str | None:
+    """How ``camera`` bins (:data:`BINNING_MODES`), or ``None`` if unknown.
+
+    The catalog field ``binning_mode`` wins; cameras outside the catalog
+    are recognised by name (QHY / ZWO: digital, SBIG / CCD: charge).
+    """
+    rec = _camera_record(camera)
+    if rec is not None and rec.get("binning_mode") in BINNING_MODES:
+        return str(rec["binning_mode"])
+    name = str(camera or "").strip().lower()
+    if _DIGITAL_BINNING_NAME.search(name):
+        return "digital"
+    if _CHARGE_BINNING_NAME.search(name):
+        return "charge"
+    return None
 
 
 def chip_size(camera: str) -> tuple[float, float] | None:

@@ -50,6 +50,17 @@ _CAMERA_INFO_QUANTITIES = {
     "asi2600": ["system_gain", "readout_noise"],
 }
 
+# How the camera bins: "digital" sums after the readout (CMOS, read noise
+# per binned pixel x sqrt(xbin * ybin)), "charge" bins on the chip (CCD).
+_BINNING_MODE = {
+    "qhy600m": "digital",
+    "qhy268": "digital",
+    "qhy5iii485c": "digital",
+    "qhy5iii462": "digital",
+    "asi2600": "digital",
+    "stf8300": "charge",
+}
+
 _DEFAULTS = {
     "stf8300": {"readout_noise": 9.3, "system_gain": None},
 }
@@ -199,6 +210,7 @@ def build() -> dict:
                 "chip_mm": _CHIP_MM.get(camera),
                 "defaults": _DEFAULTS.get(camera, {}),
                 "camera_info_quantities": list(_CAMERA_INFO_QUANTITIES.get(camera, [])),
+                "binning_mode": _BINNING_MODE.get(camera),
                 "notes": _CAMERA_NOTES.get(camera, ""),
                 "curves": [],
             },

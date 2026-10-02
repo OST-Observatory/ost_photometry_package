@@ -1,6 +1,6 @@
 {
   "meta": {
-    "updated": "2026-09-04",
+    "updated": "2026-10-02",
     "source_dir": "ost_photometry/data/camera_specs",
     "note": "Runtime camera parameters. Built from digitized manufacturer CSVs by scripts/build_camera_catalog.py. Do not edit curve arrays by hand; change the CSVs and rebuild.",
     "skipped": [
@@ -26,6 +26,7 @@
         "system_gain",
         "readout_noise"
       ],
+      "binning_mode": "digital",
       "notes": "Single readout mode. IMX462 1920\u00d71080 at 2.9 \u03bcm.",
       "curves": [
         {
@@ -749,6 +750,7 @@
         "system_gain",
         "readout_noise"
       ],
+      "binning_mode": "digital",
       "notes": "stats_red = RN, stats_pink = e-/ADU, stats_blue = DR. Dark CSV was empty and removed.",
       "curves": [
         {
@@ -1163,6 +1165,7 @@
         "readout_noise",
         "dark_current"
       ],
+      "binning_mode": "digital",
       "notes": "QHY268M uses the QHY268MC (IMX571) traces. No system-gain CSV in the drop.",
       "curves": [
         {
@@ -2656,6 +2659,7 @@
         "system_gain",
         "readout_noise"
       ],
+      "binning_mode": "digital",
       "notes": "IMX485 3864\u00d72180 at 2.9 \u03bcm. QE wavelength stored as nm (~400\u20131000).",
       "curves": [
         {
@@ -3336,6 +3340,7 @@
         "readout_noise",
         "dark_current"
       ],
+      "binning_mode": "digital",
       "notes": "",
       "curves": [
         {
@@ -5159,6 +5164,7 @@
       "camera_info_quantities": [
         "dark_current"
       ],
+      "binning_mode": "charge",
       "notes": "",
       "curves": [
         {

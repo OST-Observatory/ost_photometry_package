@@ -10,6 +10,14 @@ import numpy as np
 from ... import calibration_parameters, checks, style, terminal_output
 from ... import utilities as base_utilities
 from .. import quality, registration, utilities, validation
+from ..detector_noise import (
+    NoiseMeasurement,
+    binned_read_noise,
+    check_binning_mode,
+    check_noise_source,
+    measure_detector_noise,
+    resolve_binning_mode,
+)
 from ..frame_selection import (
     SUPPORTED_REFERENCE_SELECTION,
     SUPPORTED_STACK_WEIGHTING,
@@ -22,7 +30,7 @@ from .bias import master_bias
 from .config import ReduceConfig
 from .dark import master_dark, reduce_dark
 from .flat import master_flat, reduce_flat
-from .science import reduce_light
+from .science import check_cosmic_ray_mode, reduce_light
 from .stack import stack_image
 
 
@@ -33,7 +41,10 @@ def reduce_main(
     gain: float | None = None,
     read_noise: float | None = None,
     dark_rate: float | None = None,
-    rm_cosmic_rays: bool = True,
+    camera_noise_source: str = "catalog",
+    binning_mode: str = "auto",
+    rm_cosmic_rays: bool | str = "auto",
+    cosmic_ray_auto_min_frames: int = 7,
     mask_cosmic_rays: bool = False,
     saturation_level: float | None = None,
     limiting_contrast_rm_cosmic_rays: float = 5.0,
@@ -103,16 +114,45 @@ def reduce_main(
         Default is ``None``.
 
     read_noise
-        The read noise (e-) of the camera chip.
+        The read noise (e-) per pixel of the images (i.e. per binned pixel).
+        ``None`` takes it from ``camera_noise_source``.
         Default is ``None``.
 
     dark_rate
         Dark rate in e-/pix/s:
         Default is ``None``.
 
+    camera_noise_source
+        Where gain and read noise come from when not given explicitly:
+        ``catalog`` (header / camera catalog; the catalog read noise per
+        native pixel is scaled to the binned pixel, see ``binning_mode``) or
+        ``measured`` (read noise from bias pairs, or dark pairs without
+        bias, gain from flat pairs of equal filter and exposure time; falls
+        back to the catalog when the frames do not allow a measurement).
+        See :mod:`ost_photometry.reduce.detector_noise`.
+        Default is ``catalog``.
+
+    binning_mode
+        How the camera bins, for the catalog read noise: ``digital``
+        (CMOS, pixels summed after the readout: read noise x
+        sqrt(xbin * ybin)), ``charge`` (CCD on-chip binning: unchanged) or
+        ``auto`` (camera catalog / camera name).
+        Default is ``auto``.
+
     rm_cosmic_rays
-        If True cosmics rays will be removed.
-        Default is ``True``.
+        ``True`` removes cosmic rays with L.A.Cosmic, ``False`` never.
+        ``auto`` removes them only where the stack cannot: if
+        ``stack_images`` is False or a filter has fewer than
+        ``cosmic_ray_auto_min_frames`` light frames. Otherwise the sigma
+        clipping of the stack rejects cosmic rays without touching the
+        sky noise.
+        Default is ``auto``.
+
+    cosmic_ray_auto_min_frames
+        Minimum number of light frames per filter from which
+        ``rm_cosmic_rays="auto"`` leaves the cosmic rays to the stack.
+        Frames rejected later by ``frame_selection`` are counted.
+        Default is ``7``.
 
     mask_cosmic_rays
         If True cosmics will ''only'' be masked. If False the
@@ -342,7 +382,10 @@ def reduce_main(
         gain=gain,
         read_noise=read_noise,
         dark_rate=dark_rate,
+        camera_noise_source=camera_noise_source,
+        binning_mode=binning_mode,
         rm_cosmic_rays=rm_cosmic_rays,
+        cosmic_ray_auto_min_frames=cosmic_ray_auto_min_frames,
         mask_cosmic_rays=mask_cosmic_rays,
         saturation_level=saturation_level,
         limiting_contrast_rm_cosmic_rays=limiting_contrast_rm_cosmic_rays,
@@ -393,7 +436,12 @@ def reduce_main(
 
 @dataclass(frozen=True)
 class CameraParameters:
-    """Camera electronics resolved for one homogeneous set of frames."""
+    """Camera electronics resolved for one homogeneous set of frames.
+
+    ``read_noise`` is per binned pixel (the pixels of the frames).
+    ``noise_source`` says where gain and read noise come from: ``user``,
+    ``catalog`` or ``measured``.
+    """
 
     instrument: str
     readout_mode: str
@@ -404,15 +452,77 @@ class CameraParameters:
     read_noise: float | None
     dark_rate: float | dict | None
     saturation_level: float | None
+    binning: tuple[int, int] = (1, 1)
+    binning_mode: str | None = None
+    noise_source: str = "catalog"
 
 
-def resolve_camera_parameters(image_file_collection, cfg: ReduceConfig) -> CameraParameters:
+def _fmt(value: float | None) -> str:
+    return "n/a" if value is None else f"{float(value):.3f}"
+
+
+def _collection_binning(image_file_collection) -> tuple[int, int]:
+    """Most common ``XBINNING`` / ``YBINNING`` of the collection (default 1)."""
+    summary = image_file_collection.summary
+    values = []
+    for key in ("xbinning", "ybinning"):
+        if summary is None or key not in summary.colnames:
+            values.append(1)
+            continue
+        column = [v for v in summary[key] if v is not None and not np.ma.is_masked(v)]
+        numbers = []
+        for v in column:
+            try:
+                numbers.append(max(int(float(v)), 1))
+            except (TypeError, ValueError):
+                continue
+        values.append(max(set(numbers), key=numbers.count) if numbers else 1)
+    return values[0], values[1]
+
+
+def _collection_files(image_file_collection, image_type_dir, image_class: str) -> list[str]:
+    image_type = utilities.get_image_type(image_file_collection, image_type_dir,
+                                          image_class=image_class)
+    if not image_type:
+        return []
+    return list(image_file_collection.files_filtered(imagetyp=image_type, include_path=True))
+
+
+def measure_collection_noise(
+    image_file_collection,
+    image_type_dir: Mapping[str, list[str]],
+    saturation_level: float | None = None,
+) -> NoiseMeasurement | None:
+    """Read noise and gain from the bias, dark and flat frames of a collection."""
+    return measure_detector_noise(
+        _collection_files(image_file_collection, image_type_dir, "bias"),
+        _collection_files(image_file_collection, image_type_dir, "flat"),
+        _collection_files(image_file_collection, image_type_dir, "dark"),
+        saturation_level=saturation_level,
+    )
+
+
+def resolve_camera_parameters(
+    image_file_collection,
+    cfg: ReduceConfig,
+    *,
+    measurement: NoiseMeasurement | None = None,
+) -> CameraParameters:
     """Instrument, readout mode, gain, read noise, dark rate, saturation level.
 
     Header values (via :func:`~ost_photometry.reduce.instrument.get_instrument_info`)
     are combined with the camera catalog; explicit values in ``cfg`` win.
     The collection must hold one instrument / readout mode / gain setting.
+
+    With ``cfg.camera_noise_source == "catalog"`` the catalog read noise
+    (per native pixel) is scaled to the binned pixel according to
+    ``cfg.binning_mode``. With ``"measured"`` gain and read noise are
+    measured on the bias / dark / flat frames of the collection (or taken
+    from ``measurement``); if that fails, the catalog values are used with
+    a warning.
     """
+    check_noise_source(cfg.camera_noise_source)
+    check_binning_mode(cfg.binning_mode)
     instrument, readout_mode, gain_setting, pixel_bit_value, temperature = (
         utilities.get_instrument_info(
             image_file_collection,
@@ -455,6 +565,63 @@ def resolve_camera_parameters(image_file_collection, cfg: ReduceConfig) -> Camer
         calibration_gain,
         user_gain=cfg.gain,
     )
+
+    binning = _collection_binning(image_file_collection)
+    binning_mode = resolve_binning_mode(instrument, cfg.binning_mode)
+    noise_source = "user" if cfg.read_noise is not None else "catalog"
+    if cfg.read_noise is None:
+        catalog_read_noise = read_noise
+        read_noise, binning_mode = binned_read_noise(
+            read_noise, instrument, *binning, binning_mode=cfg.binning_mode
+        )
+        if binning != (1, 1) and binning_mode is None:
+            terminal_output.print_to_terminal(
+                f"Binning {binning[0]}x{binning[1]}, but it is unknown whether "
+                f"{instrument!r} bins on the chip or digitally; the catalog read "
+                "noise is used unscaled. Set binning_mode='digital' or 'charge'.",
+                indent=1,
+                style_name="WARNING",
+            )
+        elif read_noise != catalog_read_noise:
+            terminal_output.print_to_terminal(
+                f"Read noise {catalog_read_noise:.2f} e- per native pixel -> "
+                f"{read_noise:.2f} e- per {binning[0]}x{binning[1]} binned pixel "
+                f"({binning_mode} binning).",
+                indent=1,
+            )
+
+    if cfg.camera_noise_source == "measured":
+        if measurement is None:
+            measurement = measure_collection_noise(
+                image_file_collection, cfg.image_type_dir, saturation_level
+            )
+        if measurement is None:
+            terminal_output.print_to_terminal(
+                "camera_noise_source='measured': no bias or dark pairs to measure the "
+                f"read noise; using the {noise_source} values.",
+                indent=1,
+                style_name="WARNING",
+            )
+        else:
+            catalog_gain = gain
+            if cfg.gain is None and measurement.gain is not None:
+                gain = measurement.gain
+            elif cfg.gain is None:
+                terminal_output.print_to_terminal(
+                    "camera_noise_source='measured': no usable flat pair for the "
+                    "gain; using the header / catalog gain.",
+                    indent=1,
+                    style_name="WARNING",
+                )
+            if cfg.read_noise is None and gain is not None:
+                read_noise = measurement.read_noise(gain)
+                noise_source = "measured"
+            terminal_output.print_to_terminal(
+                f"Measured {measurement.describe()} -> gain {_fmt(gain)} e-/ADU "
+                f"(header/catalog {_fmt(catalog_gain)}), read noise {_fmt(read_noise)} e-.",
+                indent=1,
+            )
+
     return CameraParameters(
         instrument=instrument,
         readout_mode=readout_mode,
@@ -465,6 +632,9 @@ def resolve_camera_parameters(image_file_collection, cfg: ReduceConfig) -> Camer
         read_noise=read_noise,
         dark_rate=dark_rate,
         saturation_level=saturation_level,
+        binning=binning,
+        binning_mode=binning_mode,
+        noise_source=noise_source,
     )
 
 
@@ -487,6 +657,9 @@ def _run_reduction(cfg: ReduceConfig) -> None:
     if cfg.estimate_fwhm and not cfg.measure_frame_quality:
         #   Direct ReduceConfig users may still set the deprecated flag.
         cfg.measure_frame_quality = True
+    check_noise_source(cfg.camera_noise_source)
+    check_binning_mode(cfg.binning_mode)
+    check_cosmic_ray_mode(cfg.rm_cosmic_rays)
     if cfg.stack_weighting not in SUPPORTED_STACK_WEIGHTING:
         raise ValueError(
             f"stack_weighting must be one of {SUPPORTED_STACK_WEIGHTING}, "
@@ -734,6 +907,8 @@ def _run_reduction(cfg: ReduceConfig) -> None:
         output_path,
         image_type_dir,
         rm_cosmic_rays=cfg.rm_cosmic_rays,
+        cosmic_ray_auto_min_frames=cfg.cosmic_ray_auto_min_frames,
+        frames_are_stacked=cfg.stack_images,
         mask_cosmics=cfg.mask_cosmic_rays,
         gain=gain,
         read_noise=read_noise,

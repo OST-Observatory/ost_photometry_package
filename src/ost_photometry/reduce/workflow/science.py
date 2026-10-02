@@ -5,6 +5,7 @@ from pathlib import Path
 import astropy.units as u
 import ccdproc as ccdp
 import numpy as np
+from astropy.io import fits
 from astropy.nddata import CCDData
 
 from ... import checks, style, terminal_output
@@ -13,18 +14,50 @@ from ...core.parallel import Executor
 from ...core.pixel_masks import negative_outlier_mask
 from ...fits_headers import mark_cosmics_identified
 from .. import utilities, validation
+from ..detector_noise import add_signal_uncertainty
 from .constants import (
     REDUCE_STATUS_REDUCED,
     REDUCE_STATUS_SKIP_NO_FILTER,
     REDUCE_STATUS_SKIP_NO_MASTER_FLAT,
 )
 
+#: Values of ``rm_cosmic_rays``.
+COSMIC_RAY_MODES = (True, False, "auto")
+
+
+def check_cosmic_ray_mode(rm_cosmic_rays: bool | str) -> bool | str:
+    if isinstance(rm_cosmic_rays, str):
+        if rm_cosmic_rays != "auto":
+            raise ValueError(
+                f"rm_cosmic_rays must be True, False or 'auto', got {rm_cosmic_rays!r}"
+            )
+        return rm_cosmic_rays
+    return bool(rm_cosmic_rays)
+
+
+def resolve_cosmic_ray_removal(
+    rm_cosmic_rays: bool | str,
+    n_stacked_frames: int,
+    *,
+    min_frames: int = 7,
+) -> bool:
+    """Whether L.A.Cosmic runs on a frame.
+
+    ``auto`` skips it when the frame goes into a stack of at least
+    ``min_frames`` frames (``n_stacked_frames``; 0 if it is not stacked):
+    the sigma clipping of the stack rejects cosmic rays there.
+    """
+    mode = check_cosmic_ray_mode(rm_cosmic_rays)
+    if mode == "auto":
+        return n_stacked_frames < min_frames
+    return bool(mode)
+
 
 def reduce_light(
     image_path: str | Path,
     output_dir: str | Path,
     image_type: dict[str, list[str]],
-    rm_cosmic_rays: bool = True,
+    rm_cosmic_rays: bool | str = True,
     mask_cosmics: bool = False,
     gain: float | None = None,
     read_noise: float = 8.0,
@@ -44,6 +77,8 @@ def reduce_light(
     trim_y_end: int = 0,
     fail_on_missing_flat: bool = True,
     interactive: bool = True,
+    cosmic_ray_auto_min_frames: int = 7,
+    frames_are_stacked: bool = False,
 ) -> None:
     """
     Reduce the science images
@@ -61,7 +96,10 @@ def reduce_light(
         light
 
     rm_cosmic_rays
-        If True cosmic rays will be removed.
+        If True cosmic rays will be removed. ``auto`` removes them only
+        when ``frames_are_stacked`` is False or the filter has fewer than
+        ``cosmic_ray_auto_min_frames`` frames (see
+        :func:`resolve_cosmic_ray_removal`).
         Default is ``True``.
 
     mask_cosmics
@@ -76,7 +114,7 @@ def reduce_light(
         Default is ``None``.
 
     read_noise
-        The read noise (e-) of the camera chip.
+        The read noise (e-) per pixel of the images (per binned pixel).
         Default is ``8`` e-.
 
     saturation_level
@@ -141,8 +179,27 @@ def reduce_light(
         Number of pixels to trim from the end of the Y direction,
         e.g. to remove an overscan region.
         Default is ``0``.
+
+    fail_on_missing_flat
+        Raise if a light frame has no master flat.
+        Default is ``True``.
+
+    interactive
+        Ask whether reduced frames of a previous run should be reused.
+        Default is ``True``.
+
+    cosmic_ray_auto_min_frames
+        Frames per filter from which ``rm_cosmic_rays="auto"`` leaves the
+        cosmic rays to the stack.
+        Default is ``7``.
+
+    frames_are_stacked
+        Whether the reduced frames will be stacked per filter (for
+        ``rm_cosmic_rays="auto"``).
+        Default is ``False``.
     """
     terminal_output.print_to_terminal("Reduce light images...", indent=2)
+    check_cosmic_ray_mode(rm_cosmic_rays)
 
     #   Sanitize the provided paths
     file_path = checks.check_pathlib_path(image_path)
@@ -243,6 +300,28 @@ def reduce_light(
 
     checks.clear_directory(light_path)
 
+    #   Cosmic-ray removal per filter (``auto``: only where the stack cannot)
+    light_paths = list(
+        image_file_collection.files_filtered(include_path=True, imagetyp=light_image_type)
+    )
+    light_filters = [
+        str(fits.getheader(path).get("FILTER", "")).strip() for path in light_paths
+    ]
+    remove_cosmics: dict[str, bool] = {}
+    for filt in dict.fromkeys(light_filters):
+        n_frames = light_filters.count(filt) if frames_are_stacked else 0
+        remove_cosmics[filt] = resolve_cosmic_ray_removal(
+            rm_cosmic_rays, n_frames, min_frames=cosmic_ray_auto_min_frames
+        )
+    if rm_cosmic_rays == "auto":
+        skipped = [f or "?" for f, remove in remove_cosmics.items() if not remove]
+        if skipped:
+            terminal_output.print_to_terminal(
+                "Cosmic-ray removal left to the stack's sigma clipping for filter(s) "
+                f"{', '.join(skipped)} (>= {cosmic_ray_auto_min_frames} frames).",
+                indent=2,
+            )
+
     #   Get possible image types
     #   Initialize multiprocessing object
     executor = Executor(
@@ -252,11 +331,7 @@ def reduce_light(
     )
 
     #   Reduce science images and save to an extra directory
-    for file_name in image_file_collection.files_filtered(
-        include_path=True,
-        imagetyp=light_image_type,
-        # ccd_kwargs=dict(unit='adu'),
-    ):
+    for file_name, filt in zip(light_paths, light_filters, strict=True):
         executor.schedule(
             reduce_light_image,
             args=(
@@ -273,7 +348,7 @@ def reduce_light(
                 "rm_bias": rm_bias,
                 "exposure_time_tolerance": exposure_time_tolerance,
                 "add_hot_bad_pixel_mask": add_hot_bad_pixel_mask,
-                "rm_cosmic_rays": rm_cosmic_rays,
+                "rm_cosmic_rays": remove_cosmics[filt],
                 "limiting_contrast_rm_cosmic_rays": limiting_contrast_rm_cosmic_rays,
                 "sigma_clipping_value_rm_cosmic_rays": sigma_clipping_value_rm_cosmic_rays,
                 "saturation_level": saturation_level,
@@ -457,17 +532,12 @@ def reduce_light_image(
                 indent=2,
             )
 
-    #   Calculated uncertainty
-    light = ccdp.create_deviation(
-        light,
-        gain=gain * u.electron / u.adu,
-        readnoise=read_noise * u.electron,
-        disregard_nan=True,
-    )
-
-    #   Subtract bias
+    #   Subtract bias, then the uncertainty from the bias-free signal (the
+    #   bias pedestal is no photon noise). Without bias the darks carry it:
+    #   the uncertainty follows the dark subtraction below.
     if rm_bias:
         light = ccdp.subtract_bias(light, combined_bias)
+        light = add_signal_uncertainty(light, gain=gain, read_noise=read_noise)
 
     #   Find the correct dark exposure
     valid_dark_available, closest_dark_exposure_time = (
@@ -494,6 +564,8 @@ def reduce_light_image(
         exposure_unit=u.second,
         scale=rm_bias,
     )
+    if not rm_bias:
+        reduced = add_signal_uncertainty(reduced, gain=gain, read_noise=read_noise)
 
     #   Mask significantly negative pixels (defects / dark mismatch). Plain
     #   ``data < 0`` masked up to half of a faint sky through ordinary noise,

@@ -12,6 +12,7 @@ from astropy.stats import mad_std
 from ... import checks, style, terminal_output
 from ...core.parallel import Executor
 from .. import plots, utilities
+from ..detector_noise import add_signal_uncertainty
 
 
 def reduce_flat(
@@ -274,17 +275,11 @@ def reduce_flat_image(
     if gain is None:
         gain = flat.header["EGAIN"]
 
-    #   Calculated uncertainty
-    flat = ccdp.create_deviation(
-        flat,
-        gain=gain * u.electron / u.adu,
-        readnoise=read_noise * u.electron,
-        disregard_nan=True,
-    )
-
-    # Subtract bias
+    #   Subtract bias, then the uncertainty from the bias-free signal.
+    #   Without bias the darks carry it (uncertainty after the dark below).
     if rm_bias:
         flat = ccdp.subtract_bias(flat, combined_bias)
+        flat = add_signal_uncertainty(flat, gain=gain, read_noise=read_noise)
 
     #   Find the correct dark exposure
     valid_dark_available, closest_dark_exposure_time = (
@@ -311,6 +306,8 @@ def reduce_flat_image(
         exposure_unit=u.second,
         scale=rm_bias,
     )
+    if not rm_bias:
+        flat = add_signal_uncertainty(flat, gain=gain, read_noise=read_noise)
 
     #   Save the result
     file_name = flat_file_name.split("/")[-1]

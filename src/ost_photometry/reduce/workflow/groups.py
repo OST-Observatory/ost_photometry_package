@@ -26,6 +26,12 @@ from astropy.table import Table
 from ... import calibration_parameters, style, terminal_output
 from ...archive.cache import frame_link_name
 from ...core.parallel import Executor
+from ..detector_noise import (
+    NoiseMeasurement,
+    check_binning_mode,
+    check_noise_source,
+    measure_detector_noise,
+)
 from ..grouping.classify import BIAS, DARK, FLAT, LIGHT, header_frame_type
 from ..image_collection import image_file_collection
 from ..masks import load_pixel_mask_files
@@ -35,7 +41,7 @@ from .constants import REDUCE_STATUS_REDUCED
 from .dark import master_dark, reduce_dark
 from .flat import master_flat, reduce_flat
 from .main import resolve_camera_parameters
-from .science import reduce_light_image
+from .science import check_cosmic_ray_mode, reduce_light_image, resolve_cosmic_ray_removal
 
 #: IMAGETYP written into staged copies of frames whose header type is wrong.
 CANONICAL_IMAGETYP = {BIAS: "Bias Frame", DARK: "Dark Frame", FLAT: "Flat Field",
@@ -44,7 +50,10 @@ CANONICAL_IMAGETYP = {BIAS: "Bias Frame", DARK: "Dark Frame", FLAT: "Flat Field"
 
 @dataclass
 class ReductionSettings:
-    rm_cosmic_rays: bool = True
+    #: True, False or "auto" (only for frames not stacked from at least
+    #: ``cosmic_ray_auto_min_frames`` frames per target, camera and filter)
+    rm_cosmic_rays: bool | str = "auto"
+    cosmic_ray_auto_min_frames: int = 7
     mask_cosmic_rays: bool = False
     limiting_contrast_rm_cosmic_rays: float = 5.0
     sigma_clipping_value_rm_cosmic_rays: float = 4.0
@@ -58,6 +67,10 @@ class ReductionSettings:
     n_cores_multiprocessing: int | None = None
     dtype: str | None = None
     reuse_masters: bool = True
+    #: "catalog" or "measured" (per electronic setup, see measure_plan_noise)
+    camera_noise_source: str = "catalog"
+    #: "auto", "digital" or "charge" (read noise per binned pixel)
+    binning_mode: str = "auto"
 
 
 @dataclass
@@ -127,15 +140,94 @@ def _image_type_dir(spelling_dir: Path, frame_type: str) -> dict[str, list[str]]
 
 
 def _camera_parameters(directory: Path, settings: ReductionSettings,
-                       image_type_dir: dict[str, list[str]]):
+                       image_type_dir: dict[str, list[str]],
+                       measurement: NoiseMeasurement | None = None):
     cfg = ReduceConfig(
         image_path=directory, output_dir=directory, image_type_dir=image_type_dir,
         gain=settings.gain, read_noise=settings.read_noise, dark_rate=settings.dark_rate,
         saturation_level=settings.saturation_level,
         temperature_tolerance=settings.temperature_tolerance,
         ignore_readout_mode_mismatch=True, ignore_instrument_mismatch=True,
+        camera_noise_source=settings.camera_noise_source, binning_mode=settings.binning_mode,
     )
-    return resolve_camera_parameters(image_file_collection(directory), cfg)
+    return resolve_camera_parameters(image_file_collection(directory), cfg,
+                                     measurement=measurement)
+
+
+# ---------------------------------------------------------------------------
+# Detector noise and cosmic rays
+# ---------------------------------------------------------------------------
+
+
+def _gain_key(electronic_id: str) -> str:
+    """Camera, binning, readout mode and gain setting (offset and temperature
+    do not change the gain)."""
+    return "|".join(str(electronic_id).split("|")[:4])
+
+
+def measure_plan_noise(
+    frames: Table,
+    *,
+    saturation_level: float | None = None,
+    log: Callable[[str], None] = print,
+) -> dict[str, NoiseMeasurement]:
+    """Read noise per electronic setup and gain per gain setting.
+
+    Read noise comes from the bias (else dark) pairs of each
+    ``electronic_id``; the gain from flat pairs of all setups that share
+    camera, binning, readout mode and gain setting, each flat measured
+    against the zero level of its own setup.
+    """
+    if "electronic_id" not in frames.colnames:
+        return {}
+    kinds = np.asarray(frames["frame_type"]).astype(str)
+    eids = np.asarray(frames["electronic_id"]).astype(str)
+    paths = np.asarray(frames["local_path"]).astype(str)
+    per_setup: dict[str, NoiseMeasurement] = {}
+    for eid in dict.fromkeys(eids[np.isin(kinds, [BIAS, DARK, FLAT])]):
+        sel = eids == eid
+        files = {kind: [p for p in paths[sel & (kinds == kind)] if Path(p).is_file()]
+                 for kind in (BIAS, DARK, FLAT)}
+        measurement = measure_detector_noise(files[BIAS], files[FLAT], files[DARK],
+                                             saturation_level=saturation_level)
+        if measurement is not None:
+            per_setup[eid] = measurement
+    gains: dict[str, list[tuple[float, int]]] = {}
+    for eid, m in per_setup.items():
+        if m.gain is not None:
+            gains.setdefault(_gain_key(eid), []).append((m.gain, m.n_flat_pairs))
+    result: dict[str, NoiseMeasurement] = {}
+    for eid, m in per_setup.items():
+        shared = gains.get(_gain_key(eid), [])
+        gain = float(np.median([g for g, _n in shared])) if shared else None
+        result[eid] = NoiseMeasurement(m.read_noise_adu, gain, m.n_zero_pairs,
+                                       sum(n for _g, n in shared), m.zero_source)
+        log(f"Detector noise {eid}: {result[eid].describe()}")
+    return result
+
+
+def stacked_frame_counts(plan: Mapping, frames: Table) -> dict[str, int]:
+    """Frames per stack (target x camera x filter) for every light frame id.
+
+    Lights of targets with ``stack: false`` count 0 (they are not stacked).
+    """
+    lookup = _frame_lookup(frames)
+    targets = plan.get("targets") or {}
+    keys: dict[str, tuple[str, str, str] | None] = {}
+    for unit in (plan.get("units") or {}).values():
+        for fid in unit.get("lights", []):
+            row = lookup.get(str(fid))
+            if row is None:
+                continue
+            tid = str(row.get("target_id", ""))
+            stacked = bool(dict(targets.get(tid) or {}).get("stack", tid in targets))
+            keys[str(fid)] = (tid, str(row.get("camera", "")),
+                              str(row.get("filter") or "").strip()) if stacked else None
+    sizes: dict[tuple[str, str, str], int] = {}
+    for key in keys.values():
+        if key is not None:
+            sizes[key] = sizes.get(key, 0) + 1
+    return {fid: (sizes[key] if key is not None else 0) for fid, key in keys.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -162,8 +254,14 @@ def build_masters(
     settings: ReductionSettings,
     *,
     log: Callable[[str], None] = print,
+    noise: Mapping[str, NoiseMeasurement] | None = None,
 ) -> dict[str, Path]:
-    """Build every master referenced by the plan; returns ``{master_id: dir}``."""
+    """Build every master referenced by the plan; returns ``{master_id: dir}``.
+
+    ``noise`` maps electronic ids to measured detector noise (used with
+    ``settings.camera_noise_source == "measured"``).
+    """
+    noise = noise or {}
     out_dir = Path(out_dir)
     lookup = _frame_lookup(frames)
     masters = dict(plan.get("masters") or {})
@@ -195,7 +293,8 @@ def build_masters(
         input_dir = mdir / "input"
         stage_frames(rows, input_dir, kind)
         types = _image_type_dir(input_dir, kind)
-        camera = _camera_parameters(input_dir, settings, types)
+        camera = _camera_parameters(input_dir, settings, types,
+                                    noise.get(str(spec.get("electronic_id", ""))))
         if kind == BIAS:
             master_bias(input_dir, mdir, types, dtype=settings.dtype)
         elif kind == DARK:
@@ -256,9 +355,18 @@ def reduce_unit(
     settings: ReductionSettings,
     *,
     log: Callable[[str], None] = print,
+    noise: Mapping[str, NoiseMeasurement] | None = None,
+    stack_counts: Mapping[str, int] | None = None,
 ) -> UnitReport:
-    """Reduce the lights of one unit into ``<out>/reduced/<unit_id>/``."""
+    """Reduce the lights of one unit into ``<out>/reduced/<unit_id>/``.
+
+    ``stack_counts`` (frame id -> frames in its stack, see
+    :func:`stacked_frame_counts`) decides ``rm_cosmic_rays="auto"``.
+    """
     report = UnitReport(unit_id)
+    noise = noise or {}
+    if stack_counts is None:
+        stack_counts = stacked_frame_counts(plan, frames)
     out_dir = Path(out_dir)
     lookup = _frame_lookup(frames)
     rows = [lookup[f] for f in unit.get("lights", []) if f in lookup]
@@ -274,7 +382,11 @@ def reduce_unit(
     reduced_dir.mkdir(parents=True)
 
     types = _image_type_dir(stage_dir, LIGHT)
-    camera = _camera_parameters(stage_dir, settings, types)
+    camera = _camera_parameters(stage_dir, settings, types,
+                                noise.get(str(unit.get("electronic_id", ""))))
+    report.notes.append(
+        f"gain {camera.gain} e-/ADU, read noise {camera.read_noise} e- ({camera.noise_source})"
+    )
 
     bias = None
     bias_dir = masters.get(unit.get("bias") or "")
@@ -338,7 +450,9 @@ def reduce_unit(
                 "rm_bias": bias is not None,
                 "exposure_time_tolerance": settings.exposure_time_tolerance,
                 "add_hot_bad_pixel_mask": settings.add_hot_bad_pixel_mask,
-                "rm_cosmic_rays": settings.rm_cosmic_rays,
+                "rm_cosmic_rays": resolve_cosmic_ray_removal(
+                    settings.rm_cosmic_rays, int(stack_counts.get(str(row["frame_id"]), 0)),
+                    min_frames=settings.cosmic_ray_auto_min_frames),
                 "limiting_contrast_rm_cosmic_rays": settings.limiting_contrast_rm_cosmic_rays,
                 "sigma_clipping_value_rm_cosmic_rays": settings.sigma_clipping_value_rm_cosmic_rays,
                 "saturation_level": camera.saturation_level,
@@ -398,15 +512,22 @@ def reduce_planned(
     reduced_path`` (also written to ``<out>/reduction_report.ecsv``).
     """
     settings = settings or ReductionSettings()
+    check_noise_source(settings.camera_noise_source)
+    check_binning_mode(settings.binning_mode)
+    check_cosmic_ray_mode(settings.rm_cosmic_rays)
     out_dir = Path(out_dir)
-    masters = build_masters(plan, frames, out_dir, settings, log=log)
+    noise = (measure_plan_noise(frames, saturation_level=settings.saturation_level, log=log)
+             if settings.camera_noise_source == "measured" else {})
+    masters = build_masters(plan, frames, out_dir, settings, log=log, noise=noise)
+    stack_counts = stacked_frame_counts(plan, frames)
     reports: dict[str, UnitReport] = {}
     rows = []
     for unit_id, unit in (plan.get("units") or {}).items():
         if units is not None and unit_id not in units:
             continue
         terminal_output.print_to_terminal(f"Reduce unit {unit_id}...", indent=1)
-        report = reduce_unit(unit_id, unit, plan, frames, masters, out_dir, settings, log=log)
+        report = reduce_unit(unit_id, unit, plan, frames, masters, out_dir, settings, log=log,
+                             noise=noise, stack_counts=stack_counts)
         reports[unit_id] = report
         lookup = _frame_lookup(frames)
         for fid in report.reduced:
@@ -426,7 +547,9 @@ __all__ = [
     "ReductionSettings",
     "UnitReport",
     "build_masters",
+    "measure_plan_noise",
     "reduce_planned",
     "reduce_unit",
     "stage_frames",
+    "stacked_frame_counts",
 ]

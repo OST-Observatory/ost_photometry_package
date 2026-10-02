@@ -59,6 +59,13 @@ section of this file.
   (QHY268 6252×4176 and ZWO ASI2600 behind generic driver names),
   `reduce_main(interactive=False)`, `reduce_light_image(pixel_mask=)`,
   `masks.load_pixel_mask_files`, `workflow.main.resolve_camera_parameters`.
+- **Measured detector noise** (`reduce.detector_noise`,
+  `reduce_main(camera_noise_source="measured")`, also in the archive
+  pipeline per electronic setup): read noise from bias (or dark) pairs, gain
+  from the photon transfer of flat pairs; falls back to the catalog.
+- `binning_mode` (`auto` / `digital` / `charge`) and the catalog field
+  `binning_mode` in `data/cameras.json` (`camera_specs.binning_mode`).
+- `rm_cosmic_rays="auto"` with `cosmic_ray_auto_min_frames` (default 7).
 
 ### Changed
 
@@ -81,11 +88,24 @@ section of this file.
   pointing instead of searching around RA = Dec = 0, runs with a timeout,
   and uses the correct image shape for the corner check.
 - `requests` and `pyyaml` are declared dependencies.
+- `reduce_main(rm_cosmic_rays=)` defaults to `"auto"` (was `True`): with
+  stacking, filters with at least 7 frames leave cosmic rays to the
+  sigma-clipped stack. Pass `True` for the old behaviour.
 
 ### Fixed
 
 - `check_exposure_times` checked only the first exposure time and named the
   wrong file in its error message.
+- **Read noise of binned CMOS frames** was the catalog value per native
+  pixel; a 3×3 binned QHY600 pixel has three times that. L.A.Cosmic took sky
+  noise for cosmic rays (13 % of an Hα frame masked, sky 12 % too low). The
+  catalog read noise is now scaled with `sqrt(xbin * ybin)` for digitally
+  binning cameras.
+- **Uncertainty maps** of lights, flats and darks counted the bias pedestal
+  as photon noise (`create_deviation` before the bias subtraction), which
+  overestimated the pixel noise by 17–66 % on the OST test data. The
+  uncertainty is now computed from the bias-free signal (after the dark when
+  the darks carry the bias); master uncertainties add in quadrature.
 
 ### Deprecated
 

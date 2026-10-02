@@ -56,6 +56,9 @@ def test_reduce_planned_end_to_end(dataset, tmp_path):  # noqa: F811
         # Synthetic sky: 200 ADU in 60 s, gain 1 -> about 3.3 e-/s (bias and
         # dark removed exactly once; a double bias subtraction goes negative).
         assert 2.5 < sky < 4.5
+        # Uncertainty from the bias-free signal: sqrt(~205 + 5^2) ADU / 60 s
+        # ~ 0.25 e-/s; counting the 730 ADU bias as photons gave ~ 0.52.
+        assert 0.2 < float(np.nanmedian(ccd.uncertainty.array)) < 0.35
         assert ccd.mask is None or ccd.mask.mean() < 0.1
         by_unit.setdefault(unit, set()).add(header["SESSID"])
     assert len(by_unit) == 2 and all(len(v) == 1 for v in by_unit.values())

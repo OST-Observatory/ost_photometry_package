@@ -16,7 +16,15 @@ class ReduceConfig:
     gain: float | None = None
     read_noise: float | None = None
     dark_rate: float | None = None
-    rm_cosmic_rays: bool = True
+    # Gain / read noise from the camera catalog or measured on bias and flat
+    # pairs, see ost_photometry.reduce.detector_noise.NOISE_SOURCES
+    camera_noise_source: str = "catalog"
+    # How the camera bins (read noise per binned pixel): auto, digital, charge
+    binning_mode: str = "auto"
+    # True, False or "auto" (skip when the filter is stacked from enough
+    # frames, whose sigma clipping removes cosmic rays)
+    rm_cosmic_rays: bool | str = "auto"
+    cosmic_ray_auto_min_frames: int = 7
     mask_cosmic_rays: bool = False
     saturation_level: float | None = None
     limiting_contrast_rm_cosmic_rays: float = 5.0

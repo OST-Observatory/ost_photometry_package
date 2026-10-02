@@ -108,6 +108,18 @@ Header stamps of reduced lights: `FRAMEID`, `CALUNIT`, `SESSID`, `FLATGRP`,
 frame-quality keywords (`WEIGHTNG`, `NREJECT`, `FWHMMED`, …); camera
 combinations add `NCAMERAS` / `CAMERAS`.
 
+## Detector noise and cosmic rays
+
+`ReductionSettings(camera_noise_source="measured")` measures the read noise
+per electronic setup (bias pairs, else dark pairs) and the gain per gain
+setting (camera, binning, readout mode, gain; flat pairs of all offsets,
+each against the zero level of its own setup), see
+`reduce.workflow.groups.measure_plan_noise`. The default `catalog` scales the
+catalog read noise to the binned pixel (`binning_mode`). With
+`rm_cosmic_rays="auto"` (default) L.A.Cosmic runs only on frames whose stack
+(target × camera × filter) has fewer than `cosmic_ray_auto_min_frames`
+frames, or whose target is not stacked.
+
 ## Limits
 
 - Spectroscopy frames are excluded (archive classification, or spectral
