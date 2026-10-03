@@ -69,7 +69,8 @@ class FakeSession:
         return handler(method, query, json, headers or {})
 
 
-def _fits_bytes(imagetyp="Light Frame", filt="V", obj="M57", frame=0):
+def _fits_bytes(imagetyp="Light Frame", filt="V", obj="M57", frame=0, exptime=60.0,
+                readoutm="Normal"):
     header = fits.Header()
     header["FRAMENO"] = frame
     header["IMAGETYP"] = imagetyp
@@ -78,9 +79,10 @@ def _fits_bytes(imagetyp="Light Frame", filt="V", obj="M57", frame=0):
     header["INSTRUME"] = "QHYCCD-Cameras-Capture"
     header["XBINNING"] = 3
     header["OFFSET"] = 5
-    header["READOUTM"] = "Normal"
+    header["READOUTM"] = readoutm
     header["DATE-OBS"] = "2022-03-09T01:00:00"
-    header["EXPTIME"] = 60.0
+    header["EXPTIME"] = exptime
+    header["SET-TEMP"] = -15.0
     buffer = io.BytesIO()
     fits.PrimaryHDU(np.ones((4, 4), dtype=np.uint16), header).writeto(buffer)
     return buffer.getvalue()
@@ -345,3 +347,87 @@ def test_unreadable_download_is_reported_not_counted(tmp_path):
     assert report.n_downloaded == 3
     by_id = {str(r["frame_id"]): r for r in manifest}
     assert not by_id["12"]["downloaded"]
+
+
+def test_fetch_missing_darks_with_dark_finder(tmp_path):
+    """Lights of 300 s without darks: the dark finder supplies them.
+
+    The closest run has darks in another readout mode and is skipped.
+    """
+    mode = "High Gain Mode 16BIT"
+    files = {10: _fits_bytes(frame=10, exptime=300.0, readoutm=mode),
+             11: _fits_bytes(frame=11, exptime=300.0, readoutm=mode),
+             40: _fits_bytes("Dark Frame", frame=40, exptime=300.0, readoutm="Extend Fullwell"),
+             50: _fits_bytes("Dark Frame", frame=50, exptime=300.0, readoutm="High Gain Mode"),
+             51: _fits_bytes("Dark Frame", frame=51, exptime=300.0, readoutm="High Gain Mode")}
+    runs = [{"pk": 1, "name": "2026-03-26", "mid_observation_jd": 2461126.0}]
+    run_files = {
+        1: [_record(10, 1, "2026-03-26", content=files[10], exptime=300.0, hjd=2461126.0),
+            _record(11, 1, "2026-03-26", content=files[11], exptime=300.0, hjd=2461126.1)],
+        4: [_record(40, 4, "2026-03-28", "DA", "DA", "-", files[40], exptime=300.0)],
+        5: [_record(50, 5, "2026-02-10", "DA", "DA", "-", files[50], exptime=300.0),
+            _record(51, 5, "2026-02-10", "DA", "DA", "-", files[51], exptime=300.0),
+            _record(52, 5, "2026-02-10", "FL", "FL", "-", b"flat")],
+    }
+    finder_calls = []
+
+    def finder(method, params, body, headers):
+        finder_calls.append((body, headers))
+        hit = {"exptime": 300.0, "ccd_temp": -15.0, "gain": None, "offset": 5,
+               "binning_x": 3, "binning_y": 3}
+        return FakeResponse(200, {"count": 3, "results": [
+            {"id": 40, "observation_run": "2026-03-28", "observation_run_id": 4,
+             "hjd": 2461128.0, **hit},
+            {"id": 50, "observation_run": "2026-02-10", "observation_run_id": 5,
+             "hjd": 2461082.0, **hit},
+            {"id": 51, "observation_run": "2026-02-10", "observation_run_id": 5,
+             "hjd": 2461082.0, **hit},
+        ]})
+
+    routes = {
+        "/data_archive/api/runs/runs/": lambda m, p, b, h: FakeResponse(
+            200, {"count": 1, "next": None, "results": runs}),
+        "/data_archive/api/runs/datafiles/": lambda m, p, b, h: FakeResponse(
+            200, {"count": 9, "next": None, "results": run_files[int(p["observation_run"])]}),
+        "/data_archive/api/users/auth/csrf/": lambda m, p, b, h: FakeResponse(
+            200, {"csrfToken": "tok"}),
+        "/data_archive/api/runs/dark-finder/": finder,
+    }
+    for pk, content in files.items():
+        routes[f"/data_archive/api/runs/datafiles/{pk}/download/"] = (
+            lambda m, p, b, h, c=content: FakeResponse(200, content=c))
+    client = ArchiveClient(BASE, session=FakeSession(routes), rate_per_minute=0)
+
+    # Anonymous: reported, not searched.
+    _, report = fetch_dataset(client, run_name="2026-03-26", calib_window_days=0,
+                              cache_dir=tmp_path / "c0")
+    assert finder_calls == [] and "needs an archive login" in report.dark_finder[0]
+
+    client.authenticated = True
+    manifest, report = fetch_dataset(client, run_name="2026-03-26", calib_window_days=0,
+                                     cache_dir=tmp_path / "cache")
+    body, headers = finder_calls[0]
+    assert body["exptime"] == 300.0 and body["ccd_temp"] == -15.0 and body["offset"] == 5
+    assert body["binning_x"] == 3 and "gain" not in body and headers["X-CSRFToken"] == "tok"
+    ids = {str(r["frame_id"]): str(r["role"]) for r in manifest}
+    assert ids == {"10": "target", "11": "target", "50": "calibration", "51": "calibration"}
+    assert "skipped (other readout mode)" in report.dark_finder[0]
+    assert "2 darks from run 2026-02-10" in report.dark_finder[1]
+    assert any("Dark finder" in line for line in report.lines())
+
+
+def test_dark_needs_ignores_covered_setups():
+    from ost_photometry.archive.fetch import dark_needs
+
+    light = {"role": "target", "local_path": "x", "exptime": 300.0, "set_temp": -15.0,
+             "instrument_archive": "QHY600M", "naxis1": 10, "naxis2": 10, "xbinning": 2,
+             "ybinning": 2, "gain": 56.0, "offset": 30.0, "readoutm": "High Gain Mode 16BIT",
+             "jd": 1.0}
+    dark = {**light, "role": "calibration", "imagetyp": "Dark Frame", "set_temp": -14.0,
+            "readoutm": "High Gain Mode"}  # same mode after normalisation
+    assert dark_needs([light, dark]) == []
+    assert len(dark_needs([light, {**dark, "offset": 10.0}])) == 1
+    assert len(dark_needs([light, {**dark, "exptime": 120.0}])) == 1
+    need = dark_needs([light, {**light}])[0]
+    assert need.n_frames == 2 and "300 s" in need.describe()
+

@@ -71,6 +71,13 @@ section of this file.
 - Archive pipeline: `StackSettings.keep_reduced_lights` (default `False`)
   deletes the reduced frame of every aligned frame that is kept, so each
   frame is stored once.
+- Archive pipeline: darks for science exposures without matching darks
+  come from the archive's **dark finder** (`ArchiveClient.find_darks`,
+  `fetch.fetch_missing_darks`, `use_dark_finder=True`, needs a login).
+  The grouping accepts covering darks outside the calibration window.
+  Flat and dark notes name the sets and their source runs; low-probability
+  flats used with `no_flat_policy="best_available"` say so and list the
+  candidates that were not used, with their reasons.
 - Header keywords `RDNOISE` / `SATLEVEL` (electrons for the image times
   `EXPTIME`) on reduced frames, stacks and camera combinations; sigma-clipped
   stacks of at least three frames are marked `CRIDENT` / `CRCLIP`.
@@ -121,6 +128,11 @@ section of this file.
   background, star flux about 1 % low. Now computed by
   `reduce.weighted_combine.weighted_average_combine` (mask-aware, in row
   blocks of at most 2 GB); see `docs/TODO.md` for the ccdproc check.
+- QHY readout modes with the newer SDK names (`High Gain Mode 16BIT`,
+  `Photographic DSO 16BIT`, `Extend Fullwell Mode`) were not found in the
+  camera catalog, so gain and read noise fell back to 1.292 e-/ADU and
+  7.904 e-. `normalize_readout_mode` now ignores the `16BIT` / `Mode`
+  words.
 - **L.A.Cosmic saturation in the reduction** was the raw ADU limit applied to
   calibrated electrons; it is now `(saturation - bias) x gain / brightest
   flat`, so saturated star cores are protected.

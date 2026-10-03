@@ -18,6 +18,7 @@ from pathlib import Path
 from astropy.io import fits
 from astropy.table import Table
 
+from ..camera_specs import normalize_readout_mode
 from .cache import FileCache
 from .client import ArchiveClient, ArchiveError
 from .manifest import (
@@ -50,6 +51,8 @@ class FetchReport:
     n_cached: int = 0
     skipped_non_fits: int = 0
     failures: list[tuple[str, str]] = field(default_factory=list)
+    #: One line per light setup without matching darks (archive dark finder)
+    dark_finder: list[str] = field(default_factory=list)
 
     def lines(self) -> list[str]:
         out = [
@@ -65,6 +68,9 @@ class FetchReport:
             out.append("Targets in the request (archive names):")
             for name, count in sorted(self.targets.items(), key=lambda kv: (-kv[1], kv[0])):
                 out.append(f"  {name or '(no name)'}: {count} frames")
+        if self.dark_finder:
+            out.append("Dark finder (exposures without matching darks):")
+            out.extend(f"  {line}" for line in self.dark_finder)
         for name, reason in self.failures[:20]:
             out.append(f"  failed: {name}: {reason}")
         return out
@@ -332,6 +338,184 @@ def download_rows(
         apply_header(row, header)
 
 
+# ---------------------------------------------------------------------------
+# Missing darks: archive dark finder
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class DarkNeed:
+    """Light frames of one electronic setup and exposure time without darks."""
+
+    setup: tuple
+    exptime: float
+    temperature: float
+    jd: float
+    example: dict[str, object]
+    n_frames: int = 0
+
+    def describe(self) -> str:
+        camera, nx, ny, xbin, ybin, gain, offset, mode = self.setup
+        return (f"{camera} {nx}x{ny} bin {xbin}x{ybin} gain {gain:g} offset {offset:g} "
+                f"{mode or '?'}, {self.exptime:g} s at {self.temperature:.0f} C "
+                f"({self.n_frames} lights)")
+
+
+def _number(row: dict, key: str) -> float:
+    return _finite(row.get(key))
+
+
+def _temperature(row: dict) -> float:
+    temp = _number(row, "set_temp")
+    return temp if math.isfinite(temp) else _number(row, "ccd_temp")
+
+
+def _integer(row: dict, key: str, default: int) -> int:
+    value = _number(row, key)
+    return int(value) if math.isfinite(value) else default
+
+
+def _setup_key(row: dict) -> tuple:
+    """Camera, image size, binning, gain, offset and readout mode of a frame."""
+    camera = str(row.get("instrument_archive") or row.get("instrume") or "").strip()
+    gain, offset = _number(row, "gain"), _number(row, "offset")
+    return (
+        camera,
+        _integer(row, "naxis1", 0),
+        _integer(row, "naxis2", 0),
+        _integer(row, "xbinning", 1),
+        _integer(row, "ybinning", _integer(row, "xbinning", 1)),
+        gain if math.isfinite(gain) else -1.0,
+        offset if math.isfinite(offset) else -1.0,
+        normalize_readout_mode(str(row.get("readoutm") or "")) or "",
+    )
+
+
+def _row_is_dark(row: dict) -> bool:
+    user = _code(row.get("exposure_type_user"))
+    if user:
+        return user == DARK
+    return ("dark" in str(row.get("imagetyp") or "").lower()
+            or DARK in {_code(row.get("exposure_type")), _code(row.get("exposure_type_ml"))})
+
+
+def dark_needs(
+    rows: Sequence[dict[str, object]],
+    *,
+    exptime_tolerance: float = 0.5,
+    temp_tolerance: float = 2.0,
+) -> list[DarkNeed]:
+    """Exposure times of the downloaded science frames without a matching dark."""
+    darks = [r for r in rows if r.get("local_path") and _row_is_dark(r)]
+    needs: dict[tuple, DarkNeed] = {}
+    for row in rows:
+        if row.get("role") != ROLE_TARGET or not row.get("local_path"):
+            continue
+        exptime, temp = _number(row, "exptime"), _temperature(row)
+        if not math.isfinite(exptime):
+            continue
+        setup = _setup_key(row)
+        covered = any(
+            _setup_key(d) == setup
+            and abs(_number(d, "exptime") - exptime) <= exptime_tolerance
+            and (not math.isfinite(temp) or not math.isfinite(_temperature(d))
+                 or abs(_temperature(d) - temp) <= temp_tolerance)
+            for d in darks
+        )
+        if covered:
+            continue
+        key = (setup, round(exptime, 1), round(temp) if math.isfinite(temp) else None)
+        need = needs.get(key)
+        if need is None:
+            need = needs[key] = DarkNeed(setup, exptime, temp, _number(row, "jd"), dict(row))
+        need.n_frames += 1
+    return list(needs.values())
+
+
+def fetch_missing_darks(
+    client: ArchiveClient,
+    rows: list[dict[str, object]],
+    cache: FileCache,
+    *,
+    report: FetchReport,
+    exptime_tolerance: float = 0.5,
+    temp_tolerance: float = 2.0,
+    max_runs: int = 3,
+    progress: Callable[[int, int, str], None] | None = None,
+) -> None:
+    """Add darks for science exposures that have none, via the dark finder.
+
+    For every uncovered setup the matching darks of the run closest in time
+    are downloaded (``role=calibration``); a run whose darks were taken in
+    another readout mode (not known to the dark finder) is skipped and the
+    next one tried, up to ``max_runs``.
+    """
+    needs = dark_needs(rows, exptime_tolerance=exptime_tolerance, temp_tolerance=temp_tolerance)
+    if not needs:
+        return
+    if not client.authenticated:
+        for need in needs:
+            report.dark_finder.append(f"{need.describe()}: not searched (dark finder needs "
+                                      "an archive login)")
+        return
+    known = {int(r["pk"]) for r in rows if r.get("pk") not in (None, "", -1)}
+    for need in needs:
+        camera, nx, ny, xbin, ybin, gain, offset, mode = need.setup
+        try:
+            found = client.find_darks(
+                exptime=need.exptime, ccd_temp=need.temperature if math.isfinite(
+                    need.temperature) else _number(need.example, "ccd_temp"),
+                instrument=camera, naxis1=nx, naxis2=ny, binning_x=xbin, binning_y=ybin,
+                gain=gain, offset=offset, exptime_tolerance=exptime_tolerance,
+                temp_tolerance=temp_tolerance,
+            )
+        except ArchiveError as exc:
+            report.dark_finder.append(f"{need.describe()}: dark finder failed: {exc}")
+            continue
+        found = [
+            f for f in found
+            if int(f.get("id", -1)) not in known
+            and (gain < 0 or _finite(f.get("gain")) == gain)
+            and (offset < 0 or _finite(f.get("offset")) == offset)
+        ]
+        by_run: dict[int, list[dict]] = {}
+        for item in found:
+            if item.get("observation_run_id") is not None:
+                by_run.setdefault(int(item["observation_run_id"]), []).append(item)
+
+        def distance(run_id: int, by_run: dict = by_run, jd: float = need.jd) -> float:
+            jds = [_finite(i.get("hjd")) for i in by_run[run_id]]
+            jds = [j for j in jds if math.isfinite(j)]
+            if not jds or not math.isfinite(jd):
+                return math.inf
+            return min(abs(j - jd) for j in jds)
+
+        added = False
+        for run_id in sorted(by_run, key=distance)[:max_runs]:
+            ids = {int(i["id"]) for i in by_run[run_id]}
+            records = [r for r in client.datafiles(run_pk=run_id) if int(r.get("pk", -1)) in ids]
+            new_rows = [record_to_row(r, role=ROLE_CALIBRATION) for r in records]
+            download_rows(client, new_rows, cache, report=report, progress=progress)
+            usable = [r for r in new_rows if r.get("local_path")
+                      and normalize_readout_mode(str(r.get("readoutm") or "")) == (mode or None)]
+            run_name = by_run[run_id][0].get("observation_run") or run_id
+            if usable:
+                rows.extend(usable)
+                known.update(int(r["pk"]) for r in usable)
+                report.n_calibration += len(usable)
+                report.dark_finder.append(
+                    f"{need.describe()}: {len(usable)} darks from run {run_name} "
+                    f"({distance(run_id):.0f} days away)"
+                )
+                added = True
+                break
+            report.dark_finder.append(
+                f"{need.describe()}: darks of run {run_name} skipped (other readout mode)"
+            )
+        if not added and not by_run:
+            report.dark_finder.append(f"{need.describe()}: no matching darks in the archive")
+
+
 def fetch_dataset(
     client: ArchiveClient,
     *,
@@ -341,13 +525,16 @@ def fetch_dataset(
     calib_window_days: float = 7.0,
     cache_dir: str | Path,
     download_context: bool = False,
+    use_dark_finder: bool = True,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[Table, FetchReport]:
     """Collect, download and describe the frames of an object or a run.
 
     Returns the manifest (see :mod:`ost_photometry.archive.manifest`) and a
     :class:`FetchReport`. Context frames are downloaded only with
-    ``download_context=True``.
+    ``download_context=True``. With ``use_dark_finder`` (needs a login),
+    science exposures without matching darks in the calibration window get
+    darks from the archive's dark finder (:func:`fetch_missing_darks`).
     """
     report = FetchReport()
     rows = collect_records(
@@ -362,15 +549,21 @@ def fetch_dataset(
         ROLE_TARGET,
         ROLE_CALIBRATION,
     )
-    download_rows(client, rows, FileCache(cache_dir), roles=roles, report=report, progress=progress)
+    cache = FileCache(cache_dir)
+    download_rows(client, rows, cache, roles=roles, report=report, progress=progress)
+    if use_dark_finder:
+        fetch_missing_darks(client, rows, cache, report=report, progress=progress)
     return manifest_from_rows(rows), report
 
 
 __all__ = [
+    "DarkNeed",
     "FetchReport",
     "collect_records",
+    "dark_needs",
     "download_rows",
     "fetch_dataset",
+    "fetch_missing_darks",
     "is_calibration_candidate",
     "is_light_record",
     "normalize_target_name",

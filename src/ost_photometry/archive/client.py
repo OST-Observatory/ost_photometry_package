@@ -295,6 +295,63 @@ class ArchiveClient:
             params["observation_run"] = int(run_pk)
         return self._paged("runs/datafiles/", params)
 
+    def datafile(self, pk: int) -> dict:
+        """One data-file record (with ``content_hash``)."""
+        return self.get_json(f"runs/datafiles/{int(pk)}/")
+
+    def find_darks(
+        self,
+        *,
+        exptime: float,
+        ccd_temp: float,
+        instrument: str,
+        naxis1: int,
+        naxis2: int,
+        binning_x: int = 1,
+        binning_y: int = 1,
+        gain: float | None = None,
+        offset: float | None = None,
+        exptime_tolerance: float = 0.5,
+        temp_tolerance: float = 2.0,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Dark frames of public runs matching a camera setup (archive dark finder).
+
+        Needs a login. The archive filters gain / offset only when they are
+        positive and knows no readout mode; callers check those on the
+        results / headers. At most ``limit`` (<= 100) results, newest first.
+        """
+        if not self.authenticated:
+            raise ArchiveError("The archive dark finder needs a login.")
+        payload: dict[str, Any] = {
+            "exptime": float(exptime),
+            "exptime_tolerance": float(exptime_tolerance),
+            "ccd_temp": float(ccd_temp),
+            "temp_tolerance": float(temp_tolerance),
+            "instrument": str(instrument),
+            "naxis1": int(naxis1),
+            "naxis2": int(naxis2),
+            "binning_x": int(binning_x),
+            "binning_y": int(binning_y),
+            "limit": int(min(max(limit, 1), 100)),
+        }
+        if gain is not None and gain > 0:
+            payload["gain"] = float(gain)
+        if offset is not None and offset > 0:
+            payload["offset"] = int(offset)
+        token = self._csrf_token()
+        response = self._request(
+            "POST",
+            "runs/dark-finder/",
+            json=payload,
+            headers={"X-CSRFToken": token, "Referer": self.base_url + "/"},
+        )
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise ArchiveError("The dark finder did not return JSON") from exc
+        return list(body.get("results", [])) if isinstance(body, dict) else []
+
     def search_objects(self, text: str, *, limit: int = 50) -> list[dict]:
         """Objects whose name or identifiers match ``text``."""
         payload = self.get_json("objects/vuetify", {"search": text, "limit": limit, "page": 1})

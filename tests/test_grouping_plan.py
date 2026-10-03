@@ -103,6 +103,44 @@ def test_assign_bias_dark_reports_missing():
     assert sets_ok(calibration_sets(frames, "dark"))
 
 
+def test_assign_bias_dark_uses_covering_darks_outside_the_window():
+    frames = _with_types([
+        _calib_row(2, "dark", JD_NIGHT1 + 3, 60.0, run="2022-03-11"),
+        _calib_row(3, "dark", JD_NIGHT1 + 45, 300.0, run="2022-04-22"),  # dark finder
+        _calib_row(4, "dark", JD_NIGHT1 + 45.01, 300.0, run="2022-04-22"),
+    ])
+    consumers = _with_types([_calib_row(10, "light", JD_NIGHT1 + 0.2, 300.0)])
+    (result,) = assign_bias_dark(consumers, frames, window_days=30)
+    assert result.darks.night == night_of(JD_NIGHT1 + 45) and result.missing_exptimes == []
+    assert result.darks.runs == ["2022-04-22"]
+    assert any("outside the 30-day window" in n and "run 2022-04-22" in n
+               for n in result.notes)
+    # Without matching exposures anywhere: nearest night, reported with a hint.
+    (result,) = assign_bias_dark(consumers, frames[:1], window_days=30)
+    assert result.missing_exptimes == [300.0]
+    assert any("dark finder" in n for n in result.notes)
+    assert any("run 2022-03-11" in n for n in result.notes)
+
+
+def test_flat_reports_name_sets_runs_and_reasons():
+    from ost_photometry.reduce.grouping.flats import (
+        FlatCandidate,
+        _other_candidates,
+        flat_sets,
+    )
+
+    table = _with_types([
+        _calib_row(1, "flat", JD_NIGHT1 + 0.1, 2.0, filter="V", run="2022-03-08"),
+        _calib_row(2, "flat", JD_NIGHT1 + 0.11, 2.0, filter="V", run="2022-03-08"),
+    ])
+    (fs,) = flat_sets(table)
+    assert fs.runs == ["2022-03-08"]
+    assert fs.describe() == f"{fs.set_id} (2 frames, run 2022-03-08)"
+    text = _other_candidates([FlatCandidate(fs.set_id, 0.0, REJECTED,
+                                            "other session(s) in between: S2")], {fs.set_id: fs})
+    assert "not used" in text and "run 2022-03-08" in text and "S2" in text
+
+
 def sets_ok(sets):
     return all(s.set_id.startswith("D_") for s in sets)
 

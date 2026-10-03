@@ -69,10 +69,17 @@ class FlatSet:
     end_jd: float
     frame_ids: list[str] = field(default_factory=list)
     paths: list[str] = field(default_factory=list)
+    #: Observation runs (archive names or directory names) of the frames
+    runs: list[str] = field(default_factory=list)
 
     @property
     def mid_jd(self) -> float:
         return 0.5 * (self.start_jd + self.end_jd)
+
+    def describe(self) -> str:
+        """``set_id`` with frame count and source run(s), for reports."""
+        runs = f", run {', '.join(self.runs)}" if self.runs else ""
+        return f"{self.set_id} ({len(self.frame_ids)} frames{runs})"
 
 
 @dataclass
@@ -117,6 +124,9 @@ def flat_sets(frames: Table, *, block_gap_hours: float = 2.0) -> list[FlatSet]:
             open_sets[key] = current
         current.frame_ids.append(str(row["frame_id"]))
         current.paths.append(str(row.get("local_path") or ""))
+        run = str(row.get("run") or "").strip()
+        if run and run not in current.runs:
+            current.runs.append(run)
         if math.isfinite(jd):
             current.end_jd = jd if not math.isfinite(current.end_jd) else max(current.end_jd, jd)
     counters: dict[str, int] = {}
@@ -326,6 +336,17 @@ def score_flat_set(
                          "; ".join(reasons))
 
 
+def _other_candidates(candidates: Sequence[FlatCandidate], by_id: Mapping[str, FlatSet],
+                      limit: int = 3) -> str:
+    """Report text for flat sets that were not used, with probability and reason."""
+    if not candidates:
+        return ""
+    parts = [f"{by_id[c.set_id].describe()} p={c.probability:.2f} ({c.reason})"
+             for c in candidates[:limit]]
+    more = f"; {len(candidates) - limit} more" if len(candidates) > limit else ""
+    return "; not used: " + "; ".join(parts) + more
+
+
 def assign_flats(
     lights: Table,
     sessions: Sequence[Session],
@@ -417,7 +438,7 @@ def assign_flats(
             result.probability = min(c.probability for c in chosen)
             result.category = min((c.category for c in chosen),
                                   key=[CERTAIN, LIKELY, UNCERTAIN, REJECTED].index)
-            result.note = "; ".join(f"{c.set_id}: {c.reason}" for c in chosen)
+            result.note = "; ".join(f"{by_id[c.set_id].describe()}: {c.reason}" for c in chosen)
             if len(chosen) == 2:
                 result.note = "flats before and after the session combined; " + result.note
         elif scored and scored[0].category == UNCERTAIN:
@@ -425,15 +446,19 @@ def assign_flats(
             result.flat_set_ids = [best.set_id]
             result.probability = best.probability
             result.category = UNCERTAIN
-            result.note = f"{best.set_id}: {best.reason} (uncertain, check)"
+            result.note = (f"{by_id[best.set_id].describe()}: {best.reason} (uncertain, check)"
+                           + _other_candidates(scored[1:], by_id))
         elif no_flat_policy == "best_available" and scored and scored[0].probability > 0:
             best = scored[0]
             result.flat_set_ids = [best.set_id]
             result.probability = best.probability
             result.category = REJECTED
-            result.note = f"best available flat {best.set_id}: {best.reason} (low probability)"
+            result.note = (f"no reliable flat; best available {by_id[best.set_id].describe()} "
+                           f"used anyway (p={best.probability:.2f}: {best.reason})"
+                           + _other_candidates(scored[1:], by_id))
         else:
-            result.note = (f"no applicable flat ({no_flat_policy})" if scored
+            result.note = (f"no applicable flat ({no_flat_policy})"
+                           + _other_candidates(scored, by_id) if scored
                            else "no flat frames for this camera / binning / filter")
         assignments.append(result)
     return assignments

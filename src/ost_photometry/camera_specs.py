@@ -51,6 +51,7 @@ READOUT_ALIASES = {
     "photography": "photography",
     "photography mode 2cms": "photography_2cms",
     "photography 2cms": "photography_2cms",
+    "photographic dso 2cms": "photography_2cms",
     "high gain mode": "high_gain",
     "high gain": "high_gain",
     "high gain mode 2cms": "high_gain_2cms",
@@ -198,20 +199,33 @@ def normalize_instrument_name(
     return ""
 
 
+#: Words in driver mode names that do not change the mode: newer QHY SDKs
+#: call the standard modes "High Gain Mode 16BIT", "Photographic DSO 16BIT",
+#: "Extend Fullwell Mode" (versus the "... 2CMS" variants).
+_READOUT_FILLER_WORDS = frozenset({"16bit", "mode"})
+
+
+def _lookup_readout_alias(key: str) -> str | None:
+    for candidate in (key, key.replace(" ", ""), key.replace(" ", "_")):
+        if candidate in READOUT_ALIASES:
+            return READOUT_ALIASES[candidate]
+    return None
+
+
 def normalize_readout_mode(readout_mode: str | None) -> str | None:
     if readout_mode is None:
         return None
-    key = str(readout_mode).strip().lower().replace("-", " ")
+    key = str(readout_mode).strip().lower().replace("-", " ").replace("(", " ").replace(")", " ")
     key = " ".join(key.replace("_", " ").split())
-    compact = key.replace(" ", "")
-    if key in READOUT_ALIASES:
-        return READOUT_ALIASES[key]
-    if compact in READOUT_ALIASES:
-        return READOUT_ALIASES[compact]
-    underscored = key.replace(" ", "_")
-    if underscored in READOUT_ALIASES:
-        return READOUT_ALIASES[underscored]
-    return underscored or None
+    found = _lookup_readout_alias(key)
+    if found is not None:
+        return found
+    core = " ".join(w for w in key.split() if w not in _READOUT_FILLER_WORDS)
+    if core and core != key:
+        found = _lookup_readout_alias(core)
+        if found is not None:
+            return found
+    return key.replace(" ", "_") or None
 
 
 def parse_spec_filename(filename: str) -> dict[str, str | None] | None:

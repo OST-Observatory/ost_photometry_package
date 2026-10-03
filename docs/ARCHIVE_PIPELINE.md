@@ -45,7 +45,7 @@ Orientation = position angle of the image +y axis, north through east
 | Module | Role |
 |--------|------|
 | `archive.client` | `ArchiveClient`: session + CSRF login (`OST_ARCHIVE_USER` / `OST_ARCHIVE_PASSWORD` or prompt), runs, data files, object search, headers, checksum-verified downloads, rate limiting and `Retry-After` |
-| `archive.fetch` | `fetch_dataset(object_name= / run_name=, targets=, calib_window_days=)`: science frames, calibration candidates of the runs and neighbouring runs, context metadata |
+| `archive.fetch` | `fetch_dataset(object_name= / run_name=, targets=, calib_window_days=, use_dark_finder=)`: science frames, calibration candidates of the runs and neighbouring runs, context metadata; darks for uncovered science exposures from the archive dark finder (login) |
 | `archive.cache` | content-addressed read-only cache, unique symlink names |
 | `archive.manifest`, `archive.local` | manifest schema (archive + header fields), `manifest_from_directory` for local trees |
 | `reduce.grouping.classify` | frame type from image statistics (stars with spatial extent, level above bias, saturation, spectral structure) confirmed by header / archive ML / user types |
@@ -77,6 +77,19 @@ A session ends at a camera or pixel-scale change, at an orientation change
 above `pa_tolerance` (0.5°), or when another camera was used at the same
 telescope in between (archive context frames). Unsolved frames between two
 different sessions are left out (`session_id = unknown`).
+
+## Missing darks: archive dark finder
+
+After the download, `fetch_missing_darks` checks every science exposure
+time for darks of the same camera, image size, binning, gain, offset,
+readout mode and temperature (±2 K). For each gap it asks the archive's
+dark finder (`api/runs/dark-finder/`, login required, public runs only)
+and downloads the matching darks of the run closest in time. The dark
+finder does not know the readout mode, so runs whose darks were taken in
+another mode are skipped (up to three runs are tried). The fetch report
+lists every gap and its outcome. The grouping prefers covering darks
+within `calibration_window_days` (30) and then takes covering darks from
+farther away (with a note) before it gives up.
 
 ## Flat probability
 

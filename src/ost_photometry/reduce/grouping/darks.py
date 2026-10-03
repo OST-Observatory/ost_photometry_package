@@ -68,6 +68,13 @@ class CalibrationSet:
     frame_ids: list[str] = field(default_factory=list)
     exptimes: list[float] = field(default_factory=list)
     jd: float = float("nan")
+    #: Observation runs of the frames (archive or directory names)
+    runs: list[str] = field(default_factory=list)
+
+    def describe(self) -> str:
+        """Night and source run(s), for reports."""
+        runs = f" (run {', '.join(self.runs)})" if self.runs else ""
+        return f"night {self.night}{runs}"
 
 
 @dataclass
@@ -97,6 +104,9 @@ def calibration_sets(frames: Table, kind: str) -> list[CalibrationSet]:
             entry.set_id = f"{prefix}_{key[1]}"
             sets[key] = entry
         entry.frame_ids.append(str(row["frame_id"]))
+        run = str(row["run"]).strip() if "run" in frames.colnames else ""
+        if run and run not in entry.runs:
+            entry.runs.append(run)
         exptime = _float(row["exptime"])
         if math.isfinite(exptime):
             entry.exptimes.append(exptime)
@@ -132,8 +142,9 @@ def assign_bias_dark(
     ``consumers`` are light or flat frames with ``electronic_id`` / ``night``;
     ``frames`` hold the classified bias and dark frames. The nearest night
     (within ``window_days``) whose darks cover all consumer exposure times
-    wins; otherwise the nearest dark night is used and the uncovered
-    exposure times are reported.
+    wins; then the nearest covering night outside the window (darks found
+    with the archive's dark finder can be older); otherwise the nearest dark
+    night is used and the uncovered exposure times are reported.
     """
     bias_sets = calibration_sets(frames, BIAS)
     dark_sets = calibration_sets(frames, DARK)
@@ -157,13 +168,26 @@ def assign_bias_dark(
         biases = sorted((b for b in bias_sets if b.electronic_id == eid), key=distance)
         biases = [b for b in biases if distance(b) <= window_days]
         result.bias = biases[0] if biases else None
-        darks = sorted((d for d in dark_sets if d.electronic_id == eid), key=distance)
-        darks = [d for d in darks if distance(d) <= window_days]
+        all_darks = sorted((d for d in dark_sets if d.electronic_id == eid), key=distance)
+        darks = [d for d in all_darks if distance(d) <= window_days]
         bias_ok = result.bias is not None
-        full = [d for d in darks if all(_covers(d, e, exptime_tolerance, bias_ok)
-                                        for e in exptimes)]
+
+        def covering(candidates: list[CalibrationSet], exptimes: list[float] = exptimes,
+                     bias_ok: bool = bias_ok) -> list[CalibrationSet]:
+            return [d for d in candidates
+                    if all(_covers(d, e, exptime_tolerance, bias_ok) for e in exptimes)]
+
+        full = covering(darks)
+        outside = [] if full else covering([d for d in all_darks if d not in darks])
         if full:
             result.darks = full[0]
+        elif outside:
+            result.darks = outside[0]
+            result.notes.append(
+                f"darks {outside[0].describe()} are {distance(outside[0]):.0f} days away "
+                f"(outside the {window_days:g}-day window, but the only ones with matching "
+                "exposure times)"
+            )
         elif darks:
             result.darks = darks[0]
         if result.darks is None:
@@ -174,16 +198,17 @@ def assign_bias_dark(
                 e for e in exptimes
                 if not _covers(result.darks, e, exptime_tolerance, bias_ok)
             ]
-            if result.darks.night != night:
-                result.notes.append(f"darks from night {result.darks.night}")
+            if result.darks.night != night and not outside:
+                result.notes.append(f"darks from {result.darks.describe()}")
         if result.bias is None:
             result.notes.append("no bias frames (dark scaling impossible)")
         elif result.bias.night != night:
-            result.notes.append(f"bias from night {result.bias.night}")
+            result.notes.append(f"bias from {result.bias.describe()}")
         if result.missing_exptimes:
             result.notes.append(
                 "no usable dark for exposure(s) "
                 + ", ".join(f"{e:g} s" for e in result.missing_exptimes)
+                + " (1_fetch.py with an archive login searches them with the dark finder)"
             )
         assignments.append(result)
     return assignments

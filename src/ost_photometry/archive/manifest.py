@@ -202,7 +202,7 @@ def header_fields(header: Mapping[str, object] | fits.Header) -> dict[str, objec
         "set_temp": _to_float(header.get("SET-TEMP")),
         "ccd_temp": _to_float(_first(header, ("CCD-TEMP", "CCDTEMP", "TEMPERAT"))),
         "xbinning": _to_int(xbin, 1),
-        "ybinning": _to_int(ybin, 1),
+        "ybinning": _to_int(ybin, _to_int(xbin, 1)),
         "naxis1": _to_int(header.get("NAXIS1"), 0),
         "naxis2": _to_int(header.get("NAXIS2"), 0),
         "bitpix": _to_int(header.get("BITPIX"), 0),

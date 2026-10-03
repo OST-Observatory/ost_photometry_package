@@ -398,7 +398,7 @@ def build_calibration_plan(
                 unit.flats[filt] = mid
                 if assignment.category in (UNCERTAIN, REJECTED):
                     unit.notes.append(f"filter {filt}: flat {assignment.category} "
-                                      f"(p={assignment.probability:.2f})")
+                                      f"(p={assignment.probability:.2f}): {assignment.note}")
             elif settings.no_flat_policy == "exclude_lights":
                 unit.excluded[filt] = assignment.note if assignment else "no flat"
             else:
@@ -478,7 +478,12 @@ def _summary_lines(plan: CalibrationPlan) -> list[str]:
     counts = {CERTAIN: 0, LIKELY: 0, UNCERTAIN: 0, REJECTED: 0}
     for a in plan.flat_assignments:
         counts[a.category] = counts.get(a.category, 0) + 1
-    lines.append("Flat assignments: " + ", ".join(f"{v} {k}" for k, v in counts.items()))
+    line = "Flat assignments: " + ", ".join(f"{v} {k}" for k, v in counts.items())
+    used_anyway = sum(1 for a in plan.flat_assignments
+                      if a.category == REJECTED and a.flat_set_ids)
+    if used_anyway:
+        line += f" ({used_anyway} rejected used anyway as best available, see unit notes)"
+    lines.append(line)
     if len(plan.targets):
         lines.append("Targets:")
         for row in plan.targets:

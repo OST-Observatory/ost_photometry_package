@@ -204,3 +204,19 @@ def test_camera_info_stf8300_uses_catalog_defaults():
     assert dark > 0
     assert width == 17.96
     assert height == 13.52
+
+
+def test_qhy_16bit_and_mode_names_use_the_catalog_curves():
+    from ost_photometry.calibration_parameters import camera_info
+    from ost_photometry.camera_specs import normalize_readout_mode
+
+    assert normalize_readout_mode("High Gain Mode 16BIT") == "high_gain"
+    assert normalize_readout_mode("Photographic DSO 16BIT") == "photography"
+    assert normalize_readout_mode("Extend Fullwell Mode") == "extend_fullwell"
+    assert normalize_readout_mode("Photographic DSO 2CMS") == "photography_2cms"
+    assert normalize_readout_mode("High Gain Mode 2CMS") == "high_gain_2cms"
+    assert normalize_readout_mode("Unknown Mode X") == "unknown_mode_x"
+    new = camera_info("QHY600M", "High Gain Mode 16BIT", -15.0, gain_setting=56)
+    old = camera_info("QHY600M", "High Gain Mode", -15.0, gain_setting=56)
+    assert new[:2] == old[:2]
+    assert new[0] != 7.904 and new[1] != 1.292  # not the fallback defaults
