@@ -78,6 +78,16 @@ section of this file.
   Flat and dark notes name the sets and their source runs; low-probability
   flats used with `no_flat_policy="best_available"` say so and list the
   candidates that were not used, with their reasons.
+- Archive pipeline: **only complete calibration is reduced**
+  (`PlanSettings.require_complete`, `accepted_flat_categories`): lights
+  without matching darks or without an accepted flat for their session are
+  marked incomplete and skipped (`overrides.force_units`,
+  `ReductionSettings.reduce_incomplete`); `missing_calibrations.ecsv` lists
+  the dark / bias series to take.
+- Archive pipeline: bias frames from the archive finder
+  (`ArchiveClient.find_calibration_frames`, `fetch_missing_calibrations`);
+  dark / light exposure tolerance `max(0.5 s, 5 %)` in fetch, grouping and
+  reduction.
 - Header keywords `RDNOISE` / `SATLEVEL` (electrons for the image times
   `EXPTIME`) on reduced frames, stacks and camera combinations; sigma-clipped
   stacks of at least three frames are marked `CRIDENT` / `CRCLIP`.

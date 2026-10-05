@@ -299,14 +299,15 @@ class ArchiveClient:
         """One data-file record (with ``content_hash``)."""
         return self.get_json(f"runs/datafiles/{int(pk)}/")
 
-    def find_darks(
+    def find_calibration_frames(
         self,
+        kind: str,
         *,
-        exptime: float,
         ccd_temp: float,
         instrument: str,
         naxis1: int,
         naxis2: int,
+        exptime: float | None = None,
         binning_x: int = 1,
         binning_y: int = 1,
         gain: float | None = None,
@@ -315,16 +316,23 @@ class ArchiveClient:
         temp_tolerance: float = 2.0,
         limit: int = 100,
     ) -> list[dict]:
-        """Dark frames of public runs matching a camera setup (archive dark finder).
+        """Dark or bias frames of public runs matching a camera setup.
 
-        Needs a login. The archive filters gain / offset only when they are
-        positive and knows no readout mode; callers check those on the
-        results / headers. At most ``limit`` (<= 100) results, newest first.
+        Uses the archive's dark finder (``frame_type`` ``dark`` / ``bias``;
+        bias ignores the exposure time). Needs a login. The archive filters
+        gain / offset only when they are positive and knows no readout
+        mode; callers check those on the results / headers. At most
+        ``limit`` (<= 100) results, newest first.
         """
+        if kind not in ("dark", "bias"):
+            raise ValueError(f"kind must be 'dark' or 'bias', got {kind!r}")
         if not self.authenticated:
             raise ArchiveError("The archive dark finder needs a login.")
+        if kind == "dark" and not (exptime and exptime > 0):
+            raise ValueError("darks need an exposure time")
         payload: dict[str, Any] = {
-            "exptime": float(exptime),
+            "frame_type": kind,
+            "exptime": float(exptime) if kind == "dark" else 0.0,
             "exptime_tolerance": float(exptime_tolerance),
             "ccd_temp": float(ccd_temp),
             "temp_tolerance": float(temp_tolerance),
@@ -350,7 +358,13 @@ class ArchiveClient:
             body = response.json()
         except ValueError as exc:
             raise ArchiveError("The dark finder did not return JSON") from exc
-        return list(body.get("results", [])) if isinstance(body, dict) else []
+        results = list(body.get("results", [])) if isinstance(body, dict) else []
+        # Archives without frame_type support answer every request with darks.
+        return [r for r in results if r.get("frame_type", "dark") == kind]
+
+    def find_darks(self, *, exptime: float, **kwargs: Any) -> list[dict]:
+        """Dark frames matching a camera setup, see :meth:`find_calibration_frames`."""
+        return self.find_calibration_frames("dark", exptime=exptime, **kwargs)
 
     def search_objects(self, text: str, *, limit: int = 50) -> list[dict]:
         """Objects whose name or identifiers match ``text``."""

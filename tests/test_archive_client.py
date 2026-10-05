@@ -359,7 +359,8 @@ def test_fetch_missing_darks_with_dark_finder(tmp_path):
              11: _fits_bytes(frame=11, exptime=300.0, readoutm=mode),
              40: _fits_bytes("Dark Frame", frame=40, exptime=300.0, readoutm="Extend Fullwell"),
              50: _fits_bytes("Dark Frame", frame=50, exptime=300.0, readoutm="High Gain Mode"),
-             51: _fits_bytes("Dark Frame", frame=51, exptime=300.0, readoutm="High Gain Mode")}
+             51: _fits_bytes("Dark Frame", frame=51, exptime=300.0, readoutm="High Gain Mode"),
+             60: _fits_bytes("Bias Frame", frame=60, exptime=0.0, readoutm="High Gain Mode")}
     runs = [{"pk": 1, "name": "2026-03-26", "mid_observation_jd": 2461126.0}]
     run_files = {
         1: [_record(10, 1, "2026-03-26", content=files[10], exptime=300.0, hjd=2461126.0),
@@ -367,7 +368,8 @@ def test_fetch_missing_darks_with_dark_finder(tmp_path):
         4: [_record(40, 4, "2026-03-28", "DA", "DA", "-", files[40], exptime=300.0)],
         5: [_record(50, 5, "2026-02-10", "DA", "DA", "-", files[50], exptime=300.0),
             _record(51, 5, "2026-02-10", "DA", "DA", "-", files[51], exptime=300.0),
-            _record(52, 5, "2026-02-10", "FL", "FL", "-", b"flat")],
+            _record(52, 5, "2026-02-10", "FL", "FL", "-", b"flat"),
+            _record(60, 5, "2026-02-10", "BI", "BI", "-", files[60], exptime=0.0)],
     }
     finder_calls = []
 
@@ -375,6 +377,10 @@ def test_fetch_missing_darks_with_dark_finder(tmp_path):
         finder_calls.append((body, headers))
         hit = {"exptime": 300.0, "ccd_temp": -15.0, "gain": None, "offset": 5,
                "binning_x": 3, "binning_y": 3}
+        if body.get("frame_type") == "bias":
+            return FakeResponse(200, {"count": 1, "frame_type": "bias", "results": [
+                {"id": 60, "frame_type": "bias", "observation_run": "2026-02-10",
+                 "observation_run_id": 5, "hjd": 2461082.0, **hit, "exptime": 0.0}]})
         return FakeResponse(200, {"count": 3, "results": [
             {"id": 40, "observation_run": "2026-03-28", "observation_run_id": 4,
              "hjd": 2461128.0, **hit},
@@ -407,13 +413,18 @@ def test_fetch_missing_darks_with_dark_finder(tmp_path):
     manifest, report = fetch_dataset(client, run_name="2026-03-26", calib_window_days=0,
                                      cache_dir=tmp_path / "cache")
     body, headers = finder_calls[0]
-    assert body["exptime"] == 300.0 and body["ccd_temp"] == -15.0 and body["offset"] == 5
+    assert body["frame_type"] == "dark" and body["exptime"] == 300.0
+    assert body["exptime_tolerance"] == pytest.approx(15.0)  # max(0.5 s, 5 %)
+    assert body["ccd_temp"] == -15.0 and body["offset"] == 5
     assert body["binning_x"] == 3 and "gain" not in body and headers["X-CSRFToken"] == "tok"
+    assert finder_calls[1][0]["frame_type"] == "bias"
     ids = {str(r["frame_id"]): str(r["role"]) for r in manifest}
-    assert ids == {"10": "target", "11": "target", "50": "calibration", "51": "calibration"}
+    assert ids == {"10": "target", "11": "target", "50": "calibration", "51": "calibration",
+                   "60": "calibration"}
     assert "skipped (other readout mode)" in report.dark_finder[0]
-    assert "2 darks from run 2026-02-10" in report.dark_finder[1]
-    assert any("Dark finder" in line for line in report.lines())
+    assert "2 frames from run 2026-02-10" in report.dark_finder[1]
+    assert report.dark_finder[2].startswith("bias:") and "1 frames from run" in report.dark_finder[2]
+    assert any("Dark / bias finder" in line for line in report.lines())
 
 
 def test_dark_needs_ignores_covered_setups():
@@ -429,5 +440,20 @@ def test_dark_needs_ignores_covered_setups():
     assert len(dark_needs([light, {**dark, "offset": 10.0}])) == 1
     assert len(dark_needs([light, {**dark, "exptime": 120.0}])) == 1
     need = dark_needs([light, {**light}])[0]
-    assert need.n_frames == 2 and "300 s" in need.describe()
+    assert need.n_frames == 2 and "300 s darks" in need.describe()
+    # 120 s darks cover 123 s lights (5 % tolerance), not 130 s ones.
+    assert dark_needs([{**light, "exptime": 123.0}, {**dark, "exptime": 120.0}]) == []
+    assert len(dark_needs([{**light, "exptime": 130.0}, {**dark, "exptime": 120.0}])) == 1
+
+
+def test_bias_needs():
+    from ost_photometry.archive.fetch import bias_needs
+
+    light = {"role": "target", "local_path": "x", "exptime": 300.0, "set_temp": -15.0,
+             "instrument_archive": "QHY600M", "naxis1": 10, "naxis2": 10, "xbinning": 2,
+             "gain": 56.0, "offset": 30.0, "readoutm": "High Gain Mode", "jd": 1.0}
+    bias = {**light, "role": "calibration", "imagetyp": "Bias Frame", "exptime": 0.0}
+    assert bias_needs([light, bias]) == []
+    (need,) = bias_needs([light, {**light, "exptime": 60.0}, {**bias, "gain": 0.0}])
+    assert need.kind == "bias" and need.n_frames == 2 and need.describe().startswith("bias:")
 

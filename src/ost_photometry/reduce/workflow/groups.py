@@ -33,6 +33,9 @@ from ..detector_noise import (
     measure_detector_noise,
 )
 from ..grouping.classify import BIAS, DARK, FLAT, LIGHT, header_frame_type
+from ..grouping.darks import dark_exptime_tolerance
+from ..grouping.plan import light_block_reason
+from ..grouping.setup_keys import filter_name
 from ..image_collection import image_file_collection
 from ..masks import load_pixel_mask_files
 from ..storage import check_storage_dtype
@@ -74,6 +77,11 @@ class ReductionSettings:
     binning_mode: str = "auto"
     #: Floating type of written masters and reduced frames (float32 / float64)
     storage_dtype: str = "float32"
+    #: Reduce also lights whose calibration the plan marks incomplete
+    #: (per unit: overrides.force_units in the plan)
+    reduce_incomplete: bool = False
+    #: Relative part of the dark exposure tolerance (max(abs, fraction * t))
+    exposure_time_tolerance_fraction: float = 0.05
 
 
 @dataclass
@@ -91,6 +99,37 @@ class UnitReport:
 
 def _frame_lookup(frames: Table) -> dict[str, dict]:
     return {str(r["frame_id"]): dict(zip(frames.colnames, r, strict=True)) for r in frames}
+
+
+def _tolerance(settings: ReductionSettings, exptime: float) -> float:
+    return dark_exptime_tolerance(exptime, settings.exposure_time_tolerance,
+                                  settings.exposure_time_tolerance_fraction)
+
+
+def reducible_lights(
+    unit: Mapping,
+    lookup: Mapping[str, dict],
+    settings: ReductionSettings,
+) -> tuple[list[dict], list[tuple[str, str]]]:
+    """Lights of ``unit`` to reduce and ``(frame_id, reason)`` of blocked ones.
+
+    The plan blocks lights whose filter or exposure time lacks complete
+    calibration; they are reduced only for forced units or with
+    ``settings.reduce_incomplete``.
+    """
+    rows = [lookup[f] for f in unit.get("lights", []) if f in lookup]
+    if unit.get("forced") or settings.reduce_incomplete:
+        return rows, []
+    blocked_filters = dict(unit.get("blocked_filters") or {})
+    blocked_exptimes = {str(k): v for k, v in dict(unit.get("blocked_exptimes") or {}).items()}
+    keep, skipped = [], []
+    for row in rows:
+        reason = light_block_reason(row, blocked_filters, blocked_exptimes)
+        if reason:
+            skipped.append((str(row["frame_id"]), f"incomplete calibration: {reason}"))
+        else:
+            keep.append(row)
+    return keep, skipped
 
 
 def stage_frames(
@@ -270,8 +309,13 @@ def build_masters(
     masters = dict(plan.get("masters") or {})
     needed: set[str] = set()
     for unit in (plan.get("units") or {}).values():
+        rows, _skipped = reducible_lights(unit, lookup, settings)
+        if not rows:
+            continue
         needed.update(x for x in (unit.get("bias"), unit.get("darks")) if x)
-        needed.update(x for x in dict(unit.get("flats") or {}).values() if x)
+        filters = {filter_name(r) for r in rows}
+        needed.update(mid for filt, mid in dict(unit.get("flats") or {}).items()
+                      if mid and filt in filters)
     for mid in list(needed):
         spec = masters.get(mid, {})
         needed.update(x for x in (spec.get("bias_id"), spec.get("dark_id")) if x)
@@ -293,6 +337,9 @@ def build_masters(
             log(f"Master {mid}: no frames available, skipped.")
             continue
         log(f"Building master {mid} ({kind}, {len(rows)} frames)...")
+        if spec.get("missing"):
+            log(f"{style.Bcolors.WARNING}Master {mid} is incomplete: "
+                f"{'; '.join(spec['missing'])}{style.Bcolors.ENDC}")
         input_dir = mdir / "input"
         stage_frames(rows, input_dir, kind)
         types = _image_type_dir(input_dir, kind)
@@ -325,14 +372,18 @@ def build_masters(
             if rm_bias:
                 _link_into(_master_files(bias_dir, "combined_bias.fit"), mdir)
             _link_into(_master_files(dark_dir, "combined_dark_*.fit"), mdir)
-            reduce_flat(input_dir, mdir, types, gain=camera.gain, read_noise=camera.read_noise,
-                        rm_bias=rm_bias,
-                        exposure_time_tolerance=settings.exposure_time_tolerance,
-                        n_cores_multiprocessing=settings.n_cores_multiprocessing,
-                        storage_dtype=settings.storage_dtype)
-            master_flat(mdir / "flat", mdir, types,
-                        n_cores_multiprocessing=settings.n_cores_multiprocessing,
-                        dtype=settings.dtype, storage_dtype=settings.storage_dtype)
+            longest = max([float(e) for e in spec.get("exptimes") or []] or [0.0])
+            try:
+                reduce_flat(input_dir, mdir, types, gain=camera.gain,
+                            read_noise=camera.read_noise, rm_bias=rm_bias,
+                            exposure_time_tolerance=_tolerance(settings, longest),
+                            n_cores_multiprocessing=settings.n_cores_multiprocessing,
+                            storage_dtype=settings.storage_dtype)
+                master_flat(mdir / "flat", mdir, types,
+                            n_cores_multiprocessing=settings.n_cores_multiprocessing,
+                            dtype=settings.dtype, storage_dtype=settings.storage_dtype)
+            except RuntimeError as exc:
+                log(f"{style.Bcolors.WARNING}Master {mid} failed: {exc}{style.Bcolors.ENDC}")
         shutil.rmtree(input_dir, ignore_errors=True)
         if _master_files(mdir, done_pattern):
             built[mid] = mdir
@@ -376,9 +427,13 @@ def reduce_unit(
         stack_counts = stacked_frame_counts(plan, frames)
     out_dir = Path(out_dir)
     lookup = _frame_lookup(frames)
-    rows = [lookup[f] for f in unit.get("lights", []) if f in lookup]
+    rows, blocked = reducible_lights(unit, lookup, settings)
+    report.skipped.extend(blocked)
+    if blocked:
+        report.notes.append(f"{len(blocked)} light(s) not reduced: incomplete calibration "
+                            "(see the plan; overrides.force_units releases the unit)")
     if not rows:
-        report.notes.append("no light frames")
+        report.notes.append("no light frames to reduce")
         return report
     unit_dir = out_dir / "units" / unit_id
     stage_dir = unit_dir / "input"
@@ -455,7 +510,8 @@ def reduce_unit(
                 "gain": camera.gain,
                 "read_noise": camera.read_noise,
                 "rm_bias": bias is not None,
-                "exposure_time_tolerance": settings.exposure_time_tolerance,
+                "exposure_time_tolerance": _tolerance(
+                    settings, float(header.get("EXPTIME", 0.0) or 0.0)),
                 "add_hot_bad_pixel_mask": settings.add_hot_bad_pixel_mask,
                 "rm_cosmic_rays": resolve_cosmic_ray_removal(
                     settings.rm_cosmic_rays, int(stack_counts.get(str(row["frame_id"]), 0)),

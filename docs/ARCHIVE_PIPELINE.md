@@ -78,18 +78,35 @@ above `pa_tolerance` (0.5°), or when another camera was used at the same
 telescope in between (archive context frames). Unsolved frames between two
 different sessions are left out (`session_id = unknown`).
 
-## Missing darks: archive dark finder
+## Missing darks and bias: archive dark / bias finder
 
-After the download, `fetch_missing_darks` checks every science exposure
-time for darks of the same camera, image size, binning, gain, offset,
-readout mode and temperature (±2 K). For each gap it asks the archive's
-dark finder (`api/runs/dark-finder/`, login required, public runs only)
-and downloads the matching darks of the run closest in time. The dark
+After the download, `fetch_missing_calibrations` checks every science
+exposure time for darks of the same camera, image size, binning, gain,
+offset, readout mode and temperature (±2 K; exposure within
+`max(0.5 s, 5 %)`), and every setup for bias frames. For each gap it asks
+the archive's finder (`api/runs/dark-finder/` with `frame_type` `dark` or
+`bias`, login required, public runs only) and downloads the matching frames
+of the run closest in time. The dark
 finder does not know the readout mode, so runs whose darks were taken in
 another mode are skipped (up to three runs are tried). The fetch report
 lists every gap and its outcome. The grouping prefers covering darks
 within `calibration_window_days` (30) and then takes covering darks from
 farther away (with a note) before it gives up.
+
+## Complete calibration only
+
+`PlanSettings.require_complete` (default) blocks lights whose exposure time
+has no darks (within `max(dark_exptime_tolerance, fraction × t)`, or
+scaling with a bias) or whose filter has no flat of
+`accepted_flat_categories` (certain, likely) for their session — the
+category is the session's own, a shared flat master may be certain for one
+session and rejected for another. Blocked filters / exposure times are
+stored per unit (`status: incomplete`); `reduce_planned` skips those lights
+and the masters only they need. `overrides.force_units` or
+`ReductionSettings.reduce_incomplete` reduce them anyway.
+`missing_calibrations()` / `missing_calibrations.ecsv` lists the dark and
+bias series to take (header values of the setup), the basis of an
+acquisition plan.
 
 ## Flat probability
 

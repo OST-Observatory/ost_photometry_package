@@ -35,8 +35,15 @@ def test_reduce_planned_end_to_end(dataset, tmp_path):  # noqa: F811
     settings = ReductionSettings(rm_cosmic_rays=False, gain=1.0, read_noise=5.0, dark_rate=0.1,
                                  saturation_level=65535.0, n_cores_multiprocessing=2)
     out = tmp_path / "out"
+    # The night-2 unit has only an implausible flat (remount): incomplete,
+    # its 3 lights are not reduced by default.
     reports, table = reduce_planned(data, frames, out, settings, log=lambda *_: None)
+    assert sum(len(r.reduced) for r in reports.values()) == 8
+    skipped = [s for s in table["status"] if s != "reduced"]
+    assert len(skipped) == 3 and all("incomplete calibration" in s for s in skipped)
 
+    settings.reduce_incomplete = True
+    reports, table = reduce_planned(data, frames, out, settings, log=lambda *_: None)
     assert sum(len(r.reduced) for r in reports.values()) == 11
     assert all(s == "reduced" for s in table["status"])
     assert (out / "reduction_report.ecsv").is_file()
@@ -115,7 +122,8 @@ def test_stack_planned_per_target(dataset, tmp_path):  # noqa: F811
     _, report = reduce_planned(
         data, frames, out,
         ReductionSettings(rm_cosmic_rays=False, gain=1.0, read_noise=5.0, dark_rate=0.1,
-                          saturation_level=65535.0, n_cores_multiprocessing=2),
+                          saturation_level=65535.0, n_cores_multiprocessing=2,
+                          reduce_incomplete=True),
         log=lambda *_: None,
     )
     settings = StackSettings(stack_weighting="fwhm", shift_method="wcs",

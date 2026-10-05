@@ -123,7 +123,18 @@ def calibration_sets(frames: Table, kind: str) -> list[CalibrationSet]:
     return list(sets.values())
 
 
-def _covers(darks: CalibrationSet, exptime: float, tolerance: float, bias_ok: bool) -> bool:
+def dark_exptime_tolerance(exptime: float, absolute: float = 0.5, fraction: float = 0.0) -> float:
+    """Allowed dark / light exposure difference: ``max(absolute, fraction * exptime)``.
+
+    A dark of 120 s fits a 123 s light: the extra dark current of a cooled
+    CMOS (~0.003 e-/s) is far below the read noise.
+    """
+    return max(float(absolute), float(fraction) * abs(float(exptime)))
+
+
+def _covers(darks: CalibrationSet, exptime: float, tolerance: float, bias_ok: bool,
+            fraction: float = 0.0) -> bool:
+    tolerance = dark_exptime_tolerance(exptime, tolerance, fraction)
     if any(abs(d - exptime) <= tolerance for d in darks.exptimes):
         return True
     # Dark scaling needs a bias and a longer dark (never scale up).
@@ -135,6 +146,7 @@ def assign_bias_dark(
     frames: Table,
     *,
     exptime_tolerance: float = 0.5,
+    exptime_tolerance_fraction: float = 0.0,
     window_days: float = 30.0,
 ) -> list[DarkAssignment]:
     """Choose bias / dark sets for every (electronic id, night) of ``consumers``.
@@ -175,7 +187,8 @@ def assign_bias_dark(
         def covering(candidates: list[CalibrationSet], exptimes: list[float] = exptimes,
                      bias_ok: bool = bias_ok) -> list[CalibrationSet]:
             return [d for d in candidates
-                    if all(_covers(d, e, exptime_tolerance, bias_ok) for e in exptimes)]
+                    if all(_covers(d, e, exptime_tolerance, bias_ok, exptime_tolerance_fraction)
+                           for e in exptimes)]
 
         full = covering(darks)
         outside = [] if full else covering([d for d in all_darks if d not in darks])
@@ -196,7 +209,8 @@ def assign_bias_dark(
         else:
             result.missing_exptimes = [
                 e for e in exptimes
-                if not _covers(result.darks, e, exptime_tolerance, bias_ok)
+                if not _covers(result.darks, e, exptime_tolerance, bias_ok,
+                               exptime_tolerance_fraction)
             ]
             if result.darks.night != night and not outside:
                 result.notes.append(f"darks from {result.darks.describe()}")
@@ -232,5 +246,6 @@ __all__ = [
     "assign_bias_dark",
     "bias_levels",
     "calibration_sets",
+    "dark_exptime_tolerance",
     "night_of",
 ]

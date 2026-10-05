@@ -69,7 +69,7 @@ class FetchReport:
             for name, count in sorted(self.targets.items(), key=lambda kv: (-kv[1], kv[0])):
                 out.append(f"  {name or '(no name)'}: {count} frames")
         if self.dark_finder:
-            out.append("Dark finder (exposures without matching darks):")
+            out.append("Dark / bias finder (science frames without matching calibration):")
             out.extend(f"  {line}" for line in self.dark_finder)
         for name, reason in self.failures[:20]:
             out.append(f"  failed: {name}: {reason}")
@@ -345,7 +345,7 @@ def download_rows(
 
 @dataclass
 class DarkNeed:
-    """Light frames of one electronic setup and exposure time without darks."""
+    """Light frames of one electronic setup (and exposure time) without darks / bias."""
 
     setup: tuple
     exptime: float
@@ -353,11 +353,13 @@ class DarkNeed:
     jd: float
     example: dict[str, object]
     n_frames: int = 0
+    kind: str = "dark"
 
     def describe(self) -> str:
         camera, nx, ny, xbin, ybin, gain, offset, mode = self.setup
-        return (f"{camera} {nx}x{ny} bin {xbin}x{ybin} gain {gain:g} offset {offset:g} "
-                f"{mode or '?'}, {self.exptime:g} s at {self.temperature:.0f} C "
+        what = f"{self.exptime:g} s darks" if self.kind == "dark" else "bias"
+        return (f"{what}: {camera} {nx}x{ny} bin {xbin}x{ybin} gain {gain:g} "
+                f"offset {offset:g} {mode or '?'} at {self.temperature:.0f} C "
                 f"({self.n_frames} lights)")
 
 
@@ -391,18 +393,37 @@ def _setup_key(row: dict) -> tuple:
     )
 
 
-def _row_is_dark(row: dict) -> bool:
+def _row_is(row: dict, code: str, word: str) -> bool:
     user = _code(row.get("exposure_type_user"))
     if user:
-        return user == DARK
-    return ("dark" in str(row.get("imagetyp") or "").lower()
-            or DARK in {_code(row.get("exposure_type")), _code(row.get("exposure_type_ml"))})
+        return user == code
+    return (word in str(row.get("imagetyp") or "").lower()
+            or code in {_code(row.get("exposure_type")), _code(row.get("exposure_type_ml"))})
+
+
+def _row_is_dark(row: dict) -> bool:
+    return _row_is(row, DARK, "dark")
+
+
+def _row_is_bias(row: dict) -> bool:
+    return _row_is(row, BIAS, "bias")
+
+
+def exposure_tolerance(exptime: float, absolute: float = 0.5, fraction: float = 0.05) -> float:
+    """Dark / light exposure tolerance ``max(absolute, fraction * exptime)``
+    (the same rule as the grouping)."""
+    return max(float(absolute), float(fraction) * abs(float(exptime)))
+
+
+def _same_temperature(a: float, b: float, tolerance: float) -> bool:
+    return not math.isfinite(a) or not math.isfinite(b) or abs(a - b) <= tolerance
 
 
 def dark_needs(
     rows: Sequence[dict[str, object]],
     *,
     exptime_tolerance: float = 0.5,
+    exptime_tolerance_fraction: float = 0.05,
     temp_tolerance: float = 2.0,
 ) -> list[DarkNeed]:
     """Exposure times of the downloaded science frames without a matching dark."""
@@ -415,11 +436,11 @@ def dark_needs(
         if not math.isfinite(exptime):
             continue
         setup = _setup_key(row)
+        tolerance = exposure_tolerance(exptime, exptime_tolerance, exptime_tolerance_fraction)
         covered = any(
             _setup_key(d) == setup
-            and abs(_number(d, "exptime") - exptime) <= exptime_tolerance
-            and (not math.isfinite(temp) or not math.isfinite(_temperature(d))
-                 or abs(_temperature(d) - temp) <= temp_tolerance)
+            and abs(_number(d, "exptime") - exptime) <= tolerance
+            and _same_temperature(temp, _temperature(d), temp_tolerance)
             for d in darks
         )
         if covered:
@@ -432,41 +453,76 @@ def dark_needs(
     return list(needs.values())
 
 
-def fetch_missing_darks(
+def bias_needs(
+    rows: Sequence[dict[str, object]],
+    *,
+    temp_tolerance: float = 2.0,
+) -> list[DarkNeed]:
+    """Setups of the downloaded science frames without any bias frame."""
+    biases = [r for r in rows if r.get("local_path") and _row_is_bias(r)]
+    needs: dict[tuple, DarkNeed] = {}
+    for row in rows:
+        if row.get("role") != ROLE_TARGET or not row.get("local_path"):
+            continue
+        setup, temp = _setup_key(row), _temperature(row)
+        if any(_setup_key(b) == setup and _same_temperature(temp, _temperature(b), temp_tolerance)
+               for b in biases):
+            continue
+        key = (setup, round(temp) if math.isfinite(temp) else None)
+        need = needs.get(key)
+        if need is None:
+            need = needs[key] = DarkNeed(setup, 0.0, temp, _number(row, "jd"), dict(row),
+                                         kind="bias")
+        need.n_frames += 1
+    return list(needs.values())
+
+
+def fetch_missing_calibrations(
     client: ArchiveClient,
     rows: list[dict[str, object]],
     cache: FileCache,
     *,
     report: FetchReport,
+    kinds: Sequence[str] = ("dark", "bias"),
     exptime_tolerance: float = 0.5,
+    exptime_tolerance_fraction: float = 0.05,
     temp_tolerance: float = 2.0,
     max_runs: int = 3,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> None:
-    """Add darks for science exposures that have none, via the dark finder.
+    """Add darks / bias for science frames that have none, via the dark finder.
 
-    For every uncovered setup the matching darks of the run closest in time
-    are downloaded (``role=calibration``); a run whose darks were taken in
-    another readout mode (not known to the dark finder) is skipped and the
-    next one tried, up to ``max_runs``.
+    For every uncovered setup (darks: and exposure time) the matching
+    frames of the run closest in time are downloaded (``role=calibration``);
+    a run whose frames were taken in another readout mode (not known to the
+    finder) is skipped and the next one tried, up to ``max_runs``.
     """
-    needs = dark_needs(rows, exptime_tolerance=exptime_tolerance, temp_tolerance=temp_tolerance)
+    needs: list[DarkNeed] = []
+    if "dark" in kinds:
+        needs += dark_needs(rows, exptime_tolerance=exptime_tolerance,
+                            exptime_tolerance_fraction=exptime_tolerance_fraction,
+                            temp_tolerance=temp_tolerance)
+    if "bias" in kinds:
+        needs += bias_needs(rows, temp_tolerance=temp_tolerance)
     if not needs:
         return
     if not client.authenticated:
         for need in needs:
-            report.dark_finder.append(f"{need.describe()}: not searched (dark finder needs "
-                                      "an archive login)")
+            report.dark_finder.append(f"{need.describe()}: not searched (the dark finder "
+                                      "needs an archive login)")
         return
     known = {int(r["pk"]) for r in rows if r.get("pk") not in (None, "", -1)}
     for need in needs:
         camera, nx, ny, xbin, ybin, gain, offset, mode = need.setup
+        temperature = need.temperature if math.isfinite(need.temperature) else _number(
+            need.example, "ccd_temp")
         try:
-            found = client.find_darks(
-                exptime=need.exptime, ccd_temp=need.temperature if math.isfinite(
-                    need.temperature) else _number(need.example, "ccd_temp"),
-                instrument=camera, naxis1=nx, naxis2=ny, binning_x=xbin, binning_y=ybin,
-                gain=gain, offset=offset, exptime_tolerance=exptime_tolerance,
+            found = client.find_calibration_frames(
+                need.kind, exptime=need.exptime if need.kind == "dark" else None,
+                ccd_temp=temperature, instrument=camera, naxis1=nx, naxis2=ny,
+                binning_x=xbin, binning_y=ybin, gain=gain, offset=offset,
+                exptime_tolerance=exposure_tolerance(need.exptime, exptime_tolerance,
+                                                     exptime_tolerance_fraction),
                 temp_tolerance=temp_tolerance,
             )
         except ArchiveError as exc:
@@ -490,7 +546,6 @@ def fetch_missing_darks(
                 return math.inf
             return min(abs(j - jd) for j in jds)
 
-        added = False
         for run_id in sorted(by_run, key=distance)[:max_runs]:
             ids = {int(i["id"]) for i in by_run[run_id]}
             records = [r for r in client.datafiles(run_pk=run_id) if int(r.get("pk", -1)) in ids]
@@ -504,16 +559,21 @@ def fetch_missing_darks(
                 known.update(int(r["pk"]) for r in usable)
                 report.n_calibration += len(usable)
                 report.dark_finder.append(
-                    f"{need.describe()}: {len(usable)} darks from run {run_name} "
+                    f"{need.describe()}: {len(usable)} frames from run {run_name} "
                     f"({distance(run_id):.0f} days away)"
                 )
-                added = True
                 break
             report.dark_finder.append(
-                f"{need.describe()}: darks of run {run_name} skipped (other readout mode)"
+                f"{need.describe()}: frames of run {run_name} skipped (other readout mode)"
             )
-        if not added and not by_run:
-            report.dark_finder.append(f"{need.describe()}: no matching darks in the archive")
+        if not by_run:
+            report.dark_finder.append(f"{need.describe()}: no matching frames in the archive")
+
+
+def fetch_missing_darks(client: ArchiveClient, rows: list[dict[str, object]], cache: FileCache,
+                        **kwargs) -> None:
+    """Darks only, see :func:`fetch_missing_calibrations`."""
+    fetch_missing_calibrations(client, rows, cache, kinds=("dark",), **kwargs)
 
 
 def fetch_dataset(
@@ -526,6 +586,9 @@ def fetch_dataset(
     cache_dir: str | Path,
     download_context: bool = False,
     use_dark_finder: bool = True,
+    finder_kinds: Sequence[str] = ("dark", "bias"),
+    exptime_tolerance: float = 0.5,
+    exptime_tolerance_fraction: float = 0.05,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[Table, FetchReport]:
     """Collect, download and describe the frames of an object or a run.
@@ -533,8 +596,10 @@ def fetch_dataset(
     Returns the manifest (see :mod:`ost_photometry.archive.manifest`) and a
     :class:`FetchReport`. Context frames are downloaded only with
     ``download_context=True``. With ``use_dark_finder`` (needs a login),
-    science exposures without matching darks in the calibration window get
-    darks from the archive's dark finder (:func:`fetch_missing_darks`).
+    science exposures without matching darks (or setups without bias) in the
+    calibration window get them from the archive's dark finder
+    (:func:`fetch_missing_calibrations`; ``finder_kinds``). Darks match
+    within ``max(exptime_tolerance, exptime_tolerance_fraction * t)``.
     """
     report = FetchReport()
     rows = collect_records(
@@ -552,7 +617,11 @@ def fetch_dataset(
     cache = FileCache(cache_dir)
     download_rows(client, rows, cache, roles=roles, report=report, progress=progress)
     if use_dark_finder:
-        fetch_missing_darks(client, rows, cache, report=report, progress=progress)
+        fetch_missing_calibrations(
+            client, rows, cache, report=report, kinds=finder_kinds,
+            exptime_tolerance=exptime_tolerance,
+            exptime_tolerance_fraction=exptime_tolerance_fraction, progress=progress,
+        )
     return manifest_from_rows(rows), report
 
 
@@ -560,7 +629,10 @@ __all__ = [
     "DarkNeed",
     "FetchReport",
     "collect_records",
+    "bias_needs",
     "dark_needs",
+    "exposure_tolerance",
+    "fetch_missing_calibrations",
     "download_rows",
     "fetch_dataset",
     "fetch_missing_darks",

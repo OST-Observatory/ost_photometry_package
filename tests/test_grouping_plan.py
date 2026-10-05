@@ -331,6 +331,10 @@ def test_build_calibration_plan_end_to_end(dataset, tmp_path):
     u2 = next(u for u in plan.units if u is not u1)
     assert u2.dark_id and not u2.bias_id  # offset 2: own darks, no bias
     assert any("flat" in n for n in u2.notes)  # night-1 flat is unlikely after the remount
+    # The shared flat master is 'likely' for night 1 but not for night 2.
+    assert u1.status == "ready" and u2.status == "incomplete"
+    assert "only rejected for this session" in u2.blocked_filters["V"]
+    assert any("INCOMPLETE: 3 of 3 lights" in line for line in plan.report)
 
     plan_path = write_plan(plan, tmp_path / "calibration_plan.yaml")
     write_frames(plan, tmp_path / "calibration_groups.ecsv")
@@ -374,3 +378,47 @@ def test_timeline_plots_are_written(dataset, tmp_path):
     assert len(paths) == 2
     assert all(p.is_file() and p.stat().st_size > 1000 for p in paths)
     assert paths[0].parent == tmp_path / "out" / "diagnostics" / "calibration_groups"
+
+
+def test_incomplete_calibration_force_units_and_missing_list(dataset, tmp_path):
+    from ost_photometry.reduce.grouping.plan import missing_calibrations
+
+    manifest = manifest_from_directory(dataset)
+    darks_60 = [str(f) for f, n in zip(manifest["frame_id"], manifest["file_name"], strict=True)
+                if n in {"d0.fit", "d1.fit", "d2.fit"}]
+    plan = build_calibration_plan(manifest, work_dir=tmp_path / "w", solver=PlanSolver(),
+                                  overrides=Overrides(exclude_frames=darks_60),
+                                  log=lambda *_: None)
+    u1 = next(u for u in plan.units if u.session_id.startswith("S20220308"))
+    # 60 s lights: only 5 s darks remain, which are never scaled up.
+    assert u1.status == "incomplete" and "60" in u1.blocked_exptimes
+    missing = missing_calibrations(plan)
+    row = missing[(missing["kind"] == "dark") & (missing["exptime"] == 60.0)][0]
+    assert row["required"] and u1.unit_id in row["needed_for"] and row["n_frames"] == 20
+    assert row["binning"] == "3x3" and row["readout_mode"] and row["camera"]
+
+    forced = build_calibration_plan(
+        manifest, work_dir=tmp_path / "w", solver=PlanSolver(),
+        overrides=Overrides(exclude_frames=darks_60, force_units=[u1.unit_id]),
+        log=lambda *_: None)
+    f1 = next(u for u in forced.units if u.unit_id == u1.unit_id)
+    assert f1.forced and f1.status == "forced"
+
+    relaxed = build_calibration_plan(
+        manifest, work_dir=tmp_path / "w", solver=PlanSolver(),
+        settings=PlanSettings(require_complete=False), log=lambda *_: None)
+    assert all(u.status == "ready" for u in relaxed.units)
+
+
+def test_dark_exposure_tolerance_is_relative():
+    from ost_photometry.reduce.grouping.darks import dark_exptime_tolerance
+
+    frames = _with_types([_calib_row(2, "dark", JD_NIGHT1, 120.0)])
+    consumers = _with_types([_calib_row(10, "light", JD_NIGHT1 + 0.2, 123.0)])
+    (strict,) = assign_bias_dark(consumers, frames)
+    assert strict.missing_exptimes == [123.0]
+    (relative,) = assign_bias_dark(consumers, frames, exptime_tolerance_fraction=0.05)
+    assert relative.missing_exptimes == []
+    assert dark_exptime_tolerance(123.0, 0.5, 0.05) == pytest.approx(6.15)
+    assert dark_exptime_tolerance(2.0, 0.5, 0.05) == 0.5
+
