@@ -717,6 +717,7 @@ def astro_align(
             preserve_range=True,
         )
 
+    outside_field = footprint_mask.copy()
     warped_mask = resample_mask(source_mask, _warp_nearest)
     if warped_mask is not None:
         footprint_mask |= warped_mask
@@ -734,6 +735,7 @@ def astro_align(
     warn_if_mask_too_large(
         footprint_mask,
         label="astroalign registration",
+        footprint=outside_field,
     )
     return new_ccd, transformation_coefficients
 

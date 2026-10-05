@@ -95,6 +95,28 @@ def test_warn_if_mask_too_large_only_when_interior_exceeds_limit(monkeypatch):
     assert messages[0][1] == "WARNING"
 
 
+def test_warn_if_mask_too_large_separates_the_footprint(monkeypatch):
+    messages = []
+    monkeypatch.setattr(
+        "ost_photometry.core.pixel_masks.terminal_output.print_to_terminal",
+        lambda string, indent=1, style_name="BOLD": messages.append((string, style_name)),
+    )
+    mask = np.zeros((100, 100), dtype=bool)
+    footprint = np.zeros_like(mask)
+    footprint[:, :40] = True  # frame shifted by 40 % (e.g. after a meridian flip)
+    mask |= footprint
+    frac = warn_if_mask_too_large(mask, label="flip", footprint=footprint)
+    assert frac == 0.0
+    assert len(messages) == 1 and messages[0][1] != "WARNING"
+    assert "not covered by this frame" in messages[0][0]
+
+    messages.clear()
+    mask[60:80, 40:100] = True  # defects inside the covered field
+    frac = warn_if_mask_too_large(mask, label="flip", footprint=footprint, limit=0.10)
+    assert frac == pytest.approx((20 * 40) / (60 * 40), rel=0.01)  # interior 60x60
+    assert messages[-1][1] == "WARNING" and "inside the frame's field" in messages[-1][0]
+
+
 def test_aperture_masked_fraction():
     pytest.importorskip("photutils")
     from photutils.aperture import CircularAperture

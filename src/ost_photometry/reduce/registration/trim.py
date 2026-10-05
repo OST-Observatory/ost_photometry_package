@@ -216,6 +216,8 @@ def trim_image(
         warn_if_mask_too_large(
             getattr(image, "mask", None),
             label=f"aa shift image {image_id}",
+            footprint=shift_scipy(np.zeros(np.shape(image.data)), shift=shift_vector,
+                                  order=0, cval=1.0) > 0.5,
         )
         if aa_trim_margins is None:
             aa_trim_margins = aa_common_trim_margins(image_shift)

@@ -268,6 +268,7 @@ def apply_wcs_align(
     warn_if_mask_too_large(
         getattr(output_image, "mask", None),
         label=f"WCS align {current_path.name}",
+        footprint=~np.isfinite(np.asarray(output_image.data, dtype=float)),
     )
 
     file_name = current_path.name

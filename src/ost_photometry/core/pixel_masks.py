@@ -145,25 +145,50 @@ def warn_if_mask_too_large(
     mask: np.ndarray | None,
     *,
     label: str,
+    footprint: np.ndarray | None = None,
     limit: float = 0.10,
     border_px: int = 20,
     indent: int = 2,
 ) -> float | None:
-    """Log a warning when the interior mask exceeds ``limit`` (default 10 %).
+    """Warn when too much of the frame's own field is masked (default > 10 %).
 
     A grown mask (every ``data < 0`` pixel plus bilinear resampling) punched
-    holes into apertures and inflated the instrumental scatter. Edge-only
-    footprints from registration are excluded via ``border_px``.
+    holes into apertures and inflated the instrumental scatter. ``footprint``
+    marks pixels of the output grid this frame does not cover (alignment
+    onto a reference with a pointing offset, dither or meridian flip); they
+    are counted separately and reported as a note, not as defects. The outer
+    ``border_px`` are ignored. Returns the masked fraction inside the field.
     """
-    frac = interior_mask_fraction(mask, border_px=border_px)
-    if frac is None or frac <= float(limit):
+    if mask is None:
+        return None
+    values = np.asarray(mask, dtype=bool)
+    outside = (np.zeros_like(values) if footprint is None
+               else np.asarray(footprint, dtype=bool).reshape(values.shape))
+    border = max(int(border_px), 0)
+    if values.ndim == 2 and min(values.shape) > 2 * border and border:
+        values = values[border:-border, border:-border]
+        outside = outside[border:-border, border:-border]
+    if values.size == 0:
+        return None
+    inside = ~outside
+    n_inside = int(inside.sum())
+    frac = float((values & inside).sum() / n_inside) if n_inside else 1.0
+    outside_frac = float(outside.mean())
+    if outside_frac > float(limit):
+        terminal_output.print_to_terminal(
+            f"{label}: {outside_frac:.1%} of the reference field is not covered by "
+            "this frame (pointing offset, dither or meridian flip); only the "
+            "overlap contributes to the stack.",
+            indent=indent,
+        )
+    if frac <= float(limit):
         return frac
     terminal_output.print_to_terminal(
-        f"WARNING: {label}: {frac:.1%} of interior pixels are masked "
-        f"(limit {float(limit):.0%}). Aperture photometry will drop a "
+        f"WARNING: {label}: {frac:.1%} of the pixels inside the frame's field are "
+        f"masked (limit {float(limit):.0%}). Aperture photometry will drop a "
         "changing set of pixels from each star. Typical causes: masking "
-        "every negative pixel after dark subtraction, or bilinear "
-        "resampling of the mask during alignment.",
+        "every negative pixel after dark subtraction, bilinear resampling of "
+        "the mask during alignment, or a flat / dark mask flagging large areas.",
         style_name="WARNING",
         indent=indent,
     )

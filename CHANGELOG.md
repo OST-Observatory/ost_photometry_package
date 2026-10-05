@@ -131,6 +131,11 @@ section of this file.
   noise for cosmic rays (13 % of an Hα frame masked, sky 12 % too low). The
   catalog read noise is now scaled with `sqrt(xbin * ybin)` for digitally
   binning cameras.
+- The mask warning after alignment counted the part of the reference field
+  a frame does not cover (pointing offset, dither, meridian flip) as masked
+  pixels (e.g. "21.5 % of interior pixels are masked"). It now warns only
+  about masked pixels inside the frame's own field and reports large
+  offsets as a note.
 - **Weighted average stacks** (`stack_weighting != "none"` with
   `stack_method="average"`, and the camera combination) were too dark
   wherever some frames were masked or clipped: ccdproc divides by the
