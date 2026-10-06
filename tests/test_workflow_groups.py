@@ -153,17 +153,38 @@ def test_stack_planned_per_target(dataset, tmp_path):  # noqa: F811
     assert fits.getheader(m57["path"])["N-IMAGES"] == 4
     assert (out / "stacks" / "summary.ecsv").is_file()
 
-    # Restrict to one target; by default the reduced frames of the aligned
-    # (kept) frames are removed, those of the other target stay.
+    # Re-stack from the registered frames with a tighter selection.
     from dataclasses import replace
 
+    from ost_photometry.reduce.workflow.combine import restack_planned
+
+    tight = replace(settings, frame_selection={"best_fraction": 0.5, "min_frames": 1},
+                    stack_weighting="none", camera_combination="separate")
+    restacked = restack_planned(data, out, tmp_path / "restack", tight, targets=["m104"],
+                                log=lambda *_: None)
+    (row,) = list(restacked)
+    assert 1 <= row["n_images"] < 7 and Path(row["path"]).is_file()
+    assert (tmp_path / "restack" / "summary.ecsv").is_file()
+    assert (Path(row["path"]).parents[1] / "frame_quality.ecsv").is_file()
+
+    # Restrict to one target with a selection that rejects frames, but
+    # register them anyway (align_rejected): a looser re-stack brings them
+    # back. By default the reduced frames of the registered frames are
+    # removed, those of the other target stay.
     only = stack_planned(data, frames, report, tmp_path / "out2",
-                         replace(settings, keep_reduced_lights=False), targets=["m57"],
-                         log=lambda *_: None)
+                         replace(settings, keep_reduced_lights=False, align_rejected=True,
+                                 frame_selection={"best_fraction": 0.5, "min_frames": 1}),
+                         targets=["m57"], log=lambda *_: None)
     assert {str(n).lower() for n in only["target_name"]} == {"m57"}
+    m57_only = [r for r in only if r["camera"] != "combined"][0]
+    assert m57_only["n_images"] < 4
     target_of = {str(r["frame_id"]): str(r["target_name"]).lower() for r in frames}
     for fid, path in zip(report["frame_id"], report["reduced_path"], strict=True):
         assert Path(path).is_file() == (target_of[str(fid)] != "m57")
+    loose = replace(settings, frame_selection=None, camera_combination="separate")
+    (row,) = list(restack_planned(data, tmp_path / "out2", tmp_path / "restack2", loose,
+                                  targets=["m57"], log=lambda *_: None))
+    assert row["n_images"] == 4
 
 
 def test_combine_camera_stacks_noise_weighting(tmp_path):

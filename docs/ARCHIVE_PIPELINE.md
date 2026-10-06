@@ -58,7 +58,7 @@ Orientation = position angle of the image +y axis, north through east
 | `reduce.grouping.plan` | orchestration, masters, reduction units, YAML plan with overrides |
 | `reduce.grouping.plots` | timeline per telescope and night (`diagnostics/calibration_groups/`) |
 | `reduce.workflow.groups` | masters per group, lights per unit with explicit masters and pixel masks |
-| `reduce.workflow.combine` | per target: quality selection, one grid, weighted stack per camera and filter, optional camera combination |
+| `reduce.workflow.combine` | per target: quality selection, one grid, weighted stack per camera and filter, optional camera combination; `restack_planned` re-stacks the registered frames with another selection / weighting (`align_rejected` keeps rejected frames registered for that) |
 
 ## Grouping levels
 

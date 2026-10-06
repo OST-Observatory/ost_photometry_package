@@ -88,6 +88,12 @@ section of this file.
   (`ArchiveClient.find_calibration_frames`, `fetch_missing_calibrations`);
   dark / light exposure tolerance `max(0.5 s, 5 %)` in fetch, grouping and
   reduction.
+- Archive pipeline: `reduce.workflow.combine.restack_planned` /
+  `restack_target` (script `4_restack.py`) re-stack registered frames with
+  another selection / weighting; `StackSettings.align_rejected` registers
+  rejected frames too so the selection can be loosened later.
+  `3_reduce_and_stack.py` has the full frame-quality parameter block of the
+  imaging script.
 - Header keywords `RDNOISE` / `SATLEVEL` (electrons for the image times
   `EXPTIME`) on reduced frames, stacks and camera combinations; sigma-clipped
   stacks of at least three frames are marked `CRIDENT` / `CRCLIP`.

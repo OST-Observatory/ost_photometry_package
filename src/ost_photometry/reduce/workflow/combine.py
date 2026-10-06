@@ -38,6 +38,8 @@ from ..frame_selection import (
     mark_selection,
     merge_alignment_result,
     rank_frames,
+    read_quality_table,
+    set_string_column,
     stack_weights,
     write_quality_table,
 )
@@ -67,6 +69,9 @@ class StackSettings:
     wcs_method: str = "astap"
     camera_combination: str = "separate"
     keep_aligned_lights: bool = True
+    #: Also register frames the selection rejects (they are not stacked), so
+    #: that a later re-stack (:func:`restack_planned`) can loosen the selection
+    align_rejected: bool = False
     #: With ``keep_aligned_lights``: False deletes the reduced frame (in
     #: ``reduced/<unit>/``) of every aligned frame, so each is stored once.
     keep_reduced_lights: bool = False
@@ -173,72 +178,24 @@ def combine_camera_stacks(
     return out_path
 
 
-def stack_target(
-    target_id: str,
-    info: Mapping[str, object],
-    frames: Table,
-    reduced_paths: Mapping[str, str],
-    out_dir: str | Path,
-    settings: StackSettings,
+def stack_aligned_frames(
+    quality_table: Table,
+    aligned_dir: str | Path,
+    stack_dir: str | Path,
     *,
+    name: str,
+    target_id: str,
+    settings: StackSettings,
     log: Callable[[str], None] = print,
 ) -> list[dict[str, object]]:
-    """Select, register and stack all reduced lights of one target."""
-    name = str(info.get("name") or target_id)
-    target_dir = Path(out_dir) / "stacks" / safe_name(name)
-    light_dir = target_dir / "light"
-    if light_dir.exists():
-        shutil.rmtree(light_dir)
-    light_dir.mkdir(parents=True)
+    """Stack the kept, aligned frames of one target per camera and filter.
 
-    file_rows: dict[str, dict] = {}
-    originals: dict[str, Path] = {}
-    for row in frames:
-        row = dict(zip(frames.colnames, row, strict=True))
-        if str(row.get("target_id")) != target_id:
-            continue
-        path = reduced_paths.get(str(row["frame_id"]))
-        if not path or not Path(path).is_file():
-            continue
-        link = light_dir / Path(path).name
-        link.symlink_to(Path(path).resolve())
-        file_rows[link.name] = row
-        originals[link.name] = Path(path).resolve()
-    if not file_rows:
-        log(f"Target {name}: no reduced frames.")
-        return []
-
-    quality_table = measure_directory_quality(
-        light_dir, image_type_list=LIGHT_TYPES,
-        n_cores_multiprocessing=settings.n_cores_multiprocessing,
-    )
-    quality_table["camera"] = np.array(
-        [camera_id(file_rows.get(str(f), {})) for f in quality_table["file"]], dtype=str
-    )
-    group_columns = ("camera", "filter")
-    write_quality_to_headers(quality_table, light_dir)
-    selection = FrameSelection.from_mapping(settings.frame_selection)
-    mark_selection(quality_table, selection, group_columns=group_columns)
-    reference = _reference_file(quality_table)
-    mark_reference_frames(quality_table, {GLOBAL_REFERENCE_KEY: reference} if reference else {})
-    move_rejected_frames(quality_table, light_dir, target_dir / "rejected_lights")
-    quality_table["stack_weight"] = stack_weights(
-        quality_table, settings.stack_weighting, group_columns=group_columns
-    )
-    write_weights_to_headers(quality_table, light_dir)
-
-    result = registration.align_images(
-        light_dir, target_dir, LIGHT_TYPES, shift_method=settings.shift_method,
-        n_cores_multiprocessing=settings.n_cores_multiprocessing,
-        image_output_directory="aligned_lights", align_filter_wise=False,
-        reference_file_names={GLOBAL_REFERENCE_KEY: reference} if reference else None,
-        wcs_method=settings.wcs_method, instrument=None,
-    )
-    merge_alignment_result(quality_table, result)
-    write_quality_table(quality_table, target_dir / "frame_quality.ecsv")
-    plot_frame_quality(quality_table, target_dir, selection=selection, blocking=True)
-
-    aligned_dir = target_dir / "aligned_lights"
+    ``quality_table`` needs ``file``, ``filter``, ``camera``, ``rejected``,
+    ``aligned`` and ``stack_weight``. Writes
+    ``<stack_dir>/<camera>/combined_filter_<F>.fit`` (and the camera
+    combination) and returns the summary rows.
+    """
+    aligned_dir, target_dir = Path(aligned_dir), Path(stack_dir)
     summary: list[dict[str, object]] = []
     camera_stacks: dict[str, list[tuple[str, Path]]] = {}
     kept = ~np.asarray(quality_table["rejected"], dtype=bool)
@@ -302,6 +259,78 @@ def stack_target(
                 "exposure_s": float(header.get("EXPTIME", float("nan"))),
                 "fwhm_median_px": float("nan"), "path": str(out_path),
             })
+    return summary
+
+
+def stack_target(
+    target_id: str,
+    info: Mapping[str, object],
+    frames: Table,
+    reduced_paths: Mapping[str, str],
+    out_dir: str | Path,
+    settings: StackSettings,
+    *,
+    log: Callable[[str], None] = print,
+) -> list[dict[str, object]]:
+    """Select, register and stack all reduced lights of one target."""
+    name = str(info.get("name") or target_id)
+    target_dir = Path(out_dir) / "stacks" / safe_name(name)
+    light_dir = target_dir / "light"
+    if light_dir.exists():
+        shutil.rmtree(light_dir)
+    light_dir.mkdir(parents=True)
+
+    file_rows: dict[str, dict] = {}
+    originals: dict[str, Path] = {}
+    for row in frames:
+        row = dict(zip(frames.colnames, row, strict=True))
+        if str(row.get("target_id")) != target_id:
+            continue
+        path = reduced_paths.get(str(row["frame_id"]))
+        if not path or not Path(path).is_file():
+            continue
+        link = light_dir / Path(path).name
+        link.symlink_to(Path(path).resolve())
+        file_rows[link.name] = row
+        originals[link.name] = Path(path).resolve()
+    if not file_rows:
+        log(f"Target {name}: no reduced frames.")
+        return []
+
+    quality_table = measure_directory_quality(
+        light_dir, image_type_list=LIGHT_TYPES,
+        n_cores_multiprocessing=settings.n_cores_multiprocessing,
+    )
+    quality_table["camera"] = np.array(
+        [camera_id(file_rows.get(str(f), {})) for f in quality_table["file"]], dtype=str
+    )
+    group_columns = ("camera", "filter")
+    write_quality_to_headers(quality_table, light_dir)
+    selection = FrameSelection.from_mapping(settings.frame_selection)
+    mark_selection(quality_table, selection, group_columns=group_columns)
+    reference = _reference_file(quality_table)
+    mark_reference_frames(quality_table, {GLOBAL_REFERENCE_KEY: reference} if reference else {})
+    if not settings.align_rejected:
+        move_rejected_frames(quality_table, light_dir, target_dir / "rejected_lights")
+    quality_table["stack_weight"] = stack_weights(
+        quality_table, settings.stack_weighting, group_columns=group_columns
+    )
+    write_weights_to_headers(quality_table, light_dir)
+
+    result = registration.align_images(
+        light_dir, target_dir, LIGHT_TYPES, shift_method=settings.shift_method,
+        n_cores_multiprocessing=settings.n_cores_multiprocessing,
+        image_output_directory="aligned_lights", align_filter_wise=False,
+        reference_file_names={GLOBAL_REFERENCE_KEY: reference} if reference else None,
+        wcs_method=settings.wcs_method, instrument=None,
+    )
+    merge_alignment_result(quality_table, result)
+    write_quality_table(quality_table, target_dir / "frame_quality.ecsv")
+    plot_frame_quality(quality_table, target_dir, selection=selection, blocking=True)
+
+    aligned_dir = target_dir / "aligned_lights"
+    summary = stack_aligned_frames(quality_table, aligned_dir, target_dir, name=name,
+                                   target_id=target_id, settings=settings, log=log)
     if not settings.keep_aligned_lights:
         shutil.rmtree(aligned_dir, ignore_errors=True)
     elif not settings.keep_reduced_lights:
@@ -337,20 +366,103 @@ def stack_planned(
     rows: list[dict[str, object]] = []
     for target_id, info in _selected_targets(plan, targets):
         rows.extend(stack_target(target_id, info, frames, reduced, out_dir, settings, log=log))
+    return _write_summary(rows, Path(out_dir) / "stacks" / "summary.ecsv")
+
+
+def _write_summary(rows: Sequence[Mapping[str, object]], path: Path) -> Table:
     names = ("target_id", "target_name", "camera", "filter", "n_images", "exposure_s",
              "fwhm_median_px", "path")
     summary = Table(rows=[[r[n] for n in names] for r in rows], names=names) if rows else Table(
         names=names, dtype=(str, str, str, str, int, float, float, str))
-    path = Path(out_dir) / "stacks" / "summary.ecsv"
     path.parent.mkdir(parents=True, exist_ok=True)
     summary.write(path, format="ascii.ecsv", overwrite=True)
     return summary
+
+
+def restack_target(
+    target_id: str,
+    info: Mapping[str, object],
+    out_dir: str | Path,
+    restack_dir: str | Path,
+    settings: StackSettings,
+    *,
+    log: Callable[[str], None] = print,
+) -> list[dict[str, object]]:
+    """Re-stack the registered frames of one target with a new selection / weighting.
+
+    Reads ``<out>/stacks/<target>/frame_quality.ecsv`` and the frames in
+    ``aligned_lights/`` (kept by :func:`stack_target` with
+    ``keep_aligned_lights``); writes stacks, quality table and QC plots to
+    ``<restack_dir>/<target>/``. Nothing is registered again, and frames are
+    only excluded, never moved. Frames rejected in step 3 are available only
+    if they were registered then (``align_rejected``).
+    """
+    name = str(info.get("name") or target_id)
+    target_dir = Path(out_dir) / "stacks" / safe_name(name)
+    aligned_dir = target_dir / "aligned_lights"
+    table_path = target_dir / "frame_quality.ecsv"
+    if not table_path.is_file() or not aligned_dir.is_dir():
+        log(f"Target {name}: no {table_path.name} / aligned_lights in {target_dir} "
+            "(run the stacking with keep_aligned_lights first), skipped.")
+        return []
+    table = read_quality_table(table_path)
+    present = {p.name for p in aligned_dir.iterdir() if p.is_file()}
+    table = table[np.array([str(f) in present for f in table["file"]], dtype=bool)]
+    if len(table) == 0:
+        log(f"Target {name}: no registered frames in {aligned_dir}, skipped.")
+        return []
+    if "camera" not in table.colnames:
+        table["camera"] = np.array(["camera"] * len(table), dtype=str)
+    group_columns = ("camera", "filter")
+    table["rejected"] = np.zeros(len(table), dtype=bool)
+    set_string_column(table, "reject_reason", [""] * len(table))
+    table["aligned"] = np.ones(len(table), dtype=bool)
+    selection = FrameSelection.from_mapping(settings.frame_selection)
+    mark_selection(table, selection, group_columns=group_columns)
+    table["stack_weight"] = stack_weights(table, settings.stack_weighting,
+                                          group_columns=group_columns)
+    new_dir = Path(restack_dir) / safe_name(name)
+    write_quality_table(table, new_dir / "frame_quality.ecsv")
+    plot_frame_quality(table, new_dir, selection=selection, blocking=True)
+    n_kept = int(np.count_nonzero(~np.asarray(table["rejected"], dtype=bool)))
+    log(f"Target {name}: {n_kept} of {len(table)} registered frames kept "
+        f"({selection.describe()}; weighting {settings.stack_weighting})")
+    rows = stack_aligned_frames(table, aligned_dir, new_dir, name=name, target_id=target_id,
+                                settings=settings, log=log)
+    log(f"Target {name}: {len(rows)} stack(s) written to {new_dir}")
+    return rows
+
+
+def restack_planned(
+    plan: Mapping,
+    out_dir: str | Path,
+    restack_dir: str | Path,
+    settings: StackSettings | None = None,
+    *,
+    targets: Sequence[str] | None = None,
+    log: Callable[[str], None] = print,
+) -> Table:
+    """Re-stack every target of the plan from its registered frames.
+
+    Writes ``<restack_dir>/<target>/...`` and ``<restack_dir>/summary.ecsv``
+    (also returned). See :func:`restack_target`.
+    """
+    settings = settings or StackSettings()
+    if settings.camera_combination not in CAMERA_COMBINATIONS:
+        raise ValueError(f"camera_combination must be one of {CAMERA_COMBINATIONS}")
+    rows: list[dict[str, object]] = []
+    for target_id, info in _selected_targets(plan, targets):
+        rows.extend(restack_target(target_id, info, out_dir, restack_dir, settings, log=log))
+    return _write_summary(rows, Path(restack_dir) / "summary.ecsv")
 
 
 __all__ = [
     "CAMERA_COMBINATIONS",
     "StackSettings",
     "combine_camera_stacks",
+    "restack_planned",
+    "restack_target",
+    "stack_aligned_frames",
     "stack_planned",
     "stack_target",
 ]
