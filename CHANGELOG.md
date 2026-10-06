@@ -94,6 +94,10 @@ section of this file.
   rejected frames too so the selection can be loosened later.
   `3_reduce_and_stack.py` has the full frame-quality parameter block of the
   imaging script.
+- `ArchiveClient(log=)` reports retries (timeouts, HTTP 429 / 5xx with the
+  wait time) and `fetch_dataset(log=)` / `collect_records(log=)` each query
+  step; `1_fetch.py` prints both, so slow archive answers no longer look
+  like a hang.
 - Header keywords `RDNOISE` / `SATLEVEL` (electrons for the image times
   `EXPTIME`) on reduced frames, stacks and camera combinations; sigma-clipped
   stacks of at least three frames are marked `CRIDENT` / `CRCLIP`.

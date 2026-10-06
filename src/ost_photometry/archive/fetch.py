@@ -232,11 +232,16 @@ def collect_records(
     targets: Sequence[str] | None = None,
     calib_window_days: float = 7.0,
     report: FetchReport | None = None,
+    log: Callable[[str], None] | None = None,
 ) -> list[dict[str, object]]:
-    """Manifest rows (no downloads yet) for an object or a run request."""
+    """Manifest rows (no downloads yet) for an object or a run request.
+
+    ``log`` receives one line per archive query step.
+    """
     if bool(object_name) == bool(run_name):
         raise ValueError("Give exactly one of object_name or run_name.")
     report = report if report is not None else FetchReport()
+    say = log or (lambda _text: None)
     rows: dict[int, dict[str, object]] = {}
 
     def add(record: dict, role: str) -> None:
@@ -249,6 +254,7 @@ def collect_records(
             rows[pk] = record_to_row(record, role=role)
 
     def add_run_files(run: dict, *, science: bool) -> None:
+        say(f"Listing the files of run {run.get('name')}...")
         for record in client.datafiles(run_pk=int(run["pk"])):
             if is_light_record(record):
                 if science and not is_spectroscopy_record(record) and (
@@ -264,25 +270,34 @@ def collect_records(
 
     if object_name:
         report.mode, report.request = "object", object_name
+        say(f"Searching the archive object {object_name!r}...")
         obj = _choose_object(client, object_name)
+        say(f"Object {obj.get('name')!r} (id {obj.get('pk')}); listing its files...")
         science_pks = set()
         for record in client.object_datafiles(int(obj["pk"])):
             if is_light_record(record) and not is_spectroscopy_record(record):
                 add(record, ROLE_TARGET)
                 science_pks.add(int(record["pk"]))
+        say(f"{len(science_pks)} science frames; listing the runs of the object...")
         centre_runs = client.object_runs(int(obj["pk"]))
+        say(f"{len(centre_runs)} run(s): "
+            + ", ".join(str(r.get("name")) for r in centre_runs[:10])
+            + (" ..." if len(centre_runs) > 10 else ""))
         for run in centre_runs:
             add_run_files(run, science=False)
     else:
         report.mode, report.request = "run", str(run_name)
+        say(f"Searching the run {run_name!r}...")
         centre_runs = [client.find_run(str(run_name))]
         add_run_files(centre_runs[0], science=True)
 
     report.runs = [str(r.get("name")) for r in centre_runs]
     if calib_window_days > 0:
+        say(f"Listing all runs to find neighbours within {calib_window_days:g} days...")
         all_runs = client.runs(ordering="mid_observation_jd")
         neighbours = _neighbour_runs(all_runs, centre_runs, calib_window_days)
         report.neighbour_runs = [str(r.get("name")) for r in neighbours]
+        say(f"{len(neighbours)} neighbour run(s)")
         for run in neighbours:
             add_run_files(run, science=False)
 
@@ -489,6 +504,7 @@ def fetch_missing_calibrations(
     temp_tolerance: float = 2.0,
     max_runs: int = 3,
     progress: Callable[[int, int, str], None] | None = None,
+    log: Callable[[str], None] | None = None,
 ) -> None:
     """Add darks / bias for science frames that have none, via the dark finder.
 
@@ -513,6 +529,8 @@ def fetch_missing_calibrations(
         return
     known = {int(r["pk"]) for r in rows if r.get("pk") not in (None, "", -1)}
     for need in needs:
+        if log is not None:
+            log(f"Dark / bias finder: {need.describe()}...")
         camera, nx, ny, xbin, ybin, gain, offset, mode = need.setup
         temperature = need.temperature if math.isfinite(need.temperature) else _number(
             need.example, "ccd_temp")
@@ -590,6 +608,7 @@ def fetch_dataset(
     exptime_tolerance: float = 0.5,
     exptime_tolerance_fraction: float = 0.05,
     progress: Callable[[int, int, str], None] | None = None,
+    log: Callable[[str], None] | None = None,
 ) -> tuple[Table, FetchReport]:
     """Collect, download and describe the frames of an object or a run.
 
@@ -609,7 +628,11 @@ def fetch_dataset(
         targets=targets,
         calib_window_days=calib_window_days,
         report=report,
+        log=log,
     )
+    if log is not None:
+        n_files = sum(1 for r in rows if r["role"] in (ROLE_TARGET, ROLE_CALIBRATION))
+        log(f"{n_files} files to download or take from the cache")
     roles = (ROLE_TARGET, ROLE_CALIBRATION, ROLE_CONTEXT) if download_context else (
         ROLE_TARGET,
         ROLE_CALIBRATION,
@@ -621,6 +644,7 @@ def fetch_dataset(
             client, rows, cache, report=report, kinds=finder_kinds,
             exptime_tolerance=exptime_tolerance,
             exptime_tolerance_fraction=exptime_tolerance_fraction, progress=progress,
+            log=log,
         )
     return manifest_from_rows(rows), report
 

@@ -86,8 +86,12 @@ class ArchiveClient:
         rate_per_minute: float | None = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
+        log: Callable[[str], None] | None = None,
     ) -> None:
+        """``log`` receives a line for every retry (timeouts, HTTP 429 / 5xx)
+        so that long waits are visible."""
         self.base_url = base_url.rstrip("/")
+        self._log = log
         self.session = session if session is not None else requests.Session()
         self.timeout = float(timeout)
         self.max_retries = int(max_retries)
@@ -152,12 +156,15 @@ class ArchiveClient:
             except (requests.ConnectionError, requests.Timeout) as exc:
                 if attempt >= self.max_retries:
                     raise ArchiveError(f"{method} {url} failed: {exc}") from exc
-                self._sleep(min(2.0**attempt, 60.0))
+                delay = min(2.0**attempt, 60.0)
+                self._retry_note(method, url, type(exc).__name__, attempt, delay)
+                self._sleep(delay)
                 attempt += 1
                 continue
             if response.status_code in _RETRY_STATUS and attempt < self.max_retries:
                 delay = _retry_after_seconds(response, default=min(2.0**attempt, 60.0))
                 response.close()
+                self._retry_note(method, url, f"HTTP {response.status_code}", attempt, delay)
                 self._sleep(delay)
                 attempt += 1
                 continue
@@ -168,6 +175,12 @@ class ArchiveClient:
                     f"{method} {url} returned HTTP {response.status_code}: {detail}"
                 )
             return response
+
+    def _retry_note(self, method: str, url: str, reason: str, attempt: int,
+                    delay: float) -> None:
+        if self._log is not None:
+            self._log(f"{method} {url}: {reason}, retry {attempt + 1}/{self.max_retries} "
+                      f"in {delay:.0f} s")
 
     def get_json(self, path: str, params: Mapping[str, Any] | None = None) -> Any:
         response = self._request("GET", path, params=params)

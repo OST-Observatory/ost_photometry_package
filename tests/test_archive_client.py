@@ -457,3 +457,27 @@ def test_bias_needs():
     (need,) = bias_needs([light, {**light, "exptime": 60.0}, {**bias, "gain": 0.0}])
     assert need.kind == "bias" and need.n_frames == 2 and need.describe().startswith("bias:")
 
+
+def test_retries_and_query_steps_are_logged():
+    lines = []
+    calls = {"n": 0}
+
+    def flaky(method, params, body, headers):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return FakeResponse(429, {"detail": "slow down"}, headers={"Retry-After": "7"})
+        return FakeResponse(200, {"count": 1, "next": None,
+                                  "results": [{"pk": 1, "name": "2022-03-08"}]})
+
+    routes = {"/data_archive/api/runs/runs/": flaky,
+              "/data_archive/api/runs/datafiles/": lambda m, p, b, h: FakeResponse(
+                  200, {"count": 0, "next": None, "results": []})}
+    slept = []
+    client = ArchiveClient(BASE, session=FakeSession(routes), rate_per_minute=0,
+                           sleep=slept.append, log=lines.append)
+    collect_records(client, run_name="2022-03-08", calib_window_days=0, log=lines.append)
+    assert slept == [7.0]
+    assert any("HTTP 429, retry 1/5 in 7 s" in line for line in lines)
+    assert any("Searching the run" in line for line in lines)
+    assert any("Listing the files of run 2022-03-08" in line for line in lines)
+
