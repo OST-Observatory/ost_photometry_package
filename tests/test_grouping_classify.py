@@ -149,6 +149,11 @@ def test_camera_ids_and_keys():
     assert setup_keys.camera_id({}) == "unknown"
     assert setup_keys.telescope_id(qhy) == "CDK20"
     assert setup_keys.telescope_id({"focallen": 3454.0}) == "f3454"
+    # Header spellings of the same telescope; archive value for context frames
+    for name in ("OST CDK20", "Planewave CDK20", "CDK 20", "PlaneWave CDK20 (OST)"):
+        assert setup_keys.telescope_id({"telescop": name}) == "CDK20"
+    assert setup_keys.telescope_id({"telescop": "", "telescope": "OST CDK20"}) == "CDK20"
+    assert setup_keys.telescope_id({"telescop": "", "telescope": "UK"}) == "unknown"
     assert setup_keys.electronic_key(qhy) == "qhy600m|3x3|normal|g0|o5"
     other_offset = {**qhy, "offset": 2}
     assert setup_keys.electronic_key(other_offset) != setup_keys.electronic_key(qhy)

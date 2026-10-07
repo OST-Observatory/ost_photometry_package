@@ -155,6 +155,13 @@ section of this file.
   background, star flux about 1 % low. Now computed by
   `reduce.weighted_combine.weighted_average_combine` (mask-aware, in row
   blocks of at most 2 GB); see `docs/TODO.md` for the ccdproc check.
+- Telescope names: "OST CDK20" was not recognised as the CDK20 (only
+  "Planewave CDK20"), so the grouping treated it as another telescope
+  (separate sessions, flats rejected as "different camera or telescope").
+  `setup_keys.telescope_id` also recognises the model inside longer names.
+  Timeline plots use the normalised telescope and draw context frames
+  (archive metadata without header) inside the timelines instead of extra
+  "unknown" ones.
 - QHY readout modes with the newer SDK names (`High Gain Mode 16BIT`,
   `Photographic DSO 16BIT`, `Extend Fullwell Mode`) were not found in the
   camera catalog, so gain and read noise fell back to 1.292 e-/ADU and

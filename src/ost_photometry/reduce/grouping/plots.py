@@ -9,6 +9,7 @@ import numpy as np
 
 from ...output_layout import diagnostics_dir
 from .classify import BIAS, DARK, FLAT, LIGHT, SPECTROSCOPY
+from .setup_keys import telescope_id
 
 #: Categorical slots in fixed order (identity follows the entity, never rank).
 _CATEGORICAL = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300",
@@ -43,8 +44,12 @@ def plot_night_timelines(plan, output_dir: str | Path) -> list[Path]:
     jd = np.asarray(frames["jd"], dtype=float)
     nights = np.asarray(frames["night"]).astype(str)
     kinds = np.asarray(frames["frame_type"]).astype(str)
-    telescopes = np.array([str(c) for c in frames["telescop"]]) if "telescop" in frames.colnames \
-        else np.array([""] * len(frames))
+    # Normalised like the grouping ("OST CDK20" / "Planewave CDK20" -> CDK20);
+    # context frames (archive metadata, no header) use the archive telescope.
+    telescopes = np.array([telescope_id(dict(zip(frames.colnames, r, strict=True)))
+                           for r in frames], dtype=str)
+    own = (np.asarray(frames["role"]).astype(str) != "context") if "role" in frames.colnames \
+        else np.ones(len(frames), dtype=bool)
     cameras = np.asarray(frames["camera"]).astype(str)
     targets = np.asarray(frames["target_name"]).astype(str)
     session_ids = np.asarray(frames["session_id"]).astype(str)
@@ -62,8 +67,10 @@ def plot_night_timelines(plan, output_dir: str | Path) -> list[Path]:
                                            candidate.probability)
 
     written: list[Path] = []
-    keys = sorted({(n, t) for n, t, k in zip(nights, telescopes, kinds, strict=True)
-                   if k in (LIGHT, FLAT) and n != "nodate"})
+    # One timeline per night and telescope with own lights / flats; context
+    # frames (other runs in the window) only appear inside those timelines.
+    keys = sorted({(n, t) for n, t, k, o in zip(nights, telescopes, kinds, own, strict=True)
+                   if o and k in (LIGHT, FLAT) and n != "nodate"})
     for night, telescope in keys:
         sel = (nights == night) & ((telescopes == telescope) | np.isin(kinds, [BIAS, DARK]))
         if not np.any(sel & np.isin(kinds, [LIGHT, FLAT])):

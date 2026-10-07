@@ -22,11 +22,16 @@ from ...camera_specs import (
 _CAMERA_SUFFIXES = re.compile(r"(\s+\d+)?\s+ccd\s+camera$", re.IGNORECASE)
 _TELESCOPE_ALIASES = {
     "planewavecdk20": "CDK20",
+    "ostcdk20": "CDK20",
     "cdk20": "CDK20",
     "meadelx200": "LX200",
     "lx200": "LX200",
     "skywatcher": "SkyWatcher",
 }
+
+#: Model names recognised inside longer telescope names ("OST CDK20",
+#: "Planewave CDK 20"): (compact substring, telescope id).
+_TELESCOPE_MODELS = (("cdk20", "CDK20"), ("lx200", "LX200"), ("skywatcher", "SkyWatcher"))
 
 
 def _text(value: object) -> str:
@@ -76,7 +81,12 @@ def telescope_id(row: Mapping[str, object]) -> str:
         name = _text(row.get(key))
         if name and name.upper() not in {"UK", "UNKNOWN"}:
             compact = re.sub(r"[^a-z0-9]", "", name.lower())
-            return _TELESCOPE_ALIASES.get(compact, name)
+            if compact in _TELESCOPE_ALIASES:
+                return _TELESCOPE_ALIASES[compact]
+            for model, telescope in _TELESCOPE_MODELS:
+                if model in compact:
+                    return telescope
+            return name
     focal = _float(row.get("focallen"))
     if math.isfinite(focal) and focal > 0:
         return f"f{int(round(focal))}"

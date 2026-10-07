@@ -377,6 +377,9 @@ def test_timeline_plots_are_written(dataset, tmp_path):
     paths = plot_night_timelines(plan, tmp_path / "out")
     assert len(paths) == 2
     assert all(p.is_file() and p.stat().st_size > 1000 for p in paths)
+    # Named by the normalised telescope ("Planewave CDK20" -> CDK20)
+    assert sorted(p.name for p in paths) == ["timeline_20220308_CDK20.pdf",
+                                             "timeline_20220320_CDK20.pdf"]
     assert paths[0].parent == tmp_path / "out" / "diagnostics" / "calibration_groups"
 
 
