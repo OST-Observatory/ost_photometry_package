@@ -97,7 +97,9 @@ section of this file.
 - `ArchiveClient(log=)` reports retries (timeouts, HTTP 429 / 5xx with the
   wait time) and `fetch_dataset(log=)` / `collect_records(log=)` each query
   step; `1_fetch.py` prints both, so slow archive answers no longer look
-  like a hang.
+  like a hang. File listings are paged with 200 entries, a page that times
+  out is requested again with half the size, run listings ask for FITS files
+  only, and `1_fetch.py` has `archive_timeout` (120 s).
 - Header keywords `RDNOISE` / `SATLEVEL` (electrons for the image times
   `EXPTIME`) on reduced frames, stacks and camera combinations; sigma-clipped
   stacks of at least three frames are marked `CRIDENT` / `CRCLIP`.

@@ -255,7 +255,8 @@ def collect_records(
 
     def add_run_files(run: dict, *, science: bool) -> None:
         say(f"Listing the files of run {run.get('name')}...")
-        for record in client.datafiles(run_pk=int(run["pk"])):
+        # FITS only: videos (SER) and previews of a run can number thousands
+        for record in client.datafiles(run_pk=int(run["pk"]), file_type="FITS"):
             if is_light_record(record):
                 if science and not is_spectroscopy_record(record) and (
                     not targets or record_matches_targets(record, targets)

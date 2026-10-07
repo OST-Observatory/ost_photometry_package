@@ -481,3 +481,29 @@ def test_retries_and_query_steps_are_logged():
     assert any("Searching the run" in line for line in lines)
     assert any("Listing the files of run 2022-03-08" in line for line in lines)
 
+
+def test_paging_halves_the_page_size_after_a_timeout():
+    import requests
+
+    files = [{"pk": i} for i in range(90)]
+    seen = []
+
+    class SlowSession(FakeSession):
+        def request(self, method, url, params=None, **kwargs):
+            limit = int(params["limit"])
+            seen.append((int(params["page"]), limit))
+            if limit > 50:
+                raise requests.ReadTimeout("slow")
+            start = (int(params["page"]) - 1) * limit
+            batch = files[start:start + limit]
+            nxt = "x" if start + limit < len(files) else None
+            return FakeResponse(200, {"count": len(files), "next": nxt, "results": batch})
+
+    lines = []
+    client = ArchiveClient(BASE, session=SlowSession({}), rate_per_minute=0,
+                           sleep=lambda s: None, log=lines.append)
+    result = client.datafiles(run_pk=1, file_type="FITS")
+    assert [r["pk"] for r in result] == list(range(90))
+    assert seen[:3] == [(1, 200), (1, 100), (1, 50)] and (2, 50) in seen
+    assert any("retrying with 100 entries per page" in line for line in lines)
+

@@ -138,8 +138,14 @@ class ArchiveClient:
         json: Any = None,
         headers: Mapping[str, str] | None = None,
         stream: bool = False,
+        timeout_retries: int | None = None,
     ) -> requests.Response:
+        """``timeout_retries`` limits the retries after connection errors /
+        timeouts (default ``max_retries``); HTTP 429 / 5xx always get
+        ``max_retries``."""
         url = self.url(path)
+        retries = self.max_retries
+        timeout_retries = retries if timeout_retries is None else int(timeout_retries)
         attempt = 0
         while True:
             self._limiter.wait()
@@ -154,17 +160,19 @@ class ArchiveClient:
                     stream=stream,
                 )
             except (requests.ConnectionError, requests.Timeout) as exc:
-                if attempt >= self.max_retries:
+                if attempt >= timeout_retries:
                     raise ArchiveError(f"{method} {url} failed: {exc}") from exc
                 delay = min(2.0**attempt, 60.0)
-                self._retry_note(method, url, type(exc).__name__, attempt, delay)
+                self._retry_note(method, url, type(exc).__name__, attempt, delay,
+                                 timeout_retries)
                 self._sleep(delay)
                 attempt += 1
                 continue
-            if response.status_code in _RETRY_STATUS and attempt < self.max_retries:
+            if response.status_code in _RETRY_STATUS and attempt < retries:
                 delay = _retry_after_seconds(response, default=min(2.0**attempt, 60.0))
                 response.close()
-                self._retry_note(method, url, f"HTTP {response.status_code}", attempt, delay)
+                self._retry_note(method, url, f"HTTP {response.status_code}", attempt, delay,
+                                 retries)
                 self._sleep(delay)
                 attempt += 1
                 continue
@@ -177,32 +185,58 @@ class ArchiveClient:
             return response
 
     def _retry_note(self, method: str, url: str, reason: str, attempt: int,
-                    delay: float) -> None:
+                    delay: float, retries: int) -> None:
         if self._log is not None:
-            self._log(f"{method} {url}: {reason}, retry {attempt + 1}/{self.max_retries} "
+            self._log(f"{method} {url}: {reason}, retry {attempt + 1}/{retries} "
                       f"in {delay:.0f} s")
 
-    def get_json(self, path: str, params: Mapping[str, Any] | None = None) -> Any:
-        response = self._request("GET", path, params=params)
+    def get_json(
+        self,
+        path: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        timeout_retries: int | None = None,
+    ) -> Any:
+        response = self._request("GET", path, params=params, timeout_retries=timeout_retries)
         try:
             return response.json()
         except ValueError as exc:
             raise ArchiveError(f"GET {self.url(path)} did not return JSON") from exc
 
     def _paged(
-        self, path: str, params: Mapping[str, Any] | None = None, *, limit: int = 500
+        self,
+        path: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        limit: int = 200,
+        min_limit: int = 25,
     ) -> list[dict]:
         """All results of a DRF page-number list (``count`` / ``results``).
 
         The ``next`` links are not followed because behind the reverse proxy
-        they may carry the wrong scheme; pages are counted instead.
+        they may carry the wrong scheme; pages are counted instead. A page
+        that times out is requested again with half the page size (down to
+        ``min_limit``, then with the normal retries): slow servers answer
+        smaller pages in time.
         """
         results: list[dict] = []
         page = 1
         while True:
             query = dict(params or {})
             query.update({"page": page, "limit": limit})
-            payload = self.get_json(path, query)
+            try:
+                payload = self.get_json(path, query,
+                                        timeout_retries=0 if limit > min_limit else None)
+            except ArchiveError as exc:
+                if limit <= min_limit or not isinstance(exc.__cause__, requests.Timeout):
+                    raise
+                limit = max(min_limit, limit // 2)
+                # the full pages read so far are a multiple of the new size
+                page = len(results) // limit + 1
+                if self._log is not None:
+                    self._log(f"GET {self.url(path)}: timeout, retrying with "
+                              f"{limit} entries per page")
+                continue
             if isinstance(payload, list):
                 return payload
             batch = list(payload.get("results", []))
