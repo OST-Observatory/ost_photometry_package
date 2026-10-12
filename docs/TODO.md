@@ -332,9 +332,10 @@ similar-magnitude field stars (robust preselection, then RMS without bad
 epochs; leave-one-out for members), `dmag` / `dflux` with errors free of
 catalog σ, `tables/light_curve_ensemble.ecsv`, `ensemble_qc_*` and
 `lightcurve_diff_*` plots. See [DIAGNOSTICS.md](DIAGNOSTICS.md#light-curves).
-Selection ranks by the measured RMS, not the excess RMS: on the HAT-P-20
-test night the instrumental `err_*` are about 4–5× the real scatter, so
-every star had excess 0 (see **Inflate photometric uncertainties**).
+Selection ranks by the measured RMS, not the excess RMS, so wrong error
+bars cannot decide it (the HAT-P-20 test table, written with the APER error
+formula before 2026-09-08, has `err_V` 8× too large and every star had
+excess 0).
 
 ### Global bad-epoch flags — done
 
@@ -350,12 +351,33 @@ include catalog \(\sigma\): only photometry of OOI and ensemble, plus the
 ensemble’s excess RMS as systematic floor. If the quiet ensemble has 0.02 mag
 excess RMS, that floor applies to `dmag_err`.
 
-**Finding (October 2026):** on the HAT-P-20 C7 test night the instrumental
-`err_V` is ~0.02 mag while the differential point-to-point scatter is
-0.004 mag. The instrumental errors themselves are too large by 4–5×; check
-where `err_*` / `mags_unc` come from before adding floors on top. A 0.03 mag “variation” on
-`mag_cal_*` can still be the night **or** the catalog; on `dmag` it should
-not be the catalog.
+A 0.03 mag “variation” on `mag_cal_*` can still be the night **or** the
+catalog; on `dmag` it should not be the catalog.
+
+**Error budget, HAT-P-20 C7 night (October 2026, 80 aligned V frames,
+20 s, 0.5 m, X ≈ 1.15, stars V ≈ 11–12):**
+
+| Term | mag |
+|------|-----|
+| `err_V` in the April 2026 table (APER formula before 2026-09-08) | 0.019 |
+| Current APER formula (`hypot(σ_sum, σ_sky)`) on the same frames | 0.0023 |
+| Same with the empirical sky σ instead of the `UNCERT` map | 0.0026 |
+| Scintillation (Young 1967 × 1.5, Osborn et al. 2015) | 0.0021 |
+| Predicted differential scatter (all of the above + ensemble) | 0.0035 |
+| Measured point-to-point scatter, leave-one-out | 0.0024–0.0051 (median 0.0041) |
+
+So the old errors were too **large** (fixed bug), and current errors are
+too **small** for bright stars, by ~1.5×. The missing terms are
+scintillation (dominant for bright stars in short exposures) and, for
+frames reduced before 0.6.0, the `UNCERT` map: it underestimates the
+measured sky σ by 1.6× (binned CMOS read noise, fixed in 0.6.0); not yet
+rechecked on frames reduced with 0.6.0.
+
+**Next step:** add a scintillation term to `err_*` (needs aperture
+diameter, site altitude, exposure time, airmass; the camera / telescope
+catalog has the aperture), then the ensemble excess-RMS floor for what is
+left. Re-run the HAT-P-20 night end to end with the current reduction to
+confirm the `UNCERT` maps.
 
 **Direction:** `mag_err_inflated` for the transformed product (optional ZP
 floor); `dmag_err = \sqrt{\sigma_{\mathrm{OOI}}^2 + \sigma_{\mathrm{ens}}^2 +
@@ -743,7 +765,7 @@ how `camera_info` maps FITS `INSTRUME` / `GAIN` / `READOUTM` / `CCD-TEMP` to
 
 ## Suggested order
 
-1. **P1:** Light curves — honest \(\sigma\) (instrumental `err_*` are too large; then ensemble excess floor) and residuals vs airmass/FWHM/sky/\(x,y\). Differential product, quiet ensemble and `flag_epoch` are done.
+1. **P1:** Light curves — honest \(\sigma\) (scintillation term in `err_*`, then ensemble excess floor; see the error budget) and residuals vs airmass/FWHM/sky/\(x,y\). Differential product, quiet ensemble and `flag_epoch` are done.
 2. **P2:** Camera catalog — QHY268 system-gain vs GAIN (all readout modes), then dark current for 485C / 462 / ASI2600.
 3. **P2:** Registration — tests for `(dx, dy)` axes, `aa_true` on a synthetic shift and shift outliers. Skipped-frame reporting and the reference WCS after `aa_true` are done. Do **not** start drizzle while the tests are open.
 4. **P2:** Registration — backend protocol (`fit` → `apply` → YAML) and pragmatic unification: every method on the reference grid; drop `make_big_images` from the workflow; **keep** filter-then-inter-filter.
