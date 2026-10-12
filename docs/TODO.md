@@ -6,7 +6,7 @@ Closed migration notes live in [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_
 [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md), [DIAGNOSTICS.md](DIAGNOSTICS.md), and
 [COMPATIBILITY_REPORT.md](COMPATIBILITY_REPORT.md).
 
-**As of:** September 2026
+**As of:** October 2026 (after 0.6.0)
 
 **Priorities:** P1 = next sprint · P2 = track, no urgency · P3 = optional / long-term · — = operational, not code debt
 
@@ -143,10 +143,9 @@ starting drizzle.
    frames aligned; skipped: …” is printed, and skipped frames land in
    `frame_quality.ecsv` (`aligned`, `align_note`).
 
-2. **Stale WCS after `aa_true` (P2, photometry path done).** `astro_align`
-   now copies the **reference WCS** onto the warped `CCDData`. Remaining
-   work: skipped-frame reporting and tests for shifts / outliers. Do not
-   start drizzle while those are open.
+2. **Stale WCS after `aa_true` — done.** `astro_align` copies the
+   **reference WCS** onto the warped `CCDData`; skipped frames are reported
+   (item 1). Only the tests in item 5 remain before drizzle.
 
 3. **Dispatcher duplication (P2).** `align_image_main` is a long
    `if`/`elif` with repeated `Executor` boilerplate. A small backend
@@ -159,9 +158,11 @@ starting drizzle.
    explicit-only. Canonical names live in
    `ost_photometry.reduce.registration.SHIFT_METHODS`.
 
-5. **Tests (P2).** Only trim and WCS-reproject tests exist. Missing:
+5. **Tests (P2).** Trim, WCS-reproject and skipped-frame accounting
+   (`tests/test_alignment_accounting.py`) are covered. Missing:
    `(dx, dy)` vs Python axes, `aa_true` on a synthetic shift, outlier
-   logic, skipped-frame accounting.
+   logic (`rm_outliers` / `filter_window`). Do not start drizzle while
+   these are open.
 
 ### Unify alignment backends (P2 pragmatic; P3 optional global grid)
 
@@ -263,6 +264,20 @@ diverge. Not required for photometry.
 Sparse tracks (`require_complete_intersection=False`) are a C7 script
 setting; the package default stays dense for mk_calib. Other multi-image
 courses can opt in later.
+
+---
+
+## Archive pipeline
+
+See [ARCHIVE_PIPELINE.md](ARCHIVE_PIPELINE.md).
+
+### Write mount sessions back to the archive (P3)
+
+Mount sessions are derived locally (`reduce.grouping.sessions`) and live
+only in `calibration_plan.yaml`. Writing them back to the OST data archive
+was deliberately left out of 0.6.0. Later: an archive API endpoint for
+sessions, then `ArchiveClient` support, so other users and the dark /
+flat finders can reuse them. Plate solving stays local (ASTAP).
 
 ---
 
@@ -700,6 +715,14 @@ Live code is ``calibration/photometer.py`` (``DifferentialPhotometer``) and
 **Direction:** remove the shim once external scripts import from
 ``ost_photometry.analyze.calibration``.
 
+### Remove deprecated `estimate_fwhm` (P3)
+
+`reduce_main(estimate_fwhm=True)` and `reduce.utilities.estimate_fwhm` are
+deprecated since 0.6.0 (replaced by `measure_frame_quality` /
+`reduce.quality`). The course and auxiliary scripts no longer pass
+`estimate_fwhm` (checked October 2026), so both can go in the next minor
+release.
+
 ### Small compatibility leftovers (P3)
 
 - Re-export stubs such as ``analyze/utils/simbad_annotate.py`` → real module in
@@ -744,7 +767,7 @@ how `camera_info` maps FITS `INSTRUME` / `GAIN` / `READOUTM` / `CCD-TEMP` to
 
 1. **P1:** Light curves — two products (catalog-transformed mag scale vs differential depth without catalog \(\sigma\)); quiet ensemble + `flag_epoch`; then inflate \(\sigma\) and residuals vs airmass/FWHM/sky/\(x,y\).
 2. **P2:** Camera catalog — QHY268 system-gain vs GAIN (all readout modes), then dark current for 485C / 462 / ASI2600.
-3. **P2:** Registration — skipped-frame reporting, tests for shifts / outliers / skip accounting. Reference WCS is copied after `aa_true`. Do **not** start drizzle while those are open.
+3. **P2:** Registration — tests for `(dx, dy)` axes, `aa_true` on a synthetic shift and shift outliers. Skipped-frame reporting and the reference WCS after `aa_true` are done. Do **not** start drizzle while the tests are open.
 4. **P2:** Registration — backend protocol (`fit` → `apply` → YAML) and pragmatic unification: every method on the reference grid; drop `make_big_images` from the workflow; **keep** filter-then-inter-filter.
 5. **P2:** Difference images — internal night template + detection/linking + `diff_candidates.ecsv` (HiPS fetch hardening is done; do not start with legacy trim or extra survey strings).
 6. **P2:** Light curves — period search (Lomb–Scargle / BLS) from `light_curves.ecsv`; colour vs phase; simple \(\chi^2\) shape overlay.
@@ -756,7 +779,7 @@ how `camera_info` maps FITS `INSTRUME` / `GAIN` / `READOUTM` / `CCD-TEMP` to
 12. **P3:** Star-wise k″ fit (optional alternative to mk_calib campaign).
 13. **P3:** OST filter throughput → synphot Vega↔AB offsets.
 14. **P3:** Drop remaining **read** support for legacy wide tables / column `i` (adapter dual-read), when old `.dat` files no longer matter; drop related legacy meta helpers.
-15. **P3:** Remove `differential_photometry` deprecation shim once imports use `analyze.calibration`.
+15. **P3:** Remove `differential_photometry` deprecation shim once imports use `analyze.calibration`; remove deprecated `estimate_fwhm`.
 16. **P3:** Mag vs. uncertainty optional ylim / source-Poisson term, only if the log-scale QC is still hard to read.
 17. **P3:** CMD colour window for the isochrone fit (`color_fit_range`), when a mag-only cut is not enough.
 18. **P3:** Hess / density underlay on crowded CMDs (default off).
@@ -765,4 +788,5 @@ how `camera_info` maps FITS `INSTRUME` / `GAIN` / `READOUTM` / `CCD-TEMP` to
 21. **P3:** Interactive supervisor CMD (optional GUI; batch/PDF stay static).
 22. **P3:** Aperture correction from growth curve (optional APER; one correction per image, not per star).
 23. **P2:** Reduce user guide (`reduce_main` option catalogue).
-24. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.
+24. **P3:** Archive pipeline — write mount sessions back to the archive.
+25. **On utilities changes:** extract only the affected area of `reduce/utilities.py`.
