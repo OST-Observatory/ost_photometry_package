@@ -10,7 +10,7 @@ __pycache__
 .zed
 .pytest_cache/
 .venv/
-.cursor
+.claude
 # Scratch dump at the repo root; packaged traces live in src/ost_photometry/data/.
 /camera_specs/
 
