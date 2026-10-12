@@ -32,6 +32,18 @@ section of this file.
   light-curve plots. Options `light_curve_ensemble_*` and
   `light_curve_epoch_*`.
 
+### Fixed
+
+- **Night boundary at midnight UT:** `night_id_from_jd` used
+  `floor(JD - 0.5)`, which changes at 0 h UT and split every European night
+  in two (night bands, per-night zero point in `4_compare_nights.py`,
+  per-night transparency model). It is now `floor(JD)` (noon UT to noon UT).
+  Combining and comparing nights recompute `night_id` from `jd`, so tables
+  written before the fix are grouped correctly. Night labels give the
+  evening date instead of the date of the median time. The calibration
+  timelines of the archive pipeline started at midnight UT although the axis
+  reads "hours after noon UT"; they now start at noon UT.
+
 ## [0.6.0] - 2026-10-12
 
 ### Added

@@ -378,9 +378,11 @@ has `quantity="flux"` for those rows.
 
 Time is `BJD_TDB − 2450000` when barycentric correction succeeds (observatory
 location + RA/Dec), otherwise `JD − 2450000`. Grey bands mark local nights
-(`floor(JD − 0.5)`). Short outlier runs (1–2 epochs) and bright spikes stay
-in the table (`flag_outlier`) and are drawn as open grey points; a coherent
-eclipse dip is not flagged. Y-limits follow unflagged points.
+(`night_id = floor(JD)`: a night runs from noon UT to noon UT, so a
+European night is not split at midnight UT; labels give the evening date).
+Short outlier runs (1–2 epochs) and bright spikes stay in the table
+(`flag_outlier`) and are drawn as open grey points; a coherent eclipse dip
+is not flagged. Y-limits follow unflagged points.
 
 **Two products on one table.** `mag` / `mag_err` (or `flux` for unfiltered
 bands) is the **catalog-transformed** curve: absolute level and colour, with

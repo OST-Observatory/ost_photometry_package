@@ -75,7 +75,7 @@ def plot_night_timelines(plan, output_dir: str | Path) -> list[Path]:
         sel = (nights == night) & ((telescopes == telescope) | np.isin(kinds, [BIAS, DARK]))
         if not np.any(sel & np.isin(kinds, [LIGHT, FLAT])):
             continue
-        start = math.floor(np.nanmin(jd[sel]) - 0.5) + 0.5  # noon UT before the night
+        start = math.floor(np.nanmin(jd[sel]))  # noon UT before the night (JD starts at noon)
         fig, (ax_pa, ax_t) = plt.subplots(
             2, 1, figsize=(11, 6.5), sharex=True, gridspec_kw={"height_ratios": [1.2, 1]},
             constrained_layout=True,

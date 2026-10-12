@@ -60,6 +60,34 @@ def test_night_date_label_and_unique_ids():
     assert len(lab) == 10 and lab[4] == "-" and lab[7] == "-"
 
 
+def test_night_date_label_is_evening_date():
+    from astropy.time import Time
+
+    before = Time("2022-01-06T22:00:00", scale="utc").jd
+    after = Time("2022-01-07T03:00:00", scale="utc").jd
+    assert night_date_label(np.array([before])) == "2022-01-06"
+    assert night_date_label(np.array([after])) == "2022-01-06"
+    assert night_date_label(np.array([before, after, after])) == "2022-01-06"
+
+
+def test_stored_night_ids_are_recomputed_from_jd():
+    from astropy.time import Time
+
+    jd = Time(
+        ["2022-01-06T22:00:00", "2022-01-06T23:30:00", "2022-01-07T01:00:00",
+         "2022-01-07T03:00:00"],
+        scale="utc",
+    ).jd
+    tbl = _long_table(source_id=1, jd0=float(jd[0]), mag0=12.0)
+    tbl["jd"] = jd
+    tbl["bjd_tdb"] = jd
+    # Ids as written before the fix: split at midnight UT.
+    tbl["night_id"] = np.floor(jd - 0.5).astype(np.int64)
+    assert np.unique(tbl["night_id"]).size == 2
+    out = apply_nightly_zero_point(tbl)
+    assert np.unique(np.asarray(out["night_id"])).size == 1
+
+
 def test_apply_nightly_zero_point_subtracts_median():
     a = _long_table(source_id=1, jd0=2459000.4, mag0=12.0)
     b = _long_table(source_id=1, jd0=2459001.4, mag0=12.4)

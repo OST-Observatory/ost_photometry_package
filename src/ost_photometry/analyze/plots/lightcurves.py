@@ -11,7 +11,7 @@ from astropy.time import Time
 from astropy.timeseries import TimeSeries
 
 from ...output_layout import diagnostics_dir, results_dir
-from ..post_processing.light_curve import position_scatter_arcsec
+from ..post_processing.light_curve import night_id_from_jd, position_scatter_arcsec
 from ..post_processing.magnitude_systems import magnitude_system_axis_suffix
 
 plt.switch_backend("Agg")
@@ -236,12 +236,17 @@ def _scatter_with_flags(
 
 
 def night_date_label(jd_values: np.ndarray) -> str:
-    """UTC calendar date of the median finite JD (``YYYY-MM-DD``)."""
+    """Evening date of the night (``YYYY-MM-DD``), as in "night of 6/7 Jan".
+
+    The UTC date 12 h before the median JD: stable whether the median falls
+    before or after midnight UT (the plain date of the median jumped for
+    European nights).
+    """
     arr = np.asarray(jd_values, dtype=float)
     fin = arr[np.isfinite(arr)]
     if fin.size == 0:
         return "unknown"
-    t = Time(float(np.median(fin)), format="jd", scale="utc")
+    t = Time(float(np.median(fin)) - 0.5, format="jd", scale="utc")
     return t.iso[:10]
 
 
@@ -1110,9 +1115,7 @@ def _table_from_timeseries(
     else:
         mag[:] = y
         mag_err[:] = e
-    nights = np.full(n, -1, dtype=np.int64)
-    ok = np.isfinite(jd)
-    nights[ok] = np.floor(jd[ok] - 0.5).astype(np.int64)
+    nights = night_id_from_jd(jd)
     return Table(
         {
             "id": np.zeros(n, dtype=np.int64),

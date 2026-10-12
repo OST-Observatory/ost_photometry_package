@@ -576,11 +576,28 @@ def _as_positive_period(period) -> float | None:
 
 
 def night_id_from_jd(jd) -> np.ndarray:
-    """Local night index: ``floor(JD - 0.5)`` so evening UT stays one night."""
+    """Night index: ``floor(JD)``, the integer JD of the noon (UT) before the night.
+
+    JD starts at noon UT, so evening and morning of one night share the same
+    integer part for sites from about 60° W to 90° E (Europe, Africa, the
+    Americas). ``floor(JD - 0.5)`` would change at midnight UT and split a
+    European night in two. ``-1`` marks a missing JD.
+    """
     arr = np.asarray(jd, dtype=float)
     out = np.full(arr.shape, -1, dtype=np.int64)
     ok = np.isfinite(arr)
-    out[ok] = np.floor(arr[ok] - 0.5).astype(np.int64)
+    out[ok] = np.floor(arr[ok]).astype(np.int64)
+    return out
+
+
+def _with_night_ids(tbl: Table) -> Table:
+    """Copy with ``night_id`` recomputed from ``jd``.
+
+    Tables written before the night boundary moved to noon UT carry ids that
+    split nights at midnight UT; the id is a pure function of ``jd``.
+    """
+    out = tbl.copy()
+    out["night_id"] = night_id_from_jd(np.asarray(out["jd"], dtype=float))
     return out
 
 
@@ -1311,9 +1328,7 @@ def apply_nightly_zero_point(tbl: Table) -> Table:
     """Subtract (mag) or divide (flux) the per-night median continuum."""
     if len(tbl) == 0:
         return tbl
-    out = tbl.copy()
-    if "night_id" not in out.colnames:
-        out["night_id"] = night_id_from_jd(out["jd"])
+    out = _with_night_ids(tbl)
     nid = np.asarray(out["night_id"]).astype(np.int64)
     qty = "magnitude"
     if "quantity" in out.colnames:
@@ -1394,11 +1409,7 @@ def combine_light_curve_night_tables(
                 [f"{stem}:{i}:{eid}" for eid in np.asarray(sub["epoch_id"]).astype(str)],
                 dtype=str,
             )
-        if "night_id" not in sub.colnames or not np.any(
-            np.asarray(sub["night_id"]).astype(np.int64) >= 0
-        ):
-            sub["night_id"] = night_id_from_jd(sub["jd"])
-        parts.append(sub)
+        parts.append(_with_night_ids(sub))
     if not parts:
         raise ValueError(
             f"No light-curve rows for filter={filter_!r} in the given night tables."
@@ -1433,9 +1444,7 @@ def plot_nights_compare_from_table(
             style_name="WARNING",
         )
         return
-    if "night_id" not in sub.colnames:
-        sub = sub.copy()
-        sub["night_id"] = night_id_from_jd(sub["jd"])
+    sub = _with_night_ids(sub)
     nid = np.asarray(sub["night_id"]).astype(np.int64)
     n_nights = int(np.unique(nid[nid >= 0]).size) if np.any(nid >= 0) else 0
     if n_nights < 2:

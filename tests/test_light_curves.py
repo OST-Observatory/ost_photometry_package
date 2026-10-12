@@ -110,10 +110,16 @@ def _mini_photometry() -> Table:
 def test_night_id_groups_evening_and_morning():
     with isolated_sys_modules():
         lc = _load_light_curve()
-        jd = np.array([2459000.8, 2459001.2])
-        nights = lc.night_id_from_jd(jd)
-        assert nights[0] == nights[1]
-        assert int(nights[0]) == 2459000
+        evening = Time("2022-01-06T19:00:00", scale="utc").jd
+        after_midnight = Time("2022-01-07T00:30:00", scale="utc").jd
+        morning = Time("2022-01-07T05:00:00", scale="utc").jd
+        next_evening = Time("2022-01-07T19:00:00", scale="utc").jd
+        nights = lc.night_id_from_jd([evening, after_midnight, morning, next_evening])
+        assert nights[0] == nights[1] == nights[2]
+        assert nights[3] == nights[0] + 1
+        # Integer JD of the noon UT before the night.
+        assert Time(float(nights[0]), format="jd").iso.startswith("2022-01-06 12:00")
+        assert lc.night_id_from_jd([np.nan])[0] == -1
 
 
 def test_build_light_curves_table_columns_airmass_and_nights():
