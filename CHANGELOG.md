@@ -100,6 +100,14 @@ section of this file.
   like a hang. File listings are paged with 200 entries, a page that times
   out is requested again with half the size, run listings ask for FITS files
   only, and `1_fetch.py` has `archive_timeout` (120 s).
+- **Colour images** (`ost_photometry.imaging`, scripts
+  `astro_imaging/3_color_composite.py`, `archive_pipeline/5_color_composite.py`):
+  palettes RGB, LRGB, SHO, HOO and custom mixes; sky neutralisation, crop to
+  the common field, cold-pixel correction, optional polynomial /
+  `Background2D` gradient removal and star-based white balance; auto
+  (midtone), asinh or linear stretch, linked or per channel; 16-bit TIFF,
+  PNG, JPEG. See `docs/COLOR_COMPOSITE.md`. `tifffile` and `pillow` are
+  declared dependencies.
 - Header keywords `RDNOISE` / `SATLEVEL` (electrons for the image times
   `EXPTIME`) on reduced frames, stacks and camera combinations; sigma-clipped
   stacks of at least three frames are marked `CRIDENT` / `CRCLIP`.

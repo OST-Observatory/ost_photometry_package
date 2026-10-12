@@ -14,9 +14,9 @@ intended for general differential photometry workflows as well.
 The installable package lives under `src/ost_photometry/` and splits into two
 main layers:
 
-| Module | Role |
-|--------|------|
-| **`ost_photometry.reduce`** | CCD preprocessing: bias/dark/flat correction, registration, masking, instrument helpers |
+| Module                       | Role                                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------ |
+| **`ost_photometry.reduce`**  | CCD preprocessing: bias/dark/flat correction, registration, masking, instrument helpers    |
 | **`ost_photometry.analyze`** | Science analysis: WCS, extraction, correlation, calibration, post-processing, light curves |
 
 Supporting code includes `terminal_output` and `style` (console output),
@@ -28,7 +28,7 @@ the calibrated image series via an `Observation` object and `run_pipeline()`.
 
 ## Capabilities
 
-**Reduction (`reduce`)** — CCD stack building, image alignment, cosmic-ray
+**Reduction (`reduce`)**: CCD stack building, image alignment, cosmic-ray
 handling, and WCS helpers. Default alignment is star-triangle (`shift_method="aa_true"`);
 `shift_method="wcs"` reprojects onto the reference celestial WCS (large dithers /
 sparse fields). Camera gain, read noise, and dark current are interpolated from
@@ -40,9 +40,11 @@ noise-weighted (`stack_weighting`). The archive pipeline (`ost_photometry.archiv
 `reduce.grouping`) fetches an object or observation run from the OST data
 archive, groups calibration frames by mount session (camera orientation from
 plate solving) with flat probabilities, reduces per group and stacks every
-target — see [docs/ARCHIVE_PIPELINE.md](docs/ARCHIVE_PIPELINE.md).
+target (see [docs/ARCHIVE_PIPELINE.md](docs/ARCHIVE_PIPELINE.md)) . Colour images
+(RGB, LRGB, SHO, HOO, custom mixes) from the stacks: `ost_photometry.imaging`
+(see [docs/COLOR_COMPOSITE.md](docs/COLOR_COMPOSITE.md)).
 
-**Analysis pipeline (`analyze.pipeline`)** — configurable step sequence driven by
+**Analysis pipeline (`analyze.pipeline`)**: configurable step sequence driven by
 [`PipelineConfig`](src/ost_photometry/analyze/pipeline/config.py):
 
 1. WCS determination (`astrometry`, `astap`, `twirl`)
@@ -53,11 +55,11 @@ target — see [docs/ARCHIVE_PIPELINE.md](docs/ARCHIVE_PIPELINE.md).
 6. Post-processing (region selection, cluster/Gaia matching, magnitude conversion)
 7. Optional light-curve plots and HiPS reference subtraction
 
-**Calibration** — catalog cross-match (APASS, VizieR, custom tables), extinction
+**Calibration**: catalog cross-match (APASS, VizieR, custom tables), extinction
 correction, `PhotometryCalibrator` / `CalibrationEngine`, and named presets
 (`linear_fit_per_image`, `linear_fit_per_night`, …).
 
-**Libraries usable outside the pipeline** — `main_extract`, `PhotometryCalibrator`,
+**Libraries usable outside the pipeline**: `main_extract`, `PhotometryCalibrator`,
 `ExtinctionCorrector`, correlation helpers, plotting, image subtraction, and
 calibration-source fetch/crossmatch APIs.
 
@@ -90,16 +92,17 @@ The alternative `astrometry` method needs a local
 
 ## Documentation
 
-| Topic | Document |
-|-------|----------|
-| Pipeline options and decision tables | [docs/PIPELINE_CONFIG.md](docs/PIPELINE_CONFIG.md) |
-| Diagnostic plot layout | [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md) |
-| Site extinction table and observation campaigns | [docs/EXTINCTION_COEFFICIENTS.md](docs/EXTINCTION_COEFFICIENTS.md) |
-| Breaking changes and architecture (archive) | [docs/ARCHITECTURE_AND_MIGRATION.md](docs/ARCHITECTURE_AND_MIGRATION.md) |
-| Script compatibility matrix | [docs/COMPATIBILITY_REPORT.md](docs/COMPATIBILITY_REPORT.md) |
-| Changelog | [CHANGELOG.md](CHANGELOG.md) |
-| How `main` is tagged / GitHub Releases | [docs/RELEASING.md](docs/RELEASING.md) |
-| Known follow-ups | [docs/TODO.md](docs/TODO.md) |
+| Topic                                           | Document                                                                 |
+| ----------------------------------------------- | ------------------------------------------------------------------------ |
+| Pipeline options and decision tables            | [docs/PIPELINE_CONFIG.md](docs/PIPELINE_CONFIG.md)                       |
+| Diagnostic plot layout                          | [docs/DIAGNOSTICS.md](docs/DIAGNOSTICS.md)                               |
+| Colour images from the stacks                   | [docs/COLOR_COMPOSITE.md](docs/COLOR_COMPOSITE.md)                       |
+| Site extinction table and observation campaigns | [docs/EXTINCTION_COEFFICIENTS.md](docs/EXTINCTION_COEFFICIENTS.md)       |
+| Breaking changes and architecture (archive)     | [docs/ARCHITECTURE_AND_MIGRATION.md](docs/ARCHITECTURE_AND_MIGRATION.md) |
+| Script compatibility matrix                     | [docs/COMPATIBILITY_REPORT.md](docs/COMPATIBILITY_REPORT.md)             |
+| Changelog                                       | [CHANGELOG.md](CHANGELOG.md)                                             |
+| How `main` is tagged / GitHub Releases          | [docs/RELEASING.md](docs/RELEASING.md)                                   |
+| Known follow-ups                                | [docs/TODO.md](docs/TODO.md)                                             |
 
 Config defaults and all pipeline fields:
 [`src/ost_photometry/analyze/pipeline/config.py`](src/ost_photometry/analyze/pipeline/config.py).
@@ -107,7 +110,7 @@ Config defaults and all pipeline fields:
 ## Development
 
 Install the package with lint/test tools, then enable the git hook so
-[Ruff](https://docs.astral.sh/ruff/) runs (and auto-fixes) before each commit —
+[Ruff](https://docs.astral.sh/ruff/) runs (and auto-fixes) before each commit,
 the same check as CI (`ruff check src tests`):
 
 ```bash
