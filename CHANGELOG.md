@@ -11,6 +11,8 @@ section of this file.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-12
+
 ### Added
 
 - **Frame quality** in the reduction (`reduce.quality`, `reduce.frame_selection`):
@@ -292,6 +294,7 @@ paths removed.
 Last version on `main` before this changelog. It was not tagged; detailed notes
 start with later versions. Git history before that date remains the record.
 
-[Unreleased]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/2648b88...v0.5.0
 [0.4.4]: https://github.com/OST-Observatory/ost_photometry_package/commit/2648b88
