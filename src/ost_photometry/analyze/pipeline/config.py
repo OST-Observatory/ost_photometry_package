@@ -435,6 +435,22 @@ class LightCurveConfig:
     light_curve_time_scale: Literal["bjd_tdb", "jd"] = "bjd_tdb"
     light_curve_phase_cycles: int = 1
     light_curve_show_airmass: bool = True
+    #: Differential product (OOI / quiet comparison ensemble, instrumental
+    #: magnitudes only) and global ``flag_epoch`` on ``light_curves.ecsv``.
+    light_curve_differential: bool = True
+    #: Number of quiet comparison stars per filter.
+    light_curve_ensemble_size: int = 10
+    #: Half width (mag) of the brightness window around the OOI.
+    light_curve_ensemble_mag_window: float = 1.0
+    #: Minimum fraction of epochs an ensemble candidate is measured in.
+    light_curve_ensemble_min_coverage: float = 0.8
+    #: Epoch flags: robust sigma for transparency / ensemble scatter
+    #: (``None``: only the ensemble-completeness test).
+    light_curve_epoch_flag_sigma: float | None = 5.0
+    #: Smallest common-mode deviation (mag) that flags an epoch.
+    light_curve_epoch_flag_min_mag: float = 0.05
+    #: Fraction of ensemble stars an epoch needs.
+    light_curve_epoch_min_ensemble_fraction: float = 0.5
 
 
 @dataclass

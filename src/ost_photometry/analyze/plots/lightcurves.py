@@ -80,7 +80,16 @@ def y_limits_for_quantity(
     return hi, lo
 
 
-def _series_y(tbl: Table) -> tuple[np.ndarray, np.ndarray, str]:
+def _series_y(
+    tbl: Table,
+    product: str = "default",
+) -> tuple[np.ndarray, np.ndarray, str]:
+    if product == "differential":
+        return (
+            np.asarray(tbl["dflux"], dtype=float),
+            np.abs(np.asarray(tbl["dflux_err"], dtype=float)),
+            "flux",
+        )
     qty = "magnitude"
     if "quantity" in tbl.colnames:
         qarr = np.asarray(tbl["quantity"]).astype(str)
@@ -93,6 +102,19 @@ def _series_y(tbl: Table) -> tuple[np.ndarray, np.ndarray, str]:
         y = np.asarray(tbl["mag"], dtype=float)
         e = np.abs(np.asarray(tbl["mag_err"], dtype=float))
     return y, e, qty
+
+
+def _epoch_flags(tbl: Table) -> np.ndarray | None:
+    if "flag_epoch" not in tbl.colnames:
+        return None
+    return np.asarray(tbl["flag_epoch"], dtype=bool)
+
+
+def has_differential_product(tbl: Table) -> bool:
+    """True if the slice has finite ``dflux`` values."""
+    return "dflux" in tbl.colnames and bool(
+        np.any(np.isfinite(np.asarray(tbl["dflux"], dtype=float)))
+    )
 
 
 def _plot_time_and_label(
@@ -128,7 +150,14 @@ def _draw_night_bands(ax, x: np.ndarray, night_id: np.ndarray | None) -> None:
         ax.axvspan(float(np.min(xx[m])), float(np.max(xx[m])), color="0.92", zorder=0)
 
 
-def _ylabel(filter_: str, quantity: str, magnitude_system: str) -> str:
+def _ylabel(
+    filter_: str,
+    quantity: str,
+    magnitude_system: str,
+    product: str = "default",
+) -> str:
+    if product == "differential":
+        return f"{filter_} flux / ensemble (normalized)"
     if quantity == "flux":
         return f"{filter_} [flux] (normalized)"
     return f"{filter_}{magnitude_system_axis_suffix(magnitude_system)}"
@@ -142,7 +171,12 @@ def _scatter_with_flags(
     flag,
     *,
     quantity: str,
+    epoch_flag=None,
 ) -> None:
+    """Good points, per-source outliers (open grey) and bad epochs (orange ×).
+
+    Both kinds of flagged points stay out of the y-limits.
+    """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     e = _nonnegative_errorbar_yerr(yerr)
@@ -150,7 +184,11 @@ def _scatter_with_flags(
         flag = np.zeros(x.size, dtype=bool)
     else:
         flag = np.asarray(flag, dtype=bool)
-    good = ~flag
+    if epoch_flag is None:
+        bad_epoch = np.zeros(x.size, dtype=bool)
+    else:
+        bad_epoch = np.asarray(epoch_flag, dtype=bool) & ~flag
+    good = ~flag & ~bad_epoch
     if np.any(good):
         ax.errorbar(
             x[good],
@@ -178,6 +216,20 @@ def _scatter_with_flags(
             markerfacecolor="none",
             zorder=2,
             label="outlier",
+        )
+    if np.any(bad_epoch):
+        ax.errorbar(
+            x[bad_epoch],
+            y[bad_epoch],
+            yerr=e[bad_epoch],
+            marker="x",
+            markersize=5,
+            linestyle="none",
+            capsize=2,
+            ecolor="navajowhite",
+            color="darkorange",
+            zorder=2,
+            label="bad epoch",
         )
     lo_hi = y_limits_for_quantity(y[good] if np.any(good) else y, quantity=quantity)
     ax.set_ylim(*lo_hi)
@@ -501,9 +553,14 @@ def light_curve_jd_from_table(
     time_scale: str = "bjd_tdb",
     show_airmass: bool = True,
     magnitude_system: str = "vega",
+    product: str = "default",
 ) -> Path:
-    """JD (or BJD) light curve for one source/filter slice of the long table."""
-    y, e, qty = _series_y(tbl)
+    """JD (or BJD) light curve for one source/filter slice of the long table.
+
+    ``product="differential"`` plots ``dflux`` (OOI / quiet ensemble) into
+    ``lightcurve_diff_jd_*``; the default is the table's ``mag`` / ``flux``.
+    """
+    y, e, qty = _series_y(tbl, product)
     x, xlabel = _plot_time_and_label(tbl, time_scale)
     flag = np.asarray(tbl["flag_outlier"], dtype=bool) if "flag_outlier" in tbl.colnames else None
     night = np.asarray(tbl["night_id"]) if "night_id" in tbl.colnames else None
@@ -511,10 +568,11 @@ def light_curve_jd_from_table(
 
     fig, ax = plt.subplots(figsize=_FIGSIZE)
     _draw_night_bands(ax, x, night)
-    _scatter_with_flags(ax, x, y, e, flag, quantity=qty)
+    _scatter_with_flags(ax, x, y, e, flag, quantity=qty, epoch_flag=_epoch_flags(tbl))
     ax.set_xlabel(xlabel, fontsize=_LABEL_FS)
-    ax.set_ylabel(_ylabel(filter_, qty, magnitude_system), fontsize=_LABEL_FS)
-    ax.set_title(f"Light curve — {_sanitize_filename(name_object)} ({filter_})", fontsize=_TITLE_FS)
+    ax.set_ylabel(_ylabel(filter_, qty, magnitude_system, product), fontsize=_LABEL_FS)
+    kind = "Differential light curve" if product == "differential" else "Light curve"
+    ax.set_title(f"{kind} — {_sanitize_filename(name_object)} ({filter_})", fontsize=_TITLE_FS)
     ax.tick_params(labelsize=_TICK_FS)
     ax.grid(True, color="lightgray", linestyle="--")
     if show_airmass and am is not None and np.any(np.isfinite(am)):
@@ -525,8 +583,9 @@ def light_curve_jd_from_table(
         ax2.set_ylim(bottom=max(0.9, float(np.nanmin(am)) - 0.05))
     fig.tight_layout()
     plot_dir = _lightcurve_dir(output_dir, subdirectory)
+    stem = "lightcurve_diff_jd" if product == "differential" else "lightcurve_jd"
     path = plot_dir / (
-        f"lightcurve_jd_{_sanitize_filename(name_object)}_{_sanitize_filename(filter_)}.{file_type}"
+        f"{stem}_{_sanitize_filename(name_object)}_{_sanitize_filename(filter_)}.{file_type}"
     )
     fig.savefig(path, bbox_inches="tight", format=file_type)
     plt.close(fig)
@@ -586,9 +645,10 @@ def light_curve_fold_from_table(
     time_scale: str = "bjd_tdb",
     phase_cycles: int = 1,
     magnitude_system: str = "vega",
+    product: str = "default",
 ) -> Path:
     """Folded light curve vs phase (0–1, optionally wrapped to 0–2)."""
-    y, e, qty = _series_y(tbl)
+    y, e, qty = _series_y(tbl, product)
     jd = np.asarray(tbl["jd"], dtype=float)
     bjd = (
         np.asarray(tbl["bjd_tdb"], dtype=float)
@@ -617,6 +677,7 @@ def light_curve_fold_from_table(
             e,
             flag,
             quantity=qty,
+            epoch_flag=_epoch_flags(tbl),
         )
     binned = _phase_bin_centers_and_means(phase, y, e, binning_factor)
     if binned is not None:
@@ -637,9 +698,10 @@ def light_curve_fold_from_table(
             )
     ax.set_xlim(-0.02, float(cycles) + 0.02)
     ax.set_xlabel("Phase", fontsize=_LABEL_FS)
-    ax.set_ylabel(_ylabel(filter_, qty, magnitude_system), fontsize=_LABEL_FS)
+    ax.set_ylabel(_ylabel(filter_, qty, magnitude_system, product), fontsize=_LABEL_FS)
+    kind = "Folded differential" if product == "differential" else "Folded"
     ax.set_title(
-        f"Folded — {_sanitize_filename(name_object)} ({filter_}); "
+        f"{kind} — {_sanitize_filename(name_object)} ({filter_}); "
         f"P = {float(period):.6g} d",
         fontsize=_TITLE_FS,
     )
@@ -647,8 +709,9 @@ def light_curve_fold_from_table(
     ax.grid(True, color="lightgray", linestyle="--")
     fig.tight_layout()
     plot_dir = _lightcurve_dir(output_dir, subdirectory)
+    stem = "lightcurve_diff_folded" if product == "differential" else "lightcurve_folded"
     path = plot_dir / (
-        f"lightcurve_folded_{_sanitize_filename(name_object)}_{_sanitize_filename(filter_)}"
+        f"{stem}_{_sanitize_filename(name_object)}_{_sanitize_filename(filter_)}"
         f".{file_type}"
     )
     fig.savefig(path, bbox_inches="tight", format=file_type)
@@ -694,7 +757,7 @@ def plot_check_star_qc(
             else None
         )
         _draw_night_bands(ax, x, night)
-        _scatter_with_flags(ax, x, y, e, flag, quantity=qty)
+        _scatter_with_flags(ax, x, y, e, flag, quantity=qty, epoch_flag=_epoch_flags(sub))
         ax.set_ylabel(_ylabel(filter_, qty, magnitude_system), fontsize=9)
         ax.set_title(title, fontsize=10, loc="left")
         ax.tick_params(labelsize=9)
@@ -746,6 +809,131 @@ def plot_check_star_qc(
     fig.savefig(path, bbox_inches="tight", format=file_type)
     plt.close(fig)
     return path
+
+
+_EPOCH_FLAG_STYLES = (
+    ("transparency", "x", "darkorange"),
+    ("ensemble_scatter", "+", "crimson"),
+    ("ensemble_incomplete", "s", "purple"),
+)
+
+
+def plot_ensemble_qc(
+    lc: Table,
+    output_dir: str,
+    *,
+    filter_: str,
+    ooi_ids: list[tuple[int, str]],
+    file_type: str = "pdf",
+    time_scale: str = "bjd_tdb",
+) -> Path | None:
+    """Comparison ensemble of the differential product in one filter.
+
+    Top: ensemble common mode per epoch (instrumental mag; clouds and
+    extinction), bad epochs marked with their reason. Middle: scatter of the
+    ensemble stars about it. Bottom: ``dmag`` of each ensemble star
+    (leave-one-out, grey) and of the objects of interest.
+    """
+    if "ens_offset" not in lc.colnames:
+        return None
+    filts = np.asarray(lc["filter"]).astype(str)
+    sub = lc[filts == str(filter_)]
+    off_all = np.asarray(sub["ens_offset"], dtype=float)
+    if len(sub) == 0 or not np.any(np.isfinite(off_all)):
+        return None
+
+    eids = np.asarray(sub["epoch_id"]).astype(str)
+    _keys, first = np.unique(eids, return_index=True)
+    ep = sub[first]
+    x_ep, x_label = _plot_time_and_label(ep, time_scale)
+    order = np.argsort(x_ep)
+    ep = ep[order]
+    x_ep = x_ep[order]
+    off = np.asarray(ep["ens_offset"], dtype=float)
+    off_err = np.asarray(ep["ens_offset_err"], dtype=float)
+    scat = np.asarray(ep["ens_scatter"], dtype=float)
+    bad = np.asarray(ep["flag_epoch"], dtype=bool)
+    reasons = np.asarray(ep["flag_epoch_reason"]).astype(str)
+    night = np.asarray(ep["night_id"]) if "night_id" in ep.colnames else None
+
+    fig, axes = plt.subplots(3, 1, figsize=(10.0, 8.4), sharex=True)
+    ax = axes[0]
+    _draw_night_bands(ax, x_ep, night)
+    ax.errorbar(
+        x_ep[~bad], off[~bad], yerr=np.abs(off_err[~bad]), marker=".",
+        linestyle="none", color="C0", ecolor="lightsteelblue", capsize=2,
+    )
+    if np.any(bad):
+        # One marker per first reason; the full list is in flag_epoch_reason.
+        first_reason = np.array([r.split(";")[0] for r in reasons])
+        for why, marker, color in _EPOCH_FLAG_STYLES:
+            m = bad & (first_reason == why)
+            if np.any(m):
+                ax.plot(
+                    x_ep[m], off[m], marker, color=color, markersize=7,
+                    linestyle="none", label=f"bad epoch: {why.replace('_', ' ')}",
+                )
+        ax.legend(fontsize=8, loc="best")
+    ax.invert_yaxis()
+    ax.set_ylabel("Common mode [mag]", fontsize=9)
+    ax.set_title("Ensemble common mode (fainter = down)", fontsize=10, loc="left")
+
+    ax = axes[1]
+    _draw_night_bands(ax, x_ep, night)
+    ax.plot(x_ep[~bad], scat[~bad], ".", color="C0")
+    if np.any(bad):
+        ax.plot(x_ep[bad], scat[bad], "x", color="darkorange", markersize=7)
+    ax.set_ylabel("Ensemble scatter [mag]", fontsize=9)
+
+    ax = axes[2]
+    ids = np.asarray(sub["id"]).astype(int)
+    members = sorted({int(i) for i in ids[np.asarray(sub["is_ensemble"], dtype=bool)]})
+    x_all, _lbl = _plot_time_and_label(sub, time_scale)
+    dmag = np.asarray(sub["dmag"], dtype=float)
+    for k, sid in enumerate(members):
+        m = ids == sid
+        ax.plot(
+            x_all[m], dmag[m], ".", color="0.6", markersize=3,
+            label="ensemble stars (leave-one-out)" if k == 0 else None,
+        )
+    for k, (oid, name) in enumerate(ooi_ids):
+        m = ids == int(oid)
+        if np.any(m):
+            ax.plot(
+                x_all[m], dmag[m], ".", color=f"C{(k + 1) % 10}", markersize=5,
+                label=str(name),
+            )
+    ens_vals = dmag[np.isin(ids, members)]
+    ens_vals = ens_vals[np.isfinite(ens_vals)]
+    if ens_vals.size:
+        span = max(0.05, 5.0 * _robust_std(ens_vals))
+        ooi_mask = np.isin(ids, [int(o) for o, _n in ooi_ids]) & np.isfinite(dmag)
+        lo = min(-span, float(np.min(dmag[ooi_mask]))) if np.any(ooi_mask) else -span
+        hi = max(span, float(np.max(dmag[ooi_mask]))) if np.any(ooi_mask) else span
+        pad = 0.05 * (hi - lo)
+        ax.set_ylim(hi + pad, lo - pad)
+    ax.set_ylabel("dmag", fontsize=9)
+    ax.legend(fontsize=8, loc="best")
+    axes[-1].set_xlabel(x_label, fontsize=_LABEL_FS)
+    for ax in axes:
+        ax.tick_params(labelsize=9)
+        ax.grid(True, color="lightgray", linestyle="--")
+    fig.suptitle(
+        f"Comparison ensemble ({filter_}): {len(members)} quiet stars, "
+        f"{int(np.count_nonzero(bad))} of {len(ep)} epochs flagged",
+        fontsize=_TITLE_FS,
+    )
+    fig.tight_layout()
+    out = diagnostics_dir(output_dir, "lightcurves")
+    path = out / f"ensemble_qc_{_sanitize_filename(filter_)}.{file_type}"
+    fig.savefig(path, bbox_inches="tight", format=file_type)
+    plt.close(fig)
+    return path
+
+
+def _robust_std(values: np.ndarray) -> float:
+    v = np.asarray(values, dtype=float)
+    return float(1.4826 * np.median(np.abs(v - np.median(v))))
 
 
 def plot_calibrator_variability(

@@ -382,9 +382,38 @@ location + RA/Dec), otherwise `JD − 2450000`. Grey bands mark local nights
 in the table (`flag_outlier`) and are drawn as open grey points; a coherent
 eclipse dip is not flagged. Y-limits follow unflagged points.
 
+**Two products on one table.** `mag` / `mag_err` (or `flux` for unfiltered
+bands) is the **catalog-transformed** curve: absolute level and colour, with
+zero point, colour term and catalog σ in the error budget. The
+**differential** product (`light_curve_differential=True`, default) uses only
+instrumental magnitudes (`mag_inst`, from `mag_inst_*` / `mag_*` of the
+photometry table): per filter, the quietest field stars of similar brightness
+to the OOI (all field stars, not only catalog calibrators) form a comparison
+ensemble. Their weighted mean offset per epoch is the common mode
+(`ens_offset`: clouds, extinction, tracking). Every source is divided by it in
+flux: `dmag = mag_inst − ens_offset` (median 0), `dflux = 10^(−0.4 dmag)`
+(continuum ≈ 1). `dmag_err` is `√(σ_inst² + σ_ens²)`, without any catalog
+term. Ensemble stars (`is_ensemble`) are measured against the ensemble
+without themselves, so their `dmag` scatter is a fair check. Selection runs
+twice: a robust (MAD) preselection, so one bad epoch cannot hide by picking
+the stars it spared, then the plain RMS without the flagged epochs, so stars
+with short eclipses drop out. Candidates and the chosen ensemble are listed
+in `tables/light_curve_ensemble.ecsv`.
+
+**Bad epochs** (`flag_epoch`, reason in `flag_epoch_reason`) are global: a
+cloud dims every star. Reasons: `ensemble_incomplete` (fewer than half of
+the ensemble measured), `transparency` (the common mode leaves its night's
+extinction trend, linear in airmass, by more than
+`max(5 σ_robust, 0.05 mag)`), `ensemble_scatter` (the ensemble stars disagree
+with each other: patchy clouds). A thin cloud that the ensemble corrects is
+not flagged. Bad epochs are drawn as orange ×, distinct from per-source
+outliers (open grey), and stay out of the y-limits. Rows are never deleted.
+
 | File (stem) | Content |
 |-------------|---------|
 | `lightcurve_jd_<name>_<filter>` | Science light curve (OOI). Magnitudes inverted; y-limits span unflagged points (eclipse dips stay in view). |
+| `lightcurve_diff_jd_<name>_<filter>`, `lightcurve_diff_folded_<name>_<filter>` | Differential product (`dflux`, OOI / ensemble) of the same source. |
+| `ensemble_qc_<filter>` | Common mode per epoch with bad epochs by reason; scatter of the ensemble stars; `dmag` of ensemble stars (leave-one-out) and OOI. Under `diagnostics/lightcurves/`. |
 | `lightcurve_folded_<name>_<filter>` | Phase \(0\ldots 1\) (optionally two cycles), marker at phase 0. |
 | `check_star_qc_<filter>` | OOI vs the **K most variable catalog calibrators** (excess RMS, not raw RMS). OOI `id`s are removed from the calibrator pool even if they have `mag_std_*`. |
 | `calibrator_variability_<filter>` | Catalog calibrators only (OOI excluded): excess RMS vs magnitude, residual LCs (top-K in colour). |

@@ -311,63 +311,36 @@ Do **not** add more per-star PDFs, interactive HTML/plotly, a prettier
 `ImageSeries` flux backend, or a full eclipse MCMC. Those cement the old dual
 path or assume the table physics below already exists.
 
-### Two light-curve products, not one API (P1)
+### Two light-curve products, not one API — done
 
-Build **two versions**, same photometry table, different physics — not one
-function with a `mode=` switch that shares defaults.
+Both products live on `light_curves.ecsv` as **columns of the same rows**
+(source × filter × epoch), so every `(id, filter)` consumer keeps working:
 
-| Product | Scale | What it is for |
-|---------|--------|----------------|
-| **Catalog-transformed** | Calibrated magnitudes (`mag_cal_*`, Vega/AB as labelled) | Absolute level, colour, comparison to catalogs / other nights / other sites. ZP, colour term, and catalog \(\sigma\) stay in the error budget. |
-| **Relative / differential** | Flux ratio (OOI vs a comparison; continuum ≈ 1) | Shape and **depth** without a catalog ZP. Store **flux** (or a flux ratio). \(\Delta m = -2.5\log_{10}(F/F_{\mathrm{ref}})\) is only a display transform — do not difference `mag_cal_*`. |
+| Product | Columns | What it is for |
+|---------|---------|----------------|
+| **Catalog-transformed** | `mag` / `mag_err` (`mag_cal_*`), or `flux` for unfiltered bands | Absolute level, colour, comparison to catalogs / other nights / other sites. ZP, colour term, and catalog \(\sigma\) stay in the error budget. |
+| **Differential** | `dflux` / `dflux_err`, display `dmag` / `dmag_err` (from `mag_inst` only) | Shape and **depth** without a catalog ZP. |
 
-Today the catalog-transformed curve exists (`mag_cal_*` in `light_curves.ecsv`).
-Bands with **no catalog standards** (Clear, luminance, white, …) already use
-the flux fallback: epoch quasi-ZP (field median) then per-star median so the
-continuum sits at 1. That is **not** yet the quiet-ensemble product below.
+Plots say which product they show (`lightcurve_jd_*` vs `lightcurve_diff_*`).
+Open: the C7 night comparison (`4_compare_nights.py`) still uses only the
+transformed product.
 
-**Direction:** both live on the long table (e.g. `mag` / `mag_err` for the
-transformed curve; `flux` / `flux_err` with `quantity="flux"` or dedicated
-`dflux` rows for the relative curve). Plots and C7 scripts say which product
-they show. Do not silently subtract the ensemble from `mag_cal_*` and still
-call it calibrated.
+### Quiet comparison ensemble — differential product — done
 
-A magnitude-valued “differential” column is optional later for quoting eclipse
-depth in mag; it must be \(-2.5\log_{10}\) of the **same** flux ratio
-(instrumental or quasi-ZP), never catalog-calibrated magnitudes.
+`analyze.post_processing.differential_light_curve`: quiet ensemble from all
+similar-magnitude field stars (robust preselection, then RMS without bad
+epochs; leave-one-out for members), `dmag` / `dflux` with errors free of
+catalog σ, `tables/light_curve_ensemble.ecsv`, `ensemble_qc_*` and
+`lightcurve_diff_*` plots. See [DIAGNOSTICS.md](DIAGNOSTICS.md#light-curves).
+Selection ranks by the measured RMS, not the excess RMS: on the HAT-P-20
+test night the instrumental `err_*` are about 4–5× the real scatter, so
+every star had excess 0 (see **Inflate photometric uncertainties**).
 
-### Quiet comparison ensemble — differential product (P1)
+### Global bad-epoch flags — done
 
-A C7 light curve whose **relative depth** can be defended against check stars
-needs the opposite of today’s QC ranking: the **quietest** \(N\) field stars
-(smallest excess RMS, similar brightness to the OOI) as a comparison ensemble.
-Their median residual is the common mode (cloud, tracking, extinction).
-Divide the OOI by that ensemble in **flux** (or subtract in instrumental /
-quasi-ZP magnitudes — the same ratio). Catalog \(\sigma\) must not enter
-`flux_err` / `dmag_err`.
-
-Today’s Clear-filter path only removes a **global** epoch median (all stars)
-and then sets each star’s own continuum to 1. The quiet-ensemble product
-restricts that common mode to the quietest similar-mag stars.
-
-This is not a replacement for the catalog-transformed curve: that one keeps
-`mag_cal_*` and catalog systematics on purpose.
-
-**Direction:** select quiet stars from `calibrator_lc_stats.ecsv` (and/or
-similar-mag field stars, not only catalog calibrators); write ensemble
-residual and OOI/ensemble flux ratio on `light_curves.ecsv` as the
-differential product. Keep the “most variable” QC panel as a separate
-diagnostic of the transformed set.
-
-### Global bad-epoch flags (P1)
-
-`flag_outlier` is per source: short faint runs (1–2 epochs) and bright
-spikes are flagged; a coherent eclipse dip is not. A cloud hits everyone. Use the median residual of
-the **quiet** ensemble per epoch; if that common mode is large, the epoch is
-bad, not the OOI.
-
-**Direction:** `flag_epoch` (or equivalent) on the long table, plotted
-distinctly from per-star outliers. Do not delete rows.
+`flag_epoch` / `flag_epoch_reason` (`ensemble_incomplete`, `transparency`
+vs the night's extinction trend, `ensemble_scatter`), plotted distinct from
+per-star outliers. Not yet used by the period search / folded binning.
 
 ### Inflate photometric uncertainties (P1)
 
@@ -375,7 +348,12 @@ Error bars on the **transformed** curve include photon/sky \(\sigma_m\) and,
 honestly, catalog/ZP scatter. On the **differential** curve they must not
 include catalog \(\sigma\): only photometry of OOI and ensemble, plus the
 ensemble’s excess RMS as systematic floor. If the quiet ensemble has 0.02 mag
-excess RMS, that floor applies to `dmag_err`. A 0.03 mag “variation” on
+excess RMS, that floor applies to `dmag_err`.
+
+**Finding (October 2026):** on the HAT-P-20 C7 test night the instrumental
+`err_V` is ~0.02 mag while the differential point-to-point scatter is
+0.004 mag. The instrumental errors themselves are too large by 4–5×; check
+where `err_*` / `mags_unc` come from before adding floors on top. A 0.03 mag “variation” on
 `mag_cal_*` can still be the night **or** the catalog; on `dmag` it should
 not be the catalog.
 
@@ -765,7 +743,7 @@ how `camera_info` maps FITS `INSTRUME` / `GAIN` / `READOUTM` / `CCD-TEMP` to
 
 ## Suggested order
 
-1. **P1:** Light curves — two products (catalog-transformed mag scale vs differential depth without catalog \(\sigma\)); quiet ensemble + `flag_epoch`; then inflate \(\sigma\) and residuals vs airmass/FWHM/sky/\(x,y\).
+1. **P1:** Light curves — honest \(\sigma\) (instrumental `err_*` are too large; then ensemble excess floor) and residuals vs airmass/FWHM/sky/\(x,y\). Differential product, quiet ensemble and `flag_epoch` are done.
 2. **P2:** Camera catalog — QHY268 system-gain vs GAIN (all readout modes), then dark current for 485C / 462 / ASI2600.
 3. **P2:** Registration — tests for `(dx, dy)` axes, `aa_true` on a synthetic shift and shift outliers. Skipped-frame reporting and the reference WCS after `aa_true` are done. Do **not** start drizzle while the tests are open.
 4. **P2:** Registration — backend protocol (`fit` → `apply` → YAML) and pragmatic unification: every method on the reference grid; drop `make_big_images` from the workflow; **keep** filter-then-inter-filter.

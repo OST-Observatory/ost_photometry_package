@@ -32,6 +32,7 @@ from .correlation_qc import plot_track_qc
 from .extraction import plot_apertures, plot_cutouts, plot_epsf, plot_residual
 from .lightcurves import (
     fold_phase,
+    has_differential_product,
     light_curve_fold,
     light_curve_fold_from_table,
     light_curve_jd,
@@ -42,6 +43,7 @@ from .lightcurves import (
     night_date_label,
     plot_calibrator_variability,
     plot_check_star_qc,
+    plot_ensemble_qc,
     plot_light_curve_overview,
     unique_night_ids,
     y_limits_for_quantity,
@@ -74,6 +76,7 @@ __all__ = [
     "covariance_ellipse_pixels",
     "d3_scatter",
     "fold_phase",
+    "has_differential_product",
     "initialize_plot",
     "light_curve_fold",
     "light_curve_fold_from_table",
@@ -102,6 +105,7 @@ __all__ = [
     "plot_combined_separation_histograms",
     "plot_cutouts",
     "plot_derive_transform_fit_overview",
+    "plot_ensemble_qc",
     "plot_epsf",
     "plot_extinction_fit_comparison_stars",
     "plot_extinction_fit_value_airmass",

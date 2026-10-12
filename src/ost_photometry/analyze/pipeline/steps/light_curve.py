@@ -295,6 +295,8 @@ class LightCurveStep(base.PipelineStep):
             from ...post_processing.light_curve import add_color_index_rows
 
             lc = add_color_index_rows(lc, config.light_curve_color)
+        if config.light_curve_differential:
+            lc = self._add_differential_product(lc, config, output_dir, ooi_ids_all)
         path = write_light_curves_table(lc, output_dir)
         terminal_output.print_to_terminal(
             f"Wrote {path.name} ({len(lc)} rows)",
@@ -311,6 +313,36 @@ class LightCurveStep(base.PipelineStep):
             cal_ids_all,
         )
         return context
+
+    def _add_differential_product(
+        self,
+        lc: Table,
+        config: PipelineConfig,
+        output_dir: str,
+        ooi_ids: set[int],
+    ) -> Table:
+        from ...post_processing.differential_light_curve import (
+            ENSEMBLE_STATS_FILENAME,
+            add_differential_columns,
+        )
+
+        lc, ensemble = add_differential_columns(
+            lc,
+            ooi_ids,
+            ensemble_size=config.light_curve_ensemble_size,
+            mag_window=config.light_curve_ensemble_mag_window,
+            min_coverage=config.light_curve_ensemble_min_coverage,
+            epoch_flag_sigma=config.light_curve_epoch_flag_sigma,
+            epoch_flag_min_mag=config.light_curve_epoch_flag_min_mag,
+            min_ensemble_fraction=config.light_curve_epoch_min_ensemble_fraction,
+        )
+        if len(ensemble) > 0:
+            ensemble.write(
+                str(tables_dir(output_dir) / ENSEMBLE_STATS_FILENAME),
+                format="ascii.ecsv",
+                overwrite=True,
+            )
+        return lc
 
     def _flux_fallback_table(
         self,
@@ -432,6 +464,18 @@ class LightCurveStep(base.PipelineStep):
                             "magnitude_system": mag_sys,
                         },
                     )
+
+            if "ens_offset" in lc.colnames:
+                start_plot_process(
+                    lc_plots.plot_ensemble_qc,
+                    (lc, output_dir),
+                    {
+                        "filter_": filter_,
+                        "ooi_ids": ooi_pairs,
+                        "file_type": file_type,
+                        "time_scale": config.light_curve_time_scale,
+                    },
+                )
 
             if config.plot_light_curve_calibration_objects and cal_ids_all:
                 ooi_set = {oid for oid, _n in ooi_pairs}

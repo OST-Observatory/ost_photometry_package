@@ -435,6 +435,13 @@ Replot one night with `3_plot_lightcurve.py`; overlay nights with
 | `light_curve_time_scale` | `bjd_tdb` | Barycentric JD when RA/Dec + site exist; else `jd` |
 | `light_curve_outlier_sigma` | 5 | Per-source MAD clip. Flags **short** faint runs (1–2 epochs) and any bright-side spike; a coherent eclipse dip (≥ 3 faint epochs) is kept. `None` disables. Flags stay in the table |
 | `light_curve_binning_factor` | None | Folded-curve phase bin width (0–1) or number of bins (≥ 1) |
+| `light_curve_differential` | True | Differential product (`dflux` / `dmag`: OOI / quiet comparison ensemble, instrumental magnitudes only) and `flag_epoch` |
+| `light_curve_ensemble_size` | 10 | Quiet comparison stars per filter |
+| `light_curve_ensemble_mag_window` | 1.0 | Half width (mag) of the brightness window around the OOI; doubled (up to three times) when too few candidates |
+| `light_curve_ensemble_min_coverage` | 0.8 | Fraction of epochs a candidate must be measured in |
+| `light_curve_epoch_flag_sigma` | 5 | Robust sigma for the transparency and ensemble-scatter epoch tests; `None` keeps only the completeness test |
+| `light_curve_epoch_flag_min_mag` | 0.05 | Smallest deviation (mag) that flags an epoch |
+| `light_curve_epoch_min_ensemble_fraction` | 0.5 | Fraction of ensemble stars an epoch needs |
 
 See [DIAGNOSTICS.md](DIAGNOSTICS.md#light-curves).
 

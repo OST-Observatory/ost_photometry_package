@@ -11,6 +11,27 @@ section of this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Differential light curves** (`analyze.post_processing.differential_light_curve`,
+  `light_curve_differential=True`): per filter a quiet comparison ensemble
+  (the quietest field stars of similar brightness to the OOI, all field
+  stars rather than only catalog calibrators; robust preselection, then RMS
+  without bad epochs) gives the common mode per epoch. `light_curves.ecsv`
+  gains `mag_inst` / `mag_inst_err`, `ens_offset`, `ens_offset_err`, `ens_n`,
+  `ens_scatter`, `dmag`, `dmag_err`, `dflux`, `dflux_err` and `is_ensemble`;
+  differential errors carry no catalog term, and ensemble stars are measured
+  leave-one-out. Candidates and members are listed in
+  `tables/light_curve_ensemble.ecsv`. New plots `lightcurve_diff_jd_*` /
+  `lightcurve_diff_folded_*` and `diagnostics/lightcurves/ensemble_qc_*`.
+  On the HAT-P-20 test night the point-to-point scatter is 0.004 mag
+  instead of 0.010 mag for `mag_cal_V`.
+- **Global bad-epoch flags** `flag_epoch` / `flag_epoch_reason`
+  (`ensemble_incomplete`, `transparency`, `ensemble_scatter`) from the
+  ensemble common mode, drawn distinct from per-source outliers in all
+  light-curve plots. Options `light_curve_ensemble_*` and
+  `light_curve_epoch_*`.
+
 ## [0.6.0] - 2026-10-12
 
 ### Added

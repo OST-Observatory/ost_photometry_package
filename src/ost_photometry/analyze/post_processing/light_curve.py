@@ -48,6 +48,40 @@ def epoch_native_mag_err_columns(tbl: Table, filter_: str) -> tuple[str, str] | 
     return None
 
 
+def epoch_native_instrumental_columns(
+    tbl: Table,
+    filter_: str,
+) -> tuple[str, str, LightCurveQuantity] | None:
+    """Instrumental ``(value, error, kind)`` columns for ``filter_``.
+
+    Instrumental-only tables carry ``mag_inst_*``; calibrated tables keep the
+    instrumental input of the calibration as ``mag_*`` / ``err_*``. Flux
+    columns are the last resort. No zero point or catalog term is in these.
+    """
+    for mag_c, err_c in (
+        (f"mag_inst_{filter_}", f"err_inst_{filter_}"),
+        (f"mag_{filter_}", f"err_{filter_}"),
+    ):
+        if mag_c in tbl.colnames and err_c in tbl.colnames:
+            return mag_c, err_c, "magnitude"
+    flux_cols = epoch_native_flux_err_columns(tbl, filter_)
+    if flux_cols is not None:
+        return flux_cols[0], flux_cols[1], "flux"
+    return None
+
+
+def instrumental_mag_from_flux(flux, flux_err) -> tuple[np.ndarray, np.ndarray]:
+    """``-2.5 log10(flux)`` and its error; NaN where ``flux <= 0``."""
+    f = np.asarray(flux, dtype=float)
+    fe = np.abs(np.asarray(flux_err, dtype=float))
+    ok = np.isfinite(f) & (f > 0)
+    mag = np.full(f.shape, np.nan)
+    err = np.full(f.shape, np.nan)
+    mag[ok] = -2.5 * np.log10(f[ok])
+    err[ok] = 2.5 / np.log(10.0) * fe[ok] / f[ok]
+    return mag, err
+
+
 def epoch_has_catalog_calibrated_mags(tbl: Table, filter_: str) -> bool:
     """True if ``tbl`` has ``mag_cal_<filter>`` / ``err_cal_<filter>``."""
     mc, ec = f"mag_cal_{filter_}", f"err_cal_{filter_}"
@@ -514,6 +548,17 @@ def mk_time_series(
 
 
 LIGHT_CURVES_FILENAME = "light_curves.ecsv"
+#: Per-filter differential columns (``differential_light_curve``); colour
+#: rows leave them empty.
+DIFFERENTIAL_FLOAT_COLUMNS = (
+    "ens_offset",
+    "ens_offset_err",
+    "ens_scatter",
+    "dmag",
+    "dmag_err",
+    "dflux",
+    "dflux_err",
+)
 CALIBRATOR_STATS_FILENAME = "calibrator_lc_stats.ecsv"
 JD_MINUS_OFFSET = 2450000.0
 
@@ -612,6 +657,8 @@ def _empty_light_curves_table() -> Table:
             "mag_err": np.array([], dtype=float),
             "flux": np.array([], dtype=float),
             "flux_err": np.array([], dtype=float),
+            "mag_inst": np.array([], dtype=float),
+            "mag_inst_err": np.array([], dtype=float),
             "quantity": np.array([], dtype="U16"),
             "flag_outlier": np.array([], dtype=bool),
             "ra": np.array([], dtype=float),
@@ -673,6 +720,17 @@ def _rows_from_epoch_native_source(
     else:
         mag[:] = values
         mag_err[:] = errs
+    inst_cols = epoch_native_instrumental_columns(sub, filter_)
+    if inst_cols is None:
+        mag_inst = np.full(n, np.nan)
+        mag_inst_err = np.full(n, np.nan)
+    else:
+        inst_v = np.asarray(sub[inst_cols[0]].ravel(), dtype=float)
+        inst_e = np.abs(np.asarray(sub[inst_cols[1]].ravel(), dtype=float))
+        if inst_cols[2] == "flux":
+            mag_inst, mag_inst_err = instrumental_mag_from_flux(inst_v, inst_e)
+        else:
+            mag_inst, mag_inst_err = inst_v, inst_e
     name = str(object_name or "")
     return Table(
         {
@@ -688,6 +746,8 @@ def _rows_from_epoch_native_source(
             "mag_err": mag_err,
             "flux": flux,
             "flux_err": flux_err,
+            "mag_inst": mag_inst,
+            "mag_inst_err": mag_inst_err,
             "quantity": np.full(n, str(quantity), dtype="U16"),
             "flag_outlier": np.zeros(n, dtype=bool),
             "ra": ra,
@@ -890,6 +950,16 @@ def add_color_index_rows(tbl: Table, color: str | None) -> Table:
             row["mag_err"] = e
             row["flux"] = np.nan
             row["flux_err"] = np.nan
+            for col in ("mag_inst", "mag_inst_err", *DIFFERENTIAL_FLOAT_COLUMNS):
+                if col in row.colnames:
+                    row[col] = np.nan
+            for col in ("is_ensemble", "flag_epoch"):
+                if col in row.colnames:
+                    row[col] = False
+            if "ens_n" in row.colnames:
+                row["ens_n"] = 0
+            if "flag_epoch_reason" in row.colnames:
+                row["flag_epoch_reason"] = ""
             row["quantity"] = "magnitude"
             row["flag_outlier"] = False
             parts.append(row)
@@ -985,6 +1055,7 @@ def build_light_curves_table_from_flux(
             am = np.full(n_ep, np.nan)
     nights = night_id_from_jd(jds)
     rows: list[Table] = []
+    inst_mag, inst_err = instrumental_mag_from_flux(med, std)
     for j in range(n_obj):
         sid = int(ids[j])
         ra_j = float(ra[j]) if ra is not None and j < len(ra) else np.nan
@@ -1004,6 +1075,8 @@ def build_light_curves_table_from_flux(
                     "mag_err": np.full(n_ep, np.nan),
                     "flux": med[:, j],
                     "flux_err": std[:, j],
+                    "mag_inst": inst_mag[:, j],
+                    "mag_inst_err": inst_err[:, j],
                     "quantity": np.full(n_ep, "flux", dtype="U16"),
                     "flag_outlier": np.zeros(n_ep, dtype=bool),
                     "ra": np.full(n_ep, ra_j),
@@ -1480,7 +1553,11 @@ def plot_from_light_curves_table(
     show_airmass: bool = True,
     magnitude_system: str | None = None,
 ) -> None:
-    """JD (and folded, if period/t0) plots for one source from the long table."""
+    """JD (and folded, if period/t0) plots for one source from the long table.
+
+    With a differential product (finite ``dflux``) the same views are also
+    written as ``lightcurve_diff_*`` (OOI / quiet comparison ensemble).
+    """
     from .. import plots
     from .magnitude_systems import table_magnitude_system
 
@@ -1493,20 +1570,31 @@ def plot_from_light_curves_table(
         return
     name = name_object or str(sub["object_name"][0] or source_id)
     mag_sys = magnitude_system or table_magnitude_system(lc)
-    plots.light_curve_jd_from_table(
-        sub,
-        output_dir,
-        name_object=name,
-        filter_=filter_,
-        file_type=file_type,
-        subdirectory=subdirectory,
-        time_scale=time_scale,
-        show_airmass=show_airmass,
-        magnitude_system=mag_sys,
-    )
+    products = ["default"]
+    if plots.has_differential_product(sub):
+        products.append("differential")
     per = period
-    if per is not None and per != "?" and float(per) > 0.0:
-        if transit_time is not None and transit_time != "?":
+    fold = (
+        per is not None
+        and per != "?"
+        and float(per) > 0.0
+        and transit_time is not None
+        and transit_time != "?"
+    )
+    for product in products:
+        plots.light_curve_jd_from_table(
+            sub,
+            output_dir,
+            name_object=name,
+            filter_=filter_,
+            file_type=file_type,
+            subdirectory=subdirectory,
+            time_scale=time_scale,
+            show_airmass=show_airmass,
+            magnitude_system=mag_sys,
+            product=product,
+        )
+        if fold:
             plots.light_curve_fold_from_table(
                 sub,
                 output_dir,
@@ -1520,6 +1608,7 @@ def plot_from_light_curves_table(
                 time_scale=time_scale,
                 phase_cycles=phase_cycles,
                 magnitude_system=mag_sys,
+                product=product,
             )
 
 
