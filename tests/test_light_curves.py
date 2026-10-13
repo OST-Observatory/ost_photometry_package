@@ -252,6 +252,35 @@ def test_color_rows_from_matched_epoch_id():
         )
 
 
+def test_point_error_and_common_offset_from_split_columns():
+    """mag_err = rand ⊕ epoch, mag_err_sys = common; colour rows use B-V columns."""
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        phot = _mini_photometry()
+        n = len(phot)
+        for f in ("B", "V"):
+            phot[f"err_cal_rand_{f}"] = np.full(n, 0.03)
+            phot[f"err_cal_epoch_{f}"] = np.full(n, 0.04)
+            phot[f"err_cal_common_{f}"] = np.full(n, 0.02)
+        phot["err_cal_rand_B-V"] = np.full(n, 0.01)
+        phot["err_cal_epoch_B-V"] = np.full(n, 0.0)
+        phot["err_cal_common_B-V"] = np.full(n, 0.005)
+        tbl = mod.build_light_curves_table(phot, ["B", "V"], outlier_sigma=None, color="B-V")
+        filt = np.asarray(tbl["filter"]).astype(str)
+        v = tbl[filt == "V"]
+        assert np.allclose(v["mag_err"], 0.05)
+        assert np.allclose(v["mag_err_sys"], 0.02)
+        color = tbl[filt == "B-V"]
+        assert len(color) > 0
+        assert np.allclose(color["mag_err"], 0.01)
+        assert np.allclose(color["mag_err_sys"], 0.005)
+        # without the colour columns: quadrature of the components
+        phot.remove_columns(["err_cal_rand_B-V", "err_cal_epoch_B-V", "err_cal_common_B-V"])
+        tbl = mod.build_light_curves_table(phot, ["B", "V"], outlier_sigma=None, color="B-V")
+        color = tbl[np.asarray(tbl["filter"]).astype(str) == "B-V"]
+        assert np.allclose(color["mag_err"], np.hypot(0.05, 0.05))
+
+
 def test_outlier_flag_on_injected_spike():
     with isolated_sys_modules():
         mod = _load_light_curve()
@@ -519,3 +548,23 @@ def test_phase_bins_weighted_skip_flags_and_never_zero_error():
         assert cy[1] == pytest.approx(2.0)
         assert ce[1] == pytest.approx(0.1 / np.sqrt(2))
         assert np.all(ce > 0)
+
+
+def test_outlier_clip_uses_errors_and_ignores_zero_mad():
+    with isolated_sys_modules():
+        mod = _load_light_curve()
+        rng = np.random.default_rng(4)
+        n = 200
+        err = np.full(n, 0.01)
+        err[50] = 0.2  # faint point with a big error: 0.3 mag off is 1.5 σ
+        y = rng.normal(0.0, 1.0, n) * err
+        y[50] = 0.3
+        y[120] = 0.08  # 8 σ with a 0.01 error
+        cand = mod._clip_candidates(y, 5.0, err)
+        assert not cand[50] and cand[120]
+        # without errors the big-error point would be clipped
+        assert mod._clip_candidates(y, 5.0)[50]
+        # constant (quantised) series: nothing flagged
+        q = np.zeros(20)
+        q[3] = 0.001
+        assert not mod._clip_candidates(q, 5.0).any()

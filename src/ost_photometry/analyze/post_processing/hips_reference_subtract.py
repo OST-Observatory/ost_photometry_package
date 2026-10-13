@@ -253,7 +253,7 @@ def run_hips_reference_subtraction(
     hotpants_executable: str | None = None,
     hotpants_extra_args: Sequence[str] | None = None,
     hotpants_output_filename: str = "diff.fits",
-    image_gain: float = 1.0,
+    image_gain: float | None = None,
     template_gain: float | None = None,
 ) -> HipsReferenceSubtractResult:
     """

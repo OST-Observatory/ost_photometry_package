@@ -215,9 +215,12 @@ def ensemble_common_mode(
 ) -> dict:
     """Weighted mean offset of the ensemble per epoch, plus leave-one-out.
 
-    Weights are ``1 / (err**2 + excess_rms**2)`` so a slightly variable
-    member counts less. ``offset_err`` is the photometric error of that mean
-    (no catalog term, no excess floor).
+    Weights are ``1 / (err**2 + excess_rms**2)``: a slightly variable member
+    counts less, and its excess is part of its variance, so the error of the
+    mean is ``1/√Σw``. The members are the quietest stars, so their excess
+    is biased low; ``birge`` = √(mean χ²_ν of the members about the offset)
+    (trimmed over epochs, at least 1) scales ``offset_err`` and ``loo_err``.
+    No catalog term.
     """
     n_ep = centered.shape[0]
     idx = np.asarray(members, dtype=int)
@@ -229,16 +232,21 @@ def ensemble_common_mode(
     rw = np.where(v, r, 0.0) * w
     sw = w.sum(axis=1)
     swr = rw.sum(axis=1)
-    sw2e2 = (w**2 * np.where(v, err[:, idx], 0.0) ** 2).sum(axis=1)
     n = v.sum(axis=1)
     with np.errstate(all="ignore"):
         offset = np.where(sw > 0, swr / sw, np.nan)
-        offset_err = np.where(sw > 0, np.sqrt(sw2e2) / sw, np.nan)
+        chi2 = np.where(
+            n >= 2,
+            (w * np.where(v, r - offset[:, None], 0.0) ** 2).sum(axis=1) / (n - 1),
+            np.nan,
+        )
+    birge = _trimmed_birge(chi2)
+    with np.errstate(all="ignore"):
+        offset_err = birge * np.where(sw > 0, 1.0 / np.sqrt(sw), np.nan)
         # Leave-one-out per member.
         sw_loo = sw[:, None] - w
         loo = np.where(sw_loo > 0, (swr[:, None] - rw) / sw_loo, np.nan)
-        loo_var = sw2e2[:, None] - (w * np.where(v, err[:, idx], 0.0)) ** 2
-        loo_err = np.where(sw_loo > 0, np.sqrt(np.maximum(loo_var, 0.0)) / sw_loo, np.nan)
+        loo_err = birge * np.where(sw_loo > 0, 1.0 / np.sqrt(sw_loo), np.nan)
     loo = np.where(v, loo, offset[:, None])
     loo_err = np.where(v, loo_err, offset_err[:, None])
 
@@ -253,7 +261,17 @@ def ensemble_common_mode(
         "scatter": scatter,
         "loo": loo,
         "loo_err": loo_err,
+        "birge": birge,
     }
+
+
+def _trimmed_birge(chi2: np.ndarray) -> float:
+    """√ of the mean χ²_ν over epochs (cloudy epochs above 5× the median dropped), ≥ 1."""
+    c = chi2[np.isfinite(chi2)]
+    if c.size == 0:
+        return 1.0
+    c = c[c <= 5.0 * np.median(c)]
+    return float(np.sqrt(max(1.0, float(np.mean(c))))) if c.size else 1.0
 
 
 def _transparency_model(
@@ -603,11 +621,82 @@ def add_differential_columns(
     return out, vstack(stats_parts, metadata_conflicts="silent")
 
 
+def relative_flux_light_curves(
+    flux: np.ndarray,
+    flux_err: np.ndarray,
+    *,
+    min_ensemble_fraction: float = 0.5,
+    clip: float = 5.0,
+) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Relative flux of every star against the field common mode (no catalog).
+
+    For filters without a catalog calibration (e.g. Clear). ``flux`` and
+    ``flux_err`` have shape ``(n_epochs, n_objects)``; missing or
+    non-positive fluxes are ignored. Stars detected in at least
+    ``min_ensemble_fraction`` of the epochs form the ensemble; its common
+    mode per epoch is the weighted mean of their centred magnitudes
+    (:func:`ensemble_common_mode`: weights with each star's excess scatter,
+    Birge factor, ensemble stars against the others only). Points more than
+    ``clip`` σ off their star's median do not enter the common mode.
+
+    Returns ``(rel_flux, rel_flux_err, info)``: each star normalised to its
+    median (continuum ≈ 1), errors from the star's own flux error and the
+    common-mode error; ``info`` holds ``offset``, ``offset_err``, ``birge``
+    and the ensemble mask.
+    """
+    f = np.asarray(flux, dtype=float)
+    fe = np.abs(np.asarray(flux_err, dtype=float))
+    n_ep, n_obj = f.shape
+    has_flux = np.isfinite(f) & (f > 0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        mag = np.where(has_flux, -2.5 * np.log10(np.where(has_flux, f, 1.0)), np.nan)
+        err = np.where(has_flux, 2.5 / np.log(10.0) * fe / np.where(has_flux, f, 1.0), np.nan)
+    weighted = has_flux & np.isfinite(err) & (err > 0)
+    centered = _centered(mag, has_flux)
+
+    n_det = weighted.sum(axis=0)
+    min_det = max(int(np.ceil(min(max(min_ensemble_fraction, 0.0), 1.0) * n_ep)), 1)
+    ensemble = n_det >= min_det
+    if not np.any(ensemble):
+        ensemble = n_det > 0
+    rel = np.full((n_ep, n_obj), np.nan)
+    rel_err = np.full((n_ep, n_obj), np.nan)
+    info = {"offset": np.full(n_ep, np.nan), "offset_err": np.full(n_ep, np.nan),
+            "birge": np.nan, "ensemble": ensemble}
+    members = np.flatnonzero(ensemble)
+    if members.size == 0:
+        return rel, rel_err, info
+
+    common = _nanmedian(np.where(weighted[:, members], centered[:, members], np.nan), axis=1)
+    q = centered - np.nan_to_num(common, nan=0.0)[:, None]
+    exc = np.zeros(n_obj)
+    ens_valid = weighted & ensemble[None, :]
+    for j in members:
+        ok = weighted[:, j]
+        if np.count_nonzero(ok) >= 3:
+            exc[j] = excess_rms(q[ok, j], err[ok, j])
+            dev = np.abs(q[:, j] - np.median(q[ok, j]))
+            ens_valid[:, j] &= dev <= clip * np.sqrt(err[:, j] ** 2 + exc[j] ** 2)
+    cm = ensemble_common_mode(centered, err, ens_valid, members, exc[members])
+
+    ref = np.repeat(cm["offset"][:, None], n_obj, axis=1)
+    ref_err = np.repeat(cm["offset_err"][:, None], n_obj, axis=1)
+    ref[:, members] = cm["loo"]
+    ref_err[:, members] = cm["loo_err"]
+    d = mag - ref
+    dmag = d - _nanmedian(np.where(has_flux, d, np.nan), axis=0)[None, :]
+    rel = 10.0 ** (-0.4 * dmag)
+    rel_err = 0.4 * np.log(10.0) * rel * np.sqrt(err**2 + ref_err**2)
+    info.update(offset=cm["offset"], offset_err=cm["offset_err"], birge=cm["birge"])
+    return rel, rel_err, info
+
+
 __all__ = [
     "DIFFERENTIAL_FLOAT_COLUMNS",
     "ENSEMBLE_STATS_FILENAME",
     "add_differential_columns",
     "ensemble_common_mode",
     "flag_bad_epochs",
+    "relative_flux_light_curves",
     "select_quiet_ensemble",
 ]

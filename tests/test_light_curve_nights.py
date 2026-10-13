@@ -101,6 +101,24 @@ def test_apply_nightly_zero_point_subtracts_median():
     assert np.isclose(np.median(out["mag"][n2]), 0.0, atol=1e-12)
 
 
+def test_nightly_zero_point_skips_flagged_points_and_gives_its_error():
+    rng = np.random.default_rng(2)
+    tbl = _long_table(source_id=1, jd0=2459000.4, mag0=12.0)
+    n = len(tbl)
+    tbl["mag"] = 12.0 + rng.normal(0.0, 0.01, n)
+    tbl["mag_err"] = np.full(n, 0.01)
+    tbl["mag_err_sys"] = np.full(n, 0.03)  # calibration offset, cancels
+    tbl["flag_outlier"] = np.zeros(n, dtype=bool)
+    tbl["mag"][: n // 3] += 1.0
+    tbl["flag_outlier"][: n // 3] = True
+    out = apply_nightly_zero_point(tbl)
+    kept = ~np.asarray(out["flag_outlier"], dtype=bool)
+    assert np.isclose(np.median(out["mag"][kept]), 0.0, atol=1e-12)
+    err = np.asarray(out["night_norm_err"])
+    assert np.all(np.isfinite(err)) and np.all(err < 0.03)
+    assert np.allclose(out["mag_err_sys"], err)
+
+
 def test_combine_matches_by_sky_across_different_ids(tmp_path: Path):
     t1 = _long_table(source_id=7, jd0=2459000.4, mag0=12.0)
     t2 = _long_table(source_id=99, jd0=2459001.4, mag0=12.1)

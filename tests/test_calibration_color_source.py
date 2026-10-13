@@ -144,3 +144,60 @@ def test_error_split_matches_monte_carlo():
     assert np.allclose(np.std(draws, axis=0), ref["err_cal_sys_V"], rtol=0.06)
     total = np.hypot(ref["err_cal_rand_V"], ref["err_cal_sys_V"])
     assert np.allclose(ref["err_cal_V"], total)
+
+
+def test_colour_index_error_matches_monte_carlo():
+    """err_cal_rand_B-V from the joint solution equals the MC spread of B - V."""
+    rng = np.random.default_rng(1)
+    n = 5
+    base = Table({
+        "mag_B": np.linspace(10.0, 12.0, n),
+        "mag_V": np.linspace(9.5, 11.0, n),
+        "err_B": np.full(n, 0.03),
+        "err_V": np.full(n, 0.02),
+    })
+    cal = _two_filter_cal()
+    phot = DifferentialPhotometer()
+    ref = phot.apply_transform_to_table(base, cal, filters=["B", "V"])
+    draws = []
+    for _ in range(3000):
+        t = base.copy()
+        t["mag_B"] = base["mag_B"] + rng.normal(0, 0.03, n)
+        t["mag_V"] = base["mag_V"] + rng.normal(0, 0.02, n)
+        out = phot.apply_transform_to_table(t, cal, filters=["B", "V"])
+        draws.append(np.asarray(out["mag_cal_B"]) - np.asarray(out["mag_cal_V"]))
+    assert np.allclose(np.std(draws, axis=0), ref["err_cal_rand_B-V"], rtol=0.05)
+    # not the quadrature sum of the correlated magnitudes
+    naive = np.hypot(ref["err_cal_rand_B"], ref["err_cal_rand_V"])
+    assert not np.allclose(naive, ref["err_cal_rand_B-V"], rtol=0.05)
+    total = np.sqrt(
+        ref["err_cal_rand_B-V"] ** 2 + ref["err_cal_epoch_B-V"] ** 2 + ref["err_cal_common_B-V"] ** 2
+    )
+    assert np.allclose(ref["err_cal_B-V"], total)
+
+
+def _split_cal(shared_by_epochs: int) -> CalibrationResult:
+    def tc(f, t, zp):
+        return TransformationCoefficients(
+            filter_name=f, color_term=t, color_term_err=0.0, zero_point=zp, zero_point_err=0.02,
+            cov_tz=0.0, color_index_filters=("B", "V"),
+            cov_phot=np.diag([0.01**2, 0.0]),
+            cov_cat=np.diag([0.02**2 - 0.01**2, 0.0]),
+            zero_point_sys=0.004, shared_by_epochs=shared_by_epochs,
+        )
+    return CalibrationResult(identifier="e0", transformation={"B": tc("B", 0.0, 3.0), "V": tc("V", 0.0, 1.0)})
+
+
+@pytest.mark.parametrize("shared", [1, 12])
+def test_epoch_and_common_split(shared):
+    tbl = Table({"mag_B": [10.0], "mag_V": [9.5], "err_B": [0.01], "err_V": [0.01]})
+    out = DifferentialPhotometer().apply_transform_to_table(tbl, _split_cal(shared), filters=["B", "V"])
+    epoch, common = float(out["err_cal_epoch_V"][0]), float(out["err_cal_common_V"][0])
+    assert np.hypot(epoch, common) == pytest.approx(float(out["err_cal_sys_V"][0]))
+    if shared == 1:
+        # photometric part of the epoch's own fit + zero_point_sys
+        assert epoch == pytest.approx(np.hypot(0.01, 0.004), rel=1e-6)
+    else:
+        # a zero point shared by the night is one common offset
+        assert epoch == pytest.approx(0.004, rel=1e-6)
+        assert common == pytest.approx(0.02, rel=1e-6)

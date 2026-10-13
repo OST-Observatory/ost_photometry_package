@@ -351,8 +351,15 @@ Calibrated magnitudes carry three error columns:
   to star.
 - `err_cal_sys_*`: zero point, T·colour, their covariance, `zero_point_sys`
   and, for shared zero points, σ_k·(X − X_ref) of the extinction. This part
-  is common to all stars of the epoch.
-- `err_cal_*`: both in quadrature.
+  is common to all stars of the epoch. It is split into `err_cal_epoch_*`
+  (changes from epoch to epoch) and `err_cal_common_*` (one offset for all
+  epochs sharing the calibrators).
+- `err_cal_*`: all in quadrature.
+- Colour indices of the joint solution get the same columns
+  (`err_cal_rand_B-V`, …).
+
+Light curves use `mag_err` = `err_cal_rand` ⊕ `err_cal_epoch` and
+`mag_err_sys` = `err_cal_common` (see [UNCERTAINTIES.md](UNCERTAINTIES.md)).
 
 The colour filters are solved jointly, so the (1 + T) factors and the
 correlation of a colour with its own magnitude are included.

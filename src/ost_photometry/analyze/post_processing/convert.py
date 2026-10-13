@@ -99,9 +99,19 @@ def _get_mag_err(
     return None
 
 
-def _set_cal_mag_err(tbl: Table, filter_: str, mag: np.ndarray, err: np.ndarray) -> None:
+_SPLIT_ERR_PREFIXES = ("err_cal_rand_", "err_cal_epoch_", "err_cal_common_", "err_cal_sys_")
+
+
+def _set_cal_mag_err(
+    tbl: Table, filter_: str, mag: np.ndarray, err: np.ndarray, *, keep_split: bool = False
+) -> None:
+    """Write ``mag_cal`` / ``err_cal``; a converted error drops the stale split columns."""
     tbl[f"mag_cal_{filter_}"] = np.asarray(mag, dtype=float)
     tbl[f"err_cal_{filter_}"] = np.asarray(err, dtype=float)
+    if not keep_split:
+        stale = [f"{p}{filter_}" for p in _SPLIT_ERR_PREFIXES if f"{p}{filter_}" in tbl.colnames]
+        if stale:
+            tbl.remove_columns(stale)
 
 
 def _convert_sdss_jordi(
@@ -171,7 +181,7 @@ def _apply_zp_flip(
         if pair is None:
             continue
         mag, err = pair
-        _set_cal_mag_err(tbl, f, mag + sign * off, err)
+        _set_cal_mag_err(tbl, f, mag + sign * off, err, keep_split=True)
         changed.append(f)
     return changed
 

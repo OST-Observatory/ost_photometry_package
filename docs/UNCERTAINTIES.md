@@ -211,8 +211,20 @@ The covariance of (ZP, T) is split in two parts:
 - **`err_cal_rand_<f>`:** independent from star to star. It is the
   instrumental error and, with a catalog colour, T²σ_C².
 - **`err_cal_sys_<f>`:** common to the epoch. It is ZP, T·C, cov,
-  `zero_point_sys` and the extinction term.
-- **`err_cal_<f>`:** both in quadrature.
+  `zero_point_sys` and the extinction term. It is split further:
+  - **`err_cal_epoch_<f>`:** changes from epoch to epoch: the photometric
+    part of a zero point fitted to this epoch alone (`per_image`, `fixed`)
+    and `zero_point_sys`;
+  - **`err_cal_common_<f>`:** one offset for all epochs that share the
+    calibrators: the catalog part (catalog errors, σ_int), a zero point
+    shared by several epochs (`per_night`, `ensemble`, rolling smoothing;
+    `shared_by_epochs` in `calibration_epochs.ecsv`) and the extinction term.
+- **`err_cal_<f>`:** all in quadrature.
+- **`err_cal_rand_<c1>-<c2>` etc.:** the same four columns for each colour
+  index of the joint solution (e.g. `B-V`). The two magnitudes are
+  correlated through the colour terms; the colour error uses
+  `∂(m₁ − m₂)/∂x = A⁻¹₁ − A⁻¹₂` instead of adding the magnitude errors in
+  quadrature.
 
 All filters whose colours are calibrated are solved jointly:
 `m = A⁻¹(i + Z)`, `A = I − diag(T)K`. The (1 + T) factors and the
@@ -222,11 +234,86 @@ Checked against a Monte Carlo of the instrumental magnitudes and of ZP/T
 Monte Carlo on real tables as a cross-check (non-Gaussian low-S/N errors,
 `cal_low_snr_<f>`).
 
-### Not included
+## Light curves and post-processing
+
+### Transformed product (`mag`)
+
+- **`mag_err`:** what changes from point to point,
+  `err_cal_rand ⊕ err_cal_epoch`. The scatter of a constant star about its
+  mean should match it (HAT-P-20: 0.98–1.09, see the validation table).
+- **`mag_err_sys`:** the offset common to all points that share the
+  calibrators (`err_cal_common`). It moves the whole curve and does not
+  belong in a fit of the shape.
+- **Colour rows (`B-V`):** from the colour columns of the joint solution;
+  where they are missing (catalog colour, instrumental tables) the
+  components are added in quadrature.
+- **Nightly zero point** (`apply_nightly_zero_point`): the night median
+  skips flagged points. Its error `1.2533·σ_robust/√n` is common to the
+  night and replaces `mag_err_sys` (`night_norm_err`): the common
+  calibration offset cancels in the difference to the night median.
+
+### Differential product (`dmag`)
+
+- The ensemble common mode is the weighted mean with weights
+  `1/(σ² + excess²)`. Its error is `1/√Σw`, so the members' excess scatter
+  counts.
+- The members are the quietest stars, so their excess is biased low. A
+  Birge factor `√(mean χ²_ν)` of the members about the common mode, trimmed
+  over epochs and at least 1, scales the common-mode error.
+- `dmag_err = √(σ² + σ_cm²)`; ensemble members use the leave-one-out
+  common mode.
+- `excess_rms` is `√max(0, var − mean(σ²))` (ddof = 1). The median error
+  underrated the expected variance for mixed errors.
+
+### Outlier flags
+
+Residuals are normalised by `√(σ² + s²)`, where `s` is the series' own
+scatter beyond the errors (from the MAD). A point with a large error is not
+flagged for its error alone. A series with MAD 0 (constant or quantised)
+flags nothing.
+
+### Flux fallback (filters without catalog calibration)
+
+`relative_flux_light_curves` uses the same common mode as the differential
+product:
+- the ensemble is all stars detected in at least `min_detection_fraction`
+  of the epochs;
+- points beyond 5σ do not enter;
+- ensemble stars are measured leave-one-out.
+
+Errors are analytic: the star's own flux error ⊕ the common-mode error. A
+missing flux error stays NaN; the former Monte Carlo replaced it by
+10⁻⁶·flux. Columns are labelled with the photometry ids; the former
+labels 0…n−1 did not match the ids of the tables.
+
+### Limiting magnitude
+
+ImageDepth measures the 5σ flux in an aperture of radius r, but the table
+magnitudes are total fluxes (aperture-corrected APER or PSF). The limit is
+shifted by `2.5·log₁₀ ρ`, where ρ is the aperture/table flux ratio of
+bright, isolated, unsaturated stars (median, error `1.2533·σ/√n`).
+
+### Difference images
+
+- **HOTPANTS:**
+  - `-ig` is the number of electrons per image unit (`EXPTIME` for e⁻/s
+    images, `EGAIN` for ADU; it was always 1);
+  - the science σ is passed as `-ini`, and the difference σ (`-oni`) is
+    stored as the `UNCERT` extension of the difference image.
+- **Alard–Lupton:**
+  - the kernel fit weights every pixel by `1/σ` of the fitted image (the
+    `UNCERT` image, or the stamp's border σ);
+  - the difference carries `UNCERT`: the science σ when the template is
+    convolved, `√(K² ⊗ σ²)` when the science image is.
+- The template noise is not included (HiPS cutouts carry no noise model and
+  are much deeper).
+
+## Not included
 
 - **Vega/AB offsets:** taken from Blanton & Roweis (2007) without an
   uncertainty. Their real uncertainty is how the OST passbands differ from
   the ideal ones (TODO: synphot with OST throughput curves).
+- **Template noise in difference images** (see above).
 - **Jordi et al. (2006) relations:** no intrinsic scatter is given in the
   paper, only coefficient errors; the coefficient errors are propagated.
   Lupton/Jester relations carry their published scatter.
@@ -248,6 +335,9 @@ Monte Carlo on real tables as a cross-check (non-Gaussian low-S/N errors,
 | `monte_carlo` mode vs analytic at S/N 200 | `tests/test_uncertainty.py` | within 5 % |
 | Robust scatter / error of all constant stars, X < 1.3, six magnitude bins (package 2: median sky, empty-sky factor, scintillation) | HAT-P-20 C7 night, 355 (V) / 320 (B) stars | 0.97–1.01; brightest V bin (11 stars) 0.91 |
 | Calibrator 1σ coverage, random half splits (fit on one half, predict the other; σ_inst, s·σ_cat, σ_int, prediction error) | HAT-P-20 (172 epochs) / NGC 7789 N2, APASS, B and V | \|pull\| < 1: 0.684–0.693 (nominal 0.683); with target χ²_ν = 1 instead of the clipped value: 0.64–0.67 |
+| Robust scatter / `dmag_err` and / `mag_err`, all constant stars, X < 1.3, six magnitude bins (package 5) | HAT-P-20 C7 night, B and V | 0.95–1.02 / 0.94–1.08 |
+| Robust scatter / error of the flux fallback and `dmag` | ATO (Clear, 202 stars; frames reduced before package 3) | 0.88–0.92 |
+| Alard–Lupton difference σ in the sky, noisy science frame | `tests/test_alard_lupton.py` | pull σ 0.99 |
 | Fitted catalog-error scale s | same | B 0.29 / 0.87, V 0.54 / 1.0 (σ_int 0.022 in N2 V) |
 | Epoch scatter of `mag_cal` for stars with ≥ 20 epochs / (`err_cal_rand` ⊕ photometric ZP error), four error bins | HAT-P-20, B and V | 0.98–1.09; brightest bin (err ≈ 0.012) 1.18: a ~0.007 mag term beyond the model for bright stars (not in the differential light curves, see above) |
 
@@ -260,7 +350,7 @@ Real-data checks are in `scripts/validation/`.
   "hold-out catalog stars" are mostly stars the clipping or the quality cuts
   rejected; their pulls (1.5–3) are biased high and are no test of the
   errors.
-- **`scatter_over_error.py`:** robust point-to-point scatter of `dmag`
-  divided by `dmag_err`, per magnitude bin. Use all constant stars, not the
+- **`scatter_over_error.py`:** robust point-to-point scatter of `dmag`,
+  `mag` or the fallback `flux` divided by its error, per magnitude bin. Use all constant stars, not the
   differential ensemble: the ensemble is chosen for low scatter and would
   give a ratio below 1 (about 0.85 on HAT-P-20).

@@ -215,8 +215,13 @@ def track_pixel_scatter(
 
 def flux_arrays_from_photometry_tables(
     tables: list[Table | None],
-) -> tuple[np.ndarray, np.ndarray]:
+    *,
+    return_ids: bool = False,
+):
     """Stack ``flux_fit`` / ``flux_err`` on ``id``, padding misses with NaN.
+
+    Columns are the sorted unique ids; ``return_ids=True`` returns them as a
+    third array (``(flux, flux_err, ids)``).
 
     An id that occurs twice in one image (two detections linked to one
     track) is ambiguous: both entries of that image become NaN and a warning
@@ -235,7 +240,8 @@ def flux_arrays_from_photometry_tables(
 
     nonempty = [ids[ids >= 0] for ids in ids_per if ids.size]
     if not nonempty:
-        return np.zeros((n_images, 0)), np.zeros((n_images, 0))
+        empty = (np.zeros((n_images, 0)), np.zeros((n_images, 0)))
+        return (*empty, np.zeros(0, dtype=np.int64)) if return_ids else empty
     all_ids = np.unique(np.concatenate(nonempty))
     id_to_col = {int(sid): k for k, sid in enumerate(all_ids)}
     n_objects = len(all_ids)
@@ -266,6 +272,8 @@ def flux_arrays_from_photometry_tables(
                 "once; their flux is set to NaN for this image.",
                 stacklevel=2,
             )
+    if return_ids:
+        return flux, flux_err, all_ids.astype(np.int64)
     return flux, flux_err
 
 

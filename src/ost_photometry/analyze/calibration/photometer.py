@@ -121,15 +121,24 @@ def _closed_system(cal, calibrated_filters: set[str]) -> list[str]:
     return out
 
 
-def _sys_variance_per_filter(tc, color: np.ndarray, extra_sys: np.ndarray) -> np.ndarray:
-    """Epoch-common variance of ``ZP + T·C`` at colour ``C`` (plus extras)."""
-    return (
-        tc.zero_point_err**2
-        + color**2 * tc.color_term_err**2
-        + 2.0 * color * tc.cov_tz
-        + tc.zero_point_sys**2
-        + extra_sys
-    )
+def _sys_variance_per_filter(
+    tc, color: np.ndarray, extra_sys: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Variance of ``ZP + T·C`` at colour ``C``, split ``(epoch, common)``.
+
+    ``epoch`` changes from epoch to epoch: the photometric part of a zero
+    point fitted to this epoch alone and ``zero_point_sys``. ``common`` is the
+    same for all epochs sharing the calibrators: the catalog part, a zero
+    point shared by several epochs (per night, ensemble, rolling smoothing)
+    and ``extra_sys`` (extinction σ_k·(X - X_ref)).
+    """
+    total = tc.zero_point_err**2 + color**2 * tc.color_term_err**2 + 2.0 * color * tc.cov_tz
+    epoch_fit = np.zeros_like(total)
+    if tc.shared_by_epochs <= 1 and tc.cov_phot is not None:
+        cov = np.nan_to_num(np.asarray(tc.cov_phot, dtype=float))
+        epoch_fit = cov[0, 0] + 2.0 * color * cov[0, 1] + color**2 * cov[1, 1]
+        epoch_fit = np.clip(epoch_fit, 0.0, np.maximum(total, 0.0))
+    return epoch_fit + tc.zero_point_sys**2, np.maximum(total - epoch_fit, 0.0) + extra_sys
 
 
 def _write_calibrated_errors(
@@ -145,7 +154,13 @@ def _write_calibrated_errors(
     extinction=None,
     fallback_airmass_col: str = "airmass",
 ) -> None:
-    """``err_cal`` (total), ``err_cal_rand`` and ``err_cal_sys`` per filter.
+    """``err_cal`` (total), ``err_cal_rand`` / ``err_cal_sys`` per filter.
+
+    ``err_cal_sys`` is split further into ``err_cal_epoch`` (independent
+    from epoch to epoch) and ``err_cal_common`` (one offset for all epochs
+    sharing the calibrators); see :func:`_sys_variance_per_filter`. For the
+    colour indices of the joint solution the same four columns are written
+    as ``err_cal_rand_<c1>-<c2>`` etc.
 
     The calibrated magnitudes of the filters whose colours are calibrated
     solve ``m = i + Z + T·(K m)``, i.e. ``m = A⁻¹(i + Z)`` with
@@ -219,27 +234,61 @@ def _write_calibrated_errors(
         # simple model: m = i + T·C + ZP with C independent of m (catalog colour,
         # T = 0, or filters outside the closed system)
         rand = _inst_err(f) ** 2 + tc.color_term**2 * sigma_color_sq
-        sys = _sys_variance_per_filter(tc, np.nan_to_num(color), _extinction_sys(f))
+        epoch, common = _sys_variance_per_filter(tc, np.nan_to_num(color), _extinction_sys(f))
         if a_inv is not None and f in index:
             joint = source == "calibrated"
             if np.any(joint):
                 k = index[f]
                 rand_j = np.zeros(n)
-                sys_j = np.zeros(n)
+                epoch_j = np.zeros(n)
+                common_j = np.zeros(n)
                 for g, j in index.items():
                     coef2 = a_inv[k, j] ** 2
                     rand_j += coef2 * _inst_err(g) ** 2
                     color_g = np.nan_to_num(colors[g][0]) if g in colors else np.zeros(n)
-                    sys_j += coef2 * _sys_variance_per_filter(
+                    e_g, c_g = _sys_variance_per_filter(
                         cal.transformation[g], color_g, _extinction_sys(g)
                     )
+                    epoch_j += coef2 * e_g
+                    common_j += coef2 * c_g
                 rand = np.where(joint, rand_j, rand)
-                sys = np.where(joint, sys_j, sys)
-        rand = np.where(np.isfinite(color), rand, np.nan)
-        sys = np.where(np.isfinite(color), np.maximum(sys, 0.0), np.nan)
+                epoch = np.where(joint, epoch_j, epoch)
+                common = np.where(joint, common_j, common)
+        ok = np.isfinite(color)
+        rand = np.where(ok, rand, np.nan)
+        epoch = np.where(ok, np.maximum(epoch, 0.0), np.nan)
+        common = np.where(ok, np.maximum(common, 0.0), np.nan)
         data[f"{output_err_prefix}rand_{f}"] = np.sqrt(rand)
-        data[f"{output_err_prefix}sys_{f}"] = np.sqrt(sys)
-        data[f"{output_err_prefix}{f}"] = np.sqrt(rand + sys)
+        data[f"{output_err_prefix}epoch_{f}"] = np.sqrt(epoch)
+        data[f"{output_err_prefix}common_{f}"] = np.sqrt(common)
+        data[f"{output_err_prefix}sys_{f}"] = np.sqrt(epoch + common)
+        data[f"{output_err_prefix}{f}"] = np.sqrt(rand + epoch + common)
+
+    if a_inv is None:
+        return
+    # colour indices of the joint solution: ∂(m_1 - m_2)/∂x_j = A⁻¹_1j - A⁻¹_2j,
+    # so the correlation of the two magnitudes cancels instead of adding
+    pairs = {cal.transformation[f].color_index_filters for f in index}
+    for c1, c2 in sorted(pairs):
+        if c1 not in index or c2 not in index or c1 not in colors or c2 not in colors:
+            continue
+        joint = (colors[c1][2] == "calibrated") & (colors[c2][2] == "calibrated")
+        rand = np.zeros(n)
+        epoch = np.zeros(n)
+        common = np.zeros(n)
+        for g, j in index.items():
+            coef2 = (a_inv[index[c1], j] - a_inv[index[c2], j]) ** 2
+            rand += coef2 * _inst_err(g) ** 2
+            e_g, c_g = _sys_variance_per_filter(
+                cal.transformation[g], np.nan_to_num(colors[g][0]), _extinction_sys(g)
+            )
+            epoch += coef2 * e_g
+            common += coef2 * c_g
+        name = f"{c1}-{c2}"
+        data[f"{output_err_prefix}rand_{name}"] = np.where(joint, np.sqrt(rand), np.nan)
+        data[f"{output_err_prefix}epoch_{name}"] = np.where(joint, np.sqrt(epoch), np.nan)
+        data[f"{output_err_prefix}common_{name}"] = np.where(joint, np.sqrt(common), np.nan)
+        data[f"{output_err_prefix}{name}"] = np.where(joint, np.sqrt(rand + epoch + common), np.nan)
 
 
 def _filters_with_instrumental_mags(

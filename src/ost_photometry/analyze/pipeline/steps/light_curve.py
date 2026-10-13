@@ -9,8 +9,8 @@ from astropy.time import Time
 from .... import terminal_output
 from ....core.parallel import start_plot_process
 from ....output_layout import results_dir, tables_dir
-from ... import calibration
 from ...ooi_ids import ooi_photometry_id
+from ...post_processing.differential_light_curve import relative_flux_light_curves
 from ...post_processing.light_curve import (
     CALIBRATOR_STATS_FILENAME,
     build_light_curves_table,
@@ -297,7 +297,7 @@ class LightCurveStep(base.PipelineStep):
             from ...post_processing.light_curve import add_color_index_rows
 
             # After the differential product, so colour rows inherit flag_epoch.
-            lc = add_color_index_rows(lc, config.light_curve_color)
+            lc = add_color_index_rows(lc, config.light_curve_color, tbl if has_tbl else None)
         path = write_light_curves_table(lc, output_dir)
         terminal_output.print_to_terminal(
             f"Wrote {path.name} ({len(lc)} rows)",
@@ -354,26 +354,23 @@ class LightCurveStep(base.PipelineStep):
         cal_set: set[int],
         phot: Table | None,
     ) -> Table | None:
-        dist_samples = config.distribution_samples
         mdf = config.min_detection_fraction
         ensemble_frac = 0.5 if mdf is None else max(0.5, float(mdf))
-        quasi = calibration.quasi_flux_calibration_image_series(
-            image_series,
-            distribution_samples=dist_samples,
-            min_ensemble_fraction=ensemble_frac,
+        flux, flux_err, source_ids = image_series.get_flux_array(return_ids=True)
+        rel, rel_err, info = relative_flux_light_curves(
+            flux, flux_err, min_ensemble_fraction=ensemble_frac
         )
-        plot_quantity = calibration.flux_normalization_image_series(
-            image_series,
-            quasi_calibrated_flux=quasi,
-            distribution_samples=dist_samples,
+        terminal_output.print_to_terminal(
+            f"Common mode from {int(np.count_nonzero(info['ensemble']))} stars "
+            f"(Birge factor {info['birge']:.2f}).",
+            indent=2,
+            style_name="INFO",
         )
         obs_times = Time(image_series.get_observation_time(), format="jd")
         airmasses = []
         for im in image_series.image_list:
             am = getattr(im, "air_mass", None)
             airmasses.append(float(am) if am is not None else np.nan)
-        n_obj = int(plot_quantity.pdf_median().shape[1])
-        source_ids = np.arange(n_obj, dtype=np.int64)
         ra = dec = None
         if phot is not None and "id" in phot.colnames:
             if "ra" in phot.colnames and "dec" in phot.colnames:
@@ -391,7 +388,8 @@ class LightCurveStep(base.PipelineStep):
                 ra = np.array([ra_map.get(int(i), np.nan) for i in source_ids])
                 dec = np.array([dec_map.get(int(i), np.nan) for i in source_ids])
         return build_light_curves_table_from_flux(
-            plot_quantity,
+            rel,
+            rel_err,
             obs_times,
             filter_,
             source_ids=source_ids,

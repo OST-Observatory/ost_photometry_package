@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 from astropy.io import fits
-from astropy.nddata import CCDData
+from astropy.nddata import CCDData, StdDevUncertainty
 from astropy.stats import sigma_clipped_stats
 from scipy.signal import fftconvolve
 
@@ -223,28 +223,41 @@ def _template_polarity(template: np.ndarray, star_xy: np.ndarray, half: int = 9)
 
 
 def _stamp_fwhm(data: np.ndarray, star_xy: np.ndarray, half: int = 11) -> float:
-    """Median Gaussian-equivalent FWHM from star stamps (NaN if too few)."""
+    """Median Gaussian-equivalent FWHM from star stamps (NaN if too few).
+
+    A first FWHM from the area above half maximum, then second moments
+    within ``2·FWHM`` of the peak without clipping the noise (clipping at 0
+    keeps the positive noise, which the r² weight of a large stamp turns
+    into a far too broad PSF).
+    """
     fwhms: list[float] = []
     xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
     for x, y in xy[:25]:
         xt, yt = _shift_to_peak(data, x, y, half, max_shift=float(min(half - 2, 10)))
         stamp = _cutout(data, xt, yt, half)
-        if stamp is None or _stamp_snr(stamp) < 3.0:
+        if stamp is None or _stamp_snr(stamp) < 10.0:
             continue
         sky = _border_sky(stamp)
         work = stamp - sky
         if float(np.nanmax(work)) < float(-np.nanmin(work)):
             work = -work
         work = np.where(np.isfinite(work), work, 0.0)
-        work = np.clip(work, 0.0, None)
-        total = float(work.sum())
+        peak = float(work.max())
+        n_half = int(np.count_nonzero(work > 0.5 * peak))
+        if peak <= 0 or n_half == 0:
+            continue
+        fwhm0 = 2.0 * np.sqrt(n_half / np.pi)
+        yy, xx = np.indices(stamp.shape)
+        py, px = np.unravel_index(int(np.argmax(work)), work.shape)
+        r = np.hypot(xx - px, yy - py)
+        inner = r <= max(2.0 * fwhm0, 3.0)
+        total = float(work[inner].sum())
         if total <= 0:
             continue
-        yy, xx = np.indices(stamp.shape)
-        cy = stamp.shape[0] / 2.0 - 0.5
-        cx = stamp.shape[1] / 2.0 - 0.5
-        varx = float(((xx - cx) ** 2 * work).sum() / total)
-        vary = float(((yy - cy) ** 2 * work).sum() / total)
+        cx = float((xx[inner] * work[inner]).sum() / total)
+        cy = float((yy[inner] * work[inner]).sum() / total)
+        varx = float(((xx[inner] - cx) ** 2 * work[inner]).sum() / total)
+        vary = float(((yy[inner] - cy) ** 2 * work[inner]).sum() / total)
         sigma = float(np.sqrt(max((varx + vary) / 2.0, 0.0)))
         if sigma > 0.3:
             fwhms.append(2.355 * sigma)
@@ -715,6 +728,22 @@ class SpatialKernel:
         bsum = self.bases.reshape(self.bases.shape[0], -1).sum(axis=1)
         return float(np.dot(weights, bsum))
 
+    def image_at(self, x: float, y: float, shape: tuple[int, int]) -> np.ndarray:
+        """Kernel image at pixel ``(x, y)`` of an image of ``shape``."""
+        if self.n_poly == 1:
+            poly = np.array([1.0])
+        else:
+            xn, yn = _norm_xy(x, y, shape)
+            poly = np.array(_spatial_poly(xn, yn, self.n_poly), dtype=np.float64)
+        return np.tensordot(self.coeff @ poly, self.bases, axes=1)
+
+    def propagate_sigma(self, sigma: np.ndarray) -> np.ndarray:
+        """σ of the convolved image: ``√(K² ⊗ σ²)`` with the central kernel."""
+        sig = _as_2d(sigma)
+        k = self.image_at(sig.shape[1] / 2.0, sig.shape[0] / 2.0, sig.shape)
+        var = fftconvolve(np.nan_to_num(sig, nan=0.0) ** 2, k**2, mode="same")
+        return np.sqrt(np.maximum(var, 0.0))
+
     def apply(self, image: np.ndarray) -> np.ndarray:
         img = _as_2d(image)
         ny, nx = img.shape
@@ -741,11 +770,17 @@ def _lstsq_spatial_kernel(
     target: np.ndarray,
     bases: np.ndarray,
     n_poly: int,
+    *,
+    row_scale: float = 1.0,
 ) -> np.ndarray:
-    """Least-squares coefficients with flux conservation at every polynomial order."""
+    """Least-squares coefficients with flux conservation at every polynomial order.
+
+    ``row_scale`` is the typical weight of the (1/σ-weighted) data rows, so
+    the constraint keeps its strength relative to them.
+    """
     n_basis = int(bases.shape[0])
     bsum = bases.reshape(n_basis, -1).sum(axis=1)
-    weight = float(np.sqrt(max(design.shape[0], 1)))
+    weight = float(np.sqrt(max(design.shape[0], 1))) * float(row_scale)
     extra_rows = []
     extra_rhs = []
     for j in range(n_poly):
@@ -775,18 +810,25 @@ def fit_alard_lupton_kernel(
     degrees: tuple[int, ...] = _DEFAULT_DEGREES,
     n_stars: int = 40,
     spatial_order: int = 2,
+    target_sigma: np.ndarray | None = None,
 ) -> tuple[SpatialKernel, int]:
     """
     Fit an AL kernel on sky-subtracted, flux-matched images.
 
     ``spatial_order=2`` (default) is quadratic in x and y when enough stamps
-    exist; ``1`` is linear, ``0`` is spatially constant.
+    exist; ``1`` is linear, ``0`` is spatially constant. Each pixel is
+    weighted by ``1/σ`` of the fitted image (``science``): ``target_sigma``
+    (its uncertainty image) or, without it, the sky σ at the stamp border,
+    so noisy stamps count less.
     """
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
     bases = kernel_basis(ksize, sigmas, degrees)
     hw = ksize // 2
     half_stamp = hw + 6
-    packed: list[tuple[list[np.ndarray], np.ndarray, float, float]] = []
+    packed: list[tuple[list[np.ndarray], np.ndarray, np.ndarray, float, float]] = []
+    sig_img = None
+    if target_sigma is not None:
+        sig_img = _match_shapes(_as_2d(target_sigma), tmpl)[0]
     xy = np.asarray(star_xy, dtype=float).reshape(-1, 2)
     for x, y in xy:
         xt, yt = _shift_to_peak(tmpl, x, y, half_stamp, max_shift=10.0)
@@ -803,12 +845,21 @@ def fit_alard_lupton_kernel(
             continue
         if _stamp_snr(s) < 2.0 or _stamp_snr(t) < 1.5:
             continue
+        sig = _cutout(sig_img, x, y, half_stamp) if sig_img is not None else None
+        if sig is not None:
+            sig_inner = np.asarray(sig[hw:-hw, hw:-hw], dtype=float)
+        else:
+            sig_inner = np.full(inner_s.shape, _border_std(s, border=2))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            w = np.where(np.isfinite(sig_inner) & (sig_inner > 0), 1.0 / sig_inner, 0.0)
+        if not np.any(w > 0):
+            continue
         s = s - _border_sky(s, border=2)
         t = t - _border_sky(t, border=2)
         if float(np.std(s)) < 1e-8 or float(np.std(t)) < 1e-8:
             continue
         convs = [fftconvolve(t, b, mode="same")[hw:-hw, hw:-hw].ravel() for b in bases]
-        packed.append((convs, inner_s.ravel(), float(x), float(y)))
+        packed.append((convs, inner_s.ravel(), w.ravel(), float(x), float(y)))
         if len(packed) >= int(n_stars):
             break
     used = len(packed)
@@ -817,14 +868,18 @@ def fit_alard_lupton_kernel(
     n_poly = _spatial_n_poly(spatial_order, used)
     rows: list[np.ndarray] = []
     rhs: list[np.ndarray] = []
-    for convs, inner, x, y in packed:
+    weights: list[np.ndarray] = []
+    for convs, inner, w, x, y in packed:
         xn, yn = _norm_xy(x, y, sci.shape)
         poly = _spatial_poly(xn, yn, n_poly)
         cols = [c * p for c in convs for p in poly]
-        rows.append(np.column_stack(cols))
-        rhs.append(inner)
+        rows.append(np.column_stack(cols) * w[:, None])
+        rhs.append(inner * w)
+        weights.append(w)
+    all_w = np.concatenate(weights)
     coeff = _lstsq_spatial_kernel(
-        np.vstack(rows), np.concatenate(rhs), bases, n_poly
+        np.vstack(rows), np.concatenate(rhs), bases, n_poly,
+        row_scale=float(np.median(all_w[all_w > 0])),
     )
     return SpatialKernel(bases, coeff), used
 
@@ -837,15 +892,45 @@ def alard_lupton_difference(
     n_stars: int = 40,
     fwhm: float = 4.0,
     ksize: int | None = None,
+    science_sigma: np.ndarray | None = None,
 ) -> tuple[np.ndarray, str]:
     """
     Science minus a PSF-matched, flux-scaled template.
 
     Convolves whichever image is sharper. Falls back to a scalar flux scale if
     the kernel fit has too few stamps. Returns ``(difference, method)`` with
-    ``method`` ``alard_lupton`` or ``flux_scale``.
+    ``method`` ``alard_lupton`` or ``flux_scale``. See
+    :func:`alard_lupton_difference_with_noise` for the difference σ.
+    """
+    diff, method, _sigma = alard_lupton_difference_with_noise(
+        science, template, star_xy=star_xy, n_stars=n_stars, fwhm=fwhm, ksize=ksize,
+        science_sigma=science_sigma,
+    )
+    return diff, method
+
+
+def alard_lupton_difference_with_noise(
+    science: np.ndarray,
+    template: np.ndarray,
+    *,
+    star_xy: np.ndarray | None = None,
+    n_stars: int = 40,
+    fwhm: float = 4.0,
+    ksize: int | None = None,
+    science_sigma: np.ndarray | None = None,
+) -> tuple[np.ndarray, str, np.ndarray | None]:
+    """:func:`alard_lupton_difference` plus σ of the difference.
+
+    ``science_sigma`` (the science uncertainty image) weights the kernel fit
+    and gives the difference σ: unchanged when the template is convolved,
+    ``√(K² ⊗ σ²)`` when the science image is. The template noise is not
+    included (HiPS templates carry no noise model; they are much deeper).
+    ``None`` without ``science_sigma``.
     """
     sci, tmpl = _match_shapes(_as_2d(science), _as_2d(template))
+    sig_sci = None
+    if science_sigma is not None:
+        sig_sci = _match_shapes(_as_2d(science_sigma), _as_2d(template))[0]
     sci = _fill_image(sci)
     tmpl = _fill_image(tmpl)
     sci_sky, _ = _sky_level(sci)
@@ -986,6 +1071,7 @@ def alard_lupton_difference(
                         sigmas=sig_try,
                         n_stars=n_stars,
                         spatial_order=spatial_order,
+                        target_sigma=sig_sci if label == "template→science" else None,
                     )
                     ksize = k_try
                     used_sigmas = sig_try
@@ -1059,7 +1145,13 @@ def alard_lupton_difference(
                 indent=2,
                 style_name="NORMAL",
             )
-        return residual, "alard_lupton"
+        if sig_sci is None:
+            diff_sigma = None
+        elif which == "template→science":
+            diff_sigma = sig_sci
+        else:
+            diff_sigma = kernel.propagate_sigma(sig_sci)
+        return residual, "alard_lupton", diff_sigma
     except Exception as exc:
         terminal_output.print_to_terminal(
             f"Alard–Lupton kernel fit failed ({exc}); using flux-scale subtraction",
@@ -1072,7 +1164,7 @@ def alard_lupton_difference(
             indent=2,
             style_name="NORMAL",
         )
-        return diff, "flux_scale"
+        return diff, "flux_scale", sig_sci
 
 
 def run_alard_lupton(
@@ -1091,11 +1183,18 @@ def run_alard_lupton(
     work.mkdir(parents=True, exist_ok=True)
     sci = _as_2d(science_ccd.data)
     tmpl = _as_2d(template_hdu.data)
-    diff, _method = alard_lupton_difference(
-        sci, tmpl, star_xy=star_xy, n_stars=n_stars, fwhm=fwhm, ksize=ksize
+    unc = getattr(science_ccd, "uncertainty", None)
+    sci_sigma = None
+    if unc is not None:
+        sci_sigma = np.asarray(unc.represent_as(StdDevUncertainty).array, dtype=float)
+    diff, _method, diff_sigma = alard_lupton_difference_with_noise(
+        sci, tmpl, star_xy=star_xy, n_stars=n_stars, fwhm=fwhm, ksize=ksize,
+        science_sigma=sci_sigma,
     )
     out_path = work / output_filename
     out = CCDData(diff, unit=getattr(science_ccd, "unit", None) or "adu")
+    if diff_sigma is not None and diff_sigma.shape == diff.shape:
+        out.uncertainty = StdDevUncertainty(diff_sigma)
     if getattr(science_ccd, "wcs", None) is not None:
         out.wcs = science_ccd.wcs
     if getattr(science_ccd, "mask", None) is not None:
@@ -1109,6 +1208,7 @@ def run_alard_lupton(
 __all__ = [
     "SpatialKernel",
     "alard_lupton_difference",
+    "alard_lupton_difference_with_noise",
     "find_kernel_stars",
     "fit_alard_lupton_kernel",
     "flux_scale_from_stamps",

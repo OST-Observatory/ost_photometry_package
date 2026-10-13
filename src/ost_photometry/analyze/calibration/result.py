@@ -53,6 +53,10 @@ class TransformationCoefficients:
     #: Mean airmass of the epochs that share this zero point (per night /
     #: ensemble): the extinction error contributes σ_k·(X - airmass_ref).
     airmass_ref: float | None = None
+    #: Number of epochs that share this zero point (per night / ensemble).
+    #: Above 1 its fit error is one offset common to all of them; at 1 the
+    #: photometric part changes from epoch to epoch (``err_cal_epoch_*``).
+    shared_by_epochs: int = 1
 
     def __repr__(self) -> str:
         ci = f"({self.color_index_filters[0]}-{self.color_index_filters[1]})"
@@ -119,6 +123,7 @@ def calibration_epochs_table(results: dict[str, CalibrationResult]):
                 "n_stars_used": int(tc.n_stars_used),
                 "rms_residual": float(tc.rms_residual),
                 "airmass_ref": np.nan if tc.airmass_ref is None else float(tc.airmass_ref),
+                "shared_by_epochs": int(tc.shared_by_epochs),
                 "quality_flag": str(tc.quality_flag),
             })
     return Table(rows=rows) if rows else Table()

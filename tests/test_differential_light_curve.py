@@ -336,3 +336,35 @@ def test_colour_rows_inherit_epoch_and_outlier_flags():
         ]
         assert bool(hit["flag_outlier"][0])
         assert int(np.count_nonzero(np.asarray(colour["flag_outlier"], dtype=bool))) == 1
+
+
+def test_common_mode_error_covers_unmodelled_member_scatter():
+    """Members jitter by 0.006 mag beyond their errors: offset errors stay honest."""
+    with isolated_sys_modules():
+        _lc_mod, diff = _load()
+        rng = np.random.default_rng(5)
+        n_ep, n_mem = 400, 8
+        err = np.full((n_ep, n_mem), 0.004)
+        truth = rng.normal(0.0, 0.05, n_ep)  # transparency
+        jitter = rng.normal(0.0, 0.006, (n_ep, n_mem))
+        mags = truth[:, None] + rng.normal(0.0, 1.0, (n_ep, n_mem)) * err + jitter
+        valid = np.ones((n_ep, n_mem), dtype=bool)
+        members = np.arange(n_mem)
+        # excess as the selection would see it (biased low: 0 here)
+        cm = diff.ensemble_common_mode(mags, err, valid, members, np.zeros(n_mem))
+        pull = (cm["offset"] - truth) / cm["offset_err"]
+        assert np.std(pull) == np.clip(np.std(pull), 0.9, 1.1)
+        assert cm["birge"] > 1.5
+        # leave-one-out reference of a member
+        loo_pull = (cm["loo"][:, 0] - truth) / cm["loo_err"][:, 0]
+        assert 0.9 <= np.std(loo_pull) <= 1.1
+
+
+def test_excess_rms_uses_mean_error_variance():
+    with isolated_sys_modules():
+        lc_mod, _diff = _load()
+        rng = np.random.default_rng(6)
+        e = np.where(np.arange(4000) % 2 == 0, 0.01, 0.05)
+        y = rng.normal(0.0, 1.0, e.size) * e
+        # no excess: the median error (0.03) would claim one
+        assert lc_mod.excess_rms(y, e) < 0.005

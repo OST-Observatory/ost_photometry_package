@@ -8,7 +8,6 @@ from typing import Literal
 
 import astropy.units as u
 import numpy as np
-from astropy import uncertainty as unc
 from astropy.coordinates import SkyCoord, match_coordinates_sky
 from astropy.table import Table, vstack
 from astropy.time import Time
@@ -80,6 +79,21 @@ def instrumental_mag_from_flux(flux, flux_err) -> tuple[np.ndarray, np.ndarray]:
     mag[ok] = -2.5 * np.log10(f[ok])
     err[ok] = 2.5 / np.log(10.0) * fe[ok] / f[ok]
     return mag, err
+
+
+def point_and_common_errors(tbl: Table, name: str) -> tuple[np.ndarray, np.ndarray] | None:
+    """``(mag_err, mag_err_sys)`` of a light curve from the calibrated table.
+
+    ``mag_err`` is what changes from point to point (``err_cal_rand`` ⊕
+    ``err_cal_epoch``), ``mag_err_sys`` the offset common to all points that
+    share the calibrators (``err_cal_common``). ``name`` is a filter or a
+    colour index (``B-V``). ``None`` without the split columns.
+    """
+    cols = [f"err_cal_rand_{name}", f"err_cal_epoch_{name}", f"err_cal_common_{name}"]
+    if any(c not in tbl.colnames for c in cols):
+        return None
+    rand, epoch, common = (np.abs(np.asarray(tbl[c].ravel(), dtype=float)) for c in cols)
+    return np.hypot(rand, epoch), common
 
 
 def epoch_has_catalog_calibrated_mags(tbl: Table, filter_: str) -> bool:
@@ -173,8 +187,8 @@ def epoch_native_flux_matrix_for_pipeline_normalization(
     Build a dense ``(n_epochs, n_sources)`` flux matrix from an epoch-native table.
 
     Rows are ordered by sorted unique JD; columns by sorted unique correlated ``id``.
-    Missing ``(epoch, id)`` cells are ``0`` (same masking convention as
-    :func:`ost_photometry.analyze.calibration.quasi_flux_calibration_flux_arrays`).
+    Missing ``(epoch, id)`` cells are ``0`` (ignored by
+    :func:`~ost_photometry.analyze.post_processing.differential_light_curve.relative_flux_light_curves`).
     """
     cols = epoch_native_flux_err_columns(tbl, filter_)
     if cols is None:
@@ -465,35 +479,6 @@ def prepare_time_series_epoch_native(
     return values, errs, Time(jds, format="jd")
 
 
-def prepare_time_series_data(
-        data: unc.core.NdarrayDistribution,
-        filter_: str, object_id: int, calibration_type: str = 'transformed'
-        ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Prepare magnitude arrays from an ``NdarrayDistribution`` (e.g. normalized flux).
-
-    Parameters
-    ----------
-    data
-        Per-epoch, per-object distributions
-
-    filter_
-        Unused for distributions; kept for API compatibility.
-
-    object_id
-        Object (column) index in the distribution.
-
-    calibration_type
-        Unused for distributions; kept for API compatibility.
-    """
-    if isinstance(data, unc.core.NdarrayDistribution):
-        return data.pdf_median()[:, object_id], data.pdf_std()[:, object_id]
-    raise TypeError(
-        f"prepare_time_series_data expects NdarrayDistribution; got {type(data)}. "
-        "Use epoch-native tables with prepare_plot_time_series(..., epoch_meta=...)."
-    )
-
-
 def mk_time_series_flux(
     observation_times: Time,
     flux: np.ndarray,
@@ -603,26 +588,24 @@ def _with_night_ids(tbl: Table) -> Table:
 
 def excess_rms(values, errors) -> float:
     """
-    Scatter beyond photometric noise: ``sqrt(max(0, RMS^2 - median(err)^2))``.
+    Scatter beyond photometric noise: ``sqrt(max(0, RMS^2 - mean(err^2)))``.
 
-    Computed about the sample median. Returns 0 if fewer than two finite points.
+    The RMS (``ddof=1``, about the mean) and the mean error variance use the
+    same points; ``mean(err²)`` is the expected variance for heteroscedastic
+    errors (the median error underrates it). Returns 0 with fewer than two
+    points.
     """
     y = np.asarray(values, dtype=float)
-    e = np.asarray(errors, dtype=float)
+    e = np.abs(np.asarray(errors, dtype=float))
+    if e.shape != y.shape:
+        e = np.full(y.shape, float(np.nanmedian(e)) if e.size else np.nan)
     ok = np.isfinite(y)
     if int(np.count_nonzero(ok)) < 2:
         return 0.0
-    y = y[ok]
-    e = e[ok] if e.shape == np.asarray(values).shape else e[np.isfinite(e)]
-    rms = float(np.sqrt(np.mean((y - np.median(y)) ** 2)))
-    if e.size:
-        e_ok = e[np.isfinite(e)]
-        med_e = float(np.median(e_ok)) if e_ok.size else 0.0
-    else:
-        med_e = 0.0
-    if not np.isfinite(med_e) or med_e < 0.0:
-        med_e = 0.0
-    return float(np.sqrt(max(0.0, rms * rms - med_e * med_e)))
+    var = float(np.var(y[ok], ddof=1))
+    e_ok = e[ok & np.isfinite(e)]
+    mean_e2 = float(np.mean(e_ok**2)) if e_ok.size else 0.0
+    return float(np.sqrt(max(0.0, var - mean_e2)))
 
 
 def _airmass_for_rows(
@@ -672,6 +655,7 @@ def _empty_light_curves_table() -> Table:
             "night_id": np.array([], dtype=np.int64),
             "mag": np.array([], dtype=float),
             "mag_err": np.array([], dtype=float),
+            "mag_err_sys": np.array([], dtype=float),
             "flux": np.array([], dtype=float),
             "flux_err": np.array([], dtype=float),
             "mag_inst": np.array([], dtype=float),
@@ -730,6 +714,7 @@ def _rows_from_epoch_native_source(
     n = len(sub)
     mag = np.full(n, np.nan)
     mag_err = np.full(n, np.nan)
+    mag_err_sys = np.full(n, np.nan)
     flux = np.full(n, np.nan)
     flux_err = np.full(n, np.nan)
     if quantity == "flux":
@@ -738,6 +723,9 @@ def _rows_from_epoch_native_source(
     else:
         mag[:] = values
         mag_err[:] = errs
+        split = point_and_common_errors(sub, filter_)
+        if split is not None:
+            mag_err[:], mag_err_sys[:] = split
     inst_cols = epoch_native_instrumental_columns(sub, filter_)
     if inst_cols is None:
         mag_inst = np.full(n, np.nan)
@@ -767,6 +755,7 @@ def _rows_from_epoch_native_source(
             "night_id": night_id_from_jd(jds),
             "mag": mag,
             "mag_err": mag_err,
+            "mag_err_sys": mag_err_sys,
             "flux": flux,
             "flux_err": flux_err,
             "mag_inst": mag_inst,
@@ -790,20 +779,34 @@ def _time_sort_order(times: np.ndarray) -> np.ndarray:
     return np.argsort(keys, kind="stable")
 
 
-def _clip_candidates(y: np.ndarray, sigma: float) -> np.ndarray:
-    """MAD clip vs the series median. Does not require isolation."""
+def _clip_candidates(y: np.ndarray, sigma: float, err: np.ndarray | None = None) -> np.ndarray:
+    """Robust clip vs the series median. Does not require isolation.
+
+    With errors the residuals are normalised by ``√(err² + s²)`` (``s``: the
+    series' own scatter beyond the errors, from the MAD), so a point with a
+    large error is not flagged for its error alone; the clip uses the MAD of
+    the normalised residuals. A MAD of 0 (constant or quantised series)
+    flags nothing.
+    """
     cand = np.zeros(len(y), dtype=bool)
     ok = np.isfinite(y)
+    if err is not None:
+        e = np.abs(np.asarray(err, dtype=float))
+        if int(np.count_nonzero(ok & np.isfinite(e) & (e > 0))) >= 4:
+            ok &= np.isfinite(e) & (e > 0)
+        else:
+            err = None
     if int(np.count_nonzero(ok)) < 4:
         return cand
-    y_ok = y[ok]
-    center = float(np.median(y_ok))
-    mad = float(np.median(np.abs(y_ok - center)))
-    scale = 1.4826 * mad
+    d = y[ok] - float(np.median(y[ok]))
+    if err is not None:
+        e_ok = e[ok]
+        s2 = max(0.0, (1.4826 * float(np.median(np.abs(d)))) ** 2 - float(np.median(e_ok**2)))
+        d = d / np.sqrt(e_ok**2 + s2)
+    scale = 1.4826 * float(np.median(np.abs(d - np.median(d))))
     if not np.isfinite(scale) or scale <= 0.0:
-        cand[ok] = np.abs(y_ok - center) > 0.0
-    else:
-        cand[ok] = np.abs(y_ok - center) > sigma * scale
+        return cand
+    cand[ok] = np.abs(d - np.median(d)) > sigma * scale
     return cand
 
 
@@ -860,9 +863,11 @@ def flag_outliers_in_light_curves(
     *,
     max_faint_run: int = 2,
 ) -> Table:
-    """Per ``(id, filter)`` MAD clip on mag or flux.
+    """Per ``(id, filter)`` robust clip on mag or flux.
 
-    A point is ``flag_outlier`` when it is a MAD outlier and
+    Residuals are normalised by their errors (``mag_err`` / ``flux_err``)
+    and the series' own scatter, see :func:`_clip_candidates`. A point is
+    ``flag_outlier`` when it is such an outlier and
     either (1) the run of such points is at most ``max_faint_run`` epochs, or
     (2) the run is on the bright side of the series median. Coherent faint
     dips longer than that (eclipses) stay unflagged. Flags remain in the
@@ -880,6 +885,8 @@ def flag_outliers_in_light_curves(
     qty = np.asarray(out["quantity"]).astype(str)
     mag = np.asarray(out["mag"], dtype=float)
     flux = np.asarray(out["flux"], dtype=float)
+    mag_err = np.asarray(out["mag_err"], dtype=float) if "mag_err" in out.colnames else None
+    flux_err = np.asarray(out["flux_err"], dtype=float) if "flux_err" in out.colnames else None
     if "jd" in out.colnames:
         times_all = np.asarray(out["jd"], dtype=float)
     elif "bjd_tdb" in out.colnames:
@@ -894,7 +901,8 @@ def flag_outliers_in_light_curves(
             q = qty[m]
             use_flux = bool(np.any(q == "flux"))
             y = flux[m] if use_flux else mag[m]
-            cand = _clip_candidates(y, sig)
+            e_all = flux_err if use_flux else mag_err
+            cand = _clip_candidates(y, sig, None if e_all is None else e_all[m])
             if not np.any(cand):
                 continue
             flagged = _flag_candidate_runs(
@@ -932,12 +940,17 @@ def add_bjd_tdb_column(tbl: Table, location) -> Table:
     return out
 
 
-def add_color_index_rows(tbl: Table, color: str | None) -> Table:
+def add_color_index_rows(tbl: Table, color: str | None, phot: Table | None = None) -> Table:
     """Append colour rows (e.g. ``B-V``) matched on ``id`` and ``epoch_id``.
 
     A colour point is flagged when either component is: ``flag_outlier`` and
     ``flag_epoch`` (with its reasons) are OR-ed from the two filter rows, so
     call this after the differential product has set ``flag_epoch``.
+
+    Errors come from the colour columns of the calibrated table ``phot``
+    (``err_cal_rand_B-V`` …, joint solution): the two magnitudes are
+    correlated through the colour terms. Without them (catalog colour,
+    instrumental tables) the components are combined in quadrature.
     """
     if not color or color in ("?", "?-?", "-"):
         return tbl
@@ -960,6 +973,19 @@ def add_color_index_rows(tbl: Table, color: str | None) -> Table:
     eids = np.asarray(tbl["epoch_id"]).astype(str)
     mag = np.asarray(tbl["mag"], dtype=float)
     mag_err = np.asarray(tbl["mag_err"], dtype=float)
+    mag_err_sys = (
+        np.asarray(tbl["mag_err_sys"], dtype=float)
+        if "mag_err_sys" in tbl.colnames
+        else np.full(len(tbl), np.nan)
+    )
+    joint_errors: dict[tuple[int, str], tuple[float, float]] = {}
+    if phot is not None and "id" in phot.colnames and "epoch_id" in phot.colnames:
+        split = point_and_common_errors(phot, text)
+        if split is not None:
+            p_ids = np.asarray(phot["id"]).astype(int)
+            p_eids = np.asarray(phot["epoch_id"]).astype(str)
+            for k in np.flatnonzero(np.isfinite(split[0])):
+                joint_errors[(int(p_ids[k]), str(p_eids[k]))] = (float(split[0][k]), float(split[1][k]))
     outlier = np.asarray(tbl["flag_outlier"], dtype=bool)
     has_epoch_flag = "flag_epoch" in tbl.colnames
     if has_epoch_flag:
@@ -981,11 +1007,16 @@ def add_color_index_rows(tbl: Table, color: str | None) -> Table:
             if j is None:
                 continue
             c = mag[i] - mag[j]
-            e = np.hypot(mag_err[i], mag_err[j])
+            e, e_sys = joint_errors.get(
+                (int(sid), str(eids[i])),
+                (np.hypot(mag_err[i], mag_err[j]), np.hypot(mag_err_sys[i], mag_err_sys[j])),
+            )
             row = tbl[i : i + 1].copy()
             row["filter"] = text
             row["mag"] = c
             row["mag_err"] = e
+            if "mag_err_sys" in row.colnames:
+                row["mag_err_sys"] = e_sys
             row["flux"] = np.nan
             row["flux_err"] = np.nan
             for col in ("mag_inst", "mag_inst_err", *DIFFERENTIAL_FLOAT_COLUMNS):
@@ -1051,7 +1082,7 @@ def build_light_curves_table(
     tbl = vstack(parts, metadata_conflicts="silent")
     tbl = flag_outliers_in_light_curves(tbl, sigma=outlier_sigma)
     tbl = add_bjd_tdb_column(tbl, observatory_location)
-    tbl = add_color_index_rows(tbl, color)
+    tbl = add_color_index_rows(tbl, color, phot)
     from .magnitude_systems import table_magnitude_system
 
     tbl.meta["ost_photometry.magnitude_system"] = table_magnitude_system(phot)
@@ -1059,7 +1090,8 @@ def build_light_curves_table(
 
 
 def build_light_curves_table_from_flux(
-    flux_distribution: unc.core.NdarrayDistribution,
+    flux: np.ndarray,
+    flux_err: np.ndarray,
     observation_times: Time,
     filter_: str,
     *,
@@ -1072,9 +1104,14 @@ def build_light_curves_table_from_flux(
     outlier_sigma: float | None = 5.0,
     observatory_location=None,
 ) -> Table:
-    """Long table from a normalized ``(n_epochs, n_objects)`` flux distribution."""
-    med = np.asarray(flux_distribution.pdf_median(), dtype=float)
-    std = np.abs(np.asarray(flux_distribution.pdf_std(), dtype=float))
+    """Long table from normalised ``(n_epochs, n_objects)`` relative fluxes.
+
+    ``flux`` / ``flux_err`` come from
+    :func:`~ost_photometry.analyze.post_processing.differential_light_curve.relative_flux_light_curves`;
+    ``source_ids`` label the columns (the ids of the photometry tables).
+    """
+    med = np.asarray(flux, dtype=float)
+    std = np.abs(np.asarray(flux_err, dtype=float))
     n_ep, n_obj = med.shape
     jds = np.asarray(observation_times.jd, dtype=float)
     if jds.size != n_ep:
@@ -1115,6 +1152,7 @@ def build_light_curves_table_from_flux(
                     "night_id": nights,
                     "mag": np.full(n_ep, np.nan),
                     "mag_err": np.full(n_ep, np.nan),
+                    "mag_err_sys": np.full(n_ep, np.nan),
                     "flux": med[:, j],
                     "flux_err": std[:, j],
                     "mag_inst": inst_mag[:, j],
@@ -1351,45 +1389,53 @@ def resolve_light_curve_source_id(
 
 
 def apply_nightly_zero_point(tbl: Table) -> Table:
-    """Subtract (mag) or divide (flux) the per-night median continuum."""
+    """Subtract (mag) or divide (flux) the per-night median continuum.
+
+    The median uses the points without ``flag_outlier`` / ``flag_epoch``.
+    Its error, ``1.2533 · σ_robust / √n``, is common to all points of the
+    night: it is written as ``night_norm_err`` (mag, or relative for flux)
+    and, for magnitudes, replaces ``mag_err_sys`` (the common calibration
+    offset cancels in the difference to the night median).
+    """
     if len(tbl) == 0:
         return tbl
     out = _with_night_ids(tbl)
     nid = np.asarray(out["night_id"]).astype(np.int64)
-    qty = "magnitude"
-    if "quantity" in out.colnames:
-        qarr = np.asarray(out["quantity"]).astype(str)
-        if np.any(qarr == "flux"):
-            qty = "flux"
-    if qty == "flux":
-        y = np.asarray(out["flux"], dtype=float)
-        e = np.asarray(out["flux_err"], dtype=float) if "flux_err" in out.colnames else None
-        for night in np.unique(nid):
-            m = nid == int(night)
-            if int(night) < 0 or not np.any(m):
-                continue
-            fin = y[m]
-            med = float(np.nanmedian(fin[np.isfinite(fin)])) if np.any(np.isfinite(fin)) else np.nan
-            if not np.isfinite(med) or med == 0.0:
-                continue
+    use_flux = "quantity" in out.colnames and np.any(np.asarray(out["quantity"]).astype(str) == "flux")
+    y = np.asarray(out["flux" if use_flux else "mag"], dtype=float).copy()
+    err_col = "flux_err" if use_flux else "mag_err"
+    e = np.asarray(out[err_col], dtype=float).copy() if err_col in out.colnames else None
+    good = np.isfinite(y)
+    for col in ("flag_outlier", "flag_epoch"):
+        if col in out.colnames:
+            good &= ~np.asarray(out[col], dtype=bool)
+    norm_err = np.full(len(out), np.nan)
+    for night in np.unique(nid):
+        m = nid == int(night)
+        if int(night) < 0:
+            continue
+        vals = y[m & good]
+        if vals.size == 0:
+            continue
+        med = float(np.median(vals))
+        if not np.isfinite(med) or (use_flux and med == 0.0):
+            continue
+        spread = 1.4826 * float(np.median(np.abs(vals - med))) if vals.size >= 3 else np.nan
+        med_err = 1.2533 * spread / np.sqrt(vals.size)
+        if use_flux:
             y[m] = y[m] / med
             if e is not None:
                 e[m] = e[m] / med
-        out["flux"] = y
-        if e is not None:
-            out["flux_err"] = e
-    else:
-        y = np.asarray(out["mag"], dtype=float)
-        for night in np.unique(nid):
-            m = nid == int(night)
-            if int(night) < 0 or not np.any(m):
-                continue
-            fin = y[m]
-            med = float(np.nanmedian(fin[np.isfinite(fin)])) if np.any(np.isfinite(fin)) else np.nan
-            if not np.isfinite(med):
-                continue
+            norm_err[m] = med_err / abs(med)
+        else:
             y[m] = y[m] - med
-        out["mag"] = y
+            norm_err[m] = med_err
+    out["flux" if use_flux else "mag"] = y
+    if e is not None:
+        out[err_col] = e
+    out["night_norm_err"] = norm_err
+    if not use_flux and "mag_err_sys" in out.colnames:
+        out["mag_err_sys"] = norm_err
     return out
 
 
@@ -1648,7 +1694,7 @@ def plot_from_light_curves_table(
 
 
 def prepare_plot_time_series(
-        data: unc.core.NdarrayDistribution | Table,
+        data: Table | tuple[np.ndarray, np.ndarray, np.ndarray],
         observation_times: Time | None,
         filter_: str, object_name: str, object_id: int, output_dir: str,
         binning_factor: float | None = None, transit_time: str | None = None,
@@ -1665,7 +1711,11 @@ def prepare_plot_time_series(
         show_airmass: bool = True,
         observatory_location=None,
         ) -> None:
-    """Plot one object from an epoch-native table or flux distribution (no per-star CSV)."""
+    """Plot one object from an epoch-native table or relative fluxes (no per-star CSV).
+
+    ``data`` is an epoch-native table or ``(rel_flux, rel_flux_err, ids)``
+    with ``(n_epochs, n_objects)`` arrays and the column ids.
+    """
     if object_id is None:
         terminal_output.print_to_terminal(
             f"ID of object {object_name} is None. Failed to create "
@@ -1706,15 +1756,18 @@ def prepare_plot_time_series(
         )
         return
 
-    if isinstance(data, unc.core.NdarrayDistribution):
+    if isinstance(data, tuple):
         if observation_times is None:
             raise ValueError(
-                "prepare_plot_time_series requires observation_times for NdarrayDistribution"
+                "prepare_plot_time_series requires observation_times for relative fluxes"
             )
+        rel, rel_err, ids = data
         lc = build_light_curves_table_from_flux(
-            data,
+            rel,
+            rel_err,
             observation_times,
             filter_,
+            source_ids=ids,
             object_names={int(object_id): object_name},
             observatory_location=observatory_location,
         )
@@ -1762,7 +1815,6 @@ def plot_light_curve_from_epoch_native_ecsv(
     file_type_plots: str = "pdf",
     subdirectory: str = "",
     pipeline_flux_normalization: bool = False,
-    distribution_samples: int = 1000,
 ) -> None:
     """
     Read an epoch-native ``calibrated_magnitudes_*.ecsv`` and run
@@ -1776,16 +1828,14 @@ def plot_light_curve_from_epoch_native_ecsv(
     JSON file (same structure as :attr:`ost_photometry.analyze.pipeline.context.AnalysisContext.calibration_epoch_meta`).
 
     If ``pipeline_flux_normalization`` is True, replicate the pipeline flux
-    fallback (quasi ZP per epoch, then per-object median normalization) using
-    flux columns in the ECSV — same math as
-    :func:`ost_photometry.analyze.calibration.quasi_flux_calibration_image_series`
-    followed by
-    :func:`ost_photometry.analyze.calibration.flux_normalization_image_series`.
+    fallback (relative flux against the field common mode, per-object median
+    normalisation) using flux columns in the ECSV — same math as
+    :func:`~ost_photometry.analyze.post_processing.differential_light_curve.relative_flux_light_curves`.
     Requires ``quantity="flux"`` and a rectangular epoch×source matrix fillable
     from the table (see :func:`epoch_native_flux_matrix_for_pipeline_normalization`).
     """
     from ...output_layout import results_dir, tables_dir
-    from .. import calibration
+    from .differential_light_curve import relative_flux_light_curves
     from .io import read_epoch_native_magnitudes
 
     tbl = read_epoch_native_magnitudes(ecsv_path)
@@ -1848,31 +1898,24 @@ def plot_light_curve_from_epoch_native_ecsv(
                 calibration_rows,
             )
         )
-        col_matches = np.nonzero(id_list.astype(int) == int(resolved_id))[0]
-        if col_matches.size == 0:
+        if not np.any(id_list.astype(int) == int(resolved_id)):
             raise ValueError(
                 f"pipeline_flux_normalization: resolved id {resolved_id} not in "
                 f"flux matrix column ids {id_list.tolist()}."
             )
-        col_idx = int(col_matches[0])
         terminal_output.print_to_terminal(
-            "Using ECSV flux matrix + pipeline-style quasi flux calibration and "
-            "per-object normalization (same recipe as LightCurveStep flux fallback).",
+            "Using the ECSV flux matrix: relative flux against the field common "
+            "mode (same recipe as the LightCurveStep flux fallback).",
             style_name="INFO",
         )
-        quasi = calibration.quasi_flux_calibration_flux_arrays(
-            flux_m,
-            err_m,
-            distribution_samples=distribution_samples,
-        )
-        plot_quantity = calibration.flux_normalization_flux_distribution(quasi)
+        rel, rel_err, _info = relative_flux_light_curves(flux_m, err_m)
         obs_times = Time(jds_arr, format="jd")
         prepare_plot_time_series(
-            plot_quantity,
+            (rel, rel_err, id_list.astype(np.int64)),
             obs_times,
             filter_,
             object_name,
-            col_idx,
+            int(resolved_id),
             out,
             binning_factor=binning_factor,
             transit_time=transit_time,

@@ -45,6 +45,35 @@ section of this file.
 
 ### Changed
 
+- **Light-curve errors with a stated meaning:** `mag_err` is what changes
+  from point to point (`err_cal_rand` ⊕ the new `err_cal_epoch`), the new
+  `mag_err_sys` the offset common to all points sharing the calibrators
+  (`err_cal_common`; `err_cal_sys` is split into the two, a zero point shared
+  by a night or an ensemble is common, `shared_by_epochs` in
+  `calibration_epochs.ecsv`). Colour rows use colour errors of the joint
+  solution (`err_cal_*_B-V`) instead of adding correlated magnitude errors
+  in quadrature. `apply_nightly_zero_point` skips flagged points and writes
+  the error of the night median (`night_norm_err`, replaces `mag_err_sys`).
+- **Differential ensemble error:** the common-mode error includes the
+  members' excess scatter (`1/√Σw`) and a Birge factor from the members'
+  scatter about it (the quietest stars underrate their excess); was the
+  photometric error of the mean only. `excess_rms` uses `mean(σ²)` and
+  `ddof=1` instead of the median error.
+- **Outlier flags** use residuals normalised by `√(σ² + s²)` (a point with
+  a large error is no longer clipped for it); a MAD of 0 flags nothing
+  (flagged every point off the median).
+- **Flux fallback (Clear):** analytic relative fluxes against the weighted
+  leave-one-out common mode of the field (`relative_flux_light_curves`)
+  replace the Monte Carlo `quasi_flux_calibration_*` /
+  `flux_normalization_*` functions (removed; missing errors became
+  10⁻⁶·flux). `ImageSeries.get_flux_array(return_ids=True)`.
+- **Limiting magnitude** is shifted to the table magnitudes by the measured
+  aperture/table flux ratio of bright isolated stars (was the aperture flux
+  of a radius-r aperture against aperture-corrected / PSF magnitudes).
+- **Difference images:** HOTPANTS `-ig` from the image unit (`EXPTIME` for
+  e⁻/s, `EGAIN` for ADU; was 1), science σ as `-ini`; both backends write
+  the difference σ as `UNCERT`. The Alard–Lupton kernel fit is weighted by
+  1/σ.
 - **Calibration fits with honest errors** (`analyze.calibration.statistics`,
   used by `linear_fit`, `median_zp`, derive-transform): calibrators weighted
   by instrumental + catalog (`err_std_*`, 0.02 where missing) + colour +
@@ -178,6 +207,13 @@ section of this file.
 
 ### Fixed
 
+- **Flux-fallback light curves were labelled with column numbers** 0…n−1
+  instead of the photometry ids (wrong star whenever the ids had gaps).
+- **HOTPANTS crashed under numpy 2** (`ndarray.newbyteorder` was removed).
+- **Alard–Lupton on noisy images:** the stamp FWHM clipped the noise at 0, so
+  the positive noise of a 41×41 stamp gave a ~3× too broad PSF, a far too
+  large kernel and a 1.5× flux mismatch; it now uses the half-maximum area
+  and moments within 2·FWHM.
 - **Derive-transform biased stars without catalog magnitudes** by the colour
   term times the instrumental zero-point difference of the two filters (row-
   wise apply with instrumental colour); its errors had no colour-term part.

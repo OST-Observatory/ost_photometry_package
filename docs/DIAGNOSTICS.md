@@ -385,8 +385,10 @@ Short outlier runs (1–2 epochs) and bright spikes stay in the table
 is not flagged. Y-limits follow unflagged points.
 
 **Two products on one table.** `mag` / `mag_err` (or `flux` for unfiltered
-bands) is the **catalog-transformed** curve: absolute level and colour, with
-zero point, colour term and catalog σ in the error budget. The
+bands) is the **catalog-transformed** curve: absolute level and colour.
+`mag_err` is the point-to-point error (photometry and the zero point of the
+epoch's own fit); `mag_err_sys` is the offset common to all points sharing
+the calibrators (catalog σ, a zero point shared by the night). The
 **differential** product (`light_curve_differential=True`, default) uses only
 instrumental magnitudes (`mag_inst`, from `mag_inst_*` / `mag_*` of the
 photometry table): per filter, the quietest field stars of similar brightness

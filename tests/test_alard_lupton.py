@@ -434,3 +434,69 @@ def test_subtract_science_template_dispatches_to_alard_lupton(tmp_path: Path):
     )
     assert path.is_file()
     assert path.name == "diff.fits"
+
+
+def test_difference_sigma_from_science_uncertainty(tmp_path: Path):
+    """σ of the difference in the sky: pulls ≈ 1 (template noiseless)."""
+    from astropy.nddata import StdDevUncertainty
+
+    rng = np.random.default_rng(3)
+    tmpl = _star_field((180, 180), _STAR_XY, fwhm=3.0)
+    clean = 1.25 * gaussian_filter(tmpl, sigma=1.1) + 12.0
+    sigma = np.full(clean.shape, 4.0)
+    sci = clean + rng.normal(0.0, 1.0, clean.shape) * sigma
+    ccd = CCDData(sci, unit="adu", uncertainty=StdDevUncertainty(sigma))
+    out = run_alard_lupton(ccd, fits.PrimaryHDU(tmpl), workdir=tmp_path, star_xy=_STAR_XY)
+    written = CCDData.read(out)
+    assert written.uncertainty is not None
+    sky = np.ones(sci.shape, dtype=bool)
+    yy, xx = np.indices(sci.shape)
+    for x, y in _STAR_XY:
+        sky &= np.hypot(xx - x, yy - y) > 12
+    sky[:15, :] = sky[-15:, :] = sky[:, :15] = sky[:, -15:] = False
+    pull = written.data[sky] / written.uncertainty.array[sky]
+    assert 0.9 < float(np.std(pull)) < 1.1
+
+
+def test_image_gain_from_unit_and_header():
+    from ost_photometry.analyze.subtraction import image_gain_from_ccd
+
+    data = np.zeros((4, 4))
+    assert image_gain_from_ccd(CCDData(data, unit="electron/s", meta={"EXPTIME": 120.0})) == 120.0
+    assert image_gain_from_ccd(CCDData(data, unit="electron")) == 1.0
+    assert image_gain_from_ccd(CCDData(data, unit="adu", meta={"EGAIN": 0.8})) == 0.8
+    assert image_gain_from_ccd(CCDData(data, unit="adu")) is None
+
+
+def test_hotpants_gets_gain_and_noise_images(tmp_path: Path, monkeypatch):
+    from astropy.nddata import StdDevUncertainty
+
+    import ost_photometry.analyze.subtraction as sub
+
+    seen = {}
+
+    def fake_run(cmd, **_kw):
+        seen["cmd"] = cmd
+        out = Path(cmd[cmd.index("-outim") + 1])
+        fits.PrimaryHDU(np.zeros((8, 8))).writeto(out, overwrite=True)
+        noise = Path(cmd[cmd.index("-oni") + 1])
+        fits.PrimaryHDU(np.full((8, 8), 2.0)).writeto(noise, overwrite=True)
+
+        class _P:
+            returncode = 0
+            stderr = stdout = ""
+
+        return _P()
+
+    monkeypatch.setattr(sub.subprocess, "run", fake_run)
+    ccd = CCDData(
+        np.ones((8, 8)), unit="electron/s", meta={"EXPTIME": 60.0},
+        uncertainty=StdDevUncertainty(np.full((8, 8), 0.5)),
+    )
+    out = sub.run_hotpants(ccd, fits.PrimaryHDU(np.ones((8, 8))), workdir=tmp_path,
+                           hotpants_executable="/bin/true")
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("-ig") + 1] == "60.0"
+    assert "-ini" in cmd
+    with fits.open(out) as hdul:
+        assert np.allclose(hdul["UNCERT"].data, 2.0)

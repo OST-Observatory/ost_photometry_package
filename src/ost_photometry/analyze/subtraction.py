@@ -14,13 +14,54 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
+import astropy.units as u
 import numpy as np
 from astropy.io import fits
-from astropy.nddata import CCDData
+from astropy.nddata import CCDData, StdDevUncertainty
 
 from .. import terminal_output
 
 SubtractBackend = Literal["auto", "hotpants", "alard_lupton"]
+
+
+def image_gain_from_ccd(ccd: CCDData) -> float | None:
+    """Electrons per image unit: ``EXPTIME`` for e⁻/s, 1 for e⁻, ``EGAIN`` for ADU.
+
+    ``None`` when the unit or the needed header keyword is unknown.
+    """
+    unit = getattr(ccd, "unit", None)
+    header = getattr(ccd, "header", None) or {}
+    if unit is None:
+        return None
+    try:
+        if unit.is_equivalent(u.electron / u.s):
+            exptime = header.get("EXPTIME", header.get("EXPOSURE"))
+            return float(exptime) if exptime else None
+        if unit.is_equivalent(u.electron):
+            return 1.0
+        if unit.is_equivalent(u.adu):
+            gain = header.get("EGAIN", header.get("GAIN"))
+            return float(gain) if gain else None
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def _science_sigma(ccd: CCDData) -> np.ndarray | None:
+    unc = getattr(ccd, "uncertainty", None)
+    if unc is None:
+        return None
+    return np.asarray(unc.represent_as(StdDevUncertainty).array, dtype=float)
+
+
+def _attach_uncertainty(diff_path: Path, sigma: np.ndarray) -> None:
+    """Append σ as the ``UNCERT`` extension (CCDData convention)."""
+    with fits.open(diff_path, mode="update") as hdul:
+        if "UNCERT" in hdul:
+            del hdul["UNCERT"]
+        hdr = fits.Header()
+        hdr["UTYPE"] = "StdDevUncertainty"
+        hdul.append(fits.ImageHDU(np.asarray(sigma, dtype=np.float32), header=hdr, name="UNCERT"))
 
 
 def resolve_subtract_backend(
@@ -51,7 +92,7 @@ def subtract_science_template(
     output_filename: str = "diff.fits",
     backend: str = "auto",
     template_mask: np.ndarray | None = None,
-    image_gain: float = 1.0,
+    image_gain: float | None = None,
     template_gain: float | None = None,
     hotpants_executable: str | None = None,
     extra_args: Sequence[str] | None = None,
@@ -59,6 +100,10 @@ def subtract_science_template(
 ) -> Path:
     """
     Science minus PSF-matched template. Dispatches to HOTPANTS or Alard–Lupton.
+
+    ``image_gain`` (e⁻ per image unit) defaults to :func:`image_gain_from_ccd`.
+    With a science uncertainty the difference FITS carries its σ as
+    ``UNCERT`` (template noise not included).
     """
     resolved = resolve_subtract_backend(backend, hotpants_executable)
     if resolved == "hotpants":
@@ -96,7 +141,7 @@ def run_hotpants(
     workdir: str | Path,
     output_filename: str = "diff.fits",
     template_mask: np.ndarray | None = None,
-    image_gain: float = 1.0,
+    image_gain: float | None = None,
     template_gain: float | None = None,
     hotpants_executable: str | None = None,
     extra_args: Sequence[str] | None = None,
@@ -121,7 +166,11 @@ def run_hotpants(
     template_mask
         Boolean array, same shape as template; ``True`` = bad pixel for ``-tmpl``.
     image_gain, template_gain
-        Passed as ``-ig`` / ``-tg`` when template_gain is not ``None``.
+        Electrons per image unit, passed as ``-ig`` / ``-tg``. ``image_gain``
+        defaults to :func:`image_gain_from_ccd` (``EXPTIME`` for e⁻/s
+        images); ``-tg`` only when given. The science uncertainty (σ) is
+        passed as ``-ini``; the difference σ (``-oni``) is stored as the
+        ``UNCERT`` extension of the output.
     hotpants_executable
         Path to ``hotpants``; default ``shutil.which("hotpants")``.
     extra_args
@@ -149,9 +198,8 @@ def run_hotpants(
 
     science_ccd.write(sci_path, overwrite=True)
 
-    tdata = np.asarray(template_hdu.data, dtype=np.float64)
-    if hasattr(tdata, "byteswap"):
-        tdata = tdata.byteswap().newbyteorder("=")
+    # float64 in native byte order (FITS data are big-endian)
+    tdata = np.array(template_hdu.data, dtype=np.float64)
     thdr = template_hdu.header.copy()
     fits.PrimaryHDU(data=tdata, header=thdr).writeto(tmpl_path, overwrite=True)
 
@@ -175,7 +223,23 @@ def run_hotpants(
     if extra_args:
         cmd.extend(list(extra_args))
 
-    cmd.extend(["-ig", str(float(image_gain))])
+    sigma = _science_sigma(science_ccd)
+    noise_out = None
+    if sigma is not None:
+        npath = work / "_hotpants_inoise.fits"
+        fits.PrimaryHDU(sigma.astype(np.float32)).writeto(npath, overwrite=True)
+        noise_out = work / "_hotpants_onoise.fits"
+        cmd.extend(["-ini", str(npath), "-oni", str(noise_out)])
+
+    gain = image_gain if image_gain is not None else image_gain_from_ccd(science_ccd)
+    if gain is None:
+        terminal_output.print_to_terminal(
+            "HOTPANTS: image gain unknown (unit/EXPTIME/EGAIN); using 1 e⁻ per unit"
+            + ("" if sigma is not None else " for its noise model"),
+            style_name="WARNING",
+        )
+        gain = 1.0
+    cmd.extend(["-ig", str(float(gain))])
     if template_gain is not None:
         cmd.extend(["-tg", str(float(template_gain))])
     cmd.extend(["-outim", str(out_path)])
@@ -198,5 +262,7 @@ def run_hotpants(
 
     if not out_path.is_file():
         raise RuntimeError(f"hotpants reported success but output missing: {out_path}")
+    if noise_out is not None and noise_out.is_file():
+        _attach_uncertainty(out_path, fits.getdata(noise_out))
 
     return out_path

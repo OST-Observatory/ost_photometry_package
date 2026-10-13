@@ -85,6 +85,78 @@ def _pixel_indices_for_depth_mask(tbl: Table) -> tuple[np.ndarray, np.ndarray]:
     return np.rint(np.asarray(xs)).astype(int), np.rint(np.asarray(ys)).astype(int)
 
 
+def aperture_to_table_flux_ratio(
+    image_data: np.ndarray,
+    photo: Table,
+    mag_inst_col: str,
+    radius: float,
+    *,
+    saturated_col: str | None = None,
+    err_col: str | None = None,
+    max_stars: int = 30,
+    min_stars: int = 5,
+) -> tuple[float, float, int]:
+    """Aperture flux at ``radius`` (px) / flux of the table magnitude, ``(ρ, σ_ρ, n)``.
+
+    :class:`~photutils.utils.ImageDepth` measures the flux in an aperture;
+    the table magnitudes are totals (aperture-corrected APER or PSF fluxes).
+    ``ρ`` is the median over bright (S/N > 50), unsaturated stars without a
+    table neighbour within ``2·radius``, with a clipped-median annulus
+    background; its error is ``1.2533 · σ_robust / √n``. NaN with fewer than
+    ``min_stars`` stars.
+    """
+    from photutils.aperture import (
+        ApertureStats,
+        CircularAnnulus,
+        CircularAperture,
+        aperture_photometry,
+    )
+
+    nan = (float("nan"), float("nan"), 0)
+    has_xy = {"x_fit", "y_fit"} <= set(photo.colnames) or {"x", "y"} <= set(photo.colnames)
+    if mag_inst_col not in photo.colnames or not has_xy:
+        return nan
+    x = np.asarray(photo["x_fit"] if "x_fit" in photo.colnames else photo["x"], dtype=float)
+    y = np.asarray(photo["y_fit"] if "y_fit" in photo.colnames else photo["y"], dtype=float)
+    mag = np.asarray(photo[mag_inst_col], dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(mag)
+    if err_col is not None and err_col in photo.colnames:
+        ok &= np.asarray(photo[err_col], dtype=float) < 0.02
+    if saturated_col is not None and saturated_col in photo.colnames:
+        ok &= ~np.asarray(photo[saturated_col], dtype=bool)
+    ny, nx = np.shape(image_data)
+    edge = radius + 8.0
+    ok &= (x > edge) & (x < nx - edge) & (y > edge) & (y < ny - edge)
+    idx = np.flatnonzero(ok)
+    if idx.size == 0:
+        return nan
+    pos_all = np.column_stack([x, y])
+    isolated = []
+    for i in idx[np.argsort(mag[idx])]:
+        d = np.hypot(*(pos_all[np.isfinite(x) & np.isfinite(y)] - pos_all[i]).T)
+        if np.count_nonzero(d < 2.0 * radius) <= 1:
+            isolated.append(i)
+        if len(isolated) >= max_stars:
+            break
+    if len(isolated) < min_stars:
+        return nan
+    sel = np.asarray(isolated)
+    pos = pos_all[sel]
+    data = np.asarray(image_data, dtype=float)
+    aper = CircularAperture(pos, r=radius)
+    annulus = CircularAnnulus(pos, r_in=radius + 2.0, r_out=radius + 6.0)
+    bkg = np.asarray(ApertureStats(data, annulus, sigma_clip=None).median, dtype=float)
+    flux_ap = np.asarray(aperture_photometry(data, aper)["aperture_sum"], dtype=float)
+    flux_ap = flux_ap - bkg * aper.area
+    ratio = flux_ap / 10.0 ** (-0.4 * mag[sel])
+    ratio = ratio[np.isfinite(ratio) & (ratio > 0)]
+    if ratio.size < min_stars:
+        return nan
+    rho = float(np.median(ratio))
+    spread = 1.4826 * float(np.median(np.abs(ratio - rho)))
+    return rho, 1.2533 * spread / np.sqrt(ratio.size), int(ratio.size)
+
+
 def _blank_sky_source_mask(
     image_data: np.ndarray,
     index_x: np.ndarray,
@@ -305,6 +377,35 @@ def _derive_limiting_magnitude_one_epoch(
     )
 
     mag_report = float(mag_limit) + image_depth_mag_offset
+    # the instrumental magnitude the table limit refers to
+    inst_col = next(
+        (c for c in (f"mag_inst_{filter_}", f"mag_{filter_}") if c in photo.colnames),
+        f"mag_{filter_}",
+    )
+    rho, rho_err, n_rho = aperture_to_table_flux_ratio(
+        depth_data,
+        photo,
+        inst_col,
+        float(radius),
+        saturated_col=f"saturated_{filter_}",
+        err_col=f"err_inst_{filter_}" if inst_col.startswith("mag_inst_") else f"err_{filter_}",
+    )
+    if np.isfinite(rho):
+        # a star at the limit has aperture flux F_lim, i.e. table flux F_lim / ρ
+        mag_report += 2.5 * np.log10(rho)
+        terminal_output.print_to_terminal(
+            f"Aperture / table flux at r = {float(radius):.1f} px: {rho:.3f} ± {rho_err:.3f} "
+            f"({n_rho} stars); limit shifted by {2.5 * np.log10(rho):+.3f} mag",
+            indent=indent * 2,
+            style_name="INFO",
+        )
+    else:
+        terminal_output.print_to_terminal(
+            "Aperture / table flux ratio not determined (too few bright isolated "
+            f"stars or no {inst_col!r}); the limit is for the aperture flux.",
+            indent=indent * 2,
+            style_name="WARNING",
+        )
 
     terminal_output.print_to_terminal(
         "Based on the ImageDepth (photutils) routine:",

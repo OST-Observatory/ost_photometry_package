@@ -284,8 +284,10 @@ class ImageSeries:
                 )
         return flux_list
 
-    def get_flux_array(self) -> tuple[np.ndarray, np.ndarray]:
+    def get_flux_array(self, *, return_ids: bool = False):
+        """``(flux, flux_err)`` of shape ``(n_images, n_ids)``; ``return_ids``
+        adds the column ids (the photometry ``id``)."""
         from .correlate.tracks import flux_arrays_from_photometry_tables
 
         tbl_s = list(self.get_photometry().values())
-        return flux_arrays_from_photometry_tables(tbl_s)
+        return flux_arrays_from_photometry_tables(tbl_s, return_ids=return_ids)

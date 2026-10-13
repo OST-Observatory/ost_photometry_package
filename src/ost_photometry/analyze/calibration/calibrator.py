@@ -34,7 +34,7 @@ from .photometer import (
     _resolve_per_image_rolling_mode,
 )
 from .result import CalibrationResult
-from .statistics import average_epochs_per_star, set_airmass_reference
+from .statistics import average_epochs_per_star, mark_shared_zero_point
 
 
 class PhotometryCalibrator:
@@ -420,7 +420,7 @@ class PhotometryCalibrator:
                 calibration_summary_x_jd=calibration_summary_x_jd,
                 calibration_summary_use_jd_x=calibration_summary_use_jd_x,
             )
-            set_airmass_reference(result, list(self.epochs.values()), filters)
+            mark_shared_zero_point(result, list(self.epochs.values()), filters)
             for epoch_id in self.epochs:
                 results[epoch_id] = result
         elif self.mode == CoefficientMode.ENSEMBLE:
@@ -449,7 +449,7 @@ class PhotometryCalibrator:
                 sigma_clip=sigma_clip,
                 color_term_fit=color_term_fit,
             )
-            set_airmass_reference(result, list(self.epochs.values()), filters)
+            mark_shared_zero_point(result, list(self.epochs.values()), filters)
             for epoch_id in self.epochs:
                 results[epoch_id] = result
 

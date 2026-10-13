@@ -355,7 +355,14 @@ excess 0).
 vs the night's extinction trend, `ensemble_scatter`), plotted distinct from
 per-star outliers. Not yet used by the period search / folded binning.
 
-### Inflate photometric uncertainties (P1)
+### Inflate photometric uncertainties — done
+
+Done in the uncertainty overhaul (package 5): `mag_err` / `mag_err_sys` for
+the transformed product, ensemble excess and Birge factor in the
+common-mode error of the differential product. HAT-P-20 rerun (X < 1.3, all
+constant stars, six magnitude bins): scatter / `dmag_err` 0.95–1.02,
+scatter / `mag_err` 0.94–1.08. ATO (Clear, flux fallback, frames reduced
+before package 3): 0.88–0.92. History below.
 
 Error bars on the **transformed** curve include photon/sky \(\sigma_m\) and,
 honestly, catalog/ZP scatter. On the **differential** curve they must not

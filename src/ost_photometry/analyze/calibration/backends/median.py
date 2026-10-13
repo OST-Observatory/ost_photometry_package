@@ -9,8 +9,8 @@ from ..quality import calibrator_candidate_mask
 from ..result import CalibrationResult
 from ..statistics import (
     average_epochs_per_star,
+    mark_shared_zero_point,
     parse_fixed_color_terms,
-    set_airmass_reference,
 )
 from ..zp import fit_median_zero_point_epoch
 
@@ -56,7 +56,7 @@ def fit_epochs(
             min_comparisons=min_comparisons,
             sigma_clip=config.fit_sigma_clip,
         )
-        set_airmass_reference(result, list(epochs.values()), filters)
+        mark_shared_zero_point(result, list(epochs.values()), filters)
         return {eid: result for eid in epochs}
 
     if grouping == "per_night":
@@ -85,7 +85,7 @@ def fit_epochs(
                 per_epoch, filters
             ),
         )
-        set_airmass_reference(night, list(epochs.values()), filters)
+        mark_shared_zero_point(night, list(epochs.values()), filters)
         return {eid: night for eid in epochs}
 
     fixed = (

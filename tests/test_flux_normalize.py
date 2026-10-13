@@ -1,49 +1,35 @@
-"""Tests for flux normalization helpers extracted from calibration/_legacy."""
+"""Relative-flux fallback for filters without catalog calibration."""
 
 from __future__ import annotations
 
 import numpy as np
-import pytest
-from astropy import uncertainty as unc
-from astropy.stats import sigma_clipped_stats
 
-from helpers import load_module_from_path, pkg_src
+from helpers import (
+    isolated_sys_modules,
+    load_module_from_path,
+    pkg_src,
+    stub_analyze_package,
+)
+
+_PP = pkg_src() / "ost_photometry" / "analyze" / "post_processing"
 
 
-def _load_flux_normalize():
+def _diff():
+    stub_analyze_package("post_processing")
+    root = pkg_src() / "ost_photometry"
+    load_module_from_path("ost_photometry.terminal_output", root / "terminal_output.py")
+    load_module_from_path("ost_photometry.output_layout", root / "output_layout.py")
+    load_module_from_path("ost_photometry.analyze.post_processing.light_curve", _PP / "light_curve.py")
     return load_module_from_path(
-        "ost_photometry.analyze.calibration.flux_normalize",
-        pkg_src() / "ost_photometry" / "analyze" / "calibration" / "flux_normalize.py",
+        "ost_photometry.analyze.post_processing.differential_light_curve",
+        _PP / "differential_light_curve.py",
     )
 
 
-def test_quasi_flux_calibration_preserves_constant_star_ratios():
-    """Complete detections: object flux ratios stay, epoch common mode is removed."""
-    mod = _load_flux_normalize()
-    flux = np.array(
-        [
-            [10.0, 20.0, 30.0],
-            [100.0, 200.0, 300.0],
-        ],
-        dtype=float,
-    )
-    err = np.full_like(flux, 0.1)
-    result = mod.quasi_flux_calibration_flux_arrays(flux, err, distribution_samples=5000)
-    med = result.pdf_median()
-    np.testing.assert_allclose(med[0], med[1], rtol=5e-3, atol=5e-3)
-    np.testing.assert_allclose(med[0, 1] / med[0, 0], 2.0, rtol=5e-3)
-    np.testing.assert_allclose(med[0, 2] / med[0, 0], 3.0, rtol=5e-3)
-
-
-def test_quasi_flux_calibration_ignores_faint_dropout_in_epoch_median():
-    """Faint stars appearing only at high transparency must not tilt a bright OOI."""
-    mod = _load_flux_normalize()
-    rng = np.random.default_rng(0)
-    n_ep = 40
+def _field(rng, n_ep=150, n_bright=8, n_faint=120):
     x = np.linspace(-1.0, 1.0, n_ep)
     airmass = 1.15 + 1.0 * x**2
     transparency = 10 ** (-0.4 * 0.35 * (airmass - 1.0))
-    n_bright, n_faint = 8, 120
     scale = np.concatenate(
         [
             [5000.0],
@@ -52,51 +38,47 @@ def test_quasi_flux_calibration_ignores_faint_dropout_in_epoch_median():
         ]
     )
     true = transparency[:, None] * scale[None, :]
-    flux = np.where(true > 20.0, true, np.nan)
-    err = np.where(np.isfinite(flux), np.sqrt(np.maximum(flux, 1.0)), np.nan)
-
-    work = np.where(np.isfinite(flux), flux, 0.0)
-    _, raw_epoch_med, _ = sigma_clipped_stats(
-        work, axis=1, sigma=1.5, mask_value=0.0
-    )
-    old = flux[:, 0] / raw_epoch_med
-    old_norm = old / np.nanmedian(old)
-
-    result = mod.quasi_flux_calibration_flux_arrays(
-        flux, err, distribution_samples=800, min_ensemble_fraction=0.5
-    )
-    quasi = result.pdf_median()[:, 0]
-    new_norm = quasi / np.nanmedian(quasi)
-
-    assert np.nanmax(old_norm) / np.nanmin(old_norm) > 1.2
-    np.testing.assert_allclose(new_norm, 1.0, rtol=0.03, atol=0.03)
+    err = np.sqrt(true + 100.0)
+    flux = true + rng.normal(0.0, 1.0, true.shape) * err
+    flux = np.where(true > 20.0, flux, np.nan)  # faint stars drop out at high airmass
+    return flux, np.where(np.isfinite(flux), err, np.nan)
 
 
-def test_flux_normalization_flux_distribution_scales_by_object_median():
-    mod = _load_flux_normalize()
-    flux = np.array(
-        [
-            [2.0, 4.0],
-            [4.0, 8.0],
-            [6.0, 12.0],
-        ],
-        dtype=float,
-    )
-    dist = unc.normal(flux, std=np.full_like(flux, 0.01), n_samples=5000)
-    result = mod.flux_normalization_flux_distribution(dist)
-    med = result.pdf_median()
-    _, obj_med, _ = sigma_clipped_stats(flux, axis=0, sigma=1.5, mask_value=0.0)
-    expected = flux / obj_med
-    np.testing.assert_allclose(med, expected, rtol=5e-3, atol=5e-3)
+def test_constant_stars_are_flat_with_honest_errors():
+    with isolated_sys_modules():
+        mod = _diff()
+        rng = np.random.default_rng(0)
+        flux, err = _field(rng)
+        rel, rel_err, info = mod.relative_flux_light_curves(flux, err)
+        # target (column 0) and bright stars: flat, pulls ~1
+        for j in range(0, 9):
+            ok = np.isfinite(rel[:, j])
+            assert abs(np.median(rel[ok, j]) - 1.0) < 1e-4
+            pull = (rel[ok, j] - 1.0) / rel_err[ok, j]
+            assert 0.85 < np.std(pull) < 1.15
+        assert info["ensemble"][0]
 
 
-def test_calibration_package_exports_array_helpers():
-    pytest.importorskip("photutils")
-    pytest.importorskip("regions")
-    from ost_photometry.analyze import calibration
+def test_common_mode_does_not_follow_dropouts_or_a_variable():
+    with isolated_sys_modules():
+        mod = _diff()
+        rng = np.random.default_rng(1)
+        flux, err = _field(rng)
+        n_ep = flux.shape[0]
+        flux[:, 3] *= 1.0 + 0.3 * np.sin(np.linspace(0, 6, n_ep))  # variable ensemble star
+        rel, rel_err, _info = mod.relative_flux_light_curves(flux, err)
+        pull = (rel[:, 0] - 1.0) / rel_err[:, 0]
+        assert 0.85 < np.nanstd(pull) < 1.15
+        assert abs(np.nanmean(pull)) < 0.3
 
-    assert callable(calibration.quasi_flux_calibration_flux_arrays)
-    assert callable(calibration.flux_normalization_flux_distribution)
-    assert callable(calibration.quasi_flux_calibration_image_series)
-    assert callable(calibration.flux_normalization_image_series)
-    assert not hasattr(calibration, "apply_calibration")
+
+def test_missing_errors_stay_nan_and_zero_flux_is_ignored():
+    with isolated_sys_modules():
+        mod = _diff()
+        rng = np.random.default_rng(2)
+        flux, err = _field(rng, n_ep=40)
+        err[5, 0] = np.nan
+        flux[6, 0] = 0.0
+        rel, rel_err, _info = mod.relative_flux_light_curves(flux, err)
+        assert np.isfinite(rel[5, 0]) and np.isnan(rel_err[5, 0])
+        assert np.isnan(rel[6, 0])

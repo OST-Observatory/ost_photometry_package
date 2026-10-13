@@ -456,17 +456,18 @@ def mean_airmass(epochs, filter_: str) -> float | None:
     return float(np.mean(values)) if values else None
 
 
-def set_airmass_reference(result, epochs, filters: list[str]) -> None:
-    """Store the epochs' mean airmass on a zero point they share."""
+def mark_shared_zero_point(result, epochs, filters: list[str]) -> None:
+    """Mark a zero point shared by ``epochs``: their mean airmass and count."""
     for f in filters:
         tc = result.transformation.get(f)
         if tc is not None:
             tc.airmass_ref = mean_airmass(epochs, f)
+            tc.shared_by_epochs = len(epochs)
 
 
 __all__ = [
     "mean_airmass",
-    "set_airmass_reference",
+    "mark_shared_zero_point",
     "average_epochs_per_star",
     "parse_fixed_color_terms",
     "CATALOG_ERR_DEFAULT",
