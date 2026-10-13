@@ -101,3 +101,17 @@ def test_manifest_from_directory(tmp_path):
     assert table["ra"][0] == pytest.approx(283.396, abs=1e-3)
     assert all(table["downloaded"])
     assert len(set(table["frame_id"])) == 3
+
+
+def test_manifest_from_directory_follows_symlinked_nights(tmp_path):
+    night = tmp_path / "data" / "20240608"
+    night.mkdir(parents=True)
+    hdr = fits.Header({"IMAGETYP": "Light Frame", "EXPTIME": 10.0})
+    fits.PrimaryHDU(np.zeros((4, 4), dtype=np.float32), header=hdr).writeto(night / "a.fit")
+    links = tmp_path / "selection"
+    links.mkdir()
+    (links / "20240608").symlink_to(night, target_is_directory=True)
+    (links / "loop").symlink_to(links, target_is_directory=True)  # cycle must not hang
+    manifest = manifest_from_directory(links)
+    assert len(manifest) == 1
+    assert manifest["run"][0] == "20240608"

@@ -603,7 +603,8 @@ def reduce_planned(
     table = Table(rows=rows, names=("frame_id", "unit_id", "status", "reduced_path"),
                   dtype=(str, str, str, str)) if rows else Table(
         names=("frame_id", "unit_id", "status", "reduced_path"), dtype=(str, str, str, str))
-    table.write(out_dir / "reduction_report.ecsv", format="ascii.ecsv", overwrite=True)
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    table.write(Path(out_dir) / "reduction_report.ecsv", format="ascii.ecsv", overwrite=True)
     return reports, table
 
 

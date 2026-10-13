@@ -21,10 +21,20 @@ _LIGHT_TYPES = {"light frame", "light", "object", "science"}
 
 
 def iter_fits_files(root: str | Path) -> list[Path]:
-    """All FITS files below ``root`` (recursive, sorted, no hidden directories)."""
+    """All FITS files below ``root`` (recursive, sorted, no hidden directories).
+
+    Symlinked directories are followed (e.g. a folder that links the nights
+    to reduce together); each real directory is visited once.
+    """
     root = Path(root)
     found: list[Path] = []
-    for dirpath, dirnames, filenames in os.walk(root):
+    seen: set[str] = set()
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
+        real = os.path.realpath(dirpath)
+        if real in seen:
+            dirnames[:] = []
+            continue
+        seen.add(real)
         dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
         for name in sorted(filenames):
             if name.lower().endswith(FITS_SUFFIXES):
