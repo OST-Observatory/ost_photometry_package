@@ -8,6 +8,7 @@ import warnings
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import astropy.units as u
 import ccdproc as ccdp
 import numpy as np
 from astropy.nddata import CCDData, StdDevUncertainty
@@ -829,10 +830,19 @@ def update_header_information(
             style_name="WARNING",
         )
 
-    #   Add gain using a second keyword (GRANDMA)
-    gain = image.meta.get("EGAIN")
-    if gain is not None:
-        image.meta["GAIN"] = gain
+    #   GAIN for downstream tools (GRANDMA, SExtractor): electrons per data
+    #   unit. The frames are calibrated (EGAIN already applied), so that is
+    #   EXPTIME for e-/s images and 1 for electrons; the raw EGAIN (e-/ADU)
+    #   would be wrong by that factor. The camera gain *setting* that capture
+    #   software stores as GAIN is kept as GAINSET.
+    unit = getattr(image, "unit", None)
+    if unit == u.electron / u.s or unit == u.electron:
+        if "GAIN" in image.meta and "GAINSET" not in image.meta:
+            image.meta["GAINSET"] = (image.meta["GAIN"], "Camera gain setting (raw GAIN)")
+        electrons_per_unit = (
+            float(image.meta.get("EXPTIME", 1.0)) if unit == u.electron / u.s else 1.0
+        )
+        image.meta["GAIN"] = (electrons_per_unit, "Electrons per data unit")
 
     #   Add target name using a second keyword
     if new_target_name is not None:

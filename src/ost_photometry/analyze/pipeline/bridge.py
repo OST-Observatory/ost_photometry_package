@@ -117,9 +117,10 @@ def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Table | None:
 
 
 def _airmass_for_image(image) -> float:
+    """Image airmass, NaN when neither the header nor the site gave one."""
     am = getattr(image, "air_mass", None)
     if am is None:
-        return 1.0
+        return float("nan")
     return float(am)
 
 

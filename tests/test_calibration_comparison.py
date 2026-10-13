@@ -412,3 +412,33 @@ def test_plot_calibration_transformation_fit_line_ignores_nan_colors(tmp_path):
     assert np.isclose(x_line[0], 0.4, atol=1e-6)
     assert np.isclose(x_line[-1], 1.0, atol=1e-6)
     assert np.allclose(y_line, 0.5 * x_line + 0.2)
+
+
+@pytest.mark.comparison
+@pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
+def test_median_zp_with_extinction_is_unbiased(synthetic_calibration_epoch_table):
+    """The ZP is fitted on the same extinction-corrected mags that apply uses.
+
+    Before, the fit saw raw magnitudes while apply subtracted k·X, which
+    biased every calibrated magnitude by -k·X.
+    """
+    cfg_mod, engine_mod = _load_engine()
+    ext_mod = _import_submodule("ost_photometry.analyze.extinction")
+    phot_mod = _import_submodule("ost_photometry.analyze.calibration.photometer")
+    cfg = cfg_mod.PipelineConfig.from_preset(
+        "median_zp_per_image", overrides={"extinction_mode": "tabulated"}
+    )
+    tbl = synthetic_calibration_epoch_table.copy()
+    tbl["airmass"] = 1.5
+    corrector = ext_mod.ExtinctionCorrector(None, ext_mod.ExtinctionOrder.FIRST)
+    epochs = {"epoch_000": tbl}
+    results = engine_mod.CalibrationEngine.fit(
+        epochs, cfg, ["V"], extinction_corrector=corrector
+    )
+    photometer = phot_mod.DifferentialPhotometer(extinction_corrector=corrector)
+    out = engine_mod.CalibrationEngine.apply(epochs, results, ["V"], photometer=photometer)
+    comps = np.asarray(tbl["is_comparison"], dtype=bool)
+    resid = np.asarray(out["mag_cal_V"], dtype=float)[comps] - np.asarray(
+        tbl["mag_std_V"], dtype=float
+    )[comps]
+    assert abs(float(np.median(resid))) < 1e-6

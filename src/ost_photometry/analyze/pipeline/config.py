@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field, fields
-from typing import Any, Literal
+from typing import Any, Literal, get_args, get_origin, get_type_hints
 
 import astropy.units as u
 from astropy.coordinates import EarthLocation
@@ -521,6 +522,21 @@ _SECTION_NAMES = (
 _CONFIG_ALIASES = {"protect_reference_obj": "protect_ooi"}
 
 
+def _literal_values(hint) -> tuple | None:
+    """Allowed values of a ``Literal`` (or ``Literal | None``) annotation."""
+    if hint is None:
+        return None
+    if get_origin(hint) is Literal:
+        return get_args(hint)
+    args = get_args(hint)
+    if args and type(None) in args:
+        literals = [a for a in args if get_origin(a) is Literal]
+        others = [a for a in args if a is not type(None) and get_origin(a) is not Literal]
+        if len(literals) == 1 and not others:
+            return (*get_args(literals[0]), None)
+    return None
+
+
 class PipelineConfig:
     """
     Central pipeline configuration composed of step-specific sub-configs.
@@ -610,13 +626,20 @@ class PipelineConfig:
         super().__setattr__(name, value)
 
     def apply_overrides(self, **kwargs: Any) -> None:
-        """Apply flat keyword overrides (used by ``run_pipeline``)."""
+        """Apply flat keyword overrides (used by ``run_pipeline``).
+
+        Unknown keys warn (a typo would otherwise silently keep the default);
+        values of ``Literal`` options are checked (:meth:`validate`).
+        """
         diag_prefix = "diagnostic_plots__"
+        unknown: list[str] = []
         for key, val in kwargs.items():
             if key.startswith(diag_prefix):
                 sub = key[len(diag_prefix) :]
                 if hasattr(self.diagnostic_plots, sub):
                     setattr(self.diagnostic_plots, sub, val)
+                else:
+                    unknown.append(key)
                 continue
             section = self._find_section_for(key)
             if section is None and key in _CONFIG_ALIASES:
@@ -624,6 +647,29 @@ class PipelineConfig:
                 section = self._find_section_for(key)
             if section is not None:
                 setattr(section, key, val)
+            else:
+                unknown.append(key)
+        if unknown:
+            warnings.warn(
+                f"PipelineConfig: unknown option(s) {sorted(unknown)} ignored.",
+                stacklevel=3,
+            )
+        self.validate()
+
+    def validate(self) -> None:
+        """Raise ``ValueError`` for values outside an option's ``Literal`` set."""
+        problems: list[str] = []
+        for section in self._sections():
+            hints = get_type_hints(type(section), globalns=globals())
+            for f in fields(section):
+                allowed = _literal_values(hints.get(f.name))
+                if allowed is None:
+                    continue
+                value = getattr(section, f.name)
+                if value not in allowed:
+                    problems.append(f"{f.name}={value!r} (allowed: {', '.join(map(repr, allowed))})")
+        if problems:
+            raise ValueError("PipelineConfig: invalid option value(s): " + "; ".join(problems))
 
     def as_flat_dict(self) -> dict[str, Any]:
         """Serialize all sub-config fields to a flat dictionary."""

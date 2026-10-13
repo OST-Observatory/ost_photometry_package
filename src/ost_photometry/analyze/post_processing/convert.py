@@ -25,6 +25,10 @@ def _build_epoch_native_magnitude_distributions(
     """
     Build one normal distribution per filter from ``mag_cal_<F>`` / ``err_cal_<F>``,
     or (if no calibrated column for that filter) ``mag_inst_<F>`` / ``err_inst_<F>``.
+
+    Rows without a finite error are drawn with zero width (so the magnitude
+    is still converted); :func:`_rows_without_errors` marks them so the
+    converted error is NaN there.
     """
     data_dict: dict[str, unc.core.NdarrayDistribution] = {}
     for mag_prefix, err_prefix in (
@@ -43,13 +47,23 @@ def _build_epoch_native_magnitude_distributions(
             if err_col in tbl.colnames:
                 e = np.abs(np.asarray(tbl[err_col], dtype=float))
             else:
-                e = np.zeros_like(m, dtype=float)
+                e = np.full_like(m, np.nan, dtype=float)
             data_dict[filter_] = unc.normal(
                 m * u.mag,
-                std=e * u.mag,
+                std=np.where(np.isfinite(e), e, 0.0) * u.mag,
                 n_samples=distribution_samples,
             )
     return data_dict
+
+
+def _rows_without_errors(tbl: Table, filters: list[str]) -> np.ndarray:
+    """True for rows where any of ``filters`` has no finite error."""
+    bad = np.zeros(len(tbl), dtype=bool)
+    for f in filters:
+        pair = _get_mag_err(tbl, f)
+        if pair is not None:
+            bad |= ~np.isfinite(pair[1])
+    return bad
 
 
 def _list_cal_filters(tbl: Table) -> list[str]:
@@ -79,7 +93,7 @@ def _get_mag_err(
             e = (
                 np.abs(np.asarray(tbl[ec], dtype=float))
                 if ec in tbl.colnames
-                else np.zeros_like(m)
+                else np.full_like(m, np.nan)
             )
             return m, e
     return None
@@ -102,6 +116,13 @@ def _convert_sdss_jordi(
         "Jordi_et_al_2005"
     ]
     dd: dict = {**data_dict, "distribution_samples": distribution_samples}
+    no_err = _rows_without_errors(tbl, list(data_dict))
+    if np.any(no_err):
+        terminal_output.print_to_terminal(
+            f"Jordi conversion: {int(np.count_nonzero(no_err))} row(s) without input "
+            "errors; their converted errors are NaN.",
+            style_name="WARNING",
+        )
     produced: list[str] = []
     for band in ("g", "u", "r", "i", "z"):
         result = calib_functions[band](**dd)
@@ -112,6 +133,7 @@ def _convert_sdss_jordi(
         std = result.pdf_std()
         mag = np.asarray(u.Quantity(med).to_value(u.mag), dtype=float)
         err = np.asarray(u.Quantity(std).to_value(u.mag), dtype=float)
+        err = np.where(no_err, np.nan, err)
         tbl[f"mag_sdss_{band}"] = mag
         tbl[f"err_sdss_{band}"] = err
         if promote_to_mag_cal:

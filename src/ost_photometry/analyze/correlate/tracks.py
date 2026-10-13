@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -215,7 +216,12 @@ def track_pixel_scatter(
 def flux_arrays_from_photometry_tables(
     tables: list[Table | None],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Stack ``flux_fit`` / ``flux_err`` on ``id``, padding misses with NaN."""
+    """Stack ``flux_fit`` / ``flux_err`` on ``id``, padding misses with NaN.
+
+    An id that occurs twice in one image (two detections linked to one
+    track) is ambiguous: both entries of that image become NaN and a warning
+    names the image, instead of the last row silently winning.
+    """
     n_images = len(tables)
     ids_per: list[np.ndarray] = []
     for tbl in tables:
@@ -241,14 +247,25 @@ def flux_arrays_from_photometry_tables(
         ids = ids_per[i]
         flux_col = np.asarray(tbl["flux_fit"], dtype=float)
         err_col = np.asarray(tbl["flux_err"], dtype=float)
+        valid_ids = ids[ids >= 0]
+        uniq, counts = np.unique(valid_ids, return_counts=True)
+        duplicated = set(int(v) for v in uniq[counts > 1])
         for r, sid in enumerate(ids):
             if int(sid) < 0:
                 continue
             col = id_to_col.get(int(sid))
             if col is None:
                 continue
+            if int(sid) in duplicated:
+                continue
             flux[i, col] = flux_col[r]
             flux_err[i, col] = err_col[r]
+        if duplicated:
+            warnings.warn(
+                f"Image {i}: track id(s) {sorted(duplicated)[:10]} occur more than "
+                "once; their flux is set to NaN for this image.",
+                stacklevel=2,
+            )
     return flux, flux_err
 
 

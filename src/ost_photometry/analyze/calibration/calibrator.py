@@ -136,7 +136,7 @@ class PhotometryCalibrator:
 
         Expects ``mag_<filter>`` / ``err_<filter>``. If ``airmass_<filter>`` columns
         are missing, they are filled from ``filter_obstimes[f]``, then ``obstime``,
-        then scalar ``airmass``, else 1.0. A mean ``airmass`` column is added when
+        then scalar ``airmass``, else NaN. A mean ``airmass`` column is added when
         absent if per-filter columns exist.
         """
         data = data.copy()
@@ -162,7 +162,7 @@ class PhotometryCalibrator:
             elif airmass is not None:
                 data[col_a] = float(airmass)
             else:
-                data[col_a] = 1.0
+                data[col_a] = np.nan
 
         if "airmass" not in data.colnames:
             if filters_here:
@@ -181,7 +181,7 @@ class PhotometryCalibrator:
                     coords, obstime, self.location
                 )
             else:
-                data["airmass"] = 1.0
+                data["airmass"] = np.nan
 
         # Attach mag_std_* (and other numeric catalog columns) from setup_calibration_source
         if self.reference_catalog is not None and len(self.reference_catalog) > 0:
@@ -251,7 +251,6 @@ class PhotometryCalibrator:
         sigma_clip: float = 2.5,
         output_dir: str | None = None,
         file_type: str = "pdf",
-        inverse_variance_min_error: float = 1e-10,
         per_image_rolling_median_color_term: bool = False,
         per_image_rolling_median_zero_point: bool = False,
         per_image_rolling_mean_color_term: bool = False,
@@ -276,9 +275,6 @@ class PhotometryCalibrator:
         sigma_clip : float
             Outlier rejection in :meth:`DifferentialPhotometer.fit_transformation_epoch`
             (|residual| < ``sigma_clip`` × RMS). Pipeline: ``PipelineConfig.fit_sigma_clip``.
-        inverse_variance_min_error : float
-            For ``PER_NIGHT`` mode: floor on per-epoch σ when combining T and ZP
-            with inverse-variance weights (see :meth:`DifferentialPhotometer.fit_transformation_night`).
         per_image_rolling_median_color_term
             If True (``PER_IMAGE`` only), replace each epoch's color term by the centered
             rolling median along sorted epoch order.
@@ -365,7 +361,6 @@ class PhotometryCalibrator:
                 combined_preview = self.photometer.combine_epoch_calibration_results(
                     ordered_results,
                     filters,
-                    inverse_variance_min_error=inverse_variance_min_error,
                 )
                 x_jd_plot: list[float] | None = None
                 if calibration_summary_use_jd_x and calibration_summary_x_jd:
@@ -408,7 +403,6 @@ class PhotometryCalibrator:
                 color_term_fit=color_term_fit,
                 output_dir=output_dir,
                 file_type=file_type,
-                inverse_variance_min_error=inverse_variance_min_error,
                 calibration_summary_x_jd=calibration_summary_x_jd,
                 calibration_summary_use_jd_x=calibration_summary_use_jd_x,
             )

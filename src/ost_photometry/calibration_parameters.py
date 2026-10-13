@@ -3,6 +3,7 @@
 ############################################################################
 
 import astropy.units as u
+import numpy as np
 import scipy.interpolate as interpolate
 from astropy import uncertainty as unc
 from astropy.time import Time
@@ -458,6 +459,21 @@ def fitzpatrick_extinction_curve(r: float) -> interpolate.CubicSpline:
 ###
 #   Filter system conversion functions
 #
+def _select_branch(color, threshold: float, below, above):
+    """Per-star choice between two piecewise branches.
+
+    ``color`` is a distribution (one per star); the branch is chosen by its
+    median, ``<= threshold`` -> ``below``. A Python ``if`` on a distribution
+    array is ambiguous or raises, and would pick one branch for every star.
+    """
+    median = u.Quantity(color.pdf_median()).to_value(u.mag)
+    mask = np.asarray(median <= threshold)
+    below_s = u.Quantity(below.distribution)
+    above_s = u.Quantity(above.distribution)
+    chosen = np.where(mask[..., np.newaxis], below_s.value, above_s.to_value(below_s.unit))
+    return unc.Distribution(chosen * below_s.unit)
+
+
 def jordi_u(**kwargs) -> unc.core.NdarrayDistribution | None:
     distribution_samples = kwargs.get("distribution_samples")
 
@@ -548,10 +564,12 @@ def jordi_g(**kwargs) -> unc.core.NdarrayDistribution | None:
             std=0.03 * u.mag,
             n_samples=distribution_samples,
         )
-        if V - I <= 1.8:
-            return conversation_constant_1_a * (V - I) - conversation_constant_2_a + i
-        else:
-            return conversation_constant_1_b * (V - I) + conversation_constant_2_b + i
+        return _select_branch(
+            V - I,
+            1.8,
+            conversation_constant_1_a * (V - I) - conversation_constant_2_a + i,
+            conversation_constant_1_b * (V - I) + conversation_constant_2_b + i,
+        )
 
     return None
 
@@ -583,10 +601,13 @@ def jordi_r(**kwargs) -> unc.core.NdarrayDistribution | None:
             std=0.04 * u.mag,
             n_samples=distribution_samples,
         )
-        if V - R <= 0.93:
-            return conversation_constant_1_a * (V - R) + conversation_constant_2_a + R
-        else:
-            return conversation_constant_1_b * (V - R) - conversation_constant_2_b
+        # Jordi et al. (2006), Table 3: r - R = 0.77 (V - R) - 0.37 for V - R > 0.93
+        return _select_branch(
+            V - R,
+            0.93,
+            conversation_constant_1_a * (V - R) + conversation_constant_2_a + R,
+            conversation_constant_1_b * (V - R) - conversation_constant_2_b + R,
+        )
 
     if all(filter_ in kwargs for filter_ in ['V', 'R', 'g']):
         V = kwargs.get("V")
@@ -686,10 +707,12 @@ def jordi_i(**kwargs) -> unc.core.NdarrayDistribution | None:
             std=0.03 * u.mag,
             n_samples=distribution_samples,
         )
-        if V - I <= 1.8:
-            return g - conversation_constant_1_a * (V - I) + conversation_constant_2_a
-        else:
-            return g - conversation_constant_1_b * (V - I) - conversation_constant_2_b
+        return _select_branch(
+            V - I,
+            1.8,
+            g - conversation_constant_1_a * (V - I) + conversation_constant_2_a,
+            g - conversation_constant_1_b * (V - I) - conversation_constant_2_b,
+        )
 
     if all(filter_ in kwargs for filter_ in ['I', 'R', 'r']):
         I = kwargs.get("I")

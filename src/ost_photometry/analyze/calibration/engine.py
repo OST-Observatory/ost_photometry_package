@@ -33,6 +33,7 @@ class CalibrationEngine:
         output_dir: str | None = None,
         file_type: str = "pdf",
         calibration_summary_x_jd: dict[str, float] | None = None,
+        extinction_corrector=None,
     ) -> dict[str, CalibrationResult]:
         strategy = config.calibration_strategy
         if strategy == "median_zp":
@@ -41,6 +42,7 @@ class CalibrationEngine:
                 filters,
                 config,
                 color_indices=color_indices,
+                extinction_corrector=extinction_corrector,
             )
         else:
             if config.derive_transform_from_data:

@@ -280,3 +280,64 @@ def test_partition_catalog_fit_skips_clear_without_aborting():
     with pytest.raises(ValueError, match="missing columns"):
         ms.require_catalog_bands_for_filters(cat, ["V", "Clear"])
     ms.require_catalog_bands_for_filters(cat, ["V"])
+
+
+def test_jordi_r_branch_per_star_and_both_branches_add_R():
+    """V-R on both sides of 0.93 in one table: no crash, each star its branch."""
+    convert = _load_convert_stack()
+    tbl = Table()
+    tbl["mag_cal_V"] = np.array([13.0, 14.0])
+    tbl["err_cal_V"] = np.array([0.01, 0.01])
+    tbl["mag_cal_R"] = np.array([12.5, 12.8])  # V-R = 0.5 and 1.2
+    tbl["err_cal_R"] = np.array([0.01, 0.01])
+    tbl["mag_cal_B"] = np.array([13.6, 15.4])
+    tbl["err_cal_B"] = np.array([0.01, 0.01])
+    out = convert.convert_magnitudes_to_other_system(
+        tbl,
+        output_filter_set="sdss",
+        output_magnitude_system="ab",
+        calibration_source="APASS",
+        source_magnitude_system="vega",
+        source_filter_set="bessell",
+        distribution_samples=2000,
+    )
+    r_sdss = np.asarray(out["mag_sdss_r"], dtype=float)
+    # Jordi et al. (2006): r - R = 0.267 (V-R) + 0.088 below, 0.77 (V-R) - 0.37 above.
+    assert r_sdss[0] == pytest.approx(12.5 + 0.267 * 0.5 + 0.088, abs=0.01)
+    assert r_sdss[1] == pytest.approx(12.8 + 0.77 * 1.2 - 0.37, abs=0.06)
+
+
+def test_lupton_u_error_counts_g_once():
+    mod = _load_convert_stack()
+    transforms = __import__(
+        "ost_photometry.analyze.calibration_sources.transforms", fromlist=["x"]
+    )
+    del mod
+    u_, g_, r_ = np.array([16.0]), np.array([15.0]), np.array([14.6])
+    e = np.array([0.02])
+    U, eU = transforms.johnson_u_from_sloan_ugr(u_, g_, r_, e, e, e)
+    b = g_ + 0.3130 * (g_ - r_) + 0.2271
+    assert U[0] == pytest.approx(b[0] + 0.78 * (u_[0] - g_[0]) - 0.88)
+    sig = transforms.RELATION_SIGMA
+    expected = np.sqrt(
+        (0.78 * 0.02) ** 2 + (0.533 * 0.02) ** 2 + (0.313 * 0.02) ** 2
+        + sig["B"] ** 2 + sig["U-B"] ** 2
+    )
+    assert eU[0] == pytest.approx(expected)
+
+
+def test_missing_input_errors_give_nan_not_zero():
+    convert = _load_convert_stack()
+    tbl = Table()
+    tbl["mag_cal_g"] = np.array([15.0])
+    tbl["mag_cal_r"] = np.array([14.5])
+    out = convert.convert_magnitudes_to_other_system(
+        tbl,
+        output_filter_set="bessell",
+        output_magnitude_system="vega",
+        calibration_source="SDSS_Release_16",
+        source_magnitude_system="ab",
+        source_filter_set="sdss",
+    )
+    assert np.isfinite(out["mag_cal_V"][0])
+    assert np.isnan(out["err_cal_V"][0])

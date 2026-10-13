@@ -102,9 +102,9 @@ def test_apply_transform_uses_cov_tz():
     tc = TransformationCoefficients(
         filter_name="V",
         color_term=0.0,
-        color_term_err=0.0,
+        color_term_err=0.05,
         zero_point=1.0,
-        zero_point_err=0.0,
+        zero_point_err=0.05,
         cov_tz=0.002,
         color_index_filters=("B", "V"),
     )
@@ -116,15 +116,21 @@ def test_apply_transform_uses_cov_tz():
     tbl["err_V"] = np.array([0.01, 0.01, 0.01])
     tbl["mag_B"] = np.array([12.5, 13.2, 14.0])
     tbl["err_B"] = np.array([0.01, 0.01, 0.01])
+    # B has no transformation here, so the colour is the catalog colour.
+    tbl["mag_std_B"] = np.array([13.0, 13.9, 14.9])
+    tbl["mag_std_V"] = np.array([12.4, 13.0, 13.6])
+    tbl["err_std_B"] = np.array([0.03, 0.03, 0.03])
+    tbl["err_std_V"] = np.array([0.04, 0.04, 0.04])
 
     cal = CalibrationResult(identifier="e0", transformation={"V": tc})
     phot = DifferentialPhotometer()
     out = phot.apply_transform_to_table(tbl, cal, filters=["V"])
 
-    color = tbl["mag_B"] - tbl["mag_V"]
-    # T=0 → no color-noise or σ_T terms; only inst + 2·color·cov_tz
-    expected = np.sqrt(np.maximum(0.01**2 + 2.0 * color * 0.002, 0.0))
+    color = np.asarray(tbl["mag_std_B"] - tbl["mag_std_V"])
+    # T=0 → no colour-noise term; inst + ZP + (c·σ_T)² + 2·c·cov
+    expected = np.sqrt(0.01**2 + 0.05**2 + (color * 0.05) ** 2 + 2.0 * color * 0.002)
     assert np.allclose(out["err_cal_V"], expected, rtol=1e-6, atol=1e-8)
+    assert set(np.asarray(out["cal_color_source_V"])) == {"catalog"}
 
 
 @pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")

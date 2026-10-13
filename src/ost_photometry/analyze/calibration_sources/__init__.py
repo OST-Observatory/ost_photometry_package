@@ -32,7 +32,7 @@ from .transforms import (
     add_johnson_ri_to_standard_table,
     johnson_bv_from_sloan_gr,
     johnson_ri_from_sloan_ri,
-    johnson_u_from_sloan_ug_and_b,
+    johnson_u_from_sloan_ugr,
     johnson_ubvri_from_sloan_arrays,
 )
 from .vizier_query import get_vizier_catalog
@@ -48,7 +48,7 @@ __all__ = [
     "get_vizier_catalog",
     "johnson_bv_from_sloan_gr",
     "johnson_ri_from_sloan_ri",
-    "johnson_u_from_sloan_ug_and_b",
+    "johnson_u_from_sloan_ugr",
     "johnson_ubvri_from_sloan_arrays",
     "vizier_result_to_standard_table",
 ]

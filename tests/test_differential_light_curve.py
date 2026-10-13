@@ -305,3 +305,34 @@ def test_differential_and_ensemble_plots_write_files(tmp_path):
         assert plots.light_curve_jd_from_table(
             sub, str(tmp_path), name_object="eclipser", filter_="V"
         ).is_file()
+
+
+def test_colour_rows_inherit_epoch_and_outlier_flags():
+    with isolated_sys_modules():
+        lc_mod, diff = _load()
+        phot = _field()
+        phot["mag_B"] = phot["mag_V"] + 0.5
+        phot["err_B"] = phot["err_V"]
+        phot["mag_cal_B"] = phot["mag_cal_V"] + 0.5
+        phot["err_cal_B"] = phot["err_cal_V"]
+        phot["airmass_B"] = phot["airmass_V"]
+        tbl = lc_mod.build_light_curves_table(phot, ["B", "V"], outlier_sigma=None)
+        out, _stats = diff.add_differential_columns(tbl, {OOI}, verbose=False)
+        # One per-source outlier in B only.
+        b_row = np.flatnonzero(
+            (np.asarray(out["filter"]).astype(str) == "B")
+            & (np.asarray(out["id"]) == 5)
+            & (np.asarray(out["epoch_id"]).astype(str) == "epoch_007")
+        )[0]
+        out["flag_outlier"][b_row] = True
+        with_colour = lc_mod.add_color_index_rows(out, "B-V")
+        colour = with_colour[np.asarray(with_colour["filter"]).astype(str) == "B-V"]
+        cloud = colour[np.asarray(colour["epoch_id"]).astype(str) == f"epoch_{CLOUD_EPOCH:03d}"]
+        assert np.all(np.asarray(cloud["flag_epoch"], dtype=bool))
+        assert all("transparency" in r for r in np.asarray(cloud["flag_epoch_reason"]).astype(str))
+        hit = colour[
+            (np.asarray(colour["id"]) == 5)
+            & (np.asarray(colour["epoch_id"]).astype(str) == "epoch_007")
+        ]
+        assert bool(hit["flag_outlier"][0])
+        assert int(np.count_nonzero(np.asarray(colour["flag_outlier"], dtype=bool))) == 1

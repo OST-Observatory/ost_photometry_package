@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from astropy.table import Table
 
 from helpers import isolated_sys_modules, load_module_from_path, pkg_src
@@ -98,6 +99,17 @@ def test_flux_arrays_from_photometry_tables_pad_on_id():
         assert np.isnan(flux[1, 0])
         assert flux[1, 1] == 21.0
         assert err[0, 0] == 0.1
+
+
+def test_flux_arrays_duplicate_id_in_one_image_is_nan():
+    with isolated_sys_modules():
+        tracks = _tracks_module()
+        t0 = Table({"id": [0, 1, 1], "flux_fit": [10.0, 20.0, 99.0], "flux_err": [0.1, 0.2, 0.9]})
+        with pytest.warns(UserWarning, match="occur more than once"):
+            flux, err = tracks.flux_arrays_from_photometry_tables([t0])
+        assert flux[0, 0] == 10.0
+        assert np.isnan(flux[0, 1])
+        assert np.isnan(err[0, 1])
 
 
 def test_track_pixel_scatter_flags_mixed_track():

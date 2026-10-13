@@ -280,3 +280,19 @@ def test_hips_config_defaults_and_overrides():
     assert cfg.hips.hips_reference_subtraction_hips_source == "CDS/P/DSS2/blue"
     assert cfg.hips_reference_subtraction_retries == 1
     assert cfg.hips_reference_subtraction_use_cache is False
+
+
+def test_invalid_literal_value_raises():
+    from ost_photometry.analyze.pipeline.config import PipelineConfig
+
+    with pytest.raises(ValueError, match="calibration_grouping"):
+        PipelineConfig(calibration_grouping="per_month")
+    with pytest.raises(ValueError, match="photometry_extraction_method"):
+        PipelineConfig(photometry_extraction_method="aper")
+
+
+def test_unknown_option_warns():
+    from ost_photometry.analyze.pipeline.config import PipelineConfig
+
+    with pytest.warns(UserWarning, match="calibratoin_grouping"):
+        PipelineConfig(calibratoin_grouping="per_image")

@@ -20,6 +20,76 @@ from ..extinction import ExtinctionCorrector, extinction_airmass_ready
 from ..warnings_types import OstPhotometryAnalyzeWarning
 from .result import CalibrationResult, TransformationCoefficients
 
+#: Catalog error per band when the catalog gives none (APASS convention,
+#: see ``calibration_sources/fetch.py``).
+_CATALOG_ERR_DEFAULT = 0.02
+
+
+def _color_for_transformation(
+    data: Table,
+    tc,
+    cal_mags: dict[str, np.ndarray],
+    calibrated_filters: set[str],
+    *,
+    std_col_prefix: str = "mag_std_",
+    err_col_prefix: str = "err_",
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Colour for ``m_cal = m_inst + T·colour + ZP``, its variance and source.
+
+    Per row, in this order:
+
+    ``calibrated``
+        both colour filters are calibrated in this epoch (running estimate);
+        variance from their instrumental errors.
+    ``catalog``
+        catalog colour ``mag_std_c1 - mag_std_c2`` (star without the other
+        filter, or that filter has no transformation); variance from
+        ``err_std_*`` (0.02 mag per band when the catalog gives none).
+    ``none``
+        no colour: NaN, so ``mag_cal`` is NaN rather than biased.
+
+    The instrumental colour is never used: it carries the arbitrary
+    zero-point difference of the two filters. With ``T = 0`` the colour does
+    not enter and the source is ``not_needed``.
+    """
+    n = len(data)
+    color = np.full(n, np.nan)
+    sigma_sq = np.zeros(n)
+    source = np.full(n, "none", dtype="U12")
+    if abs(float(tc.color_term)) <= 1e-12 and float(tc.color_term_err) <= 0.0:
+        source[:] = "not_needed"
+        return np.zeros(n), sigma_sq, source
+    c1, c2 = tc.color_index_filters
+    if c1 in calibrated_filters and c2 in calibrated_filters:
+        cal = cal_mags[c1] - cal_mags[c2]
+        ok = np.isfinite(cal)
+        color[ok] = cal[ok]
+        source[ok] = "calibrated"
+        e1, e2 = f"{err_col_prefix}{c1}", f"{err_col_prefix}{c2}"
+        if e1 in data.colnames and e2 in data.colnames:
+            sigma_sq[ok] = (
+                np.asarray(data[e1].ravel(), dtype=float)[ok] ** 2
+                + np.asarray(data[e2].ravel(), dtype=float)[ok] ** 2
+            )
+    s1, s2 = f"{std_col_prefix}{c1}", f"{std_col_prefix}{c2}"
+    if s1 in data.colnames and s2 in data.colnames:
+        cat = np.asarray(data[s1], dtype=float) - np.asarray(data[s2], dtype=float)
+        use = ~np.isfinite(color) & np.isfinite(cat)
+        color[use] = cat[use]
+        source[use] = "catalog"
+        es1 = std_col_prefix.replace("mag_", "err_") + c1
+        es2 = std_col_prefix.replace("mag_", "err_") + c2
+        cat_var = np.zeros(n)
+        for col in (es1, es2):
+            if col in data.colnames:
+                e = np.asarray(data[col], dtype=float)
+                e = np.where(np.isfinite(e) & (e > 0), e, _CATALOG_ERR_DEFAULT)
+            else:
+                e = np.full(n, _CATALOG_ERR_DEFAULT)
+            cat_var += e**2
+        sigma_sq[use] = cat_var[use]
+    return color, sigma_sq, source
+
 
 def _filters_with_instrumental_mags(
     table: Table,
@@ -435,7 +505,6 @@ class DifferentialPhotometer:
         self,
         epoch_results: list[CalibrationResult],
         filters: list[str],
-        inverse_variance_min_error: float = 1e-10,
     ) -> dict[str, TransformationCoefficients]:
         """
         Combine per-epoch T and ZP per filter with inverse-variance weights
@@ -462,12 +531,12 @@ class DifferentialPhotometer:
                 [fr.transformation[filter_].zero_point_err for fr in results_for_filter_],
                 dtype=float,
             )
-            T_mean, T_err = self._inverse_variance_weighted_mean(
-                T_vals, T_errs, min_error=inverse_variance_min_error
-            )
-            ZP_mean, ZP_err = self._inverse_variance_weighted_mean(
-                ZP_vals, ZP_errs, min_error=inverse_variance_min_error
-            )
+            if np.all(T_errs == 0.0) and np.all(T_vals == T_vals[0]):
+                # Colour term held fixed (ZP-only fits): not a measurement.
+                T_mean, T_err = float(T_vals[0]), 0.0
+            else:
+                T_mean, T_err = self._inverse_variance_weighted_mean(T_vals, T_errs)
+            ZP_mean, ZP_err = self._inverse_variance_weighted_mean(ZP_vals, ZP_errs)
             out[filter_] = TransformationCoefficients(
                 filter_name=filter_,
                 color_term=T_mean,
@@ -499,7 +568,6 @@ class DifferentialPhotometer:
         night_id: str = "night",
         output_dir: str | None = None,
         file_type: str = "pdf",
-        inverse_variance_min_error: float = 1e-10,
         calibration_summary_x_jd: dict[str, float] | None = None,
         calibration_summary_use_jd_x: bool = False,
         **kwargs,
@@ -510,16 +578,11 @@ class DifferentialPhotometer:
         Runs :meth:`fit_transformation_epoch` per epoch, then combines T and ZP across epochs
         with inverse-variance weights (w_i = 1/σ_i²). The reported uncertainty
         on the combined value is 1/sqrt(Σ w_i). Per-epoch σ are
-        ``color_term_err`` and ``zero_point_err``. Very small σ are floored to
-        ``min_error`` to avoid division by zero.
+        ``color_term_err`` and ``zero_point_err``; epochs without a finite
+        positive σ are left out (no floor). A colour term held at 0 in every
+        epoch (ZP-only fits) stays 0.
 
         Assumes stable atmospheric conditions and instrument response over the night.
-
-        Parameters
-        ----------
-        inverse_variance_min_error : float
-            Minimum σ used as weight floor (mag). Avoids infinite weights when
-            reported errors are zero or tiny.
         """
         epoch_results = []
         for epoch_id, data in epochs.items():
@@ -558,7 +621,6 @@ class DifferentialPhotometer:
         combined = self.combine_epoch_calibration_results(
             epoch_results_sorted,
             filters,
-            inverse_variance_min_error=inverse_variance_min_error,
         )
 
         if output_dir and len(epoch_results_sorted) > 1:
@@ -661,7 +723,13 @@ class DifferentialPhotometer:
 
         warned_no_transform: set[str] = set()
         warned_no_inst: set[str] = set()
-        warned_no_color: set[str] = set()
+        #   Only filters with a transformation become calibrated; their
+        #   running estimate may enter a colour. The others stay instrumental
+        #   and must never be mixed into a colour (zero-point offset z1 - z2).
+        calibrated_filters = {
+            f for f in filters
+            if f in cal.transformation and f"{mag_col_prefix}{f}" in data.colnames
+        }
         converged = False
         last_max_change = 0.0
 
@@ -691,33 +759,14 @@ class DifferentialPhotometer:
                         warned_no_inst.add(filter_)
                     continue
                 m_inst = np.array(data[inst_col], dtype=float)
-                ci_f1, ci_f2 = tc.color_index_filters
-                if ci_f1 in iter_cal_mags and ci_f2 in iter_cal_mags:
-                    color = iter_cal_mags[ci_f1] - iter_cal_mags[ci_f2]
-                else:
-                    c1, c2 = f"{mag_col_prefix}{ci_f1}", f"{mag_col_prefix}{ci_f2}"
-                    if c1 in data.colnames and c2 in data.colnames:
-                        color = np.array(data[c1]) - np.array(data[c2])
-                    else:
-                        s1, s2 = f"{std_col_prefix}{ci_f1}", f"{std_col_prefix}{ci_f2}"
-                        if s1 in data.colnames and s2 in data.colnames:
-                            color = np.asarray(data[s1], dtype=float) - np.asarray(
-                                data[s2], dtype=float
-                            )
-                            color = np.where(np.isfinite(color), color, 0.0)
-                        else:
-                            color = np.zeros(len(data))
-                            if abs(tc.color_term) > 1e-12 and filter_ not in warned_no_color:
-                                missing = [c for c in (c1, c2) if c not in data.colnames]
-                                warnings.warn(
-                                    f"apply_transform_to_table: filter {filter_} needs color "
-                                    f"({ci_f1}-{ci_f2}) but columns {missing} missing, "
-                                    f"no catalog columns {s1}/{s2}, and calibrated mags for "
-                                    f"{ci_f1}/{ci_f2} not yet available; using color=0.",
-                                    category=OstPhotometryAnalyzeWarning,
-                                    stacklevel=2,
-                                )
-                                warned_no_color.add(filter_)
+                color, _sigma_sq, _source = _color_for_transformation(
+                    data,
+                    tc,
+                    iter_cal_mags,
+                    calibrated_filters,
+                    std_col_prefix=std_col_prefix,
+                    err_col_prefix=err_col_prefix,
+                )
                 m_cal_new = m_inst + tc.color_term * color + tc.zero_point
                 if filter_ in iter_cal_mags:
                     max_change = max(max_change, np.nanmax(np.abs(m_cal_new - iter_cal_mags[filter_])))
@@ -745,39 +794,15 @@ class DifferentialPhotometer:
                     if err_col in data.colnames:
                         tc = cal.transformation[filter_]
                         inst_err = np.asarray(data[err_col].ravel(), dtype=float)
-                        n = len(inst_err)
-                        ci_f1, ci_f2 = tc.color_index_filters
-                        # Final color (same logic as calibration iteration)
-                        if ci_f1 in iter_cal_mags and ci_f2 in iter_cal_mags:
-                            color = iter_cal_mags[ci_f1] - iter_cal_mags[ci_f2]
-                        else:
-                            c1 = f"{mag_col_prefix}{ci_f1}"
-                            c2 = f"{mag_col_prefix}{ci_f2}"
-                            if c1 in data.colnames and c2 in data.colnames:
-                                color = (
-                                    np.asarray(data[c1], dtype=float)
-                                    - np.asarray(data[c2], dtype=float)
-                                )
-                            else:
-                                s1 = f"{std_col_prefix}{ci_f1}"
-                                s2 = f"{std_col_prefix}{ci_f2}"
-                                if s1 in data.colnames and s2 in data.colnames:
-                                    color = np.asarray(data[s1], dtype=float) - np.asarray(
-                                        data[s2], dtype=float
-                                    )
-                                    color = np.where(np.isfinite(color), color, 0.0)
-                                else:
-                                    color = np.zeros(n, dtype=float)
-                        # σ_color from instrumental errors on the two color filters (approx.)
-                        e1c = f"{err_col_prefix}{ci_f1}"
-                        e2c = f"{err_col_prefix}{ci_f2}"
-                        if e1c in data.colnames and e2c in data.colnames:
-                            sigma_color_sq = (
-                                np.asarray(data[e1c].ravel(), dtype=float) ** 2
-                                + np.asarray(data[e2c].ravel(), dtype=float) ** 2
-                            )
-                        else:
-                            sigma_color_sq = np.zeros(n, dtype=float)
+                        color, sigma_color_sq, source = _color_for_transformation(
+                            data,
+                            tc,
+                            iter_cal_mags,
+                            calibrated_filters,
+                            std_col_prefix=std_col_prefix,
+                            err_col_prefix=err_col_prefix,
+                        )
+                        data[f"cal_color_source_{filter_}"] = source
                         from .transform import calibrated_magnitude_variance
 
                         # m_cal = m_inst + T*color + ZP → first-order variance including
@@ -808,20 +833,24 @@ class DifferentialPhotometer:
     def _inverse_variance_weighted_mean(
         values: np.ndarray,
         errors: np.ndarray,
-        min_error: float = 1e-10,
     ) -> tuple[float, float]:
         """
         Combine measurements with inverse-variance weights.
 
-        w_i = 1/σ_i² (σ_i floored to ``min_error``), weighted mean
-        ``Σ w_i x_i / Σ w_i``, formal uncertainty ``1/√(Σ w_i)``.
-        Reduces to the single-measurement case for one epoch.
+        w_i = 1/σ_i², weighted mean ``Σ w_i x_i / Σ w_i``, formal uncertainty
+        ``1/√(Σ w_i)``. Measurements without a finite positive σ are left out
+        (a zero error would otherwise take all the weight); NaN if none is
+        left. Reduces to the single-measurement case for one epoch.
         """
         values = np.asarray(values, dtype=float)
         errors = np.asarray(errors, dtype=float)
         if values.size == 0:
             raise ValueError("_inverse_variance_weighted_mean: empty input")
-        sigma = np.maximum(errors, min_error)
+        use = np.isfinite(values) & np.isfinite(errors) & (errors > 0)
+        if not np.any(use):
+            return float("nan"), float("nan")
+        values = values[use]
+        sigma = errors[use]
         w = 1.0 / (sigma**2)
         wsum = np.sum(w)
         mean = float(np.sum(w * values) / wsum)

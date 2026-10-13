@@ -19,6 +19,39 @@ from .camera_specs import normalize_instrument_name
 from .fits_headers import ensure_mjd_obs_in_header
 
 
+def header_airmass(header) -> float | None:
+    """``AIRMASS`` from the header, or ``None`` if missing or not >= 1."""
+    try:
+        value = float(header.get("AIRMASS"))
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(value) or value < 1.0:
+        return None
+    return value
+
+
+def header_pointing(header) -> SkyCoord | None:
+    """Telescope pointing from ``OBJCTRA``/``OBJCTDEC`` (sexagesimal hours /
+    degrees, QHYCCD / MaxIm) or ``RA``/``DEC`` (decimal degrees, NINA)."""
+    ra = header.get("OBJCTRA")
+    dec = header.get("OBJCTDEC")
+    if ra not in (None, "") and dec not in (None, ""):
+        try:
+            return SkyCoord(ra, dec, unit=(u.hourangle, u.deg), frame="icrs")
+        except (ValueError, TypeError):
+            pass
+    ra = header.get("RA")
+    dec = header.get("DEC")
+    try:
+        ra_deg = float(ra)
+        dec_deg = float(dec)
+    except (TypeError, ValueError):
+        return None
+    if not (np.isfinite(ra_deg) and np.isfinite(dec_deg)):
+        return None
+    return SkyCoord(ra_deg * u.deg, dec_deg * u.deg, frame="icrs")
+
+
 class Image:
     """
     Image class: metadata + on-demand FITS access (no persistent pixel cache).
@@ -114,17 +147,11 @@ class Image:
         #   Read focal length - set default to 3454. mm
         focal_length = header.get("FOCALLEN", 3454.0)
 
-        #   Read ra and dec of image center
-        ra = header.get("OBJCTRA", "00 00 00")
-        dec = header.get("OBJCTDEC", "+00 00 00")
-
-        #   Convert ra & dec to degrees
-        coordinates_sky = SkyCoord(
-            ra,
-            dec,
-            unit=(u.hourangle, u.deg),
-            frame="icrs",
-        )
+        #   Read ra and dec of image center (pointing); 0/0 only as the last
+        #   resort for the plate-solving hint
+        coordinates_sky = header_pointing(header)
+        if coordinates_sky is None:
+            coordinates_sky = SkyCoord(0.0 * u.deg, 0.0 * u.deg, frame="icrs")
 
         #   Number of pixels
         n_pixel_x = header.get("NAXIS1", 0)
@@ -212,7 +239,9 @@ class Image:
             jd = Time(obs_time, format="fits").jd
 
         self.jd = jd
-        self.air_mass = header.get("AIRMASS", 1.0)
+        #   ``None`` when the header has no usable AIRMASS; the analysis
+        #   computes it from pointing, time and site (never a silent 1.0)
+        self.air_mass = header_airmass(header)
         ensure_mjd_obs_in_header(header)
 
         #  Add instrument to image class

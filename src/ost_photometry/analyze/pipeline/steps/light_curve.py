@@ -291,12 +291,13 @@ class LightCurveStep(base.PipelineStep):
             return context
 
         lc = vstack(parts, metadata_conflicts="silent")
+        if config.light_curve_differential:
+            lc = self._add_differential_product(lc, config, output_dir, ooi_ids_all)
         if config.light_curve_color:
             from ...post_processing.light_curve import add_color_index_rows
 
+            # After the differential product, so colour rows inherit flag_epoch.
             lc = add_color_index_rows(lc, config.light_curve_color)
-        if config.light_curve_differential:
-            lc = self._add_differential_product(lc, config, output_dir, ooi_ids_all)
         path = write_light_curves_table(lc, output_dir)
         terminal_output.print_to_terminal(
             f"Wrote {path.name} ({len(lc)} rows)",

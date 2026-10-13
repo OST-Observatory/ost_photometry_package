@@ -281,6 +281,7 @@ class CalibrationStep(base.PipelineStep):
                 output_dir=context.output_dir,
                 file_type=file_type,
                 calibration_summary_x_jd=jd_map if jd_map else None,
+                extinction_corrector=extinction_corrector,
             )
             context.calibration_results = results
 

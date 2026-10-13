@@ -602,10 +602,23 @@ def _phase_bin_centers_and_means(
     y: np.ndarray,
     yerr: np.ndarray,
     binning_factor: float | None,
+    flagged: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Phase bins: inverse-variance mean and its error.
+
+    Flagged points (per-source outliers, bad epochs) are left out. The bin
+    error is ``max(1/sqrt(Σw), std_w(ddof=1)/sqrt(n))`` for n >= 3: the
+    propagated error, unless the points scatter more than it allows. For
+    n < 3 the scatter is not trusted and the propagated error is used.
+    Points without a finite positive error get no weight; a bin without any
+    weight is dropped (no zero errors).
+    """
     if binning_factor is None or not np.isfinite(binning_factor) or binning_factor <= 0:
         return None
-    ok = np.isfinite(phase) & np.isfinite(y)
+    e_all = _nonnegative_errorbar_yerr(yerr)
+    ok = np.isfinite(phase) & np.isfinite(y) & np.isfinite(e_all) & (e_all > 0)
+    if flagged is not None:
+        ok &= ~np.asarray(flagged, dtype=bool)
     n_ok = int(np.count_nonzero(ok))
     if n_ok < 4:
         return None
@@ -617,19 +630,24 @@ def _phase_bin_centers_and_means(
     edges = np.linspace(0.0, 1.0, n_bins + 1)
     idx = np.clip(np.digitize(phase[ok], edges) - 1, 0, n_bins - 1)
     yv = y[ok]
-    ev = _nonnegative_errorbar_yerr(yerr[ok])
+    w_all = 1.0 / e_all[ok] ** 2
     centers = 0.5 * (edges[:-1] + edges[1:])
     means = np.full(n_bins, np.nan)
     errs = np.full(n_bins, np.nan)
     for b in range(n_bins):
         m = idx == b
-        if not np.any(m):
+        n = int(np.count_nonzero(m))
+        if n == 0:
             continue
-        means[b] = float(np.nanmean(yv[m]))
-        if np.any(np.isfinite(ev[m])) and int(np.count_nonzero(m)) > 1:
-            errs[b] = float(np.nanstd(yv[m]) / np.sqrt(np.count_nonzero(m)))
-        else:
-            errs[b] = float(np.nanmedian(ev[m])) if np.any(np.isfinite(ev[m])) else 0.0
+        w = w_all[m]
+        sw = float(np.sum(w))
+        mean = float(np.sum(w * yv[m]) / sw)
+        err = 1.0 / np.sqrt(sw)
+        if n >= 3:
+            var_w = float(np.sum(w * (yv[m] - mean) ** 2) / sw) * n / (n - 1)
+            err = max(err, np.sqrt(var_w / n))
+        means[b] = mean
+        errs[b] = err
     keep = np.isfinite(means)
     if not np.any(keep):
         return None
@@ -684,7 +702,11 @@ def light_curve_fold_from_table(
             quantity=qty,
             epoch_flag=_epoch_flags(tbl),
         )
-    binned = _phase_bin_centers_and_means(phase, y, e, binning_factor)
+    bad = np.zeros(len(tbl), dtype=bool) if flag is None else np.asarray(flag, dtype=bool)
+    epoch_flag = _epoch_flags(tbl)
+    if epoch_flag is not None:
+        bad = bad | epoch_flag
+    binned = _phase_bin_centers_and_means(phase, y, e, binning_factor, flagged=bad)
     if binned is not None:
         cx, cy, ce = binned
         for wrap in range(cycles):

@@ -502,3 +502,20 @@ def test_epoch_has_catalog_calibrated_mags_ignores_instrumental():
         assert mod.epoch_has_catalog_calibrated_mags(cal, "V")
         assert not mod.epoch_has_catalog_calibrated_mags(inst, "Clear")
         assert not mod.epoch_has_catalog_calibrated_mags(cal, "Clear")
+
+
+def test_phase_bins_weighted_skip_flags_and_never_zero_error():
+    with isolated_sys_modules():
+        plots = _load_plots()
+        phase = np.array([0.05, 0.06, 0.07, 0.08, 0.55, 0.56, 0.57])
+        y = np.array([1.0, 1.0, 1.0, 5.0, 2.0, 2.0, 2.0])
+        e = np.array([0.1, 0.1, 0.2, 0.1, 0.1, np.nan, 0.1])
+        flagged = np.array([False, False, False, True, False, False, False])
+        cx, cy, ce = plots._phase_bin_centers_and_means(phase, y, e, 2, flagged=flagged)
+        # The flagged 5.0 is left out; inverse-variance mean of 1,1,1 is 1.
+        assert cy[0] == pytest.approx(1.0)
+        assert ce[0] == pytest.approx(1.0 / np.sqrt(100 + 100 + 25))
+        # NaN-error point gets no weight; n = 2 -> propagated error only.
+        assert cy[1] == pytest.approx(2.0)
+        assert ce[1] == pytest.approx(0.1 / np.sqrt(2))
+        assert np.all(ce > 0)

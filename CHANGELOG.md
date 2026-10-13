@@ -43,8 +43,57 @@ section of this file.
   `observatory_location`. On the HAT-P-20 test night the differential
   scatter was 1.3–2.5× the error bars without it.
 
+### Changed
+
+- **Missing `AIRMASS` is computed, not 1.0:** `Image.air_mass` is `None`
+  without a usable header value; the extraction step computes it at
+  mid-exposure from the WCS centre (else `OBJCTRA`/`OBJCTDEC` or NINA's
+  `RA`/`DEC` in degrees), JD and `observatory_location`
+  (`extinction.airmass_for_image`, `fill_missing_airmass`). Epoch tables and
+  the calibrator use NaN instead of 1.0 when nothing is known. The image
+  centre now also reads NINA's `RA`/`DEC` (it fell back to 0/0).
+- **Colour of the colour term:** a filter's colour comes from calibrated
+  magnitudes only when both colour filters are calibrated in that epoch,
+  else from the catalog colour (with `err_std_*`), else NaN; never from
+  instrumental magnitudes, which carry the zero-point difference of the
+  two filters. A colour term of 0 needs no colour (stars missing in the
+  other filter are no longer NaN). New column `cal_color_source_<f>`.
+- **No silent error floors:** `weighted_linear_fit` leaves out points with
+  non-finite or non-positive weights and returns NaN errors for
+  underdetermined fits (was weight 1 and errors 0); the per-night
+  inverse-variance combination drops epochs without a finite σ (the
+  `inverse_variance_min_error` floor is removed); magnitude-system
+  conversions give NaN errors where an input error is missing (was 0);
+  the differential ensemble ignores sources without errors.
+- Lupton/Jester SDSS→Johnson errors include the published scatter of each
+  relation; U is propagated from u, g, r (`johnson_u_from_sloan_ugr`
+  replaces `johnson_u_from_sloan_ug_and_b`).
+- Phase bins of folded light curves leave out flagged points and use the
+  inverse-variance mean; the bin error is the propagated error or, for
+  n ≥ 3, the scatter of the mean if larger (never 0).
+- Colour light-curve rows inherit `flag_outlier` and `flag_epoch` of both
+  filters; the differential product is now built before the colour rows.
+- Stacks and reduced frames write `GAIN` as electrons per data unit
+  (EXPTIME for e-/s) instead of the raw `EGAIN`; a camera gain setting in
+  `GAIN` is kept as `GAINSET`.
+- Images without an uncertainty extension get per-pixel errors from the
+  frame's sky scatter and the source photons (APER crashed, PSF raised).
+- `PipelineConfig` rejects values outside an option's allowed set and warns
+  about unknown option names (both were silently accepted).
+- Track flux arrays: an id that occurs twice in one image is NaN for that
+  image with a warning (the last row won silently).
+
 ### Fixed
 
+- **`median_zp` with extinction biased every magnitude by −k·X:** the zero
+  point was fitted on raw magnitudes while apply subtracted k·X. The median
+  backend now fits on the same extinction-corrected magnitudes.
+- **Jordi Bessell→SDSS:** the piecewise branches (`V−R ≤ 0.93`,
+  `V−I ≤ 1.8`) were chosen with a Python `if` on whole distribution arrays
+  (crash or one branch for all stars); they are now chosen per star. The
+  `V−R > 0.93` branch of r was missing `+ R`.
+- `determine_background` subtracted in e-/s regardless of the image unit;
+  dark-frame plots and the hot-pixel mask truncated `EGAIN` to an integer.
 - **Night boundary at midnight UT:** `night_id_from_jd` used
   `floor(JD - 0.5)`, which changes at 0 h UT and split every European night
   in two (night bands, per-night zero point in `4_compare_nights.py`,

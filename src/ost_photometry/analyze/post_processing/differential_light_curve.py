@@ -98,11 +98,12 @@ def _epoch_matrix(
         m[i, j] = mag[r]
         e[i, j] = err[r]
         bad[i, j] = outlier[r]
-    # Missing or non-positive errors: use the source's median error.
+    # Missing or non-positive errors: use the source's median error; a source
+    # without any error stays NaN (no weight in the ensemble, NaN dmag_err).
     for j in range(n_src):
         col = e[:, j]
         ok = np.isfinite(col) & (col > 0)
-        fill = float(np.median(col[ok])) if np.any(ok) else 0.0
+        fill = float(np.median(col[ok])) if np.any(ok) else np.nan
         e[~ok, j] = fill
     valid = np.isfinite(m) & ~bad
     return {
@@ -460,7 +461,8 @@ def add_differential_columns(
 
         is_ooi = np.array([int(s) in ooi for s in src], dtype=bool)
         coverage = valid.sum(axis=0) / float(n_ep)
-        candidates = ~is_ooi & (coverage >= float(min_coverage))
+        has_err = np.all(np.isfinite(err), axis=0)
+        candidates = ~is_ooi & (coverage >= float(min_coverage)) & has_err
         ooi_mags = [
             float(np.median(mag[valid[:, j], j]))
             for j in np.flatnonzero(is_ooi)

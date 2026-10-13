@@ -56,3 +56,20 @@ def test_sky_subtraction_error_converts_per_pixel_annulus_std():
         annulus_area=n_sky,
     )
     assert out == pytest.approx(sigma_pix * n_pix / np.sqrt(n_sky))
+
+
+def test_estimate_pixel_error_without_uncert_extension():
+    import astropy.units as u
+
+    from ost_photometry.analyze.extraction import estimate_pixel_error
+
+    rng = np.random.default_rng(3)
+    data = rng.normal(0.0, 0.8, (200, 200))  # background-subtracted sky, e-/s
+    data[100, 100] += 500.0  # star peak
+    sigma = estimate_pixel_error(data, u.electron / u.s, exposure_time=20.0)
+    assert np.median(sigma) == pytest.approx(0.8, rel=0.05)
+    assert sigma[100, 100] == pytest.approx(np.sqrt(0.8**2 + 500.8 / 20.0), rel=0.05)
+    sigma_e = estimate_pixel_error(data * 20.0, u.electron, exposure_time=20.0)
+    assert sigma_e[100, 100] == pytest.approx(np.sqrt(16.0**2 + 500.8 * 20.0), rel=0.05)
+    with pytest.raises(ValueError, match="unit"):
+        estimate_pixel_error(data, u.adu, exposure_time=20.0)

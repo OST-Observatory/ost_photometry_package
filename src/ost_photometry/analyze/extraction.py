@@ -135,6 +135,50 @@ DEFAULT_COSMIC_READ_NOISE = 8.0
 DEFAULT_COSMIC_SATURATION = 65535.0
 
 
+def estimate_pixel_error(data: np.ndarray, unit, exposure_time: float) -> np.ndarray:
+    """Per-pixel σ for an image without an uncertainty extension.
+
+    ``σ² = σ_sky² + S/t`` for e-/s images (``S`` for electrons): the sky,
+    read and dark noise come from the clipped scatter of the frame itself
+    (the analysis frames are background-subtracted, so the pixel values no
+    longer contain the sky photons), the source photons from the positive
+    signal. ADU or unknown units cannot be converted and raise.
+    """
+    from astropy.stats import sigma_clipped_stats
+
+    values = np.asarray(data, dtype=float)
+    _mean, _median, sky_sigma = sigma_clipped_stats(values, sigma=3.0, maxiters=5)
+    signal = np.where(np.isfinite(values), np.maximum(values, 0.0), 0.0)
+    if unit == u.electron / u.s:
+        t = float(exposure_time)
+        if not np.isfinite(t) or t <= 0:
+            raise ValueError("estimate_pixel_error: e-/s image needs a positive EXPTIME.")
+        source_var = signal / t
+    elif unit == u.electron:
+        source_var = signal
+    else:
+        raise ValueError(
+            f"estimate_pixel_error: cannot derive photon noise for unit {unit!r}; "
+            "reduce the images (e- or e-/s with an UNCERT extension) first."
+        )
+    return np.sqrt(float(sky_sigma) ** 2 + source_var)
+
+
+def _pixel_error(image: AnalysisImage, ccd=None) -> np.ndarray:
+    """``UNCERT`` of the image, else :func:`estimate_pixel_error` with a warning."""
+    ccd = image.read_image() if ccd is None else ccd
+    if ccd.uncertainty is not None:
+        return np.asarray(ccd.uncertainty.array, dtype=float)
+    terminal_output.print_to_terminal(
+        f"No uncertainty extension in {image.path}; pixel errors estimated from "
+        "the frame's sky scatter and the source photons.",
+        indent=2,
+        style_name="WARNING",
+    )
+    exposure = float(ccd.meta.get("EXPTIME", float("nan")))
+    return estimate_pixel_error(ccd.data, ccd.unit, exposure)
+
+
 def cosmic_ray_noise_parameters(
     header,
     read_noise: float | None = None,
@@ -351,7 +395,7 @@ def determine_background(
         )
 
         #   Remove background
-        image_no_bg = ccd.subtract(bkg.background * u.electron / u.s)
+        image_no_bg = ccd.subtract(bkg.background * ccd.unit)
 
         #   Put metadata back on the image, because it is lost while
         #   subtracting the background
@@ -371,7 +415,7 @@ def determine_background(
         )
 
         #   Remove background
-        image_no_bg = ccd.subtract(background_value)
+        image_no_bg = ccd.subtract(background_value * ccd.unit)
 
         #   Put metadata back on the image, because it is lost while
         #   subtracting the background
@@ -1106,9 +1150,10 @@ def extraction_epsf(
     table_dir = tables_dir(output_path)
     checks.check_output_directories(output_path, table_dir)
 
-    data = image.get_data()
-    error = image.get_error()
-    image_mask = image.get_mask()
+    ccd = image.read_image()
+    data = ccd.data
+    error = _pixel_error(image, ccd)
+    image_mask = ccd.mask
     filter_ = image.filter_
 
     initial_positions = None
@@ -1232,7 +1277,7 @@ def extraction_epsf(
         n_bad_objects = np.size(bad_results)
         if strict_cleaning_results:
             bad_results = np.where(result_tbl["flux_err"].data < 0.0)
-            n_bad_objects += len(bad_results)
+            n_bad_objects += np.size(bad_results)
             result_tbl.remove_rows(bad_results)
     except KeyError as err:
         raise RuntimeError(
@@ -1464,7 +1509,7 @@ def extraction_aperture(
     """Perform aperture photometry using the photutils aperture package."""
     ccd = image.read_image()
     data = ccd.data
-    uncertainty = ccd.uncertainty.array
+    uncertainty = _pixel_error(image, ccd)
     filter_ = image.filter_
 
     if terminal_logger is not None:
@@ -1537,12 +1582,7 @@ def extraction_aperture(
         photometry_tbl["aperture_sum"] - photometry_tbl["aper_bkg"]
     )
 
-    if uncertainty is not None:
-        aperture_sum_err = photometry_tbl["aperture_sum_err"]
-    else:
-        aperture_sum_err = np.sqrt(
-            np.maximum(np.asarray(photometry_tbl["flux_fit"], dtype=float), 0.0)
-        )
+    aperture_sum_err = photometry_tbl["aperture_sum_err"]
 
     photometry_tbl["flux_err"] = compute_aperture_photometry_uncertainties(
         aperture_sum_err,

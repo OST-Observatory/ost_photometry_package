@@ -100,7 +100,8 @@ def _slopes_with_errors(
         err_col = f"err_{filt}"
         if apply_weights and err_col in table.colnames:
             sigma = np.asarray(table[err_col], dtype=float)[mask]
-            weights = 1.0 / np.maximum(sigma**2, 1e-12)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                weights = 1.0 / sigma**2  # non-finite / zero errors are left out
         else:
             weights = np.ones(len(color), dtype=float)
         slope, _zp, slope_err, _, _ = weighted_linear_fit(color, delta, weights)

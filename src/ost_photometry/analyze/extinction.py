@@ -276,9 +276,7 @@ def observation_to_extinction_fit_table(
                 vals = vals.value
             ids = np.arange(len(phot)) if "id" not in phot.colnames else phot["id"]
             airmass = getattr(image, "air_mass", None)
-            if airmass is None:
-                airmass = 1.0
-            airmass = float(airmass)
+            airmass = np.nan if airmass is None else float(airmass)
             mag_col_name = f"mag_{filter_}" if not use_flux else f"flux_{filter_}"
             tbl = Table()
             tbl["id"] = np.asarray(ids, dtype=int)
@@ -506,6 +504,64 @@ def calculate_airmass(
         raise ValueError(f"Unknown method: {method}")
 
     return np.clip(airmass, 1.0, 10.0)
+
+
+def airmass_for_image(image, location: EarthLocation | None) -> float | None:
+    """Airmass at mid-exposure from the image centre, JD and site.
+
+    The centre comes from the image WCS when there is one, else from the
+    header pointing (``OBJCTRA``/``OBJCTDEC`` or ``RA``/``DEC``). Returns
+    ``None`` without a location, time or pointing.
+    """
+    from ..image import header_pointing
+
+    if location is None:
+        return None
+    header = image.get_header()
+    jd = getattr(image, "jd", None)
+    if jd is None:
+        return None
+    try:
+        exposure = float(header.get("EXPTIME", 0.0))
+    except (TypeError, ValueError):
+        exposure = 0.0
+    if not np.isfinite(exposure) or exposure < 0:
+        exposure = 0.0
+    coords = None
+    wcs_obj = getattr(image, "wcs", None)
+    if wcs_obj is not None and getattr(wcs_obj, "has_celestial", False):
+        nx = header.get("NAXIS1")
+        ny = header.get("NAXIS2")
+        if nx and ny:
+            try:
+                coords = wcs_obj.pixel_to_world((float(nx) - 1) / 2, (float(ny) - 1) / 2)
+            except (ValueError, TypeError):
+                coords = None
+    if coords is None:
+        coords = header_pointing(header)
+    if coords is None:
+        return None
+    obstime = Time(float(jd) + exposure / 2.0 / 86400.0, format="jd", scale="utc")
+    value = float(calculate_airmass(coords, obstime, location, method="pickering"))
+    return value if np.isfinite(value) else None
+
+
+def fill_missing_airmass(images, location: EarthLocation | None) -> tuple[int, int]:
+    """Compute ``air_mass`` for images whose header has none.
+
+    Returns ``(n_computed, n_still_missing)``.
+    """
+    computed = missing = 0
+    for image in images:
+        if getattr(image, "air_mass", None) is not None:
+            continue
+        value = airmass_for_image(image, location)
+        if value is None:
+            missing += 1
+            continue
+        image.air_mass = value
+        computed += 1
+    return computed, missing
 
 
 class ExtinctionCorrector:

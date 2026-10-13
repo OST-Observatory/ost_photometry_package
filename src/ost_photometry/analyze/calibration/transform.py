@@ -18,9 +18,19 @@ def weighted_linear_fit(
     T, ZP, T_err, ZP_err, cov_tz
         Slope, intercept, diagonal formal errors, and off-diagonal covariance
         ``Cov(T, ZP)`` from the residual variance times ``(AᵀA)⁻¹``.
+
+    Points with a non-finite or non-positive weight (or non-finite x, y) are
+    left out, not given weight 1. With fewer than three usable points or a
+    rank-deficient design the errors are NaN: they are unknown, not zero.
     """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
     w = np.asarray(weights, dtype=float)
-    w = np.where(w > 0, w, 1.0)
+    use = np.isfinite(x) & np.isfinite(y) & np.isfinite(w) & (w > 0)
+    x, y, w = x[use], y[use], w[use]
+    nan = float("nan")
+    if x.size < 2:
+        return nan, nan, nan, nan, nan
     sw = np.sqrt(w)
     a = np.column_stack([x * sw, sw])
     b = y * sw
@@ -28,16 +38,16 @@ def weighted_linear_fit(
     t_val, zp_val = float(coeffs[0]), float(coeffs[1])
     n = len(x)
     if rank < 2 or n < 3:
-        return t_val, zp_val, 0.0, 0.0, 0.0
+        return t_val, zp_val, nan, nan, nan
     if len(residuals) > 0:
         s_sq = residuals[0] / max(n - 2, 1)
     else:
         fit = t_val * x + zp_val
-        s_sq = np.sum((y - fit) ** 2) / max(n - 2, 1)
+        s_sq = np.sum(w * (y - fit) ** 2) / max(n - 2, 1)
     try:
         cov = s_sq * np.linalg.inv(a.T @ a)
     except np.linalg.LinAlgError:
-        return t_val, zp_val, 0.0, 0.0, 0.0
+        return t_val, zp_val, nan, nan, nan
     t_err = float(np.sqrt(max(cov[0, 0], 0.0)))
     zp_err = float(np.sqrt(max(cov[1, 1], 0.0)))
     cov_tz = float(cov[0, 1])

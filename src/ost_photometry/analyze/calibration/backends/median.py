@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ...extinction import extinction_airmass_ready
 from ..quality import calibrator_candidate_mask
 from ..result import CalibrationResult
 from ..zp import fit_median_zero_point_epoch
@@ -20,10 +21,21 @@ def fit_epochs(
     config: PipelineConfig,
     *,
     color_indices: dict[str, tuple[str, str]] | None = None,
+    extinction_corrector=None,
 ) -> dict[str, CalibrationResult]:
-    """Fit median ZP per epoch (``grouping=per_image``) or one ZP for all (``ensemble``)."""
+    """Fit median ZP per epoch (``grouping=per_image``) or one ZP for all (``ensemble``).
+
+    ``extinction_corrector`` must be the one used when the result is applied:
+    the zero point is fitted on extinction-corrected magnitudes, so the
+    ``k·X`` subtracted on apply is not missing from the fit.
+    """
     grouping = config.calibration_grouping
     min_comparisons = 3
+    if extinction_corrector is not None:
+        epochs = {
+            eid: _extinction_corrected(tbl, filters, extinction_corrector)
+            for eid, tbl in epochs.items()
+        }
 
     if grouping == "ensemble":
         from astropy.table import vstack
@@ -71,6 +83,20 @@ def fit_epochs(
             sigma_clip=config.fit_sigma_clip,
         )
     return results
+
+
+def _extinction_corrected(data: Table, filters: list[str], corrector) -> Table:
+    if not extinction_airmass_ready(data, filters, "airmass"):
+        return data
+    return corrector.correct(
+        data,
+        fallback_airmass_col="airmass",
+        mag_col_prefix="mag_",
+        output_prefix="mag_",
+        filters=filters,
+        inplace=False,
+        catalog_color_prefix="mag_std_",
+    )
 
 
 __all__ = ["fit_epochs"]

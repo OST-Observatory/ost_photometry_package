@@ -926,7 +926,12 @@ def add_bjd_tdb_column(tbl: Table, location) -> Table:
 
 
 def add_color_index_rows(tbl: Table, color: str | None) -> Table:
-    """Append colour rows (e.g. ``B-V``) matched on ``id`` and ``epoch_id``."""
+    """Append colour rows (e.g. ``B-V``) matched on ``id`` and ``epoch_id``.
+
+    A colour point is flagged when either component is: ``flag_outlier`` and
+    ``flag_epoch`` (with its reasons) are OR-ed from the two filter rows, so
+    call this after the differential product has set ``flag_epoch``.
+    """
     if not color or color in ("?", "?-?", "-"):
         return tbl
     text = str(color).strip()
@@ -948,6 +953,15 @@ def add_color_index_rows(tbl: Table, color: str | None) -> Table:
     eids = np.asarray(tbl["epoch_id"]).astype(str)
     mag = np.asarray(tbl["mag"], dtype=float)
     mag_err = np.asarray(tbl["mag_err"], dtype=float)
+    outlier = np.asarray(tbl["flag_outlier"], dtype=bool)
+    has_epoch_flag = "flag_epoch" in tbl.colnames
+    if has_epoch_flag:
+        epoch_flag = np.asarray(tbl["flag_epoch"], dtype=bool)
+        reasons = (
+            np.asarray(tbl["flag_epoch_reason"]).astype(str)
+            if "flag_epoch_reason" in tbl.colnames
+            else np.full(len(tbl), "")
+        )
     parts: list[Table] = []
     for sid in np.unique(ids):
         m1 = (ids == sid) & (filts == f1)
@@ -970,15 +984,19 @@ def add_color_index_rows(tbl: Table, color: str | None) -> Table:
             for col in ("mag_inst", "mag_inst_err", *DIFFERENTIAL_FLOAT_COLUMNS):
                 if col in row.colnames:
                     row[col] = np.nan
-            for col in ("is_ensemble", "flag_epoch"):
-                if col in row.colnames:
-                    row[col] = False
+            if "is_ensemble" in row.colnames:
+                row["is_ensemble"] = False
             if "ens_n" in row.colnames:
                 row["ens_n"] = 0
-            if "flag_epoch_reason" in row.colnames:
-                row["flag_epoch_reason"] = ""
+            if has_epoch_flag:
+                row["flag_epoch"] = bool(epoch_flag[i] or epoch_flag[j])
+                if "flag_epoch_reason" in row.colnames:
+                    both = [r for r in (reasons[i], reasons[j]) if r]
+                    row["flag_epoch_reason"] = ";".join(
+                        dict.fromkeys(";".join(both).split(";"))
+                    ) if both else ""
             row["quantity"] = "magnitude"
-            row["flag_outlier"] = False
+            row["flag_outlier"] = bool(outlier[i] or outlier[j])
             parts.append(row)
     if not parts:
         return tbl

@@ -603,7 +603,7 @@ def master_dark_stacking(
 
     #   Set gain _> get it from Header if not provided
     if gain is None:
-        gain = int(combined_dark.header["EGAIN"])
+        gain = float(combined_dark.header["EGAIN"])
 
     #   Plot histogram
     if plot_plots:

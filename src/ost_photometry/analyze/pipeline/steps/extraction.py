@@ -5,11 +5,33 @@ from ....core.parallel import start_plot_process
 from ....output_layout import diagnostics_dir
 from ... import plots
 from ...diagnostic_plot_hooks import run_diagnostic_plots_phase
+from ...extinction import fill_missing_airmass
 from ...extraction import extract_multiprocessing, main_extract
 from ...scintillation import apply_scintillation_to_image_series
 from .. import base
 from ..config import PipelineConfig
 from ..context import AnalysisContext
+
+
+def _fill_missing_airmass(image_series, config: PipelineConfig) -> None:
+    """Airmass from pointing, time and site for frames without ``AIRMASS``."""
+    location = getattr(config, "observatory_location", None)
+    computed, missing = fill_missing_airmass(image_series.image_list, location)
+    if computed:
+        terminal_output.print_to_terminal(
+            f"AIRMASS missing in {computed} {image_series.filter_} image(s); "
+            "computed from pointing, mid-exposure time and observatory_location.",
+            indent=1,
+            style_name="INFO",
+        )
+    if missing:
+        terminal_output.print_to_terminal(
+            f"AIRMASS unknown for {missing} {image_series.filter_} image(s) "
+            "(no header value, pointing or site); airmass-dependent terms "
+            "(scintillation, extinction) use X = 1 there.",
+            indent=1,
+            style_name="WARNING",
+        )
 
 
 def _site_altitude_m(config: PipelineConfig) -> float:
@@ -63,6 +85,8 @@ class ExtractionStep(base.PipelineStep):
                     fwhm_object_psf=fwhm_dict,
                     **ext.extract_multiprocessing_kwargs(),
                 )
+
+            _fill_missing_airmass(image_series, config)
 
             if ext.scintillation_noise:
                 apply_scintillation_to_image_series(

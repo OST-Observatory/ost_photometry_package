@@ -11,8 +11,11 @@ References
 * https://www.sdss3.org/dr8/algorithms/sdssUBVRITransform.php#Lupton2005
 * AAVSO summary of SDSS transformations (same coefficients).
 
-Error propagation uses first-order partial derivatives (Gaussian error model);
-missing errors default to 0.02 mag per band.
+Error propagation uses first-order partial derivatives (Gaussian error model)
+plus the published scatter of each relation (``RELATION_SIGMA``) in
+quadrature: even with perfect Sloan photometry a star's Johnson magnitude is
+only known to that scatter. Missing error *arrays* default to 0.02 mag per
+band (catalog convention); NaN errors stay NaN.
 """
 
 from __future__ import annotations
@@ -26,6 +29,9 @@ from astropy.table import Table
 #   R = r - 0.2936*(r - i) - 0.1439
 #   I = r - 1.2444*(r - i) - 0.3820
 # U from Jester et al. (2005) all-stars: U-B = 0.78*(u - g) - 0.88  →  U = B + …
+
+#: Published rms of the relations (Lupton 2005; Jester et al. 2005, U-B), mag.
+RELATION_SIGMA = {"B": 0.0107, "V": 0.0054, "R": 0.0072, "I": 0.0078, "U-B": 0.05}
 
 
 def _default_err(arr: np.ndarray, err: np.ndarray | None) -> np.ndarray:
@@ -73,8 +79,12 @@ def johnson_ri_from_sloan_ri(
     R_johnson[valid] = r_sloan[valid] - 0.2936 * ri - 0.1439
     I_johnson[valid] = r_sloan[valid] - 1.2444 * ri - 0.3820
     er, ei = err_r[valid], err_i[valid]
-    err_R[valid] = np.sqrt((dR_dr * er) ** 2 + (dR_di * ei) ** 2)
-    err_I[valid] = np.sqrt((dI_dr * er) ** 2 + (dI_di * ei) ** 2)
+    err_R[valid] = np.sqrt(
+        (dR_dr * er) ** 2 + (dR_di * ei) ** 2 + RELATION_SIGMA["R"] ** 2
+    )
+    err_I[valid] = np.sqrt(
+        (dI_dr * er) ** 2 + (dI_di * ei) ** 2 + RELATION_SIGMA["I"] ** 2
+    )
 
     return R_johnson, I_johnson, err_R, err_I
 
@@ -105,38 +115,47 @@ def johnson_bv_from_sloan_gr(
     B[valid] = g_sloan[valid] + 0.3130 * gr + 0.2271
     V[valid] = g_sloan[valid] - 0.5784 * gr - 0.0038
     eg, er = err_g[valid], err_r[valid]
-    eB[valid] = np.sqrt((1.3130 * eg) ** 2 + (0.3130 * er) ** 2)
-    eV[valid] = np.sqrt((0.4216 * eg) ** 2 + (0.5784 * er) ** 2)
+    eB[valid] = np.sqrt((1.3130 * eg) ** 2 + (0.3130 * er) ** 2 + RELATION_SIGMA["B"] ** 2)
+    eV[valid] = np.sqrt((0.4216 * eg) ** 2 + (0.5784 * er) ** 2 + RELATION_SIGMA["V"] ** 2)
     return B, V, eB, eV
 
 
-def johnson_u_from_sloan_ug_and_b(
+def johnson_u_from_sloan_ugr(
     u_sloan: np.ndarray,
     g_sloan: np.ndarray,
-    b_johnson: np.ndarray,
+    r_sloan: np.ndarray,
     err_u: np.ndarray | None = None,
     err_g: np.ndarray | None = None,
-    err_b: np.ndarray | None = None,
+    err_r: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Johnson U from Sloan u, g and Johnson B (Jester et al. 2005 all-stars).
+    Johnson U from Sloan u, g, r (Jester et al. 2005 U-B, Lupton 2005 B).
 
-    U - B = 0.78*(u - g) - 0.88  →  U = B + 0.78*(u - g) - 0.88
+    ``U = B + 0.78 (u - g) - 0.88`` with ``B = g + 0.3130 (g - r) + 0.2271``,
+    i.e. ``U = 0.78 u + 0.533 g - 0.313 r - 0.6529``. The error is propagated
+    from u, g, r directly: going through B would count g twice.
     """
     u_sloan = np.asarray(u_sloan, dtype=float)
     g_sloan = np.asarray(g_sloan, dtype=float)
-    b_johnson = np.asarray(b_johnson, dtype=float)
-    n = b_johnson.shape
+    r_sloan = np.asarray(r_sloan, dtype=float)
+    n = g_sloan.shape
     U = np.full(n, np.nan)
     eU = np.full(n, np.nan)
     err_u = _default_err(u_sloan, err_u)
     err_g = _default_err(g_sloan, err_g)
-    err_b = _default_err(b_johnson, err_b)
-    valid = np.isfinite(u_sloan) & np.isfinite(g_sloan) & np.isfinite(b_johnson)
-    ug = u_sloan[valid] - g_sloan[valid]
-    U[valid] = b_johnson[valid] + 0.78 * ug - 0.88
-    eu, eg, eb = err_u[valid], err_g[valid], err_b[valid]
-    eU[valid] = np.sqrt(eb**2 + (0.78 * eu) ** 2 + (0.78 * eg) ** 2)
+    err_r = _default_err(r_sloan, err_r)
+    valid = np.isfinite(u_sloan) & np.isfinite(g_sloan) & np.isfinite(r_sloan)
+    du, dg, dr = 0.78, 1.0 + 0.3130 - 0.78, -0.3130
+    U[valid] = (
+        du * u_sloan[valid] + dg * g_sloan[valid] + dr * r_sloan[valid] + 0.2271 - 0.88
+    )
+    eU[valid] = np.sqrt(
+        (du * err_u[valid]) ** 2
+        + (dg * err_g[valid]) ** 2
+        + (dr * err_r[valid]) ** 2
+        + RELATION_SIGMA["B"] ** 2
+        + RELATION_SIGMA["U-B"] ** 2
+    )
     return U, eU
 
 
@@ -162,7 +181,7 @@ def johnson_ubvri_from_sloan_arrays(
         out["B"] = (B, eB)
         out["V"] = (V, eV)
         if u is not None:
-            U, eU = johnson_u_from_sloan_ug_and_b(u, g, B, err_u, err_g, eB)
+            U, eU = johnson_u_from_sloan_ugr(u, g, r, err_u, err_g, err_r)
             out["U"] = (U, eU)
     if r is not None and i is not None:
         R, I, eR, eI = johnson_ri_from_sloan_ri(r, i, err_r, err_i)
