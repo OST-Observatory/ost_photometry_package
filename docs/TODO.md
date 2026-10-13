@@ -367,17 +367,33 @@ catalog; on `dmag` it should not be the catalog.
 | Measured point-to-point scatter, leave-one-out | 0.0024–0.0051 (median 0.0041) |
 
 So the old errors were too **large** (fixed bug), and current errors are
-too **small** for bright stars, by ~1.5×. The missing terms are
-scintillation (dominant for bright stars in short exposures) and, for
-frames reduced before 0.6.0, the `UNCERT` map: it underestimates the
-measured sky σ by 1.6× (binned CMOS read noise, fixed in 0.6.0); not yet
-rechecked on frames reduced with 0.6.0.
+too **small** for bright stars.
 
-**Next step:** add a scintillation term to `err_*` (needs aperture
-diameter, site altitude, exposure time, airmass; the camera / telescope
-catalog has the aperture), then the ensemble excess-RMS floor for what is
-left. Re-run the HAT-P-20 night end to end with the current reduction to
-confirm the `UNCERT` maps.
+**Rerun with 0.6.0 + `5eb3a64` (October 2026, reduction and photometry from
+the raw frames, `run_v0.6/`):** `err_V` of the OOI is 0.0023 mag (no
+overestimate), the `UNCERT` maps now match the measured sky σ (ratio
+1.0–1.1; up to 1.4 where alignment interpolation smooths the pixels). The
+differential point-to-point scatter is 1.3–2.5× `dmag_err`, more for bright
+stars. The missing term is brightness-independent and follows the
+scintillation estimate:
+
+| Airmass | Extra scatter (V) | Young × 1.5 | Ratio |
+|---------|-------------------|-------------|-------|
+| 1.13–1.14 | 0.0028 | 0.0021 | 1.3 |
+| 1.14–1.19 | 0.0023 | 0.0022 | 1.0 |
+| 1.19–1.30 | 0.0024 | 0.0025 | 1.0 |
+| 1.30–1.54 | 0.0048 | 0.0032 | 1.5 (thin clouds at the end of the night) |
+
+B agrees (ratios 0.9–1.3 below X = 1.3).
+
+**Next step:** add a scintillation term to `err_*` (Young 1967 with the
+Osborn et al. 2015 factor 1.5; needs aperture diameter, site altitude,
+exposure time, airmass). There is no telescope catalog with aperture
+diameters yet: `reduce.grouping.setup_keys` only normalises telescope ids
+(CDK20, LX200, SkyWatcher), so the diameters need a small table there or a
+header keyword such as `APTDIA` where the capture software writes it. The
+ensemble excess-RMS floor then only has to cover what is left (thin
+clouds, flat-field errors).
 
 **Direction:** `mag_err_inflated` for the transformed product (optional ZP
 floor); `dmag_err = \sqrt{\sigma_{\mathrm{OOI}}^2 + \sigma_{\mathrm{ens}}^2 +
