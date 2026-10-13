@@ -81,7 +81,8 @@ def test_linear_fit_per_night_extinction_preset():
     assert cfg.calibration_grouping == "per_night"
     assert cfg.extinction_mode == "from_comparison_stars"
     assert cfg.color_term_fit == "auto"
-    assert cfg.derive_transform_from_data is True
+    # per-night presets combine per-epoch linear fits (derive-transform is per image only)
+    assert cfg.derive_transform_from_data is False
     assert not hasattr(cfg, "fit_extinction_from_data")
 
     cfg_va = PipelineConfig(extinction_mode="from_value_airmass")
@@ -118,7 +119,7 @@ def test_unknown_preset_raises():
     night_ext = PipelineConfig.from_preset("linear_fit_per_night_extinction")
     assert night_ext.calibration_grouping == "per_night"
     assert night_ext.extinction_mode == "from_comparison_stars"
-    assert night_ext.derive_transform_from_data is True
+    assert night_ext.derive_transform_from_data is False
     assert PipelineConfig.from_preset(
         "extract_protect_calibrators"
     ).protect_calibration_objects is True
@@ -222,7 +223,7 @@ def test_linear_fit_ensemble_preset():
 
     cfg = PipelineConfig.from_preset("linear_fit_ensemble")
     assert cfg.calibration_strategy == "linear_fit"
-    assert cfg.derive_transform_from_data is True
+    assert cfg.derive_transform_from_data is False
     assert cfg.calibration_grouping == "ensemble"
     assert cfg.extinction_mode == "none"
     assert cfg.color_term_fit == "never"
@@ -296,3 +297,18 @@ def test_unknown_option_warns():
 
     with pytest.warns(UserWarning, match="calibratoin_grouping"):
         PipelineConfig(calibratoin_grouping="per_image")
+
+
+
+def test_derive_transform_only_per_image_and_fixed_needs_coefficients():
+    from ost_photometry.analyze.pipeline.config import PipelineConfig
+
+    with pytest.raises(ValueError, match="derive_transform_from_data"):
+        PipelineConfig(derive_transform_from_data=True, calibration_grouping="per_night")
+    with pytest.raises(ValueError, match="transformation_coefficients_dict"):
+        PipelineConfig(calibration_grouping="fixed")
+    cfg = PipelineConfig(
+        calibration_grouping="fixed",
+        transformation_coefficients_dict={"V": {"color_term": 0.05, "color_term_err": 0.01}},
+    )
+    assert cfg.calibration_grouping == "fixed"

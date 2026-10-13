@@ -6,6 +6,7 @@ import numpy as np
 from astropy.table import Table
 
 from .result import CalibrationResult, TransformationCoefficients
+from .statistics import catalog_errors, fit_zero_point
 
 
 def comparison_mask_from_std_columns(table: Table, filters: list[str]) -> np.ndarray:
@@ -28,17 +29,21 @@ def fit_median_zero_point_epoch(
     *,
     mag_col_prefix: str = "mag_",
     std_col_prefix: str = "mag_std_",
+    err_col_prefix: str = "err_",
     min_comparisons: int = 3,
     color_index_filters: dict[str, tuple[str, str]] | None = None,
     sigma_clip: float | None = None,
     max_clip_iterations: int = 5,
+    fixed_color_terms: dict[str, tuple[float, float]] | None = None,
 ) -> CalibrationResult:
     """
-    Fit zero points as median(m_std - m_inst) per filter; color term fixed at 0.
+    Zero point per filter without a fitted colour term.
 
-    When ``sigma_clip`` is set, iteratively drop stars with
-    ``|m_std - m_inst - ZP| >= sigma_clip × RMS`` (same convention as
-    ``linear_fit``). Pipeline: ``PipelineConfig.fit_sigma_clip``.
+    Weighted by instrumental and catalog errors plus the intrinsic scatter
+    that makes χ²_ν = 1, with clipping of normalised residuals at
+    ``sigma_clip`` (:func:`~ost_photometry.analyze.calibration.statistics.fit_zero_point`).
+    ``fixed_color_terms`` (``{filter: (T, σ_T)}``) subtracts a known colour
+    term first (``calibration_grouping="fixed"``); else T = 0.
     """
     color_indices = color_index_filters or {}
     result = CalibrationResult(identifier=epoch_id)
@@ -52,45 +57,58 @@ def fit_median_zero_point_epoch(
         std_col = f"{std_col_prefix}{filter_}"
         if inst_col not in comps.colnames or std_col not in comps.colnames:
             continue
-
         m_inst = np.asarray(comps[inst_col], dtype=float)
         m_std = np.asarray(comps[std_col], dtype=float)
-        valid = np.isfinite(m_inst) & np.isfinite(m_std)
-        if np.sum(valid) < min_comparisons:
-            continue
-
-        used = valid.copy()
-        residuals = m_std - m_inst
-        zp = float(np.median(residuals[used]))
-        n_iter = max_clip_iterations if sigma_clip is not None else 1
-        for _ in range(n_iter):
-            zp = float(np.median(residuals[used]))
-            resid_from_zp = residuals - zp
-            rms = float(np.nanstd(resid_from_zp[used]))
-            if sigma_clip is None or rms <= 0.0:
-                break
-            new_used = valid & (np.abs(resid_from_zp) < float(sigma_clip) * rms)
-            if np.sum(new_used) == np.sum(used) or np.sum(new_used) < min_comparisons:
-                break
-            used = new_used
-
-        used_residuals = residuals[used]
-        zp = float(np.median(used_residuals))
-        zp_err = float(np.std(used_residuals) / np.sqrt(np.sum(used)))
+        err_col = f"{err_col_prefix}{filter_}"
+        sigma_inst = (
+            np.abs(np.asarray(comps[err_col], dtype=float))
+            if err_col in comps.colnames
+            else np.full(len(comps), np.nan)
+        )
+        cat_col = f"{std_col_prefix.replace('mag_', 'err_')}{filter_}"
+        sigma_cat = catalog_errors(
+            np.asarray(comps[cat_col], dtype=float) if cat_col in comps.colnames else None,
+            len(comps),
+        )
         ci = color_indices.get(filter_, ("B", "V"))
-
+        fixed = (fixed_color_terms or {}).get(filter_)
+        color = np.zeros(len(comps))
+        if fixed is not None:
+            c1, c2 = f"{std_col_prefix}{ci[0]}", f"{std_col_prefix}{ci[1]}"
+            if c1 in comps.colnames and c2 in comps.colnames:
+                color = np.asarray(comps[c1], dtype=float) - np.asarray(comps[c2], dtype=float)
+        fit = fit_zero_point(
+            m_std - m_inst,
+            color,
+            sigma_inst,
+            sigma_cat,
+            fit_color=False,
+            fixed_color_term=0.0 if fixed is None else float(fixed[0]),
+            fixed_color_term_err=0.0 if fixed is None else float(fixed[1]),
+            sigma_clip=sigma_clip,
+            max_iterations=max_clip_iterations,
+            min_stars=min_comparisons,
+        )
+        if fit.n_used < min_comparisons or not np.isfinite(fit.zero_point):
+            continue
         result.transformation[filter_] = TransformationCoefficients(
             filter_name=filter_,
-            color_term=0.0,
-            color_term_err=0.0,
-            zero_point=zp,
-            zero_point_err=zp_err,
+            color_term=fit.color_term,
+            color_term_err=fit.color_term_err,
+            zero_point=fit.zero_point,
+            zero_point_err=fit.zero_point_err,
             color_index_filters=ci,
-            n_stars_used=int(np.sum(used)),
-            rms_residual=float(np.nanstd(used_residuals)),
+            n_stars_used=fit.n_used,
+            rms_residual=fit.rms,
+            sigma_int=fit.sigma_int,
+            catalog_error_scale=fit.catalog_error_scale,
+            chi2_nu=fit.chi2_nu,
+            quality_flag=fit.quality_flag,
+            cov_phot=fit.cov_phot,
+            cov_cat=fit.cov_cat,
         )
         full_mask = np.zeros(n_table, dtype=bool)
-        full_mask[comp_idx[used]] = True
+        full_mask[comp_idx[fit.used]] = True
         result.calibrator_mask_by_filter[filter_] = full_mask
 
     result.n_comparison_stars = int(np.sum(cand))

@@ -7,6 +7,11 @@ from typing import TYPE_CHECKING
 from ...extinction import extinction_airmass_ready
 from ..quality import calibrator_candidate_mask
 from ..result import CalibrationResult
+from ..statistics import (
+    average_epochs_per_star,
+    parse_fixed_color_terms,
+    set_airmass_reference,
+)
 from ..zp import fit_median_zero_point_epoch
 
 if TYPE_CHECKING:
@@ -38,9 +43,9 @@ def fit_epochs(
         }
 
     if grouping == "ensemble":
-        from astropy.table import vstack
-
-        combined = vstack(list(epochs.values()))
+        #   One point per star (mean over the already extinction-corrected
+        #   epochs): each star's catalog error counts once.
+        combined = average_epochs_per_star(list(epochs.values()), filters)
         mask = calibrator_candidate_mask(combined, filters, config)
         result = fit_median_zero_point_epoch(
             combined,
@@ -51,25 +56,50 @@ def fit_epochs(
             min_comparisons=min_comparisons,
             sigma_clip=config.fit_sigma_clip,
         )
+        set_airmass_reference(result, list(epochs.values()), filters)
         return {eid: result for eid in epochs}
 
     if grouping == "per_night":
-        from astropy.table import vstack
+        #   Per-epoch fits combined like the linear path: the catalog part
+        #   does not average down, the epochs' extra scatter (transparency)
+        #   is kept as zero_point_sys.
+        from ..photometer import DifferentialPhotometer
 
-        combined = vstack(list(epochs.values()))
-        mask = calibrator_candidate_mask(combined, filters, config)
-        night_result = fit_median_zero_point_epoch(
-            combined,
-            "night_combined",
-            filters,
-            mask,
-            color_index_filters=color_indices,
-            min_comparisons=min_comparisons,
-            sigma_clip=config.fit_sigma_clip,
+        per_epoch = []
+        for epoch_id, data in epochs.items():
+            mask = calibrator_candidate_mask(data, filters, config)
+            per_epoch.append(
+                fit_median_zero_point_epoch(
+                    data,
+                    epoch_id,
+                    filters,
+                    mask,
+                    color_index_filters=color_indices,
+                    min_comparisons=min_comparisons,
+                    sigma_clip=config.fit_sigma_clip,
+                )
+            )
+        night = CalibrationResult(
+            identifier="night_combined",
+            transformation=DifferentialPhotometer().combine_epoch_calibration_results(
+                per_epoch, filters
+            ),
         )
-        return {eid: night_result for eid in epochs}
+        set_airmass_reference(night, list(epochs.values()), filters)
+        return {eid: night for eid in epochs}
 
-    # per_image (default for median_zp_per_image) and fixed (same as per_image without preset coeffs)
+    fixed = (
+        parse_fixed_color_terms(config.transformation_coefficients_dict)
+        if grouping == "fixed"
+        else None
+    )
+    if grouping == "fixed" and not fixed:
+        raise ValueError(
+            "calibration_grouping='fixed' needs transformation_coefficients_dict "
+            "with the colour terms"
+        )
+
+    # per_image (default for median_zp_per_image) and fixed (known colour term)
     results: dict[str, CalibrationResult] = {}
     for epoch_id, data in epochs.items():
         mask = calibrator_candidate_mask(data, filters, config)
@@ -81,6 +111,7 @@ def fit_epochs(
             color_index_filters=color_indices,
             min_comparisons=min_comparisons,
             sigma_clip=config.fit_sigma_clip,
+            fixed_color_terms=fixed,
         )
     return results
 

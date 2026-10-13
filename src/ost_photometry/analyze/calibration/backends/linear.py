@@ -13,6 +13,7 @@ from ...extinction_io import (
 from ..calibrator import PhotometryCalibrator
 from ..quality import calibrator_candidate_mask
 from ..result import CalibrationResult
+from ..statistics import parse_fixed_color_terms
 
 if TYPE_CHECKING:
     from astropy.coordinates import EarthLocation
@@ -43,7 +44,7 @@ def build_calibrator(
         config, fitted=extinction_coefficients
     )
     coeffs = finalize_pipeline_extinction_coefficients(config, raw)
-    return PhotometryCalibrator(
+    calibrator = PhotometryCalibrator(
         mode=_coefficient_mode(grouping),
         extinction_order=ext_order,
         observatory_location=observatory_location or config.observatory_location,
@@ -51,6 +52,11 @@ def build_calibrator(
         extinction_coefficients=coeffs,
         match_radius=config.calibration_match_radius,
     )
+    if grouping == "fixed":
+        calibrator.set_fixed_color_terms(
+            parse_fixed_color_terms(config.transformation_coefficients_dict)
+        )
+    return calibrator
 
 
 def _apply_second_order_after_fit(

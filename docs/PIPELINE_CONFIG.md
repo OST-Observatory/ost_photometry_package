@@ -218,16 +218,34 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 | `calibration_grouping` | Behaviour                                      | When to use                                                             |
 | ---------------------- | ---------------------------------------------- | ----------------------------------------------------------------------- |
 | `per_image`            | One coefficient set per exposure epoch         | Each image calibrated independently (e.g. one stacked frame per filter) |
-| `per_night`            | One set per night (epochs combined before fit) | Multi-epoch variable stars on the same night                            |
-| `ensemble`             | Single set from all epochs stacked             | Stable transform from many nights; assumes constant instrument response |
-| `fixed`                | No fit; use `transformation_coefficients_dict` | Known T/ZP from external calibration                                    |
+| `per_night`            | Per-epoch fits combined (generalised least squares with the 2×2 covariances; the calibrators' catalog part does not average down; epoch scatter beyond the errors is kept as `zero_point_sys`) | Multi-epoch variable stars on the same night |
+| `ensemble`             | One fit to the per-star means of all (extinction-corrected) epochs: each star counts once | Stable transform from many nights; assumes constant instrument response |
+| `fixed`                | Colour term from `transformation_coefficients_dict` (`{"V": {"color_term": T, "color_term_err": σ}}` or the OST `Tcs` format), zero point fitted per epoch; σ_T stays in `err_cal_sys` | Known colour terms from a calibration campaign |
+
+**Fit statistics** (both strategies, `analyze.calibration.statistics`):
+- calibrators are weighted by `1/(σ_inst² + σ_cat² + T²σ_C² + σ_int²)`;
+- `σ_cat` comes from `err_std_*` (0.02 mag where missing or zero);
+- the intrinsic scatter σ_int is solved so that χ²_ν = 1; when χ²_ν < 1
+  with at least 10 calibrators, the catalog errors are scaled down
+  instead (`catalog_error_scale`; APASS B errors are often too large);
+  with clipping the target χ²_ν is that of a truncated normal (0.91 at
+  2.5σ);
+- `T` is fitted around the mean colour;
+- clipping uses residuals normalised by their own error at `fit_sigma_clip`;
+- when σ_int had to be estimated, the errors carry the Student-t factor
+  (matters for few calibrators; n < 5 is flagged `few_calibrators`).
+
+Per epoch and filter, zero point, colour term, their errors split into
+photometric and catalog parts, σ_int, χ²_ν, `catalog_error_scale`, the number of calibrators and
+the flags are written to `tables/calibration_epochs.ecsv`. See
+[UNCERTAINTIES.md](UNCERTAINTIES.md).
 
 
 `median_zp` ignores `color_term_fit`. `linear_fit` with `per_image` can smooth night-to-night drift via `per_image_rolling_*` options.
 
 **Related (not in the Literal list but coupled):**
 
-- `derive_transform_from_data` — only with `linear_fit`, exactly **two** filters; alternative to `PhotometryCalibrator` linear fit (catalog-color slopes + median ZP). Preset `linear_fit_per_night` enables this. Incompatible with using `color_term_fit` on the standard calibrator path (derive path bypasses it). Writes QC under `<output>/diagnostics/calibration/`: `derive_transform_<epoch>_<filter>.*` (catalog-color slope fits), `derive_transform_fit_overview_*.*` (T/ZP/RMS/n vs epoch), and `derive_transform_summary_*.*` (applied `c`/ZP vs epoch). Outlier rejection uses `fit_sigma_clip` (default `2.5`; lower = stricter) on both `zp_sum` and fit residuals — gray points on the QC plots are excluded stars.
+- `derive_transform_from_data` — only with `linear_fit`, `calibration_grouping="per_image"` and exactly **two** filters. Calibrators are selected jointly in both filters (clip on the summed zero points and on the residuals). The weighted colour-term / zero-point fits are then applied like `linear_fit`, with the two filters solved jointly. Incompatible with using `color_term_fit` on the standard calibrator path (derive path bypasses it). No preset enables it any more. Writes QC under `<output>/diagnostics/calibration/`: `derive_transform_<epoch>_<filter>.*` (catalog-color slope fits), `derive_transform_fit_overview_*.*` (T/ZP/RMS/n vs epoch), and `derive_transform_summary_*.*` (applied `c`/ZP vs epoch). Outlier rejection uses `fit_sigma_clip` (default `2.5`; lower = stricter) on both `zp_sum` and fit residuals — gray points on the QC plots are excluded stars.
 - `exposure_pairing` (`jd_nearest` / `index`) and `reference_filter` — build multi-band epochs before calibration. `jd_nearest` is for variable-star series (C7) when B and V of a visit should be close in time. Stacked cluster fields (N2, one image per filter) are paired by file order; the ΔJD window is not applied. Preset `median_zp_per_image` sets `exposure_pairing="index"`. `linear_fit_per_image` does not: N2 stacks pass `index` in the script, C7 keeps `jd_nearest`.
 - `zp_subsample_statistic` — extra ZP stability reporting for `median_zp` only.
 - `calibration_match_radius` — on-sky radius for matching detections to the calibration catalog (default `2 arcsec`). Independent of `separation_limit`. Tightening this cuts the tail on `differential_catalog_crossmatch_separations` in crowded fields.
@@ -238,7 +256,8 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
   - `calibrator_photon_factor` (default `2.0`; `None` disables) — also drop if σ exceeds this factor times the photon+sky envelope fitted to the same ridge.
   - `calibrator_qfit_max` / `calibrator_cfit_max` (default `0.2`) and `calibrator_qfit_bright_percentile` / `calibrator_cfit_bright_percentile` (default 90th percentile among the brightest `calibrator_bright_frac`, default 40%). The applied cap is `min(fixed, percentile)` when both exist. Missing/NaN `qfit`/`cfit` (typical for `APER`) skips that cut.
   - `calibrator_apply_finder_shape_cuts` (default `True`) — re-apply `finder_sharpness_range` / `finder_roundness_range` to catalog stars. NaN shape columns are kept.
-  - Residual clip for `median_zp` now uses `fit_sigma_clip` (default `2.5`), same `|m_cat−m_inst−ZP| < clip × RMS` loop as `linear_fit`.
+  - Residual clip for `median_zp` uses `fit_sigma_clip` (default `2.5`) on residuals normalised by their error, like `linear_fit`.
+  - Saturated, non-positive or more than `calibrator_max_masked_fraction` masked measurements are always excluded.
 
 
 
@@ -326,17 +345,26 @@ Use `never` for single-filter data or when colors are unreliable. Use `auto` as 
 
 ### `uncertainty_mode`
 
-Applied by :class:`~ost_photometry.analyze.pipeline.steps.calibration.CalibrationStep` after calibrated magnitudes are written.
+Calibrated magnitudes carry three error columns:
+- `err_cal_rand_*`: instrumental errors (photon, sky, scintillation). With a
+  catalog colour it also includes T²σ_C². This part is independent from star
+  to star.
+- `err_cal_sys_*`: zero point, T·colour, their covariance, `zero_point_sys`
+  and, for shared zero points, σ_k·(X − X_ref) of the extinction. This part
+  is common to all stars of the epoch.
+- `err_cal_*`: both in quadrature.
 
+The colour filters are solved jointly, so the (1 + T) factors and the
+correlation of a colour with its own magnitude are included.
 
-| Value              | Behaviour                                                                                                                                            |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fit_errors`       | Default. `err_cal_*` from the linear fit / derive-transform apply path (instrumental + T/ZP propagation).                                            |
-| `flux_monte_carlo` | Replace `err_cal_*` with Monte Carlo spread from `flux_<filter>` / `flux_err_<filter>` (+ ZP). Falls back to fit errors if flux columns are missing. |
-| `both`             | Combine fit and MC errors in quadrature: `sqrt(err_fit² + err_mc²)`.                                                                                 |
+| Value         | Behaviour |
+| ------------- | --------- |
+| `fit_errors`  | Default. Analytic propagation as above. |
+| `monte_carlo` | Cross-check. `err_cal_*` is replaced by half the 16–84 % range of a Monte Carlo: ZP/T drawn once per epoch (shared by all stars), flux and catalog colour per star, joint solution per draw. Stars with S/N < 3 get `cal_low_snr_<f>`; NaN where > 16 % of draws have non-positive flux. `err_cal_rand/sys` stay analytic. |
 
-
-Uses `distribution_samples` (default 1000) for the MC draw count. Requires flux columns in epoch tables (populated by the extraction bridge when PSF/aperture flux is available).
+Uses `distribution_samples` (default 1000). The former `both` (counted the
+instrumental error twice) and `flux_monte_carlo` (dropped ZP/T errors)
+raise an error.
 
 ### Magnitude output (`output_filter_set` / `output_magnitude_system`)
 

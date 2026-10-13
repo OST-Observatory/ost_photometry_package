@@ -31,6 +31,18 @@ That is a **new** method (not the same as `run_second_order_campaign`, which red
 
 **Direction (optional):** optional `extinction_mode` / helper that fits star-level residuals; keep mk_calib campaign and tabulated/user k″ as the supported paths for applying SECOND order. Do **not** bolt this onto `fit_extinction_from_comparison_stars` (epoch-mean vs X destroys color information).
 
+### Bright stars scatter ~0.007 mag beyond `err_cal` (P2)
+
+HAT-P-20 (172 epochs, per_image): epoch scatter of `mag_cal` for the
+brightest constant stars is 1.18 × `err_cal_rand` ⊕ photometric ZP error
+(err ≈ 0.012); fainter bins are 0.98–1.09. The differential light curves of
+the same stars are consistent (0.97–1.01), so the extra term is
+common-mode-like but not captured by the per-epoch zero point: candidates
+are spatial transparency / flat-field structure across the field or a
+magnitude-dependent term (non-linearity near saturation). Check residuals
+vs (x, y) and vs peak counts; if real, add it as a fitted floor.
+Check: `scripts/validation/calibration_checks.py`.
+
 ### OST filter throughput → Vega↔AB offsets via synphot (P3)
 
 Published Bessell/SDSS per-filter constants (`m_AB = m_Vega + Δ`) are correct for same-bandpass ZP conversion. If OST/instrument **throughput curves** are added later, recompute `Δ` with `synphot`/`speclite` instead of literature defaults.

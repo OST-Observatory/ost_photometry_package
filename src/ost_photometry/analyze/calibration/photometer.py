@@ -19,10 +19,18 @@ from ...core.parallel import start_plot_process
 from ..extinction import ExtinctionCorrector, extinction_airmass_ready
 from ..warnings_types import OstPhotometryAnalyzeWarning
 from .result import CalibrationResult, TransformationCoefficients
+from .statistics import catalog_errors, combine_epoch_fits, fit_zero_point
 
 #: Catalog error per band when the catalog gives none (APASS convention,
 #: see ``calibration_sources/fetch.py``).
 _CATALOG_ERR_DEFAULT = 0.02
+
+
+def _column(table: Table, name: str) -> np.ndarray | None:
+    """Float values of ``name`` or ``None`` when the column is missing."""
+    if name not in table.colnames:
+        return None
+    return np.asarray(table[name], dtype=float)
 
 
 def _color_for_transformation(
@@ -91,6 +99,149 @@ def _color_for_transformation(
     return color, sigma_sq, source
 
 
+def _closed_system(cal, calibrated_filters: set[str]) -> list[str]:
+    """Filters whose colour filters are both calibrated (solved jointly)."""
+    out = []
+    for f in sorted(calibrated_filters):
+        tc = cal.transformation.get(f)
+        if tc is None:
+            continue
+        c1, c2 = tc.color_index_filters
+        if c1 in calibrated_filters and c2 in calibrated_filters:
+            out.append(f)
+    # every filter used in a colour must itself be in the system
+    changed = True
+    while changed:
+        changed = False
+        for f in list(out):
+            c1, c2 = cal.transformation[f].color_index_filters
+            if c1 not in out or c2 not in out:
+                out.remove(f)
+                changed = True
+    return out
+
+
+def _sys_variance_per_filter(tc, color: np.ndarray, extra_sys: np.ndarray) -> np.ndarray:
+    """Epoch-common variance of ``ZP + T·C`` at colour ``C`` (plus extras)."""
+    return (
+        tc.zero_point_err**2
+        + color**2 * tc.color_term_err**2
+        + 2.0 * color * tc.cov_tz
+        + tc.zero_point_sys**2
+        + extra_sys
+    )
+
+
+def _write_calibrated_errors(
+    data: Table,
+    cal,
+    filters: list[str],
+    cal_mags: dict[str, np.ndarray],
+    calibrated_filters: set[str],
+    *,
+    std_col_prefix: str,
+    err_col_prefix: str,
+    output_err_prefix: str,
+    extinction=None,
+    fallback_airmass_col: str = "airmass",
+) -> None:
+    """``err_cal`` (total), ``err_cal_rand`` and ``err_cal_sys`` per filter.
+
+    The calibrated magnitudes of the filters whose colours are calibrated
+    solve ``m = i + Z + T·(K m)``, i.e. ``m = A⁻¹(i + Z)`` with
+    ``A = I - diag(T) K`` (K picks each filter's colour). Hence
+    ``∂m/∂i = ∂m/∂Z = A⁻¹`` and ``∂m_f/∂T_g = (A⁻¹)_fg · C_g``: the (1 + T)
+    factors and the correlation of a colour with the magnitude it contains
+    are included. ``rand`` collects the instrumental errors (independent
+    from star to star; with a catalog colour also its T²σ_C²), ``sys`` the
+    epoch-common terms ZP, T·C, cov, ``zero_point_sys`` and, for a zero point
+    shared by several epochs, ``σ_k·(X - X_ref)`` of the extinction.
+    """
+    n = len(data)
+    system = _closed_system(cal, calibrated_filters)
+    index = {f: k for k, f in enumerate(system)}
+    a_inv = None
+    if system:
+        a = np.eye(len(system))
+        for f, k in index.items():
+            tc = cal.transformation[f]
+            c1, c2 = tc.color_index_filters
+            a[k, index[c1]] -= tc.color_term
+            a[k, index[c2]] += tc.color_term
+        a_inv = np.linalg.inv(a)
+
+    def _inst_err(f):
+        col = f"{err_col_prefix}{f}"
+        if col not in data.colnames:
+            return np.full(n, np.nan)
+        return np.abs(np.asarray(data[col].ravel(), dtype=float))
+
+    def _extinction_sys(f):
+        tc = cal.transformation[f]
+        x_ref = getattr(tc, "airmass_ref", None)
+        if x_ref is None or extinction is None or not np.isfinite(x_ref):
+            return np.zeros(n)
+        if getattr(getattr(extinction, "order", None), "name", "NONE") == "NONE":
+            return np.zeros(n)
+        coeff = getattr(extinction, "coefficients", {}).get(f)
+        k_err = float(getattr(coeff, "k_prime_err", 0.0) or 0.0) if coeff is not None else 0.0
+        col = f"airmass_{f}" if f"airmass_{f}" in data.colnames else fallback_airmass_col
+        if k_err <= 0 or col not in data.colnames:
+            return np.zeros(n)
+        x = np.asarray(data[col], dtype=float)
+        return (k_err * (x - x_ref)) ** 2
+
+    colors = {}
+    for f in filters:
+        tc = cal.transformation[f]
+        color, sigma_color_sq, source = _color_for_transformation(
+            data,
+            tc,
+            cal_mags,
+            calibrated_filters,
+            std_col_prefix=std_col_prefix,
+            err_col_prefix=err_col_prefix,
+        )
+        data[f"cal_color_source_{f}"] = source
+        colors[f] = (color, sigma_color_sq, source)
+
+    for f in filters:
+        tc = cal.transformation[f]
+        color, sigma_color_sq, source = colors[f]
+        if not np.any(np.isfinite(_inst_err(f))):
+            warnings.warn(
+                f"apply_transform_to_table: no errors '{err_col_prefix}{f}'; "
+                "calibrated magnitude errors not written.",
+                category=OstPhotometryAnalyzeWarning,
+                stacklevel=3,
+            )
+            continue
+        # simple model: m = i + T·C + ZP with C independent of m (catalog colour,
+        # T = 0, or filters outside the closed system)
+        rand = _inst_err(f) ** 2 + tc.color_term**2 * sigma_color_sq
+        sys = _sys_variance_per_filter(tc, np.nan_to_num(color), _extinction_sys(f))
+        if a_inv is not None and f in index:
+            joint = source == "calibrated"
+            if np.any(joint):
+                k = index[f]
+                rand_j = np.zeros(n)
+                sys_j = np.zeros(n)
+                for g, j in index.items():
+                    coef2 = a_inv[k, j] ** 2
+                    rand_j += coef2 * _inst_err(g) ** 2
+                    color_g = np.nan_to_num(colors[g][0]) if g in colors else np.zeros(n)
+                    sys_j += coef2 * _sys_variance_per_filter(
+                        cal.transformation[g], color_g, _extinction_sys(g)
+                    )
+                rand = np.where(joint, rand_j, rand)
+                sys = np.where(joint, sys_j, sys)
+        rand = np.where(np.isfinite(color), rand, np.nan)
+        sys = np.where(np.isfinite(color), np.maximum(sys, 0.0), np.nan)
+        data[f"{output_err_prefix}rand_{f}"] = np.sqrt(rand)
+        data[f"{output_err_prefix}sys_{f}"] = np.sqrt(sys)
+        data[f"{output_err_prefix}{f}"] = np.sqrt(rand + sys)
+
+
 def _filters_with_instrumental_mags(
     table: Table,
     filters: list[str],
@@ -132,10 +283,16 @@ def _apply_rolling_smooth_to_per_image_results(
     """
     Replace per-epoch T and/or ZP with a centered rolling statistic along ``ordered_epoch_ids``.
 
-    Formal errors for smoothed quantities use the same rolling statistic on per-epoch
-    errors in the window (ad hoc). Epochs without a transformation for a filter
-    are left unchanged for that filter.
+    Formal errors of smoothed quantities are the same rolling statistic of
+    the per-epoch errors (conservative: the catalog part does not average
+    down). A smoothed zero point misses how far an epoch's own zero point
+    lies from it (transparency); the window's scatter of
+    ``ZP_epoch - ZP_smoothed`` beyond the epoch errors is kept as
+    ``zero_point_sys``. ``cov_tz`` is smoothed like the values. Epochs
+    without a transformation for a filter are left unchanged.
     """
+    from dataclasses import replace
+
     import pandas as pd
 
     w = max(1, int(window))
@@ -156,6 +313,7 @@ def _apply_rolling_smooth_to_per_image_results(
         zp_vals: list[float] = []
         t_errs: list[float] = []
         zp_errs: list[float] = []
+        covs: list[float] = []
         has_tc: list[bool] = []
         for eid in ordered_epoch_ids:
             tc = results[eid].transformation.get(filter_)
@@ -164,12 +322,14 @@ def _apply_rolling_smooth_to_per_image_results(
                 zp_vals.append(np.nan)
                 t_errs.append(np.nan)
                 zp_errs.append(np.nan)
+                covs.append(np.nan)
                 has_tc.append(False)
             else:
                 t_vals.append(float(tc.color_term))
                 zp_vals.append(float(tc.zero_point))
                 t_errs.append(float(tc.color_term_err))
                 zp_errs.append(float(tc.zero_point_err))
+                covs.append(float(tc.cov_tz))
                 has_tc.append(True)
 
         s_t = pd.Series(t_vals, dtype=float)
@@ -180,6 +340,17 @@ def _apply_rolling_smooth_to_per_image_results(
         roll_te = _roll(s_te, color_term_mode)
         roll_zp = _roll(s_zp, zero_point_mode)
         roll_ze = _roll(s_ze, zero_point_mode)
+        both = color_term_mode != "none" and zero_point_mode != "none"
+        roll_cov = _roll(pd.Series(covs, dtype=float), "mean" if both else "none")
+        if zero_point_mode != "none":
+            resid2 = (s_zp - roll_zp) ** 2
+            excess = (
+                resid2.rolling(w, center=True, min_periods=1).mean()
+                - (s_ze**2).rolling(w, center=True, min_periods=1).mean()
+            )
+            zp_sys = np.sqrt(np.maximum(excess.to_numpy(dtype=float), 0.0))
+        else:
+            zp_sys = np.zeros(len(ordered_epoch_ids))
 
         for i, eid in enumerate(ordered_epoch_ids):
             if not has_tc[i]:
@@ -198,22 +369,17 @@ def _apply_rolling_smooth_to_per_image_results(
                 if zero_point_mode != "none"
                 else tc.zero_point_err
             )
-            # Rolling mixes epochs independently for T and ZP → drop fit covariance.
-            new_cov = (
-                0.0
-                if color_term_mode != "none" or zero_point_mode != "none"
-                else tc.cov_tz
-            )
-            r.transformation[filter_] = TransformationCoefficients(
-                filter_name=filter_,
+            new_cov = float(roll_cov.iloc[i]) if both else tc.cov_tz
+            r.transformation[filter_] = replace(
+                tc,
                 color_term=new_t,
                 color_term_err=new_te,
                 zero_point=new_zp,
                 zero_point_err=new_ze,
                 cov_tz=new_cov,
-                color_index_filters=tc.color_index_filters,
-                n_stars_used=tc.n_stars_used,
-                rms_residual=tc.rms_residual,
+                zero_point_sys=float(np.hypot(tc.zero_point_sys, zp_sys[i])),
+                cov_phot=None,
+                cov_cat=None,
             )
 
 
@@ -315,6 +481,8 @@ class DifferentialPhotometer:
         color_term_fit: Literal["always", "auto", "never"] = "auto",
         output_dir: str | None = None,
         file_type: str = "pdf",
+        err_col_prefix: str = "err_",
+        fixed_color_terms: dict[str, tuple[float, float]] | None = None,
     ) -> CalibrationResult:
         """
         Fit transformation parameters (color term T, zero point ZP) for one epoch.
@@ -325,6 +493,10 @@ class DifferentialPhotometer:
         T (color term) corrects for passband mismatch; ZP (zero point) sets the scale.
         Applies extinction correction first, then iterative sigma-clip to reject outliers.
         Requires color spread > 0.1 mag for reliable T; otherwise uses ZP-only.
+        The fit is weighted by the instrumental and catalog errors plus an
+        intrinsic scatter that makes χ²_ν = 1
+        (:func:`~ost_photometry.analyze.calibration.statistics.fit_zero_point`);
+        ``fixed_color_terms`` (``{filter: (T, σ_T)}``) holds T and fits ZP only.
 
         Parameters
         ----------
@@ -398,87 +570,88 @@ class DifferentialPhotometer:
                 )
                 continue
 
-            # --- Color index for transformation: m_std - m_inst = T * (CI1 - CI2) + ZP ---
+            # --- Colour index for the transformation: Δ = ZP + T·(CI1 - CI2) ---
             ci_filters = self.color_indices.get(filter_, ("B", "V"))
             ci_std_col1 = f"{std_col_prefix}{ci_filters[0]}"
             ci_std_col2 = f"{std_col_prefix}{ci_filters[1]}"
             has_color = ci_std_col1 in comps.colnames and ci_std_col2 in comps.colnames
-
-            if determine_color_terms and has_color:
-                color_std = np.array(comps[ci_std_col1]) - np.array(comps[ci_std_col2])
-                valid &= np.isfinite(color_std)
+            if has_color:
+                color_std = np.asarray(comps[ci_std_col1], dtype=float) - np.asarray(
+                    comps[ci_std_col2], dtype=float
+                )
+                err_prefix = std_col_prefix.replace("mag_", "err_")
+                sigma_color = np.sqrt(
+                    catalog_errors(_column(comps, f"{err_prefix}{ci_filters[0]}"), len(comps)) ** 2
+                    + catalog_errors(_column(comps, f"{err_prefix}{ci_filters[1]}"), len(comps)) ** 2
+                )
             else:
                 color_std = np.zeros(len(comps))
+                sigma_color = np.zeros(len(comps))
 
-            if np.sum(valid) < min_comparisons:
+            fixed = (fixed_color_terms or {}).get(filter_)
+            if fixed is not None:
+                use_linear = False
+            elif color_term_fit == "always":
+                use_linear = determine_color_terms and has_color
+            elif color_term_fit == "never":
+                use_linear = False
+            else:
+                spread = np.nanstd(color_std[valid]) if has_color else 0.0
+                use_linear = determine_color_terms and has_color and spread > 0.1
+                if determine_color_terms and has_color and not use_linear:
+                    warnings.warn(
+                        f"[{epoch_id}] Filter {filter_}: color spread std={spread:.3f} mag "
+                        f"<= 0.1, using ZP-only fit (no color term)",
+                        category=OstPhotometryAnalyzeWarning,
+                        stacklevel=1,
+                    )
+
+            # --- Weighted fit: instrumental + catalog errors + intrinsic scatter ---
+            sigma_inst = _column(comps, f"{err_col_prefix}{filter_}")
+            if sigma_inst is None:
+                sigma_inst = np.full(len(comps), np.nan)
+            sigma_cat = catalog_errors(
+                _column(comps, f"{std_col_prefix.replace('mag_', 'err_')}{filter_}"), len(comps)
+            )
+            fit = fit_zero_point(
+                np.where(valid, m_std - m_inst, np.nan),
+                color_std,
+                np.abs(sigma_inst),
+                sigma_cat,
+                fit_color=use_linear,
+                sigma_color=sigma_color,
+                fixed_color_term=0.0 if fixed is None else float(fixed[0]),
+                fixed_color_term_err=0.0 if fixed is None else float(fixed[1]),
+                sigma_clip=sigma_clip,
+                min_stars=min_comparisons,
+            )
+            if fit.n_used < min_comparisons or not np.isfinite(fit.zero_point):
                 warnings.warn(
-                    f"[{epoch_id}] Filter {filter_} skipped: after color-index cut "
-                    f"only {np.sum(valid)} valid (need >= {min_comparisons})",
+                    f"[{epoch_id}] Filter {filter_} skipped: fewer than {min_comparisons} "
+                    "usable comparison stars with errors",
                     category=OstPhotometryAnalyzeWarning,
                     stacklevel=1,
                 )
                 continue
-
-            # --- Iterative sigma-clip fit: T (color term), ZP (zero point) ---
-            mask = valid.copy()
-            T, ZP, T_err, ZP_err, cov_tz = 0.0, 0.0, 0.0, 0.0, 0.0
-            rms = 0.0
-            warned_color_spread = False
-
-            for _ in range(5):
-                c = color_std[mask]
-                if color_term_fit == "always":
-                    use_linear = determine_color_terms and has_color
-                elif color_term_fit == "never":
-                    use_linear = False
-                else:
-                    use_linear = (
-                        determine_color_terms and has_color and np.std(c) > 0.1
-                    )
-
-                if use_linear:
-                    T, ZP, T_err, ZP_err, cov_tz = self._weighted_linear_fit(
-                        c, m_std[mask] - m_inst[mask], np.ones(np.sum(mask))
-                    )
-                else:
-                    if (
-                        color_term_fit == "auto"
-                        and determine_color_terms
-                        and has_color
-                        and not warned_color_spread
-                    ):
-                        warnings.warn(
-                            f"[{epoch_id}] Filter {filter_}: color spread std={np.std(c):.3f} mag "
-                            f"<= 0.1, using ZP-only fit (no color term)",
-                            category=OstPhotometryAnalyzeWarning,
-                            stacklevel=1,
-                        )
-                        warned_color_spread = True
-                    T = 0.0
-                    T_err = 0.0
-                    cov_tz = 0.0
-                    ZP = float(np.median((m_std - m_inst)[mask]))
-                    ZP_err = float(
-                        np.std((m_std - m_inst)[mask]) / np.sqrt(np.sum(mask))
-                    )
-
-                all_residuals = (m_std - m_inst) - (T * color_std + ZP)
-                rms = np.nanstd(all_residuals[mask])
-                new_mask = valid & (np.abs(all_residuals) < sigma_clip * rms)
-                if np.sum(new_mask) == np.sum(mask) or np.sum(new_mask) < min_comparisons:
-                    break
-                mask = new_mask
+            mask = fit.used
 
             result.transformation[filter_] = TransformationCoefficients(
                 filter_name=filter_,
-                color_term=T,
-                color_term_err=T_err,
-                zero_point=ZP,
-                zero_point_err=ZP_err,
-                cov_tz=cov_tz,
+                color_term=fit.color_term,
+                color_term_err=fit.color_term_err,
+                zero_point=fit.zero_point,
+                zero_point_err=fit.zero_point_err,
+                cov_tz=fit.cov_tz,
                 color_index_filters=ci_filters,
-                n_stars_used=int(np.sum(mask)),
-                rms_residual=rms,
+                n_stars_used=fit.n_used,
+                rms_residual=fit.rms,
+                sigma_int=fit.sigma_int,
+                catalog_error_scale=fit.catalog_error_scale,
+                chi2_nu=fit.chi2_nu,
+                color_ref=fit.color_ref,
+                quality_flag=fit.quality_flag,
+                cov_phot=fit.cov_phot,
+                cov_cat=fit.cov_cat,
             )
             used_full = np.zeros(len(data), dtype=bool)
             comp_idx = np.flatnonzero(np.asarray(comparison_mask, dtype=bool).ravel())
@@ -506,57 +679,60 @@ class DifferentialPhotometer:
         epoch_results: list[CalibrationResult],
         filters: list[str],
     ) -> dict[str, TransformationCoefficients]:
-        """
-        Combine per-epoch T and ZP per filter with inverse-variance weights
-        (same recipe as :meth:`fit_transformation_night` night result).
+        """Combine per-epoch (ZP, T) per filter into one night value.
+
+        Generalised least squares with the full 2×2 covariances
+        (:func:`~ost_photometry.analyze.calibration.statistics.combine_epoch_fits`):
+        the photometric parts average down, the catalog part of the same
+        calibrators does not, a Birge ratio covers epochs that scatter more
+        than their errors, and that extra scatter is kept as
+        ``zero_point_sys`` (what an epoch's own zero point differs from the
+        night value).
         """
         out: dict[str, TransformationCoefficients] = {}
         for filter_ in filters:
-            results_for_filter_ = [fr for fr in epoch_results if filter_ in fr.transformation]
-            if not results_for_filter_:
+            fits_ = [fr.transformation[filter_] for fr in epoch_results if filter_ in fr.transformation]
+            if not fits_:
                 continue
-            T_vals = np.array(
-                [fr.transformation[filter_].color_term for fr in results_for_filter_],
-                dtype=float,
+
+            def _cov(tc, part):
+                c = getattr(tc, part)
+                if c is not None:
+                    return np.asarray(c, dtype=float)
+                # results without a split (e.g. built by hand): all photometric
+                full = np.array([
+                    [tc.zero_point_err**2, tc.cov_tz],
+                    [tc.cov_tz, tc.color_term_err**2],
+                ])
+                return full if part == "cov_phot" else np.zeros((2, 2))
+
+            comb = combine_epoch_fits(
+                np.array([tc.zero_point for tc in fits_], dtype=float),
+                np.array([tc.color_term for tc in fits_], dtype=float),
+                np.stack([_cov(tc, "cov_phot") for tc in fits_]),
+                np.stack([_cov(tc, "cov_cat") for tc in fits_]),
+                color_ref=float(np.mean([tc.color_ref for tc in fits_])),
             )
-            ZP_vals = np.array(
-                [fr.transformation[filter_].zero_point for fr in results_for_filter_],
-                dtype=float,
-            )
-            T_errs = np.array(
-                [fr.transformation[filter_].color_term_err for fr in results_for_filter_],
-                dtype=float,
-            )
-            ZP_errs = np.array(
-                [fr.transformation[filter_].zero_point_err for fr in results_for_filter_],
-                dtype=float,
-            )
-            if np.all(T_errs == 0.0) and np.all(T_vals == T_vals[0]):
-                # Colour term held fixed (ZP-only fits): not a measurement.
-                T_mean, T_err = float(T_vals[0]), 0.0
-            else:
-                T_mean, T_err = self._inverse_variance_weighted_mean(T_vals, T_errs)
-            ZP_mean, ZP_err = self._inverse_variance_weighted_mean(ZP_vals, ZP_errs)
+            scatter = comb["zero_point_scatter"]
+            flags = sorted({f for tc in fits_ for f in tc.quality_flag.split(",") if f and f != "OK"})
             out[filter_] = TransformationCoefficients(
                 filter_name=filter_,
-                color_term=T_mean,
-                color_term_err=T_err,
-                zero_point=ZP_mean,
-                zero_point_err=ZP_err,
-                # Independent IV means for T and ZP — no joint covariance.
-                cov_tz=0.0,
-                color_index_filters=results_for_filter_[0].transformation[filter_].color_index_filters,
-                n_stars_used=sum(
-                    fr.transformation[filter_].n_stars_used for fr in results_for_filter_
-                ),
-                rms_residual=float(
-                    np.mean(
-                        [
-                            fr.transformation[filter_].rms_residual
-                            for fr in results_for_filter_
-                        ]
-                    )
-                ),
+                color_term=comb["color_term"],
+                color_term_err=comb["color_term_err"],
+                zero_point=comb["zero_point"],
+                zero_point_err=comb["zero_point_err"],
+                cov_tz=comb["cov_tz"],
+                color_index_filters=fits_[0].color_index_filters,
+                n_stars_used=max(tc.n_stars_used for tc in fits_),
+                rms_residual=float(np.nanmean([tc.rms_residual for tc in fits_])),
+                sigma_int=float(np.nanmean([tc.sigma_int for tc in fits_])),
+                catalog_error_scale=float(np.nanmean([tc.catalog_error_scale for tc in fits_])),
+                chi2_nu=float(comb["birge"]),
+                color_ref=float(np.mean([tc.color_ref for tc in fits_])),
+                zero_point_sys=float(scatter) if np.isfinite(scatter) else 0.0,
+                quality_flag=",".join(flags) if flags else "OK",
+                cov_phot=comb["cov_phot"],
+                cov_cat=comb["cov_cat"],
             )
         return out
 
@@ -785,77 +961,22 @@ class DifferentialPhotometer:
                 stacklevel=2,
             )
 
-        warned_no_err: set[str] = set()
         for filter_ in filters:
             if filter_ in iter_cal_mags:
                 data[f"{output_prefix}{filter_}"] = iter_cal_mags[filter_]
-                if filter_ in cal.transformation:
-                    err_col = f"{err_col_prefix}{filter_}"
-                    if err_col in data.colnames:
-                        tc = cal.transformation[filter_]
-                        inst_err = np.asarray(data[err_col].ravel(), dtype=float)
-                        color, sigma_color_sq, source = _color_for_transformation(
-                            data,
-                            tc,
-                            iter_cal_mags,
-                            calibrated_filters,
-                            std_col_prefix=std_col_prefix,
-                            err_col_prefix=err_col_prefix,
-                        )
-                        data[f"cal_color_source_{filter_}"] = source
-                        from .transform import calibrated_magnitude_variance
-
-                        # m_cal = m_inst + T*color + ZP → first-order variance including
-                        # 2·color·cov(T, ZP) from the joint linear fit.
-                        var = calibrated_magnitude_variance(
-                            inst_err,
-                            color,
-                            color_term=tc.color_term,
-                            color_term_err=tc.color_term_err,
-                            zero_point_err=tc.zero_point_err,
-                            cov_tz=tc.cov_tz,
-                            sigma_color_sq=sigma_color_sq,
-                        )
-                        data[f"{output_err_prefix}{filter_}"] = np.sqrt(
-                            np.maximum(var, 0.0)
-                        )
-                    elif filter_ not in warned_no_err:
-                        warnings.warn(
-                            f"apply_transform_to_table: no column '{err_col}' for filter {filter_}; "
-                            f"calibrated magnitude errors not written.",
-                            category=OstPhotometryAnalyzeWarning,
-                            stacklevel=2,
-                        )
-                        warned_no_err.add(filter_)
+        _write_calibrated_errors(
+            data,
+            cal,
+            [f for f in filters if f in iter_cal_mags and f in cal.transformation],
+            iter_cal_mags,
+            calibrated_filters,
+            std_col_prefix=std_col_prefix,
+            err_col_prefix=err_col_prefix,
+            output_err_prefix=output_err_prefix,
+            extinction=self.extinction,
+            fallback_airmass_col=fallback_airmass_col,
+        )
         return data
-
-    @staticmethod
-    def _inverse_variance_weighted_mean(
-        values: np.ndarray,
-        errors: np.ndarray,
-    ) -> tuple[float, float]:
-        """
-        Combine measurements with inverse-variance weights.
-
-        w_i = 1/σ_i², weighted mean ``Σ w_i x_i / Σ w_i``, formal uncertainty
-        ``1/√(Σ w_i)``. Measurements without a finite positive σ are left out
-        (a zero error would otherwise take all the weight); NaN if none is
-        left. Reduces to the single-measurement case for one epoch.
-        """
-        values = np.asarray(values, dtype=float)
-        errors = np.asarray(errors, dtype=float)
-        if values.size == 0:
-            raise ValueError("_inverse_variance_weighted_mean: empty input")
-        use = np.isfinite(values) & np.isfinite(errors) & (errors > 0)
-        if not np.any(use):
-            return float("nan"), float("nan")
-        values = values[use]
-        sigma = errors[use]
-        w = 1.0 / (sigma**2)
-        wsum = np.sum(w)
-        mean = float(np.sum(w * values) / wsum)
-        mean_err = float(1.0 / np.sqrt(wsum))
-        return mean, mean_err
 
     @staticmethod
     def _weighted_linear_fit(x, y, weights):

@@ -147,6 +147,90 @@ Stack headers:
 These quality values reach the epoch tables as `<name>_<filter>` (for
 example `saturated_V`) and the light-curve rows as `flag_saturated`.
 
+## Calibration
+
+### Zero point and colour term (`analyze.calibration.statistics`)
+
+For each calibrator, `Δ = m_std − m_inst = ZP + T·C + ε` with
+
+```
+Var(ε) = σ_inst² + σ_cat² + T²·σ_C² + σ_int²
+```
+
+- `σ_inst` is the instrumental error (photon, sky, scintillation).
+- `σ_cat` and `σ_C` are the catalog errors of the magnitude and the colour
+  (0.02 mag where the catalog has none).
+- `σ_int` is the intrinsic scatter: catalog systematics, colour-term
+  mismatch, crowding. It is solved so that χ²_ν = 1, so the weights are
+  absolute.
+- When the errors over-explain the scatter (χ²_ν < 1 at σ_int = 0) with at
+  least 10 calibrators, the catalog errors are scaled by a factor s < 1
+  until χ²_ν = 1 (`catalog_error_scale`). The instrumental errors are
+  validated separately (see below); the catalog errors are not. On the OST
+  test fields APASS overestimates the B errors (s = 0.29–0.87) and in the
+  HAT-P-20 field also the V errors (s ≈ 0.54).
+- With clipping at kσ the target is the variance of a normal truncated at
+  ±k instead of 1 (0.91 at the default 2.5σ), since the kept residuals
+  scatter less than their errors.
+- `T` is fitted around the mean colour.
+- When σ_int had to be estimated, the errors get the Student-t 1σ factor.
+
+Simulated 1σ coverage of ZP and T:
+
+| Case | Coverage |
+|---|---|
+| 25 or 8 calibrators | 0.68–0.70 |
+| 4 calibrators, ZP only | 0.70 |
+| 4 calibrators, errors known exactly | 0.76 (conservative) |
+| 40 / 15 calibrators, catalog errors twice too large | 0.68 / 0.68 (s ≈ 0.5) |
+
+The covariance of (ZP, T) is split in two parts:
+- **photometric:** photon, sky and scintillation of the calibrators;
+  independent from epoch to epoch;
+- **catalog:** catalog errors and σ_int of the same calibrators; common to
+  all epochs that use them.
+
+### Groupings
+
+- **`per_night`:** generalised least squares of the per-epoch fits. The
+  photometric parts average down, the catalog part does not. A Birge ratio
+  covers epochs that scatter beyond their errors, and that extra scatter is
+  `zero_point_sys` of every epoch.
+- **`ensemble`:** one fit to the per-star means of the extinction-corrected
+  epochs, so each catalog error counts once.
+- **`fixed`:** known colour terms (campaign), zero point per epoch, σ_T
+  kept.
+- **Rolling smoothing:** keeps the covariance and adds the epochs' scatter
+  about the smoothed zero point as `zero_point_sys`.
+- **Shared zero points:** with extinction applied, σ_k·(X − X_ref) is added
+  to the systematic error. The aggregated site k error includes the scatter
+  from night to night.
+
+### Error columns
+
+- **`err_cal_rand_<f>`:** independent from star to star. It is the
+  instrumental error and, with a catalog colour, T²σ_C².
+- **`err_cal_sys_<f>`:** common to the epoch. It is ZP, T·C, cov,
+  `zero_point_sys` and the extinction term.
+- **`err_cal_<f>`:** both in quadrature.
+
+All filters whose colours are calibrated are solved jointly:
+`m = A⁻¹(i + Z)`, `A = I − diag(T)K`. The (1 + T) factors and the
+correlation of a colour with its own magnitude are therefore included.
+Checked against a Monte Carlo of the instrumental magnitudes and of ZP/T
+(agreement within 5–6 %). `uncertainty_mode="monte_carlo"` repeats that
+Monte Carlo on real tables as a cross-check (non-Gaussian low-S/N errors,
+`cal_low_snr_<f>`).
+
+### Not included
+
+- **Vega/AB offsets:** taken from Blanton & Roweis (2007) without an
+  uncertainty. Their real uncertainty is how the OST passbands differ from
+  the ideal ones (TODO: synphot with OST throughput curves).
+- **Jordi et al. (2006) relations:** no intrinsic scatter is given in the
+  paper, only coefficient errors; the coefficient errors are propagated.
+  Lupton/Jester relations carry their published scatter.
+
 ## Validation
 
 | Check | Data | Result |
@@ -159,11 +243,23 @@ example `saturated_V`) and the light-curve rows as `flag_saturated`.
 | Pixel pulls between two independent 10-frame stacks (sky pixels) | NGC 7789 B/V (N2) | 0.87–0.89 (interpolation smooths pixels); 4×4 sums 1.14–1.20 |
 | Empty-sky noise factor on the stacks | NGC 7789 | 1.7–2.1: structured background at airmass 2.1, captured by `bkg_noise_factor` |
 | Faint-star pulls between the two stacks (APER, with the factor) | NGC 7789 B / V | 0.87–1.17 / 1.09 (bright stars probe PSF differences, not noise) |
+| ZP / T 1σ coverage, simulated calibrators (σ_int, catalog errors) | `tests/test_calibration_statistics.py` | 0.68–0.70 |
+| `err_cal_rand` / `err_cal_sys` vs Monte Carlo (joint B/V solution) | `tests/test_calibration_color_source.py` | within 5–6 % |
+| `monte_carlo` mode vs analytic at S/N 200 | `tests/test_uncertainty.py` | within 5 % |
 | Robust scatter / error of all constant stars, X < 1.3, six magnitude bins (package 2: median sky, empty-sky factor, scintillation) | HAT-P-20 C7 night, 355 (V) / 320 (B) stars | 0.97–1.01; brightest V bin (11 stars) 0.91 |
+| Calibrator 1σ coverage, random half splits (fit on one half, predict the other; σ_inst, s·σ_cat, σ_int, prediction error) | HAT-P-20 (172 epochs) / NGC 7789 N2, APASS, B and V | \|pull\| < 1: 0.684–0.693 (nominal 0.683); with target χ²_ν = 1 instead of the clipped value: 0.64–0.67 |
+| Fitted catalog-error scale s | same | B 0.29 / 0.87, V 0.54 / 1.0 (σ_int 0.022 in N2 V) |
+| Epoch scatter of `mag_cal` for stars with ≥ 20 epochs / (`err_cal_rand` ⊕ photometric ZP error), four error bins | HAT-P-20, B and V | 0.98–1.09; brightest bin (err ≈ 0.012) 1.18: a ~0.007 mag term beyond the model for bright stars (not in the differential light curves, see above) |
 
 Real-data checks are in `scripts/validation/`.
 - **`substack_consistency.py`, `substack_pixel_pulls.py`:** pulls between
   two stacks of disjoint frame sets, per star and per pixel.
+- **`calibration_checks.py`:** fit statistics per filter, random
+  cross-validation of the calibrators, epoch scatter of constant stars
+  against `err_cal_rand` ⊕ the photometric zero-point error. Its
+  "hold-out catalog stars" are mostly stars the clipping or the quality cuts
+  rejected; their pulls (1.5–3) are biased high and are no test of the
+  errors.
 - **`scatter_over_error.py`:** robust point-to-point scatter of `dmag`
   divided by `dmag_err`, per magnitude bin. Use all constant stars, not the
   differential ensemble: the ensemble is chosen for low scatter and would

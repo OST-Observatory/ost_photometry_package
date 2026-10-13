@@ -442,3 +442,96 @@ def test_median_zp_with_extinction_is_unbiased(synthetic_calibration_epoch_table
         tbl["mag_std_V"], dtype=float
     )[comps]
     assert abs(float(np.median(resid))) < 1e-6
+
+
+def _epochs_of_same_stars(table, n_epochs, seed=0, catalog_error=None):
+    rng = np.random.default_rng(seed)
+    table = table.copy()
+    if catalog_error is not None:
+        # catalog magnitudes with real errors, the same in every epoch
+        cat_rng = np.random.default_rng(seed + 1000)
+        for f in ("B", "V"):
+            table[f"mag_std_{f}"] = table[f"mag_std_{f}"] + cat_rng.normal(0, catalog_error, len(table))
+            table[f"err_std_{f}"] = np.full(len(table), catalog_error)
+    epochs = {}
+    for k in range(n_epochs):
+        t = table.copy()
+        for f in ("B", "V"):
+            t[f"mag_{f}"] = t[f"mag_{f}"] + rng.normal(0, 0.005, len(t))
+            t[f"err_{f}"] = np.full(len(t), 0.005)
+        t["epoch_id"] = f"epoch_{k:03d}"
+        epochs[f"epoch_{k:03d}"] = t
+    return epochs
+
+
+@pytest.mark.comparison
+@pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
+def test_ensemble_counts_each_star_once(synthetic_calibration_epoch_table):
+    """Five epochs of the same stars must not shrink the catalog-dominated ZP error."""
+    cfg_mod, engine_mod = _load_engine()
+    cfg = cfg_mod.PipelineConfig.from_preset("linear_fit_ensemble")
+    one = engine_mod.CalibrationEngine.fit(
+        _epochs_of_same_stars(synthetic_calibration_epoch_table, 1, catalog_error=0.02), cfg, ["B", "V"]
+    )
+    five = engine_mod.CalibrationEngine.fit(
+        _epochs_of_same_stars(synthetic_calibration_epoch_table, 5, catalog_error=0.02), cfg, ["B", "V"]
+    )
+    e1 = next(iter(one.values())).transformation["V"].zero_point_err
+    e5 = next(iter(five.values())).transformation["V"].zero_point_err
+    # catalog error (0.02 per star) dominates and is common to all epochs
+    assert e5 > 0.8 * e1
+
+
+@pytest.mark.comparison
+@pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
+def test_fixed_grouping_holds_color_term(synthetic_calibration_epoch_table):
+    cfg_mod, engine_mod = _load_engine()
+    cfg = cfg_mod.PipelineConfig(
+        calibration_strategy="linear_fit",
+        calibration_grouping="fixed",
+        transformation_coefficients_dict={
+            "B": {"color_term": 0.08, "color_term_err": 0.01},
+            # legacy Tcs format for V (V is filter 2 of B-V)
+            "V": {"Filter 1": "B", "T_1": 0.08, "T_1_err": 0.01,
+                  "Filter 2": "V", "T_2": 0.0, "T_2_err": 0.005},
+        },
+    )
+    epochs = _epochs_of_same_stars(synthetic_calibration_epoch_table, 2)
+    results = engine_mod.CalibrationEngine.fit(epochs, cfg, ["B", "V"])
+    for res in results.values():
+        tb, tv = res.transformation["B"], res.transformation["V"]
+        assert tb.color_term == 0.08 and tb.color_term_err == 0.01
+        assert tv.color_term == 0.0 and tv.color_term_err == 0.005
+        assert tb.zero_point == pytest.approx(0.15, abs=0.02)
+        assert tv.zero_point == pytest.approx(0.10, abs=0.02)
+
+
+@pytest.mark.comparison
+@pytest.mark.skipif(not _deps_available(), reason="requires photutils and regions")
+def test_derive_transform_non_catalog_stars_unbiased(synthetic_calibration_epoch_table):
+    """Stars without catalog magnitudes get the same calibration as calibrators.
+
+    The former row-wise apply added c·(instrumental colour) to non-catalog
+    stars only: biased by c·(z_B - z_V) (here 0.08 · 0.05 / ...).
+    """
+    cfg_mod, engine_mod = _load_engine()
+    phot_mod = _import_submodule("ost_photometry.analyze.calibration.photometer")
+    tbl = synthetic_calibration_epoch_table.copy()
+    # instrumental zero points differ by 2 mag between B and V
+    tbl["mag_B"] = tbl["mag_B"] - 2.0
+    truth_b = np.asarray(tbl["mag_std_B"], dtype=float).copy()
+    targets = ~np.asarray(tbl["is_comparison"], dtype=bool)
+    cfg = cfg_mod.PipelineConfig(calibration_strategy="linear_fit", derive_transform_from_data=True)
+    epochs = {"epoch_000": tbl}
+    results = engine_mod.CalibrationEngine.fit(epochs, cfg, ["B", "V"])
+    # remove catalog values of the "targets" for apply
+    applied_tbl = tbl.copy()
+    for col in ("mag_std_B", "mag_std_V"):
+        applied_tbl[col][targets] = np.nan
+    out = engine_mod.CalibrationEngine.apply(
+        {"epoch_000": applied_tbl}, results, ["B", "V"],
+        photometer=phot_mod.DifferentialPhotometer(),
+    )
+    resid = np.asarray(out["mag_cal_B"], dtype=float) - truth_b
+    assert np.max(np.abs(resid[targets])) < 0.01
+    assert np.max(np.abs(resid[~targets])) < 0.01

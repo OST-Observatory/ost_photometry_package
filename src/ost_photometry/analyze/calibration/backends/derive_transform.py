@@ -68,12 +68,15 @@ def fit_epochs(
     color_indices: dict[str, tuple[str, str]] | None = None,
     output_dir: str | None = None,
     file_type: str = "pdf",
+    extinction_corrector=None,
 ) -> dict[str, CalibrationResult] | None:
     """
     Fit catalog-color derive-transform per epoch.
 
     Returns ``None`` when fewer than two filters are requested (caller should
-    fall back to the standard linear backend).
+    fall back to the standard linear backend). With ``extinction_corrector``
+    (the one used on apply) the epochs are corrected before the fit, so the
+    zero point matches the apply step.
     """
     if len(filters) != 2:
         warnings.warn(
@@ -84,6 +87,13 @@ def fit_epochs(
         )
         return None
 
+    if extinction_corrector is not None:
+        from .median import _extinction_corrected
+
+        epochs = {
+            eid: _extinction_corrected(tbl, filters, extinction_corrector)
+            for eid, tbl in epochs.items()
+        }
     results: dict[str, CalibrationResult] = {}
     plot_epochs: dict = {}
     plot_coeffs: dict = {}

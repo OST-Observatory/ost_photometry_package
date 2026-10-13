@@ -358,8 +358,30 @@ def fit_extinction_from_comparison_stars(
         )
         return {}
 
-    # One (X, delta) per epoch per filter: X = airmass, delta = mean residual vs catalog.
+    # One (X, delta) per epoch per filter: X = airmass, delta = robust mean
+    # residual vs catalog over a *fixed* set of stars (measured in >= 80 % of
+    # the epochs): a star set that changes from epoch to epoch moves delta
+    # by the star-to-star offsets and biases k'.
     by_filter: dict[str, list[tuple[float, float]]] = {}
+    common_ids: dict[str, set[int]] = {}
+    if all("id" in tbl.colnames for tbl in epochs.values()):
+        counts: dict[str, dict[int, int]] = {}
+        for tbl in epochs.values():
+            for col in tbl.colnames:
+                if not col.startswith(mag_col_prefix) or col.startswith(std_col_prefix):
+                    continue
+                filter_ = col[len(mag_col_prefix):]
+                std_col = f"{std_col_prefix}{filter_}"
+                if std_col not in tbl.colnames:
+                    continue
+                ok = np.isfinite(np.asarray(tbl[col], dtype=float)) & np.isfinite(
+                    np.asarray(tbl[std_col], dtype=float)
+                )
+                per = counts.setdefault(filter_, {})
+                for sid in np.asarray(tbl["id"])[ok].astype(int):
+                    per[int(sid)] = per.get(int(sid), 0) + 1
+        need = 0.8 * len(epochs)
+        common_ids = {f: {sid for sid, c in per.items() if c >= need} for f, per in counts.items()}
 
     for epoch_id, tbl in epochs.items():
         for col in tbl.colnames:
@@ -407,8 +429,18 @@ def fit_extinction_from_comparison_stars(
                 )
                 continue
 
-            # Mean over stars: epoch-level offset cancels in the slope; slope is k'.
-            delta = np.nanmean((m_obs - m_std)[valid])
+            if common_ids.get(filter_):
+                valid &= np.isin(np.asarray(tbl["id"]).astype(int), list(common_ids[filter_]))
+                if not np.any(valid):
+                    continue
+            # Clipped median over the same stars: the epoch offset cancels in
+            # the slope, outliers (variables) do not pull it.
+            resid = (m_obs - m_std)[valid]
+            med = float(np.median(resid))
+            mad = 1.4826 * float(np.median(np.abs(resid - med)))
+            if mad > 0:
+                resid = resid[np.abs(resid - med) <= 3.0 * mad]
+            delta = float(np.median(resid))
             if by_filter.get(filter_) is None:
                 by_filter[filter_] = []
             by_filter[filter_].append((airmass_median, delta))

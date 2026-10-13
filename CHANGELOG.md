@@ -45,6 +45,44 @@ section of this file.
 
 ### Changed
 
+- **Calibration fits with honest errors** (`analyze.calibration.statistics`,
+  used by `linear_fit`, `median_zp`, derive-transform): calibrators weighted
+  by instrumental + catalog (`err_std_*`, 0.02 where missing) + colour +
+  intrinsic scatter σ_int solved for χ²_ν = 1 (fits were unweighted with
+  `ddof=0`); with χ²_ν < 1 and ≥ 10 calibrators the catalog errors are
+  scaled down instead (`catalog_error_scale`, APASS B errors are about
+  twice the scatter); with clipping the target χ²_ν is the truncated-normal
+  variance (0.91 at 2.5σ); colour term fitted around the mean colour; clipping on
+  normalised residuals; Student-t factor when σ_int is estimated; n < 5
+  flagged `few_calibrators`. Simulated 1σ coverage 0.68–0.70.
+- **Error columns:** `err_cal_rand_*` (independent per star) and
+  `err_cal_sys_*` (common to the epoch: ZP, T·C, cov, `zero_point_sys`,
+  extinction σ_k·ΔX) besides the total `err_cal_*`; all calibrated filters
+  are solved jointly (`m = A⁻¹(i+Z)`), so (1 + T) factors and the colour /
+  magnitude correlation are included. New `tables/calibration_epochs.ecsv`
+  (ZP, T, errors split into photometric / catalog parts, σ_int, χ²_ν,
+  `catalog_error_scale`,
+  calibrators, flags per epoch and filter).
+- **Groupings:** `per_night` combines per-epoch fits by GLS with full
+  covariance (the catalog part of the same calibrators no longer averages
+  down; Birge ratio; epoch scatter as `zero_point_sys`; was independent IV
+  means with cov = 0); `ensemble` fits per-star means of the
+  extinction-corrected epochs (each star once; was all epochs stacked);
+  `fixed` is implemented (known colour terms from
+  `transformation_coefficients_dict`, also in the OST `Tcs` format; zero
+  point per epoch; it always raised before). Rolling smoothing keeps the
+  covariance and adds the epochs' scatter about the smoothed zero point.
+- **Presets** `linear_fit_per_night`, `linear_fit_per_night_extinction`,
+  `linear_fit_ensemble` use the linear path with their grouping
+  (`derive_transform_from_data=False`; the derive path ignored grouping and
+  extinction). `derive_transform_from_data` requires `per_image`.
+- `uncertainty_mode`: `fit_errors` (default) and `monte_carlo` (ZP/T drawn
+  per epoch, flux and catalog colour per star, joint solution;
+  `cal_low_snr_<f>`). `both` (double-counted the instrumental error) and
+  `flux_monte_carlo` (dropped ZP/T errors) are removed.
+- Aggregated site extinction errors include the night-to-night scatter of
+  k; the comparison-star extinction fit uses a fixed star set and a clipped
+  median per epoch.
 - **Stacks and master frames propagate the frames' uncertainties**
   (`reduce.weighted_combine.combine_images`, replaces `ccdproc.combine` for
   bias, dark, flat, stacks and the camera combination): mean
@@ -140,6 +178,11 @@ section of this file.
 
 ### Fixed
 
+- **Derive-transform biased stars without catalog magnitudes** by the colour
+  term times the instrumental zero-point difference of the two filters (row-
+  wise apply with instrumental colour); its errors had no colour-term part.
+  It now fits weighted T/ZP and uses the standard joint apply; its fit sees
+  the same extinction correction as the apply.
 - **`median_zp` with extinction biased every magnitude by −k·X:** the zero
   point was fitted on raw magnitudes while apply subtracted k·X. The median
   backend now fits on the same extinction-corrected magnitudes.

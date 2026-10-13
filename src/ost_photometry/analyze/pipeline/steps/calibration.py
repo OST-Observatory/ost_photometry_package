@@ -160,6 +160,22 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
     return out
 
 
+def _write_calibration_epochs(results, output_dir) -> None:
+    """``tables/calibration_epochs.ecsv``: zero point, colour term and errors per epoch."""
+    if not output_dir or not results:
+        return
+    from ....output_layout import tables_dir
+    from ...calibration.result import CALIBRATION_EPOCHS_FILENAME, calibration_epochs_table
+
+    tbl = calibration_epochs_table(results)
+    if len(tbl):
+        tbl.write(
+            str(tables_dir(output_dir) / CALIBRATION_EPOCHS_FILENAME),
+            format="ascii.ecsv",
+            overwrite=True,
+        )
+
+
 class CalibrationStep(base.PipelineStep):
     """Epoch-native calibration via :class:`~ost_photometry.analyze.calibration.CalibrationEngine`."""
 
@@ -284,6 +300,7 @@ class CalibrationStep(base.PipelineStep):
                 extinction_corrector=extinction_corrector,
             )
             context.calibration_results = results
+            _write_calibration_epochs(results, context.output_dir)
 
             clip = config.fit_sigma_clip
 
@@ -308,19 +325,7 @@ class CalibrationStep(base.PipelineStep):
                     file_type=file_type,
                 )
 
-            if (
-                strategy == "linear_fit"
-                and config.derive_transform_from_data
-                and len(filters_for_fit) == 2
-            ):
-                from ...calibration.derive_transform import apply_derive_transform_epochs
-
-                calibrated = apply_derive_transform_epochs(
-                    epochs,
-                    results,
-                    filters_for_fit,
-                )
-            elif strategy == "linear_fit" and calibrator is not None:
+            if strategy == "linear_fit" and calibrator is not None:
                 photometer = calibrator.photometer
                 calibrated = calibrator.get_calibrated_photometry(output_prefix="mag_cal_")
             else:

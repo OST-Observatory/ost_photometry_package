@@ -96,3 +96,51 @@ def test_zero_colour_term_needs_no_colour():
     out = DifferentialPhotometer().apply_transform_to_table(tbl, cal, filters=["V"])
     assert np.all(np.isfinite(out["mag_cal_V"]))
     assert set(np.asarray(out["cal_color_source_V"])) == {"not_needed"}
+
+
+def _two_filter_cal(zp_err=0.02, t_err=0.01, cov=0.0001):
+    def tc(f, t, zp):
+        return TransformationCoefficients(
+            filter_name=f, color_term=t, color_term_err=t_err, zero_point=zp,
+            zero_point_err=zp_err, cov_tz=cov, color_index_filters=("B", "V"),
+        )
+    return CalibrationResult(identifier="e0", transformation={"B": tc("B", 0.12, 3.0), "V": tc("V", -0.08, 1.0)})
+
+
+def test_error_split_matches_monte_carlo():
+    """err_cal_rand / err_cal_sys from the joint solution equal MC spreads."""
+    rng = np.random.default_rng(0)
+    n = 5
+    base = Table({
+        "mag_B": np.linspace(10.0, 12.0, n),
+        "mag_V": np.linspace(9.5, 11.0, n),
+        "err_B": np.full(n, 0.03),
+        "err_V": np.full(n, 0.02),
+    })
+    cal = _two_filter_cal()
+    phot = DifferentialPhotometer()
+    ref = phot.apply_transform_to_table(base, cal, filters=["B", "V"])
+    # random part: perturb the instrumental magnitudes
+    draws = []
+    for _ in range(3000):
+        t = base.copy()
+        t["mag_B"] = base["mag_B"] + rng.normal(0, 0.03, n)
+        t["mag_V"] = base["mag_V"] + rng.normal(0, 0.02, n)
+        draws.append(np.asarray(phot.apply_transform_to_table(t, cal, filters=["B", "V"])["mag_cal_V"]))
+    assert np.allclose(np.std(draws, axis=0), ref["err_cal_rand_V"], rtol=0.05)
+    # systematic part: perturb ZP and T jointly (same for all stars)
+    draws = []
+    cov = np.array([[0.02**2, 0.0001], [0.0001, 0.01**2]])
+    for _ in range(3000):
+        tcs = {}
+        for f, t0, z0 in (("B", 0.12, 3.0), ("V", -0.08, 1.0)):
+            dz, dt = rng.multivariate_normal([0, 0], cov)
+            tcs[f] = TransformationCoefficients(
+                filter_name=f, color_term=t0 + dt, zero_point=z0 + dz,
+                color_index_filters=("B", "V"),
+            )
+        c = CalibrationResult(identifier="e0", transformation=tcs)
+        draws.append(np.asarray(phot.apply_transform_to_table(base, c, filters=["B", "V"])["mag_cal_V"]))
+    assert np.allclose(np.std(draws, axis=0), ref["err_cal_sys_V"], rtol=0.06)
+    total = np.hypot(ref["err_cal_rand_V"], ref["err_cal_sys_V"])
+    assert np.allclose(ref["err_cal_V"], total)

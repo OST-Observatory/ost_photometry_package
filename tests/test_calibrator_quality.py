@@ -22,6 +22,10 @@ def _load_quality_modules():
         "ost_photometry.analyze.calibration.result",
         analyze / "calibration" / "result.py",
     )
+    load_module_from_path(
+        "ost_photometry.analyze.calibration.statistics",
+        analyze / "calibration" / "statistics.py",
+    )
     zp = load_module_from_path(
         "ost_photometry.analyze.calibration.zp",
         analyze / "calibration" / "zp.py",
@@ -160,6 +164,7 @@ def test_median_zp_residual_clip_drops_outlier():
         mag_std[0] = mag[0] + 2.0
         tbl = Table()
         tbl["mag_V"] = mag
+        tbl["err_V"] = np.full(n, 0.01)
         tbl["mag_std_V"] = mag_std
         cand = np.ones(n, dtype=bool)
         unclipped = zp.fit_median_zero_point_epoch(

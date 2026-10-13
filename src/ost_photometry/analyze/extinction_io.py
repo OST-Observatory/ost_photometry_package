@@ -383,12 +383,19 @@ def _aggregate_filter_values(
     statistic: Literal["median", "weighted_median"] = "median",
     sigma_clip: float | None = 2.5,
 ) -> tuple[float, float, int]:
-    """Return (k_prime, k_prime_err, n_used) from (k, k_err) samples."""
+    """Return (k_prime, k_prime_err, n_used) from per-night (k, k_err) samples.
+
+    ``k_prime_err`` is the error of k for a *new* night: the error of the
+    median (1.2533·rms(e)/√n) plus the night-to-night scatter of k
+    (robust σ of the samples beyond their own errors), in quadrature. The
+    error of the mean alone shrank with every campaign night although k
+    itself varies from night to night.
+    """
     if not values:
         return float("nan"), float("nan"), 0
     k = np.asarray([v[0] for v in values], dtype=float)
-    e = np.asarray([max(v[1], 1e-6) for v in values], dtype=float)
-    mask = np.isfinite(k)
+    e = np.asarray([v[1] for v in values], dtype=float)
+    mask = np.isfinite(k) & np.isfinite(e) & (e > 0)
     k = k[mask]
     e = e[mask]
     if len(k) == 0:
@@ -412,7 +419,13 @@ def _aggregate_filter_values(
         k_out = float(k_sorted[min(idx, len(k_sorted) - 1)])
     else:
         k_out = float(np.median(k))
-    k_err = float(np.sqrt(np.mean(e**2)) / max(len(k), 1) ** 0.5)
+    mean_err = 1.2533 * float(np.sqrt(np.mean(e**2))) / max(len(k), 1) ** 0.5
+    if len(k) >= 3:
+        spread = 1.4826 * float(np.median(np.abs(k - np.median(k))))
+        night_scatter2 = max(spread**2 - float(np.median(e)) ** 2, 0.0)
+    else:
+        night_scatter2 = 0.0
+    k_err = float(np.sqrt(mean_err**2 + night_scatter2))
     return k_out, k_err, int(len(k))
 
 

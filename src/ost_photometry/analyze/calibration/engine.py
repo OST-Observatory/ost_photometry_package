@@ -55,6 +55,7 @@ class CalibrationEngine:
                     color_indices=color_indices,
                     output_dir=output_dir,
                     file_type=file_type,
+                    extinction_corrector=extinction_corrector,
                 )
                 if results is None:
                     cal = calibrator or linear_backend.build_calibrator(

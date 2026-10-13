@@ -1,9 +1,15 @@
 """
 Catalog-color derive-transform for two-filter epoch tables.
 
-Ports the former ``derive_transformation_onthefly`` recipe: fit color-correction
-slopes from catalog colors, median ZP per filter, then apply the differential
-color-term transformation row-wise on multi-band epoch tables.
+Ports the former ``derive_transformation_onthefly`` recipe: comparison stars
+are selected jointly in both filters (clip on the summed zero points, then
+on the residuals of ``m_std - m_inst`` vs catalog colour). The colour terms
+and zero points are then fitted per filter with
+:func:`~ost_photometry.analyze.calibration.statistics.fit_zero_point`
+(weighted, intrinsic scatter, errors) and applied by the standard
+:meth:`~ost_photometry.analyze.calibration.photometer.DifferentialPhotometer.apply_transform_to_table`,
+which solves the two filters jointly. The former row-wise apply mixed the
+instrumental colour (with its zero-point difference) into non-catalog stars.
 """
 
 from __future__ import annotations
@@ -13,11 +19,12 @@ from typing import Any
 
 import numpy as np
 from astropy.stats import sigma_clip as astropy_sigma_clip
-from astropy.table import Table, vstack
+from astropy.table import Table
 
 from .result import CalibrationResult, TransformationCoefficients
+from .statistics import catalog_errors, fit_zero_point
 from .transform import unweighted_linear_fit
-from .zp import comparison_mask_from_std_columns, fit_median_zero_point_epoch
+from .zp import comparison_mask_from_std_columns
 
 
 @dataclass
@@ -147,43 +154,65 @@ def calibration_result_from_derive_transform_fit(
     epoch_id: str,
     filters: list[str],
     derive_fit: DeriveTransformFit,
-    zp_result: CalibrationResult,
+    table: Table,
     *,
     color_index_filters: tuple[str, str] | None = None,
 ) -> CalibrationResult:
-    """Build :class:`CalibrationResult` with derived ``c`` factors and median ZPs."""
+    """Weighted T / ZP per filter on the stars selected by ``derive_fit``."""
     if len(filters) != 2:
         raise ValueError("derive_transform_from_data requires exactly two filters")
     ci = color_index_filters or (filters[0], filters[1])
+    used = np.asarray(derive_fit.comparison_mask, dtype=bool)
+    sub = table[used]
+    color = np.asarray(sub[f"mag_std_{ci[0]}"], dtype=float) - np.asarray(
+        sub[f"mag_std_{ci[1]}"], dtype=float
+    )
+    sigma_color = np.hypot(
+        catalog_errors(_col(sub, f"err_std_{ci[0]}"), len(sub)),
+        catalog_errors(_col(sub, f"err_std_{ci[1]}"), len(sub)),
+    )
     result = CalibrationResult(identifier=epoch_id)
-    slopes = (derive_fit.c_slope_f0, derive_fit.c_slope_f1)
-    intercepts = (derive_fit.z_intercept_f0, derive_fit.z_intercept_f1)
-    for idx, f in enumerate(filters):
-        zp_tc = zp_result.transformation.get(f)
-        if zp_tc is None:
-            continue
-        c_apply = derive_transform_c_factor(
-            idx, derive_fit.c_slope_f0, derive_fit.c_slope_f1
+    for f in filters:
+        sigma_inst = _col(sub, f"err_{f}")
+        fit = fit_zero_point(
+            np.asarray(sub[f"mag_std_{f}"], dtype=float) - np.asarray(sub[f"mag_{f}"], dtype=float),
+            color,
+            np.full(len(sub), np.nan) if sigma_inst is None else np.abs(sigma_inst),
+            catalog_errors(_col(sub, f"err_std_{f}"), len(sub)),
+            fit_color=True,
+            sigma_color=sigma_color,
+            sigma_clip=None,
         )
+        if not np.isfinite(fit.zero_point):
+            continue
         result.transformation[f] = TransformationCoefficients(
             filter_name=f,
-            color_term=c_apply,
-            zero_point=zp_tc.zero_point,
-            zero_point_err=zp_tc.zero_point_err,
+            color_term=fit.color_term,
+            color_term_err=fit.color_term_err,
+            zero_point=fit.zero_point,
+            zero_point_err=fit.zero_point_err,
+            cov_tz=fit.cov_tz,
             color_index_filters=ci,
-            n_stars_used=derive_fit.n_stars_used,
-            rms_residual=zp_tc.rms_residual,
+            n_stars_used=fit.n_used,
+            rms_residual=fit.rms,
+            sigma_int=fit.sigma_int,
+            catalog_error_scale=fit.catalog_error_scale,
+            chi2_nu=fit.chi2_nu,
+            color_ref=fit.color_ref,
+            quality_flag=fit.quality_flag,
+            cov_phot=fit.cov_phot,
+            cov_cat=fit.cov_cat,
         )
-        result.notes = (
-            f"derive_transform slopes=({derive_fit.c_slope_f0:.5f}, "
-            f"{derive_fit.c_slope_f1:.5f}) intercepts=({intercepts[0]:.4f}, "
-            f"{intercepts[1]:.4f}) c_apply=({derive_transform_c_factor(0, *slopes):.5f}, "
-            f"{derive_transform_c_factor(1, *slopes):.5f})"
-        )
-    result.n_comparison_stars = int(np.sum(derive_fit.comparison_mask))
-    used = np.asarray(derive_fit.comparison_mask, dtype=bool)
+    result.notes = (
+        f"derive_transform slopes=({derive_fit.c_slope_f0:.5f}, {derive_fit.c_slope_f1:.5f})"
+    )
+    result.n_comparison_stars = int(np.sum(used))
     result.calibrator_mask_by_filter = {f: used for f in result.transformation}
     return result
+
+
+def _col(table: Table, name: str) -> np.ndarray | None:
+    return np.asarray(table[name], dtype=float) if name in table.colnames else None
 
 
 def diagnostic_transformation_for_plots(
@@ -191,97 +220,8 @@ def diagnostic_transformation_for_plots(
     filters: list[str],
     derive_fit: DeriveTransformFit,
 ) -> dict[str, TransformationCoefficients]:
-    """T/ZP for diagnostic plots (linear ``m_std-m_inst`` vs catalog color)."""
-    intercepts = (derive_fit.z_intercept_f0, derive_fit.z_intercept_f1)
-    slopes = (derive_fit.c_slope_f0, derive_fit.c_slope_f1)
-    out: dict[str, TransformationCoefficients] = {}
-    for idx, f in enumerate(filters):
-        base = result.transformation.get(f)
-        if base is None:
-            continue
-        out[f] = TransformationCoefficients(
-            filter_name=f,
-            color_term=slopes[idx],
-            zero_point=intercepts[idx],
-            color_term_err=base.color_term_err,
-            zero_point_err=base.zero_point_err,
-            color_index_filters=base.color_index_filters,
-            n_stars_used=base.n_stars_used,
-            rms_residual=base.rms_residual,
-        )
-    return out
-
-
-def apply_derive_transform_to_table(
-    data: Table,
-    calibration: CalibrationResult,
-    filters: list[str],
-    comparison_mask: np.ndarray,
-    *,
-    mag_col_prefix: str = "mag_",
-    output_prefix: str = "mag_cal_",
-    err_col_prefix: str = "err_",
-    output_err_prefix: str = "err_cal_",
-) -> Table:
-    """
-    Apply derive-transform on a multi-band epoch row table.
-
-    ``m_cal = m_inst + ZP + c * color - c * color`` on comparison rows (per-star),
-    ``m_cal = m_inst + ZP + c * color`` elsewhere, with ``color = mag_f0 - mag_f1``.
-    """
-    if len(filters) != 2:
-        raise ValueError("derive_transform apply requires exactly two filters")
-    f0, f1 = filters[0], filters[1]
-    out = data.copy()
-    m0 = np.asarray(out[f"{mag_col_prefix}{f0}"], dtype=float)
-    m1 = np.asarray(out[f"{mag_col_prefix}{f1}"], dtype=float)
-    color = m0 - m1
-    cal_mask = np.asarray(comparison_mask, dtype=bool)
-
-    for f in filters:
-        if f not in calibration.transformation:
-            continue
-        tc = calibration.transformation[f]
-        c = tc.color_term
-        zp = tc.zero_point
-        m_inst = np.asarray(out[f"{mag_col_prefix}{f}"], dtype=float)
-        correction = np.zeros(len(out), dtype=float)
-        correction[cal_mask] = c * color[cal_mask]
-        m_cal = m_inst + zp + c * color - correction
-        out[f"{output_prefix}{f}"] = m_cal
-        err_col = f"{err_col_prefix}{f}"
-        if err_col in out.colnames:
-            inst_err = np.asarray(out[err_col], dtype=float)
-            out[f"{output_err_prefix}{f}"] = np.sqrt(
-                np.maximum(inst_err**2 + tc.zero_point_err**2, 0.0)
-            )
-    return out
-
-
-def apply_derive_transform_epochs(
-    epochs: dict[str, Table],
-    results: dict[str, CalibrationResult],
-    filters: list[str],
-    *,
-    output_prefix: str = "mag_cal_",
-) -> Table:
-    """Apply derive-transform calibration per epoch and vstack."""
-    tables: list[Table] = []
-    for epoch_id, data in epochs.items():
-        cal = results.get(epoch_id)
-        if cal is None:
-            continue
-        mask = comparison_mask_from_std_columns(data, filters)
-        out = apply_derive_transform_to_table(
-            data,
-            cal,
-            filters,
-            mask,
-            output_prefix=output_prefix,
-        )
-        out["epoch_id"] = epoch_id
-        tables.append(out)
-    return vstack(tables) if tables else Table()
+    """T/ZP for diagnostic plots (``m_std - m_inst`` vs catalog colour)."""
+    return {f: result.transformation[f] for f in filters if f in result.transformation}
 
 
 def fit_epoch_derive_transform(
@@ -317,17 +257,6 @@ def fit_epoch_derive_transform(
     if derive_fit is None:
         return None
 
-    zp_result = fit_median_zero_point_epoch(
-        table,
-        epoch_id,
-        filters,
-        derive_fit.comparison_mask,
-        color_index_filters=color_indices,
-        min_comparisons=min_comparisons,
-    )
-    if not zp_result.transformation:
-        return None
-
     ci = (f0, f1)
     if color_indices:
         ci = color_indices.get(f1, color_indices.get(f0, ci))
@@ -336,9 +265,11 @@ def fit_epoch_derive_transform(
         epoch_id,
         filters,
         derive_fit,
-        zp_result,
+        table,
         color_index_filters=ci,
     )
+    if not result.transformation:
+        return None
     if zp_subsample_statistic:
         from .zp import zp_subsample_statistic
 
@@ -360,8 +291,6 @@ def fit_epoch_derive_transform(
 
 __all__ = [
     "DeriveTransformFit",
-    "apply_derive_transform_epochs",
-    "apply_derive_transform_to_table",
     "calibration_result_from_derive_transform_fit",
     "derive_transform_c_factor",
     "diagnostic_transformation_for_plots",

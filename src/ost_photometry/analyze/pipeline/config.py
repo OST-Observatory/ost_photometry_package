@@ -25,7 +25,7 @@ ExtinctionMode = Literal[
 ]
 ExtinctionOrderName = Literal["first", "second"]
 ColorTermFit = Literal["always", "auto", "never"]
-UncertaintyMode = Literal["fit_errors", "flux_monte_carlo", "both"]
+UncertaintyMode = Literal["fit_errors", "monte_carlo"]
 
 CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
     # Median zero-point per exposure (stacked fields without a color term).
@@ -59,13 +59,14 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "derive_transform_from_data": False,
         "zp_subsample_statistic": False,
     },
-    # Nightly linear color term + ZP (combine visits; e.g. derive-transform).
+    # Nightly linear color term + ZP: per-epoch fits combined (GLS; catalog
+    # part kept, epoch scatter as zero_point_sys).
     "linear_fit_per_night": {
         "calibration_strategy": "linear_fit",
         "calibration_grouping": "per_night",
         "extinction_mode": "none",
         "color_term_fit": "auto",
-        "derive_transform_from_data": True,
+        "derive_transform_from_data": False,
         "zp_subsample_statistic": False,
     },
     # Same as linear_fit_per_night, plus extinction from comparison stars.
@@ -74,7 +75,7 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "calibration_grouping": "per_night",
         "extinction_mode": "from_comparison_stars",
         "color_term_fit": "auto",
-        "derive_transform_from_data": True,
+        "derive_transform_from_data": False,
         "zp_subsample_statistic": False,
     },
     # WCS + extraction + intra-filter correlation; protect calibrators; no apply.
@@ -85,10 +86,11 @@ CALIBRATION_PRESETS: dict[str, dict[str, Any]] = {
         "skip_light_curve": True,
         "extinction_mode": "none",
     },
-    # Ensemble linear transform / derive-transform over all epochs.
+    # One ZP over all epochs: per-star means of the extinction-corrected
+    # epochs (each star once).
     "linear_fit_ensemble": {
         "calibration_strategy": "linear_fit",
-        "derive_transform_from_data": True,
+        "derive_transform_from_data": False,
         "calibration_grouping": "ensemble",
         "extinction_mode": "none",
         "color_term_fit": "never",
@@ -674,6 +676,16 @@ class PipelineConfig:
                 value = getattr(section, f.name)
                 if value not in allowed:
                     problems.append(f"{f.name}={value!r} (allowed: {', '.join(map(repr, allowed))})")
+        if self.derive_transform_from_data and self.calibration_grouping != "per_image":
+            problems.append(
+                "derive_transform_from_data=True fits each epoch on its own; use it with "
+                f"calibration_grouping='per_image', not {self.calibration_grouping!r}"
+            )
+        if self.calibration_grouping == "fixed" and not self.transformation_coefficients_dict:
+            problems.append(
+                "calibration_grouping='fixed' needs transformation_coefficients_dict "
+                "(colour terms per filter)"
+            )
         if problems:
             raise ValueError("PipelineConfig: invalid option value(s): " + "; ".join(problems))
 

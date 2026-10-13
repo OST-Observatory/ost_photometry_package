@@ -1,126 +1,77 @@
-"""Tests for calibration uncertainty_mode propagation."""
+"""uncertainty_mode: analytic errors vs the Monte Carlo cross-check."""
 
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from astropy.table import Table
 
-from helpers import load_module_from_path, pkg_src
+pytest.importorskip("photutils")
+pytest.importorskip("regions")
+
+from ost_photometry.analyze.calibration import DifferentialPhotometer  # noqa: E402
+from ost_photometry.analyze.calibration.result import (  # noqa: E402
+    CalibrationResult,
+    TransformationCoefficients,
+)
+from ost_photometry.analyze.calibration.uncertainty import (  # noqa: E402
+    apply_uncertainty_mode_to_calibrated_table,
+)
 
 
-def _uncertainty_mod():
-    pkg = pkg_src() / "ost_photometry" / "analyze"
-    load_module_from_path(
-        "ost_photometry.analyze.warnings_types",
-        pkg / "warnings_types.py",
+def _calibrated(snr: float):
+    n = 4
+    flux_v = np.full(n, 1.0e4)
+    flux_b = np.full(n, 8.0e3)
+    k = 2.5 / np.log(10)
+    tbl = Table({
+        "epoch_id": ["e0"] * n,
+        "mag_B": -2.5 * np.log10(flux_b) + np.linspace(0, 1, n),
+        "mag_V": -2.5 * np.log10(flux_v) + np.linspace(0, 0.8, n),
+        "flux_B": flux_b, "flux_err_B": flux_b / snr,
+        "flux_V": flux_v, "flux_err_V": flux_v / snr,
+        "err_B": np.full(n, k / snr), "err_V": np.full(n, k / snr),
+    })
+
+    def tc(f, t, zp):
+        return TransformationCoefficients(
+            filter_name=f, color_term=t, color_term_err=0.01, zero_point=zp,
+            zero_point_err=0.015, cov_tz=0.00005, color_index_filters=("B", "V"),
+        )
+    cal = CalibrationResult(identifier="e0", transformation={"B": tc("B", 0.1, 25.0), "V": tc("V", -0.05, 24.6)})
+    out = DifferentialPhotometer().apply_transform_to_table(tbl, cal, filters=["B", "V"])
+    out["epoch_id"] = "e0"
+    return out, {"e0": cal}
+
+
+def test_monte_carlo_agrees_with_analytic_at_high_snr():
+    out, results = _calibrated(snr=200.0)
+    mc = apply_uncertainty_mode_to_calibrated_table(
+        out, results, ["B", "V"], uncertainty_mode="monte_carlo",
+        distribution_samples=20000, random_seed=1,
     )
-    load_module_from_path(
-        "ost_photometry.analyze.extinction",
-        pkg / "extinction.py",
+    assert np.allclose(mc["err_cal_V"], out["err_cal_V"], rtol=0.05)
+    assert np.allclose(mc["err_cal_B"], out["err_cal_B"], rtol=0.05)
+    assert not np.any(mc["cal_low_snr_V"])
+
+
+def test_monte_carlo_flags_low_snr():
+    out, results = _calibrated(snr=2.0)
+    mc = apply_uncertainty_mode_to_calibrated_table(
+        out, results, ["B", "V"], uncertainty_mode="monte_carlo",
+        distribution_samples=4000, random_seed=2,
     )
-    _result_mod()
-    return load_module_from_path(
-        "ost_photometry.analyze.calibration.uncertainty",
-        pkg / "calibration" / "uncertainty.py",
-    )
+    assert np.all(mc["cal_low_snr_V"])
 
 
-def _result_mod():
-    return load_module_from_path(
-        "ost_photometry.analyze.calibration.result",
-        pkg_src() / "ost_photometry" / "analyze" / "calibration" / "result.py",
-    )
-
-
-def _synthetic_calibrated_table() -> Table:
-    tbl = Table()
-    tbl["epoch_id"] = ["night_a", "night_a", "night_b", "night_b"]
-    tbl["mag_cal_V"] = [12.0, 13.0, 12.1, 13.1]
-    tbl["err_cal_V"] = [0.03, 0.03, 0.04, 0.04]
-    tbl["flux_V"] = [1000.0, 500.0, 950.0, 480.0]
-    tbl["flux_err_V"] = [20.0, 15.0, 25.0, 18.0]
-    return tbl
-
-
-def _calibration_result():
-    result_mod = _result_mod()
-    TransformationCoefficients = result_mod.TransformationCoefficients
-    CalibrationResult = result_mod.CalibrationResult
-    tc = TransformationCoefficients(
-        filter_name="V",
-        color_term=0.0,
-        zero_point=0.1,
-        zero_point_err=0.01,
-    )
-    return CalibrationResult(identifier="night_a", transformation={"V": tc})
-
-
-def test_flux_monte_carlo_changes_err_cal():
-    unc = _uncertainty_mod()
-    tbl = _synthetic_calibrated_table()
-    cal = _calibration_result()
-    results = {"night_a": cal, "night_b": cal}
-
-    out = unc.apply_uncertainty_mode_to_calibrated_table(
-        tbl,
-        results,
-        ["V"],
-        uncertainty_mode="flux_monte_carlo",
-        distribution_samples=500,
-        random_seed=7,
-    )
-
-    assert not np.allclose(out["err_cal_V"], tbl["err_cal_V"])
-    assert np.all(np.isfinite(out["err_cal_V"]))
-
-
-def test_both_combines_fit_and_mc_errors():
-    unc = _uncertainty_mod()
-    tbl = _synthetic_calibrated_table()
-    cal = _calibration_result()
-    results = {"night_a": cal, "night_b": cal}
-
-    mc_only = unc.apply_uncertainty_mode_to_calibrated_table(
-        tbl,
-        results,
-        ["V"],
-        uncertainty_mode="flux_monte_carlo",
-        distribution_samples=500,
-        random_seed=7,
-    )
-    both = unc.apply_uncertainty_mode_to_calibrated_table(
-        tbl,
-        results,
-        ["V"],
-        uncertainty_mode="both",
-        distribution_samples=500,
-        random_seed=7,
-    )
-
-    assert np.all(both["err_cal_V"] >= mc_only["err_cal_V"] - 1e-12)
+@pytest.mark.parametrize("mode", ["both", "flux_monte_carlo"])
+def test_removed_modes_raise(mode):
+    out, results = _calibrated(snr=100.0)
+    with pytest.raises(ValueError, match="removed"):
+        apply_uncertainty_mode_to_calibrated_table(out, results, ["V"], uncertainty_mode=mode)
 
 
 def test_fit_errors_leaves_table_unchanged():
-    unc = _uncertainty_mod()
-    tbl = _synthetic_calibrated_table()
-    cal = _calibration_result()
-
-    out = unc.apply_uncertainty_mode_to_calibrated_table(
-        tbl,
-        {"night_a": cal},
-        ["V"],
-        uncertainty_mode="fit_errors",
-    )
-    assert np.allclose(out["err_cal_V"], tbl["err_cal_V"])
-
-
-def test_propagate_flux_monte_carlo_applies_zp():
-    unc = _uncertainty_mod()
-    flux = np.array([1000.0, 500.0])
-    ferr = np.array([20.0, 15.0])
-    mag, err = unc.propagate_flux_monte_carlo(
-        flux, ferr, zp=0.25, n_samples=1000, seed=1
-    )
-    assert np.all(np.isfinite(err))
-    expected = -2.5 * np.log10(flux) + 0.25
-    assert np.allclose(mag, expected)
+    out, results = _calibrated(snr=100.0)
+    same = apply_uncertainty_mode_to_calibrated_table(out, results, ["V"])
+    assert same is out

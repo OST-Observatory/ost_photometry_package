@@ -24,6 +24,7 @@ from ..extinction import (
     ExtinctionCorrector,
     ExtinctionOrder,
     calculate_airmass,
+    extinction_airmass_ready,
     fit_extinction_from_comparison_stars,
 )
 from ..warnings_types import OstPhotometryAnalyzeWarning
@@ -32,7 +33,8 @@ from .photometer import (
     _apply_rolling_smooth_to_per_image_results,
     _resolve_per_image_rolling_mode,
 )
-from .result import CalibrationResult, TransformationCoefficients
+from .result import CalibrationResult
+from .statistics import average_epochs_per_star, set_airmass_reference
 
 
 class PhotometryCalibrator:
@@ -79,7 +81,7 @@ class PhotometryCalibrator:
         )
         self.epochs: dict[str, Table] = {}
         self.epoch_metadata: dict[str, dict] = {}
-        self.fixed_calibration: CalibrationResult | None = None
+        self.fixed_color_terms: dict[str, tuple[float, float]] = {}
 
     def setup_calibration_source(
         self,
@@ -234,13 +236,9 @@ class PhotometryCalibrator:
             self.extinction.coefficients.update(fitted)
         return fitted
 
-    def set_fixed_coefficients(
-        self, coefficients: dict[str, TransformationCoefficients]
-    ):
-        """Set fixed coefficients for FIXED mode."""
-        self.fixed_calibration = CalibrationResult(
-            identifier="fixed", transformation=coefficients
-        )
+    def set_fixed_color_terms(self, color_terms: dict[str, tuple[float, float]]) -> None:
+        """Colour terms ``{filter: (T, σ_T)}`` held fixed in FIXED mode."""
+        self.fixed_color_terms = dict(color_terms)
 
     def fit_transformation_parameters(
         self,
@@ -304,10 +302,26 @@ class PhotometryCalibrator:
 
         results = {}
         if self.mode == CoefficientMode.FIXED:
-            if self.fixed_calibration is None:
-                raise ValueError("FIXED mode but no coefficients set!")
-            for epoch_id in self.epochs:
-                results[epoch_id] = self.fixed_calibration
+            #   Known colour terms (campaign), zero point fitted per epoch;
+            #   σ_T stays a systematic of every calibrated magnitude.
+            fixed = getattr(self, "fixed_color_terms", None)
+            if not fixed:
+                raise ValueError(
+                    "calibration_grouping='fixed' needs transformation_coefficients_dict "
+                    "with the colour terms"
+                )
+            for epoch_id, data in self.epochs.items():
+                mask = comparison_selector(data)
+                results[epoch_id] = self.photometer.fit_transformation_epoch(
+                    data, epoch_id, filters, mask,
+                    determine_color_terms=False,
+                    min_comparisons=min_comparisons,
+                    sigma_clip=sigma_clip,
+                    color_term_fit="never",
+                    fixed_color_terms=fixed,
+                    output_dir=output_dir,
+                    file_type=file_type,
+                )
         elif self.mode == CoefficientMode.PER_IMAGE:
             for epoch_id, data in self.epochs.items():
                 mask = comparison_selector(data)
@@ -406,10 +420,27 @@ class PhotometryCalibrator:
                 calibration_summary_x_jd=calibration_summary_x_jd,
                 calibration_summary_use_jd_x=calibration_summary_use_jd_x,
             )
+            set_airmass_reference(result, list(self.epochs.values()), filters)
             for epoch_id in self.epochs:
                 results[epoch_id] = result
         elif self.mode == CoefficientMode.ENSEMBLE:
-            combined = vstack(list(self.epochs.values()))
+            #   One point per star (extinction-corrected mean over epochs):
+            #   stacking all epochs counted each star's catalog error once
+            #   per epoch as if independent.
+            corrected = []
+            for data in self.epochs.values():
+                if extinction_airmass_ready(data, filters, "airmass"):
+                    data = self.photometer.extinction.correct(
+                        data,
+                        fallback_airmass_col="airmass",
+                        mag_col_prefix="mag_",
+                        output_prefix="mag_",
+                        filters=filters,
+                        inplace=False,
+                        catalog_color_prefix="mag_std_",
+                    )
+                corrected.append(data)
+            combined = average_epochs_per_star(corrected, filters)
             combined_mask = comparison_selector(combined)
             result = self.photometer.fit_transformation_epoch(
                 combined, "ensemble", filters, combined_mask,
@@ -418,6 +449,7 @@ class PhotometryCalibrator:
                 sigma_clip=sigma_clip,
                 color_term_fit=color_term_fit,
             )
+            set_airmass_reference(result, list(self.epochs.values()), filters)
             for epoch_id in self.epochs:
                 results[epoch_id] = result
 
