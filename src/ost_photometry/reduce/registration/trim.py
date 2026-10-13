@@ -6,11 +6,16 @@ from pathlib import Path
 
 import ccdproc as ccdp
 import numpy as np
-from astropy.nddata import CCDData
+from astropy.nddata import CCDData, StdDevUncertainty
 from scipy.ndimage import shift as shift_scipy
 
 from ... import checks, style, terminal_output
-from ...core.pixel_masks import fill_masked_pixels, resample_mask, warn_if_mask_too_large
+from ...core.pixel_masks import (
+    fill_masked_pixels,
+    resample_mask,
+    resample_uncertainty,
+    warn_if_mask_too_large,
+)
 from ..image_collection import image_file_collection as make_image_file_collection
 from ..trim_slices import aa_common_trim_margins, ccd_trim_slices
 
@@ -196,6 +201,10 @@ def trim_image(
         #   the boolean mask through ``scipy.ndimage.shift(order=1)``, which
         #   returns an all-False array, i.e. the bad-pixel mask was lost.
         source_mask = None if image.mask is None else np.asarray(image.mask, dtype=bool)
+        source_sigma = (
+            None if image.uncertainty is None
+            else np.asarray(image.uncertainty.array, dtype=float)
+        )
         if source_mask is not None and source_mask.any():
             image = image.copy()
             image.data = fill_masked_pixels(image.data, source_mask)
@@ -207,6 +216,16 @@ def trim_image(
             shift=shift_vector,
             order=1,
         )
+        if source_sigma is not None:
+            #   transform_image shifts σ itself; resample the variance instead
+            #   (masked σ filled first).
+            image.uncertainty = StdDevUncertainty(
+                resample_uncertainty(
+                    source_sigma,
+                    source_mask,
+                    lambda values: shift_scipy(values, shift=shift_vector, order=1, cval=np.nan),
+                )
+            )
         shifted_mask = resample_mask(
             source_mask,
             lambda values: shift_scipy(values, shift=shift_vector, order=0, cval=1.0),

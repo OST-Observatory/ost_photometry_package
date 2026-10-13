@@ -260,3 +260,36 @@ def test_analysis_cosmic_parameters_from_header():
     assert cosmic_ray_noise_parameters(header, 10.0, 6e4)[:2] == (10.0, 6e4)
     rn, sat, notes = cosmic_ray_noise_parameters(fits.Header())
     assert (rn, sat) == (8.0, 65535.0) and len(notes) == 2
+
+
+def test_dark_shot_noise_added_above_pedestal():
+    from astropy.nddata import CCDData, StdDevUncertainty
+
+    from ost_photometry.reduce.detector_noise import add_dark_shot_noise
+
+    dark = np.full((10, 10), 500.0)  # pedestal (bias + normal dark) in ADU
+    dark[2, 3] = 900.0  # warm pixel: 400 ADU of dark signal
+    light = CCDData(
+        np.zeros((10, 10)), unit="adu", uncertainty=StdDevUncertainty(np.full((10, 10), 5.0))
+    )
+    out = add_dark_shot_noise(light, CCDData(dark, unit="adu"), gain=2.0)
+    # 400 ADU · 2 e-/ADU = 800 e- -> σ = √800 e- = √800/2 ADU = √(400/2) ADU
+    assert out.uncertainty.array[2, 3] == pytest.approx(np.sqrt(25.0 + 400.0 / 2.0))
+    assert out.uncertainty.array[0, 0] == pytest.approx(5.0)
+
+
+def test_gain_unaffected_by_changing_twilight_gradient(tmp_path):
+    """A gradient that differs between the two flats of a pair must not
+    inflate the variance (it lowered the gain before)."""
+    files = _frames(tmp_path)
+    yy, xx = np.indices(SHAPE)
+    for i, path in enumerate(files["flat"]):
+        data = fits.getdata(path).astype(float)
+        header = fits.getheader(path)
+        tilt = (0.05 if i % 2 == 0 else -0.05) * (xx - 200) / 200.0
+        signal = (data - BIAS_LEVEL) * (1.0 + tilt)
+        fits.writeto(
+            path, np.clip(BIAS_LEVEL + signal, 0, 65535).astype(np.uint16), header, overwrite=True
+        )
+    m = measure_detector_noise(files["bias"], files["flat"], saturation_level=65535)
+    assert m.gain == pytest.approx(GAIN, rel=0.07)

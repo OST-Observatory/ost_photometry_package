@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from astropy.nddata import CCDData
+from astropy.nddata import CCDData, StdDevUncertainty
 from astropy.wcs import WCS
 
 pytest.importorskip("ccdproc")
@@ -97,3 +97,35 @@ def test_apply_wcs_align_writes_reference_copy_and_shifted_frame(tmp_path: Path)
     assert y_peak == pytest.approx(ref_peak[1], abs=1.5)
     assert aligned.meta.get("ALIGNMTH") == "wcs"
     assert (trans_dir / "src.yaml").is_file()
+
+
+def test_reprojected_uncertainty_keeps_aperture_variance_bin2_to_bin1():
+    """σ_out = √(k·interp(σ²)): aperture sums keep their variance on a finer grid."""
+    pytest.importorskip("reproject")
+    from photutils.aperture import CircularAperture, aperture_photometry
+
+    from ost_photometry.reduce.registration.wcs_align import reproject_ccd_onto_wcs
+
+    rng = np.random.default_rng(7)
+    sigma0 = 3.0
+    n_src = 200
+    src = CCDData(
+        rng.normal(0.0, sigma0, (n_src, n_src)),
+        unit="electron",
+        uncertainty=StdDevUncertainty(np.full((n_src, n_src), sigma0)),
+        meta={"SATLEVEL": 60000.0, "RDNOISE": 10.0},
+    )
+    src.wcs = _tan_wcs(crpix=(n_src / 2, n_src / 2))
+    src.wcs.wcs.cdelt = [-2 / 3600, 2 / 3600]
+    target = _tan_wcs(crpix=(n_src, n_src))
+    target.wcs.cdelt = [-1 / 3600, 1 / 3600]
+    out = reproject_ccd_onto_wcs(src, target, (2 * n_src, 2 * n_src))
+    # pixel area ratio target/source = 1/4: data and σ scale accordingly
+    assert out.meta["SATLEVEL"] == pytest.approx(15000.0)
+    assert out.meta["RDNOISE"] == pytest.approx(5.0)
+    xs, ys = np.meshgrid(np.arange(40, 2 * n_src - 40, 24), np.arange(40, 2 * n_src - 40, 24))
+    pos = np.column_stack([xs.ravel(), ys.ravel()]).astype(float)
+    phot = aperture_photometry(out.data, CircularAperture(pos, 8.0), error=out.uncertainty.array)
+    measured = np.std(np.asarray(phot["aperture_sum"]))
+    predicted = np.median(np.asarray(phot["aperture_sum_err"]))
+    assert measured / predicted == pytest.approx(1.0, abs=0.15)

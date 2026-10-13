@@ -11,7 +11,6 @@ import ccdproc as ccdp
 import numpy as np
 from astropy.io import fits
 from astropy.nddata import CCDData
-from astropy.stats import mad_std
 from astropy.table import Table
 
 from ... import checks, style, terminal_output
@@ -31,7 +30,7 @@ from ..detector_noise import (
 )
 from ..frame_selection import SUPPORTED_STACK_WEIGHTING
 from ..storage import cast_like, file_float_dtype
-from ..weighted_combine import weighted_average_combine
+from ..weighted_combine import combine_images
 
 #: Stack header keywords written from ``stack_meta``: key -> (meta field, comment).
 STACK_META_KEYWORDS: dict[str, tuple[str, str]] = {
@@ -137,10 +136,57 @@ def total_exposure_time(files: Sequence[str]) -> float | None:
 MIN_FRAMES_COSMIC_CLIPPING = 3
 
 
+def _write_stack_epoch(
+    combined_image: CCDData,
+    images: Sequence[str],
+    weights: np.ndarray | None,
+) -> None:
+    """Weighted mid-time and airmass of the frames in the stack.
+
+    ``MJD_MID`` / ``DATE-MID`` are the weighted mean of the frames' mid
+    times (not the first frame plus half the total exposure, which is wrong
+    for frames spread over a night) and ``AIRMASS`` the weighted mean
+    airmass (used for scintillation and extinction of the stack). ``JD`` /
+    ``DATE-OBS`` keep the start of the first frame.
+    """
+    from astropy.time import Time
+
+    headers = [fits.getheader(name) for name in images]
+    w = np.ones(len(headers)) if weights is None else np.asarray(weights, dtype=float)
+    mids, airmasses = [], []
+    for h in headers:
+        try:
+            start = float(h["JD"]) if "JD" in h else Time(h["DATE-OBS"], format="fits").jd
+            mids.append(start + float(h.get("EXPTIME", 0.0)) / 2.0 / 86400.0)
+        except (KeyError, TypeError, ValueError):
+            mids.append(np.nan)
+        try:
+            airmasses.append(float(h["AIRMASS"]))
+        except (KeyError, TypeError, ValueError):
+            airmasses.append(np.nan)
+    mids = np.asarray(mids)
+    airmasses = np.asarray(airmasses)
+    meta = combined_image.meta
+    if np.all(np.isfinite(mids)) and w.sum() > 0:
+        jd_mid = float(np.sum(w * mids) / np.sum(w))
+        meta["MJD_MID"] = (jd_mid - 2400000.5, "Weighted mean mid-time of the frames")
+        meta["DATE-MID"] = Time(jd_mid, format="jd").fits
+    if np.all(np.isfinite(airmasses)) and w.sum() > 0:
+        meta["AIRMASS"] = (
+            float(np.sum(w * airmasses) / np.sum(w)),
+            "Weighted mean airmass of the frames",
+        )
+        meta["AIRMSMIN"] = float(np.min(airmasses))
+        meta["AIRMSMAX"] = float(np.max(airmasses))
+    elif "AIRMASS" in meta:
+        del meta["AIRMASS"]
+
+
 def _write_stack_noise(
     combined_image: CCDData,
     images: Sequence[str],
     weights: np.ndarray | None,
+    method: str = "average",
 ) -> None:
     """``RDNOISE`` / ``SATLEVEL`` of the stack and its cosmic-ray flag.
 
@@ -152,7 +198,11 @@ def _write_stack_noise(
     headers = [fits.getheader(name) for name in images]
     rate_images = combined_image.unit == u.electron / u.s
     read_noise, saturation = stack_noise_values(
-        headers, weights, rate_images=rate_images, total_exptime=meta.get("EXPTIME")
+        headers,
+        weights,
+        rate_images=rate_images,
+        total_exptime=meta.get("EXPTIME"),
+        method=method,
     )
     for key in (READ_NOISE_KEY, SATURATION_KEY):
         if key in meta:
@@ -185,30 +235,17 @@ def stack_filter_images(
     weight_array = prepare_stack_weights(
         weights, stacking_method, len(images_to_combine), label=f"filter {filter_}"
     )
-    if weight_array is not None and stacking_method == "average":
-        #   ccdproc's weighted average counts the weights of masked / clipped
-        #   values (see ost_photometry.reduce.weighted_combine)
-        combined_image = weighted_average_combine(
-            images_to_combine,
-            weight_array,
-            sigma_clip=True,
-            sigma_clip_low_thresh=5,
-            sigma_clip_high_thresh=5,
-            dtype=dtype,
-        )
-    else:
-        combined_image = ccdp.combine(
-            images_to_combine,
-            method=stacking_method,
-            weights=weight_array,
-            sigma_clip=True,
-            sigma_clip_low_thresh=5,
-            sigma_clip_high_thresh=5,
-            sigma_clip_func=np.ma.median,
-            sigma_clip_dev_func=mad_std,
-            mem_limit=15e9,
-            dtype=dtype,
-        )
+    #   σ of the stack propagated from the frames' UNCERT (one frame: its σ;
+    #   median: the median's larger variance), not their scatter.
+    combined_image = combine_images(
+        images_to_combine,
+        method=stacking_method,
+        weights=weight_array,
+        sigma_clip=True,
+        sigma_clip_low_thresh=5,
+        sigma_clip_high_thresh=5,
+        dtype=dtype,
+    )
     utilities.update_header_information(
         combined_image,
         len(images_to_combine),
@@ -216,7 +253,8 @@ def stack_filter_images(
         total_exptime=total_exposure_time(images_to_combine),
     )
     _write_stack_meta(combined_image, stack_meta, weight_array)
-    _write_stack_noise(combined_image, images_to_combine, weight_array)
+    _write_stack_noise(combined_image, images_to_combine, weight_array, stacking_method)
+    _write_stack_epoch(combined_image, images_to_combine, weight_array)
     #   Same floating type as the stacked frames (calculation in ``dtype``)
     cast_like(combined_image, file_float_dtype(images_to_combine[0]))
     file_name = "combined_filter_{}.fit".format(filter_.replace("''", "p"))

@@ -133,7 +133,7 @@ def reproject_ccd_onto_wcs(
     from ccdproc import wcs_project
     from reproject import reproject_interp
 
-    from ...core.pixel_masks import fill_masked_pixels, resample_mask
+    from ...core.pixel_masks import fill_masked_pixels, resample_mask, resample_uncertainty
 
     src_wcs = celestial_wcs_from_ccd(ccd)
     if src_wcs is None:
@@ -170,20 +170,49 @@ def reproject_ccd_onto_wcs(
     warped_mask = resample_mask(source_mask, _nearest)
     projected.mask = footprint if warped_mask is None else (footprint | warped_mask)
 
-    if ccd.uncertainty is not None:
-        from astropy.wcs.utils import proj_plane_pixel_area
+    from astropy.wcs.utils import proj_plane_pixel_area
 
-        unc_in = np.asarray(ccd.uncertainty.array, dtype=float)
-        unc_raw, _ = reproject_interp(
-            (unc_in, src_wcs),
-            target_wcs,
-            shape_out=target_shape,
-            order="bilinear",
+    #   wcs_project scales the data by the pixel-area ratio k (flux per pixel);
+    #   σ follows as √k·σ, and the per-pixel noise keywords with it.
+    area_ratio = float(proj_plane_pixel_area(target_wcs) / proj_plane_pixel_area(src_wcs))
+    if ccd.uncertainty is not None:
+
+        def _bilinear(values: np.ndarray) -> np.ndarray:
+            out, _ = reproject_interp(
+                (values, src_wcs),
+                target_wcs,
+                shape_out=target_shape,
+                order="bilinear",
+            )
+            return out
+
+        projected.uncertainty = StdDevUncertainty(
+            resample_uncertainty(
+                np.asarray(ccd.uncertainty.array, dtype=float),
+                source_mask,
+                _bilinear,
+                area_ratio=area_ratio,
+            )
         )
-        area_ratio = proj_plane_pixel_area(target_wcs) / proj_plane_pixel_area(src_wcs)
-        projected.uncertainty = StdDevUncertainty(np.asarray(unc_raw) * float(area_ratio))
+    scale_noise_keywords(projected.meta, area_ratio)
 
     return projected
+
+
+def scale_noise_keywords(meta, area_ratio: float) -> None:
+    """``SATLEVEL`` × k and ``RDNOISE`` × √k after resampling by area ratio k.
+
+    Pixel values scale by k, so saturation does; the read noise follows the
+    σ map convention (√k, correct for aperture sums).
+    """
+    k = float(area_ratio)
+    if not np.isfinite(k) or k <= 0 or abs(k - 1.0) < 1e-6:
+        return
+    if "SATLEVEL" in meta:
+        meta["SATLEVEL"] = float(meta["SATLEVEL"]) * k
+    if "RDNOISE" in meta:
+        meta["RDNOISE"] = float(meta["RDNOISE"]) * np.sqrt(k)
+    meta["PIXAREAR"] = (k, "Pixel area ratio of the resampling (new/old)")
 
 
 def apply_wcs_align(

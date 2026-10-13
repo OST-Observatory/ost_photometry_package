@@ -2,13 +2,12 @@
 
 from pathlib import Path
 
-import ccdproc as ccdp
 import numpy as np
-from astropy.stats import mad_std
 
 from ... import checks
 from .. import utilities
 from ..storage import cast_for_storage
+from ..weighted_combine import combine_images
 
 
 def master_bias(
@@ -93,15 +92,14 @@ def master_bias(
     #                   set memory limit to 15GB, set unit to 'adu' since
     #                   this is not set in our images -> find better
     #                   solution
-    combined_bias = ccdp.combine(
+    #   Raw bias frames carry no uncertainty: the master's σ is the scatter
+    #   between them (read noise) / √n.
+    combined_bias = combine_images(
         bias_frames,
         method="average",
         sigma_clip=True,
         sigma_clip_low_thresh=5,
         sigma_clip_high_thresh=5,
-        sigma_clip_func=np.ma.median,
-        sigma_clip_dev_func=mad_std,
-        mem_limit=15e9,
         unit="adu",
         dtype=dtype,
     )

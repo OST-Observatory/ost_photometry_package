@@ -45,6 +45,29 @@ section of this file.
 
 ### Changed
 
+- **Stacks and master frames propagate the frames' uncertainties**
+  (`reduce.weighted_combine.combine_images`, replaces `ccdproc.combine` for
+  bias, dark, flat, stacks and the camera combination): mean
+  `σ² = Σw²σ²/(Σw)²`, median `k(n)·n/(Σ1/σ)²` (k = 1.35 for n = 3 … π/2),
+  sum. Before, σ was the scatter between the frames: 0 where one frame
+  covered a pixel, biased low for few frames, inflated on stars by seeing
+  changes, and without the median factor. Frames without uncertainties (raw
+  bias) still use the scatter, now with `ddof=1`. Integer raw frames are read
+  block-wise with their `BZERO`/`BSCALE`.
+- **Registration resamples the variance** with a linear kernel (masked σ
+  filled first) and scales it by the pixel-area ratio k:
+  `σ = √(k·interp(σ²))`. WCS reprojection multiplied σ by k (errors 2× too
+  small from bin 2 onto bin 1) and astroalign warped σ bicubically (negative
+  σ possible). `SATLEVEL` × k, `RDNOISE` × √k and `PIXAREAR` are written.
+- Stack headers: `MJD_MID` / `DATE-MID` and `AIRMASS` (with `AIRMSMIN` /
+  `AIRMSMAX`) are weighted means over the frames; `RDNOISE` of median stacks
+  includes the median factor.
+- Frames reduced with darks that carry the bias get the dark shot noise of
+  warm pixels and amplifier glow; cosmic-ray pixels interpolated by
+  L.A.Cosmic get the σ of their neighbourhood.
+- The photon-transfer gain uses neighbouring-pixel differences of the flat
+  pair (a changing twilight gradient lowered the gain); clamped camera
+  curves warn.
 - **APER sky and errors** (`analyze.photometry_quality`): the sky is the
   3σ-clipped median of the annulus with all detected stars masked (was the
   unclipped annulus mean, about −40σ for an 8× brighter neighbour in the

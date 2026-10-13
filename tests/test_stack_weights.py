@@ -190,3 +190,26 @@ def test_fwhm_weights_use_arcsec_for_mixed_pixel_scales():
     ]
     w = stack_weights(quality_table_from_rows(rows), "fwhm")
     assert w[0] == pytest.approx(w[1])
+
+
+def test_stack_mid_time_and_airmass_are_weighted_means(tmp_path):
+    from astropy.io import fits
+    from astropy.nddata import CCDData
+    from astropy.time import Time
+
+    stack = _stack()
+    files = []
+    for i, (jd, am) in enumerate(((2460000.30, 1.2), (2460000.40, 1.5), (2460000.50, 2.0))):
+        path = tmp_path / f"f{i}.fit"
+        _write_frame(path, 1.0, jd=jd)
+        with fits.open(path, mode="update") as hdul:
+            hdul[0].header["AIRMASS"] = am
+        files.append(str(path))
+    combined = CCDData(np.ones((8, 8)), unit="electron/s", meta=fits.Header({"JD": 2460000.30}))
+    w = np.array([1.0, 2.0, 1.0])
+    stack._write_stack_epoch(combined, files, w)
+    mid = (0.30 + 2 * 0.40 + 0.50) / 4 + 2460000.0 + 5.0 / 86400.0
+    assert combined.meta["MJD_MID"] == pytest.approx(mid - 2400000.5, abs=1e-9)
+    assert Time(combined.meta["DATE-MID"], format="fits").jd == pytest.approx(mid, abs=1e-6)
+    assert combined.meta["AIRMASS"] == pytest.approx((1.2 + 2 * 1.5 + 2.0) / 4)
+    assert combined.meta["AIRMSMAX"] == 2.0

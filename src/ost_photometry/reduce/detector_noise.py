@@ -203,7 +203,9 @@ def flat_pair_gains(
 
     For two flats with the zero level removed, the difference cancels the
     illumination pattern; its variance per frame is ``S / g + RN^2`` (ADU),
-    so ``g = S / (var - RN^2)``. ``zero_level(exptime)`` returns the bias
+    so ``g = S / (var - RN^2)``. The variance is taken from differences of
+    neighbouring pixels of the pair difference, so a gradient that changed
+    between the two exposures (twilight flats) does not lower the gain. ``zero_level(exptime)`` returns the bias
     (or dark) level in ADU for a flat of that exposure time.
     """
     groups: dict[tuple[str, float], list[tuple[str, str]]] = {}
@@ -234,7 +236,13 @@ def flat_pair_gains(
             if not (FLAT_LEVEL_RANGE[0] * saturation <= level + zero
                     <= FLAT_LEVEL_RANGE[1] * saturation):
                 continue
-            variance = robust_std(a - b * (level_a / level_b)) ** 2 / 2.0 - read_noise_adu**2
+            #   Differences of neighbouring pixels of the pair difference:
+            #   an illumination gradient that changed between the two flats
+            #   (twilight) cancels there, independent pixel noise does not
+            #   (variance 2 × 2 × per-frame variance).
+            diff = a - b * (level_a / level_b)
+            neighbour = diff[:, 1:] - diff[:, :-1]
+            variance = robust_std(neighbour) ** 2 / 4.0 - read_noise_adu**2
             if variance <= read_noise_adu**2:
                 continue  # read noise dominates: no usable photon transfer
             gain = level / variance
@@ -330,6 +338,7 @@ def stack_noise_values(
     *,
     rate_images: bool,
     total_exptime: float | None,
+    method: str = "average",
 ) -> tuple[float | None, float | None]:
     """``RDNOISE`` and ``SATLEVEL`` of a weighted mean of frames.
 
@@ -338,8 +347,10 @@ def stack_noise_values(
     contributes ``RDNOISE_i / t_i`` to the rate noise, so
     ``RDNOISE = T * sqrt(sum (w_i RDNOISE_i / t_i)^2) / sum w_i`` and
     ``SATLEVEL = T * min(SATLEVEL_i / t_i)`` (the lowest rate at which any
-    frame saturates). For images in electrons ``t_i = T = 1``. Returns
-    ``None`` for values missing in any frame.
+    frame saturates). For images in electrons ``t_i = T = 1``. A median
+    stack has the larger noise of a median (``√k(n)``, see
+    :func:`~ost_photometry.reduce.weighted_combine.median_variance_factor`).
+    Returns ``None`` for values missing in any frame.
     """
     n = len(headers)
     if n == 0:
@@ -365,6 +376,10 @@ def stack_noise_values(
     saturation = values(SATURATION_KEY)
     rn = None if read_noise is None else \
         total * float(np.sqrt(np.sum((w * read_noise / t) ** 2))) / float(w.sum())
+    if rn is not None and method == "median":
+        from .weighted_combine import median_variance_factor
+
+        rn *= float(np.sqrt(median_variance_factor(np.array([n]))[0]))
     sat = None if saturation is None else total * float(np.min(saturation / t))
     return rn, sat
 
@@ -406,7 +421,27 @@ def add_signal_uncertainty(ccd: CCDData, *, gain: float, read_noise: float) -> C
     return out
 
 
+def add_dark_shot_noise(ccd: CCDData, master_dark: CCDData, *, gain: float) -> CCDData:
+    """Add the shot noise of the frame's own dark current (darks with bias).
+
+    When the darks carry the bias, the uncertainty is built after the dark
+    subtraction from the remaining sky and star signal, so the Poisson noise
+    of the frame's own dark electrons is missing. Its signal is estimated as
+    the master dark above its median (the pedestal: bias plus the low
+    dark current of normal pixels), which covers warm pixels and amplifier
+    glow, where it matters. ``ccd`` and ``master_dark`` are in ADU.
+    """
+    dark = np.asarray(master_dark.data, dtype=float)
+    pedestal = float(np.nanmedian(dark))
+    signal = np.where(np.isfinite(dark), np.maximum(dark - pedestal, 0.0), 0.0)
+    extra_var = signal / float(gain)  # ADU²: (D·g electrons) / g²
+    sigma = np.asarray(ccd.uncertainty.array, dtype=float)
+    ccd.uncertainty = StdDevUncertainty(np.sqrt(sigma**2 + extra_var))
+    return ccd
+
+
 __all__ = [
+    "add_dark_shot_noise",
     "BINNING_MODES",
     "NOISE_SOURCES",
     "READ_NOISE_KEY",

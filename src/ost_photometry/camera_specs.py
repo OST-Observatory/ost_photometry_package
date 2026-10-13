@@ -413,7 +413,12 @@ def interpolate_camera_curve(
     *,
     for_camera_info: bool = False,
 ) -> float | None:
-    """Linear interpolation on a catalog curve, or ``None``."""
+    """Linear interpolation on a catalog curve, or ``None``.
+
+    Outside the tabulated range the curve's end value is used (with a
+    warning): extrapolating a gain or read-noise curve is less safe than
+    holding it, but the value is then an approximation.
+    """
     if x is None or not np.isfinite(float(x)):
         return None
     rec = _camera_record(camera)
@@ -424,6 +429,14 @@ def interpolate_camera_curve(
     if series is None:
         return None
     xg, yg = series
+    if float(x) < float(np.min(xg)) or float(x) > float(np.max(xg)):
+        import warnings
+
+        warnings.warn(
+            f"{camera} {quantity} curve covers {float(np.min(xg)):g}-{float(np.max(xg)):g}; "
+            f"{float(x):g} is outside, the end value is used.",
+            stacklevel=2,
+        )
     y = float(np.interp(float(x), xg, yg))
     if not np.isfinite(y):
         return None

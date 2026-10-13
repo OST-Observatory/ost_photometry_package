@@ -154,6 +154,28 @@ def fill_masked_uncertainty(
     return out
 
 
+def resample_uncertainty(
+    sigma: np.ndarray,
+    mask: np.ndarray | None,
+    resample_linear: Callable[[np.ndarray], np.ndarray],
+    area_ratio: float = 1.0,
+) -> np.ndarray:
+    """Per-pixel σ on a new pixel grid.
+
+    The *variance* is resampled with a linear (non-negative) kernel, after
+    masked pixels got the median variance of their neighbours (a hot pixel's
+    σ must not leak into its neighbours), and scaled by ``area_ratio`` = new
+    / old pixel area: ``σ_out = √(k · interp(σ²))``. Summed over an aperture
+    this keeps the variance of the flux it covers, also when the new pixels
+    are smaller (k < 1, finer grid). Interpolating σ itself with a cubic
+    kernel overshoots near sharp σ spikes (negative σ is possible).
+    """
+    var = np.asarray(sigma, dtype=float) ** 2
+    var = fill_masked_pixels(var, mask)
+    out = np.asarray(resample_linear(var), dtype=float)
+    return np.sqrt(float(area_ratio) * np.maximum(out, 0.0))
+
+
 def resample_mask(
     mask: np.ndarray | None,
     resample: Callable[[np.ndarray], np.ndarray],

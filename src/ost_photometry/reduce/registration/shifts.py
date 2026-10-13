@@ -15,7 +15,12 @@ from skimage.transform import SimilarityTransform, warp
 from ... import style, terminal_output
 from ... import utilities as base_utilities
 from ...core.parallel import Executor
-from ...core.pixel_masks import fill_masked_pixels, resample_mask, warn_if_mask_too_large
+from ...core.pixel_masks import (
+    fill_masked_pixels,
+    resample_mask,
+    resample_uncertainty,
+    warn_if_mask_too_large,
+)
 from ...terminal_output import print_to_terminal
 from .. import plots, utilities
 from ..storage import cast_like
@@ -694,12 +699,26 @@ def astro_align(
         fill_value=np.nan,
     )
 
-    #   Transform uncertainty array
-    image_uncertainty, _ = aa.apply_transform(
-        transformation_coefficients,
-        current_ccd.uncertainty.array,
-        reference_ccd.uncertainty.array,
-        fill_value=np.nan,
+    #   Uncertainty: variance resampled linearly (the cubic data warp would
+    #   overshoot near σ spikes) with masked σ filled like the data; a
+    #   similarity scale s changes the pixel area by 1/s².
+    def _warp_linear(values: np.ndarray) -> np.ndarray:
+        return warp(
+            values,
+            inverse_map=transformation_coefficients.inverse,
+            output_shape=np.shape(reference_ccd.data),
+            order=1,
+            mode="constant",
+            cval=np.nan,
+            preserve_range=True,
+        )
+
+    scale = float(getattr(transformation_coefficients, "scale", 1.0) or 1.0)
+    image_uncertainty = resample_uncertainty(
+        np.asarray(current_ccd.uncertainty.array, dtype=float),
+        source_mask,
+        _warp_linear,
+        area_ratio=1.0 / scale**2,
     )
 
     footprint_mask = np.asarray(footprint_mask, dtype=bool)

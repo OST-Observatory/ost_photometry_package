@@ -6,13 +6,13 @@ from pathlib import Path
 import ccdproc as ccdp
 import numpy as np
 from astropy.nddata import CCDData
-from astropy.stats import mad_std
 
 from ... import checks, style, terminal_output
 from ...core.parallel import Executor
 from .. import plots, utilities
 from ..detector_noise import add_signal_uncertainty
 from ..storage import cast_for_storage
+from ..weighted_combine import combine_images
 
 
 def reduce_dark(
@@ -572,15 +572,14 @@ def master_dark_stacking(
     #                  outliers, set memory limit to 15GB, set unit to
     #                  'adu' since this is not set in our images
     #                  -> find better solution
-    combined_dark = ccdp.combine(
+    #   σ of the master from the darks' own uncertainties (bias-subtracted
+    #   darks); raw darks without one fall back to the scatter / √n.
+    combined_dark = combine_images(
         calibrated_darks,
         method="average",
         sigma_clip=True,
         sigma_clip_low_thresh=5,
         sigma_clip_high_thresh=5,
-        sigma_clip_func=np.ma.median,
-        sigma_clip_dev_func=mad_std,
-        mem_limit=15e9,
         unit="adu",
         dtype=dtype,
     )

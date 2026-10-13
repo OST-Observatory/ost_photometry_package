@@ -116,3 +116,71 @@ def test_ccdproc_weighted_average_bug():
     ccds = [CCDData(d, unit="electron", mask=m) for d, m in zip(data, mask, strict=True)]
     combined = ccdp.combine(ccds, method="average", weights=np.array([1.0, 2.0, 3.0]))
     assert combined.data[1, 1] == pytest.approx(10.0)  # ccdproc 2.5.1 gives 10 * 5/6
+
+
+def _noisy_frames(n, shape=(60, 60), sigma=2.0, seed=0, truth=100.0):
+    from astropy.nddata import CCDData, StdDevUncertainty
+
+    rng = np.random.default_rng(seed)
+    frames = []
+    sig = np.full(shape, sigma)
+    for i in range(n):
+        s = sig * (1.0 + 0.5 * i)  # frames of different quality
+        data = truth + rng.normal(0.0, s)
+        frames.append(CCDData(data, unit="electron", uncertainty=StdDevUncertainty(s)))
+    return frames
+
+
+@pytest.mark.parametrize("method", ["average", "median"])
+@pytest.mark.parametrize("n", [1, 2, 3, 6])
+def test_stack_uncertainty_matches_scatter(method, n):
+    """Pull of the stacked value against the truth has σ ≈ 1."""
+    from ost_photometry.reduce.weighted_combine import combine_images
+
+    if method == "median" and n == 1:
+        pytest.skip("median of one frame is the frame")
+    pulls = []
+    for seed in range(40):
+        frames = _noisy_frames(n, seed=seed)
+        out = combine_images(frames, method=method, sigma_clip=False)
+        pulls.append((out.data - 100.0) / out.uncertainty.array)
+    pulls = np.concatenate([p.ravel() for p in pulls])
+    assert np.all(np.isfinite(pulls))
+    tolerance = 0.06 if method == "average" else 0.1
+    assert np.std(pulls) == pytest.approx(1.0, abs=tolerance)
+
+
+def test_weighted_stack_uncertainty_uses_weights():
+    from ost_photometry.reduce.weighted_combine import combine_images
+
+    pulls = []
+    for seed in range(40):
+        frames = _noisy_frames(4, seed=seed)
+        w = 1.0 / np.array([f.uncertainty.array[0, 0] ** 2 for f in frames])
+        out = combine_images(frames, method="average", weights=w, sigma_clip=False)
+        pulls.append(((out.data - 100.0) / out.uncertainty.array).ravel())
+    assert np.std(np.concatenate(pulls)) == pytest.approx(1.0, abs=0.06)
+
+
+def test_single_coverage_pixel_keeps_its_sigma():
+    """Where only one frame covers a pixel the stack has that frame's σ (was 0)."""
+    from ost_photometry.reduce.weighted_combine import combine_images
+
+    frames = _noisy_frames(3)
+    for f in frames[1:]:
+        f.mask = np.zeros(f.shape, dtype=bool)
+        f.mask[:, :10] = True
+    out = combine_images(frames, method="average", sigma_clip=False)
+    assert np.allclose(out.uncertainty.array[:, :10], frames[0].uncertainty.array[:, :10])
+    assert np.all(out.uncertainty.array > 0)
+
+
+def test_frames_without_uncertainty_use_scatter():
+    from astropy.nddata import CCDData
+
+    from ost_photometry.reduce.weighted_combine import combine_images
+
+    rng = np.random.default_rng(5)
+    frames = [CCDData(100.0 + rng.normal(0, 3.0, (80, 80)), unit="adu") for _ in range(20)]
+    out = combine_images(frames, method="average", sigma_clip=False)
+    assert np.median(out.uncertainty.array) == pytest.approx(3.0 / np.sqrt(20), rel=0.05)

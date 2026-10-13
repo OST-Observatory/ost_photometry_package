@@ -7,13 +7,13 @@ import astropy.units as u
 import ccdproc as ccdp
 import numpy as np
 from astropy.nddata import CCDData
-from astropy.stats import mad_std
 
 from ... import checks, style, terminal_output
 from ...core.parallel import Executor
 from .. import plots, utilities
-from ..detector_noise import add_signal_uncertainty
+from ..detector_noise import add_dark_shot_noise, add_signal_uncertainty
 from ..storage import cast_for_storage
+from ..weighted_combine import combine_images
 
 
 def reduce_flat(
@@ -317,6 +317,7 @@ def reduce_flat_image(
     )
     if not rm_bias:
         flat = add_signal_uncertainty(flat, gain=gain, read_noise=read_noise)
+        flat = add_dark_shot_noise(flat, combined_darks[closest_dark_exposure_time], gain=gain)
 
     #   Save the result
     file_name = flat_file_name.split("/")[-1]
@@ -500,16 +501,18 @@ def stack_flat_images(
     #                  outliers, set memory limit to 15GB, scale the
     #                  frames so that they have the same median value
     #                  ('inv_median')
-    combined_flat = ccdp.combine(
+    #   Each flat scaled to median 1 (data and σ alike); the master's σ is
+    #   propagated from the flats' uncertainties.
+    scales = [
+        float(utilities.inverse_median(CCDData.read(f).data)) for f in flats_to_combine
+    ]
+    combined_flat = combine_images(
         flats_to_combine,
         method="average",
-        scale=utilities.inverse_median,
+        scale=scales,
         sigma_clip=True,
         sigma_clip_low_thresh=5,
         sigma_clip_high_thresh=5,
-        sigma_clip_func=np.ma.median,
-        sigma_clip_dev_func=mad_std,
-        mem_limit=15e9,
         dtype=dtype,
     )
 

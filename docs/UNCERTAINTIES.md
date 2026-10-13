@@ -37,6 +37,57 @@ The read noise is that of the binned pixel: `√(xbin·ybin)` × the native read
 noise for digitally binning CMOS. Frames in e⁻/s carry `RDNOISE` and
 `SATLEVEL` in electrons for the image times `EXPTIME`.
 
+### Master frames and stacks
+
+`reduce.weighted_combine.combine_images` combines frames by mean, weighted
+mean, median or sum. It propagates the frames' own `UNCERT` over the values
+that survive masking and 5σ clipping:
+
+```
+mean:   σ² = Σ w_i² σ_i² / (Σ w_i)²
+median: σ² = k(n) · n / (Σ 1/σ_i)²     k = Var(median)/Var(mean): 1.35 (n=3) … π/2
+sum:    the mean × n
+```
+
+- **Raw bias frames:** they carry no `UNCERT`, so their master gets the
+  scatter between frames, `std(ddof=1)/√n`.
+- **Flats:** each frame is scaled to median 1, data and σ alike.
+- **Why it changed:** the earlier stacks and masters used the scatter
+  between frames for every pixel. That gave σ = 0 where one frame covered a
+  pixel and was biased low for few frames (0.56 for n = 2). On stars it was
+  inflated by seeing changes between frames, and for medians the factor
+  π/2 was missing.
+
+Stack headers:
+- `MJD_MID` / `DATE-MID` and `AIRMASS` are the weighted means over the
+  frames, with `AIRMSMIN` / `AIRMSMAX` as the range.
+- `RDNOISE` of a median stack includes `√k(n)`.
+
+### Registration
+
+- **Method:** the *variance* is resampled with a linear kernel, after masked
+  pixels got their neighbours' variance, and scaled by the pixel area ratio
+  `k` (new/old pixel area): `σ_out = √(k·interp(σ²))`. Aperture sums keep
+  their variance, also onto a finer grid.
+- **Header keywords:** they follow the same `k`: `SATLEVEL` × k,
+  `RDNOISE` × √k, and `PIXAREAR` = k.
+- **Why it changed:**
+  - WCS reprojection used to scale σ by `k` itself, which made errors too
+    small by a factor of 2 when projecting bin 2 onto bin 1.
+  - astroalign warped σ bicubically, which can overshoot to negative values
+    near hot pixels.
+
+### Other reduction terms
+
+- **Darks without bias frames:** the dark shot noise of the frame's own
+  dark current is added, with the signal estimated as the master dark above
+  its median. This covers warm pixels and amplifier glow.
+- **Cosmic-ray pixels:** pixels interpolated by L.A.Cosmic get the σ of
+  their neighbourhood, not the Poisson σ of the cosmic.
+- **Photon-transfer gain:** measured from differences of neighbouring
+  pixels of a flat pair, so a twilight gradient that changes between the
+  two flats does not lower the gain.
+
 ## Extraction
 
 ### Aperture photometry
@@ -103,9 +154,16 @@ example `saturated_V`) and the light-curve rows as `flag_saturated`.
 | APER pulls, simulated frames (Poisson + read noise, neighbour in annulus) | `tests/test_aperture_uncertainty.py` | pull σ 1.00 ± 0.1; neighbour bias < 0.2σ |
 | Empty-sky factor, white noise / added structure | same | 1.0 ± 0.15 / > 1.3 |
 | Computed vs header `AIRMASS` | HAT-P-20, 10 V frames | ≤ 0.0011 |
+| Stack pulls, simulated frames (mean, weighted, median, 1 frame, no `UNCERT`) | `tests/test_weighted_combine.py` | σ 1.00 ± 0.06 (median ± 0.1) |
+| Aperture variance after reprojection bin 2 → bin 1 | `tests/test_wcs_align.py` | 1.00 ± 0.15 (old scaling: 0.5) |
+| Pixel pulls between two independent 10-frame stacks (sky pixels) | NGC 7789 B/V (N2) | 0.87–0.89 (interpolation smooths pixels); 4×4 sums 1.14–1.20 |
+| Empty-sky noise factor on the stacks | NGC 7789 | 1.7–2.1: structured background at airmass 2.1, captured by `bkg_noise_factor` |
+| Faint-star pulls between the two stacks (APER, with the factor) | NGC 7789 B / V | 0.87–1.17 / 1.09 (bright stars probe PSF differences, not noise) |
 | Robust scatter / error of all constant stars, X < 1.3, six magnitude bins (package 2: median sky, empty-sky factor, scintillation) | HAT-P-20 C7 night, 355 (V) / 320 (B) stars | 0.97–1.01; brightest V bin (11 stars) 0.91 |
 
 Real-data checks are in `scripts/validation/`.
+- **`substack_consistency.py`, `substack_pixel_pulls.py`:** pulls between
+  two stacks of disjoint frame sets, per star and per pixel.
 - **`scatter_over_error.py`:** robust point-to-point scatter of `dmag`
   divided by `dmag_err`, per magnitude bin. Use all constant stars, not the
   differential ensemble: the ensemble is chosen for low scatter and would

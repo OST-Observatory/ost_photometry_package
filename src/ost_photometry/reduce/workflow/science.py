@@ -6,15 +6,16 @@ import astropy.units as u
 import ccdproc as ccdp
 import numpy as np
 from astropy.io import fits
-from astropy.nddata import CCDData
+from astropy.nddata import CCDData, StdDevUncertainty
 
 from ... import checks, style, terminal_output
 from ... import utilities as base_utilities
 from ...core.parallel import Executor
-from ...core.pixel_masks import negative_outlier_mask
+from ...core.pixel_masks import fill_masked_uncertainty, negative_outlier_mask
 from ...fits_headers import mark_cosmics_identified
 from .. import utilities, validation
 from ..detector_noise import (
+    add_dark_shot_noise,
     add_signal_uncertainty,
     saturation_in_electrons,
     write_noise_header,
@@ -588,6 +589,9 @@ def reduce_light_image(
     )
     if not rm_bias:
         reduced = add_signal_uncertainty(reduced, gain=gain, read_noise=read_noise)
+        reduced = add_dark_shot_noise(
+            reduced, combined_darks[closest_dark_exposure_time], gain=gain
+        )
 
     #   Mask significantly negative pixels (defects / dark mismatch). Plain
     #   ``data < 0`` masked up to half of a faint sky through ordinary noise,
@@ -690,7 +694,21 @@ def reduce_light_image(
                     indent=2,
                 )
         else:
+            #   Interpolated cosmic pixels keep the Poisson σ of the cosmic
+            #   itself; give them the σ of their neighbourhood instead.
+            previous = (
+                np.zeros(reduced.shape, dtype=bool)
+                if reduced.mask is None
+                else np.asarray(reduced.mask, dtype=bool)
+            )
+            cosmic_pixels = np.asarray(reduced_without_cosmics.mask, dtype=bool) & ~previous
             reduced = reduced_without_cosmics
+            if reduced.uncertainty is not None and cosmic_pixels.any():
+                reduced.uncertainty = StdDevUncertainty(
+                    fill_masked_uncertainty(
+                        reduced.data, np.asarray(reduced.uncertainty.array), cosmic_pixels
+                    )
+                )
             if not add_hot_bad_pixel_mask:
                 reduced.mask = np.zeros(reduced.shape, dtype=bool)
             mark_cosmics_identified(reduced.meta, handling="interpolated")
