@@ -71,6 +71,10 @@ def _epoch_matrix(
         outlier = np.asarray(sub["flag_outlier"], dtype=bool)
     else:
         outlier = np.zeros(len(sub), dtype=bool)
+    if "flag_saturated" in sub.colnames:
+        saturated_rows = np.asarray(sub["flag_saturated"], dtype=bool)
+    else:
+        saturated_rows = np.zeros(len(sub), dtype=bool)
 
     epoch_keys = np.unique(eids)
     epoch_jd = np.array(
@@ -88,6 +92,7 @@ def _epoch_matrix(
     m = np.full((n_ep, n_src), np.nan)
     e = np.full((n_ep, n_src), np.nan)
     bad = np.zeros((n_ep, n_src), dtype=bool)
+    saturated = np.zeros((n_ep, n_src), dtype=bool)
     row = np.full((n_ep, n_src), -1, dtype=np.int64)
     for r in range(len(sub)):
         i = e_index[eids[r]]
@@ -97,7 +102,8 @@ def _epoch_matrix(
         row[i, j] = r
         m[i, j] = mag[r]
         e[i, j] = err[r]
-        bad[i, j] = outlier[r]
+        bad[i, j] = outlier[r] or saturated_rows[r]
+        saturated[i, j] = saturated_rows[r]
     # Missing or non-positive errors: use the source's median error; a source
     # without any error stays NaN (no weight in the ensemble, NaN dmag_err).
     for j in range(n_src):
@@ -113,6 +119,7 @@ def _epoch_matrix(
         "err": e,
         "valid": valid,
         "row": row,
+        "ever_saturated": saturated.any(axis=0),
     }
 
 
@@ -462,7 +469,12 @@ def add_differential_columns(
         is_ooi = np.array([int(s) in ooi for s in src], dtype=bool)
         coverage = valid.sum(axis=0) / float(n_ep)
         has_err = np.all(np.isfinite(err), axis=0)
-        candidates = ~is_ooi & (coverage >= float(min_coverage)) & has_err
+        candidates = (
+            ~is_ooi
+            & (coverage >= float(min_coverage))
+            & has_err
+            & ~mat["ever_saturated"]
+        )
         ooi_mags = [
             float(np.median(mag[valid[:, j], j]))
             for j in np.flatnonzero(is_ooi)

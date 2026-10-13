@@ -188,3 +188,23 @@ def test_missing_qfit_column_is_not_a_cut():
             apply_finder_shape_cuts=False,
         )
         assert int(np.sum(mask)) == 8
+
+
+def test_saturated_and_masked_calibrators_always_excluded():
+    with isolated_sys_modules():
+        quality, _zp = _load_quality_modules()
+        n = 8
+        tbl = Table(
+            {
+                "mag_V": np.linspace(11.0, 14.0, n),
+                "err_V": np.full(n, 0.01),
+                "mag_std_V": np.linspace(11.5, 14.5, n),
+                "saturated_V": [True] + [False] * (n - 1),
+                "nonpositive_flux_V": [False] * (n - 1) + [True],
+                "aperture_masked_fraction_V": [0.0, 0.5] + [0.0] * (n - 2),
+            }
+        )
+        mask = quality.calibrator_candidate_mask(tbl, ["V"], min_keep=50)
+        # Even with min_keep above the candidate count these never pass.
+        assert not mask[0] and not mask[1] and not mask[-1]
+        assert np.count_nonzero(mask) == n - 3

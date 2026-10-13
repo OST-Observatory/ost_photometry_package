@@ -38,6 +38,37 @@ _QC_COLUMNS = (
 )
 
 
+#: Per-filter measurement quality, written as ``<name>_<filter>`` so that the
+#: values of every band survive the merge of an epoch (see
+#: ``analyze.photometry_quality``).
+PER_FILTER_QC_COLUMNS = (
+    "saturated",
+    "nonpositive_flux",
+    "aperture_masked_fraction",
+    "flux_err_phot",
+    "reduced_chi2",
+    "local_bkg",
+    "sky_sigma_map",
+    "bkg_noise_factor",
+    "aperture_correction",
+    "aperture_correction_err",
+)
+
+
+def _copy_per_filter_qc(src: Table, dest: Table, filter_: str) -> None:
+    n = len(dest)
+    for name in PER_FILTER_QC_COLUMNS:
+        if name not in src.colnames:
+            continue
+        vals = src[name]
+        if hasattr(vals, "value"):
+            vals = vals.value
+        arr = np.asarray(vals)
+        if arr.shape[0] != n:
+            continue
+        dest[f"{name}_{filter_}"] = arr
+
+
 def _copy_qc_columns(src: Table, dest: Table) -> None:
     """Copy extraction quality / comparison flags onto an epoch-native table."""
     n = len(dest)
@@ -113,6 +144,7 @@ def _photometry_table_from_image(image, filter_: str, wcs_obj) -> Table | None:
         tbl[flux_col] = np.full(n, np.nan, dtype=float)
         tbl[ferr_col] = np.full(n, np.nan, dtype=float)
     _copy_qc_columns(phot, tbl)
+    _copy_per_filter_qc(phot, tbl, filter_)
     return tbl
 
 
@@ -310,6 +342,21 @@ def _merge_epoch_on_id(
                     ferr[i] = float(np.asarray(t[ferr_col].ravel())[j])
         base[flux_col] = fflux
         base[ferr_col] = ferr
+
+        for name in PER_FILTER_QC_COLUMNS:
+            col = f"{name}_{f}"
+            if col not in t.colnames:
+                continue
+            src = np.asarray(t[col])
+            if src.dtype == bool:
+                merged = np.zeros(n, dtype=bool)
+            else:
+                merged = np.full(n, np.nan, dtype=float)
+            for i in range(n):
+                j = id_to_row.get(int(base_ids[i]))
+                if j is not None:
+                    merged[i] = src[j]
+            base[col] = merged
 
     ams = [airmasses[f] for f in filter_order]
     base["airmass"] = np.full(n, float(np.mean(ams)), dtype=float)

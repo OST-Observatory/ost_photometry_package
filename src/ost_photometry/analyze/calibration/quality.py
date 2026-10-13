@@ -213,6 +213,27 @@ def _error_ridge_ok(
     return ok
 
 
+def measurement_usable_mask(
+    table: Table,
+    filters: list[str],
+    *,
+    max_masked_fraction: float = 0.05,
+) -> np.ndarray:
+    """False where a filter's measurement is saturated, has non-positive flux
+    or too large a masked aperture fraction (``<name>_<filter>`` columns of
+    the epoch tables; missing columns pass)."""
+    ok = np.ones(len(table), dtype=bool)
+    for f in filters:
+        for name in (f"saturated_{f}", f"nonpositive_flux_{f}"):
+            if name in table.colnames:
+                ok &= ~np.asarray(table[name], dtype=bool)
+        col = f"aperture_masked_fraction_{f}"
+        if col in table.colnames:
+            frac = np.asarray(table[col], dtype=float)
+            ok &= ~(np.isfinite(frac) & (frac > float(max_masked_fraction)))
+    return ok
+
+
 def calibrator_quality_kwargs(config: Any) -> dict[str, Any]:
     """Map ``PipelineConfig`` fields onto :func:`calibrator_candidate_mask` kwargs."""
     sharpness = getattr(config, "finder_sharpness_range", (0.2, 1.0))
@@ -231,6 +252,7 @@ def calibrator_quality_kwargs(config: Any) -> dict[str, Any]:
             getattr(config, "calibrator_apply_finder_shape_cuts", True)
         ),
         "min_keep": int(getattr(config, "calibrator_min_keep", 3)),
+        "max_masked_fraction": float(getattr(config, "calibrator_max_masked_fraction", 0.05)),
     }
 
 
@@ -250,11 +272,15 @@ def calibrator_candidate_mask(
     sharpness_range: tuple[float, float] = (0.2, 1.0),
     roundness_range: tuple[float, float] = (-1.0, 1.0),
     apply_finder_shape_cuts: bool = True,
+    max_masked_fraction: float = 0.05,
 ) -> np.ndarray:
     """Catalog matches that also pass photometric-error and PSF/finder quality cuts.
 
-    Cuts are applied in order (shape, qfit/cfit, error ridge). A cut is skipped
-    if it would leave fewer than ``min_keep`` candidates.
+    Measurements that cannot be right are always excluded, however few
+    candidates remain: saturated, non-positive flux, or more than
+    ``max_masked_fraction`` of the aperture masked (in any fit filter).
+    The quality cuts follow in order (shape, qfit/cfit, error ridge); each
+    is skipped if it would leave fewer than ``min_keep`` candidates.
     """
     if config is not None:
         kw = calibrator_quality_kwargs(config)
@@ -264,6 +290,7 @@ def calibrator_candidate_mask(
 
     keep = 3 if min_keep is None else int(min_keep)
     mask = comparison_mask_from_std_columns(table, filters)
+    mask &= measurement_usable_mask(table, filters, max_masked_fraction=max_masked_fraction)
     if np.count_nonzero(mask) < keep:
         return mask
 

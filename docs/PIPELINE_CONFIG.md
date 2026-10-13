@@ -110,6 +110,16 @@ Reduction writes `CRIDENT=True` plus `cosmics_rm` (interpolated) or `cosmics_msk
 
 When lacosmic runs, `read_noise` and `saturation_level` (`None` by default) come from the header keywords `RDNOISE` and `SATLEVEL` that the reduction writes: electrons per pixel for the image times `EXPTIME`, converted for stacks (read noise of the weighted mean at the total exposure, lowest saturating rate). Images without them fall back to 8 e- / 65535 with a note; explicit values always win.
 
+### Saturation and calibrator quality
+
+| Option | Default | Role |
+|--------|---------|------|
+| `saturation_fraction` | 0.9 | `saturated` when a pixel within the measurement radius reaches this fraction of `SATLEVEL` (frame before 2D background subtraction) |
+| `calibrator_max_masked_fraction` | 0.05 | Calibrators with a larger masked aperture fraction are excluded in every case |
+
+Saturated, non-positive or too-masked measurements are excluded from the
+calibrators however few remain. See [UNCERTAINTIES.md](UNCERTAINTIES.md).
+
 ### `scintillation_noise`
 
 Atmospheric scintillation is a relative flux error that is the same for

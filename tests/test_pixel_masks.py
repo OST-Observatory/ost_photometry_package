@@ -206,3 +206,22 @@ def test_astroalign_path_does_not_punch_nan_holes():
     assert np.isfinite(aligned.data[interior]).all()
     assert aligned.mask[interior].sum() <= 1.5 * mask[interior].sum()
     assert np.nanmax(aligned.data[interior]) < 5000.0
+
+
+def test_fill_masked_uncertainty_gradient_vs_peak():
+    from ost_photometry.core.pixel_masks import fill_masked_uncertainty
+
+    yy, xx = np.mgrid[:21, :21].astype(float)
+    sigma = np.full((21, 21), 3.0)
+    # Smooth gradient (a star's wing): the fill is good, σ stays the noise σ.
+    plane = 100.0 + 25.0 * xx + 10.0 * yy
+    mask = np.zeros((21, 21), dtype=bool)
+    mask[10, 10] = True
+    out = fill_masked_uncertainty(plane, sigma, mask)
+    assert out[10, 10] == pytest.approx(3.0, rel=0.05)
+    # Peak (star core): the median of the neighbours is a poor guess.
+    peak = 1000.0 * np.exp(-((xx - 10) ** 2 + (yy - 10) ** 2) / (2 * 1.8**2))
+    out = fill_masked_uncertainty(peak, sigma, mask)
+    assert out[10, 10] > 50.0
+    # Unmasked pixels are untouched.
+    assert np.all(out[~mask] == 3.0)

@@ -204,7 +204,6 @@ class ExtractionConfig:
     finder_fwhm_scale_range: tuple[float, float] | None = (0.5, 2.0)
     multiplier_background_rms_epsf: float = 5.0
     multiplier_grouper_epsf: float = 2.0
-    strict_cleaning_epsf_results: bool = True
     minimum_n_eps_stars: int = 15
     photometry_extraction_method: PhotometryExtractionMethod = "PSF"
     #: If False, fit finder positions only (no residual re-find).
@@ -226,6 +225,10 @@ class ExtractionConfig:
     #: ``mags_unc`` of every source; the photon / sky error stays in
     #: ``flux_err_phot``. Needs the aperture (telescope catalog or
     #: ``telescope_aperture_m``); site altitude from ``observatory_location``.
+    #: A star is ``saturated`` when a pixel within the measurement radius
+    #: reaches this fraction of ``SATLEVEL`` (non-linearity starts below
+    #: full well); saturated stars are no calibrators or ensemble members.
+    saturation_fraction: float = 0.9
     scintillation_noise: bool = True
     #: Correction factor to Young's coefficient (Osborn et al.: median ≈ 1.5).
     scintillation_coefficient: float = 1.5
@@ -258,8 +261,8 @@ class ExtractionConfig:
             "finder_fwhm_scale_range": self.finder_fwhm_scale_range,
             "multiplier_background_rms_epsf": self.multiplier_background_rms_epsf,
             "multiplier_grouper_epsf": self.multiplier_grouper_epsf,
-            "strict_cleaning_epsf_results": self.strict_cleaning_epsf_results,
             "minimum_n_eps_stars": self.minimum_n_eps_stars,
+            "saturation_fraction": self.saturation_fraction,
             "strict_epsf_checks": self.strict_epsf_checks,
             "photometry_extraction_method": self.photometry_extraction_method,
             "psf_find_in_residuals": self.psf_find_in_residuals,
@@ -375,6 +378,9 @@ class CalibrationConfig:
     calibrator_apply_finder_shape_cuts: bool = True
     #: Skip a quality cut if it would leave fewer than this many candidates.
     calibrator_min_keep: int = 3
+    #: Calibrators whose aperture is masked by more than this fraction (bad
+    #: pixels, frame edge) are excluded in every case.
+    calibrator_max_masked_fraction: float = 0.05
     debug_verify_ooi_global_ids: bool = False
     observatory_location: EarthLocation = field(
         default_factory=lambda: EarthLocation(

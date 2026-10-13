@@ -681,6 +681,7 @@ def _empty_light_curves_table() -> Table:
             "ra": np.array([], dtype=float),
             "dec": np.array([], dtype=float),
             "is_calibrator": np.array([], dtype=bool),
+            "flag_saturated": np.array([], dtype=bool),
         }
     )
 
@@ -748,6 +749,11 @@ def _rows_from_epoch_native_source(
             mag_inst, mag_inst_err = instrumental_mag_from_flux(inst_v, inst_e)
         else:
             mag_inst, mag_inst_err = inst_v, inst_e
+    sat_col = f"saturated_{filter_}"
+    if sat_col in sub.colnames:
+        saturated = np.asarray(sub[sat_col], dtype=bool)
+    else:
+        saturated = np.zeros(n, dtype=bool)
     name = str(object_name or "")
     return Table(
         {
@@ -770,6 +776,7 @@ def _rows_from_epoch_native_source(
             "ra": ra,
             "dec": dec,
             "is_calibrator": np.full(n, bool(is_calibrator), dtype=bool),
+            "flag_saturated": saturated,
         }
     )
 
@@ -1117,6 +1124,7 @@ def build_light_curves_table_from_flux(
                     "ra": np.full(n_ep, ra_j),
                     "dec": np.full(n_ep, dec_j),
                     "is_calibrator": np.full(n_ep, sid in cal, dtype=bool),
+                    "flag_saturated": np.zeros(n_ep, dtype=bool),
                 }
             )
         )

@@ -45,6 +45,38 @@ section of this file.
 
 ### Changed
 
+- **APER sky and errors** (`analyze.photometry_quality`): the sky is the
+  3σ-clipped median of the annulus with all detected stars masked (was the
+  unclipped annulus mean, about −40σ for an 8× brighter neighbour in the
+  annulus in simulations; now < 0.2σ). The flux error replaces the
+  background part of the map error by the empty-sky measurement
+  `bkg_noise_factor` (about 400 sky apertures per image measured like
+  stars) and includes the median's (π/2) variance. `background_estimate_simple`
+  and the helpers `compute_aperture_photometry_uncertainties` /
+  `sky_subtraction_error` are removed.
+- **Saturation:** stars with a pixel within the measurement radius at
+  `saturation_fraction` (0.9) × `SATLEVEL` of the frame before the 2D
+  background subtraction are `saturated`; they are never calibrators or
+  differential-ensemble members and are drawn as flagged points
+  (`flag_saturated` in `light_curves.ecsv`).
+- **Aperture correction per image** to the annulus inner radius from bright
+  isolated unsaturated stars (`aperture_correction`,
+  `aperture_correction_err`), for APER and PSF.
+- **PSF photometry:** local background (annulus 2.8–4 FWHM) on by default;
+  `flux_err` scaled by `√max(1, reduced_chi2)`; `reduced_chi2`, `local_bkg`
+  kept. The `strict_cleaning_epsf_results` option is removed (invalid
+  errors are always dropped).
+- **Faint stars with non-positive net flux are kept** (`nonpositive_flux`,
+  magnitude NaN) instead of being dropped (flux light curves of faint
+  sources were biased upward).
+- Masked aperture pixels get σ from their neighbours plus the neighbours'
+  spread; calibrators with more than `calibrator_max_masked_fraction`
+  (0.05) of the aperture masked are excluded.
+- Per-filter quality columns `<name>_<filter>` (`saturated`,
+  `nonpositive_flux`, `aperture_masked_fraction`, `flux_err_phot`,
+  `reduced_chi2`, `local_bkg`, `sky_sigma_map`, `bkg_noise_factor`,
+  `aperture_correction*`) in the epoch tables.
+- New `docs/UNCERTAINTIES.md`: error model and validation.
 - **Missing `AIRMASS` is computed, not 1.0:** `Image.air_mass` is `None`
   without a usable header value; the extraction step computes it at
   mid-exposure from the WCS centre (else `OBJCTRA`/`OBJCTDEC` or NINA's

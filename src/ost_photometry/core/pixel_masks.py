@@ -100,6 +100,60 @@ def fill_masked_pixels(
     return values
 
 
+def fill_masked_uncertainty(
+    data: np.ndarray,
+    sigma: np.ndarray,
+    mask: np.ndarray | None,
+    size: int = 5,
+    max_fraction: float = 0.5,
+) -> np.ndarray:
+    """σ for pixels that :func:`fill_masked_pixels` replaced.
+
+    A filled value is the median of its unmasked ``size × size``
+    neighbours. Its error is the neighbours' typical σ plus how far that
+    median is from a second interpolator, the mean of the unmasked direct
+    (4-connected) neighbours: both agree on flat sky and on a smooth
+    gradient (a star's wing), and disagree near a peak, where the fill is a
+    poor guess. The spread of the window itself would mistake the gradient
+    for noise. Without this, a hot pixel's huge σ, or a dead pixel's tiny
+    one, would enter the aperture error.
+    """
+    if mask is None:
+        return sigma
+    mask = np.asarray(mask, dtype=bool)
+    if mask.shape != np.shape(data) or not mask.any() or mask.mean() > max_fraction:
+        return sigma
+    values = np.where(mask, np.nan, np.asarray(data, dtype=float))
+    var = np.where(mask, np.nan, np.asarray(sigma, dtype=float) ** 2)
+    out = np.array(sigma, dtype=float, copy=True)
+    half = int(size) // 2
+    win_v = np.lib.stride_tricks.sliding_window_view(
+        np.pad(values, half, mode="edge"), (int(size), int(size))
+    )
+    win_s = np.lib.stride_tricks.sliding_window_view(
+        np.pad(var, half, mode="edge"), (int(size), int(size))
+    )
+    rows, cols = np.nonzero(mask)
+    chunk = 200_000
+    with np.errstate(all="ignore"):
+        for start in range(0, rows.size, chunk):
+            sl = slice(start, start + chunk)
+            v = win_v[rows[sl], cols[sl]].reshape(rows[sl].size, int(size), int(size))
+            w = win_s[rows[sl], cols[sl]].reshape(rows[sl].size, -1)
+            med = np.nanmedian(v.reshape(rows[sl].size, -1), axis=1)
+            cross = np.stack(
+                [v[:, half - 1, half], v[:, half + 1, half], v[:, half, half - 1], v[:, half, half + 1]],
+                axis=1,
+            )
+            mean4 = np.nanmean(cross, axis=1)
+            interp = np.where(np.isfinite(mean4), med - mean4, 0.0)
+            out[rows[sl], cols[sl]] = np.sqrt(np.nanmedian(w, axis=1) + interp**2)
+    fallback = float(np.nanmedian(np.where(mask, np.nan, out)))
+    bad = mask & ~np.isfinite(out)
+    out[bad] = fallback
+    return out
+
+
 def resample_mask(
     mask: np.ndarray | None,
     resample: Callable[[np.ndarray], np.ndarray],

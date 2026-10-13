@@ -16,11 +16,10 @@ from astropy.modeling.fitting import (
     LMLSQFitter,
     TRFLSQFitter,
 )
-from astropy.nddata import NDData
+from astropy.nddata import CCDData, NDData
 from astropy.stats import SigmaClip
 from astropy.table import Table
 from photutils.aperture import (
-    ApertureStats,
     CircularAnnulus,
     CircularAperture,
     aperture_photometry,
@@ -44,7 +43,11 @@ from photutils.psf import (
 from .. import checks, style, terminal_output
 from .. import utilities as base_utilities
 from ..core.parallel import Executor, start_plot_process
-from ..core.pixel_masks import aperture_masked_fraction, fill_masked_pixels
+from ..core.pixel_masks import (
+    aperture_masked_fraction,
+    fill_masked_pixels,
+    fill_masked_uncertainty,
+)
 from ..fits_headers import (
     READ_NOISE_KEY,
     SATURATION_KEY,
@@ -62,6 +65,14 @@ from ..output_layout import extraction_plot_dir, tables_dir
 from . import correlate, plots, utilities
 from .image import AnalysisImage
 from .models import ImageSeries
+from .photometry_quality import (
+    annulus_sky,
+    aperture_correction,
+    aperture_flux_errors,
+    background_noise_factor,
+    saturated_sources,
+    source_disk_mask,
+)
 from .utils.epsf_selection import n_epsf_stars_to_select
 
 
@@ -177,6 +188,103 @@ def _pixel_error(image: AnalysisImage, ccd=None) -> np.ndarray:
     )
     exposure = float(ccd.meta.get("EXPTIME", float("nan")))
     return estimate_pixel_error(ccd.data, ccd.unit, exposure)
+
+
+def _source_mask_radius(image: AnalysisImage, annulus: CircularAnnulus) -> float:
+    """Radius masked around detected stars for sky estimates: 2 FWHM, but
+    inside the annulus inner radius so a star never masks its own sky."""
+    fwhm = float(getattr(image, "fwhm", 4.0) or 4.0)
+    r_in = float(np.atleast_1d(annulus.r_in)[0])
+    return max(1.5, min(2.0 * fwhm, 0.9 * r_in))
+
+
+def _extraction_quality(
+    image: AnalysisImage,
+    radii_pix: tuple[float, float, float],
+    *,
+    saturation_fraction: float = 0.9,
+    terminal_logger: terminal_output.TerminalLog | None = None,
+) -> None:
+    """Saturation flags and the per-image aperture correction.
+
+    ``radii_pix`` is ``(measurement radius, annulus inner, annulus outer)``;
+    for PSF photometry the measurement radius only defines where saturation
+    is looked for. The aperture correction scales ``flux_fit`` /
+    ``flux_err`` to the flux inside the annulus inner radius, measured on
+    bright, isolated, unsaturated, unmasked stars of this image.
+    """
+    phot = image.photometry
+    x = np.asarray(phot["x_fit"], dtype=float)
+    y = np.asarray(phot["y_fit"], dtype=float)
+    r_meas, r_in, r_out = (float(r) for r in radii_pix)
+
+    def _log(msg: str, style_name: str = "NORMAL") -> None:
+        if terminal_logger is not None:
+            terminal_logger.add_to_cache(msg, indent=3, style_name=style_name)
+        else:
+            terminal_output.print_to_terminal(msg, indent=3, style_name=style_name)
+
+    #   Saturation on the frame with its sky, in the unit of SATLEVEL
+    #   (electrons at EXPTIME).
+    raw_path = getattr(image, "path_before_background", None) or image.path
+    raw = CCDData.read(raw_path)
+    sat_level = raw.meta.get("SATLEVEL")
+    saturated = np.zeros(len(phot), dtype=bool)
+    if sat_level is None:
+        _log("No SATLEVEL in the header: saturation not checked.", "WARNING")
+    else:
+        counts = np.asarray(raw.data, dtype=float)
+        if raw.unit == u.electron / u.s:
+            counts = counts * float(raw.meta.get("EXPTIME", 1.0))
+        saturated = saturated_sources(
+            counts, x, y, r_meas, float(sat_level), fraction=saturation_fraction
+        )
+        if np.any(saturated):
+            _log(f"{int(np.count_nonzero(saturated))} saturated star(s) flagged.")
+    phot["saturated"] = saturated
+
+    #   Aperture correction to the annulus inner radius.
+    ccd = image.read_image()
+    data = np.asarray(ccd.data, dtype=float)
+    sigma = _pixel_error(image, ccd)
+    no_coverage = ~np.isfinite(data)
+    masked = (
+        np.asarray(phot["aperture_masked_fraction"], dtype=float) > 0.0
+        if "aperture_masked_fraction" in phot.colnames
+        else np.zeros(len(phot), dtype=bool)
+    )
+    flux = np.asarray(getattr(phot["flux_fit"], "value", phot["flux_fit"]), dtype=float)
+    err = np.asarray(getattr(phot["flux_err"], "value", phot["flux_err"]), dtype=float)
+    value, error, n_used = aperture_correction(
+        data,
+        sigma,
+        x,
+        y,
+        flux,
+        err,
+        r_large=r_in,
+        r_in=r_in,
+        r_out=r_out,
+        usable=~saturated & ~masked,
+        isolation_radius=r_out + r_meas,
+        mask=no_coverage if no_coverage.any() else None,
+        source_mask=getattr(image, "source_mask", None),
+    )
+    if np.isfinite(value):
+        phot["flux_fit"] = phot["flux_fit"] * value
+        phot["flux_err"] = phot["flux_err"] * value
+        _log(
+            f"Aperture correction to r = {r_in:.1f} px: {value:.4f} ± {error:.4f} "
+            f"({n_used} stars)"
+        )
+    else:
+        _log(
+            f"Aperture correction: only {n_used} suitable stars; not applied.",
+            "WARNING",
+        )
+    phot["aperture_correction"] = np.full(len(phot), value)
+    phot["aperture_correction_err"] = np.full(len(phot), error)
+    image.photometry = phot
 
 
 def cosmic_ray_noise_parameters(
@@ -440,6 +548,9 @@ def determine_background(
     #   Set new path and file
     #   -> Background subtracted image will be used in further processing steps
     if apply_background:
+        #   Saturation is judged on the frame with its sky (see
+        #   ``_extraction_quality``), so remember where it is.
+        image.path_before_background = image.path
         image.path = output_path / file_name
         image.filename = file_name
 
@@ -1133,9 +1244,8 @@ def extraction_epsf(
     n_iterations_eps_extraction: int = 1,
     multiplier_background_rms: float = 5.0,
     multiplier_grouper: float = 2.0,
-    strict_cleaning_results: bool = True,
     terminal_logger: terminal_output.TerminalLog | None = None,
-    rm_background: bool = False,
+    rm_background: bool = True,
     indent: int = 2,
     finder_sharpness_range: tuple[float, float] = (0.2, 1.0),
     finder_roundness_range: tuple[float, float] = (-1.0, 1.0),
@@ -1208,9 +1318,14 @@ def extraction_epsf(
     size_extraction_region = _odd_psf_fit_shape(size_extraction_region, fwhm)
 
     if rm_background:
+        #   Residual sky left by the 80 px Background2D map biases the PSF
+        #   flux by about b·N_eff; fit it locally in an annulus beyond the
+        #   PSF wings.
         sigma_clip = SigmaClip(sigma=sigma_background)
         mmm_bkg = MMMBackground(sigma_clip=sigma_clip)
-        local_bkg_estimator = LocalBackground(7, 10, mmm_bkg)
+        r_in = max(7.0, 2.8 * float(fwhm))
+        r_out = max(r_in + 3.0, 4.0 * float(fwhm))
+        local_bkg_estimator = LocalBackground(r_in, r_out, bkg_estimator=mmm_bkg)
     else:
         local_bkg_estimator = None
 
@@ -1256,34 +1371,29 @@ def extraction_epsf(
         result_tbl = photometry(data=data, error=error, mask=image_mask)
 
     if "flux_err" not in result_tbl.colnames:
-        estimated_uncertainty = np.absolute(
-            result_tbl["flux_fit"] - result_tbl["flux_init"]
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL} \nPSF photometry returned no flux_err "
+            f"column (needs an error array) {style.Bcolors.ENDC}"
         )
-        result_tbl.add_column(estimated_uncertainty, name="flux_err")
 
-    try:
-        uncertainty_mask = np.invert(np.isnan(result_tbl["flux_err"].value))
-        result_tbl = result_tbl[uncertainty_mask]
-    except KeyError as err:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nProblem with cleanup of NANs in "
-            f"uncertainties... {style.Bcolors.ENDC}"
-        ) from err
+    #   Fits without a covariance (NaN flux_err) are unusable; negative net
+    #   fluxes of faint stars are kept (dropping them biases faint flux
+    #   light curves upward); their magnitudes are NaN.
+    flux_err_values = np.asarray(getattr(result_tbl["flux_err"], "value", result_tbl["flux_err"]), dtype=float)
+    keep = np.isfinite(flux_err_values) & (flux_err_values >= 0.0)
+    n_bad_objects = int(np.count_nonzero(~keep))
+    result_tbl = result_tbl[keep]
 
-    n_bad_objects = 0
-    try:
-        bad_results = np.where(result_tbl["flux_fit"].data < 0.0)
-        result_tbl.remove_rows(bad_results)
-        n_bad_objects = np.size(bad_results)
-        if strict_cleaning_results:
-            bad_results = np.where(result_tbl["flux_err"].data < 0.0)
-            n_bad_objects += np.size(bad_results)
-            result_tbl.remove_rows(bad_results)
-    except KeyError as err:
-        raise RuntimeError(
-            f"{style.Bcolors.FAIL} \nProblem with cleanup of negative "
-            f"uncertainties... {style.Bcolors.ENDC}"
-        ) from err
+    #   flux_err is the formal fit covariance for the pixel errors only.
+    #   Where the model does not describe the star (ePSF mismatch, blends),
+    #   reduced_chi2 > 1: scale the error by sqrt(reduced_chi2).
+    if "reduced_chi2" in result_tbl.colnames:
+        chi2 = np.asarray(result_tbl["reduced_chi2"], dtype=float)
+        scale = np.sqrt(np.where(np.isfinite(chi2), np.maximum(chi2, 1.0), 1.0))
+        result_tbl["flux_err"] = result_tbl["flux_err"] * scale
+    result_tbl["nonpositive_flux"] = (
+        np.asarray(getattr(result_tbl["flux_fit"], "value", result_tbl["flux_fit"])) <= 0.0
+    )
 
     try:
         bad_results = np.where(result_tbl["x_fit"].data < 0.0)
@@ -1343,52 +1453,6 @@ def extraction_epsf(
 
     image.photometry = result_tbl
     image.residual_image = residual_image
-
-
-def compute_aperture_photometry_uncertainties(
-    aperture_sum_err: np.ndarray,
-    sky_subtraction_err: np.ndarray,
-) -> np.ndarray:
-    """1σ net-flux error from the aperture sum and the scaled sky subtraction.
-
-    Both arguments are **standard deviations in flux units**, not variances.
-    Photutils ``aperture_sum_err`` is already ``√Σ σ_pix²`` over the aperture;
-    ``sky_subtraction_err`` is the uncertainty of the background already
-    scaled to the same aperture (``aper_bkg_err``, or
-    ``σ_sky · n_pix / √n_sky`` when the annulus supplies a per-pixel σ).
-
-    Combines as ``hypot(σ_sum, σ_sky)``. An earlier helper treated
-    ``aperture_sum_err`` as a variance and multiplied the sky term by the
-    aperture area again, which inflated APER (and CMD colour) error bars.
-    """
-    src = np.asarray(aperture_sum_err, dtype=float)
-    sky = np.asarray(sky_subtraction_err, dtype=float)
-    return np.sqrt(np.maximum(src, 0.0) ** 2 + np.maximum(sky, 0.0) ** 2)
-
-
-def sky_subtraction_error(
-    sky_err: np.ndarray,
-    *,
-    per_pixel: bool,
-    aperture_area: np.ndarray | float | None = None,
-    annulus_area: np.ndarray | float | None = None,
-) -> np.ndarray:
-    """Sky uncertainty in aperture-flux units.
-
-    When ``per_pixel`` is False, ``sky_err`` is already ``σ(aper_bkg)``.
-    When True it is the annulus per-pixel σ, converted with
-    ``n_pix · σ / √n_sky``.
-    """
-    err = np.asarray(sky_err, dtype=float)
-    if not per_pixel:
-        return err
-    if aperture_area is None or annulus_area is None:
-        raise ValueError(
-            "per-pixel sky errors need aperture_area and annulus_area."
-        )
-    n_pix = np.asarray(aperture_area, dtype=float)
-    n_sky = np.maximum(np.asarray(annulus_area, dtype=float), 1e-12)
-    return err * n_pix / np.sqrt(n_sky)
 
 
 def resolve_aperture_radii(
@@ -1500,7 +1564,6 @@ def extraction_aperture(
     inner_annulus_radius: float,
     outer_annulus_radius: float,
     radii_unit: str = "pixel",
-    background_estimate_simple: bool = False,
     plot_aperture_positions: bool = False,
     terminal_logger: terminal_output.TerminalLog | None = None,
     file_type_plots: str = "pdf",
@@ -1541,6 +1604,7 @@ def extraction_aperture(
     masked_fraction = aperture_masked_fraction(aperture, data, source_mask)
     if source_mask is not None and source_mask.any():
         defects = source_mask & ~no_coverage
+        uncertainty = fill_masked_uncertainty(data, uncertainty, defects)
         data = fill_masked_pixels(data, defects)
     phot_mask = no_coverage if no_coverage.any() else None
 
@@ -1553,46 +1617,64 @@ def extraction_aperture(
     photometry_tbl["aperture_masked_fraction"] = masked_fraction
 
     aperture_area = aperture.area_overlap(data, mask=phot_mask)
-    annulus_aperture_area = annulus_aperture.area_overlap(data, mask=phot_mask)
 
-    if background_estimate_simple:
-        sigma_clip = SigmaClip(sigma=3.0, maxiters=10)
-        bkg_stats = ApertureStats(
-            data, annulus_aperture, mask=phot_mask, sigma_clip=sigma_clip
-        )
-        bkg_median = bkg_stats.median
-        bkg_err = bkg_stats.std
-        photometry_tbl["annulus_median"] = bkg_median
-        photometry_tbl["aper_bkg"] = bkg_median * aperture_area
-    else:
-        bkg_phot = aperture_photometry(
-            data,
-            annulus_aperture,
-            mask=phot_mask,
-            error=uncertainty,
-        )
-        photometry_tbl["aper_bkg"] = (
-            bkg_phot["aperture_sum"] * aperture_area / annulus_aperture_area
-        )
-        bkg_err = photometry_tbl["aper_bkg_err"] = (
-            bkg_phot["aperture_sum_err"] * aperture_area / annulus_aperture_area
-        )
-
+    #   Sky: clipped median per annulus (neighbour stars and cosmics in the
+    #   annulus do not pull it up). Errors: the map's source part plus the
+    #   background part scaled by the scatter measured on empty sky
+    #   (correlated noise, faint stars, flat-field structure).
+    stars_mask = source_disk_mask(
+        np.shape(data),
+        np.asarray(photometry_tbl["x_center"]),
+        np.asarray(photometry_tbl["y_center"]),
+        _source_mask_radius(image, annulus_aperture),
+    )
+    image.source_mask = stars_mask
+    sky = annulus_sky(
+        data, uncertainty, annulus_aperture, mask=phot_mask, source_mask=stars_mask
+    )
+    photometry_tbl["annulus_median"] = sky["sky"]
+    photometry_tbl["aper_bkg"] = sky["sky"] * aperture_area
     photometry_tbl["flux_fit"] = (
         photometry_tbl["aperture_sum"] - photometry_tbl["aper_bkg"]
     )
-
-    aperture_sum_err = photometry_tbl["aperture_sum_err"]
-
-    photometry_tbl["flux_err"] = compute_aperture_photometry_uncertainties(
-        aperture_sum_err,
-        sky_subtraction_error(
-            bkg_err,
-            per_pixel=background_estimate_simple,
-            aperture_area=aperture_area,
-            annulus_area=annulus_aperture_area,
-        ),
+    r_ap_pix = float(np.atleast_1d(aperture.r)[0])
+    r_in_pix = float(np.atleast_1d(annulus_aperture.r_in)[0])
+    r_out_pix = float(np.atleast_1d(annulus_aperture.r_out)[0])
+    detected = np.column_stack(
+        [np.asarray(photometry_tbl["x_center"]), np.asarray(photometry_tbl["y_center"])]
     )
+    noise_factor, n_empty = background_noise_factor(
+        data,
+        uncertainty,
+        detected,
+        r_ap_pix,
+        r_in_pix,
+        r_out_pix,
+        mask=phot_mask,
+        source_mask=stars_mask,
+        seed=int(getattr(image, "image_id", 0) or 0),
+    )
+    factor_used = max(1.0, noise_factor) if np.isfinite(noise_factor) else 1.0
+    photometry_tbl["sky_sigma_map"] = sky["sigma_map"]
+    photometry_tbl["bkg_noise_factor"] = np.full(len(photometry_tbl), noise_factor)
+    photometry_tbl["flux_err"] = aperture_flux_errors(
+        np.asarray(photometry_tbl["aperture_sum_err"], dtype=float),
+        sky["sigma_map"],
+        aperture_area,
+        sky["n_sky"],
+        noise_factor=factor_used,
+    )
+    msg = (
+        f"Empty-sky check ({n_empty} apertures): background noise "
+        f"{noise_factor:.2f}x the uncertainty map"
+        if np.isfinite(noise_factor)
+        else f"Empty-sky check: only {n_empty} empty apertures; background "
+        "noise taken from the uncertainty map"
+    )
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(msg, indent=indent)
+    else:
+        terminal_output.print_to_terminal(msg, indent=indent)
 
     photometry_tbl.rename_column("x_center", "x_fit")
     photometry_tbl.rename_column("y_center", "y_fit")
@@ -1629,9 +1711,11 @@ def extraction_aperture(
         terminal_logger=terminal_logger,
     )
 
-    flux = np.array(photometry_tbl["flux_fit"])
-    mask = np.argwhere(flux > 0.0).ravel()
-    photometry_tbl = photometry_tbl[mask]
+    #   Keep faint stars with zero or negative net flux: dropping them biases
+    #   flux light curves of faint sources upward. Their magnitudes are NaN.
+    flux = np.asarray(photometry_tbl["flux_fit"], dtype=float)
+    photometry_tbl = photometry_tbl[np.isfinite(flux)]
+    photometry_tbl["nonpositive_flux"] = np.asarray(photometry_tbl["flux_fit"]) <= 0.0
 
     image.photometry = photometry_tbl
 
@@ -1697,7 +1781,6 @@ def extract_multiprocessing(
     finder_fwhm_scale_range: tuple[float, float] | None = (0.5, 2.0),
     multiplier_background_rms_epsf: float = 5.0,
     multiplier_grouper_epsf: float = 2.0,
-    strict_cleaning_epsf_results: bool = True,
     minimum_n_eps_stars: int = 15,
     photometry_extraction_method: str = "PSF",
     psf_find_in_residuals: bool = False,
@@ -1715,6 +1798,7 @@ def extract_multiprocessing(
     file_type_plots: str = "pdf",
     fwhm_estimate_min: float = 2.0,
     fwhm_estimate_max: float = 15.0,
+    saturation_fraction: float = 0.9,
 ) -> None:
     """
     Extract flux and object positions using multiprocessing
@@ -1753,7 +1837,6 @@ def extract_multiprocessing(
                 "finder_fwhm_scale_range": finder_fwhm_scale_range,
                 "multiplier_background_rms_epsf": multiplier_background_rms_epsf,
                 "multiplier_grouper_epsf": multiplier_grouper_epsf,
-                "strict_cleaning_epsf_results": strict_cleaning_epsf_results,
                 "minimum_n_eps_stars": minimum_n_eps_stars,
                 "strict_epsf_checks": strict_epsf_checks,
                 "id_reference_image": image_series.reference_image_index,
@@ -1772,6 +1855,7 @@ def extract_multiprocessing(
                 "use_wcs_projection_for_star_maps": use_wcs_projection_for_star_maps,
                 "fwhm_estimate_min": fwhm_estimate_min,
                 "fwhm_estimate_max": fwhm_estimate_max,
+                "saturation_fraction": saturation_fraction,
             },
         )
 
@@ -1813,7 +1897,6 @@ def main_extract(
     finder_fwhm_scale_range: tuple[float, float] | None = (0.5, 2.0),
     multiplier_background_rms_epsf: float = 5.0,
     multiplier_grouper_epsf: float = 2.0,
-    strict_cleaning_epsf_results: bool = True,
     minimum_n_eps_stars: int = 15,
     id_reference_image: int = 0,
     photometry_extraction_method: str = "PSF",
@@ -1837,6 +1920,7 @@ def main_extract(
     use_wcs_projection_for_star_maps: bool = True,
     fwhm_estimate_min: float = 2.0,
     fwhm_estimate_max: float = 15.0,
+    saturation_fraction: float = 0.9,
 ) -> None | tuple[int, Table | None]:
     """
     Main function to extract the information from the individual images
@@ -1970,7 +2054,6 @@ def main_extract(
                 n_iterations_eps_extraction=n_iterations_eps_extraction,
                 multiplier_background_rms=multiplier_background_rms_epsf,
                 multiplier_grouper=multiplier_grouper_epsf,
-                strict_cleaning_results=strict_cleaning_epsf_results,
                 terminal_logger=terminal_logger,
                 finder_sharpness_range=finder_sharpness_range,
                 finder_roundness_range=finder_roundness_range,
@@ -2058,9 +2141,40 @@ def main_extract(
                 f"({image.filter_})."
             )
 
-        magnitudes, magnitudes_error = utilities.flux_to_magnitudes(
-            image.photometry["flux_fit"],
-            image.photometry["flux_err"],
+        if photometry_extraction_method == "APER":
+            scale = 1.0 if radii_unit_use == "pixel" else 1.0 / float(image.pixel_scale)
+            radii_pix = (
+                radius_aperture_use * scale,
+                inner_annulus_use * scale,
+                outer_annulus_use * scale,
+            )
+        else:
+            fwhm_px = float(getattr(image, "fwhm", 4.0) or 4.0)
+            radii_pix = (
+                max(2.0, 1.5 * fwhm_px),
+                max(7.0, 2.8 * fwhm_px),
+                max(10.0, 4.0 * fwhm_px),
+            )
+        _extraction_quality(
+            image,
+            radii_pix,
+            saturation_fraction=saturation_fraction,
+            terminal_logger=terminal_logger,
+        )
+
+        flux = np.asarray(
+            getattr(image.photometry["flux_fit"], "value", image.photometry["flux_fit"]),
+            dtype=float,
+        )
+        flux_err = np.asarray(
+            getattr(image.photometry["flux_err"], "value", image.photometry["flux_err"]),
+            dtype=float,
+        )
+        positive = flux > 0.0
+        magnitudes = np.full(flux.shape, np.nan)
+        magnitudes_error = np.full(flux.shape, np.nan)
+        magnitudes[positive], magnitudes_error[positive] = utilities.flux_to_magnitudes(
+            flux[positive], flux_err[positive]
         )
 
         image.photometry["mags_fit"] = magnitudes

@@ -104,6 +104,16 @@ def _series_y(
     return y, e, qty
 
 
+def _point_flags(tbl: Table) -> np.ndarray | None:
+    """Per-point flags: per-source outliers and saturated measurements."""
+    flag = None
+    for col in ("flag_outlier", "flag_saturated"):
+        if col in tbl.colnames:
+            values = np.asarray(tbl[col], dtype=bool)
+            flag = values if flag is None else (flag | values)
+    return flag
+
+
 def _epoch_flags(tbl: Table) -> np.ndarray | None:
     if "flag_epoch" not in tbl.colnames:
         return None
@@ -353,7 +363,7 @@ def light_curve_nights_jd_from_table(
     """JD light curve with one colour/marker per local night."""
     y, e, qty = _series_y(tbl)
     x, xlabel = _plot_time_and_label(tbl, time_scale)
-    flag = np.asarray(tbl["flag_outlier"], dtype=bool) if "flag_outlier" in tbl.colnames else None
+    flag = _point_flags(tbl)
     nights = unique_night_ids(tbl)
     if nights.size == 0:
         return light_curve_jd_from_table(
@@ -424,7 +434,7 @@ def light_curve_nights_fold_from_table(
     t0 = Time(transit_time, format="isot", scale="utc")
     t0_jd = float(t0.tdb.jd) if time_scale == "bjd_tdb" else float(t0.jd)
     phase = fold_phase(t_use, t0_jd, period)
-    flag = np.asarray(tbl["flag_outlier"], dtype=bool) if "flag_outlier" in tbl.colnames else None
+    flag = _point_flags(tbl)
     nights = unique_night_ids(tbl)
     labels = _night_labels_from_table(tbl, nights) if nights.size else {}
     nid = np.asarray(tbl["night_id"]) if "night_id" in tbl.colnames else np.zeros(len(tbl), dtype=int)
@@ -503,8 +513,8 @@ def light_curve_nights_panels_from_table(
     labels = _night_labels_from_table(tbl, nights)
     nid = np.asarray(tbl["night_id"]).astype(np.int64)
     flag_all = (
-        np.asarray(tbl["flag_outlier"], dtype=bool)
-        if "flag_outlier" in tbl.colnames
+        _point_flags(tbl)
+        if _point_flags(tbl) is not None
         else np.zeros(len(tbl), dtype=bool)
     )
     ylim = y_limits_for_quantity(y[~flag_all] if np.any(~flag_all) else y, quantity=qty)
@@ -523,7 +533,7 @@ def light_curve_nights_panels_from_table(
         sub = tbl[m]
         x, x_label = _plot_time_and_label(sub, time_scale)
         yi, ei, _qty = _series_y(sub)
-        fl = np.asarray(sub["flag_outlier"], dtype=bool) if "flag_outlier" in sub.colnames else None
+        fl = _point_flags(sub)
         _scatter_with_flags(ax, x, yi, ei, fl, quantity=qty)
         ax.set_ylim(*ylim)
         ax.set_ylabel(y_lab, fontsize=9)
@@ -567,7 +577,7 @@ def light_curve_jd_from_table(
     """
     y, e, qty = _series_y(tbl, product)
     x, xlabel = _plot_time_and_label(tbl, time_scale)
-    flag = np.asarray(tbl["flag_outlier"], dtype=bool) if "flag_outlier" in tbl.colnames else None
+    flag = _point_flags(tbl)
     night = np.asarray(tbl["night_id"]) if "night_id" in tbl.colnames else None
     am = np.asarray(tbl["airmass"], dtype=float) if "airmass" in tbl.colnames else None
 
@@ -685,7 +695,7 @@ def light_curve_fold_from_table(
     t0 = Time(transit_time, format="isot", scale="utc")
     t0_jd = float(t0.tdb.jd) if time_scale == "bjd_tdb" else float(t0.jd)
     phase = fold_phase(t_use, t0_jd, period)
-    flag = np.asarray(tbl["flag_outlier"], dtype=bool) if "flag_outlier" in tbl.colnames else None
+    flag = _point_flags(tbl)
     cycles = 2 if int(phase_cycles) >= 2 else 1
 
     fig, ax = plt.subplots(figsize=_FIGSIZE)
@@ -779,9 +789,7 @@ def plot_check_star_qc(
         x, x_label = _plot_time_and_label(sub, time_scale)
         night = np.asarray(sub["night_id"]) if "night_id" in sub.colnames else None
         flag = (
-            np.asarray(sub["flag_outlier"], dtype=bool)
-            if "flag_outlier" in sub.colnames
-            else None
+            _point_flags(sub)
         )
         _draw_night_bands(ax, x, night)
         _scatter_with_flags(ax, x, y, e, flag, quantity=qty, epoch_flag=_epoch_flags(sub))
@@ -1013,8 +1021,8 @@ def plot_calibrator_variability(
             continue
         x, x_label = _plot_time_and_label(sub, time_scale)
         flag = (
-            np.asarray(sub["flag_outlier"], dtype=bool)
-            if "flag_outlier" in sub.colnames
+            _point_flags(sub)
+            if _point_flags(sub) is not None
             else np.zeros(len(sub), dtype=bool)
         )
         ok = np.isfinite(y) & (~flag)
@@ -1091,9 +1099,7 @@ def plot_light_curve_overview(
         x, x_label = _plot_time_and_label(sub, time_scale)
         night = np.asarray(sub["night_id"]) if "night_id" in sub.colnames else None
         flag = (
-            np.asarray(sub["flag_outlier"], dtype=bool)
-            if "flag_outlier" in sub.colnames
-            else None
+            _point_flags(sub)
         )
         _draw_night_bands(ax, x, night)
         _scatter_with_flags(ax, x, y, e, flag, quantity=qty)
