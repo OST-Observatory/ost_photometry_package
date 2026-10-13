@@ -110,6 +110,32 @@ Reduction writes `CRIDENT=True` plus `cosmics_rm` (interpolated) or `cosmics_msk
 
 When lacosmic runs, `read_noise` and `saturation_level` (`None` by default) come from the header keywords `RDNOISE` and `SATLEVEL` that the reduction writes: electrons per pixel for the image times `EXPTIME`, converted for stacks (read noise of the weighted mean at the total exposure, lowest saturating rate). Images without them fall back to 8 e- / 65535 with a note; explicit values always win.
 
+### `scintillation_noise`
+
+Atmospheric scintillation is a relative flux error that is the same for
+bright and faint stars and does not cancel in differential photometry. After
+the extraction, `ExtractionStep` adds it in quadrature to `flux_err` /
+`mags_unc` of every source (so to `err_*`, `mag_inst_err`, `dmag_err` and the
+calibration weights); the photon / sky error stays in `flux_err_phot`.
+
+`σ_S² = 10⁻⁵ C_Y² D^(−4/3) t⁻¹ X³ exp(−2h / 8000 m)` (Young 1967 in the form
+of Osborn et al. 2015, eq. 7), with the aperture `D` in m, `EXPTIME` `t` in s
+(the summed exposure for stacks), airmass `X`, site altitude `h` from
+`observatory_location`.
+
+| Option | Default | Role |
+|--------|---------|------|
+| `scintillation_noise` | True | Add the term; `False` keeps the photon / sky error only |
+| `scintillation_coefficient` | 1.5 | `C_Y`; Osborn et al. find Young's coefficient too low by a median 1.5 |
+| `telescope_aperture_m` | None | Aperture in m; `None` uses `TELESCOP` (else `FOCALLEN` ± 2 %) and `data/telescopes.json` |
+
+The catalog holds the OST telescopes from the OST wiki: CDK20 (508 mm), C14,
+C11, C8, RASA 11, TS 130 mm APO and the H-alpha solar telescopes. A
+telescope that is not in it gets no term and a warning. Typical values:
+CDK20, 20 s, X = 1.15: 0.0022 mag; 300 s: 0.0006 mag. On the HAT-P-20 test
+night this term was the missing part of the differential scatter (see
+[TODO.md](TODO.md), light-curve uncertainties).
+
 ### `psf_find_in_residuals`
 
 

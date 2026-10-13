@@ -6,9 +6,18 @@ from ....output_layout import diagnostics_dir
 from ... import plots
 from ...diagnostic_plot_hooks import run_diagnostic_plots_phase
 from ...extraction import extract_multiprocessing, main_extract
+from ...scintillation import apply_scintillation_to_image_series
 from .. import base
 from ..config import PipelineConfig
 from ..context import AnalysisContext
+
+
+def _site_altitude_m(config: PipelineConfig) -> float:
+    location = getattr(config, "observatory_location", None)
+    try:
+        return float(location.height.to_value("m"))
+    except AttributeError:
+        return 0.0
 
 
 class ExtractionStep(base.PipelineStep):
@@ -53,6 +62,14 @@ class ExtractionStep(base.PipelineStep):
                     ext.n_cores_multiprocessing,
                     fwhm_object_psf=fwhm_dict,
                     **ext.extract_multiprocessing_kwargs(),
+                )
+
+            if ext.scintillation_noise:
+                apply_scintillation_to_image_series(
+                    image_series,
+                    altitude_m=_site_altitude_m(config),
+                    coefficient=ext.scintillation_coefficient,
+                    aperture_m=ext.telescope_aperture_m,
                 )
 
             if mode == "multi" and ext.transform_object_positions_to_reference:

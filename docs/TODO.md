@@ -386,14 +386,12 @@ scintillation estimate:
 
 B agrees (ratios 0.9–1.3 below X = 1.3).
 
-**Next step:** add a scintillation term to `err_*` (Young 1967 with the
-Osborn et al. 2015 factor 1.5; needs aperture diameter, site altitude,
-exposure time, airmass). There is no telescope catalog with aperture
-diameters yet: `reduce.grouping.setup_keys` only normalises telescope ids
-(CDK20, LX200, SkyWatcher), so the diameters need a small table there or a
-header keyword such as `APTDIA` where the capture software writes it. The
-ensemble excess-RMS floor then only has to cover what is left (thin
-clouds, flat-field errors).
+**Scintillation term — done** (`analyze.scintillation`,
+`scintillation_noise=True`, telescope catalog `data/telescopes.json`). Rerun
+of the photometry with it: scatter / `dmag_err` per airmass bin is
+0.96–1.08 (V) and 0.97–1.07 (B) below X = 1.3, and 1.3 above (thin clouds
+at the end of the night, not flagged). That remainder is what the ensemble
+excess-RMS floor below has to cover.
 
 **Direction:** `mag_err_inflated` for the transformed product (optional ZP
 floor); `dmag_err = \sqrt{\sigma_{\mathrm{OOI}}^2 + \sigma_{\mathrm{ens}}^2 +
@@ -781,7 +779,7 @@ how `camera_info` maps FITS `INSTRUME` / `GAIN` / `READOUTM` / `CCD-TEMP` to
 
 ## Suggested order
 
-1. **P1:** Light curves — honest \(\sigma\) (scintillation term in `err_*`, then ensemble excess floor; see the error budget) and residuals vs airmass/FWHM/sky/\(x,y\). Differential product, quiet ensemble and `flag_epoch` are done.
+1. **P1:** Light curves — honest \(\sigma\) (ensemble excess floor for thin clouds; the scintillation term is done) and residuals vs airmass/FWHM/sky/\(x,y\). Differential product, quiet ensemble and `flag_epoch` are done.
 2. **P2:** Camera catalog — QHY268 system-gain vs GAIN (all readout modes), then dark current for 485C / 462 / ASI2600.
 3. **P2:** Registration — tests for `(dx, dy)` axes, `aa_true` on a synthetic shift and shift outliers. Skipped-frame reporting and the reference WCS after `aa_true` are done. Do **not** start drizzle while the tests are open.
 4. **P2:** Registration — backend protocol (`fit` → `apply` → YAML) and pragmatic unification: every method on the reference grid; drop `make_big_images` from the workflow; **keep** filter-then-inter-filter.

@@ -1,0 +1,61 @@
+{
+  "source": "OST wiki: de:ost:telescope:grunddaten (CDK20) and de:ost:telescope:mobile (mobile telescopes), read 2026-10-13",
+  "telescopes": {
+    "CDK20": {
+      "name": "PlaneWave CDK20",
+      "aperture_mm": 508.0,
+      "central_obstruction_mm": 198.0,
+      "focal_length_mm": 3454.0,
+      "aliases": ["cdk20", "planewavecdk20", "ostcdk20"]
+    },
+    "C14": {
+      "name": "Celestron C14 (Schmidt-Cassegrain)",
+      "aperture_mm": 356.0,
+      "central_obstruction_mm": null,
+      "focal_length_mm": 3910.0,
+      "aliases": ["c14", "celestronc14", "celestron14"]
+    },
+    "C11": {
+      "name": "Celestron C11 (Schmidt-Cassegrain)",
+      "aperture_mm": 279.4,
+      "central_obstruction_mm": null,
+      "focal_length_mm": 2800.0,
+      "aliases": ["c11", "celestronc11", "celestron11"]
+    },
+    "C8": {
+      "name": "Celestron C8 (Schmidt-Cassegrain)",
+      "aperture_mm": 203.2,
+      "central_obstruction_mm": null,
+      "focal_length_mm": 2032.0,
+      "aliases": ["c8", "celestronc8", "celestron8"]
+    },
+    "RASA11": {
+      "name": "Celestron RASA 11 V2",
+      "aperture_mm": 279.0,
+      "central_obstruction_mm": null,
+      "focal_length_mm": 620.0,
+      "aliases": ["rasa11", "rasa11v2", "celestronrasa11"]
+    },
+    "TS130APO": {
+      "name": "TS-Optics 130 mm apochromat",
+      "aperture_mm": 130.0,
+      "central_obstruction_mm": null,
+      "focal_length_mm": 910.0,
+      "aliases": ["ts130apo", "tsoptics130", "130apo", "apo130"]
+    },
+    "SolarMaxII60": {
+      "name": "Coronado SolarMax II 60 (H-alpha, OSST)",
+      "aperture_mm": 60.0,
+      "central_obstruction_mm": null,
+      "focal_length_mm": 400.0,
+      "aliases": ["solarmaxii60", "solarmax60", "coronadosolarmax", "osst"]
+    },
+    "Heliostar76": {
+      "name": "Sky-Watcher Heliostar 76 H-alpha",
+      "aperture_mm": 76.0,
+      "central_obstruction_mm": null,
+      "focal_length_mm": 630.0,
+      "aliases": ["heliostar76", "heliostar"]
+    }
+  }
+}

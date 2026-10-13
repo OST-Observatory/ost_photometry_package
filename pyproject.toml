@@ -76,6 +76,7 @@ exclude = [
 "src/ost_photometry/data/__init__.py" = "ost_photometry/data/__init__.py"
 "src/ost_photometry/data/ost_potsdam_extinction.json" = "ost_photometry/data/ost_potsdam_extinction.json"
 "src/ost_photometry/data/cameras.json" = "ost_photometry/data/cameras.json"
+"src/ost_photometry/data/telescopes.json" = "ost_photometry/data/telescopes.json"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

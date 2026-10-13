@@ -32,6 +32,17 @@ section of this file.
   light-curve plots. Options `light_curve_ensemble_*` and
   `light_curve_epoch_*`.
 
+- **Scintillation in the photometric errors** (`analyze.scintillation`,
+  `scintillation_noise=True`): after the extraction every source gets the
+  scintillation term of Osborn et al. (2015, eq. 7, `C_Y = 1.5`) in
+  quadrature on `flux_err` / `mags_unc`; the photon / sky error is kept as
+  `flux_err_phot`. Aperture from the new telescope catalog
+  (`ost_photometry.telescope_specs`, `data/telescopes.json`: CDK20 and the
+  mobile OST telescopes from the OST wiki; matched by `TELESCOP`, else
+  `FOCALLEN`) or `telescope_aperture_m`; site altitude from
+  `observatory_location`. On the HAT-P-20 test night the differential
+  scatter was 1.3–2.5× the error bars without it.
+
 ### Fixed
 
 - **Night boundary at midnight UT:** `night_id_from_jd` used

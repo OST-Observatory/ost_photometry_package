@@ -221,6 +221,16 @@ class ExtractionConfig:
     outer_annulus_fwhm_factor: float = 4.0
     strict_epsf_checks: bool = True
     transform_object_positions_to_reference: bool = False
+    #: Add atmospheric scintillation (Osborn et al. 2015) to ``flux_err`` /
+    #: ``mags_unc`` of every source; the photon / sky error stays in
+    #: ``flux_err_phot``. Needs the aperture (telescope catalog or
+    #: ``telescope_aperture_m``); site altitude from ``observatory_location``.
+    scintillation_noise: bool = True
+    #: Correction factor to Young's coefficient (Osborn et al.: median ≈ 1.5).
+    scintillation_coefficient: float = 1.5
+    #: Aperture diameter in m; ``None`` takes it from ``TELESCOP`` /
+    #: ``FOCALLEN`` and ``data/telescopes.json``.
+    telescope_aperture_m: float | None = None
     skip_extraction: bool = False
 
     def main_extract_kwargs(self, *, fwhm: float | None = None) -> dict[str, Any]:
