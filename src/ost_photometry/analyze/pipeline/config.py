@@ -416,7 +416,7 @@ class PostProcessConfig:
     cluster_ruwe_max: float = 1.4
     cluster_plx_snr_min: float | None = None
     cluster_pmem_min: float = 0.5
-    cluster_membership_method: Literal["gmm", "hdbscan"] = "gmm"
+    cluster_membership_method: Literal["gmm", "xd", "hdbscan"] = "gmm"
     cluster_component_id: int | None = None
     convert_magnitudes: bool = False
     #: Preferred output filter family after calibration (``auto`` = calibrated set).

@@ -72,7 +72,12 @@ def plot_cmds_from_table(
     dropped; ``max_photometric_err`` optionally rejects large photometric σ.
     ``is_cluster_member`` in the table (if present) greys out field stars and
     restricts the isochrone fit to members. ``color_by_error`` colours members
-    by photometric σ. ``cmd_diagnostics`` writes a fit ECSV and residual CMD.
+    by photometric σ. ``do_error_bars`` only controls drawing: the fit always
+    uses the photometric errors and treats distance and reddening (with
+    ``m_m_err`` / ``distance_err``, ``e_b_v_err``, ``rv_err`` as Gaussian
+    priors) as nuisance offsets. The fit writes
+    ``tables/cmd_isochrone_fit_*.ecsv`` (age, age interval, χ²_ν, offsets);
+    ``cmd_diagnostics`` adds a residual CMD.
     """
     if len(tbl) == 0:
         raise ValueError("CMD table is empty.")
@@ -133,6 +138,8 @@ def plot_cmds_from_table(
             is_cluster_member=series.is_cluster_member,
             color_by_error=color_by_error,
             cmd_diagnostics=cmd_diagnostics,
+            color_mag_cov=series.color_mag_cov,
+            draw_error_bars=do_error_bars,
         )
         x_app = _range_at(x_plot_range_apparent, filter_id)
         y_app = _range_at(y_plot_range_apparent, filter_id)
@@ -173,9 +180,9 @@ def plot_cmds_from_table(
             iso.isochrone_keyword,
             iso.isochrone_legend,
             rv=rv,
-            e_b_v_err=e_b_v_err if do_error_bars else None,
-            rv_err=rv_err if do_error_bars else None,
-            m_m_err=mu_err if do_error_bars else None,
+            e_b_v_err=e_b_v_err,
+            rv_err=rv_err,
+            m_m_err=mu_err,
             figure_size_x=figure_size_x,
             figure_size_y=figure_size_y,
             y_plot_range_max=y_overlay[1],

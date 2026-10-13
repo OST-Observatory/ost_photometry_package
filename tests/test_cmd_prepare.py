@@ -141,8 +141,54 @@ def test_load_cmd_table_ecsv(tmp_path):
         )
         tbl.write(path, format="ascii.ecsv")
         loaded = mod.load_cmd_table(path)
+        # all epochs averaged per star (no errors: plain mean)
         assert len(loaded) == 1
-        assert str(loaded["epoch_id"][0]) == "epoch_000"
+        assert float(loaded["mag_cal_V"][0]) == pytest.approx(14.25)
+        one = mod.load_cmd_table(path, epoch_id="epoch_001")
+        assert float(one["mag_cal_V"][0]) == pytest.approx(14.5)
+
+
+def test_combine_cmd_epochs_keeps_the_common_error():
+    with isolated_sys_modules():
+        mod = _prepare()
+        n_ep = 9
+        tbl = Table({
+            "id": np.repeat([1, 2], n_ep),
+            "epoch_id": np.tile([f"e{k}" for k in range(n_ep)], 2),
+            "mag_cal_V": np.concatenate([np.full(n_ep, 14.0), 15.0 + 0.3 * np.arange(n_ep) % 2]),
+            "err_cal_V": np.full(2 * n_ep, np.hypot(0.03, 0.02)),
+            "err_cal_rand_V": np.full(2 * n_ep, 0.03),
+            "err_cal_epoch_V": np.zeros(2 * n_ep),
+            "err_cal_common_V": np.full(2 * n_ep, 0.02),
+        })
+        out = mod.combine_cmd_epochs(tbl)
+        assert len(out) == 2 and "epoch_id" not in out.colnames
+        star = out[np.asarray(out["id"]) == 1][0]
+        # 0.03/√9 averages down, the 0.02 catalog part does not
+        assert float(star["err_cal_V"]) == pytest.approx(np.hypot(0.01, 0.02), rel=1e-6)
+        var = out[np.asarray(out["id"]) == 2][0]
+        # a variable star: the scatter between epochs sets the error
+        assert float(var["err_cal_V"]) > 0.05
+
+
+def test_cmd_series_colour_error_and_covariance_from_joint_solution():
+    with isolated_sys_modules():
+        mod = _prepare()
+        tbl = Table({
+            "id": [1],
+            "epoch_id": ["e0"],
+            "mag_cal_B": [12.5],
+            "mag_cal_V": [12.0],
+            "err_cal_B": [0.05],
+            "err_cal_V": [0.04],
+            "err_cal_B-V": [0.03],
+        })
+        series = mod.cmd_series_from_table(tbl, "B", "V")
+        assert series.color_err[0] == pytest.approx(0.03)
+        cov_bv = 0.5 * (0.05**2 + 0.04**2 - 0.03**2)
+        assert series.color_mag_cov[0] == pytest.approx(cov_bv - 0.04**2)
+        # errors are loaded without do_error_bars (the fit needs them)
+        assert series.magnitude_filter_2_err is not None
 
 
 def test_load_isochrone_config_blank():
@@ -430,26 +476,3 @@ def test_mask_cmd_series_drops_nan_and_large_errors():
         clipped = mod.mask_cmd_series(series, max_photometric_err=0.2)
         np.testing.assert_allclose(clipped.color, [0.5, 0.6])
         np.testing.assert_allclose(clipped.magnitude_filter_2, [15.0, 15.2])
-
-
-def test_weighted_chi_square_downweights_large_sigma():
-    with isolated_sys_modules():
-        mod = _prepare()
-        residual = np.array([1.0, 1.0])
-        assert mod.weighted_chi_square(residual) == pytest.approx(2.0)
-        assert mod.weighted_chi_square(
-            residual, np.array([1.0, 10.0])
-        ) == pytest.approx(1.01)
-        assert mod.weighted_chi_square(residual, np.array([0.0, np.nan])) == (
-            pytest.approx(2.0)
-        )
-
-
-def test_fiducial_fit_sigma_photometry_or_scatter():
-    with isolated_sys_modules():
-        mod = _prepare()
-        ivw = mod.fiducial_fit_sigma(np.array([0.1, 0.1]), scatter=0.5, n=2)
-        assert ivw == pytest.approx(0.1 / np.sqrt(2))
-        fallback = mod.fiducial_fit_sigma(None, scatter=0.4, n=4)
-        assert fallback == pytest.approx(0.2)
-        assert mod.fiducial_fit_sigma(None, scatter=0.0, n=1) == 1.0

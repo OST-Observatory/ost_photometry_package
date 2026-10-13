@@ -6,20 +6,15 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from astropy.stats import sigma_clipped_stats
 from astropy.table import Table
 from scipy.spatial import KDTree
 
 from ... import checks, terminal_output
 from ...output_layout import diagnostics_dir, results_dir, tables_dir
-from ..cmd_prepare import (
-    fiducial_fit_sigma,
-    format_isochrone_annotation,
-    weighted_chi_square,
-)
+from ..cmd_prepare import format_isochrone_annotation
+from ..isochrone_fit import age_interval, bin_fiducials, profile_chi_square
 from .cmd_reddening import (
     cmd_correction_offsets,
-    combine_cmd_error_bars,
     reddening_for_absolute_cmd,
 )
 from .style import (
@@ -120,6 +115,7 @@ def _scatter_cmd_stars(
     color_err: np.ndarray | float | None,
     color_by_error: bool,
     marker_alpha: float = 0.45,
+    draw_error_bars: bool = True,
 ):
     """Field (grey) behind members; optional colour-coding by photometric σ."""
     n = len(color)
@@ -175,7 +171,7 @@ def _scatter_cmd_stars(
             label=member_label,
             rasterized=True,
         )
-    if mag_err_arr is not None or color_err_arr is not None:
+    if draw_error_bars and (mag_err_arr is not None or color_err_arr is not None):
         ax.errorbar(
             color,
             mag,
@@ -211,7 +207,9 @@ class MakeCMDs:
             output_dir: str = 'output',
             is_cluster_member: np.ndarray | None = None,
             color_by_error: bool = False,
-            cmd_diagnostics: bool = False) -> None:
+            cmd_diagnostics: bool = False,
+            color_mag_cov: np.ndarray | None = None,
+            draw_error_bars: bool = True) -> None:
         """
         Parameters
         ----------
@@ -247,6 +245,13 @@ class MakeCMDs:
         output_dir
             Output directory
             Default is ``output``.
+
+        color_mag_cov
+            ``cov(colour, magnitude)`` per star for the isochrone fit.
+
+        draw_error_bars
+            Draw the per-star error bars. The errors are used by the
+            isochrone fit either way.
         """
         self.name_of_star_cluster = name_of_star_cluster
         self.file_name = file_name
@@ -262,6 +267,10 @@ class MakeCMDs:
         self.is_cluster_member = is_cluster_member
         self.color_by_error = color_by_error
         self.cmd_diagnostics = cmd_diagnostics
+        self.color_mag_cov = color_mag_cov
+        self.draw_error_bars = draw_error_bars
+        self._fit_context: dict = {}
+        self._fit_result: dict | None = None
 
         #   Additional attributes filled later
         self.magnitude_filter_2_absolute: np.ndarray | None = None
@@ -424,9 +433,25 @@ class MakeCMDs:
         n_members: int | None,
         n_field: int | None,
         plot_tag: str,
+        fit_result: dict | None = None,
+        residual_plot: bool = True,
     ) -> None:
-        """Write fit summary ECSV and a residual CMD under diagnostics/cmds."""
-        tree = KDTree(np.asarray(iso_array, dtype=float), leafsize=100)
+        """Write the fit summary ECSV; with ``residual_plot`` also a residual CMD.
+
+        ``fit_result`` (from :meth:`plot_absolute_cmd`) adds the age interval
+        (``age_err_lo`` / ``age_err_hi``, from ``Δχ² = s``), ``chi_square_nu``,
+        ``dof``, the Birge scale ``s`` and the fitted offsets ``delta_m`` /
+        ``delta_e`` with the resulting ``m_m_fit`` / ``e_b_v_fit``.
+        """
+        fit_result = fit_result or {}
+        interval = fit_result.get("interval")
+        dm = float(fit_result.get("delta_m", 0.0))
+        de = float(fit_result.get("delta_e", 0.0))
+        ctx = getattr(self, "_fit_context", None) or {}
+        iso_array = np.asarray(iso_array, dtype=float).copy()
+        iso_array[:, 0] += dm + de * float(ctx.get("a_per_e", 0.0))
+        iso_array[:, 1] += de * float(ctx.get("c_per_e", 0.0))
+        tree = KDTree(iso_array, leafsize=100)
         points = np.column_stack(
             (np.asarray(mag, dtype=float), np.asarray(color, dtype=float))
         )
@@ -455,10 +480,23 @@ class MakeCMDs:
             "apply_corrections_to": str(apply_corrections_to),
             "median_d_color": float(np.nanmedian(dcolor)),
             "median_d_mag": float(np.nanmedian(dmag)),
+            "age_err_lo": np.nan if interval is None else float(interval.age_err_lo),
+            "age_err_hi": np.nan if interval is None else float(interval.age_err_hi),
+            "chi_square_nu": np.nan if interval is None else float(interval.chi_square_nu),
+            "dof": -1 if interval is None else int(interval.dof),
+            "chi_square_scale": np.nan if interval is None else float(interval.scale),
+            "delta_m": dm,
+            "delta_e": de,
+            "sigma_m_prior": float(ctx.get("sigma_m", 0.0)),
+            "sigma_e_prior": float(ctx.get("sigma_e", 0.0)),
+            "m_m_fit": float(m_m) + dm,
+            "e_b_v_fit": float(e_b_v) + de,
         }
         fit_path = tables_dir(self.output_dir) / f"cmd_isochrone_fit_{stub}.ecsv"
         Table(rows=[row]).write(str(fit_path), format="ascii.ecsv", overwrite=True)
         terminal_output.print_to_terminal(f"Save isochrone fit table: {fit_path}")
+        if not residual_plot:
+            return
 
         fig = initialize_plot("", "")
         ax = fig.add_subplot(1, 1, 1)
@@ -657,52 +695,49 @@ class MakeCMDs:
 
         return isochrone_magnitude_2, isochrone_color
 
-    @staticmethod
-    def calculate_chi_square(
-            magnitude_filter_2: np.ndarray, magnitude_color: np.ndarray,
-            isochrone_array: np.ndarray, nearst_neighbour_indexes: np.ndarray,
-            magnitude_filter_2_err: np.ndarray | None = None,
-            magnitude_color_err: np.ndarray | None = None,
-            ) -> tuple[float, float, float]:
+    def _annotation_fit_terms(self, m_m: float, e_b_v: float) -> dict:
+        result = getattr(self, "_fit_result", None) or {}
+        interval = result.get("interval")
+        if interval is None:
+            return {}
+        terms = {
+            "age_err_lo": interval.age_err_lo,
+            "age_err_hi": interval.age_err_hi,
+            "chi_square_nu": interval.chi_square_nu,
+        }
+        if result.get("n_free"):
+            terms["m_m_fit"] = float(m_m) + float(result.get("delta_m", 0.0))
+            terms["e_b_v_fit"] = float(e_b_v) + float(result.get("delta_e", 0.0))
+        return terms
+
+    def _score_isochrone(
+        self,
+        isochrone_array: np.ndarray,
+        *,
+        free: bool = False,
+        data_scale: float = 1.0,
+    ) -> tuple[float, float, float, float, float]:
+        """χ² of one isochrone against the fiducials set by :meth:`plot_absolute_cmd`.
+
+        ``free=False``: offsets fixed at the input distance / reddening (first
+        pass, gives the χ²_ν scale). ``free=True``: δM / δE profiled with
+        their priors and the data χ² divided by ``data_scale``
+        (:func:`~ost_photometry.analyze.isochrone_fit.profile_chi_square`).
+        Returns ``(χ²_mag, χ²_colour, χ², δM, δE)``.
         """
-        Error-weighted χ² of binned fiducials vs. nearest isochrone points.
-
-        Parameters
-        ----------
-        magnitude_filter_2
-            Object magnitudes of filter 2 (sigma-clipped stats columns)
-
-        magnitude_color
-            Object colors (sigma-clipped stats columns)
-
-        isochrone_array
-            Array with isochrone data
-
-        nearst_neighbour_indexes
-            Indexes of the nearest isochrone points to the reference points
-            of the observed objects.
-
-        magnitude_filter_2_err, magnitude_color_err
-            1-sigma for each fiducial. Missing sigmas fall back to unweighted χ².
-
-        Returns
-        -------
-        chi_square_magnitude_2, chi_square_color, chi_square_total
-        """
-        dmag = (
-            magnitude_filter_2[:, 1]
-            - isochrone_array[:, 0][nearst_neighbour_indexes]
+        ctx = self._fit_context
+        res = profile_chi_square(
+            ctx["fiducials"],
+            isochrone_array[:, 0],
+            isochrone_array[:, 1],
+            a_per_e=ctx["a_per_e"],
+            c_per_e=ctx["c_per_e"],
+            sigma_m=ctx["sigma_m"] if free else None,
+            sigma_e=ctx["sigma_e"] if free else None,
+            data_scale=data_scale,
         )
-        dcolor = (
-            magnitude_color[:, 1]
-            - isochrone_array[:, 1][nearst_neighbour_indexes]
-        )
-        chi_square_magnitude_2 = weighted_chi_square(
-            dmag, magnitude_filter_2_err
-        )
-        chi_square_color = weighted_chi_square(dcolor, magnitude_color_err)
-        chi_square_total = chi_square_magnitude_2 + chi_square_color
-        return chi_square_magnitude_2, chi_square_color, chi_square_total
+        return (res.chi_square_mag, res.chi_square_color, res.chi_square,
+                res.delta_m, res.delta_e)
 
     def plot_apparent_cmd(
             self, figure_size_x: str = '', figure_size_y: str = '',
@@ -757,6 +792,7 @@ class MakeCMDs:
             mag_err=self.magnitude_filter_2_err,
             color_err=self.magnitude_color_err,
             color_by_error=self.color_by_error,
+            draw_error_bars=self.draw_error_bars,
         )
 
         #   Set ticks and labels
@@ -938,7 +974,7 @@ class MakeCMDs:
             )
         )
         (dmag_obs, dcolor_obs, dmag_iso, dcolor_iso,
-         correction_mag_err, correction_color_err) = cmd_correction_offsets(
+         _correction_mag_err, _correction_color_err) = cmd_correction_offsets(
             a_filter_2,
             relative_extinction,
             m_m,
@@ -955,18 +991,22 @@ class MakeCMDs:
         magnitude_color = self.magnitude_color + dcolor_obs
         self.magnitude_filter_2_absolute = magnitude_filter_2
         self.magnitude_color_absolute = magnitude_color
-        if apply_to_iso:
-            magnitude_filter_2_err = self.magnitude_filter_2_err
-            magnitude_color_err = self.magnitude_color_err
-        else:
-            magnitude_filter_2_err = combine_cmd_error_bars(
-                self.magnitude_filter_2_err,
-                correction_mag_err,
+        # Per-star errors stay photometric: distance and reddening are one
+        # offset for all stars and enter the fit as nuisance parameters.
+        magnitude_filter_2_err = self.magnitude_filter_2_err
+        magnitude_color_err = self.magnitude_color_err
+        # nuisance offsets: δE (colour excess) and δM (distance modulus and
+        # the R_V part of the extinction), Gaussian priors from the inputs
+        a_per_e, c_per_e, _, _ = reddening_for_absolute_cmd(
+            self.filter_1, self.filter_2, rv, 1.0
+        )
+        a_rv_err, c_rv_err = 0.0, 0.0
+        if rv_err:
+            _, _, a_rv_err, c_rv_err = reddening_for_absolute_cmd(
+                self.filter_1, self.filter_2, rv, e_b_v, rv_err=rv_err
             )
-            magnitude_color_err = combine_cmd_error_bars(
-                self.magnitude_color_err,
-                correction_color_err,
-            )
+        sigma_e = float(np.hypot(e_b_v_err or 0.0, c_rv_err / c_per_e if c_per_e else 0.0))
+        sigma_m = float(np.hypot(m_m_err or 0.0, a_rv_err))
 
         def _shift_isochrone(mag, color):
             return (
@@ -1027,6 +1067,7 @@ class MakeCMDs:
             mag_err=magnitude_filter_2_err,
             color_err=magnitude_color_err,
             color_by_error=self.color_by_error,
+            draw_error_bars=self.draw_error_bars,
             marker_alpha=0.35,
         )
 
@@ -1088,58 +1129,38 @@ class MakeCMDs:
                 max_magnitude_filter_2,
                 n_bin_observation,
             )
-
-            #   Perform binning
-            digitized = np.digitize(mag_fit, bins)
-            mag_rows = []
-            color_rows = []
-            mag_fit_err = []
-            color_fit_err = []
-            for i in range(1, len(bins)):
-                in_bin = digitized == i
-                if not np.any(in_bin):
-                    continue
-                mag_stats = sigma_clipped_stats(mag_fit[in_bin])
-                color_stats = sigma_clipped_stats(color_fit[in_bin])
-                n_bin = int(np.count_nonzero(in_bin))
-                mag_phot = None
-                if mag_err_fit is not None:
-                    mag_phot = np.broadcast_to(
-                        np.asarray(mag_err_fit, dtype=float),
-                        mag_fit.shape,
-                    )[in_bin]
-                color_phot = None
-                if color_err_fit is not None:
-                    color_phot = np.broadcast_to(
-                        np.asarray(color_err_fit, dtype=float),
-                        color_fit.shape,
-                    )[in_bin]
-                mag_rows.append(mag_stats)
-                color_rows.append(color_stats)
-                mag_fit_err.append(
-                    fiducial_fit_sigma(mag_phot, mag_stats[2], n_bin)
-                )
-                color_fit_err.append(
-                    fiducial_fit_sigma(color_phot, color_stats[2], n_bin)
-                )
-            if not mag_rows:
+            cov_fit = self.color_mag_cov
+            if cov_fit is not None and fit_members is not None:
+                cov_fit = np.asarray(cov_fit, dtype=float)[fit_members]
+            fiducials = bin_fiducials(
+                mag_fit,
+                color_fit,
+                mag_err=mag_err_fit,
+                color_err=color_err_fit,
+                color_mag_cov=cov_fit,
+                bins=bins,
+            )
+            if len(fiducials) == 0:
                 raise ValueError(
                     "No CMD points left in the magnitude fit range."
                 )
-            magnitude_filter_2_binned = np.array(mag_rows)
-            magnitude_color_binned = np.array(color_rows)
-            magnitude_filter_2_fit_err = np.asarray(mag_fit_err, dtype=float)
-            magnitude_color_fit_err = np.asarray(color_fit_err, dtype=float)
+            self._fit_context = {
+                "fiducials": fiducials,
+                "a_per_e": float(a_per_e),
+                "c_per_e": float(c_per_e),
+                "sigma_m": sigma_m,
+                "sigma_e": sigma_e,
+            }
             magnitude_binned_array = np.column_stack(
-                (magnitude_filter_2_binned[:, 1], magnitude_color_binned[:, 1])
+                (fiducials.mag, fiducials.color)
             )
 
             if fiduciary_points_observation:
                 ax0.errorbar(
-                    magnitude_color_binned[:, 1],
-                    magnitude_filter_2_binned[:, 1],
-                    xerr=magnitude_color_binned[:, 2],
-                    yerr=magnitude_filter_2_binned[:, 2],
+                    fiducials.color,
+                    fiducials.mag,
+                    xerr=fiducials.color_err,
+                    yerr=fiducials.mag_err,
                     marker='o',
                     ls='none',
                     elinewidth=1.0,
@@ -1152,10 +1173,7 @@ class MakeCMDs:
                 )
         else:
             magnitude_binned_array = None
-            magnitude_filter_2_binned = None
-            magnitude_color_binned = None
-            magnitude_filter_2_fit_err = None
-            magnitude_color_fit_err = None
+            fiducials = None
 
         #   Plot isochrones
         #
@@ -1331,44 +1349,12 @@ class MakeCMDs:
 
                     if fit_isochrone:
                         #   Calculate chi square
-                        chi_square_magnitude_2, chi_square_color, chi_square_total = self.calculate_chi_square(
-                            magnitude_filter_2_binned,
-                            magnitude_color_binned,
-                            isochrone_array,
-                            nearst_neighbour_indexes,
-                            magnitude_filter_2_err=magnitude_filter_2_fit_err,
-                            magnitude_color_err=magnitude_color_fit_err,
-                        )
+                        chi_square_magnitude_2, chi_square_color, chi_square_total, _dm, _de = self._score_isochrone(isochrone_array)
                         chi_square_magnitude_2_list.append(
                             chi_square_magnitude_2
                         )
                         chi_square_color_list.append(chi_square_color)
                         chi_square_list.append(chi_square_total)
-
-                        #   Plot chi square values
-                        if chi_square_plot_mode == 'detailed':
-                            ax1.scatter(
-                                chi_square_magnitude_2,
-                                age_value,
-                                color=color_pick.to_rgba(i),
-                                marker='o',
-                                alpha=0.2,
-                            )
-                            ax2.scatter(
-                                age_value,
-                                chi_square_color,
-                                color=color_pick.to_rgba(i),
-                                marker='o',
-                                alpha=0.2,
-                            )
-                        elif chi_square_plot_mode == 'simple':
-                            ax2.scatter(
-                                age_value,
-                                chi_square_color + chi_square_magnitude_2,
-                                color=color_pick.to_rgba(i),
-                                marker='o',
-                                alpha=0.2,
-                            )
 
             #   OPTION II: Isochrone file containing many individual isochrones
             if isochrone_type == 'file':
@@ -1503,45 +1489,13 @@ class MakeCMDs:
 
                     if fit_isochrone:
                         #   Calculate chi square
-                        chi_square_magnitude_2, chi_square_color, chi_square_total = self.calculate_chi_square(
-                            magnitude_filter_2_binned,
-                            magnitude_color_binned,
-                            isochrones_list[i],
-                            nearst_neighbour_indexes_list[i],
-                            magnitude_filter_2_err=magnitude_filter_2_fit_err,
-                            magnitude_color_err=magnitude_color_fit_err,
-                        )
+                        chi_square_magnitude_2, chi_square_color, chi_square_total, _dm, _de = self._score_isochrone(isochrones_list[i])
                         chi_square_magnitude_2_list.append(
                             chi_square_magnitude_2
                         )
                         chi_square_color_list.append(chi_square_color)
                         chi_square_list.append(chi_square_total)
 
-                        #   Plot chi square values
-                        if chi_square_plot_mode == 'detailed':
-                            ax1.plot(
-                                chi_square_magnitude_2,
-                                age_value,
-                                color=color_pick.to_rgba(i),
-                                marker='o',
-                                alpha=0.2,
-                            )
-                            ax2.plot(
-                                age_value,
-                                chi_square_color,
-                                ls='none',
-                                color=color_pick.to_rgba(i),
-                                marker='o',
-                                alpha=0.2,
-                            )
-                        elif chi_square_plot_mode == 'simple':
-                            ax2.scatter(
-                                age_value,
-                                chi_square_color + chi_square_magnitude_2,
-                                color=color_pick.to_rgba(i),
-                                marker='o',
-                                alpha=0.2,
-                            )
                 age_list = age_list_new
 
             #   Plot legend
@@ -1568,66 +1522,94 @@ class MakeCMDs:
                     style_name="WARNING",
                 )
             else:
-                #   Evaluate chi square
-                min_chi_square_id = int(np.argmin(chi_square_list))
-                best_age = age_list[min_chi_square_id]
+                #   Evaluate chi square. Pass 1 (in the loop): offsets fixed
+                #   at the inputs -> χ²_ν scale s. Pass 2: δM / δE profiled
+                #   with their priors on the data χ² divided by s.
+                ctx = self._fit_context
+                n_fid = len(ctx["fiducials"])
+                n_free = int(bool(ctx["sigma_m"])) + int(bool(ctx["sigma_e"]))
+                chi_nu_fixed = float(np.nanmin(chi_square_list)) / max(n_fid - 1, 1)
+                scale = max(1.0, chi_nu_fixed)
+                offsets = [(0.0, 0.0)] * len(chi_square_list)
+                if n_free:
+                    rescored = [
+                        self._score_isochrone(iso, free=True, data_scale=scale)
+                        for iso in isochrones_list[: len(chi_square_list)]
+                    ]
+                    chi_square_magnitude_2_list = [r[0] for r in rescored]
+                    chi_square_color_list = [r[1] for r in rescored]
+                    chi_square_list = [r[2] for r in rescored]
+                    offsets = [(r[3], r[4]) for r in rescored]
+                numeric_ages = len(age_list) == len(chi_square_list) and all(
+                    isinstance(a, (int, float)) for a in age_list
+                )
+                if numeric_ages:
+                    interval = age_interval(
+                        np.asarray(age_list, dtype=float),
+                        np.asarray(chi_square_list, dtype=float),
+                        n_fiducials=n_fid,
+                        n_free=n_free,
+                        scale=1.0 if n_free else None,
+                    )
+                    if n_free:
+                        interval.scale = scale
+                        interval.chi_square_nu = chi_nu_fixed
+                        interval.dof = max(n_fid - 1, 1)
+                    min_chi_square_id = interval.index
+                    best_age = interval.best_age
+                else:
+                    interval = None
+                    min_chi_square_id = int(np.argmin(chi_square_list))
+                    best_age = age_list[min_chi_square_id]
                 best_age_unit = age_unit
                 best_chi_square = chi_square_list[min_chi_square_id]
-
+                best_offsets = offsets[min_chi_square_id]
+                self._fit_result = {
+                    "interval": interval,
+                    "delta_m": best_offsets[0],
+                    "delta_e": best_offsets[1],
+                    "n_free": n_free,
+                }
+                age_note = ""
+                if interval is not None:
+                    age_note = (
+                        f" (+{interval.age_err_hi:.2f} / -{interval.age_err_lo:.2f}), "
+                        f"χ²_ν = {interval.chi_square_nu:.2f} (ν = {interval.dof})"
+                    )
                 terminal_output.print_to_terminal(
-                    f'Best fitting isochrone: {age_list[min_chi_square_id]:.1f} '
-                    f'{age_unit} with chi^2 = {chi_square_list[min_chi_square_id]:.3f}',
+                    f'Best fitting isochrone: {best_age:.2f} {age_unit}{age_note}; '
+                    f'offsets δM = {best_offsets[0]:+.3f}, '
+                    f'δE = {best_offsets[1]:+.3f} mag',
                     style_name="GOOD",
                 )
 
-                #   Plot best isochrone
+                #   Plot best isochrone with the fitted offsets
+                best_iso = isochrones_list[min_chi_square_id]
                 ax0.plot(
-                    isochrones_list[min_chi_square_id][:, 1],
-                    isochrones_list[min_chi_square_id][:, 0],
+                    best_iso[:, 1] + best_offsets[1] * ctx["c_per_e"],
+                    best_iso[:, 0] + best_offsets[0] + best_offsets[1] * ctx["a_per_e"],
                     linestyle='-',
                     color=color_pick.to_rgba(min_chi_square_id),
                     linewidth=2,
                 )
 
-                #   Finish chi square plots
+                #   χ² panels: every isochrone, the best one highlighted
+                ages_plot = age_list if numeric_ages else list(range(len(chi_square_list)))
+                for i, age_i in enumerate(ages_plot):
+                    alpha_i = 1.0 if i == min_chi_square_id else 0.2
+                    if chi_square_plot_mode == 'detailed':
+                        ax1.scatter(chi_square_magnitude_2_list[i], age_i,
+                                    color=color_pick.to_rgba(i), marker='o', alpha=alpha_i)
+                        ax2.scatter(age_i, chi_square_color_list[i],
+                                    color=color_pick.to_rgba(i), marker='o', alpha=alpha_i)
+                    elif chi_square_plot_mode == 'simple':
+                        ax2.scatter(age_i, chi_square_list[i],
+                                    color=color_pick.to_rgba(i), marker='o', alpha=alpha_i)
                 if chi_square_plot_mode == 'detailed':
-                    ax1.scatter(
-                        chi_square_magnitude_2_list[min_chi_square_id],
-                        age_list[min_chi_square_id],
-                        color=color_pick.to_rgba(min_chi_square_id),
-                        marker='o',
-                        alpha=1.0,
-                    )
-                    ax2.scatter(
-                        age_list[min_chi_square_id],
-                        chi_square_color_list[min_chi_square_id],
-                        color=color_pick.to_rgba(min_chi_square_id),
-                        marker='o',
-                        alpha=1.0,
-                    )
-                    mk_ticks_labels(
-                        f'Age [{age_unit}]',
-                        r'$\chi^2$ ',
-                        ax1,
-                    )
-                    mk_ticks_labels(
-                        r'$\chi^2$ ',
-                        f'Age [{age_unit}]',
-                        ax2,
-                    )
+                    mk_ticks_labels(f'Age [{age_unit}]', r'$\chi^2$ ', ax1)
+                    mk_ticks_labels(r'$\chi^2$ ', f'Age [{age_unit}]', ax2)
                 elif chi_square_plot_mode == 'simple':
-                    ax2.scatter(
-                        age_list[min_chi_square_id],
-                        chi_square_magnitude_2_list[min_chi_square_id] + chi_square_color_list[min_chi_square_id],
-                        color=color_pick.to_rgba(min_chi_square_id),
-                        marker='o',
-                        alpha=1.0,
-                    )
-                    mk_ticks_labels(
-                        r'$\chi^2$ ',
-                        f'Age [{age_unit}]',
-                        ax2,
-                    )
+                    mk_ticks_labels(r'$\chi^2$ ', f'Age [{age_unit}]', ax2)
 
         #   Set ticks and labels for CMD
         mk_ticks_labels(
@@ -1657,6 +1639,7 @@ class MakeCMDs:
             best_age=best_age,
             best_age_unit=best_age_unit,
             chi_square=best_chi_square,
+            **self._annotation_fit_terms(m_m, e_b_v),
         )
         if annotation:
             ax0.text(
@@ -1680,7 +1663,7 @@ class MakeCMDs:
         #   Write plot to disk
         plot_tag = "apparent_iso" if apply_to_iso else "absolut"
         self.write_cmd(plot_tag)
-        if self.cmd_diagnostics and fit_isochrone and best_age is not None:
+        if fit_isochrone and best_age is not None:
             iso_best = (
                 isochrones_list[min_chi_square_id]
                 if min_chi_square_id is not None and isochrones_list
@@ -1721,6 +1704,8 @@ class MakeCMDs:
                     n_members=n_mem,
                     n_field=n_fld,
                     plot_tag=plot_tag,
+                    fit_result=getattr(self, "_fit_result", None),
+                    residual_plot=self.cmd_diagnostics,
                 )
         plt.close()
 

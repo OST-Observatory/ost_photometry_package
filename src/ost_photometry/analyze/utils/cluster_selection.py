@@ -44,6 +44,9 @@ GAIA_DR3_COLUMNS = (
     "e_pmRA",
     "pmDE",
     "e_pmDE",
+    "pmRApmDEcor",
+    "PlxpmRAcor",
+    "PlxpmDEcor",
     "RUWE",
 )
 
@@ -190,6 +193,30 @@ def _gaia_astrometry_arrays(gaia: Table) -> tuple[
     return pm_ra, pm_de, plx, ruwe, plx_err, gmag
 
 
+def gaia_astrometry_covariance(gaia: Table) -> np.ndarray | None:
+    """Per-star 3×3 covariance of (μ_α*, μ_δ, ϖ) from Gaia errors and correlations.
+
+    ``None`` when the errors are missing; missing correlations count as 0.
+    """
+    names = ("e_pmRA", "e_pmDE", "e_Plx")
+    if any(n not in gaia.colnames for n in names):
+        return None
+    err = np.column_stack([as_float_column(gaia[n]) for n in names])
+
+    def corr(name):
+        if name not in gaia.colnames:
+            return np.zeros(len(gaia))
+        return np.nan_to_num(as_float_column(gaia[name]))
+
+    rho = {(0, 1): corr("pmRApmDEcor"), (0, 2): corr("PlxpmRAcor"), (1, 2): corr("PlxpmDEcor")}
+    cov = np.zeros((len(gaia), 3, 3))
+    for i in range(3):
+        cov[:, i, i] = err[:, i] ** 2
+    for (i, j), r in rho.items():
+        cov[:, i, j] = cov[:, j, i] = r * err[:, i] * err[:, j]
+    return cov
+
+
 def _empty_cluster_table(tbl: Table) -> Table:
     empty = tbl[0:0]
     empty.meta["cluster_membership"] = {
@@ -333,10 +360,12 @@ def find_cluster(
     plx_q = plx[quality]
     gmag_q = None if gmag is None else gmag[quality]
 
+    cov = gaia_astrometry_covariance(gaia)
     result = membership_from_astrometry(
         pm_ra_q,
         pm_de_q,
         plx_q,
+        cov=None if cov is None else cov[quality],
         method=membership_method,
         simbad_pm_ra=simbad_pm_ra,
         simbad_pm_de=simbad_pm_de,
@@ -534,6 +563,7 @@ __all__ = [
     "GAIA_DR3_CATALOG",
     "GAIA_DR3_COLUMNS",
     "find_cluster",
+    "gaia_astrometry_covariance",
     "proper_motion_selection",
     "query_gaia_dr3_cone",
     "query_simbad_astrometry",

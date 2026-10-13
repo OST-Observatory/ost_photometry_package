@@ -207,6 +207,34 @@ def _gmm_cluster_component(
     return int(np.argmin(spreads)), "tighter Gaussian"
 
 
+class _XDModel:
+    """astroML ``XDGMM`` with the attributes the component helpers read.
+
+    ``means_`` / ``covariances_`` are the deconvolved (intrinsic) component
+    parameters; responsibilities use each star's covariance.
+    """
+
+    def __init__(self, n_components: int, random_state: int):
+        from astroML.density_estimation import XDGMM
+
+        self._xd = XDGMM(n_components=n_components, max_iter=300, tol=1e-6,
+                         random_state=random_state)
+        self.n_components = n_components
+
+    def fit(self, x: np.ndarray, x_cov: np.ndarray) -> _XDModel:
+        self._xd.fit(x, x_cov)
+        self.means_ = np.asarray(self._xd.mu, dtype=float)
+        self.covariances_ = np.asarray(self._xd.V, dtype=float)
+        self.weights_ = np.asarray(self._xd.alpha, dtype=float)
+        return self
+
+    def predict_proba(self, x: np.ndarray, x_cov: np.ndarray) -> np.ndarray:
+        log_p = np.asarray(self._xd.logprob_a(x, x_cov), dtype=float)
+        log_p -= log_p.max(axis=1, keepdims=True)
+        p = np.exp(log_p)
+        return p / p.sum(axis=1, keepdims=True)
+
+
 def _gmm_components_look_alike(gmm, *, ratio_min: float = 1.5) -> bool:
     if gmm.n_components < 2:
         return False
@@ -292,6 +320,7 @@ def membership_from_astrometry(
     pm_de: np.ndarray,
     plx: np.ndarray,
     *,
+    cov: np.ndarray | None = None,
     method: str = "gmm",
     simbad_pm_ra: float | None = None,
     simbad_pm_de: float | None = None,
@@ -300,6 +329,14 @@ def membership_from_astrometry(
     random_state: int = 0,
 ) -> MembershipResult:
     """P(member) from a 2-component GMM in z-scaled (μ_α*, μ_δ, ϖ).
+
+    With ``cov`` (per-star 3×3 covariance of (μ_α*, μ_δ, ϖ), e.g. from
+    :func:`~ost_photometry.analyze.utils.cluster_selection.gaia_astrometry_covariance`)
+    the mixture is fitted by extreme deconvolution (astroML ``XDGMM``): the
+    components describe the intrinsic distributions, and each star's
+    responsibility uses its own errors, so faint stars with large errors are
+    not pushed into the broad field component. Without ``cov`` a plain
+    Gaussian mixture is used. ``method='xd'`` requires ``cov``.
 
     The cluster component is the one nearest Simbad (μ, π) when given, otherwise
     the tighter Gaussian (smaller covariance trace). ``component_id`` overrides.
@@ -338,17 +375,30 @@ def membership_from_astrometry(
             method="gmm",
             reason="too few stars; all kept",
         )
-    from sklearn.mixture import GaussianMixture
+    scaled_cov = None
+    if cov is not None:
+        c = np.asarray(cov, dtype=float)
+        s = np.asarray(scaler.scale_, dtype=float)
+        scaled_cov = c / (s[:, None] * s[None, :])[None, :, :]
+        bad = ~np.all(np.isfinite(scaled_cov), axis=(1, 2))
+        # a star without errors: tiny isotropic error (treated as exact)
+        scaled_cov[bad] = np.eye(3) * 1e-6
+    elif method_key == "xd":
+        raise ValueError("method='xd' needs the per-star covariance (cov=...)")
+    if scaled_cov is not None:
+        gmm = _XDModel(2, int(random_state)).fit(scaled, scaled_cov)
+    else:
+        from sklearn.mixture import GaussianMixture
 
-    gmm = GaussianMixture(
-        n_components=2,
-        covariance_type="full",
-        random_state=int(random_state),
-        n_init=5,
-    )
-    gmm.fit(scaled)
+        gmm = GaussianMixture(
+            n_components=2,
+            covariance_type="full",
+            random_state=int(random_state),
+            n_init=5,
+        )
+        gmm.fit(scaled)
     if (
-        method_key == "gmm"
+        method_key in ("gmm", "xd")
         and simbad_scaled is None
         and component_id is None
         and _gmm_components_look_alike(gmm)
@@ -372,14 +422,17 @@ def membership_from_astrometry(
     cluster_k, reason = _gmm_cluster_component(
         gmm, simbad_scaled=simbad_scaled, component_id=component_id
     )
-    proba = gmm.predict_proba(scaled)
-    labels = gmm.predict(scaled)
+    if scaled_cov is not None:
+        proba = gmm.predict_proba(scaled, scaled_cov)
+    else:
+        proba = gmm.predict_proba(scaled)
+    labels = np.argmax(proba, axis=1)
     p_mem = np.asarray(proba[:, cluster_k], dtype=float)
     return MembershipResult(
         p_mem=np.clip(p_mem, 0.0, 1.0),
         labels=np.asarray(labels, dtype=int),
         cluster_component=int(cluster_k),
-        method="gmm",
+        method="xd" if scaled_cov is not None else "gmm",
         reason=reason,
     )
 

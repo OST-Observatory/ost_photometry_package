@@ -24,6 +24,9 @@ class CmdSeries:
     color_err: np.ndarray | None = None
     magnitude_filter_2_err: np.ndarray | None = None
     is_cluster_member: np.ndarray | None = None
+    #: cov(colour, magnitude) per star (``−σ₂²`` for independent filters;
+    #: from the joint calibration solution where its colour error exists).
+    color_mag_cov: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +71,75 @@ def table_is_epoch_native_cmd(tbl: Table) -> bool:
     )
 
 
+def combine_cmd_epochs(tbl: Table) -> Table:
+    """One row per star: weighted mean over the epochs of a multi-epoch table.
+
+    For every ``mag_cal_<f>`` / ``mag_inst_<f>`` (and colour columns
+    ``err_cal_<c1>-<c2>``) the point errors (``err_cal_rand`` ⊕
+    ``err_cal_epoch`` where split, else the total) weight the mean; its error
+    is ``√(max(1/Σw, var/n) + mean(common²))``: the common part
+    (``err_cal_common``, the same calibrators every epoch) does not average
+    down, and the scatter between epochs covers variable stars. A table with
+    one epoch (or none) is returned unchanged.
+    """
+    if "epoch_id" not in tbl.colnames or "id" not in tbl.colnames:
+        return tbl
+    if np.unique(np.asarray(tbl["epoch_id"])).size <= 1:
+        return tbl
+    ids = np.asarray(tbl["id"])
+    uniq, first = np.unique(ids, return_index=True)
+    out = tbl[np.sort(first)].copy()
+    out_ids = np.asarray(out["id"])
+    groups = {sid: np.flatnonzero(ids == sid) for sid in uniq}
+
+    def _col(name):
+        return np.asarray(tbl[name], dtype=float) if name in tbl.colnames else None
+
+    names = [n[len("mag_cal_"):] for n in tbl.colnames if n.startswith("mag_cal_")]
+    names += [n[len("mag_inst_"):] for n in tbl.colnames if n.startswith("mag_inst_")
+              and n[len("mag_inst_"):] not in names]
+    for f in names:
+        mag_col = f"mag_cal_{f}" if f"mag_cal_{f}" in tbl.colnames else f"mag_inst_{f}"
+        err_col = "err_cal_" if mag_col.startswith("mag_cal_") else "err_inst_"
+        mag = _col(mag_col)
+        total = _col(f"{err_col}{f}")
+        rand, epoch, common = (_col(f"err_cal_{p}_{f}") for p in ("rand", "epoch", "common"))
+        point = np.hypot(rand, epoch) if rand is not None and epoch is not None else total
+        new_mag = np.full(len(out), np.nan)
+        new_err = np.full(len(out), np.nan)
+        new_common = np.full(len(out), np.nan)
+        for k, sid in enumerate(out_ids):
+            g = groups[sid]
+            ok = np.isfinite(mag[g])
+            if point is not None:
+                ok &= np.isfinite(point[g]) & (point[g] > 0)
+            if not np.any(ok):
+                continue
+            m = mag[g][ok]
+            if point is None:
+                new_mag[k] = float(np.mean(m))
+                continue
+            w = 1.0 / point[g][ok] ** 2
+            new_mag[k] = float(np.sum(w * m) / np.sum(w))
+            var = 1.0 / np.sum(w)
+            if m.size >= 2:
+                var = max(var, float(np.var(m, ddof=1)) / m.size)
+            c2 = float(np.nanmean(common[g][ok] ** 2)) if common is not None else 0.0
+            new_common[k] = np.sqrt(c2) if common is not None else np.nan
+            new_err[k] = np.sqrt(var + c2)
+        out[mag_col] = new_mag
+        if total is not None:
+            out[f"{err_col}{f}"] = new_err
+        if common is not None:
+            out[f"err_cal_common_{f}"] = new_common
+        for p in ("rand", "epoch", "sys"):
+            if f"err_cal_{p}_{f}" in out.colnames:
+                out.remove_column(f"err_cal_{p}_{f}")
+    out.remove_column("epoch_id")
+    out.meta["cmd_epochs_combined"] = int(np.unique(np.asarray(tbl["epoch_id"])).size)
+    return out
+
+
 def slice_cmd_table_to_single_epoch(
     tbl: Table, epoch_id: str | None = None
 ) -> Table:
@@ -85,11 +157,17 @@ def slice_cmd_table_to_single_epoch(
 def load_cmd_table(
     path: str | Path, *, epoch_id: str | None = None
 ) -> Table:
-    """Read ASCII/ECSV photometry and slice to a single epoch when needed."""
+    """Read ASCII/ECSV photometry; several epochs are averaged per star.
+
+    ``epoch_id`` selects one epoch instead (:func:`slice_cmd_table_to_single_epoch`);
+    by default all epochs are combined (:func:`combine_cmd_epochs`).
+    """
     path = Path(path)
     fmt = "ascii.ecsv" if path.suffix.lower() == ".ecsv" else "ascii"
     tbl = Table.read(path, format=fmt)
-    return slice_cmd_table_to_single_epoch(tbl, epoch_id=epoch_id)
+    if epoch_id is not None:
+        return slice_cmd_table_to_single_epoch(tbl, epoch_id=epoch_id)
+    return combine_cmd_epochs(tbl)
 
 
 def distance_modulus(
@@ -257,7 +335,14 @@ def cmd_series_from_table(
     magnitude_transformation: bool | None = None,
     cali: dict[str, float] | None = None,
 ) -> CmdSeries:
-    """Magnitudes, colour, and optional errors for one filter pair."""
+    """Magnitudes, colour and, where the table has them, errors for one filter pair.
+
+    Errors are loaded whenever the columns exist (the isochrone fit needs
+    them whether or not error bars are drawn); ``do_error_bars=True``
+    requires them. The colour error comes from the joint calibration solution
+    (``err_cal_<f1>-<f2>``) when present, else from both filters in
+    quadrature; ``color_mag_cov`` is ``cov(m₁ − m₂, m₂)``.
+    """
     native = table_is_epoch_native_cmd(tbl)
     mag_col_1 = _mag_column(
         tbl,
@@ -279,7 +364,25 @@ def cmd_series_from_table(
     color = mag_1 - mag_2
     members = cluster_member_flags(tbl)
 
-    if not do_error_bars:
+    try:
+        err_col_1 = _err_column_for_mag(
+            tbl,
+            filter_1,
+            mag_col_1,
+            native=native,
+            magnitude_transformation=magnitude_transformation,
+        )
+        err_col_2 = _err_column_for_mag(
+            tbl,
+            filter_2,
+            mag_col_2,
+            native=native,
+            magnitude_transformation=magnitude_transformation,
+        )
+        _require_columns(tbl, err_col_1, err_col_2)
+    except KeyError:
+        if do_error_bars:
+            raise
         return CmdSeries(
             filter_1,
             filter_2,
@@ -287,25 +390,19 @@ def cmd_series_from_table(
             mag_2,
             is_cluster_member=members,
         )
-
-    err_col_1 = _err_column_for_mag(
-        tbl,
-        filter_1,
-        mag_col_1,
-        native=native,
-        magnitude_transformation=magnitude_transformation,
-    )
-    err_col_2 = _err_column_for_mag(
-        tbl,
-        filter_2,
-        mag_col_2,
-        native=native,
-        magnitude_transformation=magnitude_transformation,
-    )
-    _require_columns(tbl, err_col_1, err_col_2)
     err_1 = _column_array(tbl, err_col_1)
     err_2 = _column_array(tbl, err_col_2)
-    color_err = np.sqrt(np.square(err_1) + np.square(err_2))
+    joint = f"err_cal_{filter_1}-{filter_2}"
+    if joint in tbl.colnames:
+        joint_err = _column_array(tbl, joint)
+        color_err = np.where(np.isfinite(joint_err), joint_err, np.hypot(err_1, err_2))
+        # cov(m1, m2) from var(m1 - m2) = var1 + var2 - 2 cov
+        cov_12 = np.where(
+            np.isfinite(joint_err), 0.5 * (err_1**2 + err_2**2 - joint_err**2), 0.0
+        )
+    else:
+        color_err = np.hypot(err_1, err_2)
+        cov_12 = np.zeros_like(err_1)
     return CmdSeries(
         filter_1,
         filter_2,
@@ -314,6 +411,7 @@ def cmd_series_from_table(
         color_err=color_err,
         magnitude_filter_2_err=err_2,
         is_cluster_member=members,
+        color_mag_cov=cov_12 - err_2**2,
     )
 
 
@@ -394,44 +492,10 @@ def mask_cmd_series(
             if series.is_cluster_member is None
             else np.asarray(series.is_cluster_member, dtype=bool)[keep]
         ),
+        color_mag_cov=(
+            None if series.color_mag_cov is None else np.asarray(series.color_mag_cov)[keep]
+        ),
     )
-
-
-def fiducial_fit_sigma(
-    phot_err: np.ndarray | None,
-    scatter: float,
-    n: int,
-) -> float:
-    """1-sigma for a binned CMD fiducial: photometric IVW, else scatter/√N."""
-    phot_term = 0.0
-    if phot_err is not None:
-        err = np.asarray(phot_err, dtype=float)
-        err = err[np.isfinite(err) & (err > 0)]
-        if err.size:
-            phot_term = float(np.sqrt(1.0 / np.sum(1.0 / np.square(err))))
-    if phot_term > 0:
-        return phot_term
-    count = max(int(n), 1)
-    if np.isfinite(scatter) and scatter > 0:
-        return float(scatter) / np.sqrt(count)
-    return 1.0
-
-
-def weighted_chi_square(
-    residual: np.ndarray,
-    sigma: np.ndarray | None = None,
-) -> float:
-    """Σ (δ/σ)², or unweighted Σ δ² if ``sigma`` is missing or unusable."""
-    delta = np.asarray(residual, dtype=float)
-    if sigma is None:
-        finite = np.isfinite(delta)
-        return float(np.square(delta[finite]).sum()) if np.any(finite) else 0.0
-    sig = np.asarray(sigma, dtype=float)
-    good = np.isfinite(delta) & np.isfinite(sig) & (sig > 0)
-    if not np.any(good):
-        finite = np.isfinite(delta)
-        return float(np.square(delta[finite]).sum()) if np.any(finite) else 0.0
-    return float(np.sum(np.square(delta[good] / sig[good])))
 
 
 def _optional_yaml_str(data: dict, *keys: str) -> str | None:
@@ -488,6 +552,11 @@ def format_isochrone_annotation(
     best_age: float | None = None,
     best_age_unit: str | None = None,
     chi_square: float | None = None,
+    age_err_lo: float | None = None,
+    age_err_hi: float | None = None,
+    chi_square_nu: float | None = None,
+    m_m_fit: float | None = None,
+    e_b_v_fit: float | None = None,
 ) -> str:
     """Compact matplotlib mathtext block for the CMD isochrone info box."""
     lines: list[str] = []
@@ -537,11 +606,22 @@ def format_isochrone_annotation(
     age_txt = _fmt_annotation_number(best_age, digits=3)
     if age_txt is not None:
         unit = "" if _is_unset(best_age_unit) else f" {best_age_unit}"
+        lo_txt = _fmt_annotation_number(age_err_lo, digits=2)
+        hi_txt = _fmt_annotation_number(age_err_hi, digits=2)
+        if lo_txt is not None and hi_txt is not None:
+            age_txt = rf"{age_txt}^{{+{hi_txt}}}_{{-{lo_txt}}}"
         fit = rf"Best age: ${age_txt}${unit}"
+        nu_txt = _fmt_annotation_number(chi_square_nu, digits=3)
         chi_txt = _fmt_annotation_number(chi_square, digits=3)
-        if chi_txt is not None:
+        if nu_txt is not None:
+            fit += rf", $\chi^2_\nu={nu_txt}$"
+        elif chi_txt is not None:
             fit += rf", $\chi^2={chi_txt}$"
         lines.append(fit)
+    mm_fit_txt = _fmt_annotation_number(m_m_fit, digits=4)
+    ebv_fit_txt = _fmt_annotation_number(e_b_v_fit, digits=3)
+    if mm_fit_txt is not None and ebv_fit_txt is not None:
+        lines.append(rf"Fit: $(m-M)={mm_fit_txt}$, $E(B-V)={ebv_fit_txt}$")
 
     return "\n".join(lines)
 
@@ -660,15 +740,14 @@ __all__ = [
     "IsochronePlotConfig",
     "cluster_member_flags",
     "cmd_series_from_table",
+    "combine_cmd_epochs",
     "distance_modulus",
     "distance_modulus_uncertainty",
-    "fiducial_fit_sigma",
     "flag_cluster_members",
     "format_isochrone_annotation",
     "load_cmd_table",
     "load_isochrone_config",
     "mask_cmd_series",
-    "weighted_chi_square",
     "slice_cmd_table_to_single_epoch",
     "table_is_epoch_native_cmd",
 ]

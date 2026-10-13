@@ -308,6 +308,56 @@ bright, isolated, unsaturated stars (median, error `1.2533·σ/√n`).
 - The template noise is not included (HiPS cutouts carry no noise model and
   are much deeper).
 
+## Colour–magnitude diagrams
+
+### Input
+
+- Several epochs are averaged per star (`combine_cmd_epochs`, default of
+  `load_cmd_table`; was the first epoch). Weights are the point errors;
+  the error of the mean is `√(max(1/Σw, var/n) + mean(common²))`, so the
+  catalog part does not average down and variable stars keep their scatter.
+- The colour error comes from the joint calibration solution
+  (`err_cal_<f1>-<f2>`), and `cov(colour, mag)` follows from the three
+  variances (`−σ₂²` for independent filters).
+- Errors are always loaded; `do_error_bars` only controls drawing. The fit
+  used no errors when error bars were off.
+
+### Isochrone fit (`analyze.isochrone_fit`)
+
+- **Fiducials per magnitude bin:**
+  - colour: IVW mean with σ = max(IVW error, 1.2533·σ_robust/√N) of the
+    colour scatter about a linear trend in the bin (the sequence slope is no
+    error);
+  - magnitude: the IVW error;
+  - their covariance;
+  - no fallback σ of 1.
+- **χ²:** Mahalanobis distance of each fiducial to its nearest isochrone
+  point (isochrone densified, gaps between branches not filled). Each
+  fiducial slides along the isochrone, so `ν = n_fid − 1 − n_free`.
+- **Distance and reddening** are nuisance offsets (δM: distance modulus and
+  the R_V part of the extinction; δE: colour excess), profiled per isochrone
+  with Gaussian priors from `m_m_err` / `distance_err`, `e_b_v_err`,
+  `rv_err`. They are no longer added to every star's error bar. Two passes:
+  1. offsets fixed → `s = max(1, χ²_ν)`;
+  2. offsets free, data χ² divided by `s`, so fiducials that are too
+     optimistic cannot drag the offsets away from their priors.
+- **Age:** vertex of a parabola through the χ² minimum on the age grid and
+  its neighbours; the 1σ interval where the profile rises by 1 (after
+  scaling with s).
+- **Output:** `tables/cmd_isochrone_fit_*.ecsv` is written for every fit and
+  contains `best_age`, `age_err_lo` / `age_err_hi`, `chi_square_nu`, `dof`,
+  `chi_square_scale`, `delta_m` / `delta_e`, `m_m_fit` / `e_b_v_fit`. The
+  info box and the terminal show them too.
+- **Fit range:** binning in magnitude assumes one colour per magnitude. Keep
+  the giant branch and the red clump out of `magnitude_fit_range`; fit the
+  main sequence and the turn-off.
+
+### Cluster membership
+
+Extreme deconvolution in (μ_α*, μ_δ, ϖ) with each star's Gaia covariance
+(errors and the three correlations) is described in
+[DIAGNOSTICS.md](DIAGNOSTICS.md#cluster-membership-gaia).
+
 ## Not included
 
 - **Vega/AB offsets:** taken from Blanton & Roweis (2007) without an
@@ -338,6 +388,10 @@ bright, isolated, unsaturated stars (median, error `1.2533·σ/√n`).
 | Robust scatter / `dmag_err` and / `mag_err`, all constant stars, X < 1.3, six magnitude bins (package 5) | HAT-P-20 C7 night, B and V | 0.95–1.02 / 0.94–1.08 |
 | Robust scatter / error of the flux fallback and `dmag` | ATO (Clear, 202 stars; frames reduced before package 3) | 0.88–0.92 |
 | Alard–Lupton difference σ in the sky, noisy science frame | `tests/test_alard_lupton.py` | pull σ 0.99 |
+| Isochrone age 1σ coverage, simulated clusters (distance / reddening profiled, true age on and between grid ages) | `tests/test_isochrone_fit.py` | 0.69–0.72; χ²_ν 0.94 |
+| NGC 7789 isochrone fit (PARSEC Z = 0.0152, priors E(B−V) = 0.22 ± 0.03, d = 1.795 ± 0.1 kpc, no membership) | N2, B/V | 2.08 (+0.18/−0.15) Gyr for V 1.0–4.5, 2.44 ± 0.2 Gyr for V 0.5–4.5; χ²_ν 11–14 (field stars, giants in the bright bins); offsets within ~1σ of the priors |
+| Gaia membership, simulated cluster with faint members (errors 12× the intrinsic width) | `tests/test_membership_xd.py` | XD: recall 0.91–0.94, contamination 3 %, Σ P_mem within 2 % of the truth; plain GMM: 53 % contamination or recall 0.01–0.03 |
+| Gaia membership NGC 7789 (12′, G < 18) | Gaia DR3 | XD vs GMM: 1890 vs 1875 members, +4 % at G 17–18 |
 | Fitted catalog-error scale s | same | B 0.29 / 0.87, V 0.54 / 1.0 (σ_int 0.022 in N2 V) |
 | Epoch scatter of `mag_cal` for stars with ≥ 20 epochs / (`err_cal_rand` ⊕ photometric ZP error), four error bins | HAT-P-20, B and V | 0.98–1.09; brightest bin (err ≈ 0.012) 1.18: a ~0.007 mag term beyond the model for bright stars (not in the differential light curves, see above) |
 

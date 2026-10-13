@@ -356,8 +356,14 @@ distance \(d=1/\varpi\). Figures land under `diagnostics/cluster/`.
 | `cluster_pmem` | Histogram of \(P_\mathrm{mem}\) with the keep-threshold; a clean split looks bimodal. |
 | `cluster_mu_plx_3d` | Four views of \((\mu_{\alpha*},\,\mu_\delta,\,\varpi)\) as QC only — this is not where members are defined. |
 
-The pipeline GMM (or HDBSCAN fallback) writes `is_cluster_member` and
-`cluster_p_mem` on the full post-processed ECSV. The **student** extract
+The pipeline mixture model (or HDBSCAN fallback) writes `is_cluster_member`
+and `cluster_p_mem` on the full post-processed ECSV. With the Gaia errors and
+correlations (always queried) it is fitted by extreme deconvolution
+(astroML `XDGMM`): the components are the intrinsic distributions and each
+star's \(P_\mathrm{mem}\) uses its own covariance, so faint members with
+large errors are not pushed into the field component
+(`cluster_membership_method`: `gmm` = XD when errors exist, `xd` requires
+them, `hdbscan`). The **student** extract
 script uses a **parallax window** on Gaia \(G\) vs \(\varpi\) (optional μ box
 and RUWE). That is a teaching cut, not \(P_\mathrm{mem}\). A star on the edge
 of the window can be a member in the supervisor table and field in the student
@@ -372,8 +378,9 @@ table. QC lives under `diagnostics/lightcurves/`.
 **Catalog bands** (Bessell UBVRI, SDSS ugriz) use `mag_cal_*` after the ZP /
 colour-term fit. **Unfiltered bands** (Clear, luminance, white, …) have no
 catalog standards: calibration skips the catalog download and ZP fit, and
-`LightCurveStep` writes **relative flux** (epoch quasi-ZP, then each star
-divided by its own median so the continuum sits at ≈ 1). The long table then
+`LightCurveStep` writes **relative flux** (each star against the weighted
+leave-one-out common mode of the field, then divided by its own median so the
+continuum sits at ≈ 1). The long table then
 has `quantity="flux"` for those rows.
 
 Time is `BJD_TDB − 2450000` when barycentric correction succeeds (observatory

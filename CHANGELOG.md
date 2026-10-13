@@ -45,6 +45,29 @@ section of this file.
 
 ### Changed
 
+- **Isochrone fit with an age error** (`analyze.isochrone_fit`): fiducials
+  with σ = max(IVW, 1.2533·σ_robust/√N) of the detrended colour scatter and
+  a colour–magnitude covariance (was IVW or scatter, else 1.0); χ² as the
+  Mahalanobis distance to the nearest isochrone point (was Euclidean
+  nearest point); distance and reddening profiled as nuisance offsets with
+  Gaussian priors and the data χ² scaled by χ²_ν (were added to every
+  star's error bar); age from the parabola vertex and its 1σ interval from
+  Δχ² = 1. `tables/cmd_isochrone_fit_*.ecsv` is always written with
+  `age_err_lo` / `age_err_hi`, `chi_square_nu`, `delta_m` / `delta_e`,
+  `m_m_fit` / `e_b_v_fit`; the info box shows them. Simulated 1σ coverage
+  0.69–0.72.
+- **CMD input:** epochs are averaged per star (was the first epoch;
+  `load_cmd_table(epoch_id=...)` selects one), colour errors and the
+  colour–magnitude covariance come from the joint calibration solution, and
+  errors are loaded for the fit whether or not error bars are drawn
+  (`do_error_bars` only draws).
+- **Gaia cluster membership by extreme deconvolution** (new dependency
+  `astroML`): with the Gaia errors and correlations (`pmRApmDEcor`,
+  `PlxpmRAcor`, `PlxpmDEcor`, now queried) the mixture is fitted with
+  `XDGMM` and each star's P_mem uses its own covariance; option value `xd`
+  requires the errors. In simulations the plain GMM either absorbed half of
+  the field or lost the faint members; XD keeps 91–94 % of them at 3 %
+  contamination.
 - **Light-curve errors with a stated meaning:** `mag_err` is what changes
   from point to point (`err_cal_rand` ⊕ the new `err_cal_epoch`), the new
   `mag_err_sys` the offset common to all points sharing the calibrators
@@ -207,6 +230,10 @@ section of this file.
 
 ### Fixed
 
+- Archive pipeline: a local directory whose nights are symlinks was read as
+  empty (`os.walk` did not follow links; now followed, each real directory
+  once); `reduce_planned` crashed writing `reduction_report.ecsv` when the
+  output directory did not exist yet.
 - **Flux-fallback light curves were labelled with column numbers** 0…n−1
   instead of the photometry ids (wrong star whenever the ids had gaps).
 - **HOTPANTS crashed under numpy 2** (`ndarray.newbyteorder` was removed).
