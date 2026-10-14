@@ -77,6 +77,16 @@ Steps are already modular via config. What is missing is **persist and continue 
 
 ## Reduce
 
+### Memory of registration with mixed binning (P2)
+
+Registering bin-2 frames onto a bin-1 reference grid (QHY600M, 9576×6388)
+needs 8–11 GB per worker: data, σ and mask at 61 Mpx in float64 plus the
+reprojection. With the default of all cores the T CrB test (two nights,
+bin 1 + bin 2) ran a 62 GB laptop out of memory; one worker works
+(~11 GB). Options: choose the worker count from the free memory and the
+frame size, reproject in float32, or prefer the coarsest binning as the
+common grid when frames are mixed.
+
 ### Camera catalog — missing manufacturer curves (P2)
 
 Runtime parameters live in `data/cameras.json` (built from

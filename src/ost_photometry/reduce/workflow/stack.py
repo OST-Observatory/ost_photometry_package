@@ -244,6 +244,7 @@ def stack_filter_images(
         sigma_clip=True,
         sigma_clip_low_thresh=5,
         sigma_clip_high_thresh=5,
+        match_background=True,
         dtype=dtype,
     )
     utilities.update_header_information(

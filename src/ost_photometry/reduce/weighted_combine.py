@@ -194,8 +194,17 @@ def combine_images(
     mem_limit: float = DEFAULT_MEM_LIMIT,
     dtype: str | np.dtype | None = None,
     unit=None,
+    match_background: bool = False,
 ) -> CCDData:
     """Combine images (files or CCDData) with propagated uncertainties.
+
+    ``match_background=True`` shifts every frame to the common (weighted
+    mean) sky level before clipping and combining: frames from different
+    nights differ in sky brightness, and the per-pixel clipping would keep
+    the brighter frames in some pixels and reject them in others, which
+    turns the sky difference into pixel-to-pixel noise. The shift is a
+    constant per frame (clipped median of the unmasked pixels); the
+    uncertainty is unchanged.
 
     ``method`` is ``average``, ``median`` or ``sum``; ``weights`` (not for
     the median) and ``scale`` (multiplies data and σ of each frame, e.g. the
@@ -229,6 +238,9 @@ def combine_images(
     out_unit = unit if unit is not None else first.unit
     del first
     thresholds = (sigma_clip_low_thresh, sigma_clip_high_thresh) if sigma_clip else None
+    offsets = np.zeros(n)
+    if match_background:
+        offsets = _background_offsets(images, factors, weights, unit)
 
     value = np.empty(shape, dtype=out_dtype)
     uncertainty = np.empty(shape, dtype=out_dtype)
@@ -267,7 +279,7 @@ def combine_images(
             block_mask = np.zeros(block.shape, dtype=bool)
             block_sigma = np.empty(block.shape, dtype=np.float64) if use_sigma else None
             for i, (data_src, mask_src, unc_src) in enumerate(sources):
-                block[i] = np.asarray(data_src[start:stop], dtype=np.float64) * factors[i]
+                block[i] = np.asarray(data_src[start:stop], dtype=np.float64) * factors[i] + offsets[i]
                 if mask_src is not None:
                     block_mask[i] = np.asarray(mask_src[start:stop], dtype=bool)
                 if use_sigma:
@@ -282,6 +294,24 @@ def combine_images(
             value[start:stop], uncertainty[start:stop], mask[start:stop] = v, u, e
     return CCDData(value, unit=out_unit, meta=meta, mask=mask,
                    uncertainty=StdDevUncertainty(uncertainty))
+
+
+def _background_offsets(images, factors, weights, unit) -> np.ndarray:
+    """Per-frame shift to the weighted mean sky level (see ``match_background``)."""
+    from astropy.stats import sigma_clipped_stats
+
+    sky = np.empty(len(images))
+    for i, image in enumerate(images):
+        ccd = image if isinstance(image, CCDData) else CCDData.read(image, unit=unit)
+        data = np.asarray(ccd.data, dtype=np.float64)[::4, ::4] * factors[i]
+        good = np.isfinite(data)
+        if ccd.mask is not None:
+            good &= ~np.asarray(ccd.mask, dtype=bool)[::4, ::4]
+        sky[i] = sigma_clipped_stats(data[good], sigma=3.0, maxiters=5)[1] if np.any(good) else 0.0
+        del ccd, data
+    w = np.ones(len(images)) if weights is None else np.asarray(weights, dtype=np.float64)
+    reference = float(np.sum(w * sky) / np.sum(w)) if np.sum(w) > 0 else float(np.mean(sky))
+    return reference - sky
 
 
 def weighted_average_combine(

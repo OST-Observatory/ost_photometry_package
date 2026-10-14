@@ -52,6 +52,10 @@ sum:    the mean × n
 - **Raw bias frames:** they carry no `UNCERT`, so their master gets the
   scatter between frames, `std(ddof=1)/√n`.
 - **Flats:** each frame is scaled to median 1, data and σ alike.
+- **Science stacks:** every frame is first shifted to the common (weighted
+  mean) sky level. Otherwise frames from nights with different sky
+  brightness are clipped in some pixels and kept in others, and the sky
+  difference turns into pixel-to-pixel noise.
 - **Why it changed:** the earlier stacks and masters used the scatter
   between frames for every pixel. That gave σ = 0 where one frame covered a
   pixel and was biased low for few frames (0.56 for n = 2). On stars it was
@@ -388,6 +392,8 @@ Extreme deconvolution in (μ_α*, μ_δ, ϖ) with each star's Gaia covariance
 | Robust scatter / `dmag_err` and / `mag_err`, all constant stars, X < 1.3, six magnitude bins (package 5) | HAT-P-20 C7 night, B and V | 0.95–1.02 / 0.94–1.08 |
 | Robust scatter / error of the flux fallback and `dmag` | ATO (Clear, 202 stars; frames reduced before package 3) | 0.88–0.92 |
 | Alard–Lupton difference σ in the sky, noisy science frame | `tests/test_alard_lupton.py` | pull σ 0.99 |
+| Aperture scatter / propagated σ on registered frames, bin 2 reprojected onto bin 1 (k = 0.25: `SATLEVEL` 91 000 → 22 760, `RDNOISE` 11.66 → 5.83 e⁻) | T CrB 2024-06-08 (bin 1, 18 frames) + 06-09 (bin 2, 50 frames), QHY600M | bin 1: 1.01–1.19, bin 2: 0.93–1.17 |
+| Same for the mixed stacks (local sky) | T CrB, B V R I Clear | 0.96–1.11 after sky matching (Clear 2.86 before) |
 | Isochrone age 1σ coverage, simulated clusters (distance / reddening profiled, true age on and between grid ages) | `tests/test_isochrone_fit.py` | 0.69–0.72; χ²_ν 0.94 |
 | NGC 7789 isochrone fit (PARSEC Z = 0.0152, priors E(B−V) = 0.22 ± 0.03, d = 1.795 ± 0.1 kpc, no membership) | N2, B/V | 2.08 (+0.18/−0.15) Gyr for V 1.0–4.5, 2.44 ± 0.2 Gyr for V 0.5–4.5; χ²_ν 11–14 (field stars, giants in the bright bins); offsets within ~1σ of the priors |
 | Gaia membership, simulated cluster with faint members (errors 12× the intrinsic width) | `tests/test_membership_xd.py` | XD: recall 0.91–0.94, contamination 3 %, Σ P_mem within 2 % of the truth; plain GMM: 53 % contamination or recall 0.01–0.03 |

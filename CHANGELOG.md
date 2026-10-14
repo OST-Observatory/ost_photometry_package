@@ -230,6 +230,13 @@ section of this file.
 
 ### Fixed
 
+- **Stacks of frames from different nights were noisy:** the per-pixel 5σ
+  clipping kept the frames with the brighter sky in some pixels and rejected
+  them in others, so the sky difference became pixel-to-pixel noise (T CrB,
+  Clear, 3 + 10 frames from two nights: 2.9× the propagated σ, sky +12 %).
+  Stacks now shift every frame to the common sky level before clipping
+  (`combine_images(match_background=True)`); afterwards 0.96–1.11× the
+  propagated σ in all five filters.
 - **ASTAP found no stars on reduced frames with one extreme pixel:** the
   temporary 16-bit copy was scaled to the maximum, so a single masked dead
   flat pixel (10⁹ e⁻/s in a QHY600 I frame) pushed every star to the lowest

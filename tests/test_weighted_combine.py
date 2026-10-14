@@ -91,7 +91,11 @@ def test_stack_filter_images_weighted_is_unbiased(tmp_path):
         paths.append(str(path))
     name = stack_filter_images(paths, "average", None, "V", tmp_path, None, weights=WEIGHTS)
     stacked = fits.getdata(tmp_path / name).astype(float)
-    valid = np.ma.masked_array(data, mask)
+    # the stack matches the frames' sky levels first (match_background)
+    from ost_photometry.reduce.weighted_combine import _background_offsets
+
+    offsets = _background_offsets(paths, np.ones(len(paths)), np.asarray(WEIGHTS, float), None)
+    valid = np.ma.masked_array(data + offsets[:, None, None], mask)
     lo, hi = valid.min(axis=0).filled(np.nan), valid.max(axis=0).filled(np.nan)
     ok = np.isfinite(lo)
     assert np.all((stacked[ok] >= lo[ok] - 1e-4) & (stacked[ok] <= hi[ok] + 1e-4))
@@ -184,3 +188,27 @@ def test_frames_without_uncertainty_use_scatter():
     frames = [CCDData(100.0 + rng.normal(0, 3.0, (80, 80)), unit="adu") for _ in range(20)]
     out = combine_images(frames, method="average", sigma_clip=False)
     assert np.median(out.uncertainty.array) == pytest.approx(3.0 / np.sqrt(20), rel=0.05)
+
+
+def test_match_background_for_frames_from_two_nights():
+    """3 frames with bright sky + 10 with dark sky, 5σ clipping: the stack noise
+    must follow its propagated σ only after the sky levels are matched."""
+    from ost_photometry.reduce.weighted_combine import combine_images
+
+    rng = np.random.default_rng(4)
+    shape = (200, 200)
+    frames = []
+    for sky, sigma, count in ((3.8, 0.6, 3), (1.8, 0.27, 10)):
+        for _ in range(count):
+            data = sky + rng.normal(0.0, sigma, shape)
+            frames.append(CCDData(data, unit="electron/s", uncertainty=StdDevUncertainty(np.full(shape, sigma))))
+
+    def pull_sigma(stack):
+        sky = np.median(stack.data)
+        return np.std((stack.data - sky) / stack.uncertainty.array)
+
+    plain = combine_images(frames, method="average", sigma_clip_low_thresh=5, sigma_clip_high_thresh=5)
+    matched = combine_images(frames, method="average", sigma_clip_low_thresh=5,
+                             sigma_clip_high_thresh=5, match_background=True)
+    assert pull_sigma(plain) > 1.5
+    assert pull_sigma(matched) == pytest.approx(1.0, abs=0.08)
