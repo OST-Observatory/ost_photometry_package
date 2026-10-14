@@ -64,12 +64,21 @@ def _needs_astap_preprocessing(data: np.ndarray, bitpix: int) -> bool:
     return bool(np.any(data < 0))
 
 
-def _scale_image_for_astap(data: np.ndarray) -> np.ndarray:
-    """Convert image data to unsigned 16-bit values suitable for ASTAP."""
+def _scale_image_for_astap(data: np.ndarray, mask: np.ndarray | None = None) -> np.ndarray:
+    """Convert image data to unsigned 16-bit values suitable for ASTAP.
+
+    Masked pixels (``mask`` True) are set to the background, and the scale
+    is capped at the 99.995th percentile: a single hot pixel (e.g. a dead
+    flat pixel at 10⁹) would otherwise squeeze every star into the lowest
+    ADU and ASTAP finds none.
+    """
     clean = np.nan_to_num(np.asarray(data, dtype=np.float64))
     clean = np.where(np.isfinite(clean), clean, 0.0)
+    good = np.ones(clean.shape, dtype=bool)
+    if mask is not None and np.shape(mask) == clean.shape:
+        good = ~np.asarray(mask, dtype=bool)
 
-    positive = clean[clean > 0]
+    positive = clean[good & (clean > 0)]
     if positive.size == 0:
         raise RuntimeError(
             f"{style.Bcolors.FAIL}Image contains no positive pixels; "
@@ -77,8 +86,12 @@ def _scale_image_for_astap(data: np.ndarray) -> np.ndarray:
         )
 
     background = float(np.percentile(positive, 5)) if positive.size > 10 else 0.0
+    clean = np.where(good, clean, background)
     scaled = np.clip(clean - background, 0, None)
-    maximum = float(scaled.max())
+    maximum = float(np.percentile(scaled[good], 99.995)) if np.any(good) else 0.0
+    if maximum <= 0:
+        maximum = float(scaled.max())
+    scaled = np.minimum(scaled, maximum)
     if maximum <= 0:
         raise RuntimeError(
             f"{style.Bcolors.FAIL}Image contains no usable signal after "
@@ -112,7 +125,8 @@ def _prepare_astap_fits(source_path: Path, working_dir: Path) -> tuple[Path, boo
 
         header = hdul[0].header.copy()
         _strip_wcs_keywords(header)
-        astap_data = _scale_image_for_astap(data)
+        mask = hdul["MASK"].data if "MASK" in hdul else None
+        astap_data = _scale_image_for_astap(data, mask)
 
     for keyword in ("BZERO", "BSCALE", "BLANK"):
         if keyword in header:

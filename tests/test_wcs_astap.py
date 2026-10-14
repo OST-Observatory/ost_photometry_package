@@ -145,3 +145,18 @@ def test_prepare_astap_fits_strips_existing_wcs_from_temp_header(tmp_path: Path)
         assert "CTYPE1" not in hdul[0].header
 
     astap_path.unlink()
+
+
+def test_scale_image_for_astap_ignores_a_masked_hot_pixel():
+    rng = np.random.default_rng(0)
+    data = rng.normal(100.0, 5.0, (200, 200))
+    data[100, 100] += 5000.0  # a star
+    data[10, 10] = 1e9  # dead flat pixel, masked
+    mask = np.zeros(data.shape, dtype=bool)
+    mask[10, 10] = True
+    scaled = _scale_image_for_astap(data, mask)
+    assert scaled[10, 10] < 1000
+    assert scaled[100, 100] > 10000  # the star keeps its dynamic range
+    # unmasked outlier: capped, the star still stands out
+    scaled = _scale_image_for_astap(data)
+    assert scaled[100, 100] > 1000

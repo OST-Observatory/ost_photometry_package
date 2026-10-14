@@ -92,6 +92,7 @@ re-digitized:
 | Camera | Still needed |
 |--------|----------------|
 | **QHY268M/C** | **System gain vs GAIN for every readout mode** (today falls back to 1.292 e-/ADU). Photography full-well CSVs are unusable; no DR / linearity. |
+| **QHY600M** | Headers with `READOUTM` = `Fast` or `Normal` (T CrB 2024 and older OST frames) match none of the catalog's readout modes: read noise and gain fall back to 7.904 e⁻ / 1.292 e⁻/ADU with a warning. Needs the manufacturer curves for these modes, or a mapping to a catalog mode if they are the same. |
 | **QHY5III485C** | Dark current vs temperature. Full well / DR traces have unclear axes (not used). No linearity. |
 | **QHY5III462C** | Dark current vs temperature. No QE. No linearity. |
 | **ASI2600** | Dark current (digitized CSV was all zeros and removed). No full well / linearity. |

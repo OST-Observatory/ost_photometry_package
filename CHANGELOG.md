@@ -230,6 +230,11 @@ section of this file.
 
 ### Fixed
 
+- **ASTAP found no stars on reduced frames with one extreme pixel:** the
+  temporary 16-bit copy was scaled to the maximum, so a single masked dead
+  flat pixel (10⁹ e⁻/s in a QHY600 I frame) pushed every star to the lowest
+  ADU. Masked pixels are set to the background and the scale is capped at
+  the 99.995th percentile.
 - Archive pipeline: a local directory whose nights are symlinks was read as
   empty (`os.walk` did not follow links; now followed, each real directory
   once); `reduce_planned` crashed writing `reduction_report.ecsv` when the
