@@ -259,7 +259,10 @@ section of this file.
   temporary 16-bit copy was scaled to the maximum, so a single masked dead
   flat pixel (10⁹ e⁻/s in a QHY600 I frame) pushed every star to the lowest
   ADU. Masked pixels are set to the background and the scale is capped at
-  the 99.995th percentile.
+  the brightest extended source (largest 3×3 median among the brightest
+  pixels), so single hot pixels are ignored and bright star cores keep
+  their order (a cap at a percentile of the image flattened ~760 star
+  pixels and made a NGC 7789 B stack unsolvable).
 - Archive pipeline: a local directory whose nights are symlinks was read as
   empty (`os.walk` did not follow links; now followed, each real directory
   once); `reduce_planned` crashed writing `reduction_report.ecsv` when the

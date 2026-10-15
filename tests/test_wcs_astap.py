@@ -157,6 +157,18 @@ def test_scale_image_for_astap_ignores_a_masked_hot_pixel():
     scaled = _scale_image_for_astap(data, mask)
     assert scaled[10, 10] < 1000
     assert scaled[100, 100] > 10000  # the star keeps its dynamic range
-    # unmasked outlier: capped, the star still stands out
+    # unmasked hot pixel: capped at the star, which keeps its full range
     scaled = _scale_image_for_astap(data)
-    assert scaled[100, 100] > 1000
+    assert scaled[100, 100] > 10000
+
+
+def test_scale_image_for_astap_keeps_bright_star_cores_apart():
+    """Bright stars must keep their order: no cap at a percentile of the image."""
+    yy, xx = np.mgrid[:300, :300]
+    data = np.full((300, 300), 100.0)
+    peaks = [20000.0, 15000.0, 10000.0, 6000.0]
+    for k, peak in enumerate(peaks):
+        data += peak * np.exp(-((xx - 50 - 60 * k) ** 2 + (yy - 150) ** 2) / (2 * 2.0**2))
+    scaled = _scale_image_for_astap(data).astype(float)
+    cores = [scaled[150, 50 + 60 * k] for k in range(len(peaks))]
+    assert cores == sorted(cores, reverse=True) and len(set(cores)) == len(cores)

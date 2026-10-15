@@ -68,9 +68,11 @@ def _scale_image_for_astap(data: np.ndarray, mask: np.ndarray | None = None) -> 
     """Convert image data to unsigned 16-bit values suitable for ASTAP.
 
     Masked pixels (``mask`` True) are set to the background, and the scale
-    is capped at the 99.995th percentile: a single hot pixel (e.g. a dead
-    flat pixel at 10⁹) would otherwise squeeze every star into the lowest
-    ADU and ASTAP finds none.
+    is capped at the brightest *extended* signal (:func:`_robust_peak`): a
+    single hot pixel (e.g. a dead flat pixel at 10⁹) would otherwise squeeze
+    every star into the lowest ADU and ASTAP finds none. Star cores are not
+    clipped: ASTAP builds its quads from the brightest stars, and flattened
+    cores scramble their order (a percentile cap made NGC 7789 unsolvable).
     """
     clean = np.nan_to_num(np.asarray(data, dtype=np.float64))
     clean = np.where(np.isfinite(clean), clean, 0.0)
@@ -88,7 +90,7 @@ def _scale_image_for_astap(data: np.ndarray, mask: np.ndarray | None = None) -> 
     background = float(np.percentile(positive, 5)) if positive.size > 10 else 0.0
     clean = np.where(good, clean, background)
     scaled = np.clip(clean - background, 0, None)
-    maximum = float(np.percentile(scaled[good], 99.995)) if np.any(good) else 0.0
+    maximum = _robust_peak(scaled)
     if maximum <= 0:
         maximum = float(scaled.max())
     scaled = np.minimum(scaled, maximum)
@@ -99,6 +101,23 @@ def _scale_image_for_astap(data: np.ndarray, mask: np.ndarray | None = None) -> 
         )
 
     return (scaled / maximum * _ASTAP_UINT16_MAX).astype(np.uint16)
+
+
+def _robust_peak(data: np.ndarray, n_brightest: int = 2000) -> float:
+    """Largest 3×3 median among the brightest pixels.
+
+    A single hot pixel has a low 3×3 median, a star core a high one, so the
+    result is the peak of the brightest real source.
+    """
+    flat = data.ravel()
+    n = min(int(n_brightest), flat.size)
+    if n == 0:
+        return 0.0
+    idx = np.argpartition(flat, flat.size - n)[flat.size - n:]
+    ys, xs = np.unravel_index(idx, data.shape)
+    padded = np.pad(data, 1, mode="edge")
+    windows = np.stack([padded[ys + dy, xs + dx] for dy in range(3) for dx in range(3)])
+    return float(np.median(windows, axis=0).max())
 
 
 def _prepare_astap_fits(source_path: Path, working_dir: Path) -> tuple[Path, bool]:
