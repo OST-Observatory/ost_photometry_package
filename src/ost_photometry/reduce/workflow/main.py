@@ -9,6 +9,12 @@ import numpy as np
 
 from ... import calibration_parameters, checks, style, terminal_output
 from ... import utilities as base_utilities
+from ...camera_specs import (
+    full_well_adu,
+    is_unknown_readout_mode,
+    readout_mode_candidates,
+    site_measurement,
+)
 from .. import quality, registration, utilities, validation
 from ..detector_noise import (
     NoiseMeasurement,
@@ -42,7 +48,7 @@ def reduce_main(
     gain: float | None = None,
     read_noise: float | None = None,
     dark_rate: float | None = None,
-    camera_noise_source: str = "catalog",
+    camera_noise_source: str = "auto",
     binning_mode: str = "auto",
     rm_cosmic_rays: bool | str = "auto",
     cosmic_ray_auto_min_frames: int = 7,
@@ -126,12 +132,14 @@ def reduce_main(
 
     camera_noise_source
         Where gain and read noise come from when not given explicitly:
+        ``auto`` (default: ``measured`` when the header does not name the
+        readout mode, e.g. MaxIm DL "Fast" / "Normal", else ``catalog``),
         ``catalog`` (header / camera catalog; the catalog read noise per
         native pixel is scaled to the binned pixel, see ``binning_mode``) or
         ``measured`` (read noise from bias pairs, or dark pairs without
         bias, gain from flat pairs of equal filter and exposure time; falls
-        back to the catalog when the frames do not allow a measurement).
-        See :mod:`ost_photometry.reduce.detector_noise`.
+        back to the OST measurements / catalog when the frames do not allow
+        a measurement). See :mod:`ost_photometry.reduce.detector_noise`.
         Default is ``catalog``.
 
     binning_mode
@@ -471,6 +479,60 @@ def _fmt(value: float | None) -> str:
     return "n/a" if value is None else f"{float(value):.3f}"
 
 
+def _collection_offset(image_file_collection) -> float | None:
+    """``OFFSET`` of the collection if all frames agree, else ``None``."""
+    summary = image_file_collection.summary
+    if summary is None or "offset" not in summary.colnames:
+        return None
+    values = set()
+    for v in summary["offset"]:
+        if v is None or np.ma.is_masked(v):
+            continue
+        try:
+            values.add(float(v))
+        except (TypeError, ValueError):
+            continue
+    return values.pop() if len(values) == 1 else None
+
+
+def _saturation_for_unknown_mode(
+    instrument: str,
+    gain_setting,
+    gain: float | None,
+    read_noise: float | None,
+    binning: tuple[int, int],
+    adc_limit: float,
+) -> float:
+    """Saturation (ADU) without a known readout mode.
+
+    The catalog modes that agree with the gain and the native read noise
+    (read noise per binned pixel / √n, used up to 2x2) are the candidates;
+    the smallest of their full wells (in ADU) times the number of summed
+    pixels, but at most the ADC / 16-bit limit, is the saturation level.
+    """
+    n = max(int(binning[0]), 1) * max(int(binning[1]), 1)
+    native_rn = read_noise / np.sqrt(n) if read_noise is not None and n <= 4 else None
+    modes = readout_mode_candidates(instrument, gain_setting, system_gain=gain, read_noise=native_rn)
+    full_well = full_well_adu(instrument, gain_setting, modes)
+    if full_well is None:
+        terminal_output.print_to_terminal(
+            f"Readout mode unknown, no catalog mode matches gain {_fmt(gain)} e-/ADU and "
+            f"read noise {_fmt(native_rn)} e-: saturation at the ADC limit "
+            f"{adc_limit:.0f} ADU.",
+            indent=1,
+            style_name="WARNING",
+        )
+        return adc_limit
+    level = min(adc_limit, n * full_well)
+    terminal_output.print_to_terminal(
+        f"Readout mode unknown; consistent catalog modes: {', '.join(modes)} -> saturation "
+        f"{level:.0f} ADU (full well {full_well:.0f} ADU per native pixel, ADC limit "
+        f"{adc_limit:.0f} ADU).",
+        indent=1,
+    )
+    return level
+
+
 def _collection_binning(image_file_collection) -> tuple[int, int]:
     """Most common ``XBINNING`` / ``YBINNING`` of the collection (default 1)."""
     summary = image_file_collection.summary
@@ -526,10 +588,17 @@ def resolve_camera_parameters(
 
     With ``cfg.camera_noise_source == "catalog"`` the catalog read noise
     (per native pixel) is scaled to the binned pixel according to
-    ``cfg.binning_mode``. With ``"measured"`` gain and read noise are
-    measured on the bias / dark / flat frames of the collection (or taken
-    from ``measurement``); if that fails, the catalog values are used with
-    a warning.
+    ``cfg.binning_mode``. With ``"measured"`` (or ``"auto"`` and an unknown
+    readout mode) gain and read noise are measured on the bias / dark /
+    flat frames of the collection (or taken from ``measurement``); if that
+    fails, the OST measurements (``data/camera_measurements.json``) or the
+    catalog values are used with a warning.
+
+    Unknown readout mode (missing keyword or MaxIm's "Fast" / "Normal"):
+    no catalog mode is assumed. Gain and read noise come from the
+    measurement or the OST measurements at this gain setting, offset and
+    binning; the saturation level is the smallest full well of the catalog
+    modes that agree with them (at most the ADC limit).
     """
     check_noise_source(cfg.camera_noise_source)
     check_binning_mode(cfg.binning_mode)
@@ -547,6 +616,8 @@ def resolve_camera_parameters(
     dark_rate = cfg.dark_rate
     saturation_level = cfg.saturation_level
     egain = get_egain_from_collection(image_file_collection)
+    offset = _collection_offset(image_file_collection)
+    unknown_mode = is_unknown_readout_mode(readout_mode)
     calibration_gain = None
     if (
         read_noise is None
@@ -559,14 +630,13 @@ def resolve_camera_parameters(
             readout_mode,
             temperature,
             gain_setting=gain_setting,
+            offset=offset,
         )
         if read_noise is None:
             read_noise = camera_info[0]
         calibration_gain = camera_info[1]
         if dark_rate is None:
             dark_rate = camera_info[2]
-        if saturation_level is None:
-            saturation_level = pow(2, pixel_bit_value) - 1
 
     gain = resolve_system_gain(
         instrument,
@@ -579,7 +649,22 @@ def resolve_camera_parameters(
     binning = _collection_binning(image_file_collection)
     binning_mode = resolve_binning_mode(instrument, cfg.binning_mode)
     noise_source = "user" if cfg.read_noise is not None else "catalog"
-    if cfg.read_noise is None:
+    site = (site_measurement(instrument, gain_setting, offset=offset,
+                             xbin=binning[0], ybin=binning[1])
+            if unknown_mode else None)
+    if cfg.read_noise is None and site is not None and site.get("read_noise") is not None:
+        # OST measurement at this binning (bin 3 is not a plain 3x3 sum)
+        read_noise = site["read_noise"]
+        if cfg.gain is None:
+            gain = site["system_gain"]
+        noise_source = "OST measurement" + (" (binning derived)" if site["derived_read_noise"] else "")
+        terminal_output.print_to_terminal(
+            f"Readout mode unknown: OST measurement for {binning[0]}x{binning[1]} binning: "
+            f"gain {gain:.3f} e-/ADU, read noise {read_noise:.2f} e- per binned pixel"
+            + (" (derived from the native value)" if site["derived_read_noise"] else "") + ".",
+            indent=1,
+        )
+    elif cfg.read_noise is None:
         catalog_read_noise = read_noise
         read_noise, binning_mode = binned_read_noise(
             read_noise, instrument, *binning, binning_mode=cfg.binning_mode
@@ -600,26 +685,29 @@ def resolve_camera_parameters(
                 indent=1,
             )
 
-    if cfg.camera_noise_source == "measured":
+    measure = cfg.camera_noise_source == "measured" or (
+        cfg.camera_noise_source == "auto" and unknown_mode
+    )
+    if measure:
         if measurement is None:
             measurement = measure_collection_noise(
                 image_file_collection, cfg.image_type_dir, saturation_level
             )
         if measurement is None:
             terminal_output.print_to_terminal(
-                "camera_noise_source='measured': no bias or dark pairs to measure the "
-                f"read noise; using the {noise_source} values.",
+                f"camera_noise_source={cfg.camera_noise_source!r}: no bias or dark pairs to "
+                f"measure the read noise; using the {noise_source} values.",
                 indent=1,
                 style_name="WARNING",
             )
         else:
-            catalog_gain = gain
+            previous_gain = gain
             if cfg.gain is None and measurement.gain is not None:
                 gain = measurement.gain
             elif cfg.gain is None:
                 terminal_output.print_to_terminal(
-                    "camera_noise_source='measured': no usable flat pair for the "
-                    "gain; using the header / catalog gain.",
+                    "No usable flat pair for the gain; using the "
+                    f"{'OST measurement' if site else 'header / catalog'} gain.",
                     indent=1,
                     style_name="WARNING",
                 )
@@ -628,8 +716,15 @@ def resolve_camera_parameters(
                 noise_source = "measured"
             terminal_output.print_to_terminal(
                 f"Measured {measurement.describe()} -> gain {_fmt(gain)} e-/ADU "
-                f"(header/catalog {_fmt(catalog_gain)}), read noise {_fmt(read_noise)} e-.",
+                f"(before {_fmt(previous_gain)}), read noise {_fmt(read_noise)} e-.",
                 indent=1,
+            )
+
+    if saturation_level is None:
+        saturation_level = pow(2, pixel_bit_value) - 1
+        if unknown_mode:
+            saturation_level = _saturation_for_unknown_mode(
+                instrument, gain_setting, gain, read_noise, binning, saturation_level
             )
 
     return CameraParameters(

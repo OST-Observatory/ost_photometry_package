@@ -154,7 +154,9 @@ def test_camera_ids_and_keys():
         assert setup_keys.telescope_id({"telescop": name}) == "CDK20"
     assert setup_keys.telescope_id({"telescop": "", "telescope": "OST CDK20"}) == "CDK20"
     assert setup_keys.telescope_id({"telescop": "", "telescope": "UK"}) == "unknown"
-    assert setup_keys.electronic_key(qhy) == "qhy600m|3x3|normal|g0|o5"
+    # MaxIm's "Normal" / "Fast" do not name the QHY readout mode
+    assert setup_keys.electronic_key(qhy) == "qhy600m|3x3|unknown|g0|o5"
+    assert setup_keys.electronic_key({**qhy, "readoutm": "Fast"}) == setup_keys.electronic_key(qhy)
     other_offset = {**qhy, "offset": 2}
     assert setup_keys.electronic_key(other_offset) != setup_keys.electronic_key(qhy)
     assert setup_keys.optical_key(qhy) == "qhy600m|3x3|V|CDK20"

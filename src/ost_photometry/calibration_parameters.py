@@ -9,7 +9,14 @@ from astropy import uncertainty as unc
 from astropy.time import Time
 
 from . import terminal_output
-from .camera_specs import camera_defaults, chip_size, interpolate_camera_curve
+from .camera_specs import (
+    camera_defaults,
+    catalog_readout_modes,
+    chip_size,
+    interpolate_camera_curve,
+    is_unknown_readout_mode,
+    site_measurement,
+)
 
 ############################################################################
 #                           Routines & definitions                         #
@@ -67,7 +74,8 @@ def chip_dimensions(camera: str) -> tuple[float, float]:
 
 def camera_info(
         camera: str, readout_mode: str, temperature: float,
-        gain_setting: int | float | None = None
+        gain_setting: int | float | None = None,
+        offset: int | float | None = None,
     ) -> tuple[float, float, float, int, int]:
     """
     Camera specific parameters
@@ -107,6 +115,46 @@ def camera_info(
         Height in mm
     """
     defaults = camera_defaults(camera)
+
+    if is_unknown_readout_mode(readout_mode):
+        # MaxIm "Fast" / "Normal" or no keyword: OST measurement, else a
+        # catalog mode as an explicit guess (never silently).
+        site = site_measurement(camera, gain_setting, offset=offset)
+        modes = catalog_readout_modes(camera)
+        guess = None
+        if modes:
+            guess = "extend_fullwell_2cms" if "extend_fullwell_2cms" in modes else modes[0]
+        if site is not None:
+            read_noise = site.get("read_noise")
+            note = f"read noise {read_noise:.2f} e- per native pixel" if read_noise is not None else (
+                f"read noise measured only at other binnings; native value from {guess!r} "
+                "(the reduction uses the OST value of its binning)")
+            if read_noise is None and guess is not None:
+                read_noise = interpolate_camera_curve(
+                    camera, "readout_noise", gain_setting, guess, for_camera_info=True,
+                )
+            terminal_output.print_to_terminal(
+                f"Camera: {camera}, readout mode unknown: OST measurement for GAIN "
+                f"{gain_setting}: gain {site['system_gain']:.3f} e-/ADU, {note}",
+                indent=1,
+                style_name='WARNING',
+            )
+            dark_rate = interpolate_camera_curve(
+                camera, "dark_current", temperature, None, for_camera_info=True,
+            )
+            if dark_rate is None:
+                dark_rate = defaults.get("dark_current", 0.002)
+            d, h = chip_dimensions(camera)
+            return (read_noise if read_noise is not None else 7.904), site["system_gain"], dark_rate, d, h
+        if guess is not None:
+            terminal_output.print_to_terminal(
+                f"Camera: {camera}, readout mode unknown ({readout_mode!r}) and no OST "
+                f"measurement for GAIN {gain_setting}: catalog mode {guess!r} is a guess. "
+                "Measure gain and read noise (camera_noise_source='auto' / 'measured').",
+                indent=1,
+                style_name='WARNING',
+            )
+            readout_mode = guess
 
     read_noise = interpolate_camera_curve(
         camera,

@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "description": "Gain and read noise measured at the OST on bias and flat pairs (reduce.detector_noise.measure_detector_noise). Used when the header does not name the camera's readout mode, e.g. MaxIm DL frames whose READOUTM ('Fast' / 'Normal') is MaxIm's exposure-tab setting and not the QHY driver mode.",
+    "read_noise_unit": "ADU per (binned) pixel",
+    "system_gain_unit": "e-/ADU"
+  },
+  "cameras": {
+    "qhy600m": [
+      {
+        "gain_setting": 0,
+        "offset": 2,
+        "system_gain": 1.314,
+        "read_noise_adu": {"1": 4.29, "2": 8.74},
+        "measured": "2026-10-15",
+        "sources": [
+          "T CrB 2024-06 (READOUTM Fast bin 1, 40 bias, 293 flats; Normal bin 2, 80 bias, 2200 flats)",
+          "NGC 7789 (Fast bin 2, dark pairs, 50 flats)",
+          "ATO J080.5805+10.6719 (Fast bin 2, dark pairs, 20 flats)"
+        ],
+        "note": "Read noise per native pixel 5.6-5.8 e-, consistent with the 2CMS modes only; gain 15 % below the manufacturer curves (1.52)."
+      },
+      {
+        "gain_setting": 0,
+        "offset": 0,
+        "system_gain": 1.296,
+        "read_noise_adu": {"3": 8.92},
+        "measured": "2026-10-15",
+        "sources": ["HAT-P-20 (READOUTM Normal bin 3, dark pairs, 40 flats)"],
+        "note": "Bin 3 read noise is not 3x the native value (not a plain 3x3 sum)."
+      }
+    ]
+  }
+}

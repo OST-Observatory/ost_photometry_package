@@ -45,6 +45,24 @@ section of this file.
 
 ### Changed
 
+- **QHY readout mode not in the header (MaxIm DL):** `READOUTM` = `Fast` /
+  `Normal` / `Slow` is MaxIm's exposure-tab setting, not the QHY driver
+  mode. These labels (and a missing keyword) now mean an unknown readout
+  mode; it was silently assumed to be "Extend Fullwell 2CMS" (reduction)
+  or replaced by fixed 7.904 e⁻ / 1.292 e⁻/ADU (`camera_info`). New default
+  `camera_noise_source="auto"` measures gain and read noise on bias and
+  flat pairs for such data, else uses the OST measurements in the new
+  `data/camera_measurements.json` (QHY600M, GAIN 0: 1.31 e⁻/ADU, read noise
+  per binning). The saturation level comes from the catalog modes that
+  agree with the measured values (2CMS modes: 62 386 ADU per native pixel,
+  the ADC limit for 2x2 sums). The archive pipeline no longer splits
+  electronic setups by these labels unless their bias levels differ. On
+  the OST QHY600M data the catalog gain was 16 % too high (1.53 vs
+  1.31 e⁻/ADU, photon noise 7 % too small relative to the signal) and the
+  bin-3 read noise 50 % too high. On HAT-P-20 the final errors stay right
+  (scatter / error 0.93–1.08); the empty-sky factor now carries the extra
+  sky noise of the light frames (1.27–1.30, was 1.06–1.11 because the two
+  errors hid it).
 - **Isochrone fit with an age error** (`analyze.isochrone_fit`): fiducials
   with σ = max(IVW, 1.2533·σ_robust/√N) of the detrended colour scatter and
   a colour–magnitude covariance (was IVW or scatter, else 1.0); χ² as the

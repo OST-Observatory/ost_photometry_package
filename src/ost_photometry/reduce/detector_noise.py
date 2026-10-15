@@ -37,8 +37,10 @@ from astropy.stats import sigma_clip
 from ..camera_specs import binning_mode as catalog_binning_mode
 from ..fits_headers import READ_NOISE_KEY, SATURATION_KEY
 
-#: Values of ``camera_noise_source``.
-NOISE_SOURCES = ("catalog", "measured")
+#: Values of ``camera_noise_source``: ``auto`` measures gain and read noise
+#: when the header does not name the readout mode (MaxIm "Fast" / "Normal")
+#: and uses the catalog otherwise.
+NOISE_SOURCES = ("auto", "catalog", "measured")
 
 #: Values of ``binning_mode``; ``auto`` asks the camera catalog.
 BINNING_MODES = ("auto", "digital", "charge")

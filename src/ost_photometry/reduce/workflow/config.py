@@ -18,7 +18,7 @@ class ReduceConfig:
     dark_rate: float | None = None
     # Gain / read noise from the camera catalog or measured on bias and flat
     # pairs, see ost_photometry.reduce.detector_noise.NOISE_SOURCES
-    camera_noise_source: str = "catalog"
+    camera_noise_source: str = "auto"
     # How the camera bins (read noise per binned pixel): auto, digital, charge
     binning_mode: str = "auto"
     # True, False or "auto" (skip when the filter is stacked from enough

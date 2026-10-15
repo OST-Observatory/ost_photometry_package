@@ -102,7 +102,7 @@ re-digitized:
 | Camera | Still needed |
 |--------|----------------|
 | **QHY268M/C** | **System gain vs GAIN for every readout mode** (today falls back to 1.292 e-/ADU). Photography full-well CSVs are unusable; no DR / linearity. |
-| **QHY600M** | Headers with `READOUTM` = `Fast` or `Normal` (T CrB 2024 and older OST frames) match none of the catalog's readout modes: read noise and gain fall back to 7.904 e⁻ / 1.292 e⁻/ADU with a warning. Needs the manufacturer curves for these modes, or a mapping to a catalog mode if they are the same. |
+| **QHY600M** | MaxIm `Fast` / `Normal` frames: handled (unknown mode, measured gain / read noise, OST measurements). Open: why the manufacturer gain curves are 15 % above the measured gain at GAIN 0, and how bin 3 combines pixels (read noise 8.9 ADU instead of ~13 ADU for a 3x3 sum). Add OST measurements for other GAIN / OFFSET settings when such data are reduced. |
 | **QHY5III485C** | Dark current vs temperature. Full well / DR traces have unclear axes (not used). No linearity. |
 | **QHY5III462C** | Dark current vs temperature. No QE. No linearity. |
 | **ASI2600** | Dark current (digitized CSV was all zeros and removed). No full well / linearity. |

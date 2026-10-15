@@ -15,8 +15,13 @@ from dataclasses import dataclass, field
 import numpy as np
 from astropy.table import Table
 
+from ...camera_specs import UNKNOWN_READOUT_MODE
 from .classify import BIAS, DARK
 from .setup_keys import electronic_key, sensor_temperature, temperature_clusters
+
+#: Bias levels of two placeholder labels (MaxIm "Fast" / "Normal") differ
+#: when they are this many times the frames' noise apart.
+LABEL_SPLIT_NOISE = 5.0
 
 
 def _float(value: object) -> float:
@@ -36,11 +41,52 @@ def night_of(jd: float) -> str:
     return Time(jd - 0.5, format="jd").datetime.strftime("%Y%m%d")
 
 
+def _split_placeholder_labels(rows: list[dict], keys: list[str]) -> list[str]:
+    """Keep placeholder labels apart only where their bias levels differ.
+
+    Setups with an unknown readout mode (MaxIm "Fast" / "Normal") merge the
+    labels: they are an exposure-tab setting and leave the QHY readout
+    alone. If the bias frames of two labels of one setup still differ in
+    level by more than :data:`LABEL_SPLIT_NOISE` times their noise, the label
+    did change the readout, and the setup is split by it.
+    """
+    out = list(keys)
+    marker = f"|{UNKNOWN_READOUT_MODE}|"
+    for key in dict.fromkeys(k for k in keys if marker in k):
+        idx = [i for i, k in enumerate(keys) if k == key]
+        levels: dict[str, list[tuple[float, float]]] = {}
+        for i in idx:
+            row = rows[i]
+            if str(row.get("frame_type", "")) != BIAS:
+                continue
+            level = _float(row.get("stat_median"))
+            noise = _float(row.get("stat_noise"))
+            if math.isfinite(level):
+                label = str(row.get("readoutm", "")).strip() or "-"
+                levels.setdefault(label, []).append((level, noise))
+        if len(levels) < 2:
+            continue
+        medians = {lab: float(np.median([v for v, _n in vals])) for lab, vals in levels.items()}
+        noise = float(np.nanmedian([n for vals in levels.values() for _v, n in vals]))
+        if not math.isfinite(noise) or noise <= 0:
+            continue
+        if max(medians.values()) - min(medians.values()) <= LABEL_SPLIT_NOISE * noise:
+            continue
+        for i in idx:
+            label = str(rows[i].get("readoutm", "")).strip() or "-"
+            out[i] = key.replace(marker, f"|{UNKNOWN_READOUT_MODE}-{label.lower()}|")
+    return out
+
+
 def add_electronic_ids(table: Table, *, temp_tolerance: float = 2.0) -> Table:
-    """Add ``electronic_id`` (setup key plus temperature cluster) and ``night``."""
+    """Add ``electronic_id`` (setup key plus temperature cluster) and ``night``.
+
+    Placeholder readout labels are merged unless their bias levels differ
+    (:func:`_split_placeholder_labels`).
+    """
     out = table.copy()
     rows = [dict(zip(out.colnames, r, strict=True)) for r in out]
-    keys = [electronic_key(r) for r in rows]
+    keys = _split_placeholder_labels(rows, [electronic_key(r) for r in rows])
     temps = [sensor_temperature(r) for r in rows]
     ids = [""] * len(rows)
     for key in dict.fromkeys(keys):

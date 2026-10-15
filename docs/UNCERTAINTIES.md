@@ -34,7 +34,17 @@ See also [PIPELINE_CONFIG.md](PIPELINE_CONFIG.md) (options) and
 frame errors in quadrature.
 
 The read noise is that of the binned pixel: `√(xbin·ybin)` × the native read
-noise for digitally binning CMOS. Frames in e⁻/s carry `RDNOISE` and
+noise for digitally binning CMOS.
+
+**Gain and read noise without a known readout mode.** MaxIm DL writes its
+own exposure setting (`Fast` / `Normal`) instead of the QHY driver mode.
+Then gain and read noise are measured on bias and flat pairs
+(`camera_noise_source="auto"`), else taken from the OST measurements
+(`data/camera_measurements.json`). The manufacturer curves are not used.
+On the QHY600M at GAIN 0 they would give 1.53 e⁻/ADU; measured are
+1.31 e⁻/ADU in four data sets from 2022 to 2024. The curves made the photon
+noise about 7 % too small relative to the signal. The read noise at bin 3
+is not 3× the native value: 8.9 ADU measured, about 13 ADU for a plain sum. Frames in e⁻/s carry `RDNOISE` and
 `SATLEVEL` in electrons for the image times `EXPTIME`.
 
 ### Master frames and stacks
@@ -394,6 +404,8 @@ Extreme deconvolution in (μ_α*, μ_δ, ϖ) with each star's Gaia covariance
 | Alard–Lupton difference σ in the sky, noisy science frame | `tests/test_alard_lupton.py` | pull σ 0.99 |
 | Aperture scatter / propagated σ on registered frames, bin 2 reprojected onto bin 1 (k = 0.25: `SATLEVEL` 91 000 → 22 760, `RDNOISE` 11.66 → 5.83 e⁻) | T CrB 2024-06-08 (bin 1, 18 frames) + 06-09 (bin 2, 50 frames), QHY600M | bin 1: 1.01–1.19, bin 2: 0.93–1.17 |
 | Same for the mixed stacks (local sky) | T CrB, B V R I Clear | 0.96–1.11 after sky matching (Clear 2.86 before) |
+| Gain / read noise without readout mode (MaxIm `Fast` / `Normal`), measured on bias / dark and flat pairs | T CrB bin 1 / bin 2, NGC 7789, ATO, HAT-P-20 bin 3 (QHY600M, GAIN 0) | 1.296–1.319 e⁻/ADU (catalog 1.53); read noise 4.29 ADU (bin 1), 8.6–8.9 ADU (bin 2), 8.92 ADU (bin 3) |
+| HAT-P-20 rerun with the measured values: robust scatter / `dmag_err`, / `mag_err` (X < 1.3, six bins) | HAT-P-20 C7 night | 0.93–1.02 / 0.94–1.08 (before 0.95–1.02 / 0.94–1.08); empty-sky factor 1.27–1.30 (before 1.06–1.11, when a 16 % too high gain and a 3× bin-3 read noise hid the extra sky noise) |
 | Isochrone age 1σ coverage, simulated clusters (distance / reddening profiled, true age on and between grid ages) | `tests/test_isochrone_fit.py` | 0.69–0.72; χ²_ν 0.94 |
 | NGC 7789 isochrone fit (PARSEC Z = 0.0152, priors E(B−V) = 0.22 ± 0.03, d = 1.795 ± 0.1 kpc, no membership) | N2, B/V | 2.08 (+0.18/−0.15) Gyr for V 1.0–4.5, 2.44 ± 0.2 Gyr for V 0.5–4.5; χ²_ν 11–14 (field stars, giants in the bright bins); offsets within ~1σ of the priors |
 | Gaia membership, simulated cluster with faint members (errors 12× the intrinsic width) | `tests/test_membership_xd.py` | XD: recall 0.91–0.94, contamination 3 %, Σ P_mem within 2 % of the truth; plain GMM: 53 % contamination or recall 0.01–0.03 |

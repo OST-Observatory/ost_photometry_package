@@ -4,6 +4,12 @@ Digitized manufacturer plots (QHY, ZWO, SBIG). These CSVs and the source
 JPG/PNG files are **provenance**. The reduction pipeline loads
 ``ost_photometry/data/cameras.json``, not these files.
 
+Gain and read noise measured at the OST (bias and flat pairs) are kept
+separately in ``ost_photometry/data/camera_measurements.json``. They are
+used when the header does not name the readout mode, e.g. MaxIm DL's
+``READOUTM`` "Fast" / "Normal". Add an entry per gain setting, offset and
+binning when new data are measured (``reduce.detector_noise.measure_detector_noise``).
+
 Rebuild the catalog after changing a CSV:
 
 ```text

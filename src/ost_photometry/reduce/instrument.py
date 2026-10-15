@@ -6,7 +6,12 @@ from astropy.stats import sigma_clip
 from astropy.table import Table
 
 from .. import style, terminal_output
-from ..camera_specs import GENERIC_INSTRUMENT_NAMES, normalize_instrument_name
+from ..camera_specs import (
+    GENERIC_INSTRUMENT_NAMES,
+    UNKNOWN_READOUT_MODE,
+    is_unknown_readout_mode,
+    normalize_instrument_name,
+)
 
 _QHY_CAMERAS = frozenset({"QHY600M", "QHY268M"})
 
@@ -101,8 +106,12 @@ def resolve_readout_mode(
     Extract the camera readout mode from FITS headers.
 
     Older cameras (e.g. SBIG STF-8300) often lack a readout-mode keyword; in
-    that case ``"default"`` is returned. QHY cameras without the keyword
-    default to ``"Extend Fullwell 2CMS"``.
+    that case ``"default"`` is returned. For QHY cameras a missing keyword or
+    a placeholder (MaxIm DL writes its exposure-tab setting "Fast" /
+    "Normal" / "Slow", not the driver mode) gives ``"unknown"``: gain and
+    read noise are then measured or taken from the OST measurements
+    (``camera_noise_source="auto"``), not from a guessed mode. Numeric QHY
+    modes 0-3 are translated to their names.
     """
     summary = image_file_collection.summary
     if not isinstance(summary, Table):
@@ -111,18 +120,18 @@ def resolve_readout_mode(
             "could not be determined. Summary table of image file collection "
             f"is not available. -> ABORT {style.Bcolors.ENDC}"
         )
+    qhy = instrument in _QHY_CAMERAS
 
     readout_mode_keyword = _get_readout_mode_keyword(summary)
     if readout_mode_keyword is None:
-        if instrument in _QHY_CAMERAS:
+        if qhy:
             terminal_output.print_to_terminal(
-                "No readout mode keyword in FITS headers; "
-                "assuming Extend Fullwell 2CMS for QHY camera.",
+                "No readout mode keyword in the FITS headers: readout mode unknown; "
+                "gain and read noise are measured or taken from the OST measurements.",
                 style_name="WARNING",
                 indent=1,
             )
-            return "Extend Fullwell 2CMS"
-
+            return UNKNOWN_READOUT_MODE
         terminal_output.print_to_terminal(
             "No readout mode keyword in FITS headers; using default.",
             style_name="WARNING",
@@ -145,6 +154,23 @@ def resolve_readout_mode(
     readout_modes = list(
         set(summary[readout_mode_keyword][np.invert(readout_mode_mask)])
     )
+    if qhy:
+        numeric = {0: "PhotoGraphic DSO", 1: "High Gain Mode", 2: "Extend Fullwell",
+                   3: "Extend Fullwell 2CMS"}
+        readout_modes = [numeric.get(m, m) if not isinstance(m, str) else m
+                         for m in readout_modes]
+        placeholders = [m for m in readout_modes if is_unknown_readout_mode(m)]
+        if not readout_modes or len(placeholders) == len(readout_modes):
+            labels = ", ".join(repr(str(m)) for m in placeholders) or "none"
+            terminal_output.print_to_terminal(
+                f"Readout mode unknown (READOUTM {labels} is the MaxIm DL exposure setting, "
+                "not the QHY driver mode); gain and read noise are measured or taken "
+                "from the OST measurements.",
+                style_name="WARNING",
+                indent=1,
+            )
+            return UNKNOWN_READOUT_MODE
+        readout_modes = [m for m in readout_modes if not is_unknown_readout_mode(m)]
 
     if len(readout_modes) > 1:
         if ignore_readout_mode_mismatch:
@@ -154,40 +180,14 @@ def resolve_readout_mode(
                 f"detected: {readout_mode}",
                 style_name="WARNING",
             )
-        else:
-            raise RuntimeError(
-                f"{style.Bcolors.FAIL}Multiple readout modes detected.\n"
-                f"This is currently not supported -> EXIT \n{style.Bcolors.ENDC}"
-            )
-    else:
-        readout_mode = "default"
-
-    if instrument in _QHY_CAMERAS:
-        if not readout_modes:
-            readout_mode = "Extend Fullwell 2CMS"
-        elif len(readout_modes) == 1:
-            readout_mode = readout_modes[0]
-            if readout_mode in ["Fast", "Slow", "Normal"]:
-                readout_mode = "Extend Fullwell 2CMS"
-            if readout_mode == 0:
-                readout_mode = "PhotoGraphic DSO"
-            elif readout_mode == 1:
-                readout_mode = "High Gain Mode"
-            elif readout_mode == 2:
-                readout_mode = "Extend Fullwell"
-            elif readout_mode == 3:
-                readout_mode = "Extend Fullwell 2CMS"
-        elif ignore_readout_mode_mismatch:
-            terminal_output.print_to_terminal(
-                "WARNING: Multiple readout modes detected. Assume Extend Fullwell 2CMS",
-                style_name="WARNING",
-                indent=2,
-            )
-            readout_mode = "Extend Fullwell 2CMS"
-    elif len(readout_modes) == 1:
-        readout_mode = readout_modes[0]
-
-    return readout_mode
+            return readout_mode
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Multiple readout modes detected.\n"
+            f"This is currently not supported -> EXIT \n{style.Bcolors.ENDC}"
+        )
+    if len(readout_modes) == 1:
+        return readout_modes[0]
+    return "default"
 
 
 def get_egain_from_collection(

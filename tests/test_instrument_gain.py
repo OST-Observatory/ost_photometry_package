@@ -29,7 +29,15 @@ def test_resolve_readout_mode_defaults_for_qhy_without_keyword():
         _mock_collection(summary),
         "QHY268M",
     )
-    assert readout_mode == "Extend Fullwell 2CMS"
+    assert readout_mode == "unknown"
+
+
+def test_resolve_readout_mode_maxim_labels_are_unknown_not_a_mismatch():
+    summary = Table(
+        [MaskedColumn(data=["Fast", "Normal"], mask=[False, False])],
+        names=["readoutm"],
+    )
+    assert resolve_readout_mode(_mock_collection(summary), "QHY600M") == "unknown"
 
 
 def test_resolve_readout_mode_reads_readoutm_keyword():

@@ -25,6 +25,7 @@ from astropy.table import Table
 
 from ... import calibration_parameters, style, terminal_output
 from ...archive.cache import frame_link_name
+from ...camera_specs import UNKNOWN_READOUT_MODE
 from ...core.parallel import Executor
 from ..detector_noise import (
     NoiseMeasurement,
@@ -71,8 +72,9 @@ class ReductionSettings:
     n_cores_multiprocessing: int | None = None
     dtype: str | None = None
     reuse_masters: bool = True
-    #: "catalog" or "measured" (per electronic setup, see measure_plan_noise)
-    camera_noise_source: str = "catalog"
+    #: "auto" (measured for setups with unknown readout mode), "catalog" or
+    #: "measured" (per electronic setup, see measure_plan_noise)
+    camera_noise_source: str = "auto"
     #: "auto", "digital" or "charge" (read noise per binned pixel)
     binning_mode: str = "auto"
     #: Floating type of written masters and reduced frames (float32 / float64)
@@ -581,8 +583,15 @@ def reduce_planned(
     check_cosmic_ray_mode(settings.rm_cosmic_rays)
     check_storage_dtype(settings.storage_dtype)
     out_dir = Path(out_dir)
-    noise = (measure_plan_noise(frames, saturation_level=settings.saturation_level, log=log)
-             if settings.camera_noise_source == "measured" else {})
+    noise = {}
+    if settings.camera_noise_source == "measured":
+        noise = measure_plan_noise(frames, saturation_level=settings.saturation_level, log=log)
+    elif settings.camera_noise_source == "auto" and "electronic_id" in frames.colnames:
+        unknown = [e for e in dict.fromkeys(np.asarray(frames["electronic_id"]).astype(str))
+                   if f"|{UNKNOWN_READOUT_MODE}" in e]
+        if unknown:
+            noise = measure_plan_noise(frames[np.isin(frames["electronic_id"], unknown)],
+                                       saturation_level=settings.saturation_level, log=log)
     masters = build_masters(plan, frames, out_dir, settings, log=log, noise=noise)
     stack_counts = stacked_frame_counts(plan, frames)
     reports: dict[str, UnitReport] = {}

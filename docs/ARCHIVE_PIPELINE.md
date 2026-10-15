@@ -144,8 +144,18 @@ combinations add `NCAMERAS` / `CAMERAS`.
 per electronic setup (bias pairs, else dark pairs) and the gain per gain
 setting (camera, binning, readout mode, gain; flat pairs of all offsets,
 each against the zero level of its own setup), see
-`reduce.workflow.groups.measure_plan_noise`. The default `catalog` scales the
-catalog read noise to the binned pixel (`binning_mode`). With
+`reduce.workflow.groups.measure_plan_noise`. `catalog` scales the catalog
+read noise to the binned pixel (`binning_mode`). The default `auto` measures
+the setups whose readout mode is unknown and uses the catalog for the rest.
+
+**Readout mode labels of MaxIm DL.** For QHY cameras driven through ASCOM,
+MaxIm writes its exposure-tab setting (`Fast` / `Normal` / `Slow`) as
+`READOUTM`; the driver's readout mode is not in the header. These labels
+count as an unknown readout mode: they do not split electronic setups,
+unless the bias frames of two labels of one setup differ in level by more
+than five times their noise (then the label did change the readout). On the
+OST QHY600M data (2022–2024, GAIN 0) `Fast` and `Normal` give the same gain
+(1.31 e⁻/ADU) and read noise (5.6–5.8 e⁻ per native pixel). With
 `rm_cosmic_rays="auto"` (default) L.A.Cosmic runs only on frames whose stack
 (target × camera × filter) has fewer than `cosmic_ray_auto_min_frames`
 frames, or whose target is not stacked.

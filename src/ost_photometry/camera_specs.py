@@ -21,6 +21,15 @@ from pathlib import Path
 import numpy as np
 
 _CATALOG_NAME = "cameras.json"
+_MEASUREMENTS_NAME = "camera_measurements.json"
+
+#: ``READOUTM`` values that do not name the camera's readout mode. MaxIm DL
+#: writes its own exposure-tab setting ("Fast" / "Normal" / "Slow") for
+#: QHY cameras driven through ASCOM; the driver mode is not in the header.
+PLACEHOLDER_READOUT_MODES = frozenset({"fast", "normal", "slow"})
+
+#: Normalised name of a readout mode that is not known from the header.
+UNKNOWN_READOUT_MODE = "unknown"
 _SPEC_DIR_NAME = "camera_specs"
 
 CAMERA_ALIASES = {
@@ -217,6 +226,8 @@ def normalize_readout_mode(readout_mode: str | None) -> str | None:
         return None
     key = str(readout_mode).strip().lower().replace("-", " ").replace("(", " ").replace(")", " ")
     key = " ".join(key.replace("_", " ").split())
+    if key in PLACEHOLDER_READOUT_MODES or key == UNKNOWN_READOUT_MODE:
+        return UNKNOWN_READOUT_MODE
     found = _lookup_readout_alias(key)
     if found is not None:
         return found
@@ -455,3 +466,132 @@ def camera_spec_files() -> list[str]:
     if spec.is_dir():
         names.update(p.name for p in spec.glob("*.csv"))
     return sorted(names)
+
+
+def is_unknown_readout_mode(readout_mode: object) -> bool:
+    """True for a missing mode and for placeholders such as MaxIm's "Fast" / "Normal"."""
+    if readout_mode is None:
+        return True
+    text = str(readout_mode).strip()
+    if not text or text.lower() in {"none", "nan", "--"}:
+        return True
+    return normalize_readout_mode(text) == UNKNOWN_READOUT_MODE
+
+
+@lru_cache(maxsize=1)
+def camera_measurements() -> dict:
+    """OST measurements of gain and read noise (``data/camera_measurements.json``)."""
+    resource = files("ost_photometry.data").joinpath(_MEASUREMENTS_NAME)
+    return json.loads(resource.read_text(encoding="utf-8"))
+
+
+def site_measurement(
+    camera: str,
+    gain_setting: float | None,
+    *,
+    offset: float | None = None,
+    xbin: int = 1,
+    ybin: int = 1,
+) -> dict | None:
+    """Measured ``system_gain`` (e-/ADU) and ``read_noise`` (e- per binned pixel).
+
+    Entries must match the gain setting; an entry with the same offset is
+    preferred. The read noise is the value measured at this binning; for a
+    binning without a measurement it is derived from the native one
+    (``√(xbin·ybin)``, digital summing), and ``derived_read_noise`` says so.
+    Returns ``None`` without a matching entry.
+    """
+    cam = normalize_camera_id(camera)
+    if cam is None or gain_setting is None:
+        return None
+    entries = camera_measurements().get("cameras", {}).get(cam) or []
+    try:
+        gs = float(gain_setting)
+    except (TypeError, ValueError):
+        return None
+    matches = [e for e in entries if float(e.get("gain_setting", float("nan"))) == gs]
+    if not matches:
+        return None
+    if offset is not None:
+        same = [e for e in matches if e.get("offset") is not None and float(e["offset"]) == float(offset)]
+        matches = same or matches
+    n = max(int(xbin), 1) * max(int(ybin), 1)
+    key = str(max(int(xbin), int(ybin))) if int(xbin) == int(ybin) else f"{int(xbin)}x{int(ybin)}"
+    for entry in matches:
+        rn = entry.get("read_noise_adu") or {}
+        if key in rn:
+            gain = float(entry["system_gain"])
+            return {"system_gain": gain, "read_noise": float(rn[key]) * gain,
+                    "derived_read_noise": False, "entry": entry}
+    for entry in matches:
+        rn = entry.get("read_noise_adu") or {}
+        if "1" in rn:
+            gain = float(entry["system_gain"])
+            return {"system_gain": gain, "read_noise": float(rn["1"]) * gain * float(np.sqrt(n)),
+                    "derived_read_noise": n > 1, "entry": entry}
+    entry = matches[0]
+    return {"system_gain": float(entry["system_gain"]), "read_noise": None,
+            "derived_read_noise": False, "entry": entry}
+
+
+def _quiet_curves(camera: str, quantities, x, mode) -> list[float | None]:
+    """Curve values for a scan over modes (end-value warnings not repeated)."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return [interpolate_camera_curve(camera, q, x, mode) for q in quantities]
+
+
+def catalog_readout_modes(camera: str, quantity: str = "readout_noise") -> list[str]:
+    """Readout modes with a usable ``quantity`` curve in the catalog."""
+    rec = _camera_record(camera)
+    if rec is None:
+        return []
+    modes = [c.get("readout_mode") for c in rec.get("curves") or []
+             if c.get("quantity") == quantity and c.get("usable", True)]
+    return list(dict.fromkeys(m for m in modes if m))
+
+
+def readout_mode_candidates(
+    camera: str,
+    gain_setting: float | None,
+    *,
+    system_gain: float | None,
+    read_noise: float | None,
+    read_noise_tolerance: float = 0.2,
+    gain_tolerance: float = 0.3,
+) -> list[str]:
+    """Catalog modes whose curves agree with a measured gain and native read noise.
+
+    Relative tolerances: the manufacturer gain curves of the QHY600M are
+    15 % above the OST measurements, the read noise separates the modes
+    (2CMS 5.7-5.8 e-, others 7.4-7.7 e-, high gain 3.3-3.6 e- at GAIN 0).
+    """
+    if gain_setting is None:
+        return []
+    out = []
+    for mode in catalog_readout_modes(camera):
+        rn, g = _quiet_curves(camera, ("readout_noise", "system_gain"), gain_setting, mode)
+        if read_noise is not None and rn is not None and abs(read_noise - rn) > read_noise_tolerance * rn:
+            continue
+        if system_gain is not None and g is not None and abs(system_gain - g) > gain_tolerance * g:
+            continue
+        out.append(mode)
+    return out
+
+
+def full_well_adu(camera: str, gain_setting: float | None, modes: list[str]) -> float | None:
+    """Smallest full well among ``modes``, in ADU (catalog full well / catalog gain).
+
+    The full well and the gain come from the same manufacturer curves, so
+    their ratio stays right when the absolute gain is off.
+    """
+    if gain_setting is None:
+        return None
+    values = []
+    for mode in modes:
+        fw, g = _quiet_curves(camera, ("fullwell", "system_gain"), gain_setting, mode)
+        if fw is not None and g is not None and g > 0:
+            values.append(fw / g)
+    return min(values) if values else None
