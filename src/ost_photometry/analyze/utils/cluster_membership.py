@@ -197,6 +197,11 @@ def _gmm_cluster_component(
         if 0 <= cid < n_comp:
             return cid, f"manual override (component {cid})"
     if simbad_scaled is not None:
+        if hasattr(gmm, "component_log_density"):
+            # a compact cluster component is far denser at the cluster's
+            # (μ, π) than a broad field component whose mean happens to lie closer
+            return int(np.argmax(gmm.component_log_density(simbad_scaled))), \
+                "highest density at Simbad (μ, π)"
         means = np.asarray(gmm.means_, dtype=float)
         dist = np.linalg.norm(means - simbad_scaled[None, :], axis=1)
         return int(np.argmin(dist)), "nearest Simbad (μ, π)"
@@ -208,31 +213,102 @@ def _gmm_cluster_component(
 
 
 class _XDModel:
-    """astroML ``XDGMM`` with the attributes the component helpers read.
+    """Gaussian mixture fitted by extreme deconvolution (Bovy et al. 2011).
 
-    ``means_`` / ``covariances_`` are the deconvolved (intrinsic) component
-    parameters; responsibilities use each star's covariance.
+    Each star ``i`` is drawn from component ``k`` with the covariance
+    ``V_k + S_i`` (intrinsic width plus the star's own errors); EM in log
+    space, so stars far from every component (large proper motions in a
+    wide field) cannot underflow all responsibilities to 0/0 (astroML's
+    ``XDGMM`` fails there with NaN). ``means_`` / ``covariances_`` are the
+    deconvolved component parameters.
     """
 
-    def __init__(self, n_components: int, random_state: int):
-        from astroML.density_estimation import XDGMM
+    #: Added to every intrinsic covariance (scaled units) to keep it positive definite.
+    regularization = 1e-6
 
-        self._xd = XDGMM(n_components=n_components, max_iter=300, tol=1e-6,
-                         random_state=random_state)
-        self.n_components = n_components
+    def __init__(self, n_components: int, random_state: int, *, max_iter: int = 300, tol: float = 1e-6):
+        self.n_components = int(n_components)
+        self.random_state = int(random_state)
+        self.max_iter = int(max_iter)
+        self.tol = float(tol)
+
+    def _log_resp(self, x: np.ndarray, x_cov: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        from scipy.special import logsumexp
+
+        t = x_cov[:, None, :, :] + self.covariances_[None, :, :, :]
+        t_inv = np.linalg.inv(t)
+        _sign, logdet = np.linalg.slogdet(t)
+        diff = x[:, None, :] - self.means_[None, :, :]
+        maha = np.einsum("nki,nkij,nkj->nk", diff, t_inv, diff)
+        d = x.shape[1]
+        log_n = -0.5 * (maha + logdet + d * np.log(2.0 * np.pi)) + np.log(self.weights_)[None, :]
+        log_norm = logsumexp(log_n, axis=1)
+        return log_n - log_norm[:, None], log_norm, t_inv, diff
 
     def fit(self, x: np.ndarray, x_cov: np.ndarray) -> _XDModel:
-        self._xd.fit(x, x_cov)
-        self.means_ = np.asarray(self._xd.mu, dtype=float)
-        self.covariances_ = np.asarray(self._xd.V, dtype=float)
-        self.weights_ = np.asarray(self._xd.alpha, dtype=float)
+        from sklearn.mixture import GaussianMixture
+
+        n, d = x.shape
+        init = GaussianMixture(self.n_components, covariance_type="full",
+                               random_state=self.random_state, n_init=3).fit(x)
+        self.means_ = np.asarray(init.means_, dtype=float)
+        self.covariances_ = np.asarray(init.covariances_, dtype=float)
+        self.weights_ = np.asarray(init.weights_, dtype=float)
+        eye = np.eye(d) * self.regularization
+        log_l = -np.inf
+        for _ in range(self.max_iter):
+            log_q, log_norm, t_inv, diff = self._log_resp(x, x_cov)
+            new_log_l = float(np.sum(log_norm))
+            q = np.exp(log_q)
+            # E-step: expected true values b and their covariance B (eqs. 16-17)
+            v = self.covariances_
+            b = self.means_[None, :, :] + np.einsum("kij,nkjl,nkl->nki", v, t_inv, diff)
+            big_b = v[None, :, :, :] - np.einsum("kij,nkjl,klm->nkim", v, t_inv, v)
+            # M-step
+            qj = np.maximum(q.sum(axis=0), 1e-300)
+            self.weights_ = np.maximum(qj / n, 1e-12)
+            self.means_ = np.einsum("nk,nki->ki", q, b) / qj[:, None]
+            dev = b - self.means_[None, :, :]
+            self.covariances_ = (
+                np.einsum("nk,nki,nkj->kij", q, dev, dev) + np.einsum("nk,nkij->kij", q, big_b)
+            ) / qj[:, None, None] + eye
+            if new_log_l - log_l < self.tol * n:
+                break
+            log_l = new_log_l
+        self.log_likelihood_ = float(np.sum(self._log_resp(x, x_cov)[1]))
         return self
 
+    def bic(self, n: int, d: int) -> float:
+        params = self.n_components * (d + d * (d + 1) / 2) + self.n_components - 1
+        return -2.0 * self.log_likelihood_ + params * np.log(n)
+
     def predict_proba(self, x: np.ndarray, x_cov: np.ndarray) -> np.ndarray:
-        log_p = np.asarray(self._xd.logprob_a(x, x_cov), dtype=float)
-        log_p -= log_p.max(axis=1, keepdims=True)
-        p = np.exp(log_p)
-        return p / p.sum(axis=1, keepdims=True)
+        return np.exp(self._log_resp(x, x_cov)[0])
+
+    def component_log_density(self, point: np.ndarray) -> np.ndarray:
+        """Log density of each component at ``point`` (intrinsic covariance, no weight)."""
+        diff = point[None, :] - self.means_
+        inv = np.linalg.inv(self.covariances_)
+        _sign, logdet = np.linalg.slogdet(self.covariances_)
+        return -0.5 * (np.einsum("ki,kij,kj->k", diff, inv, diff) + logdet)
+
+
+def _fit_xd(x: np.ndarray, x_cov: np.ndarray, random_state: int,
+            components: tuple[int, ...] = (2, 3, 4, 5)) -> _XDModel:
+    """XD mixture with the number of components chosen by BIC.
+
+    Two components are not enough for a wide field: the field itself is
+    not one Gaussian, takes both components, and the cluster disappears.
+    """
+    n, d = x.shape
+    best = None
+    for k in components:
+        if n < 10 * k:
+            break
+        model = _XDModel(k, random_state).fit(x, x_cov)
+        if best is None or model.bic(n, d) < best.bic(n, d):
+            best = model
+    return best if best is not None else _XDModel(2, random_state).fit(x, x_cov)
 
 
 def _gmm_components_look_alike(gmm, *, ratio_min: float = 1.5) -> bool:
@@ -328,18 +404,22 @@ def membership_from_astrometry(
     component_id: int | None = None,
     random_state: int = 0,
 ) -> MembershipResult:
-    """P(member) from a 2-component GMM in z-scaled (μ_α*, μ_δ, ϖ).
+    """P(member) from a Gaussian mixture in z-scaled (μ_α*, μ_δ, ϖ).
 
     With ``cov`` (per-star 3×3 covariance of (μ_α*, μ_δ, ϖ), e.g. from
     :func:`~ost_photometry.analyze.utils.cluster_selection.gaia_astrometry_covariance`)
-    the mixture is fitted by extreme deconvolution (astroML ``XDGMM``): the
-    components describe the intrinsic distributions, and each star's
-    responsibility uses its own errors, so faint stars with large errors are
-    not pushed into the broad field component. Without ``cov`` a plain
-    Gaussian mixture is used. ``method='xd'`` requires ``cov``.
+    the mixture is fitted by extreme deconvolution (:class:`_XDModel`, EM in
+    log space): the components describe the intrinsic distributions, and
+    each star's responsibility uses its own errors, so faint stars with
+    large errors are not pushed into the broad field component. The number
+    of components (2-5) is chosen by BIC, so a wide field can take several.
+    Without ``cov`` a plain 2-component Gaussian mixture is used.
+    ``method='xd'`` requires ``cov``.
 
-    The cluster component is the one nearest Simbad (μ, π) when given, otherwise
-    the tighter Gaussian (smaller covariance trace). ``component_id`` overrides.
+    The cluster component is the one with the highest density at the
+    Simbad (μ, π) for XD (nearest mean for the plain mixture) when given,
+    otherwise the tighter Gaussian (smaller covariance trace).
+    ``component_id`` overrides.
     If both Gaussians look like field (similar spread) and no Simbad prior,
     fall back to HDBSCAN when ``method='gmm'``.
     """
@@ -386,7 +466,7 @@ def membership_from_astrometry(
     elif method_key == "xd":
         raise ValueError("method='xd' needs the per-star covariance (cov=...)")
     if scaled_cov is not None:
-        gmm = _XDModel(2, int(random_state)).fit(scaled, scaled_cov)
+        gmm = _fit_xd(scaled, scaled_cov, int(random_state))
     else:
         from sklearn.mixture import GaussianMixture
 

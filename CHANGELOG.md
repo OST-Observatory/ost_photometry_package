@@ -79,13 +79,17 @@ section of this file.
   colour–magnitude covariance come from the joint calibration solution, and
   errors are loaded for the fit whether or not error bars are drawn
   (`do_error_bars` only draws).
-- **Gaia cluster membership by extreme deconvolution** (new dependency
-  `astroML`): with the Gaia errors and correlations (`pmRApmDEcor`,
-  `PlxpmRAcor`, `PlxpmDEcor`, now queried) the mixture is fitted with
-  `XDGMM` and each star's P_mem uses its own covariance; option value `xd`
-  requires the errors. In simulations the plain GMM either absorbed half of
-  the field or lost the faint members; XD keeps 91–94 % of them at 3 %
-  contamination.
+- **Gaia cluster membership by extreme deconvolution:** with the Gaia
+  errors and correlations (`pmRApmDEcor`, `PlxpmRAcor`, `PlxpmDEcor`, now
+  queried) the mixture is fitted by XD (Bovy et al. 2011, own EM in log
+  space; astroML's `XDGMM` produced NaN on wide fields when stars far from
+  every component underflowed all responsibilities) and each star's P_mem
+  uses its own covariance. 2–5 components are chosen by BIC (two were not
+  enough for a wide field: the field took both and up to 28 000 of 34 000
+  stars came out as members); the cluster is the component with the
+  highest density at the Simbad (μ, ϖ). Option value `xd` requires the
+  errors. In simulations the plain GMM either absorbed half of the field or
+  lost the faint members; XD keeps 91–94 % of them at 3 % contamination.
 - **Light-curve errors with a stated meaning:** `mag_err` is what changes
   from point to point (`err_cal_rand` ⊕ the new `err_cal_epoch`), the new
   `mag_err_sys` the offset common to all points sharing the calibrators

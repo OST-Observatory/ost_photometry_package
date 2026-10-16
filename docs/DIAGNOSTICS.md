@@ -358,10 +358,12 @@ distance \(d=1/\varpi\). Figures land under `diagnostics/cluster/`.
 
 The pipeline mixture model (or HDBSCAN fallback) writes `is_cluster_member`
 and `cluster_p_mem` on the full post-processed ECSV. With the Gaia errors and
-correlations (always queried) it is fitted by extreme deconvolution
-(astroML `XDGMM`): the components are the intrinsic distributions and each
+correlations (always queried) it is fitted by extreme deconvolution (Bovy
+et al. 2011, EM in log space; 2–5 components chosen by BIC, so a wide field
+can take several): the components are the intrinsic distributions and each
 star's \(P_\mathrm{mem}\) uses its own covariance, so faint members with
-large errors are not pushed into the field component
+large errors are not pushed into the field component. The cluster is the
+component with the highest density at the Simbad (μ, ϖ)
 (`cluster_membership_method`: `gmm` = XD when errors exist, `xd` requires
 them, `hdbscan`). The **student** extract
 script uses a **parallax window** on Gaia \(G\) vs \(\varpi\) (optional μ box

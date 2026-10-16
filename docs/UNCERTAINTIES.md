@@ -409,7 +409,7 @@ Extreme deconvolution in (μ_α*, μ_δ, ϖ) with each star's Gaia covariance
 | Isochrone age 1σ coverage, simulated clusters (distance / reddening profiled, true age on and between grid ages) | `tests/test_isochrone_fit.py` | 0.69–0.72; χ²_ν 0.94 |
 | NGC 7789 isochrone fit (PARSEC Z = 0.0152, priors E(B−V) = 0.22 ± 0.03, d = 1.795 ± 0.1 kpc, no membership) | N2, B/V | 2.08 (+0.18/−0.15) Gyr for V 1.0–4.5, 2.44 ± 0.2 Gyr for V 0.5–4.5; χ²_ν 11–14 (field stars, giants in the bright bins); offsets within ~1σ of the priors |
 | Gaia membership, simulated cluster with faint members (errors 12× the intrinsic width) | `tests/test_membership_xd.py` | XD: recall 0.91–0.94, contamination 3 %, Σ P_mem within 2 % of the truth; plain GMM: 53 % contamination or recall 0.01–0.03 |
-| Gaia membership NGC 7789 (12′, G < 18) | Gaia DR3 | XD vs GMM: 1890 vs 1875 members, +4 % at G 17–18 |
+| Gaia membership NGC 7789 (G < 20; 12′ / 36′ cone, the latter the full image width) | Gaia DR3 | XD: 2714 / 4955 members, cluster component μ = (−0.92, −1.95) mas/yr, ϖ = 0.48 mas, intrinsic σ_μ 0.12 mas/yr (Simbad −0.92, −1.93, 0.45); plain 2-component GMM: 4618 / 28 487 (field mistaken for the cluster) |
 | Fitted catalog-error scale s | same | B 0.29 / 0.87, V 0.54 / 1.0 (σ_int 0.022 in N2 V) |
 | Epoch scatter of `mag_cal` for stars with ≥ 20 epochs / (`err_cal_rand` ⊕ photometric ZP error), four error bins | HAT-P-20, B and V | 0.98–1.09; brightest bin (err ≈ 0.012) 1.18: a ~0.007 mag term beyond the model for bright stars (not in the differential light curves, see above) |
 

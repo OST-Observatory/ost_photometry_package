@@ -5,8 +5,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-pytest.importorskip("astroML")
-
 from ost_photometry.analyze.utils.cluster_membership import (  # noqa: E402
     membership_from_astrometry,
 )
