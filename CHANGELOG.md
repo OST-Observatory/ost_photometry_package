@@ -11,6 +11,8 @@ section of this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-16
+
 ### Added
 
 - **Differential light curves** (`analyze.post_processing.differential_light_curve`,
@@ -249,6 +251,40 @@ section of this file.
   about unknown option names (both were silently accepted).
 - Track flux arrays: an id that occurs twice in one image is NaN for that
   image with a warning (the last row won silently).
+
+### Removed
+
+Old behaviour that gave wrong values was removed rather than kept as an
+option. Scripts that use these names need the replacement given here.
+
+- `PipelineConfig.strict_cleaning_epsf_results`: rows with non-positive
+  flux stay in the tables, flagged `nonpositive_flux_<f>`.
+- `uncertainty_mode="both"` (counted the instrumental error twice) and
+  `"flux_monte_carlo"` (dropped the zero-point and colour-term errors):
+  use `fit_errors` (default) or `monte_carlo`; the old names raise a
+  `ValueError` that says so. `propagate_fit_errors` and
+  `propagate_flux_monte_carlo` are gone (`monte_carlo_errors`).
+- `apply_derive_transform_epochs` / `apply_derive_transform_to_table`: the
+  derive-transform fit now feeds the standard joint apply
+  (`CalibrationEngine.apply`).
+- `inverse_variance_min_error` of the per-night combination: replaced by
+  the GLS combination of `analyze.calibration.statistics`;
+  `set_fixed_coefficients` is `set_fixed_color_terms`.
+- `calibration.quasi_flux_calibration_*`, `calibration.flux_normalization_*`
+  and `prepare_time_series_data` (Monte Carlo flux fallback): use
+  `post_processing.differential_light_curve.relative_flux_light_curves`;
+  `build_light_curves_table_from_flux` takes `(flux, flux_err, …)` arrays
+  instead of a distribution.
+- `cmd_prepare.fiducial_fit_sigma` / `weighted_chi_square`: the isochrone
+  fit lives in `analyze.isochrone_fit`.
+- `johnson_u_from_sloan_ug_and_b` (counted g twice): Lupton U is propagated
+  from (u, g, r).
+- `compute_aperture_photometry_uncertainties` / `sky_subtraction_error` and
+  the unclipped APER sky: the aperture photometry uses the clipped-median
+  sky with the empty-sky noise factor.
+- The silent readout-mode default "Extend Fullwell 2CMS" for QHY frames
+  without the driver mode (see Changed).
+- The `astroML` dependency (only briefly used for the Gaia membership).
 
 ### Fixed
 
@@ -585,7 +621,8 @@ paths removed.
 Last version on `main` before this changelog. It was not tagged; detailed notes
 start with later versions. Git history before that date remains the record.
 
-[Unreleased]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/2648b88...v0.5.0
 [0.4.4]: https://github.com/OST-Observatory/ost_photometry_package/commit/2648b88
