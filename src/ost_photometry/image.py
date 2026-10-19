@@ -19,6 +19,38 @@ from .camera_specs import normalize_instrument_name
 from .fits_headers import ensure_mjd_obs_in_header
 
 
+def header_jd_start_mid(header) -> tuple[float, float]:
+    """``(start, mid)`` of the exposure as JD (UTC) from a FITS header.
+
+    The start is ``JD`` or ``DATE-OBS``. The mid-time is ``MJD_MID`` /
+    ``DATE-MID`` when present (stacks: weighted mean of the frames'
+    mid-times), else the start plus half of ``EXPTIME``. Raises
+    ``ValueError`` without any time keyword.
+    """
+    jd = header.get("JD", None)
+    if jd is None:
+        obs_time = header.get("DATE-OBS", None)
+        if not obs_time:
+            raise ValueError(
+                f"{style.Bcolors.FAIL} \tERROR: No information about the "
+                "observation time was found in the header"
+                f"{style.Bcolors.ENDC}"
+            )
+        jd = Time(obs_time, format="fits").jd
+    start = float(jd)
+    if header.get("MJD_MID") is not None:
+        return start, float(header["MJD_MID"]) + 2400000.5
+    if header.get("DATE-MID"):
+        return start, float(Time(header["DATE-MID"], format="fits").jd)
+    try:
+        exposure = float(header.get("EXPTIME", 0.0))
+    except (TypeError, ValueError):
+        exposure = 0.0
+    if not np.isfinite(exposure) or exposure < 0:
+        exposure = 0.0
+    return start, start + exposure / 2.0 / 86400.0
+
+
 def header_airmass(header) -> float | None:
     """``AIRMASS`` from the header, or ``None`` if missing or not >= 1."""
     try:
@@ -87,7 +119,10 @@ class Image:
         self.pixel_scale: float | None = None
         self.fov_pixel_region: RectanglePixelRegion | None = None
         self.air_mass: float | None = None
+        #: Mid-exposure JD (UTC); stacks: the weighted mean mid-time ``MJD_MID``
         self.jd: float | None = None
+        #: Start of the exposure (header ``JD`` / ``DATE-OBS``)
+        self.jd_start: float | None = None
         self.fwhm: float = 4.0
 
         self._header_cache: fits.Header | None = None
@@ -226,19 +261,8 @@ class Image:
         self.pixel_scale = pixel_scale
         self.fov_pixel_region = pixel_region
 
-        #   Add JD (observation time) and air mass from Header to image class
-        jd = header.get("JD", None)
-        if jd is None:
-            obs_time = header.get("DATE-OBS", None)
-            if not obs_time:
-                raise ValueError(
-                    f"{style.Bcolors.FAIL} \tERROR: No information about the "
-                    "observation time was found in the header"
-                    f"{style.Bcolors.ENDC}"
-                )
-            jd = Time(obs_time, format="fits").jd
-
-        self.jd = jd
+        #   Observation time: mid-exposure (``jd``) and start (``jd_start``)
+        self.jd_start, self.jd = header_jd_start_mid(header)
         #   ``None`` when the header has no usable AIRMASS; the analysis
         #   computes it from pointing, time and site (never a silent 1.0)
         self.air_mass = header_airmass(header)

@@ -308,19 +308,28 @@ def attach_observation_jd_column(
     ref_filter: str,
 ) -> Table:
     """
-    Add ``observation_jd`` (Julian Date) per row from ``epoch_meta`` and ``epoch_id``.
+    Add the observation times per row from ``epoch_meta`` and ``epoch_id``.
 
-    Enables standalone light-curve plotting from ECSV without a full
+    ``observation_jd_<f>`` holds the mid-exposure JD of filter ``f`` (the
+    frames of one epoch are taken at different times); ``observation_jd``
+    is the epoch time of ``ref_filter``. Enables standalone light-curve
+    plotting from ECSV without a full
     :class:`~ost_photometry.analyze.analyze.Observation`.
     """
     if len(tbl) == 0 or "epoch_id" not in tbl.colnames:
         return tbl
     out = tbl.copy()
-    if "observation_jd" in out.colnames:
-        return out
     eids = np.asarray(out["epoch_id"]).astype(str)
-    jds = [_epoch_filter_jd(epoch_meta, eid, ref_filter) for eid in eids]
-    out["observation_jd"] = np.asarray(jds, dtype=float)
+    filters = set()
+    for meta in (epoch_meta or {}).values():
+        filters.update((meta.get("jd_by_filter") or meta.get("filter_jds") or {}).keys())
+    for filter_ in sorted(filters):
+        col = f"observation_jd_{filter_}"
+        if col not in out.colnames:
+            out[col] = np.asarray([_epoch_filter_jd(epoch_meta, eid, filter_) for eid in eids], dtype=float)
+    if "observation_jd" not in out.colnames:
+        jds = [_epoch_filter_jd(epoch_meta, eid, ref_filter) for eid in eids]
+        out["observation_jd"] = np.asarray(jds, dtype=float)
     return out
 
 
@@ -368,7 +377,24 @@ def _row_jds_from_table(
     epoch_meta: dict | None,
     filter_: str,
 ) -> np.ndarray:
-    """Per-row JDs: prefer ``observation_jd`` / ``jd`` columns, else ``epoch_meta``."""
+    """Per-row JDs of ``filter_``.
+
+    Order: the filter's own column ``observation_jd_<f>``, then
+    ``jd_by_filter`` of ``epoch_meta``, then the epoch columns
+    ``observation_jd`` / ``jd`` / ``time_jd`` (the reference filter's time:
+    a non-reference filter is off by the time between its frame and the
+    reference frame of the epoch).
+    """
+    own = f"observation_jd_{filter_}"
+    if own in sub.colnames:
+        arr = np.asarray(sub[own], dtype=float)
+        if np.any(np.isfinite(arr)):
+            return arr
+    if epoch_meta and "epoch_id" in sub.colnames:
+        arr = np.array([_epoch_filter_jd(epoch_meta, eid, filter_)
+                        for eid in np.asarray(sub["epoch_id"]).astype(str)], dtype=float)
+        if np.all(np.isfinite(arr)):
+            return arr
     for col in ("observation_jd", "jd", "time_jd"):
         if col in sub.colnames:
             arr = np.asarray(sub[col], dtype=float)

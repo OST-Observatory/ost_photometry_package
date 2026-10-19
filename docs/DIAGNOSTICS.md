@@ -432,7 +432,7 @@ outliers (open grey), and stay out of the y-limits. Rows are never deleted.
 | `calibrator_variability_<filter>` | Catalog calibrators only (OOI excluded): excess RMS vs magnitude, residual LCs (top-K in colour). |
 | `lightcurve_overview_<filter>` | OOI + N random field stars (only if `plot_light_curve_all_objects`). |
 | `lightcurve_nights_jd_<name>_<filter>` | Same source, colour/marker per local night (C7 `4_compare_nights.py`). |
-| `lightcurve_nights_folded_<name>_<filter>` | Folded overlay of those nights (needs period + `transit_time`). |
+| `lightcurve_nights_folded_<name>_<filter>` | Folded overlay of those nights (needs period + `transit_time` as BJD_TDB). |
 | `lightcurve_nights_panels_<name>_<filter>` | One JD panel per night, shared y-limits. |
 
 **Excess RMS** is \(\sqrt{\max(0,\mathrm{RMS}^2-\mathrm{median}(\sigma_m)^2)}\)

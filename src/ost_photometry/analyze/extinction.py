@@ -550,15 +550,9 @@ def airmass_for_image(image, location: EarthLocation | None) -> float | None:
     if location is None:
         return None
     header = image.get_header()
-    jd = getattr(image, "jd", None)
+    jd = getattr(image, "jd", None)  # mid-exposure (Image.jd)
     if jd is None:
         return None
-    try:
-        exposure = float(header.get("EXPTIME", 0.0))
-    except (TypeError, ValueError):
-        exposure = 0.0
-    if not np.isfinite(exposure) or exposure < 0:
-        exposure = 0.0
     coords = None
     wcs_obj = getattr(image, "wcs", None)
     if wcs_obj is not None and getattr(wcs_obj, "has_celestial", False):
@@ -573,7 +567,7 @@ def airmass_for_image(image, location: EarthLocation | None) -> float | None:
         coords = header_pointing(header)
     if coords is None:
         return None
-    obstime = Time(float(jd) + exposure / 2.0 / 86400.0, format="jd", scale="utc")
+    obstime = Time(float(jd), format="jd", scale="utc")
     value = float(calculate_airmass(coords, obstime, location, method="pickering"))
     return value if np.isfinite(value) else None
 

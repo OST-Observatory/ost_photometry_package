@@ -503,7 +503,7 @@ Replot one night with `3_plot_lightcurve.py`; overlay nights with
 | `light_curve_calibrator_qc_n` | 3 | How many calibrators (largest excess RMS, excluding OOI) appear on the QC panel |
 | `light_curve_quantity` | `magnitude` | Use `mag_cal_*` when present; otherwise the normalized-flux fallback (Clear / no catalog ZP). `flux` forces that fallback even when `mag_cal_*` exist. |
 | `light_curve_color` | None | e.g. `B-V` colour rows and colour light curve |
-| `light_curve_time_scale` | `bjd_tdb` | Barycentric JD when RA/Dec + site exist; else `jd` |
+| `light_curve_time_scale` | `bjd_tdb` | Barycentric JD when RA/Dec + site exist; else `jd`. All times are mid-exposure (stacks: `MJD_MID` / `DATE-MID`), per filter (`observation_jd_<f>`). Folding uses `bjd_tdb` only (rows without it are left out) and reads `transit_time` as BJD_TDB: a full JD (`2459110.54167`) or an ISO date in TDB |
 | `light_curve_outlier_sigma` | 5 | Per-source MAD clip. Flags **short** faint runs (1–2 epochs) and any bright-side spike; a coherent eclipse dip (≥ 3 faint epochs) is kept. `None` disables. Flags stay in the table |
 | `light_curve_binning_factor` | None | Folded-curve phase bin width (0–1) or number of bins (≥ 1) |
 | `light_curve_differential` | True | Differential product (`dflux` / `dmag`: OOI / quiet comparison ensemble, instrumental magnitudes only) and `flag_epoch` |

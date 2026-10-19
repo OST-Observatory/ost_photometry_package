@@ -71,7 +71,7 @@ def _calibration_summary_jd_by_epoch_id(
 
 
 def _attach_jd_from_epoch_meta(tbl, context: AnalysisContext, config: PipelineConfig, filter_list: list):
-    """Add ``observation_jd`` for standalone ECSV output."""
+    """Add ``observation_jd`` and ``observation_jd_<f>`` for standalone ECSV output."""
     if len(tbl) == 0 or not filter_list or not context.calibration_epoch_meta:
         return tbl
     ref = config.reference_filter or filter_list[0]

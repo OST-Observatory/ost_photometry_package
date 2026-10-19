@@ -10,7 +10,7 @@ from astropy.io import fits
 from astropy.time import Time
 
 from ost_photometry.analyze.extinction import airmass_for_image, fill_missing_airmass
-from ost_photometry.image import header_airmass, header_pointing
+from ost_photometry.image import header_airmass, header_jd_start_mid, header_pointing
 
 OST = EarthLocation(lat=52.409184 * u.deg, lon=12.973185 * u.deg, height=39 * u.m)
 
@@ -51,8 +51,10 @@ def _expected(coord, jd_mid):
 def test_airmass_computed_at_mid_exposure_from_pointing():
     coord = SkyCoord(111.9165 * u.deg, 24.3365 * u.deg)
     jd = Time("2022-01-06T22:59:13", scale="utc").jd
-    header = fits.Header({"RA": 111.9165, "DEC": 24.3365, "EXPTIME": 600.0})
-    image = _Image(header, jd)
+    header = fits.Header({"RA": 111.9165, "DEC": 24.3365, "EXPTIME": 600.0, "JD": jd})
+    # Image.jd is the mid-exposure time; the airmass uses it as it is
+    _start, mid = header_jd_start_mid(header)
+    image = _Image(header, mid)
     value = airmass_for_image(image, OST)
     assert value == pytest.approx(_expected(coord, jd + 300 / 86400), rel=1e-6)
     # Without a site or a pointing nothing can be computed.
@@ -71,3 +73,16 @@ def test_fill_missing_airmass_keeps_header_values():
     assert have.air_mass == 1.5
     assert 1.0 < need.air_mass < 3.0
     assert lost.air_mass is None
+
+
+def test_header_jd_start_mid():
+    jd = 2460000.25
+    start, mid = header_jd_start_mid(fits.Header({"JD": jd, "EXPTIME": 120.0}))
+    assert start == jd and mid == pytest.approx(jd + 60 / 86400, abs=1e-9)
+    # stacks: the weighted mean mid-time wins over JD + EXPTIME/2
+    stack = fits.Header({"JD": jd, "EXPTIME": 1200.0, "MJD_MID": 60000.0})
+    assert header_jd_start_mid(stack)[1] == pytest.approx(2460000.5)
+    start, mid = header_jd_start_mid(fits.Header({"DATE-OBS": "2023-02-24T18:00:00", "EXPTIME": 10.0}))
+    assert mid - start == pytest.approx(5 / 86400, abs=1e-9)
+    with pytest.raises(ValueError):
+        header_jd_start_mid(fits.Header({"EXPTIME": 10.0}))

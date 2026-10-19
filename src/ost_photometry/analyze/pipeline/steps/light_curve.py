@@ -117,6 +117,44 @@ def _parse_period(raw) -> float | None:
     return val if val > 0.0 else None
 
 
+def _series_id_coordinates(image_series, source_ids) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """RA/Dec (deg) per source id, reference frame first, then the others.
+
+    Only used for the barycentric correction, where an arcminute of position
+    error is ~0.2 s, so the series WCS is good enough for every frame.
+    """
+    ids = [int(i) for i in source_ids]
+    ra = np.full(len(ids), np.nan)
+    dec = np.full(len(ids), np.nan)
+    index = {sid: k for k, sid in enumerate(ids)}
+    images = list(getattr(image_series, "image_list", []))
+    ref = int(getattr(image_series, "reference_image_index", 0) or 0)
+    if 0 < ref < len(images):
+        images.insert(0, images.pop(ref))
+    for img in images:
+        wcs = getattr(img, "wcs", None) or getattr(image_series, "wcs", None)
+        phot = getattr(img, "photometry", None)
+        if wcs is None or not getattr(wcs, "has_celestial", False) or phot is None or "id" not in phot.colnames:
+            continue
+        xcol = "x_fit" if "x_fit" in phot.colnames else "x"
+        ycol = "y_fit" if "y_fit" in phot.colnames else "y"
+        if xcol not in phot.colnames or ycol not in phot.colnames:
+            continue
+        todo = [(index[int(sid)], float(x), float(y)) for sid, x, y in zip(phot["id"], phot[xcol], phot[ycol], strict=True)
+                if int(sid) in index and np.isnan(ra[index[int(sid)]]) and np.isfinite(x) and np.isfinite(y)]
+        if not todo:
+            continue
+        k, xs, ys = (np.array(v) for v in zip(*todo, strict=True))
+        sky = wcs.pixel_to_world(xs, ys)
+        ra[k.astype(int)] = sky.ra.deg
+        dec[k.astype(int)] = sky.dec.deg
+        if not np.any(np.isnan(ra)):
+            break
+    if np.all(np.isnan(ra)):
+        return None, None
+    return ra, dec
+
+
 class LightCurveStep(base.PipelineStep):
     """
     After calibration, write ``tables/light_curves.ecsv`` and plot views.
@@ -387,6 +425,15 @@ class LightCurveStep(base.PipelineStep):
                     )
                 ra = np.array([ra_map.get(int(i), np.nan) for i in source_ids])
                 dec = np.array([dec_map.get(int(i), np.nan) for i in source_ids])
+        if ra is None or np.any(~np.isfinite(ra)):
+            # no calibrated table (Clear only) or ids missing in it: positions
+            # from the frames' WCS, so that the barycentric times exist
+            ra_w, dec_w = _series_id_coordinates(image_series, source_ids)
+            if ra is None:
+                ra, dec = ra_w, dec_w
+            elif ra_w is not None:
+                miss = ~np.isfinite(ra)
+                ra[miss], dec[miss] = ra_w[miss], dec_w[miss]
         return build_light_curves_table_from_flux(
             rel,
             rel_err,

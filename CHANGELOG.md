@@ -11,6 +11,30 @@ section of this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Observation times are mid-exposure** (`Image.jd`): `MJD_MID` / `DATE-MID`
+  (stacks) or `JD` / `DATE-OBS` + EXPTIME/2; the start stays as
+  `Image.jd_start`. Light curves, BJD_TDB, epoch pairing and the airmass all
+  use the mid-time (the airmass already did, it now reads it from `jd`).
+  Before, light-curve times were the exposure start, a shift of half the
+  exposure time (and of up to hours for stacks).
+- **Times per filter:** `calibrated_magnitudes_*.ecsv` gains
+  `observation_jd_<f>` per filter; a light curve of filter `f` uses the time
+  of its own frame, not the epoch's reference-filter frame. Older tables
+  without these columns take the time from `epoch_meta.json` when it has
+  `jd_by_filter`.
+- **Folding:** `transit_time` is read as **BJD_TDB** (full JD such as
+  `2459110.54167`, or an ISO date in TDB) instead of a UTC calendar date.
+  Folding uses `bjd_tdb` only; rows without it are left out instead of being
+  mixed with geocentric JD (up to 8.3 min apart). Reduced dates
+  (`BJD − 2450000`) raise an error.
+
+### Fixed
+
+- Flux-fallback light curves (Clear, no catalog zero point) had no RA/Dec
+  and hence no `bjd_tdb`; positions now come from the frames' WCS.
+
 ## [0.7.0] - 2026-10-16
 
 ### Added

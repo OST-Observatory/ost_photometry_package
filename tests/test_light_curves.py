@@ -568,3 +568,44 @@ def test_outlier_clip_uses_errors_and_ignores_zero_mad():
         q = np.zeros(20)
         q[3] = 0.001
         assert not mod._clip_candidates(q, 5.0).any()
+
+
+def test_rows_get_their_own_filters_time():
+    with isolated_sys_modules():
+        lc = _load_light_curve()
+        meta = {
+            "e1": {"jd_by_filter": {"B": 2459000.10, "V": 2459000.12}},
+            "e2": {"jd_by_filter": {"B": 2459000.20, "V": 2459000.23}},
+        }
+        tbl = Table({"id": [1, 1], "epoch_id": ["e1", "e2"]})
+        out = lc.attach_observation_jd_column(tbl, meta, "B")
+        assert np.allclose(out["observation_jd"], [2459000.10, 2459000.20])
+        assert np.allclose(lc._row_jds_from_table(out, meta, "V"), [2459000.12, 2459000.23])
+        assert np.allclose(lc._row_jds_from_table(out, meta, "B"), [2459000.10, 2459000.20])
+        # old table: only the reference filter's column, epoch_meta still knows V
+        old = Table({"id": [1, 1], "epoch_id": ["e1", "e2"],
+                     "observation_jd": [2459000.10, 2459000.20]})
+        assert np.allclose(lc._row_jds_from_table(old, meta, "V"), [2459000.12, 2459000.23])
+
+
+def test_transit_time_is_read_as_bjd_tdb():
+    with isolated_sys_modules():
+        plots = _load_plots()
+        assert plots.transit_time_bjd_tdb(2459111.0417) == pytest.approx(2459111.0417)
+        assert plots.transit_time_bjd_tdb("2459111.0417") == pytest.approx(2459111.0417)
+        iso = plots.transit_time_bjd_tdb("2020-09-18T01:00:00")
+        assert iso == pytest.approx(Time("2020-09-18T01:00:00", scale="tdb").jd, abs=1e-9)
+        with pytest.raises(ValueError, match="full BJD_TDB"):
+            plots.transit_time_bjd_tdb(9111.0417)
+
+
+def test_fold_never_mixes_bjd_and_jd():
+    with isolated_sys_modules():
+        plots = _load_plots()
+        tbl = Table({"jd": [2459000.0, 2459000.1, 2459000.2],
+                     "bjd_tdb": [2459000.004, np.nan, 2459000.204]})
+        t = plots._fold_times(tbl, "bjd_tdb")
+        assert np.isnan(t[1])
+        assert t[0] == pytest.approx(2459000.004)
+        no_bjd = Table({"jd": [2459000.0, 2459000.1]})
+        assert np.allclose(plots._fold_times(no_bjd, "bjd_tdb"), [2459000.0, 2459000.1])

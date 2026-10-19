@@ -10,6 +10,7 @@ from astropy.table import Table
 from astropy.time import Time
 from astropy.timeseries import TimeSeries
 
+from ... import terminal_output
 from ...output_layout import diagnostics_dir, results_dir
 from ..post_processing.light_curve import night_id_from_jd, position_scatter_arcsec
 from ..post_processing.magnitude_systems import magnitude_system_axis_suffix
@@ -48,6 +49,60 @@ def fold_phase(time_jd: np.ndarray, t0_jd: float, period: float) -> np.ndarray:
     if not np.isfinite(p) or p <= 0.0:
         return np.full(t.shape, np.nan)
     return np.mod((t - float(t0_jd)) / p, 1.0)
+
+
+def transit_time_bjd_tdb(transit_time) -> float:
+    """Reference minimum/transit time as BJD_TDB (days).
+
+    Accepts a full Julian date (number or numeric string, e.g. an ephemeris
+    ``T0`` in BJD_TDB) or an ISO date, which is read as a barycentric TDB
+    calendar date. Reduced dates (``BJD - 2450000``, MJD) are ambiguous and
+    rejected.
+    """
+    try:
+        value = float(transit_time)
+    except (TypeError, ValueError):
+        return float(Time(str(transit_time).strip(), format="isot", scale="tdb").jd)
+    if not np.isfinite(value) or value < 2_400_000.0:
+        raise ValueError(
+            f"transit_time {transit_time!r}: give the full BJD_TDB "
+            "(e.g. 2459111.0417) or an ISO date (TDB)"
+        )
+    return value
+
+
+def _fold_times(tbl: Table, time_scale: str) -> np.ndarray:
+    """Times to fold on: ``bjd_tdb`` (rows without one are left out), or JD.
+
+    Barycentric and geocentric times differ by up to 8.3 min, so they are
+    never mixed; only a table without any BJD falls back to JD (with a
+    warning, the phase is then off by the light-time effect).
+    """
+    jd = np.asarray(tbl["jd"], dtype=float)
+    if time_scale != "bjd_tdb":
+        return jd
+    bjd = (
+        np.asarray(tbl["bjd_tdb"], dtype=float)
+        if "bjd_tdb" in tbl.colnames
+        else np.full(len(tbl), np.nan)
+    )
+    if np.any(np.isfinite(bjd)):
+        n_miss = int(np.count_nonzero(~np.isfinite(bjd) & np.isfinite(jd)))
+        if n_miss:
+            terminal_output.print_to_terminal(
+                f"{n_miss} point(s) without BJD_TDB (no coordinates) are left "
+                "out of the folded light curve.",
+                indent=2,
+                style_name="WARNING",
+            )
+        return bjd
+    terminal_output.print_to_terminal(
+        "No BJD_TDB in the light curve: folding on JD (UTC, geocentric); "
+        "the phase is off by up to 8 min against a BJD_TDB ephemeris.",
+        indent=2,
+        style_name="WARNING",
+    )
+    return jd
 
 
 def y_limits_for_quantity(
@@ -421,19 +476,8 @@ def light_curve_nights_fold_from_table(
 ) -> Path:
     """Folded light curve with one colour/marker per local night."""
     y, e, qty = _series_y(tbl)
-    jd = np.asarray(tbl["jd"], dtype=float)
-    bjd = (
-        np.asarray(tbl["bjd_tdb"], dtype=float)
-        if "bjd_tdb" in tbl.colnames
-        else np.full(len(tbl), np.nan)
-    )
-    if time_scale == "bjd_tdb" and np.any(np.isfinite(bjd)):
-        t_use = np.where(np.isfinite(bjd), bjd, jd)
-    else:
-        t_use = jd
-    t0 = Time(transit_time, format="isot", scale="utc")
-    t0_jd = float(t0.tdb.jd) if time_scale == "bjd_tdb" else float(t0.jd)
-    phase = fold_phase(t_use, t0_jd, period)
+    t_use = _fold_times(tbl, time_scale)
+    phase = fold_phase(t_use, transit_time_bjd_tdb(transit_time), period)
     flag = _point_flags(tbl)
     nights = unique_night_ids(tbl)
     labels = _night_labels_from_table(tbl, nights) if nights.size else {}
@@ -682,19 +726,8 @@ def light_curve_fold_from_table(
 ) -> Path:
     """Folded light curve vs phase (0–1, optionally wrapped to 0–2)."""
     y, e, qty = _series_y(tbl, product)
-    jd = np.asarray(tbl["jd"], dtype=float)
-    bjd = (
-        np.asarray(tbl["bjd_tdb"], dtype=float)
-        if "bjd_tdb" in tbl.colnames
-        else np.full(len(tbl), np.nan)
-    )
-    if time_scale == "bjd_tdb" and np.any(np.isfinite(bjd)):
-        t_use = np.where(np.isfinite(bjd), bjd, jd)
-    else:
-        t_use = jd
-    t0 = Time(transit_time, format="isot", scale="utc")
-    t0_jd = float(t0.tdb.jd) if time_scale == "bjd_tdb" else float(t0.jd)
-    phase = fold_phase(t_use, t0_jd, period)
+    t_use = _fold_times(tbl, time_scale)
+    phase = fold_phase(t_use, transit_time_bjd_tdb(transit_time), period)
     flag = _point_flags(tbl)
     cycles = 2 if int(phase_cycles) >= 2 else 1
 
