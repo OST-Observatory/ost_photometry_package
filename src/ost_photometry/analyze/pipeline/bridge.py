@@ -43,6 +43,7 @@ _QC_COLUMNS = (
 #: ``analyze.photometry_quality``).
 PER_FILTER_QC_COLUMNS = (
     "saturated",
+    "no_flat",
     "nonpositive_flux",
     "aperture_masked_fraction",
     "flux_err_phot",
@@ -52,6 +53,9 @@ PER_FILTER_QC_COLUMNS = (
     "bkg_noise_factor",
     "aperture_correction",
     "aperture_correction_err",
+    "neighbour_flux_fraction",
+    "blended",
+    "centroid_shift",
 )
 
 

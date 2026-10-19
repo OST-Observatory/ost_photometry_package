@@ -19,6 +19,34 @@ section of this file.
   use the mid-time (the airmass already did, it now reads it from `jd`).
   Before, light-curve times were the exposure start, a shift of half the
   exposure time (and of up to hours for stacks).
+- **APER radii in FWHM by default:** `radii_unit` is `fwhm` (default,
+  2.0 / 2.8 / 4.0 × the image FWHM), `arcsec` (default 5 / 7 / 10) or
+  `pixel`; radii left at `None` take the unit's defaults. Every frame and
+  stack measures the same fraction of its stars. The limiting magnitude uses
+  the measurement aperture unless `aperture_radius` is set.
+- **PSF photometry, crowded stars:** the local sky is the clipped median of
+  the annulus outside all detected stars, measured again on the residual
+  image after a first fit (wings of the star and of neighbours removed);
+  stars are grouped when a neighbour's wings reach the fit box (≥ fit
+  half-width + 2.5 FWHM); fit weights from the background noise only, the
+  star's photon noise and the sky error added to `flux_err`; positions
+  bounded to 1 FWHM (`centroid_shift` column); saturated stars left out of
+  the ePSF. Simulated stars with a 10× brighter neighbour at 2.2–4.5 FWHM
+  were 270 mmag too bright, now within 2 mmag.
+- **Aperture correction to the total flux** (growth curve to 6 FWHM, Moffat
+  extrapolation, `aperture_correction_total`); before only to the annulus
+  inner radius, which left 2–4 % seeing-dependent light out.
+- **Neighbour light:** `neighbour_flux_fraction_<f>` and `blended_<f>`
+  (> 1 %) in the epoch tables.
+- **`aperture_masked_fraction`** is the masked fraction of the star's light
+  (Moffat-weighted), not of the aperture area.
+- **Intra-filter matching** uses pixel coordinates only when every frame
+  lies on the reference grid (before: the median frame), else sky
+  coordinates.
+- **Pixel scale from the WCS:** `Image.pixel_scale` comes from the header
+  WCS and is updated when the WCS is solved, not from `XPIXSZ` /
+  `FOCALLEN` (a frame resampled onto another binning kept the old pixel
+  size, which put arcsec radii off by the binning factor).
 - **Times per filter:** `calibrated_magnitudes_*.ecsv` gains
   `observation_jd_<f>` per filter; a light curve of filter `f` uses the time
   of its own frame, not the epoch's reference-filter frame. Older tables
@@ -30,8 +58,39 @@ section of this file.
   mixed with geocentric JD (up to 8.3 min apart). Reduced dates
   (`BJD − 2450000`) raise an error.
 
+- **Stacks: flux scaling and clipping against the frames' own errors.**
+  Frames are scaled to a common transmission measured from their stars
+  (`reduce.quality.frame_flux_scales`), then matched in sky level, then
+  clipped at 5 × `sqrt(σ_i² + (snoise·P)²)` (own σ, `P` the local star peak,
+  `snoise` from the FWHM spread) instead of 5 MAD-σ of the frames, and only
+  where at least 3 values remain. Header: `STKCLIP`, `SNOISE`, `TRANSMIN`,
+  `FLXSCMIN` / `FLXSCMAX`, `NSCLSTAR`. The old clipping made bright stars
+  0.3–0.5 % too bright in stacks of frames with different seeing.
+- **Effective stack airmass:** `AIRMASS` of a stack is the airmass of the
+  averaged flux (filter's typical extinction, `AIRMSEXK`), not the mean
+  airmass.
+- **Masked pixels inside stars** are filled from a local Moffat fit instead
+  of the 5×5 median (before resampling and in the aperture sums): a masked
+  core pixel cost up to 8 % of a star's flux at FWHM 3 px, now < 0.3 %.
+- **Hot-pixel mask** relative to the median dark rate (2 e⁻/s or 5σ above
+  it), so darks with a bias pedestal work.
+- **Frames without flat** carry `FLATCORR = none` (stacks: `none` /
+  `partial`); the photometry gets `no_flat_<f>` and a warning.
+
+### Removed
+
+- `aperture_scale_with_fwhm`, `aperture_fwhm_factor`,
+  `inner_annulus_fwhm_factor`, `outer_annulus_fwhm_factor` (error with a
+  hint): use `radii_unit='fwhm'` with the radii as FWHM multiples.
+
 ### Fixed
 
+- **astroalign registration with a scale** (other binning) did not conserve
+  flux: values are now scaled by the pixel-area ratio like σ and the noise
+  keywords. Area ratios within 1e-3 of 1 (plate-solution noise) are no
+  longer applied in the WCS reprojection either.
+- **L.A.Cosmic on undersampled frames** (FWHM < 2.5 px) removed star cores:
+  stars are excluded from the detection and `objlim` is raised to 15.
 - Flux-fallback light curves (Clear, no catalog zero point) had no RA/Dec
   and hence no `bjd_tdb`; positions now come from the frames' WCS.
 

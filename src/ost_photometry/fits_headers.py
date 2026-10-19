@@ -7,6 +7,7 @@ import warnings
 from collections.abc import Mapping, MutableMapping
 from typing import Any, Literal
 
+import numpy as np
 from astropy.io import fits
 from astropy.time import Time
 from astropy.wcs import WCS, FITSFixedWarning
@@ -202,3 +203,51 @@ def _mjd_obs_from_header(header: fits.Header) -> float | None:
 
 
 ignore_wcs_datfix_warnings()
+
+
+def celestial_pixel_scale(header: Mapping[str, object] | fits.Header) -> float | None:
+    """Pixel scale (arcsec/pixel) of the header's celestial WCS, else ``None``."""
+    if not isinstance(header, fits.Header):
+        return None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            wcs = wcs_from_header(header.copy())
+        if not wcs.has_celestial:
+            return None
+        from astropy.wcs.utils import proj_plane_pixel_scales
+
+        value = float(np.mean(np.abs(proj_plane_pixel_scales(wcs.celestial)) * 3600.0))
+    except Exception:  # noqa: BLE001 — a malformed WCS counts as none
+        return None
+    return value if np.isfinite(value) and value > 0.0 else None
+
+
+def pixel_scale_from_header(header: Mapping[str, object] | fits.Header) -> float | None:
+    """Pixel scale in arcsec/pixel from a celestial WCS or header geometry.
+
+    Order: :func:`celestial_pixel_scale`, else
+    ``206.265 * XPIXSZ[µm] / FOCALLEN[mm]`` (``PIXSIZE1`` as fallback for the
+    pixel size). ``None`` when neither is available; no default focal length
+    is assumed so that FWHM values in arcsec are never silently wrong.
+    """
+    value = celestial_pixel_scale(header)
+    if value is not None:
+        return value
+    focal = _finite_positive(header.get("FOCALLEN"))
+    pixel = _finite_positive(header.get("XPIXSZ"))
+    if pixel is None:
+        pixel = _finite_positive(header.get("PIXSIZE1"))
+    if focal is None or pixel is None:
+        return None
+    return 206.265 * pixel / focal
+
+
+def _finite_positive(value: object) -> float | None:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(number) or number <= 0.0:
+        return None
+    return number

@@ -118,6 +118,10 @@ def load_pixel_mask_files(
         combined = mask if combined is None else (combined | mask)
     return combined
 
+#: Dark current (e-/s) above the typical pixel that makes a pixel hot.
+HOT_PIXEL_EXCESS = 2.0
+
+
 def make_hot_pixel_mask(
     dark_image: CCDData,
     gain: float | None,
@@ -160,22 +164,32 @@ def make_hot_pixel_mask(
     #   Number of pixel
     n_pixel = dark_image.shape[1] * dark_image.shape[0]
 
-    #   Calculate the hot pixel mask. Increase the threshold if the number of
-    #   hot pixels is unrealistically high
-    threshold_hot_pixel = 2
+    #   Hot pixels: dark rate more than HOT_PIXEL_EXCESS e-/s (or 5 robust σ
+    #   of the master dark, for short darks) above the typical pixel. Relative
+    #   to the median, not to 0: a dark that still contains the bias pedestal
+    #   (CMOS offset) has every pixel above any fixed rate. The threshold is
+    #   raised while more than 3 % of the pixels would be masked.
+    rate = np.asarray(dark_image.data, dtype=float)
+    sample = rate[::4, ::4]
+    sample = sample[np.isfinite(sample)]
+    median = float(np.median(sample)) if sample.size else 0.0
+    sigma = 1.4826 * float(np.median(np.abs(sample - median))) if sample.size else 0.0
+    excess = max(HOT_PIXEL_EXCESS, 5.0 * sigma)
+    step = max(1.0, sigma)
     hot_pixel_sum = 0
-    hot_pixels = np.zeros(dark_image.shape)
+    hot_pixels = np.zeros(dark_image.shape, dtype=bool)
     for _ in range(0, 100):
-        hot_pixels = dark_image.data > threshold_hot_pixel
-        hot_pixel_sum = hot_pixels.sum()
+        hot_pixels = rate > median + excess
+        hot_pixel_sum = int(hot_pixels.sum())
         #   Check if number of hot pixel is realistic
         if hot_pixel_sum / n_pixel <= 0.03:
             break
-        threshold_hot_pixel += 1
+        excess += step
+    threshold_hot_pixel = median + excess
 
     if verbose:
         sys.stdout.write(f"\r\tNumber of hot pixels: {hot_pixel_sum}\n")
-        sys.stdout.write(f"\r\tLimit (e-/s/pix) used: {threshold_hot_pixel}\n")
+        sys.stdout.write(f"\r\tLimit (e-/s/pix) used: {threshold_hot_pixel:.3f} (median {median:.3f})\n")
         sys.stdout.flush()
 
     #   Save mask with hot pixels

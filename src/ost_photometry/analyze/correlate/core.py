@@ -156,6 +156,39 @@ def _match_pair(
     return _match_two_datasets_sky(x_a, y_a, wcs_a, x_b, y_b, wcs_b, separation_limit)
 
 
+def frame_pixel_shifts_to_reference(
+    x_pixel_positions: list,
+    y_pixel_positions: list,
+    reference_dataset_id: int,
+    *,
+    max_pixels: float = 20.0,
+) -> np.ndarray | None:
+    """Median nearest-neighbour pixel offset of every other frame vs the
+    reference (``inf`` for a frame with fewer than 5 matches); ``None`` if
+    the reference has fewer than 8 stars."""
+    ref = int(reference_dataset_id)
+    if ref < 0 or ref >= len(x_pixel_positions):
+        return None
+    xr = _ravel_pixels(x_pixel_positions[ref])
+    yr = _ravel_pixels(y_pixel_positions[ref])
+    if xr.size < 8:
+        return None
+    shifts: list[float] = []
+    for i in range(len(x_pixel_positions)):
+        if i == ref:
+            continue
+        idx_r, idx_c = _match_two_datasets_pixel(
+            xr, yr, x_pixel_positions[i], y_pixel_positions[i], max_pixels
+        )
+        if idx_r.size < 5:
+            shifts.append(float("inf"))
+            continue
+        dx = _ravel_pixels(x_pixel_positions[i])[idx_c] - xr[idx_r]
+        dy = _ravel_pixels(y_pixel_positions[i])[idx_c] - yr[idx_r]
+        shifts.append(float(np.median(np.hypot(dx, dy))))
+    return np.asarray(shifts, dtype=float)
+
+
 def median_pixel_shift_to_reference(
     x_pixel_positions: list,
     y_pixel_positions: list,
@@ -167,30 +200,15 @@ def median_pixel_shift_to_reference(
 
     ``None`` if too few frames have matches (series is probably not registered).
     """
-    ref = int(reference_dataset_id)
-    if ref < 0 or ref >= len(x_pixel_positions):
+    shifts = frame_pixel_shifts_to_reference(
+        x_pixel_positions, y_pixel_positions, reference_dataset_id, max_pixels=max_pixels
+    )
+    if shifts is None:
         return None
-    xr = _ravel_pixels(x_pixel_positions[ref])
-    yr = _ravel_pixels(y_pixel_positions[ref])
-    if xr.size < 8:
+    finite = shifts[np.isfinite(shifts)]
+    if finite.size == 0 or finite.size < 0.5 * max(shifts.size, 1):
         return None
-    shifts: list[float] = []
-    n_frames = 0
-    for i in range(len(x_pixel_positions)):
-        if i == ref:
-            continue
-        n_frames += 1
-        idx_r, idx_c = _match_two_datasets_pixel(
-            xr, yr, x_pixel_positions[i], y_pixel_positions[i], max_pixels
-        )
-        if idx_r.size < 5:
-            continue
-        dx = _ravel_pixels(x_pixel_positions[i])[idx_c] - xr[idx_r]
-        dy = _ravel_pixels(y_pixel_positions[i])[idx_c] - yr[idx_r]
-        shifts.append(float(np.median(np.hypot(dx, dy))))
-    if not shifts or len(shifts) < 0.5 * max(n_frames, 1):
-        return None
-    return float(np.median(shifts))
+    return float(np.median(finite))
 
 
 def resolve_correlation_coordinates(
@@ -201,18 +219,26 @@ def resolve_correlation_coordinates(
     *,
     aligned_shift_px: float = 4.0,
 ) -> tuple[str, float | None]:
-    """``auto`` → ``pixel`` when the series looks registered to one grid."""
+    """``auto`` → ``pixel`` when **every** frame lies on the reference grid
+    (median star offset ≤ ``aligned_shift_px``), else ``sky``.
+
+    One unregistered frame in an otherwise registered series would be
+    matched in pixels to whatever star happens to lie within the matching
+    radius (wrong identifications in crowded fields), so the median of the
+    frames is not enough. Returns the mode and the largest frame shift.
+    """
     mode = str(requested or "auto").strip().lower()
     if mode not in ("auto", "sky", "pixel"):
         mode = "auto"
-    shift = median_pixel_shift_to_reference(
+    shifts = frame_pixel_shifts_to_reference(
         x_pixel_positions,
         y_pixel_positions,
         reference_dataset_id,
     )
+    shift = None if shifts is None or shifts.size == 0 else float(np.max(shifts))
     if mode in ("sky", "pixel"):
         return mode, shift
-    if shift is not None and shift <= float(aligned_shift_px):
+    if shifts is not None and (shifts.size == 0 or shift <= float(aligned_shift_px)):
         return "pixel", shift
     return "sky", shift
 

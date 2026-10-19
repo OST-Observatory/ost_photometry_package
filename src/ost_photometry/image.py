@@ -16,7 +16,7 @@ from regions import PixCoord, RectanglePixelRegion
 
 from . import calibration_parameters, style, terminal_output
 from .camera_specs import normalize_instrument_name
-from .fits_headers import ensure_mjd_obs_in_header
+from .fits_headers import celestial_pixel_scale, ensure_mjd_obs_in_header
 
 
 def header_jd_start_mid(header) -> tuple[float, float]:
@@ -243,8 +243,13 @@ class Image:
         field_of_view_x = field_of_view_x * 360.0 / 2.0 / np.pi * 60.0
         field_of_view_y = field_of_view_y * 360.0 / 2.0 / np.pi * 60.0
 
-        #   Calculate pixel scale [arcsec/pixel]
+        #   Calculate pixel scale [arcsec/pixel]: from the header WCS when the
+        #   frame has one (a frame resampled onto another binning keeps its
+        #   old XPIXSZ), else from the geometry
         pixel_scale = field_of_view_x * 60 / n_pixel_x
+        wcs_scale = celestial_pixel_scale(header)
+        if wcs_scale is not None:
+            pixel_scale = wcs_scale
 
         #   Create RectanglePixelRegion that covers the field of view
         pixel_region = RectanglePixelRegion(

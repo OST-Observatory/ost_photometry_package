@@ -225,3 +225,93 @@ def test_fill_masked_uncertainty_gradient_vs_peak():
     assert out[10, 10] > 50.0
     # Unmasked pixels are untouched.
     assert np.all(out[~mask] == 3.0)
+
+
+def test_astroalign_conserves_flux_across_binning():
+    """A bin-2 frame aligned onto a bin-1 reference keeps the star fluxes."""
+    pytest.importorskip("astroalign")
+    from astropy.nddata import CCDData, StdDevUncertainty
+
+    from ost_photometry.reduce.registration.shifts import astro_align
+
+    rng = np.random.default_rng(8)
+    stars = rng.uniform(40, 280, (30, 2))
+    fluxes = rng.uniform(2e4, 1e5, 30)
+
+    def frame(shape, binning, sky):
+        yy, xx = np.mgrid[0 : shape[0], 0 : shape[1]]
+        s = 2.0 / binning  # sigma 2 px at bin 1
+        img = np.full(shape, sky)
+        for (x0, y0), f in zip(stars, fluxes, strict=True):
+            # pixel centres at integers: bin-1 x0 is (x0 + 0.5) / b - 0.5 at bin b
+            x, y = (x0 + 0.5) / binning - 0.5, (y0 + 0.5) / binning - 0.5
+            img += f * np.exp(-((xx - x) ** 2 + (yy - y) ** 2) / (2 * s * s)) / (2 * np.pi * s * s)
+        return img + rng.normal(0, 0.5, shape)
+
+    ref = CCDData(frame((320, 320), 1, 10.0), unit="electron", uncertainty=StdDevUncertainty(np.full((320, 320), 1.0)))
+    cur = CCDData(frame((160, 160), 2, 40.0), unit="electron", uncertainty=StdDevUncertainty(np.full((160, 160), 1.0)))
+    cur.meta["SATLEVEL"] = 60000.0
+    aligned, _ = astro_align(ref, cur)
+    yy, xx = np.mgrid[0:320, 0:320]
+    ratios = []
+    for (x0, y0), f in zip(stars, fluxes, strict=True):
+        d = np.hypot(xx - x0, yy - y0)
+        ap, ann = d <= 10, (d > 14) & (d < 20)
+        sky = np.nanmedian(aligned.data[ann])
+        ratios.append((np.nansum(aligned.data[ap]) - sky * ap.sum()) / f)
+    assert np.median(ratios) == pytest.approx(1.0, abs=2e-3)
+    assert aligned.meta["SATLEVEL"] == pytest.approx(15000.0, rel=1e-2)
+
+
+@pytest.mark.parametrize("profile", ["gauss", "moffat"])
+def test_masked_star_core_is_filled_from_a_profile_fit(profile):
+    """A masked core pixel (FWHM 3 px) costs < 0.5 % of the star's flux."""
+    from ost_photometry.core.pixel_masks import fill_masked_pixels
+
+    rng = np.random.default_rng(2)
+    fwhm, beta = 3.0, 2.5
+    s, alpha = fwhm / 2.3548, fwhm / (2 * np.sqrt(2 ** (1 / beta) - 1))
+    errors, errors_median = [], []
+    for k in range(40):
+        x0, y0 = 60 + rng.uniform(-0.5, 0.5), 60 + rng.uniform(-0.5, 0.5)
+        yy, xx = np.mgrid[:120, :120]
+        acc = np.zeros((120, 120))
+        for dy in (np.arange(5) - 2) / 5:
+            for dx in (np.arange(5) - 2) / 5:
+                r2 = (xx + dx - x0) ** 2 + (yy + dy - y0) ** 2
+                acc += (np.exp(-r2 / (2 * s * s)) / (2 * np.pi * s * s) if profile == "gauss"
+                        else (beta - 1) / (np.pi * alpha**2) * (1 + r2 / alpha**2) ** (-beta))
+        truth = 1e4 * acc / 25 + 100.0
+        img = truth + rng.normal(0, 1.0, truth.shape)
+        mask = np.zeros(truth.shape, dtype=bool)
+        mask[int(round(y0)), int(round(x0))] = True
+        if k % 2:
+            mask[int(round(y0)), int(round(x0)) + 1] = True
+        mask[10, 10] = True  # a defect in the sky keeps the median fill
+        out = fill_masked_pixels(img, mask)
+        plain = fill_masked_pixels(img, mask, fit_sources=False)
+        core = mask.copy()
+        core[10, 10] = False
+        errors.append(np.sum(out[core] - truth[core]) / 1e4)
+        errors_median.append(np.sum(plain[core] - truth[core]) / 1e4)
+        assert out[10, 10] == pytest.approx(100.0, abs=5.0)
+    assert np.max(np.abs(errors)) < 5e-3
+    assert np.median(errors_median) < -0.02  # the plain median misses the core
+
+
+def test_masked_fraction_weighted_by_the_star():
+    from photutils.aperture import CircularAperture
+
+    from ost_photometry.core.pixel_masks import aperture_masked_fraction
+
+    data = np.zeros((50, 50))
+    ap = CircularAperture([(25.0, 25.0)], r=8.0)
+    core = np.zeros((50, 50), dtype=bool)
+    core[25, 25] = True
+    edge = np.zeros((50, 50), dtype=bool)
+    edge[25, 32] = True
+    area = aperture_masked_fraction(ap, data, core)[0]
+    assert aperture_masked_fraction(ap, data, edge)[0] == pytest.approx(area, rel=0.05)
+    # weighted by a 3 px FWHM star: the core pixel holds ~8 % of its light
+    assert aperture_masked_fraction(ap, data, core, fwhm=3.0)[0] > 0.05
+    assert aperture_masked_fraction(ap, data, edge, fwhm=3.0)[0] < 0.002

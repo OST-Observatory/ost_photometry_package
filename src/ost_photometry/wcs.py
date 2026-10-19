@@ -303,12 +303,18 @@ def persist_wcs_to_fits(image: Image) -> wcs.WCS:
 
 
 def sync_image_coordinates_from_wcs(image: Image, derived_wcs: wcs.WCS) -> None:
-    """Align the image sky center with the solved WCS reference position."""
+    """Align the image sky center and pixel scale with the solved WCS."""
     image.coordinates_image_center = SkyCoord(
         ra=derived_wcs.wcs.crval[0] * u.deg,
         dec=derived_wcs.wcs.crval[1] * u.deg,
         frame="icrs",
     )
+    if derived_wcs.has_celestial:
+        from astropy.wcs.utils import proj_plane_pixel_scales
+
+        scale = float(np.mean(np.abs(proj_plane_pixel_scales(derived_wcs.celestial)) * 3600.0))
+        if np.isfinite(scale) and scale > 0.0:
+            image.pixel_scale = scale
 
 
 def _sync_image_coordinates_from_wcs(image: Image, derived_wcs: wcs.WCS) -> None:

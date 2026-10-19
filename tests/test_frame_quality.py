@@ -224,3 +224,26 @@ def test_assess_frame_quality_end_to_end(tmp_path):
     weights = [frame_weight(fits.getheader(light / f"img_{i}.fit")) for i in range(3)]
     assert weights[0] > weights[1] > weights[2]
     assert np.mean(weights) == pytest.approx(1.0)
+
+
+def test_solved_wcs_sets_the_pixel_scale():
+    """A bin-2 frame resampled onto bin 1 keeps XPIXSZ; the WCS decides."""
+    from types import SimpleNamespace
+
+    from astropy.wcs import WCS
+
+    from ost_photometry.fits_headers import celestial_pixel_scale
+    from ost_photometry.wcs import sync_image_coordinates_from_wcs
+
+    w = WCS(naxis=2)
+    w.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+    w.wcs.crval = [10.0, 20.0]
+    w.wcs.crpix = [50.0, 50.0]
+    w.wcs.cdelt = [-0.45 / 3600, 0.45 / 3600]
+    header = w.to_header()
+    header["XPIXSZ"] = 7.52  # bin 2 pixel size of the original frame
+    header["FOCALLEN"] = 1720.0
+    assert celestial_pixel_scale(header) == pytest.approx(0.45, rel=1e-6)
+    image = SimpleNamespace(pixel_scale=206.265 * 7.52 / 1720.0)
+    sync_image_coordinates_from_wcs(image, w)
+    assert image.pixel_scale == pytest.approx(0.45, rel=1e-6)

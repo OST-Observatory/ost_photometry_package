@@ -211,5 +211,30 @@ def test_stack_mid_time_and_airmass_are_weighted_means(tmp_path):
     mid = (0.30 + 2 * 0.40 + 0.50) / 4 + 2460000.0 + 5.0 / 86400.0
     assert combined.meta["MJD_MID"] == pytest.approx(mid - 2400000.5, abs=1e-9)
     assert Time(combined.meta["DATE-MID"], format="fits").jd == pytest.approx(mid, abs=1e-6)
-    assert combined.meta["AIRMASS"] == pytest.approx((1.2 + 2 * 1.5 + 2.0) / 4)
+    # effective airmass of the averaged flux (V: k = 0.2), slightly below the mean
+    k = combined.meta["AIRMSEXK"]
+    x = np.array([1.2, 1.5, 2.0])
+    x_eff = -2.5 / k * np.log10(np.sum(w * 10 ** (-0.4 * k * x)) / w.sum())
+    assert combined.meta["AIRMASS"] == pytest.approx(x_eff)
+    assert x_eff < (1.2 + 2 * 1.5 + 2.0) / 4
     assert combined.meta["AIRMSMAX"] == 2.0
+
+
+def test_stack_marks_frames_without_flat(tmp_path):
+    from astropy.io import fits
+    from astropy.nddata import CCDData
+
+    stack = _stack()
+    files = []
+    for i, state in enumerate(("applied", "none")):
+        path = tmp_path / f"f{i}.fit"
+        _write_frame(path, 1.0)
+        with fits.open(path, mode="update") as hdul:
+            hdul[0].header["FLATCORR"] = state
+        files.append(str(path))
+    combined = CCDData(np.ones((8, 8)), unit="electron/s", meta=fits.Header({"EXPTIME": 20.0}))
+    stack._write_stack_noise(combined, files, None)
+    assert combined.meta["FLATCORR"] == "partial"
+    combined = CCDData(np.ones((8, 8)), unit="electron/s", meta=fits.Header({"EXPTIME": 20.0}))
+    stack._write_stack_noise(combined, files[1:], None)
+    assert combined.meta["FLATCORR"] == "none"

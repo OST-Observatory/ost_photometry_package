@@ -99,7 +99,7 @@ def load_channels(stacks: Mapping[str, str | Path]) -> dict[str, _Channel]:
             bad |= mask
         valid = ~bad
         if bad.any():
-            data = np.asarray(fill_masked_pixels(data, bad), dtype=np.float32)
+            data = np.asarray(fill_masked_pixels(data, bad, fit_sources=False), dtype=np.float32)
             rest = ~np.isfinite(data)
             if rest.any():
                 level, _std = sky_level(data, rest)

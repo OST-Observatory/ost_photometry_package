@@ -477,3 +477,18 @@ def test_resolve_ooi_separation_limit_floors_at_five_arcsec(core):
     assert wide.to(u.arcsec).value == pytest.approx(8.0)
     custom = 3.0 * u.arcsec
     assert ooi.resolve_ooi_separation_limit(2.0 * u.arcsec, custom) is custom
+
+
+def test_one_unregistered_frame_forces_sky_matching(core):
+    base = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0]
+    x0 = _pixel_positions(base)
+    y0 = _pixel_positions(base)
+    shifted = _pixel_positions([v + 12.0 for v in base])
+    frame, shift = core.resolve_correlation_coordinates(
+        "auto",
+        [x0, x0, x0, shifted],
+        [y0, y0, y0, y0],
+        0,
+    )
+    assert frame == "sky"
+    assert shift is not None and shift > 4.0

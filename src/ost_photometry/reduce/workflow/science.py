@@ -59,6 +59,42 @@ def resolve_cosmic_ray_removal(
     return bool(mode)
 
 
+#: L.A.Cosmic object limit for undersampled frames (default 4-5): with a
+#: FWHM below ~2.5 px a star core is as sharp as a cosmic ray.
+UNDERSAMPLED_OBJLIM = 15.0
+
+
+def _protect_undersampled_stars(
+    reduced: CCDData, objlim: float, file_name: str
+) -> tuple[CCDData, np.ndarray | None, float]:
+    """L.A.Cosmic input for ``reduced``: for an undersampled frame
+    (central FWHM < :data:`~ost_photometry.reduce.quality.UNDERSAMPLED_FWHM`)
+    the star cores are added to the mask (``inmask``, not touched) and
+    ``objlim`` is raised to :data:`UNDERSAMPLED_OBJLIM`.
+
+    Returns ``(input, protected, objlim)``; ``protected`` is ``None`` for a
+    well-sampled frame.
+    """
+    from ..quality import UNDERSAMPLED_FWHM, central_fwhm, star_core_mask
+
+    fwhm = central_fwhm(reduced.data, reduced.mask)
+    if not np.isfinite(fwhm) or fwhm >= UNDERSAMPLED_FWHM:
+        return reduced, None, objlim
+    protected = star_core_mask(reduced.data, reduced.mask, fwhm)
+    new_objlim = max(float(objlim), UNDERSAMPLED_OBJLIM)
+    terminal_output.print_to_terminal(
+        f"{file_name}: FWHM {fwhm:.2f} px is undersampled; star cores "
+        f"({int(protected.sum())} px) are excluded from the cosmic-ray "
+        f"detection and objlim is {new_objlim:g}.",
+        indent=2,
+        style_name="WARNING",
+    )
+    cr_input = reduced.copy()
+    base = np.zeros(reduced.shape, dtype=bool) if reduced.mask is None else np.asarray(reduced.mask, dtype=bool)
+    cr_input.mask = base | protected
+    return cr_input, protected, new_objlim
+
+
 def reduce_light(
     image_path: str | Path,
     output_dir: str | Path,
@@ -624,6 +660,12 @@ def reduce_light_image(
 
     #   Divided science by the master flat
     reduced: CCDData = ccdp.flat_correct(reduced, flat_master)
+    #   "none": reduced with a unity flat (no flat for this filter); the
+    #   magnitudes keep the vignetting, the analysis flags them (no_flat)
+    reduced.meta["FLATCORR"] = (
+        "none" if str(flat_master.meta.get("FLATCORR", "")).strip().lower() == "none" else "applied",
+        "Flat-field correction",
+    )
 
     if add_hot_bad_pixel_mask:
         #   Get mask of bad and hot pixel
@@ -673,14 +715,24 @@ def reduce_light_image(
                 f"Remove cosmic rays from image {file_name}"
             )
 
+        cr_input, protected, objlim = _protect_undersampled_stars(
+            reduced, limiting_contrast_rm_cosmic_rays, file_name
+        )
         reduced_without_cosmics = ccdp.cosmicray_lacosmic(
-            reduced,
-            objlim=limiting_contrast_rm_cosmic_rays,
+            cr_input,
+            objlim=objlim,
             readnoise=read_noise,
             sigclip=sigma_clipping_value_rm_cosmic_rays,
             satlevel=saturation_electrons,
             verbose=verbose,
         )
+        if protected is not None:
+            #   star cores were only hidden from L.A.Cosmic, not bad pixels
+            original = (np.zeros(reduced.shape, dtype=bool) if reduced.mask is None
+                        else np.asarray(reduced.mask, dtype=bool))
+            reduced_without_cosmics.mask = original | (
+                np.asarray(reduced_without_cosmics.mask, dtype=bool) & ~protected
+            )
 
         if mask_cosmics:
             if add_hot_bad_pixel_mask:

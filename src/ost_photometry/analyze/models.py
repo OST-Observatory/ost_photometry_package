@@ -208,11 +208,12 @@ class ImageSeries:
             for img in self.image_list:
                 img.wcs = w
                 sync_image_coordinates_from_wcs(img, w)
-            return
-        if self.image_list:
+        elif self.image_list:
             ref = self.image_list[self.reference_image_index]
             ref.wcs = w
             sync_image_coordinates_from_wcs(ref, w)
+        if self.image_list:
+            self.pixel_scale = getattr(self.image_list[self.reference_image_index], "pixel_scale", self.pixel_scale)
 
     def get_photometry(self) -> dict[str, object]:
 

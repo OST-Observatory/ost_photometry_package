@@ -288,12 +288,183 @@ def aperture_correction(
     return value, float(error), int(ratio.size)
 
 
+#: Growth-curve radii (FWHM) and sky ring (FWHM) of the total-flux correction.
+GROWTH_RADII_FWHM = (1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0)
+GROWTH_SKY_RING_FWHM = (7.0, 10.0)
+
+
+def _moffat_encircled(r: np.ndarray, alpha: float, beta: float) -> np.ndarray:
+    """Encircled-energy fraction of a Moffat profile within radius ``r``."""
+    return 1.0 - (1.0 + (np.asarray(r, dtype=float) / alpha) ** 2) ** (1.0 - beta)
+
+
+def total_flux_correction(
+    data: np.ndarray,
+    sigma_map: np.ndarray,
+    x: np.ndarray,
+    y: np.ndarray,
+    flux_measured: np.ndarray,
+    flux_err: np.ndarray,
+    fwhm: float,
+    *,
+    usable: np.ndarray | None = None,
+    mask: np.ndarray | None = None,
+    source_mask: np.ndarray | None = None,
+    min_snr: float = 50.0,
+    min_stars: int = 5,
+) -> dict[str, float]:
+    """Factor from the measured flux to the **total** flux of a star.
+
+    Bright (S/N > ``min_snr``), ``usable`` stars without a detected
+    neighbour within the sky ring are measured in apertures of
+    :data:`GROWTH_RADII_FWHM` with the sky from the ring
+    :data:`GROWTH_SKY_RING_FWHM` (other stars masked). A Moffat
+    encircled-energy curve ``C·EE(r; α, β) − d·πr²`` fitted to the median
+    growth curve ``F(r) / F_measured`` extrapolates beyond 6 FWHM (``d``:
+    the stars' own wings in the sky ring); per star
+    ``C_i = (F_i(6 FWHM)/F_meas,i + d·π(6 FWHM)²) / EE(6 FWHM)``, the result is their
+    median (error ``1.2533·σ_robust/√n``). Keys: ``value``, ``error``, ``n``,
+    ``beta``, ``beyond`` (fraction of the light outside 6 FWHM).
+    """
+    from scipy.optimize import least_squares
+    from scipy.spatial import cKDTree
+
+    nan = {"value": float("nan"), "error": float("nan"), "n": 0, "beta": float("nan"),
+           "beyond": float("nan")}
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    flux = np.asarray(flux_measured, dtype=float)
+    err = np.asarray(flux_err, dtype=float)
+    radii = float(fwhm) * np.asarray(GROWTH_RADII_FWHM)
+    ring_in, ring_out = (float(fwhm) * r for r in GROWTH_SKY_RING_FWHM)
+    ok = np.isfinite(flux) & np.isfinite(err) & (err > 0) & (flux / err > min_snr)
+    if usable is not None:
+        ok &= np.asarray(usable, dtype=bool)
+    if x.size > 1:
+        dist, _ = cKDTree(np.column_stack([x, y])).query(np.column_stack([x, y]), k=2)
+        ok &= dist[:, 1] > radii[-1]
+    ny, nx = np.shape(data)
+    ok &= (x > ring_out) & (x < nx - 1 - ring_out) & (y > ring_out) & (y < ny - 1 - ring_out)
+    idx = np.flatnonzero(ok)
+    nan["n"] = int(idx.size)
+    if idx.size < min_stars:
+        return nan
+    pos = np.column_stack([x[idx], y[idx]])
+    sky = annulus_sky(data, sigma_map, CircularAnnulus(pos, ring_in, ring_out), mask=mask,
+                      source_mask=source_mask)["sky"]
+    growth = np.empty((idx.size, radii.size))
+    for k, r in enumerate(radii):
+        sums = np.asarray(aperture_photometry(data, CircularAperture(pos, r), mask=mask)["aperture_sum"], dtype=float)
+        growth[:, k] = (sums - sky * np.pi * r**2) / flux[idx]
+    good = np.all(np.isfinite(growth), axis=1)
+    growth = growth[good]
+    if growth.shape[0] < min_stars:
+        nan["n"] = int(growth.shape[0])
+        return nan
+    curve = np.median(growth, axis=0)
+    alpha0 = float(fwhm) / (2.0 * math.sqrt(2.0 ** (1.0 / 2.5) - 1.0))
+    area = np.pi * radii**2
+    #   d: the stars' own wings in the sky ring (a sky too high by a fixed
+    #   fraction of the flux per pixel), fitted with the curve
+    try:
+        fit = least_squares(
+            lambda p: p[0] * _moffat_encircled(radii, p[1], p[2]) - p[3] * area - curve,
+            [float(curve[-1]), alpha0, 2.5, 0.0],
+            bounds=([0.0, 0.1 * alpha0, 1.2, -np.inf], [np.inf, 10.0 * alpha0, 20.0, np.inf]),
+        )
+    except ValueError:
+        return nan
+    if not fit.success:
+        return nan
+    _c, alpha, beta, offset = (float(v) for v in fit.x)
+    ee_last = float(_moffat_encircled(radii[-1], alpha, beta))
+    per_star = (growth[:, -1] + offset * area[-1]) / ee_last
+    value = float(np.median(per_star))
+    error = MEDIAN_ERROR_FACTOR * _robust_std(per_star) / math.sqrt(per_star.size)
+    return {"value": value, "error": float(error), "n": int(per_star.size), "beta": beta,
+            "beyond": 1.0 - ee_last}
+
+
+#: Neighbour light above this fraction of a star's own flux (within its
+#: measurement radius) flags the star as ``blended``.
+BLEND_FRACTION = 0.01
+
+
+def _offset_circle_fraction(radius: float, fwhm: float, beta: float, distances: np.ndarray) -> np.ndarray:
+    """Fraction of a unit-flux Moffat star at ``distances`` from a circle's
+    centre that falls inside the circle of ``radius`` (numerical, 0.1 px)."""
+    alpha = fwhm / (2.0 * math.sqrt(2.0 ** (1.0 / beta) - 1.0))
+    step = min(0.1, radius / 20.0)
+    g = np.arange(-radius, radius + step, step)
+    gx, gy = np.meshgrid(g, g)
+    inside = gx**2 + gy**2 <= radius**2
+    px, py = gx[inside], gy[inside]
+    norm = (beta - 1.0) / (np.pi * alpha**2) * step**2
+    out = np.empty(distances.size)
+    for k, d in enumerate(distances):
+        out[k] = norm * np.sum((1.0 + ((px - d) ** 2 + py**2) / alpha**2) ** (-beta))
+    return out
+
+
+def neighbour_flux_fraction(
+    x: np.ndarray,
+    y: np.ndarray,
+    flux: np.ndarray,
+    fwhm: float,
+    radius: float,
+    *,
+    beta: float = 2.5,
+    max_distance_fwhm: float = 10.0,
+) -> np.ndarray:
+    """Light of the detected neighbours inside each star's measurement circle,
+    as a fraction of the star's own flux.
+
+    ``Σ_j F_j · f(d_ij) / F_i`` with ``f(d)`` the fraction of a Moffat star
+    (``fwhm``, ``beta``) at distance ``d`` inside a circle of ``radius``;
+    neighbours beyond ``radius + max_distance_fwhm·fwhm`` are ignored. NaN
+    for stars without a positive flux. Undetected (fainter) neighbours are
+    not counted.
+    """
+    from scipy.spatial import cKDTree
+
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    f = np.asarray(flux, dtype=float)
+    out = np.full(x.size, np.nan)
+    good = np.isfinite(x) & np.isfinite(y) & np.isfinite(f)
+    if not np.any(good) or not np.isfinite(fwhm) or fwhm <= 0 or radius <= 0:
+        return out
+    d_max = float(radius) + float(max_distance_fwhm) * float(fwhm)
+    table_d = np.linspace(0.0, d_max, 200)
+    table_f = _offset_circle_fraction(float(radius), float(fwhm), float(beta), table_d)
+    idx = np.flatnonzero(good)
+    pos = np.column_stack([x[idx], y[idx]])
+    tree = cKDTree(pos)
+    f_pos = np.clip(f[idx], 0.0, None)
+    for k, neighbours in enumerate(tree.query_ball_point(pos, d_max)):
+        i = idx[k]
+        if f[i] <= 0:
+            continue
+        others = [j for j in neighbours if j != k]
+        if not others:
+            out[i] = 0.0
+            continue
+        d = np.hypot(pos[others, 0] - pos[k, 0], pos[others, 1] - pos[k, 1])
+        out[i] = float(np.sum(f_pos[others] * np.interp(d, table_d, table_f)) / f[i])
+    return out
+
+
 __all__ = [
+    "BLEND_FRACTION",
+    "GROWTH_RADII_FWHM",
+    "GROWTH_SKY_RING_FWHM",
     "MEDIAN_ERROR_FACTOR",
     "annulus_sky",
+    "neighbour_flux_fraction",
     "aperture_correction",
     "aperture_flux_errors",
     "background_noise_factor",
     "saturated_sources",
     "source_disk_mask",
+    "total_flux_correction",
 ]

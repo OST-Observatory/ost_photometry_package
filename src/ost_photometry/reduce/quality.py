@@ -13,6 +13,7 @@ from __future__ import annotations
 import shutil
 import warnings
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -27,8 +28,8 @@ from ..core.pixel_masks import interior_mask_fraction
 from ..fits_headers import (
     FRAME_REFERENCE_KEY,
     mark_frame_rejected,
+    pixel_scale_from_header,
     set_frame_weight,
-    wcs_from_header,
 )
 from ..fwhm import (
     _finder_roundness_column,
@@ -74,48 +75,6 @@ _HEADER_CARD_TEXT_LIMIT = 68
 # ---------------------------------------------------------------------------
 # Header helpers
 # ---------------------------------------------------------------------------
-
-
-def pixel_scale_from_header(header: Mapping[str, object] | fits.Header) -> float | None:
-    """Pixel scale in arcsec/pixel from a celestial WCS or header geometry.
-
-    Order: ``proj_plane_pixel_scales`` of a celestial WCS, else
-    ``206.265 * XPIXSZ[µm] / FOCALLEN[mm]`` (``PIXSIZE1`` as fallback for the
-    pixel size). ``None`` when neither is available; no default focal length
-    is assumed so that FWHM values in arcsec are never silently wrong.
-    """
-    if isinstance(header, fits.Header):
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                wcs = wcs_from_header(header.copy())
-            if wcs.has_celestial:
-                from astropy.wcs.utils import proj_plane_pixel_scales
-
-                scales = np.abs(proj_plane_pixel_scales(wcs.celestial)) * 3600.0
-                value = float(np.mean(scales))
-                if np.isfinite(value) and value > 0.0:
-                    return value
-        except Exception:  # noqa: BLE001 — malformed WCS falls through to geometry
-            pass
-
-    focal = _finite_positive(header.get("FOCALLEN"))
-    pixel = _finite_positive(header.get("XPIXSZ"))
-    if pixel is None:
-        pixel = _finite_positive(header.get("PIXSIZE1"))
-    if focal is None or pixel is None:
-        return None
-    return 206.265 * pixel / focal
-
-
-def _finite_positive(value: object) -> float | None:
-    try:
-        number = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
-    if not np.isfinite(number) or number <= 0.0:
-        return None
-    return number
 
 
 def _header_float(header: Mapping[str, object], key: str) -> float:
@@ -302,6 +261,258 @@ def measure_frame_quality(
     if pixel_scale is not None:
         row["fwhm_arcsec"] = float(fwhm_value) * float(pixel_scale)
     return row
+
+
+#: Below this FWHM (pixel) L.A.Cosmic takes star cores for cosmic rays.
+UNDERSAMPLED_FWHM = 2.5
+
+
+def central_fwhm(data: np.ndarray, mask: np.ndarray | None = None, *, size: int = 1024) -> float:
+    """FWHM (pixel) of the stars in a central ``size``² cutout; NaN if none."""
+    ny, nx = np.shape(data)
+    y0, x0 = max(0, ny // 2 - size // 2), max(0, nx // 2 - size // 2)
+    cut = np.asarray(data, dtype=float)[y0:y0 + size, x0:x0 + size]
+    bad = ~np.isfinite(cut)
+    if mask is not None:
+        bad |= np.asarray(mask, dtype=bool)[y0:y0 + size, x0:x0 + size]
+    if np.all(bad):
+        return float("nan")
+    _mean, sky, std = sigma_clipped_stats(cut, mask=bad, sigma=3.0, maxiters=5)
+    if not np.isfinite(std) or std <= 0:
+        return float("nan")
+    sub = np.where(bad, 0.0, cut - sky)
+    sources = _find_stars(sub, bad, fwhm=2.0, threshold=10.0 * std, sharpness_range=(0.2, 1.0))
+    if sources is None or len(sources) < 3:
+        return float("nan")
+    selected = select_sources_for_fwhm_fit(sources, data_shape=sub.shape, n_select=25)
+    value, error = estimate_fwhm_from_positions(
+        sub, source_positions_from_table(selected), default_fwhm=2.0, mask=bad, min_fwhm=0.5, max_fwhm=20.0
+    )
+    return float(value) if error is None else float("nan")
+
+
+def star_core_mask(
+    data: np.ndarray, mask: np.ndarray | None, fwhm: float, *, threshold_sigma: float = 5.0
+) -> np.ndarray:
+    """Disks of radius max(2, 1.5 FWHM) around the stars of a frame (not
+    around cosmic rays: those are sharper or elongated)."""
+    from photutils.detection import DAOStarFinder
+
+    arr = np.asarray(data, dtype=float)
+    bad = ~np.isfinite(arr)
+    if mask is not None:
+        bad |= np.asarray(mask, dtype=bool)
+    out = np.zeros(arr.shape, dtype=bool)
+    _mean, sky, std = sigma_clipped_stats(arr[::2, ::2], mask=bad[::2, ::2], sigma=3.0, maxiters=5)
+    if not np.isfinite(std) or std <= 0:
+        return out
+    #   sharphi / roundness keep cosmic rays (single pixels, tracks) out:
+    #   a star matched to the kernel has sharpness ~0.5-0.7, a hot pixel ~1
+    finder = DAOStarFinder(threshold=threshold_sigma * std, fwhm=max(float(fwhm), 1.0),
+                           sharplo=0.2, sharphi=0.85, roundlo=-0.7, roundhi=0.7)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        sources = finder(np.where(bad, 0.0, arr - sky), mask=bad)
+    if sources is None or len(sources) == 0:
+        return out
+    r = max(2.0, 1.5 * float(fwhm))
+    half = int(np.ceil(r))
+    yy, xx = np.mgrid[-half:half + 1, -half:half + 1]
+    for x, y in zip(np.asarray(sources["xcentroid"]), np.asarray(sources["ycentroid"]), strict=True):
+        xi, yi = int(round(x)), int(round(y))
+        disk = np.hypot(xx + xi - x, yy + yi - y) <= r
+        ys, xs = yy[disk] + yi, xx[disk] + xi
+        ok = (ys >= 0) & (ys < arr.shape[0]) & (xs >= 0) & (xs < arr.shape[1])
+        out[ys[ok], xs[ok]] = True
+    return out
+
+
+#: Floor of the stack's PSF tolerance (fraction of the local peak, see
+#: :func:`frame_flux_scales`): registration errors and PSF shape changes.
+MIN_STACK_SNOISE = 0.1
+
+
+@dataclass
+class FrameFluxScales:
+    """Result of :func:`frame_flux_scales` (one value per frame)."""
+
+    scale: np.ndarray
+    transmission: np.ndarray
+    n_stars: int
+    reference_index: int
+    fwhm: np.ndarray
+    fwhm_max: float
+    snoise: float
+    note: str = ""
+
+
+def _star_cutouts(path: str | Path, xs: np.ndarray, ys: np.ndarray, half: int) -> list[tuple[np.ndarray, np.ndarray]]:
+    """``(data, bad)`` cutouts of ``2·half+1`` pixels around the positions."""
+    from .weighted_combine import _hdu_with_data, _ScaledSection
+
+    out = []
+    with fits.open(path, memmap=True, do_not_scale_image_data=True) as hdul:
+        data_src = _ScaledSection(_hdu_with_data(hdul))
+        mask_src = _ScaledSection(hdul["MASK"]) if "MASK" in hdul else None
+        for x, y in zip(xs, ys, strict=True):
+            x0, y0 = int(round(x)), int(round(y))
+            sl = (slice(y0 - half, y0 + half + 1), slice(x0 - half, x0 + half + 1))
+            cut = np.asarray(data_src[sl], dtype=float)
+            bad = ~np.isfinite(cut)
+            if mask_src is not None:
+                bad |= np.asarray(mask_src[sl], dtype=bool)
+            out.append((cut, bad))
+    return out
+
+
+def _flux_ratios(
+    frame: list[tuple[np.ndarray, np.ndarray]],
+    reference: list[tuple[np.ndarray, np.ndarray]],
+    offsets: list[tuple[np.ndarray, np.ndarray]],
+    r_ap: float,
+    r_in: float,
+    r_out: float,
+    min_coverage: float = 0.97,
+) -> np.ndarray:
+    """Flux ratio frame / reference per star, both summed over the aperture
+    pixels that are good in both (masks differ from frame to frame); NaN
+    with less than ``min_coverage`` of the aperture."""
+    out = np.full(len(frame), np.nan)
+    for k, ((cut, bad), (ref, ref_bad), (dx, dy)) in enumerate(zip(frame, reference, offsets, strict=True)):
+        r = np.hypot(dx, dy)
+        ap = r <= r_ap
+        common = ap & ~bad & ~ref_bad
+        if np.count_nonzero(common) < min_coverage * np.count_nonzero(ap):
+            continue
+        ann = (r >= r_in) & (r < r_out)
+        ann_i, ann_r = ann & ~bad, ann & ~ref_bad
+        if np.count_nonzero(ann_i) < 20 or np.count_nonzero(ann_r) < 20:
+            continue
+        sky_i = sigma_clipped_stats(cut[ann_i], sigma=3.0, maxiters=5)[1]
+        sky_r = sigma_clipped_stats(ref[ann_r], sigma=3.0, maxiters=5)[1]
+        f_ref = float(np.sum(ref[common] - sky_r))
+        if f_ref > 0:
+            out[k] = float(np.sum(cut[common] - sky_i)) / f_ref
+    return out
+
+
+def frame_flux_scales(
+    files: list[str] | list[Path],
+    weights: np.ndarray | None = None,
+    *,
+    max_stars: int = 100,
+    clip_sigma: float = 5.0,
+    saturation_fraction: float = 0.7,
+) -> FrameFluxScales:
+    """Per-frame flux factors of aligned frames from their stars.
+
+    Bright, unsaturated, isolated stars of the reference frame (largest
+    weight) are measured at the same positions in every frame, in an
+    aperture of 3 × the largest FWHM (seeing changes move < 1 % of the flux
+    across it) with a local sky annulus. The transmission ``t_i`` of a frame
+    is the clipped median of its flux ratios to the reference; the factor
+    ``scale_i = t̄ / t_i`` (``t̄`` the weighted mean) brings all frames to a
+    common level, which keeps the stack's flux scale.
+
+    ``snoise`` is the tolerance of the stack's clipping for stars that look
+    different because of seeing: the peak of the sharpest frame lies
+    ``(FWHM_med / FWHM_min)² - 1`` above the median one, that of the
+    broadest ``1 - (FWHM_med / FWHM_max)²`` below; twice the larger of the
+    two must stay within ``clip_sigma`` × ``snoise`` of the peak (at least
+    :data:`MIN_STACK_SNOISE`). FWHMs come from the ``FWHM`` header keyword
+    of the frame-quality step.
+
+    With fewer than 5 usable stars all factors are 1 (``note`` says why).
+    """
+    from scipy.spatial import cKDTree
+
+    n = len(files)
+    w = np.ones(n) if weights is None else np.asarray(weights, dtype=float)
+    ref = int(np.argmax(w)) if n else 0
+    headers = [fits.getheader(f) for f in files]
+    fwhm = np.array([_header_float(h, "FWHM") for h in headers], dtype=float)
+    finite = np.isfinite(fwhm) & (fwhm > 0)
+    snoise = MIN_STACK_SNOISE
+    if np.count_nonzero(finite) >= 2:
+        med = float(np.median(fwhm[finite]))
+        dev = max((med / np.min(fwhm[finite])) ** 2 - 1.0, 1.0 - (med / np.max(fwhm[finite])) ** 2)
+        snoise = max(MIN_STACK_SNOISE, 2.0 * dev / float(clip_sigma))
+    ones = np.ones(n)
+    fwhm_ref = float(fwhm[ref]) if finite[ref] else float("nan")
+    if not np.isfinite(fwhm_ref):
+        fwhm_ref = float(measure_frame_quality(files[ref]).get("fwhm_px", float("nan")))
+    if not np.isfinite(fwhm_ref):
+        fwhm_ref = 3.0
+    fwhm_max = float(np.max(fwhm[finite])) if np.any(finite) else fwhm_ref
+
+    def result(scale, transmission, n_stars, note=""):
+        return FrameFluxScales(scale, transmission, n_stars, ref, fwhm, fwhm_max, snoise, note)
+
+    if n < 2:
+        return result(ones, ones, 0, "single frame")
+    try:
+        ccd = CCDData.read(files[ref])
+    except ValueError:
+        ccd = CCDData.read(files[ref], unit="adu")
+    data = np.asarray(ccd.data, dtype=float)
+    mask = ~np.isfinite(data)
+    if ccd.mask is not None:
+        mask |= np.asarray(ccd.mask, dtype=bool)
+    _mean, sky, std = sigma_clipped_stats(data[::2, ::2], mask=mask[::2, ::2], sigma=3.0, maxiters=5)
+    if not np.isfinite(std) or std <= 0:
+        return result(ones, np.full(n, np.nan), 0, "no sky noise in the reference frame")
+    data_sub = data - sky
+    data_sub[mask] = 0.0
+    sources = _find_stars(data_sub, mask, fwhm=fwhm_ref, threshold=10.0 * std, sharpness_range=(0.2, 1.0))
+    del data_sub
+    if sources is None or len(sources) < 5:
+        return result(ones, np.full(n, np.nan), 0, "fewer than 5 stars in the reference frame")
+    xs = np.asarray(sources["xcentroid"], dtype=float)
+    ys = np.asarray(sources["ycentroid"], dtype=float)
+    peak = np.asarray(sources["peak"], dtype=float) + sky
+    flux = np.asarray(sources["flux"], dtype=float)
+    r_ap = 3.0 * fwhm_max
+    r_in, r_out = r_ap + fwhm_max, r_ap + 3.0 * fwhm_max
+    ny, nx = data.shape
+    edge = r_out + 2
+    keep = (xs > edge) & (xs < nx - 1 - edge) & (ys > edge) & (ys < ny - 1 - edge)
+    #   SATLEVEL is in electrons per exposure; rate frames are per second
+    sat = _header_float(ccd.header, "SATLEVEL")
+    if np.isfinite(sat) and sat > 0:
+        exptime = _header_float(ccd.header, "EXPTIME")
+        per_exposure = exptime if (ccd.unit is not None and ccd.unit.is_equivalent("electron/s")
+                                   and np.isfinite(exptime) and exptime > 0) else 1.0
+        keep &= peak * per_exposure < saturation_fraction * sat
+    if len(xs) > 1:
+        dist, _ = cKDTree(np.column_stack([xs, ys])).query(np.column_stack([xs, ys]), k=2)
+        keep &= dist[:, 1] > r_out
+    del ccd, data, mask
+    idx = np.flatnonzero(keep)
+    idx = idx[np.argsort(flux[idx])[::-1][:max_stars]]
+    if idx.size < 5:
+        return result(ones, np.full(n, np.nan), int(idx.size), "fewer than 5 isolated unsaturated stars")
+    half = int(np.ceil(r_out)) + 1
+    grid = np.mgrid[-half:half + 1, -half:half + 1]
+    offsets = [(grid[1] + int(round(x)) - x, grid[0] + int(round(y)) - y) for x, y in zip(xs[idx], ys[idx], strict=True)]
+    reference = _star_cutouts(files[ref], xs[idx], ys[idx], half)
+    transmission = np.full(n, np.nan)
+    transmission[ref] = 1.0
+    for i, f in enumerate(files):
+        if i == ref:
+            continue
+        ratios = _flux_ratios(_star_cutouts(f, xs[idx], ys[idx], half), reference, offsets, r_ap, r_in, r_out)
+        good = np.isfinite(ratios)
+        if np.count_nonzero(good) >= 5:
+            transmission[i] = sigma_clipped_stats(ratios[good], sigma=3.0, maxiters=5)[1]
+    ok = np.isfinite(transmission) & (transmission > 0)
+    if not np.any(ok):
+        return result(ones, transmission, int(idx.size), "no frame with enough measured stars")
+    w_ok = np.where(ok, w, 0.0)
+    t_mean = float(np.sum(w_ok * np.where(ok, transmission, 0.0)) / np.sum(w_ok)) if np.sum(w_ok) > 0 \
+        else float(np.mean(transmission[ok]))
+    scale = np.where(ok, t_mean / np.where(ok, transmission, 1.0), 1.0)
+    note = "" if np.all(ok) else f"{int(np.count_nonzero(~ok))} frame(s) without enough stars keep factor 1"
+    return result(scale, transmission, int(idx.size), note)
 
 
 def measure_directory_quality(
@@ -602,7 +813,12 @@ def plot_frame_quality(
 
 __all__ = [
     "GLOBAL_REFERENCE_KEY",
+    "MIN_STACK_SNOISE",
     "QUALITY_HEADER_KEYWORDS",
+    "UNDERSAMPLED_FWHM",
+    "FrameFluxScales",
+    "central_fwhm",
+    "frame_flux_scales",
     "apply_frame_selection",
     "assess_frame_quality",
     "measure_directory_quality",
@@ -610,6 +826,7 @@ __all__ = [
     "move_rejected_frames",
     "pixel_scale_from_header",
     "plot_frame_quality",
+    "star_core_mask",
     "write_quality_to_headers",
     "write_weights_to_headers",
 ]

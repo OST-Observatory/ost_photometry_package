@@ -183,7 +183,7 @@ def correlate_image_series_images(
     image_series.share_pixel_grid = coordinate_frame == "pixel"
     if coordinate_frame == "pixel":
         shift_txt = (
-            f"{pixel_shift:.2f} px median shift vs reference"
+            f"largest frame shift {pixel_shift:.2f} px vs reference"
             if pixel_shift is not None
             else "forced pixel frame"
         )
@@ -194,7 +194,7 @@ def correlate_image_series_images(
     elif pixel_shift is not None:
         terminal_output.print_to_terminal(
             f"Intra-filter matching on sky "
-            f"(median pixel shift {pixel_shift:.1f} px vs reference)",
+            f"(largest frame shift {pixel_shift:.1f} px vs reference)",
             indent=1,
         )
 

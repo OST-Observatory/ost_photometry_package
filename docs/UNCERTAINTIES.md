@@ -62,10 +62,32 @@ sum:    the mean × n
 - **Raw bias frames:** they carry no `UNCERT`, so their master gets the
   scatter between frames, `std(ddof=1)/√n`.
 - **Flats:** each frame is scaled to median 1, data and σ alike.
-- **Science stacks:** every frame is first shifted to the common (weighted
-  mean) sky level. Otherwise frames from nights with different sky
-  brightness are clipped in some pixels and kept in others, and the sky
-  difference turns into pixel-to-pixel noise.
+- **Science stacks:** every frame is first brought to a common flux level
+  and then shifted to the common (weighted mean) sky level.
+  - *Flux level:* `reduce.quality.frame_flux_scales` measures bright,
+    unsaturated, isolated stars of the reference frame in every frame
+    (aperture 3 × the largest FWHM, the pixels good in both frames, at
+    least 97 % of the aperture). The transmission `t_i` is the clipped
+    median of the flux ratios, the factor `t̄ / t_i` (`t̄` the weighted
+    mean) is passed as `scale`. Header: `TRANSMIN`, `FLXSCMIN` /
+    `FLXSCMAX`, `NSCLSTAR`, the factors in `HISTORY`.
+  - *Sky level:* otherwise frames from nights with different sky brightness
+    are clipped in some pixels and kept in others, and the sky difference
+    turns into pixel-to-pixel noise.
+  - *Clipping* (`STKCLIP = ccdclip`): a value is rejected when it lies more
+    than 5 × `sqrt(σ_i² + (snoise·P)²)` from the median of its pixel, with
+    the frame's own σ and `P` the peak of the local star (maximum of the
+    mean frame within 2 × the largest FWHM). `snoise` (header `SNOISE`,
+    at least 0.1) covers the seeing spread: twice the larger of
+    `(FWHM_med/FWHM_min)² − 1` and `1 − (FWHM_med/FWHM_max)²`, divided by
+    5. Pixels with fewer than 3 values are not clipped (with two values
+    the median lies halfway).
+  - *Why it changed:* the clipping against the MAD of the frames, relative
+    to each pixel, cut the cores and wings of stars in frames with the best
+    or worst seeing. Bright stars came out 0.3–0.5 % too bright (simulated
+    5-frame stack with FWHM 3.0–3.9 px), faint stars were unaffected: a
+    magnitude-dependent error. With two frames a pixel was either kept or
+    lost in both.
 - **Why it changed:** the earlier stacks and masters used the scatter
   between frames for every pixel. That gave σ = 0 where one frame covered a
   pixel and was biased low for few frames (0.56 for n = 2). On stars it was
@@ -73,8 +95,12 @@ sum:    the mean × n
   π/2 was missing.
 
 Stack headers:
-- `MJD_MID` / `DATE-MID` and `AIRMASS` are the weighted means over the
-  frames, with `AIRMSMIN` / `AIRMSMAX` as the range.
+- `MJD_MID` / `DATE-MID` are the weighted mean of the frames' mid times.
+- `AIRMASS` is the effective airmass of the averaged flux,
+  `X_eff = −2.5/k · log10(Σ w_i 10^(−0.4 k X_i) / Σ w_i)` with the filter's
+  typical extinction `k` (`AIRMSEXK`), and `AIRMSMIN` / `AIRMSMAX` give the
+  range.
+- `FLATCORR = none` (or `partial`) when frames were reduced without a flat.
 - `RDNOISE` of a median stack includes `√k(n)`.
 
 ### Registration
@@ -85,7 +111,16 @@ Stack headers:
   their variance, also onto a finer grid.
 - **Header keywords:** they follow the same `k`: `SATLEVEL` × k,
   `RDNOISE` × √k, and `PIXAREAR` = k.
+- **Flux:** values scale with `k` as well (flux per pixel), also for
+  astroalign (`k = 1/s²` of the similarity transform). Within `|k − 1| <
+  1e-3` (same binning, noise of the plate solutions) nothing is scaled.
+- **Masked pixels** are filled before resampling (and in the aperture sums)
+  with the local median, except inside stars: there a Moffat fit to the
+  unmasked pixels around the defect fills it (the median misses a masked
+  core pixel at FWHM 3 px by 8 % of the star's flux, the fit by < 0.3 %).
 - **Why it changed:**
+  - astroalign did not scale the values by `k`: a bin-2 frame aligned onto
+    a bin-1 reference had 4 × the flux.
   - WCS reprojection used to scale σ by `k` itself, which made errors too
     small by a factor of 2 when projecting bin 2 onto bin 1.
   - astroalign warped σ bicubically, which can overshoot to negative values
@@ -98,6 +133,13 @@ Stack headers:
   its median. This covers warm pixels and amplifier glow.
 - **Cosmic-ray pixels:** pixels interpolated by L.A.Cosmic get the σ of
   their neighbourhood, not the Poisson σ of the cosmic.
+- **Undersampled frames** (FWHM < 2.5 px on a central cutout): L.A.Cosmic
+  takes star cores for cosmic rays (simulated FWHM 1.8 px: the stars kept
+  ~3 % of their flux). Star cores are excluded from the detection
+  (`inmask`) and `objlim` is raised to 15.
+- **Hot pixels:** dark rate more than 2 e⁻/s (or 5 robust σ) above the
+  median of the master dark, not above 0: a dark with the bias pedestal
+  had every pixel above any fixed rate.
 - **Photon-transfer gain:** measured from differences of neighbouring
   pixels of a flat pair, so a twilight gradient that changes between the
   two flats does not lower the gain.
@@ -124,20 +166,51 @@ Stack headers:
     image with about 400 apertures on empty sky, measured exactly like
     stars. Faint undetected stars, flat-field structure, scattered light and
     noise correlated by resampling all raise it.
-- **Masked pixels:** filled with the median of their neighbours. Their σ is
-  the neighbours' σ plus the neighbours' spread (`1.4826·MAD`). The masked
-  fraction of each aperture is kept as `aperture_masked_fraction`.
+- **Radii:** in FWHM by default (2.0 / 2.8 / 4.0), see PIPELINE_CONFIG.
+- **Masked pixels:** filled with the median of their neighbours, inside
+  stars from a local Moffat fit. Their σ is the neighbours' σ plus the
+  neighbours' spread (`1.4826·MAD`). `aperture_masked_fraction` is the
+  masked fraction of the star's light in the aperture (Moffat-weighted, so
+  a masked core pixel counts more than one at the edge).
 - **Faint stars:** stars with zero or negative net flux are kept
   (`nonpositive_flux`, magnitude NaN). Dropping them biased faint flux
   light curves upward.
 
 ### PSF photometry
 
-- **Local background:** fitted in an annulus at 2.8–4 FWHM, on top of the
-  80 px `Background2D` map.
-- **Flux error:** the formal fit error scaled by `√max(1, reduced_chi2)`.
-  Where the ePSF does not describe the star (mismatch, blends), the formal
-  error is too small.
+- **Local background** (on top of the 80 px `Background2D` map): clipped
+  median in an annulus at 2.8–4 FWHM, outside the disks of all detected
+  stars, measured twice: first on the data, then on the residual image
+  with all fitted stars (wings included) subtracted, and the stars fitted
+  again with that sky (`local_bkg`).
+  - *Why:* photutils' `LocalBackground` took the neighbours' light and the
+    star's own wings into the sky. Simulated targets with a 10× brighter
+    neighbour at 2.2–4.5 FWHM came out 270 mmag too bright, now within
+    2 mmag; isolated bright stars 3.6 → < 1 mmag.
+- **Grouping:** stars closer than `max(multiplier_grouper_epsf · FWHM,
+  fit half-width + 2.5 FWHM)` are fitted together, so a neighbour whose
+  wings reach into a star's fit box is modelled, not fitted as the star.
+- **Fit weights** from the background noise only (`σ_tot² − source/t`,
+  at least half the sky variance): σ that holds the star's own photon noise
+  (estimated from the noisy data) pulls a least-squares flux low. Positions
+  may move by at most 1 FWHM (`xy_bounds`); `centroid_shift` is the
+  distance from the detected position.
+- **ePSF stars:** saturated stars are left out before the sample is chosen.
+- **Flux error:**
+  ```
+  σ_F² = (σ_fit² + K·F/t + (G·σ_sky)²) · max(1, χ²_ν / E[χ²_ν])
+  ```
+  - `σ_fit` is the fit error for the background σ, `K = ΣP³/(ΣP²)²` of the
+    PSF on the fit box (4/3 for a Gaussian), `t` the exposure for a rate
+    image.
+  - `G = ΣP/ΣP²` turns the error of the local sky `σ_sky`
+    (`√(π/2)·σ/√n`) into flux.
+  - `χ²_ν` relative to the background σ is divided by its expectation for
+    a perfect model (mean of `σ_tot²/σ_bkg²` over the fit box; stored as
+    `reduced_chi2`). Where the ePSF does not describe the star (mismatch,
+    blends), it scales the error up.
+  - Simulated isolated stars: pulls with a robust width of 1.15–1.2 (also
+    before these changes).
 
 ### Both methods
 
@@ -145,13 +218,24 @@ Stack headers:
   radius reaches `saturation_fraction` (0.9) × `SATLEVEL`. The test uses the
   frame *before* the 2D background subtraction, so the sky counts towards
   saturation.
-- **Aperture correction per image:** the flux is scaled to the flux inside
-  the annulus inner radius. The factor is measured on bright, isolated,
-  unsaturated stars (`aperture_correction` ± `aperture_correction_err`).
+- **Aperture correction per image, to the total flux:** bright, isolated,
+  unsaturated stars are measured in apertures of 1–6 FWHM with the sky in
+  a ring at 7–10 FWHM. A Moffat curve `C·EE(r; α, β) − d·πr²` fitted to the
+  median growth curve extrapolates beyond 6 FWHM (`d` takes up the stars'
+  own wings in the sky ring). Columns: `aperture_correction` ±
+  `aperture_correction_err`, `aperture_correction_total` (False when too
+  few isolated stars: then only to the annulus inner radius, with a
+  warning).
   - *Why:* the flux outside a fixed aperture (or outside the ePSF
-    normalisation radius) changes with seeing.
+    normalisation radius) changes with seeing: 2–4 % outside 2.8 FWHM for
+    β = 2–3.
   - Per-image calibration absorbs this change; per-night and ensemble
     calibrations would see it as variability.
+- **Neighbour light:** `neighbour_flux_fraction` is the light of the
+  detected neighbours inside the measurement radius (Moffat with the image
+  FWHM and the β of the growth curve) as a fraction of the star's flux;
+  `blended` is set above 1 %. For PSF photometry (neighbours fitted) it is
+  an indicator only.
 - **Scintillation:** added to every source after extraction (Osborn et al.
   2015, eq. 7, `C_Y = 1.5`); see `scintillation_noise`. The error without it
   is kept as `flux_err_phot`.

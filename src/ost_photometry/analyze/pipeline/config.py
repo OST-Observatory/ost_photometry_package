@@ -210,17 +210,15 @@ class ExtractionConfig:
     photometry_extraction_method: PhotometryExtractionMethod = "PSF"
     #: If False, fit finder positions only (no residual re-find).
     psf_find_in_residuals: bool = False
-    radius_aperture: float = 5.0
-    inner_annulus_radius: float = 7.0
-    outer_annulus_radius: float = 10.0
-    radii_unit: str = "arcsec"
-    #: If True, APER radii are ``factor × image FWHM`` in pixels (absolute
-    #: ``radius_aperture`` / annulus unused for extraction).
-    aperture_scale_with_fwhm: bool = False
-    #: Measurement aperture in units of the image FWHM. Typical 1.5–2.5.
-    aperture_fwhm_factor: float = 2.0
-    inner_annulus_fwhm_factor: float = 2.8
-    outer_annulus_fwhm_factor: float = 4.0
+    #: APER radii (aperture, annulus inner / outer) in ``radii_unit``;
+    #: ``None`` takes the unit's default (``fwhm``: 2.0 / 2.8 / 4.0,
+    #: ``arcsec``: 5 / 7 / 10; ``pixel`` needs all three).
+    radius_aperture: float | None = None
+    inner_annulus_radius: float | None = None
+    outer_annulus_radius: float | None = None
+    #: ``fwhm`` (multiples of each image's FWHM: the same fraction of the
+    #: star in every frame and stack), ``arcsec`` or ``pixel``.
+    radii_unit: Literal["fwhm", "arcsec", "pixel"] = "fwhm"
     strict_epsf_checks: bool = True
     transform_object_positions_to_reference: bool = False
     #: Add atmospheric scintillation (Osborn et al. 2015) to ``flux_err`` /
@@ -272,10 +270,6 @@ class ExtractionConfig:
             "inner_annulus_radius": self.inner_annulus_radius,
             "outer_annulus_radius": self.outer_annulus_radius,
             "radii_unit": self.radii_unit,
-            "aperture_scale_with_fwhm": self.aperture_scale_with_fwhm,
-            "aperture_fwhm_factor": self.aperture_fwhm_factor,
-            "inner_annulus_fwhm_factor": self.inner_annulus_fwhm_factor,
-            "outer_annulus_fwhm_factor": self.outer_annulus_fwhm_factor,
             "cosmic_ray_removal": normalize_cosmic_ray_removal(self.cosmic_ray_removal),
             "limiting_contrast_rm_cosmics": self.limiting_contrast_rm_cosmics,
             "read_noise": self.read_noise,
@@ -397,7 +391,9 @@ class CalibrationConfig:
     region_to_select_calibration_stars: object = None
     transformation_coefficients_dict: dict[str, float | str] | None = None
     distribution_samples: int = 1000
-    aperture_radius: float = 4.0
+    #: Blank-sky aperture of the limiting magnitude in ``radii_unit``;
+    #: ``None`` uses the APER measurement aperture.
+    aperture_radius: float | None = None
     skip_calibration: bool = False
 
 
@@ -545,6 +541,19 @@ def _literal_values(hint) -> tuple | None:
     return None
 
 
+#: Options that no longer exist -> what to use instead (error, not warning).
+_REMOVED_OPTIONS: dict[str, str] = {
+    "aperture_scale_with_fwhm": (
+        "APER radii scale with the FWHM by default now: radii_unit='fwhm' with "
+        "radius_aperture / inner_annulus_radius / outer_annulus_radius as FWHM "
+        "multiples (default 2.0 / 2.8 / 4.0)"
+    ),
+    "aperture_fwhm_factor": "use radius_aperture with radii_unit='fwhm'",
+    "inner_annulus_fwhm_factor": "use inner_annulus_radius with radii_unit='fwhm'",
+    "outer_annulus_fwhm_factor": "use outer_annulus_radius with radii_unit='fwhm'",
+}
+
+
 class PipelineConfig:
     """
     Central pipeline configuration composed of step-specific sub-configs.
@@ -639,6 +648,12 @@ class PipelineConfig:
         Unknown keys warn (a typo would otherwise silently keep the default);
         values of ``Literal`` options are checked (:meth:`validate`).
         """
+        removed = [k for k in kwargs if k in _REMOVED_OPTIONS]
+        if removed:
+            raise ValueError(
+                "PipelineConfig: removed option(s): "
+                + "; ".join(f"{k} ({_REMOVED_OPTIONS[k]})" for k in removed)
+            )
         diag_prefix = "diagnostic_plots__"
         unknown: list[str] = []
         for key, val in kwargs.items():

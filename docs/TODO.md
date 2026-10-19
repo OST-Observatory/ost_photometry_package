@@ -500,7 +500,7 @@ worth the join.
 
 ### Aperture correction from growth curve (P3)
 
-Image-adaptive APER (`aperture_scale_with_fwhm`) already uses **one** radius
+APER radii are in FWHM by default (`radii_unit='fwhm'`): **one** radius
 per frame, scaled to that image’s FWHM. What is still missing is a **common
 flux scale**: measure in a relatively small aperture (better SNR, less
 blend) and correct to total light from the growth curve of isolated bright

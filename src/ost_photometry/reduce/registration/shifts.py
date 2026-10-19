@@ -26,6 +26,7 @@ from .. import plots, utilities
 from ..storage import cast_like
 from .accounting import ApplyResult, apply_ok, apply_skipped, exception_note
 from .trim import trim_image
+from .wcs_align import AREA_RATIO_TOLERANCE, scale_noise_keywords
 
 
 def apply_xy_image_shift(
@@ -713,12 +714,21 @@ def astro_align(
             preserve_range=True,
         )
 
+    #   A similarity scale s (other binning or plate scale) changes the pixel
+    #   area by k = 1/s²: values (flux per pixel), σ and the per-pixel noise
+    #   keywords follow, so star fluxes are conserved. Below 1e-3 the scale is
+    #   fit noise and left alone.
     scale = float(getattr(transformation_coefficients, "scale", 1.0) or 1.0)
+    area_ratio = 1.0 / scale**2
+    if abs(area_ratio - 1.0) < AREA_RATIO_TOLERANCE:
+        area_ratio = 1.0
+    else:
+        image_data = image_data * area_ratio
     image_uncertainty = resample_uncertainty(
         np.asarray(current_ccd.uncertainty.array, dtype=float),
         source_mask,
         _warp_linear,
-        area_ratio=1.0 / scale**2,
+        area_ratio=area_ratio,
     )
 
     footprint_mask = np.asarray(footprint_mask, dtype=bool)
@@ -743,10 +753,12 @@ def astro_align(
 
     #   Build new CCDData object. Pixels sit on the reference grid, so the
     #   current WCS is the reference WCS (not the unwarped input header).
+    meta = current_ccd.meta.copy()
+    scale_noise_keywords(meta, area_ratio)
     new_ccd = CCDData(
         image_data,
         mask=footprint_mask,
-        meta=current_ccd.meta,
+        meta=meta,
         unit=current_ccd.unit,
         uncertainty=StdDevUncertainty(image_uncertainty),
         wcs=getattr(reference_ccd, "wcs", None),

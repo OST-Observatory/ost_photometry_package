@@ -92,9 +92,10 @@ def test_stack_filter_images_weighted_is_unbiased(tmp_path):
     name = stack_filter_images(paths, "average", None, "V", tmp_path, None, weights=WEIGHTS)
     stacked = fits.getdata(tmp_path / name).astype(float)
     # the stack matches the frames' sky levels first (match_background)
-    from ost_photometry.reduce.weighted_combine import _background_offsets
+    from ost_photometry.reduce.weighted_combine import _frame_pass
 
-    offsets = _background_offsets(paths, np.ones(len(paths)), np.asarray(WEIGHTS, float), None)
+    offsets, _sky, _peak = _frame_pass(paths, np.ones(len(paths)), np.asarray(WEIGHTS, float), None,
+                                       data.shape[1:], match_background=True, peak_radius=None)
     valid = np.ma.masked_array(data + offsets[:, None, None], mask)
     lo, hi = valid.min(axis=0).filled(np.nan), valid.max(axis=0).filled(np.nan)
     ok = np.isfinite(lo)

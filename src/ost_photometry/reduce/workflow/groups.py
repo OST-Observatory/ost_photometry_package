@@ -402,6 +402,7 @@ def build_masters(
 def _unity_flat(shape: tuple[int, ...], filter_: str) -> CCDData:
     ccd = CCDData(np.ones(shape, dtype=np.float32), unit="electron")
     ccd.meta["FILTER"] = filter_
+    ccd.meta["FLATCORR"] = "none"
     return ccd
 
 

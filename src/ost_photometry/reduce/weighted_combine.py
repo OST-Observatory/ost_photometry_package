@@ -69,6 +69,41 @@ def median_variance_factor(n: np.ndarray) -> np.ndarray:
     return np.where(n > _MEDIAN_VARIANCE_FACTOR.size, np.pi / 2, _MEDIAN_VARIANCE_FACTOR[idx])
 
 
+#: Fewest valid values of a pixel that are clipped against their own σ: with
+#: two values the median lies halfway, and both or neither would go.
+MIN_CLIP_FRAMES = 3
+
+
+def clip_against_uncertainty(
+    data: np.ma.MaskedArray,
+    sigma: np.ndarray,
+    low: float,
+    high: float,
+    *,
+    psf_noise: np.ndarray | None = None,
+    min_frames: int = MIN_CLIP_FRAMES,
+) -> np.ndarray:
+    """Mask of values to reject: ``x_i - med`` beyond ``low`` / ``high`` ×
+    ``sqrt(σ_i² + psf_noise²)`` (ccdclip with the frames' own errors).
+
+    ``psf_noise`` (shape of one frame) is the tolerated difference between
+    frames that is not noise: stars look different in frames of different
+    seeing. Pixels with fewer than ``min_frames`` valid values are not
+    clipped.
+    """
+    valid = ~np.ma.getmaskarray(data)
+    n = valid.sum(axis=0)
+    med = np.ma.median(data, axis=0).filled(np.nan)
+    var = np.asarray(sigma, dtype=np.float64) ** 2
+    if psf_noise is not None:
+        var = var + np.asarray(psf_noise, dtype=np.float64) ** 2
+    with np.errstate(invalid="ignore"):
+        tol = np.sqrt(var)
+        dev = data.data - med
+        reject = (dev < -low * tol) | (dev > high * tol)
+    return valid & (n >= min_frames) & reject
+
+
 def combine_stack(
     data: np.ma.MaskedArray,
     sigma: np.ndarray | None,
@@ -76,14 +111,19 @@ def combine_stack(
     method: str = "average",
     weights: np.ndarray | None = None,
     sigma_clip_thresholds: tuple[float, float] | None = (5.0, 5.0),
+    clip_against_sigma: bool = False,
+    psf_noise: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Combine along axis 0; returns ``(value, uncertainty, empty)``.
 
     ``sigma`` (same shape as ``data``) are the frames' 1σ errors; ``None``
     uses the scatter of the frames (``std(ddof=1)/√n``, NaN for one frame).
-    Values more than ``low`` / ``high`` MAD-σ below / above the median are
-    clipped first (one pass); clipped and masked values are left out of the
-    value and of the error alike.
+    Clipping (one pass, before combining): values more than ``low`` /
+    ``high`` MAD-σ below / above the median, or with
+    ``clip_against_sigma`` (needs ``sigma``) more than that many of their
+    own σ (and ``psf_noise``), see :func:`clip_against_uncertainty`.
+    Clipped and masked values are left out of the value and of the error
+    alike.
     """
     data = np.ma.masked_invalid(data)
     if sigma is not None:
@@ -92,9 +132,13 @@ def combine_stack(
         )
     if sigma_clip_thresholds is not None:
         low, high = sigma_clip_thresholds
-        clipped = astropy_sigma_clip(data, sigma_lower=low, sigma_upper=high, axis=0, maxiters=1,
-                                     cenfunc="median", stdfunc="mad_std", masked=True, copy=True)
-        data = np.ma.masked_array(data.data, mask=np.ma.getmaskarray(clipped))
+        if clip_against_sigma and sigma is not None:
+            reject = clip_against_uncertainty(data, sigma, low, high, psf_noise=psf_noise)
+            data = np.ma.masked_array(data.data, mask=np.ma.getmaskarray(data) | reject)
+        else:
+            clipped = astropy_sigma_clip(data, sigma_lower=low, sigma_upper=high, axis=0, maxiters=1,
+                                         cenfunc="median", stdfunc="mad_std", masked=True, copy=True)
+            data = np.ma.masked_array(data.data, mask=np.ma.getmaskarray(clipped))
     valid = ~np.ma.getmaskarray(data)
     n_total = data.shape[0]
     n = valid.sum(axis=0)
@@ -195,8 +239,21 @@ def combine_images(
     dtype: str | np.dtype | None = None,
     unit=None,
     match_background: bool = False,
+    clip_snoise: float | None = None,
+    clip_snoise_radius: int = 0,
 ) -> CCDData:
     """Combine images (files or CCDData) with propagated uncertainties.
+
+    Clipping: by default against the MAD of the frames at each pixel. With
+    ``clip_snoise`` (needs uncertainties) a value is clipped when it is more
+    than ``low`` / ``high`` × ``sqrt(σ_i² + (clip_snoise·P)²)`` from the
+    median, and only where at least :data:`MIN_CLIP_FRAMES` values remain.
+    ``P`` is the local peak above the sky of the mean frame within
+    ``clip_snoise_radius`` pixels: a star in a frame of different seeing
+    differs from the median by a fraction of its peak, in the core and in
+    the wings alike, and is kept. Clipping against the MAD of a few frames
+    (or relative to the pixel value) cuts star cores and wings of the frames
+    with the best / worst seeing, which loses flux of bright stars.
 
     ``match_background=True`` shifts every frame to the common (weighted
     mean) sky level before clipping and combining: frames from different
@@ -238,9 +295,17 @@ def combine_images(
     out_unit = unit if unit is not None else first.unit
     del first
     thresholds = (sigma_clip_low_thresh, sigma_clip_high_thresh) if sigma_clip else None
+    clip_sigma = sigma_clip and clip_snoise is not None
     offsets = np.zeros(n)
-    if match_background:
-        offsets = _background_offsets(images, factors, weights, unit)
+    peak = None
+    if match_background or clip_sigma:
+        offsets, sky_ref, peak = _frame_pass(
+            images, factors, weights, unit, shape,
+            match_background=match_background,
+            peak_radius=int(clip_snoise_radius) if clip_sigma else None,
+        )
+        if not match_background:
+            offsets = np.zeros(n)
 
     value = np.empty(shape, dtype=out_dtype)
     uncertainty = np.empty(shape, dtype=out_dtype)
@@ -273,6 +338,8 @@ def combine_images(
                 "they cannot be combined consistently"
             )
         use_sigma = all(have_sigma)
+        if clip_sigma and not use_sigma:
+            raise ValueError("clip_snoise needs frames with an uncertainty (UNCERT)")
         for start in range(0, shape[0], rows):
             stop = min(start + rows, shape[0])
             block = np.empty((n, stop - start) + tuple(shape[1:]), dtype=np.float64)
@@ -290,28 +357,57 @@ def combine_images(
                 method=method,
                 weights=weights,
                 sigma_clip_thresholds=thresholds,
+                clip_against_sigma=clip_sigma,
+                psf_noise=None if peak is None else float(clip_snoise) * peak[start:stop],
             )
             value[start:stop], uncertainty[start:stop], mask[start:stop] = v, u, e
     return CCDData(value, unit=out_unit, meta=meta, mask=mask,
                    uncertainty=StdDevUncertainty(uncertainty))
 
 
-def _background_offsets(images, factors, weights, unit) -> np.ndarray:
-    """Per-frame shift to the weighted mean sky level (see ``match_background``)."""
-    from astropy.stats import sigma_clipped_stats
+def _frame_pass(
+    images, factors, weights, unit, shape, *, match_background: bool, peak_radius: int | None
+) -> tuple[np.ndarray, float, np.ndarray | None]:
+    """One read of every frame: sky levels and, optionally, the peak map.
 
-    sky = np.empty(len(images))
+    Returns ``(offsets, sky_ref, peak)``: the shift of every frame to the
+    weighted mean sky level ``sky_ref`` (see ``match_background``) and,
+    with ``peak_radius``, the maximum of the weighted mean frame minus
+    ``sky_ref`` within that radius (``float32``, ≥ 0).
+    """
+    from astropy.stats import sigma_clipped_stats
+    from scipy.ndimage import maximum_filter
+
+    n = len(images)
+    w = np.ones(n) if weights is None else np.asarray(weights, dtype=np.float64)
+    sky = np.empty(n)
+    total = wsum = None
+    if peak_radius is not None:
+        total = np.zeros(shape, dtype=np.float32)
+        wsum = np.zeros(shape, dtype=np.float32)
     for i, image in enumerate(images):
         ccd = image if isinstance(image, CCDData) else CCDData.read(image, unit=unit)
-        data = np.asarray(ccd.data, dtype=np.float64)[::4, ::4] * factors[i]
+        data = np.asarray(ccd.data, dtype=np.float64) * factors[i]
         good = np.isfinite(data)
         if ccd.mask is not None:
-            good &= ~np.asarray(ccd.mask, dtype=bool)[::4, ::4]
-        sky[i] = sigma_clipped_stats(data[good], sigma=3.0, maxiters=5)[1] if np.any(good) else 0.0
-        del ccd, data
-    w = np.ones(len(images)) if weights is None else np.asarray(weights, dtype=np.float64)
+            good &= ~np.asarray(ccd.mask, dtype=bool)
+        sub = good[::4, ::4]
+        sky[i] = sigma_clipped_stats(data[::4, ::4][sub], sigma=3.0, maxiters=5)[1] if np.any(sub) else 0.0
+        if total is not None:
+            wi = w[i] if w[i] > 0 else 0.0
+            total += np.where(good, data - sky[i], 0.0) * wi
+            wsum += good * wi
+        del ccd, data, good
     reference = float(np.sum(w * sky) / np.sum(w)) if np.sum(w) > 0 else float(np.mean(sky))
-    return reference - sky
+    offsets = reference - sky if match_background else np.zeros(n)
+    peak = None
+    if total is not None:
+        with np.errstate(invalid="ignore", divide="ignore"):
+            mean = np.where(wsum > 0, total / wsum, 0.0)
+        del total, wsum
+        size = 2 * max(int(peak_radius), 0) + 1
+        peak = maximum_filter(np.clip(mean, 0.0, None).astype(np.float32), size=size)
+    return offsets, reference, peak
 
 
 def weighted_average_combine(
@@ -339,6 +435,8 @@ def weighted_average_combine(
 
 __all__ = [
     "CCDPROC_CHECKED_VERSION",
+    "MIN_CLIP_FRAMES",
+    "clip_against_uncertainty",
     "combine_images",
     "combine_stack",
     "masked_weighted_mean",

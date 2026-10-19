@@ -136,18 +136,29 @@ def total_exposure_time(files: Sequence[str]) -> float | None:
 MIN_FRAMES_COSMIC_CLIPPING = 3
 
 
+def _typical_extinction(filter_: str) -> float:
+    """Typical extinction (mag/airmass) of ``filter_``; 0.2 if unknown."""
+    from ...analyze.extinction import DEFAULT_EXTINCTION
+
+    coefficients = DEFAULT_EXTINCTION.get(filter_.strip())
+    return float(coefficients.k_prime) if coefficients is not None else 0.2
+
+
 def _write_stack_epoch(
     combined_image: CCDData,
     images: Sequence[str],
     weights: np.ndarray | None,
 ) -> None:
-    """Weighted mid-time and airmass of the frames in the stack.
+    """Weighted mid-time and effective airmass of the frames in the stack.
 
     ``MJD_MID`` / ``DATE-MID`` are the weighted mean of the frames' mid
     times (not the first frame plus half the total exposure, which is wrong
-    for frames spread over a night) and ``AIRMASS`` the weighted mean
-    airmass (used for scintillation and extinction of the stack). ``JD`` /
-    ``DATE-OBS`` keep the start of the first frame.
+    for frames spread over a night). ``AIRMASS`` is the effective airmass of
+    the stack's flux, ``X_eff = -2.5/k · log10(Σ w_i 10^(-0.4 k X_i) / Σ w_i)``
+    with the filter's typical extinction ``k`` (the stack averages fluxes,
+    not magnitudes; the weighted mean airmass is ~``0.46 k Var(X)`` too
+    large). It is used for extinction and scintillation of the stack.
+    ``JD`` / ``DATE-OBS`` keep the start of the first frame.
     """
     from astropy.time import Time
 
@@ -172,10 +183,13 @@ def _write_stack_epoch(
         meta["MJD_MID"] = (jd_mid - 2400000.5, "Weighted mean mid-time of the frames")
         meta["DATE-MID"] = Time(jd_mid, format="jd").fits
     if np.all(np.isfinite(airmasses)) and w.sum() > 0:
+        k = _typical_extinction(str(headers[0].get("FILTER", "")))
+        mean_flux = np.sum(w * 10 ** (-0.4 * k * airmasses)) / np.sum(w)
         meta["AIRMASS"] = (
-            float(np.sum(w * airmasses) / np.sum(w)),
-            "Weighted mean airmass of the frames",
+            float(-2.5 / k * np.log10(mean_flux)),
+            "Effective airmass of the stacked flux",
         )
+        meta["AIRMSEXK"] = (k, "Extinction [mag/airmass] for the effective airmass")
         meta["AIRMSMIN"] = float(np.min(airmasses))
         meta["AIRMSMAX"] = float(np.max(airmasses))
     elif "AIRMASS" in meta:
@@ -208,10 +222,56 @@ def _write_stack_noise(
         if key in meta:
             del meta[key]
     write_noise_header(meta, read_noise, saturation)
+    flat_states = {str(h.get("FLATCORR", "")).strip().lower() for h in headers}
+    if "none" in flat_states:
+        meta["FLATCORR"] = ("none" if flat_states == {"none"} else "partial", "Flat-field correction")
     if len(images) >= MIN_FRAMES_COSMIC_CLIPPING:
         mark_cosmics_identified(meta, handling="clipped")
     elif not all(cosmics_identified(h) for h in headers):
         clear_cosmics_identified(meta)
+
+
+def _has_uncertainty(file_name: str) -> bool:
+    with fits.open(file_name) as hdul:
+        return "UNCERT" in hdul
+
+
+def _flux_scales_for_stack(images: Sequence[str], weights, filter_: str):
+    """:func:`~ost_photometry.reduce.quality.frame_flux_scales`, or ``None`` for one frame."""
+    from ..quality import frame_flux_scales
+
+    if len(images) < 2:
+        return None
+    scales = frame_flux_scales(list(images), None if weights is None else np.asarray(weights, float))
+    if scales.note:
+        terminal_output.print_to_terminal(
+            f"Filter {filter_}: flux factors of the frames: {scales.note}.",
+            indent=2,
+            style_name="WARNING",
+        )
+    return scales
+
+
+def _write_stack_scales(image: CCDData, scales, clipped_against_sigma: bool) -> None:
+    meta = image.meta
+    meta["STKCLIP"] = (
+        "ccdclip" if clipped_against_sigma and scales is not None else "mad",
+        "Stack clipping method",
+    )
+    if scales is None:
+        return
+    meta["SNOISE"] = (round(float(scales.snoise), 4), "Clip tolerance, fraction of star peak")
+    meta["NSCLSTAR"] = (int(scales.n_stars), "Stars used for the frame flux factors")
+    finite = np.isfinite(scales.transmission)
+    if np.any(finite):
+        meta["TRANSMIN"] = (round(float(np.min(scales.transmission[finite])), 4),
+                            "Lowest frame transmission vs reference")
+        meta["FLXSCMAX"] = (round(float(np.max(scales.scale)), 4), "Largest frame flux factor")
+        meta["FLXSCMIN"] = (round(float(np.min(scales.scale)), 4), "Smallest frame flux factor")
+    if hasattr(meta, "add_history"):
+        values = ", ".join(f"{v:.3f}" for v in scales.scale[:40])
+        meta.add_history(f"Frame flux factors (reference {scales.reference_index}): {values}"
+                         + (" ..." if scales.scale.size > 40 else ""))
 
 
 def stack_filter_images(
@@ -235,18 +295,34 @@ def stack_filter_images(
     weight_array = prepare_stack_weights(
         weights, stacking_method, len(images_to_combine), label=f"filter {filter_}"
     )
+    scales = _flux_scales_for_stack(images_to_combine, weights, filter_)
+    with_sigma = all(_has_uncertainty(name) for name in images_to_combine)
+    if not with_sigma:
+        terminal_output.print_to_terminal(
+            f"Filter {filter_}: frames without UNCERT, the stack clips against the "
+            "scatter of the frames (MAD) instead of their own errors.",
+            indent=2,
+            style_name="WARNING",
+        )
     #   σ of the stack propagated from the frames' UNCERT (one frame: its σ;
-    #   median: the median's larger variance), not their scatter.
+    #   median: the median's larger variance), not their scatter. Frames are
+    #   brought to a common flux level first (scale), then to a common sky
+    #   (match_background), and clipped against their own σ plus a tolerance
+    #   for seeing differences (snoise × local star peak).
     combined_image = combine_images(
         images_to_combine,
         method=stacking_method,
         weights=weight_array,
+        scale=scales.scale if scales is not None else None,
         sigma_clip=True,
         sigma_clip_low_thresh=5,
         sigma_clip_high_thresh=5,
         match_background=True,
+        clip_snoise=scales.snoise if (scales is not None and with_sigma) else None,
+        clip_snoise_radius=int(np.ceil(2.0 * scales.fwhm_max)) if scales is not None else 0,
         dtype=dtype,
     )
+    _write_stack_scales(combined_image, scales, with_sigma)
     utilities.update_header_information(
         combined_image,
         len(images_to_combine),

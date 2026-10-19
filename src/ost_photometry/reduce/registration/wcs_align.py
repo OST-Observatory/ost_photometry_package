@@ -124,6 +124,10 @@ def ensure_celestial_wcs_on_fits(
     return fits_has_celestial_wcs(path)
 
 
+#: Pixel-area ratios closer to 1 than this are plate-solution noise.
+AREA_RATIO_TOLERANCE = 1e-3
+
+
 def reproject_ccd_onto_wcs(
     ccd: CCDData,
     target_wcs: WCS,
@@ -173,8 +177,13 @@ def reproject_ccd_onto_wcs(
     from astropy.wcs.utils import proj_plane_pixel_area
 
     #   wcs_project scales the data by the pixel-area ratio k (flux per pixel);
-    #   σ follows as √k·σ, and the per-pixel noise keywords with it.
+    #   σ follows as √k·σ, and the per-pixel noise keywords with it. Within
+    #   AREA_RATIO_TOLERANCE k is the noise of the plate solutions (same
+    #   binning): undone, so frames do not get random flux factors.
     area_ratio = float(proj_plane_pixel_area(target_wcs) / proj_plane_pixel_area(src_wcs))
+    if abs(area_ratio - 1.0) < AREA_RATIO_TOLERANCE:
+        projected.data = np.asarray(projected.data) / area_ratio
+        area_ratio = 1.0
     if ccd.uncertainty is not None:
 
         def _bilinear(values: np.ndarray) -> np.ndarray:

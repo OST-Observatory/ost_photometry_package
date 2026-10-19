@@ -146,8 +146,8 @@ class DeriveLimitingMagnitudeStep(base.PipelineStep):
                         pixel_scale=float(image.pixel_scale),
                         zeropoint=0.0,
                         image_depth_mag_offset=offset,
-                        aperture_radius=config.aperture_radius,
-                        radii_unit=config.radii_unit,
+                        aperture_radius=_depth_aperture_pixels(config, image),
+                        radii_unit="pixel",
                         file_type_plots=config.file_type_plots,
                         use_wcs_projection_for_star_maps=(
                             config.use_wcs_projection_for_star_maps
@@ -161,3 +161,23 @@ class DeriveLimitingMagnitudeStep(base.PipelineStep):
             style_name="WARNING",
         )
         return context
+
+
+def _depth_aperture_pixels(config, image) -> float:
+    """Blank-sky aperture radius (pixel): ``aperture_radius`` in ``radii_unit``
+    or, when unset, the APER measurement aperture."""
+    from ...extraction import radius_to_pixels, resolve_aperture_radii
+
+    fwhm = getattr(image, "fwhm", None)
+    scale = getattr(image, "pixel_scale", None)
+    if config.aperture_radius is not None:
+        return radius_to_pixels(config.aperture_radius, config.radii_unit, fwhm, scale)
+    r_ap, _r_in, _r_out = resolve_aperture_radii(
+        radius_aperture=config.radius_aperture,
+        inner_annulus_radius=config.inner_annulus_radius,
+        outer_annulus_radius=config.outer_annulus_radius,
+        radii_unit=config.radii_unit,
+        fwhm_pix=fwhm,
+        pixel_scale=scale,
+    )
+    return float(r_ap)
