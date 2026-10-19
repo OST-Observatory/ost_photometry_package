@@ -20,7 +20,7 @@ section of this file.
   Before, light-curve times were the exposure start, a shift of half the
   exposure time (and of up to hours for stacks).
 - **APER radii in FWHM by default:** `radii_unit` is `fwhm` (default,
-  2.0 / 2.8 / 4.0 × the image FWHM), `arcsec` (default 5 / 7 / 10) or
+  1.0 / 2.5 / 4.0 × the image FWHM), `arcsec` (default 5 / 7 / 10) or
   `pixel`; radii left at `None` take the unit's defaults. Every frame and
   stack measures the same fraction of its stars. The limiting magnitude uses
   the measurement aperture unless `aperture_radius` is set.

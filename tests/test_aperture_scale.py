@@ -17,7 +17,7 @@ def _resolve(**kw):
 
 
 def test_default_radii_are_fwhm_multiples():
-    assert _resolve() == pytest.approx((7.0, 9.8, 14.0))
+    assert _resolve() == pytest.approx((3.5, 8.75, 14.0))
 
 
 def test_arcsec_radii_keep_their_meaning():

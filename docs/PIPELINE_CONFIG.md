@@ -34,7 +34,7 @@ config = PipelineConfig(
 | `wcs_method`                   | `astrometry`, `astap`, `twirl`                                     | WCS                             | Astrometric solution per image                                  |
 | `n_cores_multiprocessing`      | `int` or `None` (default `None` → half the CPUs)                   | Extraction (multi-image)        | Worker processes; `None` or `<= 0` uses `cpu_count() // 2`      |
 | `photometry_extraction_method` | `PSF`, `APER`                                                      | Extraction                      | PSF fitting vs aperture photometry                              |
-| `radii_unit`                   | `fwhm` (default), `arcsec`, `pixel`                                | Extraction (`APER`)             | Unit of `radius_aperture` / annulus radii (default 2.0 / 2.8 / 4.0 FWHM) |
+| `radii_unit`                   | `fwhm` (default), `arcsec`, `pixel`                                | Extraction (`APER`)             | Unit of `radius_aperture` / annulus radii (default 1.0 / 2.5 / 4.0 FWHM) |
 | `cosmic_ray_removal`           | `auto`, `always`, `never` (bool `True`/`False` still accepted)     | Extraction                      | Skip lacosmic when reduction set `CRIDENT` / `cosmics_*`        |
 | `psf_find_in_residuals`        | `True`, `False` (default `False`)                                  | Extraction (PSF)                | If False, fit finder positions only (no residual re-find)       |
 | `finder_sharpness_range` / `finder_roundness_range` | tuples (defaults `(0.2, 1.0)` / `(-1.0, 1.0)`) | Extraction                      | Shared quality cuts. IRAF remaps a DAO-style signed roundness window to `(0, 0.5)` (IRAF ellipticity, not DAO ±1). |
@@ -92,7 +92,7 @@ One **radius per image** (not per star), in `radii_unit`:
 
 | `radii_unit` | Radii | Defaults (`None`) |
 | ------------ | ----- | ----------------- |
-| `fwhm` (default) | multiples of each image's FWHM | 2.0 / 2.8 / 4.0 |
+| `fwhm` (default) | multiples of each image's FWHM | 1.0 / 2.5 / 4.0 |
 | `arcsec` | arcsec, with the pixel scale of the image's WCS | 5 / 7 / 10 |
 | `pixel` | pixels | none: all three must be set |
 

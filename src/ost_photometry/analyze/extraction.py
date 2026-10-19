@@ -1687,10 +1687,12 @@ def extraction_epsf(
 
 
 #: Default APER radii (aperture, annulus inner, annulus outer) per unit.
-#: ``fwhm``: 2 FWHM holds ~94 % of a Moffat (β = 2.5) star, the rest comes
-#: from the aperture correction; the annulus starts beyond the wings.
+#: ``fwhm``: 1 FWHM is about S/N-optimal for Moffat stars and keeps
+#: neighbours out; the aperture correction brings the flux to the total.
+#: (2 FWHM on the crowded NGC 7789 stacks, FWHM 5.5″: scatter against
+#: Stetson's standards 70-100 mmag instead of 28-33.)
 APER_RADII_DEFAULTS: dict[str, tuple[float, float, float]] = {
-    "fwhm": (2.0, 2.8, 4.0),
+    "fwhm": (1.0, 2.5, 4.0),
     "arcsec": (5.0, 7.0, 10.0),
 }
 

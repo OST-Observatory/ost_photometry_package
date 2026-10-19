@@ -211,7 +211,7 @@ class ExtractionConfig:
     #: If False, fit finder positions only (no residual re-find).
     psf_find_in_residuals: bool = False
     #: APER radii (aperture, annulus inner / outer) in ``radii_unit``;
-    #: ``None`` takes the unit's default (``fwhm``: 2.0 / 2.8 / 4.0,
+    #: ``None`` takes the unit's default (``fwhm``: 1.0 / 2.5 / 4.0,
     #: ``arcsec``: 5 / 7 / 10; ``pixel`` needs all three).
     radius_aperture: float | None = None
     inner_annulus_radius: float | None = None
@@ -560,7 +560,7 @@ _REMOVED_OPTIONS: dict[str, str] = {
     "aperture_scale_with_fwhm": (
         "APER radii scale with the FWHM by default now: radii_unit='fwhm' with "
         "radius_aperture / inner_annulus_radius / outer_annulus_radius as FWHM "
-        "multiples (default 2.0 / 2.8 / 4.0)"
+        "multiples (default 1.0 / 2.5 / 4.0)"
     ),
     "aperture_fwhm_factor": "use radius_aperture with radii_unit='fwhm'",
     "inner_annulus_fwhm_factor": "use inner_annulus_radius with radii_unit='fwhm'",
