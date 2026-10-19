@@ -252,3 +252,15 @@ def test_focus_limits_ignore_pm_and_parallax_outliers():
         assert flo >= 0.25 - 0.08
         assert flo < 0.5 < fhi
         assert fhi < 4.0
+
+
+def test_star_whose_gaia_source_fails_quality_gets_no_neighbour():
+    from ost_photometry.analyze.utils.cluster_selection import match_to_quality_sources
+
+    obj = SkyCoord([10.0, 10.01], [0.0, 0.0], unit="deg")
+    # Gaia: star 0's own source (fails RUWE), a good neighbour 1.2" away, star 1's source
+    gaia = SkyCoord([10.0, 10.0 + 1.2 / 3600.0, 10.01], [0.0, 0.0, 0.0], unit="deg")
+    quality = np.array([False, True, True])
+    id_img, id_q = match_to_quality_sources(obj, gaia, quality, 2.0)
+    assert list(id_img) == [1]
+    assert list(id_q) == [1]  # second quality source = Gaia row 2

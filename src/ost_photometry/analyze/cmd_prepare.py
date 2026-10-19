@@ -74,13 +74,21 @@ def table_is_epoch_native_cmd(tbl: Table) -> bool:
 def combine_cmd_epochs(tbl: Table) -> Table:
     """One row per star: weighted mean over the epochs of a multi-epoch table.
 
-    For every ``mag_cal_<f>`` / ``mag_inst_<f>`` (and colour columns
-    ``err_cal_<c1>-<c2>``) the point errors (``err_cal_rand`` ⊕
-    ``err_cal_epoch`` where split, else the total) weight the mean; its error
-    is ``√(max(1/Σw, var/n) + mean(common²))``: the common part
-    (``err_cal_common``, the same calibrators every epoch) does not average
-    down, and the scatter between epochs covers variable stars. A table with
-    one epoch (or none) is returned unchanged.
+    For every ``mag_cal_<f>`` / ``mag_inst_<f>`` the epochs are averaged in
+    **flux**: ``F_e = 10^(-0.4 m_e)`` with weights ``1/σ_F,e²`` and
+    ``σ_F,e = F_e·σ_e/1.0857`` (the point errors ``err_cal_rand`` ⊕
+    ``err_cal_epoch`` where split, else the total). ``σ_F`` does not depend
+    on the star's measured fluctuation, ``σ_m`` does (``σ_F/F``): a weighted
+    mean of magnitudes favoured the bright fluctuations (−10 mmag at
+    σ = 0.1). The error of the mean is ``√(max(1/Σw, var/n) + mean(common²))``
+    in magnitudes: the common part (``err_cal_common``, the same calibrators
+    every epoch) does not average down, and the scatter between epochs
+    covers variable stars.
+
+    A star uses the epochs in which all its filters are measured (so a
+    colour compares the same epochs), unless that leaves none. Colour error
+    columns ``err_cal_<c1>-<c2>`` are combined like the magnitudes. A table
+    with one epoch (or none) is returned unchanged.
     """
     if "epoch_id" not in tbl.colnames or "id" not in tbl.colnames:
         return tbl
@@ -98,8 +106,28 @@ def combine_cmd_epochs(tbl: Table) -> Table:
     names = [n[len("mag_cal_"):] for n in tbl.colnames if n.startswith("mag_cal_")]
     names += [n[len("mag_inst_"):] for n in tbl.colnames if n.startswith("mag_inst_")
               and n[len("mag_inst_"):] not in names]
+    mag_cols = {f: (f"mag_cal_{f}" if f"mag_cal_{f}" in tbl.colnames else f"mag_inst_{f}") for f in names}
+    #   epochs in which every filter of the star is measured
+    all_finite = np.ones(len(tbl), dtype=bool)
+    for col in mag_cols.values():
+        all_finite &= np.isfinite(_col(col))
+
+    def _mean_in_flux(values, errors, common_part):
+        """``(mag, err)`` of the flux-weighted mean (``None`` errors: plain)."""
+        flux = 10.0 ** (-0.4 * values)
+        if errors is None:
+            return float(-2.5 * np.log10(np.mean(flux))), float("nan")
+        sigma_f = flux * errors / 1.0857
+        w = 1.0 / sigma_f**2
+        f_mean = float(np.sum(w * flux) / np.sum(w))
+        var_f = 1.0 / float(np.sum(w))
+        if flux.size >= 2:
+            var_f = max(var_f, float(np.var(flux, ddof=1)) / flux.size)
+        err = 1.0857 * np.sqrt(var_f) / f_mean if f_mean > 0 else float("nan")
+        return float(-2.5 * np.log10(f_mean)) if f_mean > 0 else float("nan"), float(np.hypot(err, common_part))
+
     for f in names:
-        mag_col = f"mag_cal_{f}" if f"mag_cal_{f}" in tbl.colnames else f"mag_inst_{f}"
+        mag_col = mag_cols[f]
         err_col = "err_cal_" if mag_col.startswith("mag_cal_") else "err_inst_"
         mag = _col(mag_col)
         total = _col(f"{err_col}{f}")
@@ -113,20 +141,15 @@ def combine_cmd_epochs(tbl: Table) -> Table:
             ok = np.isfinite(mag[g])
             if point is not None:
                 ok &= np.isfinite(point[g]) & (point[g] > 0)
+            if np.any(ok & all_finite[g]):
+                ok &= all_finite[g]
             if not np.any(ok):
                 continue
-            m = mag[g][ok]
-            if point is None:
-                new_mag[k] = float(np.mean(m))
-                continue
-            w = 1.0 / point[g][ok] ** 2
-            new_mag[k] = float(np.sum(w * m) / np.sum(w))
-            var = 1.0 / np.sum(w)
-            if m.size >= 2:
-                var = max(var, float(np.var(m, ddof=1)) / m.size)
             c2 = float(np.nanmean(common[g][ok] ** 2)) if common is not None else 0.0
             new_common[k] = np.sqrt(c2) if common is not None else np.nan
-            new_err[k] = np.sqrt(var + c2)
+            new_mag[k], new_err[k] = _mean_in_flux(
+                mag[g][ok], None if point is None else point[g][ok], np.sqrt(c2)
+            )
         out[mag_col] = new_mag
         if total is not None:
             out[f"{err_col}{f}"] = new_err
@@ -135,6 +158,36 @@ def combine_cmd_epochs(tbl: Table) -> Table:
         for p in ("rand", "epoch", "sys"):
             if f"err_cal_{p}_{f}" in out.colnames:
                 out.remove_column(f"err_cal_{p}_{f}")
+
+    #   Colour errors of the combined epochs, not the first epoch's value:
+    #   the random part (epoch colour error minus the common calibration
+    #   part of both filters) averages down, the common part does not; the
+    #   scatter between epochs is a floor of the random part.
+    for name in [n for n in tbl.colnames if n.startswith("err_cal_") and "-" in n[len("err_cal_"):]]:
+        values = _col(name)
+        pair = name[len("err_cal_"):].split("-", 1)
+        c1, c2 = (mag_cols.get(b) for b in pair)
+        colour = _col(c1) - _col(c2) if c1 is not None and c2 is not None else None
+        common_sq = np.zeros(len(tbl))
+        for band in pair:
+            part = _col(f"err_cal_common_{band}")
+            if part is not None:
+                common_sq = common_sq + np.nan_to_num(part) ** 2
+        combined = np.full(len(out), np.nan)
+        for k, sid in enumerate(out_ids):
+            g = groups[sid]
+            ok = np.isfinite(values[g]) & (values[g] > 0)
+            if colour is not None:
+                ok &= np.isfinite(colour[g])
+            if not np.any(ok):
+                continue
+            c_sq = float(np.mean(common_sq[g][ok]))
+            rand_sq = np.maximum(values[g][ok] ** 2 - c_sq, 1e-12)
+            var = 1.0 / float(np.sum(1.0 / rand_sq))
+            if colour is not None and np.count_nonzero(ok) >= 2:
+                var = max(var, float(np.var(colour[g][ok], ddof=1)) / np.count_nonzero(ok))
+            combined[k] = np.sqrt(var + c_sq)
+        out[name] = combined
     out.remove_column("epoch_id")
     out.meta["cmd_epochs_combined"] = int(np.unique(np.asarray(tbl["epoch_id"])).size)
     return out

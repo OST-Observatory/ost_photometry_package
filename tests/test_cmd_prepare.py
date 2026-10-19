@@ -141,9 +141,10 @@ def test_load_cmd_table_ecsv(tmp_path):
         )
         tbl.write(path, format="ascii.ecsv")
         loaded = mod.load_cmd_table(path)
-        # all epochs averaged per star (no errors: plain mean)
+        # all epochs averaged per star (no errors: plain mean of the fluxes)
         assert len(loaded) == 1
-        assert float(loaded["mag_cal_V"][0]) == pytest.approx(14.25)
+        mean_flux = -2.5 * np.log10(0.5 * (10 ** (-0.4 * 14.0) + 10 ** (-0.4 * 14.5)))
+        assert float(loaded["mag_cal_V"][0]) == pytest.approx(mean_flux)
         one = mod.load_cmd_table(path, epoch_id="epoch_001")
         assert float(one["mag_cal_V"][0]) == pytest.approx(14.5)
 
@@ -476,3 +477,26 @@ def test_mask_cmd_series_drops_nan_and_large_errors():
         clipped = mod.mask_cmd_series(series, max_photometric_err=0.2)
         np.testing.assert_allclose(clipped.color, [0.5, 0.6])
         np.testing.assert_allclose(clipped.magnitude_filter_2, [15.0, 15.2])
+
+
+def test_combine_cmd_epochs_is_unbiased_for_noisy_epochs():
+    """5 epochs with σ = 0.1 mag: the flux mean is unbiased (the weighted
+    magnitude mean was −10 mmag)."""
+    with isolated_sys_modules():
+        mod = _prepare()
+        rng = np.random.default_rng(1)
+        n_star, n_ep, flux_err = 4000, 5, 0.1 / 1.0857
+        true_mag = 16.0
+        flux = 10 ** (-0.4 * true_mag) * (1 + rng.normal(0, flux_err, (n_star, n_ep)))
+        flux = np.clip(flux, 1e-12, None)
+        mag = -2.5 * np.log10(flux)
+        err = 1.0857 * flux_err * 10 ** (-0.4 * true_mag) / flux  # σ_m from the measured flux
+        tbl = Table({
+            "id": np.repeat(np.arange(n_star), n_ep),
+            "epoch_id": np.tile([f"e{k}" for k in range(n_ep)], n_star),
+            "mag_cal_V": mag.ravel(),
+            "err_cal_V": err.ravel(),
+        })
+        out = mod.combine_cmd_epochs(tbl)
+        bias = np.median(np.asarray(out["mag_cal_V"], float)) - true_mag
+        assert abs(bias) < 0.002

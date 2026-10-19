@@ -843,6 +843,7 @@ def _flag_candidate_runs(
     *,
     bright_is_high: bool,
     max_faint_run: int = 2,
+    center: float | None = None,
 ) -> np.ndarray:
     """Flag short faint runs and any bright-side run; keep longer faint dips.
 
@@ -857,7 +858,8 @@ def _flag_candidate_runs(
     finite = y[np.isfinite(y)]
     if finite.size == 0:
         return out
-    center = float(np.median(finite))
+    if center is None or not np.isfinite(center):
+        center = float(np.median(finite))
     i = 0
     n = int(seq.size)
     while i < n:
@@ -883,21 +885,65 @@ def _flag_candidate_runs(
     return out
 
 
+#: Half width (phase) of the transit / eclipse windows around phase 0 and
+#: 0.5 of an object with a known ephemeris.
+ECLIPSE_WINDOW_PHASE = 0.05
+
+#: Faint runs shorter than this (minutes) are outliers (clouds, satellites);
+#: longer ones may be an eclipse. At least ``max_faint_run`` epochs.
+MAX_FAINT_RUN_MINUTES = 15.0
+
+
+def eclipse_window_mask(
+    times_bjd: np.ndarray, period: float, t0_bjd: float, half_width: float = ECLIPSE_WINDOW_PHASE
+) -> np.ndarray:
+    """True within ``half_width`` (phase) of phase 0 (transit / primary
+    eclipse) and 0.5 (secondary eclipse)."""
+    t = np.asarray(times_bjd, dtype=float)
+    if not (np.isfinite(period) and period > 0 and np.isfinite(t0_bjd)):
+        return np.zeros(t.shape, dtype=bool)
+    phase = np.mod((t - float(t0_bjd)) / float(period), 1.0)
+    d0 = np.minimum(phase, 1.0 - phase)
+    d5 = np.abs(phase - 0.5)
+    return np.isfinite(t) & ((d0 <= half_width) | (d5 <= half_width))
+
+
+def _row_eclipse_windows(tbl: Table, ephemerides: dict | None) -> np.ndarray:
+    """Per row: inside a transit / eclipse window of its source's ephemeris
+    (``{id: (period_d, t0_bjd_tdb)}``, times from ``bjd_tdb``)."""
+    n = len(tbl)
+    inside = np.zeros(n, dtype=bool)
+    if not ephemerides or n == 0 or "bjd_tdb" not in tbl.colnames:
+        return inside
+    ids = np.asarray(tbl["id"]).astype(int)
+    bjd = np.asarray(tbl["bjd_tdb"], dtype=float)
+    for sid, (period, t0) in ephemerides.items():
+        m = ids == int(sid)
+        if np.any(m):
+            inside[m] = eclipse_window_mask(bjd[m], float(period), float(t0))
+    return inside
+
+
 def flag_outliers_in_light_curves(
     tbl: Table,
     sigma: float | None = 5.0,
     *,
     max_faint_run: int = 2,
+    max_faint_minutes: float = MAX_FAINT_RUN_MINUTES,
+    ephemerides: dict | None = None,
 ) -> Table:
     """Per ``(id, filter)`` robust clip on mag or flux.
 
     Residuals are normalised by their errors (``mag_err`` / ``flux_err``)
     and the series' own scatter, see :func:`_clip_candidates`. A point is
-    ``flag_outlier`` when it is such an outlier and
-    either (1) the run of such points is at most ``max_faint_run`` epochs, or
-    (2) the run is on the bright side of the series median. Coherent faint
-    dips longer than that (eclipses) stay unflagged. Flags remain in the
-    table. ``sigma=None`` disables clipping.
+    ``flag_outlier`` when it is such an outlier and either (1) its run of
+    such points (within one night) is short, at most ``max_faint_minutes``
+    and at least ``max_faint_run`` epochs at the series' cadence, or (2)
+    the run is on the bright side of the series median. Coherent faint dips
+    longer than that (eclipses) stay unflagged; so do faint points inside a
+    transit / eclipse window of a known ephemeris (``ephemerides``
+    ``{id: (period, t0 BJD_TDB)}``, see :func:`eclipse_window_mask`). Flags
+    remain in the table. ``sigma=None`` disables clipping.
     """
     out = tbl.copy()
     n = len(out)
@@ -920,6 +966,12 @@ def flag_outliers_in_light_curves(
     else:
         times_all = np.full(n, np.nan)
     sig = float(sigma)
+    nights = (
+        np.asarray(out["night_id"]).astype(np.int64)
+        if "night_id" in out.colnames
+        else night_id_from_jd(times_all)
+    )
+    in_window = _row_eclipse_windows(out, ephemerides)
     for sid in np.unique(ids):
         for filt in np.unique(filts[ids == sid]):
             m = (ids == sid) & (filts == filt)
@@ -931,13 +983,28 @@ def flag_outliers_in_light_curves(
             cand = _clip_candidates(y, sig, None if e_all is None else e_all[m])
             if not np.any(cand):
                 continue
-            flagged = _flag_candidate_runs(
-                y,
-                cand,
-                _time_sort_order(times_all[m]),
-                bright_is_high=use_flux,
-                max_faint_run=max_faint_run,
-            )
+            t = times_all[m]
+            steps = np.diff(np.sort(t[np.isfinite(t)]))
+            steps = steps[steps > 0]
+            cadence_min = float(np.median(steps)) * 1440.0 if steps.size else np.nan
+            run_limit = int(max_faint_run)
+            if np.isfinite(cadence_min) and cadence_min > 0:
+                run_limit = max(run_limit, int(float(max_faint_minutes) // cadence_min))
+            flagged = np.zeros(idx.size, dtype=bool)
+            #   runs within one night: a dip at the end of one night and the
+            #   start of the next is not one event
+            for night in np.unique(nights[m]):
+                k = nights[m] == night
+                sub = np.flatnonzero(k)
+                runs = _flag_candidate_runs(
+                    y[sub], cand[sub], _time_sort_order(t[sub]),
+                    bright_is_high=use_flux, max_faint_run=run_limit,
+                    center=float(np.nanmedian(y)),
+                )
+                flagged[sub] = runs
+            #   faint points in a known transit / eclipse window are kept
+            faint = (y < np.nanmedian(y)) if use_flux else (y > np.nanmedian(y))
+            flagged &= ~(in_window[m] & faint)
             flag[idx] = flagged
     out["flag_outlier"] = flag
     return out
@@ -1079,8 +1146,13 @@ def build_light_curves_table(
     outlier_sigma: float | None = 5.0,
     observatory_location=None,
     color: str | None = None,
+    ephemerides: dict | None = None,
 ) -> Table:
-    """Long light-curve table: one row per source × filter × epoch."""
+    """Long light-curve table: one row per source × filter × epoch.
+
+    ``ephemerides`` (``{id: (period, t0 BJD_TDB)}``) keeps faint points in
+    known transit / eclipse windows from being flagged as outliers.
+    """
     names = object_names or {}
     cal = calibrator_ids or set()
     if phot is None or len(phot) == 0 or "id" not in phot.colnames:
@@ -1106,8 +1178,8 @@ def build_light_curves_table(
     if not parts:
         return _empty_light_curves_table()
     tbl = vstack(parts, metadata_conflicts="silent")
-    tbl = flag_outliers_in_light_curves(tbl, sigma=outlier_sigma)
     tbl = add_bjd_tdb_column(tbl, observatory_location)
+    tbl = flag_outliers_in_light_curves(tbl, sigma=outlier_sigma, ephemerides=ephemerides)
     tbl = add_color_index_rows(tbl, color, phot)
     from .magnitude_systems import table_magnitude_system
 
@@ -1129,6 +1201,7 @@ def build_light_curves_table_from_flux(
     dec: np.ndarray | None = None,
     outlier_sigma: float | None = 5.0,
     observatory_location=None,
+    ephemerides: dict | None = None,
 ) -> Table:
     """Long table from normalised ``(n_epochs, n_objects)`` relative fluxes.
 
@@ -1193,8 +1266,8 @@ def build_light_curves_table_from_flux(
             )
         )
     tbl = vstack(rows, metadata_conflicts="silent") if rows else _empty_light_curves_table()
-    tbl = flag_outliers_in_light_curves(tbl, sigma=outlier_sigma)
     tbl = add_bjd_tdb_column(tbl, observatory_location)
+    tbl = flag_outliers_in_light_curves(tbl, sigma=outlier_sigma, ephemerides=ephemerides)
     return tbl
 
 
@@ -1414,10 +1487,13 @@ def resolve_light_curve_source_id(
     )
 
 
-def apply_nightly_zero_point(tbl: Table) -> Table:
+def apply_nightly_zero_point(tbl: Table, *, ephemerides: dict | None = None) -> Table:
     """Subtract (mag) or divide (flux) the per-night median continuum.
 
-    The median uses the points without ``flag_outlier`` / ``flag_epoch``.
+    The median uses the points without ``flag_outlier`` / ``flag_epoch`` and,
+    with a known ephemeris (``{id: (period, t0 BJD_TDB)}``), outside the
+    transit / eclipse windows: a night covering an eclipse otherwise lifts
+    the continuum by part of the depth.
     Its error, ``1.2533 · σ_robust / √n``, is common to all points of the
     night: it is written as ``night_norm_err`` (mag, or relative for flux)
     and, for magnitudes, replaces ``mag_err_sys`` (the common calibration
@@ -1435,6 +1511,9 @@ def apply_nightly_zero_point(tbl: Table) -> Table:
     for col in ("flag_outlier", "flag_epoch"):
         if col in out.colnames:
             good &= ~np.asarray(out[col], dtype=bool)
+    in_window = _row_eclipse_windows(out, ephemerides)
+    if np.any(good & ~in_window):
+        good &= ~in_window
     norm_err = np.full(len(out), np.nan)
     for night in np.unique(nid):
         m = nid == int(night)
@@ -1551,7 +1630,15 @@ def plot_nights_compare_from_table(
             style_name="WARNING",
         )
     if align_nightly_zero:
-        sub = apply_nightly_zero_point(sub)
+        ephem = None
+        if period is not None and transit_time not in (None, "?"):
+            from ..plots.lightcurves import transit_time_bjd_tdb
+
+            try:
+                ephem = {int(source_id): (float(period), transit_time_bjd_tdb(transit_time))}
+            except (TypeError, ValueError):
+                ephem = None
+        sub = apply_nightly_zero_point(sub, ephemerides=ephem)
     name = name_object or str(sub["object_name"][0] or source_id)
     mag_sys = magnitude_system or table_magnitude_system(lc)
     ylabel = None

@@ -116,8 +116,20 @@ def _to_color_zero(cov: np.ndarray, c_ref: float) -> np.ndarray:
     return jac @ cov @ jac.T
 
 
-def _weighted_fit(delta, color, var, *, fit_color, fixed_t):
-    """One weighted solve; returns (zp_ref, t, cov(zp_ref, t) 2x2, c_ref)."""
+#: The errors-in-variables correction is applied while the measured colour
+#: spread exceeds the colour errors by this factor (S_xx_true ≥ (1 − 1/f)·S_xx).
+MIN_COLOR_SIGNAL = 1.5
+
+
+def _weighted_fit(delta, color, var, *, fit_color, fixed_t, color_var=None, delta_color_cov=None):
+    """One weighted solve; returns (zp_ref, t, cov(zp_ref, t) 2x2, c_ref).
+
+    With ``color_var`` (σ_C²) and ``delta_color_cov`` (cov(e_Δ, e_C)) the
+    slope is corrected for the errors of the catalog colour (method of
+    moments): ``T = (S_xΔ − Σw·cov) / (S_xx − Σw·σ_C²)``. The ordinary slope
+    is attenuated by the colour errors and biased by the catalog error the
+    magnitude and the colour share.
+    """
     w = 1.0 / var
     c_ref = float(np.sum(w * color) / np.sum(w)) if fit_color else 0.0
     if fit_color:
@@ -126,6 +138,15 @@ def _weighted_fit(delta, color, var, *, fit_color, fixed_t):
         aw = a * w[:, None]
         cov = np.linalg.inv(a.T @ aw)
         zp_ref, t = cov @ (aw.T @ delta)
+        if color_var is not None:
+            s_xx = float(np.sum(w * x**2))
+            noise = float(np.sum(w * color_var))
+            if s_xx > MIN_COLOR_SIGNAL * noise and s_xx > 0:
+                d_mean = float(np.sum(w * delta) / np.sum(w))
+                s_xd = float(np.sum(w * x * (delta - d_mean)))
+                shared = 0.0 if delta_color_cov is None else float(np.sum(w * delta_color_cov))
+                t = (s_xd - shared) / (s_xx - noise)
+                zp_ref = d_mean
         return float(zp_ref), float(t), cov, c_ref
     resid = delta - fixed_t * color
     zp = float(np.sum(w * resid) / np.sum(w))
@@ -138,6 +159,19 @@ def _chi2(delta, color, var, zp_ref, t, c_ref):
     return float(np.sum((delta - model) ** 2 / var))
 
 
+def shared_catalog_covariance(
+    filter_: str, color_filters: tuple[str, str], sigma_cat: np.ndarray
+) -> np.ndarray:
+    """cov(e_Δ, e_C) of ``Δ = m_std,f − m_inst`` and ``C = m_std,c1 − m_std,c2``:
+    ``+σ_f²`` when ``f`` is ``c1``, ``−σ_f²`` when it is ``c2``, else 0."""
+    sigma_cat = np.asarray(sigma_cat, dtype=float)
+    if filter_ == color_filters[0]:
+        return sigma_cat**2
+    if filter_ == color_filters[1]:
+        return -(sigma_cat**2)
+    return np.zeros_like(sigma_cat)
+
+
 def fit_zero_point(
     delta: np.ndarray,
     color: np.ndarray,
@@ -146,6 +180,7 @@ def fit_zero_point(
     *,
     fit_color: bool,
     sigma_color: np.ndarray | None = None,
+    delta_color_cov: np.ndarray | None = None,
     fixed_color_term: float = 0.0,
     fixed_color_term_err: float = 0.0,
     sigma_clip: float | None = 2.5,
@@ -157,6 +192,13 @@ def fit_zero_point(
     Returns NaN parameters with fewer than ``min_stars`` usable stars.
     ``fixed_color_term_err`` enters ``color_term_err`` (the colour term is
     not fitted, its error stays a systematic of every star's magnitude).
+
+    The colour term is corrected for the catalog colour errors
+    ``sigma_color`` and for ``delta_color_cov``, the covariance of the
+    errors of Δ and C (the catalog magnitude of the filter is part of the
+    colour: ``+σ_f²`` when the filter is the colour's first band, ``−σ_f²``
+    when it is the second), both scaled like the catalog errors. Without
+    it, T was biased by +0.014 / −0.010 for typical APASS errors.
     """
     delta = np.asarray(delta, dtype=float)
     color = np.asarray(color, dtype=float)
@@ -165,6 +207,19 @@ def fit_zero_point(
     sig_c2_raw = (
         np.zeros_like(delta) if sigma_color is None else np.asarray(sigma_color, dtype=float) ** 2
     )
+    cov_dc_raw = (
+        np.zeros_like(delta) if delta_color_cov is None else np.asarray(delta_color_cov, dtype=float)
+    )
+    sig_c2_raw = np.where(np.isfinite(sig_c2_raw), sig_c2_raw, 0.0)
+    cov_dc_raw = np.where(np.isfinite(cov_dc_raw), cov_dc_raw, 0.0)
+    eiv = sigma_color is not None
+
+    def solve(d, c, var, scale2, idx):
+        return _weighted_fit(
+            d, c, var, fit_color=fit_color, fixed_t=fixed_color_term,
+            color_var=scale2 * sig_c2_raw[idx] if eiv else None,
+            delta_color_cov=scale2 * cov_dc_raw[idx] if eiv else None,
+        )
     base = inst2 + cat2_raw
     valid = np.isfinite(delta) & np.isfinite(base) & (base > 0)
     if fit_color or fixed_color_term != 0.0:
@@ -183,9 +238,7 @@ def fit_zero_point(
         d, c = delta[use], color[use]
         base, sig_c2, cat_scale = inst2 + cat2_raw, sig_c2_raw, 1.0
         var0 = base[use] + t_now**2 * sig_c2[use]
-        zp_ref, t_now, cov, c_ref = _weighted_fit(
-            d, c, var0, fit_color=fit_color, fixed_t=fixed_color_term
-        )
+        zp_ref, t_now, cov, c_ref = solve(d, c, var0, cat_scale**2, use)
         chi2_0 = _chi2(d, c, var0, zp_ref, t_now, c_ref) / (n - p)
         # intrinsic scatter: σ_int with χ²_ν = 1 (bisection on the variance)
         sigma_int = 0.0
@@ -195,9 +248,7 @@ def fit_zero_point(
             for _bisect in range(50):
                 mid = 0.5 * (lo + hi)
                 var = inst2[use] + mid**2 * (cat2_raw[use] + t_now**2 * sig_c2_raw[use])
-                zp_ref, t_now, cov, c_ref = _weighted_fit(
-                    d, c, var, fit_color=fit_color, fixed_t=fixed_color_term
-                )
+                zp_ref, t_now, cov, c_ref = solve(d, c, var, mid**2, use)
                 if _chi2(d, c, var, zp_ref, t_now, c_ref) / (n - p) > target:
                     lo = mid
                 else:
@@ -211,9 +262,7 @@ def fit_zero_point(
             for _bisect in range(60):
                 mid = 0.5 * (lo + hi)
                 var = var0 + mid
-                zp_ref, t_now, cov, c_ref = _weighted_fit(
-                    d, c, var, fit_color=fit_color, fixed_t=fixed_color_term
-                )
+                zp_ref, t_now, cov, c_ref = solve(d, c, var, cat_scale**2, use)
                 if _chi2(d, c, var, zp_ref, t_now, c_ref) / (n - p) > target:
                     lo = mid
                 else:
@@ -230,9 +279,7 @@ def fit_zero_point(
 
     n = int(use.sum())
     var = (base + t_now**2 * sig_c2 + sigma_int**2)[use]
-    zp_ref, t_now, cov, c_ref = _weighted_fit(
-        delta[use], color[use], var, fit_color=fit_color, fixed_t=fixed_color_term
-    )
+    zp_ref, t_now, cov, c_ref = solve(delta[use], color[use], var, cat_scale**2, use)
     var_phot = inst2[use]
     cov_phot = _sandwich(color[use], var, var_phot, c_ref, fit_color=fit_color)
     cov_cat = _sandwich(color[use], var, var - var_phot, c_ref, fit_color=fit_color)

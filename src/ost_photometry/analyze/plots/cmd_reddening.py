@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import functools
+
 import numpy as np
 
 _RV_FINITE_DIFFERENCE = 1e-4
@@ -60,6 +62,68 @@ def _fitzpatrick_dk_drv(rv: float, inverse_um: float) -> float:
     return (_fitzpatrick_k(rv_hi, inverse_um) - _fitzpatrick_k(rv_lo, inverse_um)) / span
 
 
+#: Approximate passbands (centre, FWHM in Å) for the broadband extinction:
+#: Bessell (1990) UBVRI, SDSS ugriz.
+BROADBAND_PASSBANDS: dict[str, tuple[float, float]] = {
+    "U": (3600.0, 625.0), "B": (4380.0, 890.0), "V": (5450.0, 840.0),
+    "R": (6410.0, 1580.0), "I": (7980.0, 1540.0),
+    "u": (3551.0, 599.0), "g": (4686.0, 1379.0), "r": (6166.0, 1382.0),
+    "i": (7480.0, 1535.0), "z": (8932.0, 1370.0),
+}
+
+
+def broadband_extinction_ratio(filter_: str, rv: float, *, t_eff: float = 7000.0) -> float:
+    """``A_band / E(B−V)`` integrated over a Gaussian passband for a
+    ``t_eff`` blackbody (Fitzpatrick 1999 curve), normalised so that
+    ``A_B − A_V = E(B−V)`` with the same integration.
+
+    The curve read at the effective wavelength (monochromatic) differs from
+    the broadband value by a few per cent (U, R, I); the source spectrum
+    and the passband shift the effective wavelength under extinction.
+    """
+    from ost_photometry.calibration_parameters import fitzpatrick_extinction_curve
+
+    curve = fitzpatrick_extinction_curve(rv)
+    e_test = 0.05
+
+    def _a(band: str) -> float:
+        centre, fwhm = BROADBAND_PASSBANDS[band]
+        lam = np.linspace(centre - 1.5 * fwhm, centre + 1.5 * fwhm, 400)
+        lam = lam[lam > 2700.0]
+        sigma = fwhm / 2.3548
+        response = np.exp(-0.5 * ((lam - centre) / sigma) ** 2)
+        # photon-counting: S(λ)·F_λ·λ, F_λ of a blackbody
+        x = 1.4388e8 / (lam * t_eff)
+        f_lam = lam ** -5 / np.expm1(x)
+        weight = response * f_lam * lam
+        k = np.asarray(curve(1.0e4 / lam), dtype=float)
+        transmitted = np.sum(weight * 10 ** (-0.4 * k * e_test)) / np.sum(weight)
+        return float(-2.5 * np.log10(transmitted) / e_test)
+
+    scale = _a("B") - _a("V")
+    return _a(filter_) / scale if scale > 0 else float("nan")
+
+
+@functools.lru_cache(maxsize=256)
+def _curve_r_for_broadband_rv(rv: float) -> float:
+    """Fitzpatrick curve parameter whose broadband ``A_V/E(B−V)`` is ``rv``."""
+    r = float(rv)
+    for _ in range(20):
+        lo, hi = broadband_extinction_ratio("V", r - 0.01), broadband_extinction_ratio("V", r + 0.01)
+        slope = (hi - lo) / 0.02
+        miss = broadband_extinction_ratio("V", r) - float(rv)
+        if not np.isfinite(slope) or slope == 0 or abs(miss) < 1e-5:
+            break
+        r -= miss / slope
+    return r
+
+
+def broadband_k(filter_: str, rv: float) -> float:
+    """``A_band / E(B−V)`` for broadband ``R_V`` (``A_V = R_V·E(B−V)`` and
+    ``A_B − A_V = E(B−V)`` hold exactly)."""
+    return broadband_extinction_ratio(filter_, _curve_r_for_broadband_rv(round(float(rv), 4)))
+
+
 def reddening_for_absolute_cmd(
         filter_1: str, filter_2: str, rv: float, e_b_v: float,
         *, e_b_v_err: float | None = None, rv_err: float | None = None,
@@ -82,6 +146,26 @@ def reddening_for_absolute_cmd(
         d_a_drv = e_b_v
         d_rel_de = 1.0
         d_rel_drv = 0.0
+    elif filter_1 in BROADBAND_PASSBANDS and filter_2 in BROADBAND_PASSBANDS:
+        #   Broadband ratios; A_V = R_V·E(B−V) by definition of R_V, the
+        #   other bands scaled to it
+        def _k(band: str, r: float) -> float:
+            return broadband_k(band, r)
+
+        k1, k2 = _k(filter_1, rv), _k(filter_2, rv)
+        a_filter_2 = k2 * e_b_v
+        relative_extinction = (k1 - k2) * e_b_v
+        d_a_de = k2
+        d_rel_de = k1 - k2
+        if sigma_rv:
+            delta = _RV_FINITE_DIFFERENCE
+            dk1 = (_k(filter_1, rv + delta) - _k(filter_1, max(rv - delta, delta))) / (2 * delta)
+            dk2 = (_k(filter_2, rv + delta) - _k(filter_2, max(rv - delta, delta))) / (2 * delta)
+            d_a_drv = e_b_v * dk2
+            d_rel_drv = e_b_v * (dk1 - dk2)
+        else:
+            d_a_drv = 0.0
+            d_rel_drv = 0.0
     else:
         from ost_photometry.calibration_parameters import (
             filter_effective_wavelength,

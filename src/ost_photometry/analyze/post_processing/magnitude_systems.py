@@ -74,6 +74,13 @@ VEGA_TO_AB_OFFSET: dict[str, float] = {
     "z-s`": 0.54,
 }
 
+# SDSS catalog magnitudes are only nearly AB: m_AB = m_SDSS + offset
+# (SDSS DR documentation: u_AB = u_SDSS - 0.04, z_AB = z_SDSS + 0.02).
+SDSS_TO_AB_OFFSET: dict[str, float] = {"u": -0.04, "z": 0.02}
+
+#: Catalog names / Vizier ids whose u, z need :data:`SDSS_TO_AB_OFFSET`.
+SDSS_CATALOGS = frozenset({"SDSS_Release_16", "V/147/sdss12"})
+
 # Friendly catalog name and Vizier id → primary magnitude system of standards.
 CATALOG_MAGNITUDE_SYSTEMS: dict[str, MagnitudeSystem] = {
     "APASS": "vega",

@@ -36,6 +36,26 @@ def fit_epochs(
     """
     grouping = config.calibration_grouping
     min_comparisons = 3
+    if extinction_corrector is not None and getattr(config, "extinction_mode", None) == "from_comparison_stars":
+        #   k from the comparison stars, as on the linear path (before, the
+        #   tabulated values were used without a word). The corrector is the
+        #   one that applies the result, so the fitted k is used there too.
+        from ...extinction import fit_extinction_from_comparison_stars
+
+        fitted = fit_extinction_from_comparison_stars(epochs)
+        if fitted:
+            extinction_corrector.coefficients.update(fitted)
+        else:
+            import warnings
+
+            from ...warnings_types import OstPhotometryAnalyzeWarning
+
+            warnings.warn(
+                "extinction_mode='from_comparison_stars': no coefficient could be fitted "
+                "(airmass range or comparison stars); tabulated values are used.",
+                category=OstPhotometryAnalyzeWarning,
+                stacklevel=2,
+            )
     if extinction_corrector is not None:
         epochs = {
             eid: _extinction_corrected(tbl, filters, extinction_corrector)

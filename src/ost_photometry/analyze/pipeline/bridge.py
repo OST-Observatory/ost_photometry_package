@@ -443,6 +443,41 @@ def _pairing_index(
     return pairs
 
 
+def _warn_pairing_gaps_vs_period(context: AnalysisContext, image_groups: list[dict[str, Any]]) -> None:
+    """Warn when the frames of one epoch lie more than 2 % of a known OOI
+    period apart: the colour (and colour-term correction) of that variable
+    mixes phases. The magnitudes of each filter keep their own times."""
+    periods = []
+    for obj in context.objects_of_interest or []:
+        try:
+            period = float(getattr(obj, "period", None))
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(period) and period > 0:
+            periods.append((period, getattr(obj, "name", "")))
+    if not periods or not image_groups:
+        return
+    gaps = []
+    for group in image_groups:
+        jds = [_jd_for_image(im) for im in group.values() if hasattr(im, "jd")]
+        jds = [j for j in jds if j is not None]
+        if len(jds) > 1:
+            gaps.append(max(jds) - min(jds))
+    if not gaps:
+        return
+    gap = float(np.max(gaps))
+    period, name = min(periods)
+    if gap > 0.02 * period:
+        terminal_output.print_to_terminal(
+            f"Exposure pairing: frames of one epoch up to {gap * 1440:.1f} min apart, "
+            f"{100 * gap / period:.1f} % of the period of {name} ({period:.4f} d). Its colour "
+            "and colour-term correction mix phases; each filter's light curve keeps its own "
+            "times.",
+            indent=2,
+            style_name="WARNING",
+        )
+
+
 def _pairing_jd_nearest(
     context: AnalysisContext,
     filter_list: list[str],
@@ -608,6 +643,7 @@ def observation_to_calibration_epochs(
             skipped,
             debug=debug_pairing,
         )
+        _warn_pairing_gaps_vs_period(context, image_groups)
 
     epoch_idx = 0
     for group in image_groups:

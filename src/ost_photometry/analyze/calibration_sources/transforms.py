@@ -40,6 +40,20 @@ def _default_err(arr: np.ndarray, err: np.ndarray | None) -> np.ndarray:
     return np.asarray(err, dtype=float)
 
 
+def sdss_ri_from_primed_ri(r_primed: np.ndarray, i_primed: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """SDSS 2.5 m r, i from the USNO u′g′r′i′z′ system (APASS r′, i′).
+
+    ``r = r′ + 0.035·((r′ − i′) − 0.21)``, ``i = i′ + 0.041·((r′ − i′) − 0.21)``
+    (SDSS photometric equations, Gunn, Hogg, Finkbeiner & Schlegel; Tucker
+    et al. 2006). The Lupton (2005) relations are for SDSS r, i: applied to
+    APASS r′, i′ directly, red stars came out up to ~0.03 mag off.
+    """
+    r_primed = np.asarray(r_primed, dtype=float)
+    i_primed = np.asarray(i_primed, dtype=float)
+    ri = r_primed - i_primed - 0.21
+    return r_primed + 0.035 * ri, i_primed + 0.041 * ri
+
+
 def johnson_ri_from_sloan_ri(
     r_sloan: np.ndarray,
     i_sloan: np.ndarray,
@@ -240,11 +254,15 @@ def add_johnson_ri_to_standard_table(
     *,
     inplace: bool = False,
     skip_if_present: bool = True,
+    primed: bool = False,
 ) -> Table:
     """
     Add ``mag_std_R``/``err_std_R`` and ``mag_std_I``/``err_std_I`` from Sloan bands.
 
     Expects ``mag_std_r``, ``mag_std_i`` (Sloan) and optional ``err_std_r``/``err_std_i``.
+    ``primed``: the columns are r′, i′ of the USNO system (APASS); they are
+    converted to SDSS r, i (:func:`sdss_ri_from_primed_ri`) before Lupton.
+    ``mag_std_r`` / ``mag_std_i`` themselves are left as they are.
     """
     if not inplace:
         table = table.copy()
@@ -266,6 +284,8 @@ def add_johnson_ri_to_standard_table(
         else None
     )
 
+    if primed:
+        r_sloan, i_sloan = sdss_ri_from_primed_ri(r_sloan, i_sloan)
     R_j, I_j, eR, eI = johnson_ri_from_sloan_ri(r_sloan, i_sloan, err_r, err_i)
     table["mag_std_R"] = R_j
     table["mag_std_I"] = I_j

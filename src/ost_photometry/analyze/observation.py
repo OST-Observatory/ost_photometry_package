@@ -77,6 +77,12 @@ class Observation:
                             u.degree,
                             name,
                         )
+                        #   Simbad positions are J2000: the proper motion
+                        #   moves them to the observation epoch later
+                        from .utils.cluster_selection import query_simbad_astrometry
+
+                        pm_ra, pm_de, _plx = query_simbad_astrometry(name)
+                        ooi.pm_ra_cosdec, ooi.pm_dec = pm_ra, pm_de
                     except name_resolve.NameResolveError:
                         ooi = ObjectOfInterest(None, None, None, None, name)
                 else:

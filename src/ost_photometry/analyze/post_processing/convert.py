@@ -10,6 +10,8 @@ from astropy.table import Table
 from ... import calibration_parameters, terminal_output
 from ..calibration_sources.transforms import johnson_ubvri_from_sloan_arrays
 from .magnitude_systems import (
+    SDSS_CATALOGS,
+    SDSS_TO_AB_OFFSET,
     annotate_table_magnitude_meta,
     infer_filter_set,
     resolve_catalog_magnitude_system,
@@ -290,6 +292,23 @@ def convert_magnitudes_to_other_system(
 
     out = tbl.copy()
     notes: list[str] = []
+
+    #   Magnitudes on an SDSS catalog are SDSS, not exactly AB (u, z)
+    if (
+        calibration_source in SDSS_CATALOGS
+        and cal_fs == "sdss"
+        and not out.meta.get("sdss_ab_offsets_applied", False)
+    ):
+        shifted = []
+        for f, off in SDSS_TO_AB_OFFSET.items():
+            pair = _get_mag_err(out, f)
+            if pair is None:
+                continue
+            _set_cal_mag_err(out, f, pair[0] + off, pair[1], keep_split=True)
+            shifted.append(f)
+        if shifted:
+            out.meta["sdss_ab_offsets_applied"] = True
+            notes.append(f"SDSS→AB offsets on {shifted}")
 
     # Filter-set change
     if effective.filter_set == "sdss" and cal_fs != "sdss":

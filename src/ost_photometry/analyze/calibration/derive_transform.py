@@ -22,7 +22,7 @@ from astropy.stats import sigma_clip as astropy_sigma_clip
 from astropy.table import Table
 
 from .result import CalibrationResult, TransformationCoefficients
-from .statistics import catalog_errors, fit_zero_point
+from .statistics import catalog_errors, fit_zero_point, shared_catalog_covariance
 from .transform import unweighted_linear_fit
 from .zp import comparison_mask_from_std_columns
 
@@ -174,13 +174,15 @@ def calibration_result_from_derive_transform_fit(
     result = CalibrationResult(identifier=epoch_id)
     for f in filters:
         sigma_inst = _col(sub, f"err_{f}")
+        sigma_cat = catalog_errors(_col(sub, f"err_std_{f}"), len(sub))
         fit = fit_zero_point(
             np.asarray(sub[f"mag_std_{f}"], dtype=float) - np.asarray(sub[f"mag_{f}"], dtype=float),
             color,
             np.full(len(sub), np.nan) if sigma_inst is None else np.abs(sigma_inst),
-            catalog_errors(_col(sub, f"err_std_{f}"), len(sub)),
+            sigma_cat,
             fit_color=True,
             sigma_color=sigma_color,
+            delta_color_cov=shared_catalog_covariance(f, ci, sigma_cat),
             sigma_clip=None,
         )
         if not np.isfinite(fit.zero_point):

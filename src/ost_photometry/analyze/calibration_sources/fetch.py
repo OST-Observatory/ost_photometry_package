@@ -116,7 +116,8 @@ def _maybe_add_johnson_ri_standard(
     """
     If enabled and Sloan r/i exist but Johnson R/I do not, apply Lupton transform.
 
-    ``catalog_identifier`` is reserved for future per-catalog policy; currently unused.
+    For APASS (``catalog_identifier`` II/336/apass9) r′, i′ are primed and
+    converted to SDSS r, i first.
     """
     if not apply_sloan_to_johnson_ri:
         return table
@@ -124,7 +125,33 @@ def _maybe_add_johnson_ri_standard(
         return table
     if "mag_std_r" not in table.colnames or "mag_std_i" not in table.colnames:
         return table
-    return add_johnson_ri_to_standard_table(table, inplace=False)
+    primed = str(catalog_identifier or "") == APASS_VIZIER_ID
+    return add_johnson_ri_to_standard_table(table, inplace=False, primed=primed)
+
+
+def _vsp_coordinates(ra_values: list, dec_values: list) -> tuple[np.ndarray, np.ndarray]:
+    """VSP positions (sexagesimal strings ``HH:MM:SS``/``±DD:MM:SS``, or
+    numbers: RA in hours) in degrees."""
+    ra = np.full(len(ra_values), np.nan)
+    dec = np.full(len(dec_values), np.nan)
+    for i, (r, d) in enumerate(zip(ra_values, dec_values, strict=True)):
+        try:
+            if isinstance(r, str) and ":" in r:
+                c = SkyCoord(r, d, unit=(u.hourangle, u.deg))
+                ra[i], dec[i] = c.ra.deg, c.dec.deg
+            else:
+                ra[i], dec[i] = float(r) * 15.0, float(d)
+        except (TypeError, ValueError):
+            continue
+    return ra, dec
+
+
+def _as_float(value) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+    return number if np.isfinite(number) else float("nan")
 
 
 def _fetch_vsp_standard(
@@ -137,23 +164,26 @@ def _fetch_vsp_standard(
     """
     AAVSO VSP JSON API → standard table.
 
-    * Upper magnitude cut is sent to the API as ``maglimit`` (``range[1]``).
-    * Lower cut: legacy used ``magV >= range[0]`` when V band exists.
-    * RA from API is treated as **hours** and converted to degrees (×15) to match
-      historical ``hourangle`` behavior; Dec assumed degrees.
+    * The upper magnitude cut is sent to the API as ``maglimit``; the
+      range applies to every band (magnitudes outside it become NaN, stars
+      without any band left are dropped).
+    * Bands the chart does not give and missing errors are NaN (not 0).
+    * Positions come as sexagesimal strings (RA in hours) and are converted
+      to degrees.
     """
     _print("Downloading calibration data from www.aavso.org", indent=indent)
     filters = filter_list if filter_list else ["B", "V"]
     ra = center.ra.degree
     dec = center.dec.degree
     vsp_template = (
-        'https://www.aavso.org/apps/vsp/api/chart/"'
+        "https://www.aavso.org/apps/vsp/api/chart/"
         "?format=json&fov={}&maglimit={}&ra={}&dec={}&special=std_field"
     )
     r = requests.get(
         vsp_template.format(
             field_of_view_arcmin, calibration_catalog_mag_range[1], ra, dec
-        )
+        ),
+        timeout=60,
     )
     if r.status_code != 200:
         raise RuntimeError(
@@ -162,37 +192,34 @@ def _fetch_vsp_standard(
             f"{style.Bcolors.ENDC}"
         )
 
-    obj_id: list = []
-    obj_ra: list = []
-    obj_dec: list = []
-    n_obj = len(r.json()["photometry"])
-    n_filter = len(filters)
-    mags = np.zeros((n_obj, n_filter))
-    errs = np.zeros((n_obj, n_filter))
-
-    for i, star in enumerate(r.json()["photometry"]):
-        obj_id.append(star["auid"])
-        obj_ra.append(star["ra"])
-        obj_dec.append(star["dec"])
+    stars = r.json().get("photometry", []) or []
+    n_obj = len(stars)
+    mags = np.full((n_obj, len(filters)), np.nan)
+    errs = np.full((n_obj, len(filters)), np.nan)
+    obj_id = [star.get("auid", "") for star in stars]
+    for i, star in enumerate(stars):
         for j, filter_ in enumerate(filters):
-            for band in star["bands"]:
-                if band["band"][0] == filter_:
-                    mags[i, j] = band["mag"]
-                    errs[i, j] = band["error"]
+            for band in star.get("bands", []) or []:
+                # "Rc" / "Ic" are R / I
+                if str(band.get("band", ""))[:1] == filter_:
+                    mags[i, j] = _as_float(band.get("mag"))
+                    errs[i, j] = _as_float(band.get("error"))
+    obj_ra, obj_dec = _vsp_coordinates([star.get("ra") for star in stars],
+                                       [star.get("dec") for star in stars])
+
+    lo, hi = calibration_catalog_mag_range
+    outside = (mags < lo) | (mags > hi)
+    mags[outside] = np.nan
+    errs[outside] = np.nan
+    keep = np.any(np.isfinite(mags), axis=1) & np.isfinite(obj_ra) & np.isfinite(obj_dec)
 
     out = Table()
-    out["id"] = obj_id
-    # Hours → degrees for internal standard schema (ICRS deg)
-    out["ra"] = np.asarray(obj_ra, dtype=float) * 15.0
-    out["dec"] = np.asarray(obj_dec, dtype=float)
+    out["id"] = np.asarray(obj_id, dtype=str)[keep] if n_obj else np.asarray([], dtype=str)
+    out["ra"] = obj_ra[keep]
+    out["dec"] = obj_dec[keep]
     for j, filter_ in enumerate(filters):
-        out[f"mag_std_{filter_}"] = mags[:, j]
-        out[f"err_std_{filter_}"] = errs[:, j]
-
-    # Legacy lower bound only on V when present (typical variable-star charts)
-    if "mag_std_V" in out.colnames:
-        mask = out["mag_std_V"] >= calibration_catalog_mag_range[0]
-        out = out[mask]
+        out[f"mag_std_{filter_}"] = mags[keep, j]
+        out[f"err_std_{filter_}"] = errs[keep, j]
     _print(
         f"{len(out)} calibration objects remaining after magnitude filtering",
         indent=indent,
@@ -395,6 +422,7 @@ def _fetch_apass9_standard(
             "e_g'mag",
             "e_r'mag",
             "e_i'mag",
+            "nobs",
         ],
         row_limit=-1,
     )
@@ -455,7 +483,37 @@ def _fetch_apass9_standard(
         if "e_g'mag" in apass.colnames:
             out["err_std_g"] = apass["e_g'mag"]
 
-    out = add_johnson_ri_to_standard_table(out, inplace=False)
+    nobs = np.asarray(apass["nobs"], dtype=float) if "nobs" in apass.colnames else None
+    out = _apass_quality(out, nobs, indent)
+    out = add_johnson_ri_to_standard_table(out, inplace=False, primed=True)
+    return out
+
+
+def _apass_quality(out: Table, nobs: np.ndarray | None, indent: int) -> Table:
+    """APASS stars seen in a single night (``nobs`` < 2) are dropped; a band
+    with error 0 or no error (also single measurements) becomes NaN."""
+    n_before = len(out)
+    if nobs is not None:
+        out = out[~(np.isfinite(nobs) & (nobs < 2))]
+    n_bands = 0
+    for col in [c for c in out.colnames if c.startswith("mag_std_")]:
+        err_col = "err_std_" + col[len("mag_std_"):]
+        if err_col not in out.colnames:
+            continue
+        mags = np.array(np.ma.filled(np.ma.asarray(out[col], dtype=float), np.nan), dtype=float)
+        errs = np.array(np.ma.filled(np.ma.asarray(out[err_col], dtype=float), np.nan), dtype=float)
+        bad = np.isfinite(mags) & ~(np.isfinite(errs) & (errs > 0))
+        n_bands += int(np.count_nonzero(bad))
+        mags[bad] = np.nan
+        errs[bad] = np.nan
+        out[col] = mags
+        out[err_col] = errs
+    if n_before - len(out) or n_bands:
+        _print(
+            f"APASS quality: {n_before - len(out)} star(s) from a single night dropped, "
+            f"{n_bands} band value(s) without error set to NaN",
+            indent=indent,
+        )
     return out
 
 

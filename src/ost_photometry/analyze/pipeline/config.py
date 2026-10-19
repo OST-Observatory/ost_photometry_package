@@ -219,6 +219,9 @@ class ExtractionConfig:
     #: ``fwhm`` (multiples of each image's FWHM: the same fraction of the
     #: star in every frame and stack), ``arcsec`` or ``pixel``.
     radii_unit: Literal["fwhm", "arcsec", "pixel"] = "fwhm"
+    #: APER: model the detected stars (Moffat) and measure sky and aperture
+    #: with the neighbours removed (crowded fields, poor seeing).
+    aperture_neighbour_subtraction: bool = True
     strict_epsf_checks: bool = True
     transform_object_positions_to_reference: bool = False
     #: Add atmospheric scintillation (Osborn et al. 2015) to ``flux_err`` /
@@ -270,6 +273,7 @@ class ExtractionConfig:
             "inner_annulus_radius": self.inner_annulus_radius,
             "outer_annulus_radius": self.outer_annulus_radius,
             "radii_unit": self.radii_unit,
+            "aperture_neighbour_subtraction": self.aperture_neighbour_subtraction,
             "cosmic_ray_removal": normalize_cosmic_ray_removal(self.cosmic_ray_removal),
             "limiting_contrast_rm_cosmics": self.limiting_contrast_rm_cosmics,
             "read_noise": self.read_noise,
@@ -357,7 +361,9 @@ class CalibrationConfig:
     calibration_match_radius: u.Quantity = 2.0 * u.arcsec
     #: Drop catalog stars that coincide with VSX (known variables) before the fit.
     exclude_known_variables: bool = True
-    exclude_known_variables_radius: u.Quantity = 1.0 * u.arcsec
+    #: Match radius catalog star ↔ VSX: VSX positions of older variables
+    #: are often off by 1-2" (3", was 1").
+    exclude_known_variables_radius: u.Quantity = 3.0 * u.arcsec
     #: Reject catalog stars whose ``err_<filter>`` sits above the binned p84
     #: ridge of all detections at that magnitude.
     calibrator_error_p84_clip: bool = True
@@ -377,6 +383,14 @@ class CalibrationConfig:
     #: Calibrators whose aperture is masked by more than this fraction (bad
     #: pixels, frame edge) are excluded in every case.
     calibrator_max_masked_fraction: float = 0.05
+    #: Calibrators must be isolated: no own detection within this radius
+    #: (arcsec) less than ``calibrator_isolation_dmag`` fainter (catalog
+    #: positions of APASS-like surveys merge such pairs), and no more than
+    #: ``calibrator_max_neighbour_fraction`` neighbour light in the aperture
+    #: (``blended``). ``None`` disables a test; skipped when too few remain.
+    calibrator_isolation_arcsec: float | None = 10.0
+    calibrator_isolation_dmag: float = 5.0
+    calibrator_max_neighbour_fraction: float | None = 0.01
     debug_verify_ooi_global_ids: bool = False
     observatory_location: EarthLocation = field(
         default_factory=lambda: EarthLocation(
@@ -703,6 +717,15 @@ class PipelineConfig:
             )
         if problems:
             raise ValueError("PipelineConfig: invalid option value(s): " + "; ".join(problems))
+        if self.calibration_grouping in ("per_night", "ensemble") and self.extinction_mode == "none":
+            warnings.warn(
+                f"PipelineConfig: calibration_grouping={self.calibration_grouping!r} shares one "
+                "zero point between epochs, but extinction_mode='none': magnitudes drift with the "
+                "airmass by k·(X - X_mean) (k ≈ 0.2 mag/airmass in V, 0.33 in B). The drift is "
+                "carried as a systematic error; use extinction_mode='from_comparison_stars' or "
+                "'tabulated' when the night allows it.",
+                stacklevel=3,
+            )
 
     def as_flat_dict(self) -> dict[str, Any]:
         """Serialize all sub-config fields to a flat dictionary."""

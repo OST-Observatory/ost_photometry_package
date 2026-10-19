@@ -213,3 +213,28 @@ def test_saturated_and_masked_calibrators_always_excluded():
         # Even with min_keep above the candidate count these never pass.
         assert not mask[0] and not mask[1] and not mask[-1]
         assert np.count_nonzero(mask) == n - 3
+
+
+def test_calibrators_with_comparable_neighbours_are_dropped():
+    from astropy.table import Table
+
+    from ost_photometry.analyze.calibration.quality import calibrator_candidate_mask
+
+    n = 12
+    ra = 10.0 + np.arange(n) * 0.01
+    dec = np.full(n, 20.0)
+    mag = np.full(n, 13.0)
+    # star 0: neighbour 5" away, 1 mag fainter (an APASS blend) -> dropped
+    # star 1: neighbour 5" away, 7 mag fainter -> kept
+    ra = np.concatenate([ra, [ra[0] + 5 / 3600 / np.cos(np.radians(20)), ra[1] + 5 / 3600 / np.cos(np.radians(20))]])
+    dec = np.concatenate([dec, [20.0, 20.0]])
+    mag = np.concatenate([mag, [14.0, 20.0]])
+    std = np.concatenate([np.full(n, 12.5), [np.nan, np.nan]])
+    frac = np.zeros(n + 2)
+    frac[2] = 0.05  # star 2 blended in the aperture
+    tbl = Table({"ra": ra, "dec": dec, "mag_V": mag, "err_V": np.full(n + 2, 0.01),
+                 "mag_std_V": std, "err_std_V": np.full(n + 2, 0.02),
+                 "neighbour_flux_fraction_V": frac})
+    mask = calibrator_candidate_mask(tbl, ["V"], error_p84_clip=False, photon_factor=None,
+                                     apply_finder_shape_cuts=False, qfit_max=None, cfit_max=None)
+    assert not mask[0] and mask[1] and not mask[2] and mask[3]

@@ -12,7 +12,7 @@ from .vizier_query import get_vizier_catalog
 
 VSX_VIZIER_ID = "B/vsx/vsx"
 KNOWN_VARIABLES_EXCLUDED_META = "ost_photometry.known_variables_excluded"
-DEFAULT_EXCLUDE_RADIUS = 1.0 * u.arcsec
+DEFAULT_EXCLUDE_RADIUS = 3.0 * u.arcsec
 _ROW_COL = "ost_cat_row"
 
 

@@ -1,11 +1,17 @@
 """Calibrated magnitudes against Gaia DR3 synthetic Johnson photometry.
 
-Usage: python scripts/validation/gaia_synthetic_comparison.py <output_dir> [radius_arcmin]
+Usage: python scripts/validation/gaia_synthetic_comparison.py <output_dir> [radius_arcmin] [gaia|stetson]
 
 Reads ``<output_dir>/tables/calibrated_magnitudes_*.ecsv`` (several epochs
 are reduced to the per-star median), queries the Gaia DR3 Synthetic
 Photometry Catalogue (Vizier ``I/360/syntphot``, Johnson-Kron-Cousins B/V,
 standardised on Landolt) around the field centre and matches within 1".
+
+``stetson`` uses Stetson's ground-based standard photometry instead
+(Pancino et al. 2022 collection, Vizier ``J/A+A/664/A109/table5``, entries
+with ``Collect == Stetson``; e.g. the NGC 7789 standard field). Gaia XP
+synthetic photometry of faint stars in crowded fields is contaminated by
+neighbours, Stetson's is not.
 
 For B and V it prints the median of ``mag_cal - gaia`` and its trends with
 magnitude, colour, distance from the image centre and neighbours; the same
@@ -65,15 +71,44 @@ def _trend(label, x, d, edges):
     print(f"    vs {label}: " + " | ".join(out))
 
 
-def main(out_dir: str, radius_arcmin: float = 15.0) -> None:
+def _stetson(center, radius_arcmin):
+    """Stetson B/V as a table with the Gaia column names used below."""
+    from astropy.table import Table as _T
+
+    viz = Vizier(columns=["RAJ2000", "DEJ2000", "Bmag", "e_Bmag", "Vmag", "e_Vmag", "Collect", "VarFlag"],
+                 row_limit=200_000)
+    tbl = viz.query_region(center, radius=radius_arcmin * u.arcmin, catalog="J/A+A/664/A109/table5")[0]
+    tbl = tbl[np.asarray(tbl["Collect"]).astype(str) == "Stetson"]
+    out = _T()
+    out["RA_ICRS"] = np.asarray(tbl["RAJ2000"], float)
+    out["DE_ICRS"] = np.asarray(tbl["DEJ2000"], float)
+    for band in ("B", "V"):
+        mag = np.asarray(np.ma.filled(tbl[f"{band}mag"], np.nan), float)
+        err = np.asarray(np.ma.filled(tbl[f"e_{band}mag"], np.nan), float)
+        out[f"{band}mag"] = mag
+        # flux and its error so that 1.0857·e_F/F = e_mag
+        out[f"F{band}"] = np.ones(len(tbl))
+        out[f"e_F{band}"] = err / 1.0857
+        var = np.asarray(np.ma.filled(tbl["VarFlag"], 0)).astype(str) if "VarFlag" in tbl.colnames else None
+        ok = np.isfinite(mag) & np.isfinite(err)
+        if var is not None:
+            ok &= np.isin(np.char.strip(var), ["", "0", "--"])
+        out[f"{band}Flag"] = ok.astype(int)
+    return out
+
+
+def main(out_dir: str, radius_arcmin: float = 15.0, reference: str = "gaia") -> None:
     f = sorted(x for x in glob.glob(f"{out_dir}/tables/calibrated_magnitudes_*.ecsv") if "post_processed" not in x)[0]
     tbl = _per_star(Table.read(f))
     ra, dec = np.asarray(tbl["ra"], float), np.asarray(tbl["dec"], float)
     ok = np.isfinite(ra) & np.isfinite(dec)
     center = SkyCoord(np.nanmedian(ra) * u.deg, np.nanmedian(dec) * u.deg)
-    viz = Vizier(columns=["RA_ICRS", "DE_ICRS", "Bmag", "Vmag", "FB", "e_FB", "FV", "e_FV", "BFlag", "VFlag"],
-                 row_limit=200_000)
-    gaia = viz.query_region(center, radius=radius_arcmin * u.arcmin, catalog="I/360/syntphot")[0]
+    if reference == "stetson":
+        gaia = _stetson(center, radius_arcmin)
+    else:
+        viz = Vizier(columns=["RA_ICRS", "DE_ICRS", "Bmag", "Vmag", "FB", "e_FB", "FV", "e_FV", "BFlag", "VFlag"],
+                     row_limit=200_000)
+        gaia = viz.query_region(center, radius=radius_arcmin * u.arcmin, catalog="I/360/syntphot")[0]
     g = SkyCoord(np.asarray(gaia["RA_ICRS"], float) * u.deg, np.asarray(gaia["DE_ICRS"], float) * u.deg)
     ours = SkyCoord(ra[ok] * u.deg, dec[ok] * u.deg)
     idx, sep, _ = ours.match_to_catalog_sky(g)
@@ -133,4 +168,5 @@ def main(out_dir: str, radius_arcmin: float = 15.0) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], float(sys.argv[2]) if len(sys.argv) > 2 else 15.0)
+    main(sys.argv[1], float(sys.argv[2]) if len(sys.argv) > 2 else 15.0,
+         sys.argv[3] if len(sys.argv) > 3 else "gaia")

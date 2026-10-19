@@ -43,6 +43,59 @@ section of this file.
 - **Intra-filter matching** uses pixel coordinates only when every frame
   lies on the reference grid (before: the median frame), else sky
   coordinates.
+- **APER neighbour subtraction** (`aperture_neighbour_subtraction`, default
+  on): the detected stars are modelled as Moffat profiles (image FWHM, β of
+  the growth curve); sky and aperture are measured again with the
+  neighbours removed (DAOPHOT style). In the crowded NGC 7789 stacks
+  (FWHM 5.5″) faint stars were up to 50 mmag too faint against Stetson's
+  standards.
+- **CMD epoch mean in flux**, weighted by flux errors (free of the measured
+  fluctuation), over the epochs with all filters; colour errors combined
+  over the epochs (random part averages, common part does not). The
+  weighted magnitude mean was −10 mmag biased at σ = 0.1 mag.
+- **Common mode iterated:** the ensemble stars' zero points are refined
+  until the offsets converge, so stars missing in some epochs leave no
+  steps.
+- **Light-curve outliers:** faint runs per night, up to 15 min (at least 2
+  epochs) instead of a fixed 2 epochs; with a known ephemeris faint points
+  in the transit / eclipse windows (phase 0 and 0.5 ± 0.05) are never
+  flagged and the nightly normalisation uses the points outside them.
+- **Cluster membership:** photometry is matched to the full Gaia cone, the
+  quality cuts apply afterwards (a star whose own source failed them got a
+  neighbour's membership).
+- **Objects of interest** resolved by name move by their Simbad proper
+  motion to the median observation time.
+- **CMD reddening:** broadband `A_λ/E(B−V)` (Fitzpatrick 1999 integrated
+  over the passband, 7000 K source) with `A_V = R_V·E(B−V)` and
+  `A_B − A_V = E(B−V)` exactly, instead of the curve at the effective
+  wavelength.
+- **SDSS u, z** on SDSS catalogs get the AB offsets (u_AB = u − 0.04,
+  z_AB = z + 0.02) when converted.
+- **Colour term with errors in both axes** (method of moments: colour
+  errors and the catalog error shared by Δ and the colour). Typical APASS
+  errors biased T by +0.02 (B) / −0.01 (V).
+- **`color_term_fit="auto"`** is decided once per filter over all epochs
+  (no more mix of epochs with and without a colour term).
+- **Isolated calibrators:** no detection within 10″ less than 5 mag fainter
+  and ≤ 1 % neighbour light (`calibrator_isolation_arcsec`,
+  `calibrator_isolation_dmag`, `calibrator_max_neighbour_fraction`).
+- **APASS:** stars from a single night (`nobs` < 2) are dropped and band
+  values without an error are NaN; Johnson R/I from r′, i′ convert the
+  primed (USNO) system to SDSS r, i first (Lupton holds for SDSS).
+- **VSX exclusion radius** 3″ (was 1″); Sloan filters use neighbouring-band
+  colours (g−r, r−i, …) by default instead of B−V.
+- **Shared zero point without extinction** (`per_night` / `ensemble` with
+  `extinction_mode='none'`): warning, and the drift `k·(X − X_ref)` with the
+  filter's typical k is part of the systematic error.
+- **Second-order extinction:** default k″ follow the AAVSO sign convention
+  (k″_B = −0.03, others 0; before +0.02 / +0.01); the colour is taken before
+  the magnitudes are overwritten, mapped onto the standard scale
+  (`C_std = a + b·C_inst` from the epoch's catalog stars), the catalog
+  colour where the instrumental one is missing (`ext_second_order_<f>`
+  marks stars with first order only); a k′ fitted from the calibrators is
+  reduced by k″·C̄ so the k″ term is not counted twice.
+- **Pairing warning** when the frames of one epoch are more than 2 % of a
+  known OOI period apart.
 - **Pixel scale from the WCS:** `Image.pixel_scale` comes from the header
   WCS and is updated when the WCS is solved, not from `XPIXSZ` /
   `FOCALLEN` (a frame resampled onto another binning kept the old pixel
@@ -85,6 +138,13 @@ section of this file.
 
 ### Fixed
 
+- **AAVSO VSP:** the URL had a stray quote, sexagesimal positions failed to
+  parse, missing bands were magnitude 0 and missing errors `None`, and only
+  V was cut to the magnitude range.
+- **Rolling smoothing** of the calibration moved stars of typical colour by
+  ΔT·C_ref when only the colour term was smoothed.
+- **`median_zp` with `extinction_mode='from_comparison_stars'`** used the
+  tabulated k without fitting it.
 - **astroalign registration with a scale** (other binning) did not conserve
   flux: values are now scaled by the pixel-area ratio like σ and the noise
   keywords. Area ratios within 1e-3 of 1 (plate-solution noise) are no

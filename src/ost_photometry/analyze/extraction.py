@@ -71,6 +71,7 @@ from .photometry_quality import (
     aperture_correction,
     aperture_flux_errors,
     background_noise_factor,
+    moffat_star_model,
     neighbour_flux_fraction,
     saturated_sources,
     source_disk_mask,
@@ -1811,6 +1812,55 @@ def apertures_from_xy(
     )
 
 
+def _subtract_neighbours(
+    image, data, uncertainty, tbl, aperture, annulus, area, mask, stars_mask, r_ap, terminal_logger, indent,
+    n_iter: int = 2,
+) -> dict | None:
+    """Neighbour-subtracted aperture photometry (DAOPHOT style), in place.
+
+    The stars' total fluxes (first pass / Moffat encircled energy of the
+    aperture) give a model image of all detected stars. The sky is the
+    clipped annulus median of ``data − model`` (wings of the star and of all
+    neighbours removed), the aperture sum is ``Σ(data − model) + own model``
+    (only the neighbours removed; the star's own pixels stay data). Two
+    passes. In crowded fields with poor seeing, neighbour light in the
+    annulus made faint stars too faint by up to 50 mmag (NGC 7789 against
+    Stetson's standards). Returns the new sky statistics, ``None`` when the
+    FWHM is unknown.
+    """
+    fwhm = float(getattr(image, "fwhm", float("nan")) or float("nan"))
+    if not np.isfinite(fwhm) or fwhm <= 0 or len(tbl) == 0:
+        return None
+    x = np.asarray(tbl["x_center"], dtype=float)
+    y = np.asarray(tbl["y_center"], dtype=float)
+    flux = np.asarray(tbl["flux_fit"], dtype=float)
+    err = np.asarray(tbl["aperture_sum_err"], dtype=float)
+    growth = total_flux_correction(data, uncertainty, x, y, flux, err, fwhm, mask=mask, source_mask=stars_mask)
+    beta = float(growth["beta"]) if np.isfinite(growth["beta"]) else 2.5
+    alpha = fwhm / (2.0 * np.sqrt(2.0 ** (1.0 / beta) - 1.0))
+    ee_ap = 1.0 - (1.0 + (r_ap / alpha) ** 2) ** (1.0 - beta)
+    total = np.clip(np.nan_to_num(flux), 0.0, None) / ee_ap
+    sky = None
+    for _ in range(max(1, int(n_iter))):
+        model, own = moffat_star_model(np.shape(data), x, y, total, fwhm, beta, aperture_radius=r_ap)
+        residual = np.asarray(data, dtype=float) - model
+        ap_sum = np.asarray(aperture_photometry(residual, aperture, mask=mask)["aperture_sum"], dtype=float) + own
+        sky = annulus_sky(residual, uncertainty, annulus, mask=mask, source_mask=stars_mask)
+        flux = ap_sum - sky["sky"] * area
+        total = np.clip(np.nan_to_num(flux), 0.0, None) / ee_ap
+        del model, residual
+    tbl["aperture_sum"] = ap_sum
+    tbl["annulus_median"] = sky["sky"]
+    tbl["aper_bkg"] = sky["sky"] * area
+    tbl["flux_fit"] = flux
+    msg = f"Neighbours subtracted (Moffat, FWHM {fwhm:.2f} px, β = {beta:.2f})"
+    if terminal_logger is not None:
+        terminal_logger.add_to_cache(msg, indent=indent)
+    else:
+        terminal_output.print_to_terminal(msg, indent=indent)
+    return sky
+
+
 def extraction_aperture(
     image: AnalysisImage,
     radius_aperture: float,
@@ -1821,8 +1871,15 @@ def extraction_aperture(
     terminal_logger: terminal_output.TerminalLog | None = None,
     file_type_plots: str = "pdf",
     indent: int = 2,
+    neighbour_subtraction: bool = True,
 ) -> None:
-    """Perform aperture photometry using the photutils aperture package."""
+    """Perform aperture photometry using the photutils aperture package.
+
+    With ``neighbour_subtraction`` the detected stars are modelled as
+    Moffat profiles (image FWHM, β of the growth curve) and the sky and the
+    aperture sums are measured again with the neighbours removed (see
+    :func:`_subtract_neighbours`).
+    """
     ccd = image.read_image()
     data = ccd.data
     uncertainty = _pixel_error(image, ccd)
@@ -1896,6 +1953,11 @@ def extraction_aperture(
     r_ap_pix = float(np.atleast_1d(aperture.r)[0])
     r_in_pix = float(np.atleast_1d(annulus_aperture.r_in)[0])
     r_out_pix = float(np.atleast_1d(annulus_aperture.r_out)[0])
+    if neighbour_subtraction:
+        sky = _subtract_neighbours(
+            image, data, uncertainty, photometry_tbl, aperture, annulus_aperture,
+            aperture_area, phot_mask, stars_mask, r_ap_pix, terminal_logger, indent,
+        ) or sky
     detected = np.column_stack(
         [np.asarray(photometry_tbl["x_center"]), np.asarray(photometry_tbl["y_center"])]
     )
@@ -2044,6 +2106,7 @@ def extract_multiprocessing(
     inner_annulus_radius: float | None = None,
     outer_annulus_radius: float | None = None,
     radii_unit: str = "fwhm",
+    aperture_neighbour_subtraction: bool = True,
     strict_epsf_checks: bool = True,
     plots_for_all_images: bool = False,
     use_wcs_projection_for_star_maps: bool = True,
@@ -2098,6 +2161,7 @@ def extract_multiprocessing(
                 "inner_annulus_radius": inner_annulus_radius,
                 "outer_annulus_radius": outer_annulus_radius,
                 "radii_unit": radii_unit,
+                "aperture_neighbour_subtraction": aperture_neighbour_subtraction,
                 "plots_for_all_images": plots_for_all_images,
                 "file_type_plots": file_type_plots,
                 "use_wcs_projection_for_star_maps": use_wcs_projection_for_star_maps,
@@ -2153,6 +2217,7 @@ def main_extract(
     inner_annulus_radius: float | None = None,
     outer_annulus_radius: float | None = None,
     radii_unit: str = "fwhm",
+    aperture_neighbour_subtraction: bool = True,
     strict_epsf_checks: bool = True,
     cosmic_ray_removal: bool | str = "auto",
     limiting_contrast_rm_cosmics: float = 5.0,
@@ -2355,6 +2420,7 @@ def main_extract(
                 radius_aperture_use,
                 inner_annulus_use,
                 outer_annulus_use,
+                neighbour_subtraction=aperture_neighbour_subtraction,
                 radii_unit="pixel",
                 plot_aperture_positions=plot_aperture_positions,
                 terminal_logger=terminal_logger,

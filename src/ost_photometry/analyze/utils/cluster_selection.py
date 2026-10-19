@@ -217,6 +217,17 @@ def gaia_astrometry_covariance(gaia: Table) -> np.ndarray | None:
     return cov
 
 
+def match_to_quality_sources(obj_coordinates, gaia_coordinates, quality, separation_arcsec):
+    """Match against all Gaia sources, keep the matches to sources that pass
+    ``quality``; returns ``(id_img, index into the quality-passing sources)``."""
+    id_img, id_gaia_all, _sep = match_photometry_to_gaia(
+        obj_coordinates, gaia_coordinates, separation_arcsec=separation_arcsec
+    )
+    quality = np.asarray(quality, dtype=bool)
+    passed = quality[id_gaia_all]
+    return id_img[passed], (np.cumsum(quality) - 1)[id_gaia_all[passed]]
+
+
 def _empty_cluster_table(tbl: Table) -> Table:
     empty = tbl[0:0]
     empty.meta["cluster_membership"] = {
@@ -354,7 +365,6 @@ def find_cluster(
         empty = _empty_cluster_table(tbl)
         return empty, np.zeros(0, dtype=int), quality, np.zeros(0, dtype=bool)
 
-    gaia_q = gaia[quality]
     pm_ra_q = pm_ra[quality]
     pm_de_q = pm_de[quality]
     plx_q = plx[quality]
@@ -392,11 +402,11 @@ def find_cluster(
         simbad_plx=simbad_plx,
     )
 
-    gaia_coordinates = _gaia_skycoord(gaia_q, years=years)
-    id_img, id_gaia, _sep = match_photometry_to_gaia(
-        obj_coordinates,
-        gaia_coordinates,
-        separation_arcsec=separation_limit,
+    #   Match against the full cone, then keep the matches whose Gaia source
+    #   passed the quality cuts: matching only the good sources gave a star
+    #   whose own counterpart failed them the neighbour's membership.
+    id_img, id_gaia = match_to_quality_sources(
+        obj_coordinates, _gaia_skycoord(gaia, years=years), quality, separation_limit
     )
     if id_img.size == 0:
         terminal_output.print_to_terminal(

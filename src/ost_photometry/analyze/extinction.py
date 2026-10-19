@@ -74,25 +74,30 @@ class ExtinctionCoefficients:
 # cat-star.org http://cat-star.org/SOCO/PROCESSING/extinction.html
 # Note: Coefficients vary night-to-night and season-to-season (humidity, aerosols).
 # For precision use fit_extinction_from_value_airmass or fit_extinction_from_comparison_stars.
+# Second order (m_0 = m - k'X - k''X·C, C the standard colour): red stars
+# lose less light in a broad blue band, so k''_B is negative, about -0.03 per
+# airmass per mag of B-V (AAVSO, "typical values of 2nd order extinction
+# coefficients"; Henden & Kaitchuck). V, R and I are ~0 at the OST's
+# precision; k''_U is poorly known and left at 0 (fit it from data).
 DEFAULT_EXTINCTION = {
     "U": ExtinctionCoefficients(
-        "U", k_prime=0.60, k_prime_err=0.06, k_second=0.03,
+        "U", k_prime=0.60, k_prime_err=0.06, k_second=0.0,
         color_filter_1="U", color_filter_2="B",
     ),
     "B": ExtinctionCoefficients(
-        "B", k_prime=0.33, k_prime_err=0.04, k_second=0.02,
+        "B", k_prime=0.33, k_prime_err=0.04, k_second=-0.03,
         color_filter_1="B", color_filter_2="V",
     ),
     "V": ExtinctionCoefficients(
-        "V", k_prime=0.20, k_prime_err=0.03, k_second=0.01,
+        "V", k_prime=0.20, k_prime_err=0.03, k_second=0.0,
         color_filter_1="B", color_filter_2="V",
     ),
     "R": ExtinctionCoefficients(
-        "R", k_prime=0.13, k_prime_err=0.02, k_second=0.01,
+        "R", k_prime=0.13, k_prime_err=0.02, k_second=0.0,
         color_filter_1="V", color_filter_2="R",
     ),
     "I": ExtinctionCoefficients(
-        "I", k_prime=0.08, k_prime_err=0.02, k_second=0.005,
+        "I", k_prime=0.08, k_prime_err=0.02, k_second=0.0,
         color_filter_1="R", color_filter_2="I",
     ),
 }
@@ -590,6 +595,51 @@ def fill_missing_airmass(images, location: EarthLocation | None) -> tuple[int, i
     return computed, missing
 
 
+def _second_order_color(
+    data: Table,
+    instrumental: dict[str, np.ndarray],
+    filter_1: str,
+    filter_2: str,
+    catalog_prefix: str | None,
+) -> np.ndarray | None:
+    """Standard colour ``filter_1 - filter_2`` per row for the k'' term.
+
+    The instrumental colour carries the zero-point difference of the two
+    bands (through k''·X it would act like a wrong k') and is stretched by
+    the colour terms and k''·X: it is mapped onto the standard scale by a
+    straight line ``C_catalog = a + b·C_instrumental`` through the rows
+    with both (at least 5, colour spread > 0.2 mag; else only the median
+    offset). Rows without an instrumental colour take the catalog colour;
+    NaN where neither exists. ``None`` without any colour source.
+    """
+    inst = None
+    if filter_1 in instrumental and filter_2 in instrumental:
+        inst = instrumental[filter_1] - instrumental[filter_2]
+    cat = None
+    if catalog_prefix:
+        c1, c2 = f"{catalog_prefix}{filter_1}", f"{catalog_prefix}{filter_2}"
+        if c1 in data.colnames and c2 in data.colnames:
+            cat = np.asarray(data[c1].ravel(), dtype=float) - np.asarray(data[c2].ravel(), dtype=float)
+    if inst is None and cat is None:
+        return None
+    if inst is None:
+        return cat
+    color = inst.copy()
+    if cat is not None:
+        both = np.isfinite(inst) & np.isfinite(cat)
+        if np.count_nonzero(both) >= 5 and np.std(cat[both]) > 0.2:
+            slope, intercept = np.polyfit(inst[both], cat[both], 1)
+            resid = cat[both] - (intercept + slope * inst[both])
+            good = np.abs(resid) <= 3.0 * 1.4826 * np.median(np.abs(resid - np.median(resid))) + 1e-6
+            if np.count_nonzero(good) >= 5:
+                slope, intercept = np.polyfit(inst[both][good], cat[both][good], 1)
+            color = intercept + slope * inst
+        elif np.any(both):
+            color = color + float(np.median(cat[both] - inst[both]))
+        color = np.where(np.isfinite(color), color, cat)
+    return color
+
+
 class ExtinctionCorrector:
     """
     Correct atmospheric extinction.
@@ -679,6 +729,15 @@ class ExtinctionCorrector:
                 f"{[f'airmass_{f}' for f in filters]} for extinction correction."
             )
 
+        #   Colours from the magnitudes as they came in: with output_prefix ==
+        #   mag_col_prefix the loop overwrites them filter by filter.
+        original = {
+            col[len(mag_col_prefix):]: np.array(data[col].ravel(), dtype=float)
+            for col in data.colnames
+            if col.startswith(mag_col_prefix)
+            and (std_col_prefix is None or not col.startswith(std_col_prefix))
+        }
+
         for filter_ in filters:
             mag_col = f"{mag_col_prefix}{filter_}"
             if mag_col not in data.colnames:
@@ -707,38 +766,23 @@ class ExtinctionCorrector:
             correction = coeff.k_prime * airmass
 
             if self.order == ExtinctionOrder.SECOND and coeff.k_second != 0:
-                ci_col1 = f"{mag_col_prefix}{coeff.color_filter_1}"
-                ci_col2 = f"{mag_col_prefix}{coeff.color_filter_2}"
-                if ci_col1 in data.colnames and ci_col2 in data.colnames:
-                    color = np.array(data[ci_col1].ravel()) - np.array(data[ci_col2].ravel())
-                    correction += coeff.k_second * airmass * color
-                elif catalog_color_prefix:
-                    s1 = f"{catalog_color_prefix}{coeff.color_filter_1}"
-                    s2 = f"{catalog_color_prefix}{coeff.color_filter_2}"
-                    if s1 in data.colnames and s2 in data.colnames:
-                        color = np.asarray(data[s1].ravel(), dtype=float) - np.asarray(
-                            data[s2].ravel(), dtype=float
-                        )
-                        color = np.where(np.isfinite(color), color, 0.0)
-                        correction += coeff.k_second * airmass * color
-                    else:
-                        missing = [c for c in (ci_col1, ci_col2) if c not in data.colnames]
-                        warnings.warn(
-                            f"Second-order extinction for filter {filter_} skipped: missing "
-                            f"instrumental color {missing} and catalog columns "
-                            f"{[c for c in (s1, s2) if c not in data.colnames]}.",
-                            category=OstPhotometryAnalyzeWarning,
-                            stacklevel=2,
-                        )
-                else:
-                    missing = [c for c in (ci_col1, ci_col2) if c not in data.colnames]
+                color = _second_order_color(
+                    data, original, coeff.color_filter_1, coeff.color_filter_2, catalog_color_prefix
+                )
+                if color is None:
                     warnings.warn(
-                        f"Second-order extinction for filter {filter_} skipped: missing "
-                        f"columns {missing} (need {coeff.color_filter_1}-{coeff.color_filter_2} "
-                        f"under prefix '{mag_col_prefix}').",
+                        f"Second-order extinction for filter {filter_} skipped: no "
+                        f"{coeff.color_filter_1}-{coeff.color_filter_2} colour (instrumental "
+                        "or catalog).",
                         category=OstPhotometryAnalyzeWarning,
                         stacklevel=2,
                     )
+                    data[f"ext_second_order_{filter_}"] = np.zeros(len(data), dtype=bool)
+                else:
+                    has = np.isfinite(color)
+                    correction = correction + coeff.k_second * airmass * np.where(has, color, 0.0)
+                    #   False: no colour for this star, first order only
+                    data[f"ext_second_order_{filter_}"] = has
 
             m_corrected = m_obs - correction
             data[f"{output_prefix}{filter_}"] = m_corrected

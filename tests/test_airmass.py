@@ -86,3 +86,41 @@ def test_header_jd_start_mid():
     assert mid - start == pytest.approx(5 / 86400, abs=1e-9)
     with pytest.raises(ValueError):
         header_jd_start_mid(fits.Header({"EXPTIME": 10.0}))
+
+
+def test_second_order_uses_standard_colour_of_uncorrected_mags():
+    """b, v with different zero points: m0 - m_true is the same for every
+    colour and airmass (colour on the standard scale, taken before the
+    loop overwrites mag_B)."""
+    import numpy as np
+    from astropy.table import Table
+
+    from ost_photometry.analyze.extinction import (
+        ExtinctionCoefficients,
+        ExtinctionCorrector,
+        ExtinctionOrder,
+    )
+
+    rng = np.random.default_rng(1)
+    n = 30
+    bv = rng.uniform(0.0, 1.6, n)
+    v_true = rng.uniform(11, 14, n)
+    b_true = v_true + bv
+    rows = []
+    k = {"B": (0.30, -0.03), "V": (0.18, 0.0)}
+    for x in (1.1, 1.6, 2.2):
+        b = b_true + 24.1 + k["B"][0] * x + k["B"][1] * x * bv
+        v = v_true + 23.4 + k["V"][0] * x
+        rows.append(Table({"mag_B": b, "mag_V": v, "mag_std_B": b_true, "mag_std_V": v_true,
+                           "airmass": np.full(n, x)}))
+    corrector = ExtinctionCorrector(order=ExtinctionOrder.SECOND)
+    corrector.coefficients = {
+        f: ExtinctionCoefficients(f, k_prime=kp, k_second=ks, color_filter_1="B", color_filter_2="V")
+        for f, (kp, ks) in k.items()
+    }
+    for tbl in rows:
+        out = corrector.correct(tbl, mag_col_prefix="mag_", output_prefix="mag_", filters=["B", "V"],
+                                catalog_color_prefix="mag_std_")
+        np.testing.assert_allclose(out["mag_B"] - b_true, 24.1, atol=1e-6)
+        np.testing.assert_allclose(out["mag_V"] - v_true, 23.4, atol=1e-9)
+        assert np.all(out["ext_second_order_B"])

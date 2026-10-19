@@ -253,7 +253,59 @@ def calibrator_quality_kwargs(config: Any) -> dict[str, Any]:
         ),
         "min_keep": int(getattr(config, "calibrator_min_keep", 3)),
         "max_masked_fraction": float(getattr(config, "calibrator_max_masked_fraction", 0.05)),
+        "isolation_arcsec": getattr(config, "calibrator_isolation_arcsec", 10.0),
+        "isolation_dmag": float(getattr(config, "calibrator_isolation_dmag", 5.0)),
+        "max_neighbour_fraction": getattr(config, "calibrator_max_neighbour_fraction", 0.01),
     }
+
+
+def _isolated(
+    table: Table,
+    filters: list[str],
+    radius_arcsec: float | None,
+    dmag: float,
+    max_neighbour_fraction: float | None,
+) -> np.ndarray:
+    """True for stars without a comparable neighbour (see calibrator_candidate_mask)."""
+    from scipy.spatial import cKDTree
+
+    n = len(table)
+    ok = np.ones(n, dtype=bool)
+    if max_neighbour_fraction is not None:
+        for f in filters:
+            col = f"neighbour_flux_fraction_{f}"
+            if col in table.colnames:
+                frac = np.asarray(table[col], dtype=float)
+                ok &= ~(np.isfinite(frac) & (frac > float(max_neighbour_fraction)))
+    if radius_arcsec is None or "ra" not in table.colnames or "dec" not in table.colnames:
+        return ok
+    ra = np.radians(np.asarray(table["ra"], dtype=float))
+    dec = np.radians(np.asarray(table["dec"], dtype=float))
+    pos = np.isfinite(ra) & np.isfinite(dec)
+    if np.count_nonzero(pos) < 2:
+        return ok
+    xyz = np.column_stack([np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)])
+    radius = 2.0 * np.sin(np.radians(float(radius_arcsec) / 3600.0) / 2.0)
+    mags = None
+    for f in filters:
+        col = f"mag_{f}"
+        if col in table.colnames:
+            mags = np.asarray(table[col], dtype=float)
+            break
+    idx = np.flatnonzero(pos)
+    tree = cKDTree(xyz[idx])
+    for k, neighbours in enumerate(tree.query_ball_point(xyz[idx], radius)):
+        i = idx[k]
+        others = [idx[j] for j in neighbours if j != k]
+        if not others:
+            continue
+        if mags is None or not np.isfinite(mags[i]):
+            ok[i] = False
+            continue
+        m_other = mags[others]
+        if np.any(~np.isfinite(m_other) | (m_other - mags[i] < float(dmag))):
+            ok[i] = False
+    return ok
 
 
 def calibrator_candidate_mask(
@@ -273,14 +325,20 @@ def calibrator_candidate_mask(
     roundness_range: tuple[float, float] = (-1.0, 1.0),
     apply_finder_shape_cuts: bool = True,
     max_masked_fraction: float = 0.05,
+    isolation_arcsec: float | None = 10.0,
+    isolation_dmag: float = 5.0,
+    max_neighbour_fraction: float | None = 0.01,
 ) -> np.ndarray:
     """Catalog matches that also pass photometric-error and PSF/finder quality cuts.
 
     Measurements that cannot be right are always excluded, however few
     candidates remain: saturated, non-positive flux, or more than
     ``max_masked_fraction`` of the aperture masked (in any fit filter).
-    The quality cuts follow in order (shape, qfit/cfit, error ridge); each
-    is skipped if it would leave fewer than ``min_keep`` candidates.
+    The quality cuts follow in order (isolation, shape, qfit/cfit, error
+    ridge); each is skipped if it would leave fewer than ``min_keep``
+    candidates. Isolation: no own detection within ``isolation_arcsec``
+    less than ``isolation_dmag`` fainter, and ``neighbour_flux_fraction``
+    at most ``max_neighbour_fraction`` in every filter.
     """
     if config is not None:
         kw = calibrator_quality_kwargs(config)
@@ -299,6 +357,7 @@ def calibrator_candidate_mask(
         if np.count_nonzero(next_mask) >= keep:
             mask = next_mask
 
+    _try(mask & _isolated(table, filters, isolation_arcsec, isolation_dmag, max_neighbour_fraction))
     if apply_finder_shape_cuts:
         _try(
             mask

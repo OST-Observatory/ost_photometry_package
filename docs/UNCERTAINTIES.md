@@ -166,7 +166,17 @@ Stack headers:
     image with about 400 apertures on empty sky, measured exactly like
     stars. Faint undetected stars, flat-field structure, scattered light and
     noise correlated by resampling all raise it.
-- **Radii:** in FWHM by default (2.0 / 2.8 / 4.0), see PIPELINE_CONFIG.
+- **Radii:** in FWHM by default, see PIPELINE_CONFIG.
+- **Neighbour subtraction** (`aperture_neighbour_subtraction`, default on):
+  all detected stars are modelled as Moffat profiles (image FWHM, β of the
+  growth curve, total flux from the first pass). The sky is measured on
+  `data − model` (all stars removed), the aperture on `data − model + own
+  model` (only the neighbours removed; the star's own pixels stay data).
+  Two passes.
+  - *Why:* in crowded fields with poor seeing neighbour light in aperture
+    and annulus shifted faint stars by tens of mmag (NGC 7789, FWHM 5.5″:
+    up to +50 mmag against Stetson's standards); simulated targets next to
+    10× brighter stars: 36 mmag → < 10 mmag.
 - **Masked pixels:** filled with the median of their neighbours, inside
   stars from a local Moffat fit. Their σ is the neighbours' σ plus the
   neighbours' spread (`1.4826·MAD`). `aperture_masked_fraction` is the
@@ -270,7 +280,27 @@ Var(ε) = σ_inst² + σ_cat² + T²·σ_C² + σ_int²
 - With clipping at kσ the target is the variance of a normal truncated at
   ±k instead of 1 (0.91 at the default 2.5σ), since the kept residuals
   scatter less than their errors.
-- `T` is fitted around the mean colour.
+- `T` is fitted around the weighted mean colour of the calibrators
+  (`color_ref`), where `ZP` and `T` are almost uncorrelated. Rolling
+  smoothing works on the zero point at the epochs' median `color_ref` and
+  computes `ZP` at colour 0 back from the smoothed `T`, so a star of
+  typical colour does not move when only `T` is smoothed.
+- **Colour errors (errors in variables):** the catalog colour is noisy and
+  shares the catalog error of the filter's own magnitude (`+σ_f²` when the
+  filter is the colour's first band, `−σ_f²` when it is the second). The
+  slope is corrected by the method of moments,
+  `T = (S_xΔ − Σw·cov(e_Δ, e_C)) / (S_xx − Σw·σ_C²)`, while the colour
+  spread exceeds the colour errors 1.5-fold. Without it, typical APASS
+  errors (σ_B = 0.04, σ_V = 0.03) biased T by about +0.02 (B) / −0.01 (V).
+- `color_term_fit="auto"` is decided once per filter: the colour term is
+  fitted in every epoch when the comparison stars of all epochs together
+  span more than 0.1 mag (std), else in none.
+- **Calibrators** must be isolated: no own detection within 10″ less than
+  5 mag fainter (merged catalog pairs) and at most 1 %
+  `neighbour_flux_fraction` (`calibrator_isolation_arcsec`,
+  `calibrator_isolation_dmag`, `calibrator_max_neighbour_fraction`; the cut
+  is skipped when too few calibrators remain). APASS stars measured in one
+  night (`nobs` < 2) and band values without an error are not used.
 - When σ_int had to be estimated, the errors get the Student-t 1σ factor.
 
 Simulated 1σ coverage of ZP and T:
@@ -362,6 +392,10 @@ Monte Carlo on real tables as a cross-check (non-Gaussian low-S/N errors,
   common mode.
 - `excess_rms` is `√max(0, var − mean(σ²))` (ddof = 1). The median error
   underrated the expected variance for mixed errors.
+- Each star's zero point is refined against the common mode
+  (`median(m_j − offset)`, iterated to convergence): a star missing in some
+  epochs otherwise has a zero shifted by those epochs' common mode, and the
+  common mode steps where it drops in or out.
 
 ### Outlier flags
 
@@ -369,6 +403,13 @@ Residuals are normalised by `√(σ² + s²)`, where `s` is the series' own
 scatter beyond the errors (from the MAD). A point with a large error is not
 flagged for its error alone. A series with MAD 0 (constant or quantised)
 flags nothing.
+
+Faint outliers are flagged only in short runs within one night (at most
+15 min at the series' cadence, at least 2 epochs): a coherent longer dip
+may be an eclipse. With a known ephemeris (OOI period and `transit_time`
+as BJD_TDB) faint points within ±0.05 in phase of phase 0 and 0.5 are never
+flagged, and the nightly normalisation uses the points outside these
+windows.
 
 ### Flux fallback (filters without catalog calibration)
 
@@ -411,9 +452,17 @@ bright, isolated, unsaturated stars (median, error `1.2533·σ/√n`).
 ### Input
 
 - Several epochs are averaged per star (`combine_cmd_epochs`, default of
-  `load_cmd_table`; was the first epoch). Weights are the point errors;
-  the error of the mean is `√(max(1/Σw, var/n) + mean(common²))`, so the
-  catalog part does not average down and variable stars keep their scatter.
+  `load_cmd_table`; was the first epoch), in **flux** with weights from the
+  flux errors `σ_F = F·σ_m/1.0857` (free of the measured fluctuation; the
+  magnitude mean weighted by `σ_m` favoured bright fluctuations, −10 mmag
+  at σ = 0.1). Only epochs with all filters of the star are used, so a
+  colour compares the same epochs. The error of the mean is
+  `√(max(1/Σw, var/n) + mean(common²))`, so the catalog part does not
+  average down and variable stars keep their scatter; colour errors are
+  combined the same way.
+- Reddening: broadband `A_λ/E(B−V)` (Fitzpatrick 1999 over the passband,
+  7000 K source), scaled so that `A_V = R_V·E(B−V)` and `A_B − A_V =
+  E(B−V)` hold exactly (R_V = 3.1: U 4.88, B 4.10, R 2.48, I 1.74).
 - The colour error comes from the joint calibration solution
   (`err_cal_<f1>-<f2>`), and `cov(colour, mag)` follows from the three
   variances (`−σ₂²` for independent filters).

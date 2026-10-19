@@ -174,3 +174,34 @@ def test_calibration_epochs_table_rows():
     assert tbl["zero_point_err_phot"][0] == pytest.approx(0.01)
     assert tbl["zero_point_err_cat"][0] == pytest.approx(np.sqrt(0.0003))
     assert tbl["quality_flag"][0] == "few_calibrators"
+
+
+@pytest.mark.parametrize(("filter_", "sign"), [("B", 1.0), ("V", -1.0)])
+def test_color_term_corrected_for_catalog_color_errors(filter_, sign):
+    """B−V from the catalog shares the error of B (or V): without the
+    errors-in-variables correction T is biased by ~+0.02 (B) / −0.01 (V)."""
+    with isolated_sys_modules():
+        st = _stats()
+        rng = np.random.default_rng(3 if filter_ == "B" else 4)
+        t_true, s_b, s_v = 0.10, 0.04, 0.03
+        fitted, naive = [], []
+        for _ in range(1500):
+            c_true = rng.uniform(0.3, 1.2, 40)
+            e_b, e_v = rng.normal(0, s_b, 40), rng.normal(0, s_v, 40)
+            e_inst = rng.normal(0, 0.005, 40)
+            color = c_true + e_b - e_v
+            e_f, s_f = (e_b, s_b) if filter_ == "B" else (e_v, s_v)
+            delta = 25.0 + t_true * c_true + e_f - e_inst
+            s_cat = np.full(40, s_f)
+            s_color = np.full(40, np.hypot(s_b, s_v))
+            common = dict(fit_color=True, sigma_color=s_color, sigma_clip=None)
+            fit = st.fit_zero_point(
+                delta, color, np.full(40, 0.005), s_cat,
+                delta_color_cov=st.shared_catalog_covariance(filter_, ("B", "V"), s_cat), **common,
+            )
+            plain = st.fit_zero_point(delta, color, np.full(40, 0.005), s_cat, fit_color=True,
+                                      sigma_clip=None)
+            fitted.append(fit.color_term)
+            naive.append(plain.color_term)
+        assert abs(np.mean(fitted) - t_true) < 0.003
+        assert sign * (np.mean(naive) - t_true) > 0.006

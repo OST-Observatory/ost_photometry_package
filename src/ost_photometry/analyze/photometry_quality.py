@@ -454,12 +454,53 @@ def neighbour_flux_fraction(
     return out
 
 
+def moffat_star_model(
+    shape: tuple[int, int],
+    x: np.ndarray,
+    y: np.ndarray,
+    flux: np.ndarray,
+    fwhm: float,
+    beta: float,
+    *,
+    radius_fwhm: float = 6.0,
+    aperture_radius: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Image of Moffat stars (total ``flux``, FWHM, β; stamps of
+    ``radius_fwhm`` FWHM) and, with ``aperture_radius``, each star's own
+    model summed in a circle of that radius on the same pixels (exact
+    overlap, as ``aperture_photometry``)."""
+    ny, nx = shape
+    alpha = float(fwhm) / (2.0 * math.sqrt(2.0 ** (1.0 / beta) - 1.0))
+    norm = (beta - 1.0) / (np.pi * alpha**2)
+    half = int(np.ceil(radius_fwhm * fwhm))
+    model = np.zeros(shape, dtype=float)
+    own = np.zeros(np.size(x))
+    dy, dx = np.mgrid[-half:half + 1, -half:half + 1]
+    for k, (xc, yc, f) in enumerate(zip(np.asarray(x, float), np.asarray(y, float), np.asarray(flux, float),
+                                        strict=True)):
+        if not (np.isfinite(xc) and np.isfinite(yc) and np.isfinite(f)) or f <= 0:
+            continue
+        ix, iy = int(round(xc)), int(round(yc))
+        stamp = f * norm * (1.0 + ((dx + ix - xc) ** 2 + (dy + iy - yc) ** 2) / alpha**2) ** (-beta)
+        y0, y1 = max(0, iy - half), min(ny, iy + half + 1)
+        x0, x1 = max(0, ix - half), min(nx, ix + half + 1)
+        if y0 >= y1 or x0 >= x1:
+            continue
+        sub = stamp[y0 - (iy - half):y1 - (iy - half), x0 - (ix - half):x1 - (ix - half)]
+        model[y0:y1, x0:x1] += sub
+        if aperture_radius is not None:
+            ap = CircularAperture((xc - x0, yc - y0), float(aperture_radius))
+            own[k] = float(ap.do_photometry(sub)[0][0])
+    return model, own
+
+
 __all__ = [
     "BLEND_FRACTION",
     "GROWTH_RADII_FWHM",
     "GROWTH_SKY_RING_FWHM",
     "MEDIAN_ERROR_FACTOR",
     "annulus_sky",
+    "moffat_star_model",
     "neighbour_flux_fraction",
     "aperture_correction",
     "aperture_flux_errors",

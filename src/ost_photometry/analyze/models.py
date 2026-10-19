@@ -66,6 +66,28 @@ class ObjectOfInterest:
         self.transit_time: str | None = None
         self.period: float | None = None
 
+        #   Proper motion (mas/yr, μ_α* and μ_δ) and the epoch of the
+        #   coordinates (Simbad: ICRS J2000); see move_to_epoch.
+        self.pm_ra_cosdec: float | None = None
+        self.pm_dec: float | None = None
+        self.coordinates_epoch_jd: float = 2451545.0
+
+    def move_to_epoch(self, jd: float) -> float:
+        """Shift the coordinates by the proper motion to ``jd``; returns the
+        shift in arcsec (0 without proper motion or coordinates)."""
+        if self.pm_ra_cosdec is None or self.pm_dec is None or self.ra is None or self.dec is None:
+            return 0.0
+        years = (float(jd) - float(self.coordinates_epoch_jd)) / 365.25
+        if not np.isfinite(years) or years == 0.0:
+            return 0.0
+        d_dec = float(self.pm_dec) * years / 3.6e6
+        d_ra = float(self.pm_ra_cosdec) * years / 3.6e6 / np.cos(np.radians(float(self.dec)))
+        self.ra = float(self.ra) + d_ra
+        self.dec = float(self.dec) + d_dec
+        self.coordinates_object = SkyCoord(ra=self.ra * u.deg, dec=self.dec * u.deg, frame="icrs")
+        self.coordinates_epoch_jd = float(jd)
+        return float(np.hypot(float(self.pm_ra_cosdec), float(self.pm_dec)) * abs(years) / 1000.0)
+
 
 class ImageSeries:
     """

@@ -236,6 +236,37 @@ class PhotometryCalibrator:
             self.extinction.coefficients.update(fitted)
         return fitted
 
+    def _decide_color_terms(self, filters: list[str], comparison_selector) -> dict[str, str]:
+        """``auto`` colour term, decided once per filter for all epochs.
+
+        Fitted (``always``) when the comparison stars of all epochs together
+        span more than 0.1 mag (std) in the filter's colour, else ``never``.
+        A per-epoch decision mixed epochs with and without a colour term:
+        magnitudes jumped between them and the per-night combination failed.
+        """
+        decision: dict[str, str] = {}
+        for filter_ in filters:
+            c1, c2 = self.photometer.color_indices.get(filter_, ("B", "V"))
+            colours = []
+            for data in self.epochs.values():
+                s1, s2 = f"mag_std_{c1}", f"mag_std_{c2}"
+                if s1 not in data.colnames or s2 not in data.colnames:
+                    continue
+                mask = np.asarray(comparison_selector(data), dtype=bool)
+                colour = np.asarray(data[s1], dtype=float) - np.asarray(data[s2], dtype=float)
+                colours.append(colour[mask & np.isfinite(colour)])
+            pooled = np.concatenate(colours) if colours else np.array([])
+            spread = float(np.std(pooled)) if pooled.size > 1 else 0.0
+            decision[filter_] = "always" if spread > 0.1 else "never"
+            if decision[filter_] == "never":
+                warnings.warn(
+                    f"Filter {filter_}: colour spread of the comparison stars std={spread:.3f} mag "
+                    "<= 0.1 over all epochs, using ZP-only fits (no colour term)",
+                    category=OstPhotometryAnalyzeWarning,
+                    stacklevel=2,
+                )
+        return decision
+
     def set_fixed_color_terms(self, color_terms: dict[str, tuple[float, float]]) -> None:
         """Colour terms ``{filter: (T, σ_T)}`` held fixed in FIXED mode."""
         self.fixed_color_terms = dict(color_terms)
@@ -299,6 +330,9 @@ class PhotometryCalibrator:
                     if std_col in table.colnames:
                         mask &= np.isfinite(table[std_col])
                 return mask
+
+        if color_term_fit == "auto" and determine_color_terms:
+            color_term_fit = self._decide_color_terms(filters, comparison_selector)
 
         results = {}
         if self.mode == CoefficientMode.FIXED:

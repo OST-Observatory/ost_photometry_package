@@ -19,7 +19,12 @@ from ...core.parallel import start_plot_process
 from ..extinction import ExtinctionCorrector, extinction_airmass_ready
 from ..warnings_types import OstPhotometryAnalyzeWarning
 from .result import CalibrationResult, TransformationCoefficients
-from .statistics import catalog_errors, combine_epoch_fits, fit_zero_point
+from .statistics import (
+    catalog_errors,
+    combine_epoch_fits,
+    fit_zero_point,
+    shared_catalog_covariance,
+)
 
 #: Catalog error per band when the catalog gives none (APASS convention,
 #: see ``calibration_sources/fetch.py``).
@@ -192,18 +197,27 @@ def _write_calibrated_errors(
         return np.abs(np.asarray(data[col].ravel(), dtype=float))
 
     def _extinction_sys(f):
+        #   Shared zero point (airmass_ref set): σ_k·(X - X_ref) with an
+        #   extinction correction; without one the whole drift k·(X - X_ref)
+        #   with the filter's typical k is a systematic error.
         tc = cal.transformation[f]
         x_ref = getattr(tc, "airmass_ref", None)
-        if x_ref is None or extinction is None or not np.isfinite(x_ref):
+        if x_ref is None or not np.isfinite(x_ref):
             return np.zeros(n)
-        if getattr(getattr(extinction, "order", None), "name", "NONE") == "NONE":
-            return np.zeros(n)
-        coeff = getattr(extinction, "coefficients", {}).get(f)
-        k_err = float(getattr(coeff, "k_prime_err", 0.0) or 0.0) if coeff is not None else 0.0
         col = f"airmass_{f}" if f"airmass_{f}" in data.colnames else fallback_airmass_col
-        if k_err <= 0 or col not in data.colnames:
+        if col not in data.colnames:
             return np.zeros(n)
         x = np.asarray(data[col], dtype=float)
+        if extinction is None or getattr(getattr(extinction, "order", None), "name", "NONE") == "NONE":
+            from ..extinction import DEFAULT_EXTINCTION
+
+            typical = DEFAULT_EXTINCTION.get(f)
+            k_typ = float(typical.k_prime) if typical is not None else 0.2
+            return np.nan_to_num((k_typ * (x - x_ref)) ** 2)
+        coeff = getattr(extinction, "coefficients", {}).get(f)
+        k_err = float(getattr(coeff, "k_prime_err", 0.0) or 0.0) if coeff is not None else 0.0
+        if k_err <= 0:
+            return np.zeros(n)
         return (k_err * (x - x_ref)) ** 2
 
     colors = {}
@@ -332,6 +346,12 @@ def _apply_rolling_smooth_to_per_image_results(
     """
     Replace per-epoch T and/or ZP with a centered rolling statistic along ``ordered_epoch_ids``.
 
+    The zero point is smoothed at a common reference colour ``c0`` (median
+    of the epochs' ``color_ref``): ``zp(c0) = ZP0 + T·c0``, then
+    ``ZP0 = zp(c0)_smoothed − T_new·c0``. ``ZP0`` (colour 0) and ``T`` are
+    strongly anticorrelated; smoothing ``T`` alone with ``ZP0`` kept moved a
+    star of typical colour by ``ΔT·c0``.
+
     Formal errors of smoothed quantities are the same rolling statistic of
     the per-epoch errors (conservative: the catalog part does not average
     down). A smoothed zero point misses how far an epoch's own zero point
@@ -363,6 +383,7 @@ def _apply_rolling_smooth_to_per_image_results(
         t_errs: list[float] = []
         zp_errs: list[float] = []
         covs: list[float] = []
+        c_refs: list[float] = []
         has_tc: list[bool] = []
         for eid in ordered_epoch_ids:
             tc = results[eid].transformation.get(filter_)
@@ -372,6 +393,7 @@ def _apply_rolling_smooth_to_per_image_results(
                 t_errs.append(np.nan)
                 zp_errs.append(np.nan)
                 covs.append(np.nan)
+                c_refs.append(np.nan)
                 has_tc.append(False)
             else:
                 t_vals.append(float(tc.color_term))
@@ -379,10 +401,15 @@ def _apply_rolling_smooth_to_per_image_results(
                 t_errs.append(float(tc.color_term_err))
                 zp_errs.append(float(tc.zero_point_err))
                 covs.append(float(tc.cov_tz))
+                c_refs.append(float(getattr(tc, "color_ref", 0.0)))
                 has_tc.append(True)
 
+        finite_c = np.asarray(c_refs, dtype=float)
+        finite_c = finite_c[np.isfinite(finite_c)]
+        c0 = float(np.median(finite_c)) if finite_c.size else 0.0
         s_t = pd.Series(t_vals, dtype=float)
-        s_zp = pd.Series(zp_vals, dtype=float)
+        #   zero point at the common reference colour c0
+        s_zp = pd.Series(np.asarray(zp_vals, dtype=float) + np.asarray(t_vals, dtype=float) * c0, dtype=float)
         s_te = pd.Series(t_errs, dtype=float)
         s_ze = pd.Series(zp_errs, dtype=float)
         roll_t = _roll(s_t, color_term_mode)
@@ -410,9 +437,8 @@ def _apply_rolling_smooth_to_per_image_results(
             new_te = (
                 float(roll_te.iloc[i]) if color_term_mode != "none" else tc.color_term_err
             )
-            new_zp = (
-                float(roll_zp.iloc[i]) if zero_point_mode != "none" else tc.zero_point
-            )
+            zp_c0 = float(roll_zp.iloc[i]) if zero_point_mode != "none" else float(s_zp.iloc[i])
+            new_zp = zp_c0 - new_t * c0
             new_ze = (
                 float(roll_ze.iloc[i])
                 if zero_point_mode != "none"
@@ -493,6 +519,12 @@ class DifferentialPhotometer:
         "V": ("B", "V"),
         "R": ("V", "R"),
         "I": ("R", "I"),
+        #   Sloan: neighbouring bands (not B-V, which the Sloan catalogs lack)
+        "u": ("u", "g"),
+        "g": ("g", "r"),
+        "r": ("g", "r"),
+        "i": ("r", "i"),
+        "z": ("i", "z"),
     }
 
     def __init__(
@@ -638,11 +670,14 @@ class DifferentialPhotometer:
                 sigma_color = np.zeros(len(comps))
 
             fixed = (fixed_color_terms or {}).get(filter_)
+            mode_f = (
+                color_term_fit.get(filter_, "auto") if isinstance(color_term_fit, dict) else color_term_fit
+            )
             if fixed is not None:
                 use_linear = False
-            elif color_term_fit == "always":
+            elif mode_f == "always":
                 use_linear = determine_color_terms and has_color
-            elif color_term_fit == "never":
+            elif mode_f == "never":
                 use_linear = False
             else:
                 spread = np.nanstd(color_std[valid]) if has_color else 0.0
@@ -669,6 +704,7 @@ class DifferentialPhotometer:
                 sigma_cat,
                 fit_color=use_linear,
                 sigma_color=sigma_color,
+                delta_color_cov=shared_catalog_covariance(filter_, ci_filters, sigma_cat),
                 fixed_color_term=0.0 if fixed is None else float(fixed[0]),
                 fixed_color_term_err=0.0 if fixed is None else float(fixed[1]),
                 sigma_clip=sigma_clip,

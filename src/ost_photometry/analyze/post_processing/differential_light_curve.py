@@ -368,6 +368,39 @@ def flag_bad_epochs(
     return flag, text
 
 
+def iterated_common_mode(
+    values: np.ndarray,
+    err: np.ndarray,
+    valid: np.ndarray,
+    members: np.ndarray,
+    member_excess: np.ndarray,
+    *,
+    max_iter: int = 20,
+    tol: float = 1e-5,
+) -> dict:
+    """:func:`ensemble_common_mode` with the stars' zero points refined.
+
+    Each star's zero point starts as its median over its own epochs; a star
+    missing in some epochs (clouds, edge) then has a zero shifted by the
+    common mode of the missing epochs, and the offset steps where it drops
+    in or out. Each pass sets the zero to ``median(m_j − offset)`` and
+    recomputes the offset, until the offsets change by less than ``tol``.
+    """
+    centered = _centered(values, valid)
+    cm = ensemble_common_mode(centered, err, valid, members, member_excess)
+    for _ in range(max(0, int(max_iter) - 1)):
+        offset = np.nan_to_num(cm["offset"], nan=0.0)
+        zero = _nanmedian(np.where(valid, values - offset[:, None], np.nan), axis=0)
+        centered = values - zero[None, :]
+        new = ensemble_common_mode(centered, err, valid, members, member_excess)
+        change = np.nanmax(np.abs((new["offset"] - np.nanmedian(new["offset"]))
+                                  - (cm["offset"] - np.nanmedian(cm["offset"]))))
+        cm = new
+        if not np.isfinite(change) or change < tol:
+            break
+    return cm
+
+
 def _common_mode_and_flags(
     centered: np.ndarray,
     err: np.ndarray,
@@ -378,7 +411,7 @@ def _common_mode_and_flags(
     night: np.ndarray,
     flag_kw: dict,
 ) -> tuple[dict, np.ndarray, np.ndarray]:
-    cm = ensemble_common_mode(centered, err, valid, members, excess)
+    cm = iterated_common_mode(centered, err, valid, members, excess)
     flag, reason = flag_bad_epochs(
         cm["offset"],
         cm["n"],
@@ -677,7 +710,7 @@ def relative_flux_light_curves(
             exc[j] = excess_rms(q[ok, j], err[ok, j])
             dev = np.abs(q[:, j] - np.median(q[ok, j]))
             ens_valid[:, j] &= dev <= clip * np.sqrt(err[:, j] ** 2 + exc[j] ** 2)
-    cm = ensemble_common_mode(centered, err, ens_valid, members, exc[members])
+    cm = iterated_common_mode(mag, err, ens_valid, members, exc[members])
 
     ref = np.repeat(cm["offset"][:, None], n_obj, axis=1)
     ref_err = np.repeat(cm["offset_err"][:, None], n_obj, axis=1)

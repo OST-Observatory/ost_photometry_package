@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
+
+import numpy as np
 
 from ...extinction import CoefficientMode, ExtinctionCoefficients, ExtinctionOrder
 from ...extinction_io import (
@@ -62,8 +65,15 @@ def build_calibrator(
 def _apply_second_order_after_fit(
     calibrator: PhotometryCalibrator,
     config: PipelineConfig,
+    fitted: dict | None = None,
 ) -> None:
-    """Merge tabulated / user k″ onto fitted k′ when ``extinction_order="second"``."""
+    """Merge tabulated / user k″ onto fitted k′ when ``extinction_order="second"``.
+
+    A k′ fitted from the calibrators without the k″ term holds
+    ``k″·C̄`` (C̄ the mean standard colour of the calibrators); adding the
+    k″ term on top would count it twice, so ``k′ ← k′ − k″·C̄`` for the
+    filters in ``fitted``.
+    """
     if resolve_pipeline_extinction_order(config) != ExtinctionOrder.SECOND:
         # Still allow explicit k_second overrides on FIRST-order runs (no-op for correct()).
         if not getattr(config, "k_second", None):
@@ -71,9 +81,30 @@ def _apply_second_order_after_fit(
     finalized = finalize_pipeline_extinction_coefficients(
         config, dict(calibrator.extinction.coefficients)
     )
-    if finalized:
-        calibrator.extinction.coefficients.update(finalized)
-        calibrator.extinction.order = resolve_pipeline_extinction_order(config)
+    if not finalized:
+        return
+    if resolve_pipeline_extinction_order(config) == ExtinctionOrder.SECOND:
+        for filter_ in fitted or {}:
+            coeff = finalized.get(filter_)
+            if coeff is None or coeff.k_second == 0:
+                continue
+            c_mean = _mean_catalog_color(calibrator.epochs, coeff.color_filter_1, coeff.color_filter_2)
+            if np.isfinite(c_mean):
+                finalized[filter_] = replace(coeff, k_prime=coeff.k_prime - coeff.k_second * c_mean)
+    calibrator.extinction.coefficients.update(finalized)
+    calibrator.extinction.order = resolve_pipeline_extinction_order(config)
+
+
+def _mean_catalog_color(epochs: dict, filter_1: str, filter_2: str) -> float:
+    """Median catalog colour of the catalog-matched stars over all epochs."""
+    values = []
+    for tbl in epochs.values():
+        c1, c2 = f"mag_std_{filter_1}", f"mag_std_{filter_2}"
+        if c1 in tbl.colnames and c2 in tbl.colnames:
+            color = np.asarray(tbl[c1], dtype=float) - np.asarray(tbl[c2], dtype=float)
+            values.append(color[np.isfinite(color)])
+    values = np.concatenate(values) if values else np.array([])
+    return float(np.median(values)) if values.size else float("nan")
 
 
 def fit_epochs(
@@ -91,11 +122,11 @@ def fit_epochs(
         calibrator.epochs[epoch_id] = tbl
 
     if config.extinction_mode == "from_comparison_stars":
-        calibrator.fit_extinction_from_epochs(
+        fitted = calibrator.fit_extinction_from_epochs(
             output_dir=output_dir,
             file_type=file_type,
         )
-        _apply_second_order_after_fit(calibrator, config)
+        _apply_second_order_after_fit(calibrator, config, fitted)
 
     def _comparison_selector(table):
         return calibrator_candidate_mask(table, filters, config)

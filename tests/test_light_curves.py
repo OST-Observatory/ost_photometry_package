@@ -609,3 +609,24 @@ def test_fold_never_mixes_bjd_and_jd():
         assert t[0] == pytest.approx(2459000.004)
         no_bjd = Table({"jd": [2459000.0, 2459000.1]})
         assert np.allclose(plots._fold_times(no_bjd, "bjd_tdb"), [2459000.0, 2459000.1])
+
+
+def test_transit_points_are_not_outliers_and_do_not_set_the_continuum():
+    with isolated_sys_modules():
+        lc = _load_light_curve()
+        n = 120
+        t0, period = 2460000.60, 3.0
+        bjd = t0 - 0.10 + np.arange(n) * (0.2 / n)          # one night around a transit
+        mag = np.full(n, 12.0) + np.random.default_rng(1).normal(0, 0.002, n)
+        in_transit = np.abs(bjd - t0) < 0.01               # 29 min: shorter than the window
+        mag[in_transit] += 0.05
+        tbl = Table({"id": np.ones(n, dtype=int), "filter": np.full(n, "V"), "quantity": np.full(n, "magnitude"),
+                     "jd": bjd, "bjd_tdb": bjd, "mag": mag, "mag_err": np.full(n, 0.002),
+                     "flux": np.full(n, np.nan), "flux_err": np.full(n, np.nan), "night_id": np.zeros(n, dtype=int)})
+        plain = lc.flag_outliers_in_light_curves(tbl, sigma=5.0, max_faint_minutes=60.0)
+        assert np.any(np.asarray(plain["flag_outlier"])[in_transit])
+        kept = lc.flag_outliers_in_light_curves(tbl, sigma=5.0, max_faint_minutes=60.0,
+                                                ephemerides={1: (period, t0)})
+        assert not np.any(np.asarray(kept["flag_outlier"])[in_transit])
+        norm = lc.apply_nightly_zero_point(kept, ephemerides={1: (period, t0)})
+        assert abs(np.median(np.asarray(norm["mag"])[~in_transit])) < 0.001

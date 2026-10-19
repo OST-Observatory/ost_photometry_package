@@ -79,6 +79,24 @@ def _ooi_id_name_pairs(objects_of_interest: list, filter_: str) -> list[tuple[in
     return pairs
 
 
+def _ooi_ephemerides(objects_of_interest: list, filter_: str) -> dict[int, tuple[float, float]]:
+    """``{photometry id: (period d, t0 BJD_TDB)}`` of objects with an ephemeris."""
+    from ...plots.lightcurves import transit_time_bjd_tdb
+
+    out: dict[int, tuple[float, float]] = {}
+    for obj in objects_of_interest or []:
+        period = _parse_period(getattr(obj, "period", None))
+        t0 = getattr(obj, "transit_time", None)
+        oid = ooi_photometry_id(obj, filter_=filter_)
+        if period is None or t0 in (None, "?") or oid is None:
+            continue
+        try:
+            out[int(oid)] = (float(period), transit_time_bjd_tdb(t0))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def _log_position_scatter(stats: Table, filter_: str, limit_arcsec: float = 3.0) -> None:
     """Identity QC: calibrators whose sky position wanders between epochs."""
     if "pos_max_arcsec" not in stats.colnames or len(stats) == 0:
@@ -290,6 +308,7 @@ class LightCurveStep(base.PipelineStep):
                     outlier_sigma=config.light_curve_outlier_sigma,
                     observatory_location=config.observatory_location,
                     color=None,
+                    ephemerides=_ooi_ephemerides(context.objects_of_interest, filter_),
                 )
                 if len(part) > 0:
                     parts.append(part)
@@ -311,6 +330,7 @@ class LightCurveStep(base.PipelineStep):
                     object_names,
                     cal_set,
                     tbl if has_tbl else None,
+                    ephemerides=_ooi_ephemerides(context.objects_of_interest, filter_),
                 )
                 if part is not None and len(part) > 0:
                     parts.append(part)
@@ -391,6 +411,7 @@ class LightCurveStep(base.PipelineStep):
         object_names: dict[int, str],
         cal_set: set[int],
         phot: Table | None,
+        ephemerides: dict | None = None,
     ) -> Table | None:
         mdf = config.min_detection_fraction
         ensemble_frac = 0.5 if mdf is None else max(0.5, float(mdf))
@@ -447,6 +468,7 @@ class LightCurveStep(base.PipelineStep):
             dec=dec,
             outlier_sigma=config.light_curve_outlier_sigma,
             observatory_location=config.observatory_location,
+            ephemerides=ephemerides,
         )
 
     def _plot_views(

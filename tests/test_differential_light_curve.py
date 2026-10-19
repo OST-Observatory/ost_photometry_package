@@ -368,3 +368,29 @@ def test_excess_rms_uses_mean_error_variance():
         y = rng.normal(0.0, 1.0, e.size) * e
         # no excess: the median error (0.03) would claim one
         assert lc_mod.excess_rms(y, e) < 0.005
+
+
+def test_common_mode_without_steps_from_gaps():
+    """A member missing in the cloudy epochs must not leave a step."""
+    from ost_photometry.analyze.post_processing.differential_light_curve import (
+        ensemble_common_mode,
+        iterated_common_mode,
+    )
+
+    rng = np.random.default_rng(1)
+    n_ep, n_mem = 40, 8
+    truth = np.where(np.arange(n_ep) < 20, 0.0, 0.3)  # clouds in the second half
+    mag = 12.0 + np.arange(n_mem)[None, :] * 0.1 + truth[:, None] + rng.normal(0, 0.002, (n_ep, n_mem))
+    err = np.full((n_ep, n_mem), 0.002)
+    valid = np.ones((n_ep, n_mem), dtype=bool)
+    valid[20:, :3] = False  # three members only in the clear half
+    members = np.arange(n_mem)
+    exc = np.zeros(n_mem)
+    from ost_photometry.analyze.post_processing.differential_light_curve import _centered
+
+    plain = ensemble_common_mode(_centered(mag, valid), err, valid, members, exc)["offset"]
+    cm = iterated_common_mode(mag, err, valid, members, exc)["offset"]
+    step_plain = np.median(plain[20:]) - np.median(plain[:20])
+    step = np.median(cm[20:]) - np.median(cm[:20])
+    assert abs(step_plain - 0.3) > 0.003
+    assert abs(step - 0.3) < 0.0005
