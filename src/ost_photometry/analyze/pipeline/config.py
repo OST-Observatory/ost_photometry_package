@@ -206,6 +206,14 @@ class ExtractionConfig:
     finder_fwhm_scale_range: tuple[float, float] | None = (0.5, 2.0)
     multiplier_background_rms_epsf: float = 5.0
     multiplier_grouper_epsf: float = 2.0
+    #: PSF: stars within the fit half-width + this many FWHM are fitted
+    #: together (neighbours' wings in the fit box are modelled). ``None``:
+    #: only ``multiplier_grouper_epsf`` × FWHM, much faster in crowded
+    #: fields with poor seeing, but neighbours bias faint stars.
+    psf_group_wing_fwhm: float | None = 2.5
+    #: PSF: second pass with the local sky from the residual image (all
+    #: fitted stars subtracted). ``False`` halves the time.
+    psf_residual_sky: bool = True
     minimum_n_eps_stars: int = 15
     photometry_extraction_method: PhotometryExtractionMethod = "PSF"
     #: If False, fit finder positions only (no residual re-find).
@@ -264,6 +272,8 @@ class ExtractionConfig:
             "finder_fwhm_scale_range": self.finder_fwhm_scale_range,
             "multiplier_background_rms_epsf": self.multiplier_background_rms_epsf,
             "multiplier_grouper_epsf": self.multiplier_grouper_epsf,
+            "psf_group_wing_fwhm": self.psf_group_wing_fwhm,
+            "psf_residual_sky": self.psf_residual_sky,
             "minimum_n_eps_stars": self.minimum_n_eps_stars,
             "saturation_fraction": self.saturation_fraction,
             "strict_epsf_checks": self.strict_epsf_checks,

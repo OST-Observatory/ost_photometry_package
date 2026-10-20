@@ -96,11 +96,15 @@ def propagate_gaia_positions(
     pm_de: np.ndarray,
     years: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """First-order sky shift: Gaia ``pmRA`` is μ_α* = μα cos δ (mas/yr)."""
+    """First-order sky shift: Gaia ``pmRA`` is μ_α* = μα cos δ (mas/yr).
+
+    Sources without a proper motion (2-parameter solutions) keep their
+    catalog position.
+    """
     ra = as_float_column(ra_deg)
     dec = as_float_column(dec_deg)
-    mu_a = as_float_column(pm_ra)
-    mu_d = as_float_column(pm_de)
+    mu_a = np.nan_to_num(as_float_column(pm_ra), nan=0.0, posinf=0.0, neginf=0.0)
+    mu_d = np.nan_to_num(as_float_column(pm_de), nan=0.0, posinf=0.0, neginf=0.0)
     dt = float(years)
     if not np.isfinite(dt) or dt == 0.0:
         return ra.copy(), dec.copy()
@@ -117,12 +121,22 @@ def match_photometry_to_gaia(
     *,
     separation_arcsec: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Unique nearest pairs within ``separation_arcsec`` (keep smallest separation)."""
+    """Unique nearest pairs within ``separation_arcsec`` (keep smallest separation).
+
+    Positions that are NaN on either side take no part; the indices refer
+    to the full inputs.
+    """
+    img_ok = np.flatnonzero(np.isfinite(obj_coordinates.ra.deg) & np.isfinite(obj_coordinates.dec.deg))
+    gaia_ok = np.flatnonzero(np.isfinite(gaia_coordinates.ra.deg) & np.isfinite(gaia_coordinates.dec.deg))
+    if img_ok.size == 0 or gaia_ok.size == 0:
+        empty = np.zeros(0, dtype=int)
+        return empty, empty, np.zeros(0, dtype=float)
     id_img, id_gaia, d2d, _ = matching.search_around_sky(
-        obj_coordinates,
-        gaia_coordinates,
+        obj_coordinates[img_ok],
+        gaia_coordinates[gaia_ok],
         float(separation_arcsec) * u.arcsec,
     )
+    id_img, id_gaia = img_ok[id_img], gaia_ok[id_gaia]
     sep = np.asarray(d2d.arcsec, dtype=float)
     id_img, sep, id_gaia = clear_duplicates(id_img, sep, id_gaia)
     id_gaia, sep, id_img = clear_duplicates(id_gaia, sep, id_img)

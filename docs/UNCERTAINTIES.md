@@ -198,8 +198,11 @@ Stack headers:
     neighbour at 2.2–4.5 FWHM came out 270 mmag too bright, now within
     2 mmag; isolated bright stars 3.6 → < 1 mmag.
 - **Grouping:** stars closer than `max(multiplier_grouper_epsf · FWHM,
-  fit half-width + 2.5 FWHM)` are fitted together, so a neighbour whose
-  wings reach into a star's fit box is modelled, not fitted as the star.
+  fit half-width + psf_group_wing_fwhm · FWHM)` (default 2.5) are fitted
+  together, so a neighbour whose wings reach into a star's fit box is
+  modelled, not fitted as the star. In rich clusters with poor seeing the
+  groups get large and slow; `psf_group_wing_fwhm=None` and
+  `psf_residual_sky=False` give the old speed.
 - **Fit weights** from the background noise only (`σ_tot² − source/t`,
   at least half the sky variance): σ that holds the star's own photon noise
   (estimated from the noisy data) pulls a least-squares flux low. Positions

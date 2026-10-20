@@ -264,3 +264,18 @@ def test_star_whose_gaia_source_fails_quality_gets_no_neighbour():
     id_img, id_q = match_to_quality_sources(obj, gaia, quality, 2.0)
     assert list(id_img) == [1]
     assert list(id_q) == [1]  # second quality source = Gaia row 2
+
+
+def test_gaia_sources_without_proper_motion_take_part():
+    from ost_photometry.analyze.utils.cluster_membership import (
+        match_photometry_to_gaia,
+        propagate_gaia_positions,
+    )
+
+    ra, dec = propagate_gaia_positions(np.array([10.0, 10.01]), np.array([0.0, 0.0]),
+                                       np.array([np.nan, 1000.0]), np.array([np.nan, 0.0]), 10.0)
+    assert ra[0] == 10.0 and np.isfinite(ra[1])
+    obj = SkyCoord([10.0, np.nan, 10.02], [0.0, 0.0, 0.0], unit="deg")
+    gaia = SkyCoord([np.nan, 10.0, 10.02], [0.0, 0.0, 0.0], unit="deg")
+    id_img, id_gaia, _ = match_photometry_to_gaia(obj, gaia, separation_arcsec=1.0)
+    assert sorted(zip(id_img.tolist(), id_gaia.tolist(), strict=True)) == [(0, 1), (2, 2)]

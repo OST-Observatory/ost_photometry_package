@@ -32,7 +32,10 @@ section of this file.
   star's photon noise and the sky error added to `flux_err`; positions
   bounded to 1 FWHM (`centroid_shift` column); saturated stars left out of
   the ePSF. Simulated stars with a 10× brighter neighbour at 2.2–4.5 FWHM
-  were 270 mmag too bright, now within 2 mmag.
+  were 270 mmag too bright, now within 2 mmag. `psf_group_wing_fwhm`
+  (default 2.5, `None`: the old grouping) and `psf_residual_sky` (default
+  True) trade accuracy for speed: the NGC 7789 stacks (FWHM 5.5″, rich
+  cluster) take ~30 min per image with the defaults instead of ~2 min.
 - **Aperture correction to the total flux** (growth curve to 6 FWHM, Moffat
   extrapolation, `aperture_correction_total`); before only to the annulus
   inner radius, which left 2–4 % seeing-dependent light out.
@@ -138,6 +141,10 @@ section of this file.
 
 ### Fixed
 
+- **Gaia cluster selection** with Gaia sources without proper motion
+  (2-parameter solutions): their propagated positions were NaN and the
+  match failed (`Catalog coordinates cannot contain NaN entries`); they now
+  keep their catalog position.
 - **AAVSO VSP:** the URL had a stray quote, sexagesimal positions failed to
   parse, missing bands were magnitude 0 and missing errors `None`, and only
   V was cut to the magnitude range.

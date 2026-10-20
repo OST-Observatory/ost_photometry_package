@@ -1409,9 +1409,17 @@ def extraction_epsf(
     finder_roundness_range: tuple[float, float] = (-1.0, 1.0),
     finder_min_separation_fwhm: float = 1.0,
     psf_find_in_residuals: bool = False,
+    group_wing_fwhm: float | None = 2.5,
+    residual_sky: bool = True,
 ) -> None:
     """
     Main function to perform the eEPSF photometry, using photutils
+
+    ``group_wing_fwhm``: stars are fitted together when one lies within the
+    other's fit half-width plus this many FWHM (its wings reach the fit
+    box); ``None`` groups by ``multiplier_grouper`` × FWHM only (faster in
+    crowded fields, neighbours' wings then bias the fit). ``residual_sky``:
+    second pass with the local sky from the residual image.
     """
     output_path = image.out_path
 
@@ -1499,7 +1507,9 @@ def extraction_epsf(
 
     #   Stars are fitted together when a neighbour's wings (2.5 FWHM) reach
     #   into the other's fit box; otherwise its light is fitted as the star's.
-    min_separation = max(float(multiplier_grouper) * float(fwhm), aperture_radius + 2.5 * float(fwhm))
+    min_separation = float(multiplier_grouper) * float(fwhm)
+    if group_wing_fwhm is not None:
+        min_separation = max(min_separation, aperture_radius + float(group_wing_fwhm) * float(fwhm))
     source_grouper = SourceGrouper(min_separation=min_separation)
 
     if psf_find_in_residuals:
@@ -1544,7 +1554,8 @@ def extraction_epsf(
         )
         x_start = np.asarray(initial_positions["x_0"], dtype=float)
         y_start = np.asarray(initial_positions["y_0"], dtype=float)
-        if rm_background and not psf_find_in_residuals and len(result_tbl) == len(initial_positions):
+        if (residual_sky and rm_background and not psf_find_in_residuals
+                and len(result_tbl) == len(initial_positions)):
             #   Second pass: the sky from the residual image (all fitted stars
             #   subtracted, wings included) instead of the data: the annulus
             #   at 2.8-4 FWHM still holds the star's own wings and those of
@@ -2101,6 +2112,8 @@ def extract_multiprocessing(
     finder_fwhm_scale_range: tuple[float, float] | None = (0.5, 2.0),
     multiplier_background_rms_epsf: float = 5.0,
     multiplier_grouper_epsf: float = 2.0,
+    psf_group_wing_fwhm: float | None = 2.5,
+    psf_residual_sky: bool = True,
     minimum_n_eps_stars: int = 15,
     photometry_extraction_method: str = "PSF",
     psf_find_in_residuals: bool = False,
@@ -2154,6 +2167,8 @@ def extract_multiprocessing(
                 "finder_fwhm_scale_range": finder_fwhm_scale_range,
                 "multiplier_background_rms_epsf": multiplier_background_rms_epsf,
                 "multiplier_grouper_epsf": multiplier_grouper_epsf,
+                "psf_group_wing_fwhm": psf_group_wing_fwhm,
+                "psf_residual_sky": psf_residual_sky,
                 "minimum_n_eps_stars": minimum_n_eps_stars,
                 "strict_epsf_checks": strict_epsf_checks,
                 "id_reference_image": image_series.reference_image_index,
@@ -2211,6 +2226,8 @@ def main_extract(
     finder_fwhm_scale_range: tuple[float, float] | None = (0.5, 2.0),
     multiplier_background_rms_epsf: float = 5.0,
     multiplier_grouper_epsf: float = 2.0,
+    psf_group_wing_fwhm: float | None = 2.5,
+    psf_residual_sky: bool = True,
     minimum_n_eps_stars: int = 15,
     id_reference_image: int = 0,
     photometry_extraction_method: str = "PSF",
@@ -2371,6 +2388,8 @@ def main_extract(
                 finder_roundness_range=finder_roundness_range,
                 finder_min_separation_fwhm=finder_min_separation_fwhm,
                 psf_find_in_residuals=psf_find_in_residuals,
+                group_wing_fwhm=psf_group_wing_fwhm,
+                residual_sky=psf_residual_sky,
             )
 
             start_plot_process(
