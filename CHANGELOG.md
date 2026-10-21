@@ -13,6 +13,11 @@ section of this file.
 
 ### Changed
 
+- **Accuracy documented** (UNCERTAINTIES, "Accuracy"): magnitudes against
+  Stetson's standards on five N2 nights with two cameras; flat within
+  ±10 mmag in seeing ≲ 3″, a 30–60 mmag magnitude trend in a rich cluster
+  at ≳ 4″ and airmass > 2 (open, see TODO).
+
 - **Observation times are mid-exposure** (`Image.jd`): `MJD_MID` / `DATE-MID`
   (stacks) or `JD` / `DATE-OBS` + EXPTIME/2; the start stays as
   `Image.jd_start`. Light curves, BJD_TDB, epoch pairing and the airmass all
@@ -141,6 +146,14 @@ section of this file.
 
 ### Fixed
 
+- **ASTAP on deep stacks:** the 16-bit copy maps the image with an asinh
+  stretch in units of the sky noise (the linear map put the noise at
+  1–2 ADU and ASTAP found no stars); a failed solve is retried with the
+  100 / 50 brightest stars, and solutions whose axes differ in scale
+  (> 0.2 %) or rotation (> 0.1°) are rejected (a skewed match put the stars
+  of two filters 10 px apart).
+- **Stacks keep the WCS** of the registration grid (`CCDData.read` moves it
+  out of the header, so stacks had none and had to be plate-solved again).
 - **Gaia cluster selection** with Gaia sources without proper motion
   (2-parameter solutions): their propagated positions were NaN and the
   match failed (`Catalog coordinates cannot contain NaN entries`); they now

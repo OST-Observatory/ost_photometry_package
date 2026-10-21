@@ -12,6 +12,18 @@ Closed migration notes live in [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_
 
 ---
 
+## Magnitude trend in poor seeing (P1)
+
+On the N2 NGC 7789 stacks with seeing ≳ 4″ and airmass > 2 (2023-05-30,
+2024-05-14) faint stars are 30–60 mmag too faint relative to bright ones
+against Stetson's standards; nights with ≲ 3″ are flat within ±10 mmag
+(see UNCERTAINTIES, "Accuracy"). APER and PSF agree, stars without a
+neighbour within 25″ show it too, and stars injected into the final stack
+are recovered linearly. Open: a camera-mode night (MaxIm `Fast`) with good
+seeing to rule out the mode; injection before stacking; sky in wider
+annuli and from the residual image; colour of the faint stars (second-order
+extinction at X > 2); unresolved cluster light.
+
 ## Calibration accuracy & photometry systems
 
 ### Star-wise fit for second-order extinction k″ (P3)

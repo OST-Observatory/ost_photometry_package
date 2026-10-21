@@ -518,6 +518,46 @@ Extreme deconvolution in (μ_α*, μ_δ, ϖ) with each star's Gaia covariance
   paper, only coefficient errors; the coefficient errors are propagated.
   Lupton/Jester relations carry their published scatter.
 
+## Accuracy
+
+The errors above describe the scatter. Whether the magnitudes themselves
+are right was checked against independent standards: Stetson's
+ground-based photometry of the NGC 7789 field (769 stars, Pancino et al.
+2022 collection, Vizier `J/A+A/664/A109/table5`) and Gaia DR3 synthetic
+Johnson photometry (`I/360/syntphot`), with
+`scripts/validation/gaia_synthetic_comparison.py <output> 15 stetson|gaia`.
+The zero point follows the calibration catalog (APASS); the test is the
+*trend* of `ours − standard` with magnitude for isolated stars, offset
+removed.
+
+| Night (N2 NGC 7789, B / V stacks) | Camera | Seeing, airmass | Trend B, bright → faint | Trend V | Robust σ B / V |
+|---|---|---|---|---|---|
+| 2025-06-19 | QHY600M, GAIN 26 / OFFSET 30 | 2.3″, 1.3 | −1 … +3 mmag (11.7–20 mag) | −6 … +8 | 26 / 39 mmag |
+| 2024-07-09 | QHY600M, GAIN 0 / OFFSET 2 | 2.4″, 1.1 | −6 → +3 (faintest bin +14 ± 6) | −2 … +6 (11–18 mag) | 32 / 24 |
+| 2020-11-20 | SBIG STF-8300 (CCD) | 2.7″, 1.0 | −5 → +10 | −2 … +2 (11–19 mag) | 20 / 17 |
+| 2024-05-14 | QHY600M, GAIN 0 / OFFSET 2 | 4.1″, 2.4 | −13 → +21 | −7 → +13 | 48 / 51 |
+| 2023-05-30 | QHY600M, GAIN 0 / OFFSET 2 | 5.5″, 2.1 | −14 → +50 | −13 → +32 | 28 / 33 |
+
+APER, radii 1.0 / 2.5 / 4.0 FWHM, neighbour subtraction; PSF photometry
+gives the same trends. Other checks:
+
+- **Injection–recovery** (`scripts/validation/injection_recovery.py`,
+  Moffat stars injected into the reduced image): isolated stars are
+  recovered linearly to ≲ 10 mmag over 2.5 decades of flux, also on the
+  2023-05-30 stack. The trend of the poor nights is therefore not made by
+  the extraction of the final image.
+- **Simulations** (tests): stack clipping changes no star flux
+  (< 0.02 %); PSF targets next to a 10× brighter star within 2 mmag; APER
+  with neighbour subtraction within 10 mmag; aperture correction to the
+  total flux within 0.4 % for Moffat β = 2–4.
+
+**Known limitation:** in a rich cluster with poor seeing (≳ 4″) at high
+airmass, faint stars come out too faint relative to bright ones by
+30–60 mmag over five magnitudes, with both camera modes seen so far and
+both methods, also for stars without a detected neighbour within 25″.
+Under ordinary conditions (≲ 3″) the trend stays within ±10 mmag. The
+cause is being investigated (`docs/TODO.md`).
+
 ## Validation
 
 | Check | Data | Result |
