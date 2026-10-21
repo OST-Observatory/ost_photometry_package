@@ -19,10 +19,13 @@ On the N2 NGC 7789 stacks with seeing ≳ 4″ and airmass > 2 (2023-05-30,
 against Stetson's standards; nights with ≲ 3″ are flat within ±10 mmag
 (see UNCERTAINTIES, "Accuracy"). APER and PSF agree, stars without a
 neighbour within 25″ show it too, and stars injected into the final stack
-are recovered linearly. Open: a camera-mode night (MaxIm `Fast`) with good
-seeing to rule out the mode; injection before stacking; sky in wider
-annuli and from the residual image; colour of the faint stars (second-order
-extinction at X > 2); unresolved cluster light.
+are recovered linearly. Ruled out: MaxIm `Fast` (2022-11-11, same camera
+settings, 2.5″, X 1.0: flat), sky annulus (4–6 FWHM: same trend), stacking
+(stack vs single frame of the same night), colour (trend at fixed B−V),
+raw data (same levels and digitisation). Open: seeing and airmass are not
+separated (both poor nights have both); injection of the image's own ePSF
+into the single frames before registration and stacking; unresolved
+cluster light.
 
 ## Calibration accuracy & photometry systems
 

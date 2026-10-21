@@ -535,8 +535,9 @@ removed.
 | 2025-06-19 | QHY600M, GAIN 26 / OFFSET 30 | 2.3″, 1.3 | −1 … +3 mmag (11.7–20 mag) | −6 … +8 | 26 / 39 mmag |
 | 2024-07-09 | QHY600M, GAIN 0 / OFFSET 2 | 2.4″, 1.1 | −6 → +3 (faintest bin +14 ± 6) | −2 … +6 (11–18 mag) | 32 / 24 |
 | 2020-11-20 | SBIG STF-8300 (CCD) | 2.7″, 1.0 | −5 → +10 | −2 … +2 (11–19 mag) | 20 / 17 |
-| 2024-05-14 | QHY600M, GAIN 0 / OFFSET 2 | 4.1″, 2.4 | −13 → +21 | −7 → +13 | 48 / 51 |
-| 2023-05-30 | QHY600M, GAIN 0 / OFFSET 2 | 5.5″, 2.1 | −14 → +50 | −13 → +32 | 28 / 33 |
+| 2022-11-11 | QHY600M, GAIN 0 / OFFSET 2, MaxIm `Fast` | 2.5″, 1.0 | −11 → +11 | −4 … +4 (11–18.6 mag) | 26 / 28 |
+| 2024-05-14 | QHY600M, GAIN 0 / OFFSET 2, MaxIm `Fast` | 4.1″, 2.4 | −13 → +21 | −7 → +13 | 48 / 51 |
+| 2023-05-30 | QHY600M, GAIN 0 / OFFSET 2, MaxIm `Fast` | 5.5″, 2.1 | −14 → +50 | −13 → +32 | 28 / 33 |
 
 APER, radii 1.0 / 2.5 / 4.0 FWHM, neighbour subtraction; PSF photometry
 gives the same trends. Other checks:
@@ -552,11 +553,16 @@ gives the same trends. Other checks:
   total flux within 0.4 % for Moffat β = 2–4.
 
 **Known limitation:** in a rich cluster with poor seeing (≳ 4″) at high
-airmass, faint stars come out too faint relative to bright ones by
-30–60 mmag over five magnitudes, with both camera modes seen so far and
-both methods, also for stars without a detected neighbour within 25″.
-Under ordinary conditions (≲ 3″) the trend stays within ±10 mmag. The
-cause is being investigated (`docs/TODO.md`).
+airmass (> 2), faint stars come out too faint relative to bright ones by
+30–60 mmag over five magnitudes, with both methods, also for stars without
+a detected neighbour within 25″ and at fixed colour. Under ordinary
+conditions (≲ 3″, airmass ≲ 1.3) the trend stays within ±10 mmag, also in
+MaxIm's `Fast` mode with the same camera settings (2022-11-11): the camera
+mode is not the cause. Ruled out as well: the sky annulus (4–6 FWHM gives
+the same trend), stacking (stack vs a single frame of the same night),
+the extraction of the final image (injected stars), and the raw data
+(same levels and digitisation in `Fast` and `Normal`). The cause is being
+investigated (`docs/TODO.md`).
 
 ## Validation
 
