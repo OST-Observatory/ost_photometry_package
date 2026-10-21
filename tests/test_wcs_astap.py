@@ -9,6 +9,7 @@ from astropy.coordinates import SkyCoord
 from astropy.io import fits
 
 from ost_photometry.wcs import (
+    _ASTAP_COPY_TOP,
     _apply_wcs_to_fits,
     _astap_field_of_view_degrees,
     _needs_astap_preprocessing,
@@ -155,11 +156,12 @@ def test_scale_image_for_astap_ignores_a_masked_hot_pixel():
     mask = np.zeros(data.shape, dtype=bool)
     mask[10, 10] = True
     scaled = _scale_image_for_astap(data, mask)
-    assert scaled[10, 10] < 1000
-    assert scaled[100, 100] > 10000  # the star keeps its dynamic range
+    sky = float(np.median(scaled))
+    assert abs(float(scaled[10, 10]) - sky) < 0.05 * _ASTAP_COPY_TOP  # masked: set to the sky
+    assert scaled[100, 100] > 0.9 * _ASTAP_COPY_TOP  # the star keeps its dynamic range
     # unmasked hot pixel: capped at the star, which keeps its full range
     scaled = _scale_image_for_astap(data)
-    assert scaled[100, 100] > 10000
+    assert scaled[100, 100] > 0.9 * _ASTAP_COPY_TOP
 
 
 def test_scale_image_for_astap_keeps_bright_star_cores_apart():
@@ -172,3 +174,53 @@ def test_scale_image_for_astap_keeps_bright_star_cores_apart():
     scaled = _scale_image_for_astap(data).astype(float)
     cores = [scaled[150, 50 + 60 * k] for k in range(len(peaks))]
     assert cores == sorted(cores, reverse=True) and len(set(cores)) == len(cores)
+
+
+
+def test_scale_image_for_astap_resolves_the_noise_of_deep_stacks():
+    """Dynamic range 10⁶ σ: the sky noise must still span many ADU."""
+    rng = np.random.default_rng(1)
+    data = rng.normal(5.0, 0.01, (300, 300))
+    yy, xx = np.mgrid[:300, :300]
+    data += 1e4 * np.exp(-((xx - 150) ** 2 + (yy - 150) ** 2) / (2 * 2.0**2))  # 10⁶ σ star
+    data += 0.2 * np.exp(-((xx - 60) ** 2 + (yy - 60) ** 2) / (2 * 2.0**2))   # 20 σ star
+    scaled = _scale_image_for_astap(data).astype(float)
+    sky = scaled[200:290, 200:290]
+    assert np.std(sky) > 100
+    assert scaled[60, 60] - np.median(sky) > 5 * np.std(sky)
+    assert scaled[150, 150] > scaled[60, 60]
+
+
+def test_astap_retries_with_fewer_stars(monkeypatch):
+    import subprocess
+
+    from ost_photometry import wcs as wcs_module
+
+    calls = []
+
+    def fake_run(cmd, timeout):
+        calls.append(list(cmd))
+        solved = "-s" in cmd and cmd[cmd.index("-s") + 1] == "100"
+        return subprocess.CompletedProcess(cmd, 0, stdout="Solution found: 23 57" if solved else "No solution found!", stderr="")
+
+    monkeypatch.setattr(wcs_module, "_run_astap", fake_run)
+    monkeypatch.setattr(wcs_module, "_astap_solution_plausible", lambda path: True)
+    result = wcs_module._run_astap_solve(["astap_cli", "-f", "x.fit"], 10)
+    assert wcs_module._astap_solved(result)
+    assert calls == [["astap_cli", "-f", "x.fit"], ["astap_cli", "-f", "x.fit", "-s", "100"]]
+
+
+
+def test_skewed_astap_solution_is_rejected(tmp_path):
+    from astropy.io import fits
+
+    from ost_photometry.wcs import _astap_solution_plausible
+
+    good = tmp_path / "good.fit"
+    fits.PrimaryHDU(np.zeros((4, 4), dtype=np.uint16), header=fits.Header({
+        "CDELT1": 1.2542e-4, "CDELT2": 1.2537e-4, "CROTA1": 43.007, "CROTA2": 43.023})).writeto(good)
+    bad = tmp_path / "bad.fit"
+    fits.PrimaryHDU(np.zeros((4, 4), dtype=np.uint16), header=fits.Header({
+        "CDELT1": 1.2548e-4, "CDELT2": 1.2614e-4, "CROTA1": 43.300, "CROTA2": 43.016})).writeto(bad)
+    assert _astap_solution_plausible(str(good))
+    assert not _astap_solution_plausible(str(bad))

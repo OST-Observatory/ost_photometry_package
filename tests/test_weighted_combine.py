@@ -213,3 +213,28 @@ def test_match_background_for_frames_from_two_nights():
                              sigma_clip_high_thresh=5, match_background=True)
     assert pull_sigma(plain) > 1.5
     assert pull_sigma(matched) == pytest.approx(1.0, abs=0.08)
+
+
+def test_stack_keeps_the_wcs_of_the_frames(tmp_path):
+    from astropy.io import fits
+    from astropy.wcs import WCS
+
+    from ost_photometry.reduce.weighted_combine import combine_images
+
+    w = WCS(naxis=2)
+    w.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+    w.wcs.crval = [359.3, 56.7]
+    w.wcs.crpix = [10.0, 10.0]
+    w.wcs.cd = [[-1.2e-4, 1e-6], [1e-6, 1.2e-4]]
+    paths = []
+    for i in range(3):
+        ccd = CCDData(np.full((20, 20), 1.0 + i, dtype=np.float32), unit="electron/s", wcs=w,
+                      uncertainty=StdDevUncertainty(np.full((20, 20), 0.1, dtype=np.float32)))
+        path = tmp_path / f"f{i}.fit"
+        ccd.write(path)
+        paths.append(str(path))
+    out = combine_images(paths)
+    out.write(tmp_path / "stack.fit")
+    stacked = WCS(fits.getheader(tmp_path / "stack.fit"))
+    assert stacked.has_celestial
+    assert np.allclose(stacked.wcs.crval, [359.3, 56.7])

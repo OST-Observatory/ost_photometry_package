@@ -292,6 +292,9 @@ def combine_images(
     first = images[0] if isinstance(images[0], CCDData) else CCDData.read(images[0], unit=unit)
     shape = first.shape
     meta = first.meta.copy()
+    #   CCDData.read moves the WCS keywords out of meta into .wcs; the
+    #   frames share the first frame's grid, so its WCS is the stack's
+    out_wcs = first.wcs
     out_unit = unit if unit is not None else first.unit
     del first
     thresholds = (sigma_clip_low_thresh, sigma_clip_high_thresh) if sigma_clip else None
@@ -361,7 +364,7 @@ def combine_images(
                 psf_noise=None if peak is None else float(clip_snoise) * peak[start:stop],
             )
             value[start:stop], uncertainty[start:stop], mask[start:stop] = v, u, e
-    return CCDData(value, unit=out_unit, meta=meta, mask=mask,
+    return CCDData(value, unit=out_unit, meta=meta, mask=mask, wcs=out_wcs,
                    uncertainty=StdDevUncertainty(uncertainty))
 
 

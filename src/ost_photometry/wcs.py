@@ -64,43 +64,56 @@ def _needs_astap_preprocessing(data: np.ndarray, bitpix: int) -> bool:
     return bool(np.any(data < 0))
 
 
+#: Stretch of the ASTAP copy: asinh with this softening (in sky σ), sky
+#: noise down to this many σ below the sky kept, top at this ADU.
+_ASTAP_STRETCH_SIGMA = 3.0
+_ASTAP_STRETCH_FLOOR_SIGMA = 5.0
+_ASTAP_COPY_TOP = 60000.0
+
+
 def _scale_image_for_astap(data: np.ndarray, mask: np.ndarray | None = None) -> np.ndarray:
     """Convert image data to unsigned 16-bit values suitable for ASTAP.
 
-    Masked pixels (``mask`` True) are set to the background, and the scale
-    is capped at the brightest *extended* signal (:func:`_robust_peak`): a
-    single hot pixel (e.g. a dead flat pixel at 10⁹) would otherwise squeeze
-    every star into the lowest ADU and ASTAP finds none. Star cores are not
-    clipped: ASTAP builds its quads from the brightest stars, and flattened
-    cores scramble their order (a percentile cap made NGC 7789 unsolvable).
+    asinh stretch in units of the sky noise: the noise spans hundreds of ADU
+    and the brightest star still fits below 65535. A linear map from the sky
+    to the brightest star put the noise of deep stacks (dynamic range
+    > 10⁵ σ) at 1-2 ADU, and ASTAP found no stars ("will use mean value 2
+    as background"). The stretch is monotonic, so the brightness order of
+    the stars (ASTAP's quads) is kept and no core is clipped. The sky sits
+    on a pedestal, so negative noise is not cut off.
+
+    Masked pixels (``mask`` True) are set to the sky, and the top of the
+    scale is the brightest *extended* signal (:func:`_robust_peak`): a
+    single hot pixel (e.g. a dead flat pixel at 10⁹) would otherwise set it.
     """
     clean = np.nan_to_num(np.asarray(data, dtype=np.float64))
     clean = np.where(np.isfinite(clean), clean, 0.0)
     good = np.ones(clean.shape, dtype=bool)
     if mask is not None and np.shape(mask) == clean.shape:
         good = ~np.asarray(mask, dtype=bool)
-
-    positive = clean[good & (clean > 0)]
-    if positive.size == 0:
+    values = clean[good]
+    if values.size == 0:
         raise RuntimeError(
-            f"{style.Bcolors.FAIL}Image contains no positive pixels; "
+            f"{style.Bcolors.FAIL}Image contains no usable pixels; "
             f"ASTAP preprocessing failed -> EXIT{style.Bcolors.ENDC}"
         )
-
-    background = float(np.percentile(positive, 5)) if positive.size > 10 else 0.0
-    clean = np.where(good, clean, background)
-    scaled = np.clip(clean - background, 0, None)
-    maximum = _robust_peak(scaled)
-    if maximum <= 0:
-        maximum = float(scaled.max())
-    scaled = np.minimum(scaled, maximum)
-    if maximum <= 0:
+    sample = values[:: max(1, values.size // 1_000_000)]
+    sky = float(np.median(sample))
+    sigma = 1.4826 * float(np.median(np.abs(sample - sky)))
+    clean = np.where(good, clean, sky)
+    peak = _robust_peak(clean - sky)
+    if not np.isfinite(sigma) or sigma <= 0:
+        sigma = peak / 1000.0 if peak > 0 else 0.0
+    if peak <= 0 or sigma <= 0:
         raise RuntimeError(
             f"{style.Bcolors.FAIL}Image contains no usable signal after "
             f"ASTAP preprocessing -> EXIT{style.Bcolors.ENDC}"
         )
-
-    return (scaled / maximum * _ASTAP_UINT16_MAX).astype(np.uint16)
+    soft = _ASTAP_STRETCH_SIGMA * sigma
+    low = np.arcsinh(-_ASTAP_STRETCH_FLOOR_SIGMA * sigma / soft)
+    high = np.arcsinh(peak / soft)
+    stretched = (np.arcsinh((clean - sky) / soft) - low) / (high - low) * _ASTAP_COPY_TOP
+    return np.clip(stretched, 0.0, _ASTAP_COPY_TOP).astype(np.uint16)
 
 
 def _robust_peak(data: np.ndarray, n_brightest: int = 2000) -> float:
@@ -423,6 +436,60 @@ def _astap_solved(result: subprocess.CompletedProcess) -> bool:
     return result.returncode == 0 and "Solution found:" in (result.stdout or "")
 
 
+#: ``-s`` (number of image stars) for the retries after a failed solve.
+ASTAP_FALLBACK_MAX_STARS = (100, 50)
+
+
+#: A solution whose two axes differ by more than this in scale (fraction)
+#: or rotation (degrees) is a wrong match of few stars, not a solution.
+ASTAP_MAX_AXIS_SCALE_DIFFERENCE = 2e-3
+ASTAP_MAX_AXIS_ROTATION_DIFFERENCE = 0.1
+
+
+def _astap_solution_plausible(fits_path: str) -> bool:
+    """Both axes of the solution in ``fits_path`` agree in scale and rotation."""
+    try:
+        header = fits.getheader(fits_path)
+        c1, c2 = abs(float(header["CDELT1"])), abs(float(header["CDELT2"]))
+        r1, r2 = float(header["CROTA1"]), float(header["CROTA2"])
+    except (KeyError, TypeError, ValueError, OSError):
+        return True  # nothing to check: keep ASTAP's verdict
+    rotation = abs((r1 - r2 + 180.0) % 360.0 - 180.0)
+    scale = abs(c1 - c2) / max(c1, c2) if max(c1, c2) > 0 else 0.0
+    return scale <= ASTAP_MAX_AXIS_SCALE_DIFFERENCE and rotation <= ASTAP_MAX_AXIS_ROTATION_DIFFERENCE
+
+
+def _run_astap_solve(cmd: list[str], timeout: float | None) -> subprocess.CompletedProcess:
+    """Run an ASTAP solve; when it fails, retry with fewer, brighter stars.
+
+    A deep stack holds many stars fainter than ASTAP's database (D80): with
+    the default 500 image stars most quads are built from them and none
+    match ("No solution found"), while the 100 brightest solve at once
+    (NGC 7789 stacks of 20-50 frames). Every solution must pass
+    :func:`_astap_solution_plausible`: with 50 stars ASTAP accepted a skewed
+    match (axes 0.6 % apart in scale, 0.3° in rotation) that put stars of
+    the two filters 10 px apart at the image edges. A solve that never
+    passes is reported as not solved.
+    """
+    path = cmd[cmd.index("-f") + 1] if "-f" in cmd else None
+
+    def _ok(result: subprocess.CompletedProcess) -> bool:
+        return _astap_solved(result) and (path is None or _astap_solution_plausible(path))
+
+    attempts = [cmd] if "-s" in cmd else [cmd, *([*cmd, "-s", str(n)] for n in ASTAP_FALLBACK_MAX_STARS)]
+    result = None
+    for attempt in attempts:
+        result = _run_astap(attempt, timeout)
+        if _ok(result):
+            return result
+    if result is not None and _astap_solved(result):
+        return subprocess.CompletedProcess(
+            result.args, 1, stdout=(result.stdout or "") + "\nSolution rejected: axes differ in scale or rotation.",
+            stderr=result.stderr,
+        )
+    return result
+
+
 def solve_astap_copy(
     path: str | Path,
     *,
@@ -464,7 +531,7 @@ def solve_astap_copy(
             radius_deg=radius_deg,
             update=True,
         )
-        result = _run_astap(cmd, timeout)
+        result = _run_astap_solve(cmd, timeout)
         if not _astap_solved(result):
             return None
         with fits.open(prepared) as hdul:
@@ -789,7 +856,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
     ]
 
     try:
-        command_result = _run_astap(cmd, ASTAP_TIMEOUT_SECONDS)
+        command_result = _run_astap_solve(cmd, ASTAP_TIMEOUT_SECONDS)
 
         if not _astap_solved(command_result):
             raise RuntimeError(
