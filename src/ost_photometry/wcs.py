@@ -71,21 +71,35 @@ _ASTAP_STRETCH_FLOOR_SIGMA = 5.0
 _ASTAP_COPY_TOP = 60000.0
 
 
-def _scale_image_for_astap(data: np.ndarray, mask: np.ndarray | None = None) -> np.ndarray:
+#: Stretches of the ASTAP copy, tried in this order (see :func:`_solve_with_astap`).
+ASTAP_STRETCHES = ("linear", "asinh")
+
+
+def _scale_image_for_astap(
+    data: np.ndarray, mask: np.ndarray | None = None, stretch: str = "linear"
+) -> np.ndarray:
     """Convert image data to unsigned 16-bit values suitable for ASTAP.
 
-    asinh stretch in units of the sky noise: the noise spans hundreds of ADU
-    and the brightest star still fits below 65535. A linear map from the sky
-    to the brightest star put the noise of deep stacks (dynamic range
-    > 10⁵ σ) at 1-2 ADU, and ASTAP found no stars ("will use mean value 2
-    as background"). The stretch is monotonic, so the brightness order of
-    the stars (ASTAP's quads) is kept and no core is clipped. The sky sits
-    on a pedestal, so negative noise is not cut off.
+    ``linear``: from the sky (5th percentile) to the brightest star. Deep
+    stacks (dynamic range > 10⁵ σ) end up with the sky noise at 1-2 ADU and
+    ASTAP finds no stars ("will use mean value 2 as background").
 
-    Masked pixels (``mask`` True) are set to the sky, and the top of the
-    scale is the brightest *extended* signal (:func:`_robust_peak`): a
-    single hot pixel (e.g. a dead flat pixel at 10⁹) would otherwise set it.
+    ``asinh``: asinh stretch in units of the sky noise: the noise spans
+    hundreds of ADU and the brightest star still fits below 65535; the sky
+    sits on a pedestal, so negative noise is not cut off. It solves the deep
+    stacks but not every stack in poor seeing (NGC 7789, FWHM 11 px), which
+    the linear copy solves; hence both are tried, linear first.
+
+    Both are monotonic, so the brightness order of the stars (ASTAP's quads)
+    is kept and no core is clipped. Masked pixels (``mask`` True) are set to
+    the sky, and the top of the scale is the brightest *extended* signal
+    (:func:`_robust_peak`): a single hot pixel (e.g. a dead flat pixel at
+    10⁹) would otherwise set it.
     """
+    if stretch == "linear":
+        return _scale_linear_for_astap(data, mask)
+    if stretch != "asinh":
+        raise ValueError(f"unknown ASTAP stretch {stretch!r}")
     clean = np.nan_to_num(np.asarray(data, dtype=np.float64))
     clean = np.where(np.isfinite(clean), clean, 0.0)
     good = np.ones(clean.shape, dtype=bool)
@@ -116,6 +130,34 @@ def _scale_image_for_astap(data: np.ndarray, mask: np.ndarray | None = None) -> 
     return np.clip(stretched, 0.0, _ASTAP_COPY_TOP).astype(np.uint16)
 
 
+def _scale_linear_for_astap(data: np.ndarray, mask: np.ndarray | None) -> np.ndarray:
+    """Linear 16-bit copy (see :func:`_scale_image_for_astap`)."""
+    clean = np.nan_to_num(np.asarray(data, dtype=np.float64))
+    clean = np.where(np.isfinite(clean), clean, 0.0)
+    good = np.ones(clean.shape, dtype=bool)
+    if mask is not None and np.shape(mask) == clean.shape:
+        good = ~np.asarray(mask, dtype=bool)
+    positive = clean[good & (clean > 0)]
+    if positive.size == 0:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Image contains no positive pixels; "
+            f"ASTAP preprocessing failed -> EXIT{style.Bcolors.ENDC}"
+        )
+    background = float(np.percentile(positive, 5)) if positive.size > 10 else 0.0
+    clean = np.where(good, clean, background)
+    scaled = np.clip(clean - background, 0, None)
+    maximum = _robust_peak(scaled)
+    if maximum <= 0:
+        maximum = float(scaled.max())
+    if maximum <= 0:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}Image contains no usable signal after "
+            f"ASTAP preprocessing -> EXIT{style.Bcolors.ENDC}"
+        )
+    scaled = np.minimum(scaled, maximum)
+    return (scaled / maximum * _ASTAP_UINT16_MAX).astype(np.uint16)
+
+
 def _robust_peak(data: np.ndarray, n_brightest: int = 2000) -> float:
     """Largest 3×3 median among the brightest pixels.
 
@@ -133,7 +175,7 @@ def _robust_peak(data: np.ndarray, n_brightest: int = 2000) -> float:
     return float(np.median(windows, axis=0).max())
 
 
-def _prepare_astap_fits(source_path: Path, working_dir: Path) -> tuple[Path, bool]:
+def _prepare_astap_fits(source_path: Path, working_dir: Path, stretch: str = "linear") -> tuple[Path, bool]:
     """
     Return an ASTAP-compatible FITS path.
 
@@ -158,7 +200,7 @@ def _prepare_astap_fits(source_path: Path, working_dir: Path) -> tuple[Path, boo
         header = hdul[0].header.copy()
         _strip_wcs_keywords(header)
         mask = hdul["MASK"].data if "MASK" in hdul else None
-        astap_data = _scale_image_for_astap(data, mask)
+        astap_data = _scale_image_for_astap(data, mask, stretch)
 
     for keyword in ("BZERO", "BSCALE", "BLANK"):
         if keyword in header:
@@ -490,6 +532,38 @@ def _run_astap_solve(cmd: list[str], timeout: float | None) -> subprocess.Comple
     return result
 
 
+def _solve_with_astap(
+    source_path: Path,
+    working_dir: Path,
+    build_cmd,
+    timeout: float | None,
+) -> tuple[subprocess.CompletedProcess | None, Path | None, bool, list[str]]:
+    """Solve ``source_path``, trying the copy stretches of
+    :data:`ASTAP_STRETCHES` in turn (each with the star-count fallback and
+    the plausibility check of :func:`_run_astap_solve`).
+
+    ``build_cmd(path)`` returns the ASTAP command for a prepared file. A
+    file ASTAP can read directly (raw 16-bit) is solved once, in place.
+    Returns ``(result, solved path or None, path is temporary, last
+    command)``; a temporary copy that did not solve is removed.
+    """
+    result, cmd = None, []
+    for stretch in ASTAP_STRETCHES:
+        path, is_temporary = _prepare_astap_fits(source_path, working_dir, stretch)
+        if not is_temporary:
+            with fits.open(path, mode="update") as hdul:
+                _strip_wcs_keywords(hdul[0].header)
+                hdul.flush()
+        cmd = build_cmd(path)
+        result = _run_astap_solve(cmd, timeout)
+        if _astap_solved(result):
+            return result, path, is_temporary, cmd
+        if not is_temporary:
+            break
+        path.unlink(missing_ok=True)
+    return result, None, False, cmd
+
+
 def solve_astap_copy(
     path: str | Path,
     *,
@@ -514,25 +588,29 @@ def solve_astap_copy(
     with tempfile.TemporaryDirectory(prefix="astap_", dir=base) as tmp:
         tmp_dir = Path(tmp)
         try:
-            prepared, is_temporary = _prepare_astap_fits(source, tmp_dir)
+            _prepared, is_temporary = _prepare_astap_fits(source, tmp_dir)
         except RuntimeError:
             return None
-        if not is_temporary:
-            prepared = tmp_dir / source.name
-            shutil.copyfile(source, prepared)
-            with fits.open(prepared, mode="update") as hdul:
-                _strip_wcs_keywords(hdul[0].header)
-                hdul.flush()
-        cmd = astap_command(
-            prepared,
-            fov_deg=fov_deg,
-            ra_deg=ra_deg,
-            dec_deg=dec_deg,
-            radius_deg=radius_deg,
-            update=True,
-        )
-        result = _run_astap_solve(cmd, timeout)
-        if not _astap_solved(result):
+        if is_temporary:
+            _prepared.unlink(missing_ok=True)
+            source_for_solve = source
+        else:
+            #   raw 16-bit: solve a private copy, never the file itself
+            source_for_solve = tmp_dir / source.name
+            shutil.copyfile(source, source_for_solve)
+        try:
+            result, prepared, _temp, _cmd = _solve_with_astap(
+                source_for_solve,
+                tmp_dir,
+                lambda path: astap_command(
+                    path, fov_deg=fov_deg, ra_deg=ra_deg, dec_deg=dec_deg,
+                    radius_deg=radius_deg, update=True,
+                ),
+                timeout,
+            )
+        except RuntimeError:
+            return None
+        if prepared is None:
             return None
         with fits.open(prepared) as hdul:
             header = hdul[0].header
@@ -821,20 +899,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
     field_of_view = _astap_field_of_view_degrees(image)
     source_path = Path(image.path)
     working_dir = work_dir(image.out_path, "wcs_images")
-    astap_path, is_temporary = _prepare_astap_fits(source_path, working_dir)
     nx, ny = _image_shape_xy(image)
-
-    if not is_temporary:
-        with fits.open(astap_path, mode="update") as hdul:
-            _strip_wcs_keywords(hdul[0].header)
-            hdul.flush()
-
-    if is_temporary:
-        terminal_output.print_to_terminal(
-            "Created temporary 16-bit FITS copy for ASTAP.",
-            indent=indent,
-            style_name="WARNING",
-        )
 
     hint = _astap_search_hint_arguments(image)
     if not hint:
@@ -843,27 +908,32 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
             indent=indent,
             style_name="WARNING",
         )
-    cmd = [
-        "astap_cli",
-        "-f",
-        str(astap_path),
-        "-r",
-        "3" if hint else f"{ASTAP_BLIND_RADIUS_DEG:.10g}",
-        "-fov",
-        f"{field_of_view:.10g}",
-        *hint,
-        "-update",
-    ]
+
+    def build_cmd(path: Path) -> list[str]:
+        return [
+            "astap_cli",
+            "-f",
+            str(path),
+            "-r",
+            "3" if hint else f"{ASTAP_BLIND_RADIUS_DEG:.10g}",
+            "-fov",
+            f"{field_of_view:.10g}",
+            *hint,
+            "-update",
+        ]
+
+    command_result, astap_path, is_temporary, cmd = _solve_with_astap(
+        source_path, working_dir, build_cmd, ASTAP_TIMEOUT_SECONDS
+    )
 
     try:
-        command_result = _run_astap_solve(cmd, ASTAP_TIMEOUT_SECONDS)
-
-        if not _astap_solved(command_result):
+        if astap_path is None or not _astap_solved(command_result):
             raise RuntimeError(
                 f"{style.Bcolors.FAIL} \nNo wcs solution could be found for "
                 f"the images!\n {style.Bcolors.ENDC}{style.Bcolors.BOLD}"
                 f"The command was:\n{shlex.join(cmd)} \nDetailed error output:\n"
-                f"{style.Bcolors.ENDC}{command_result.stdout}{command_result.stderr}"
+                f"{style.Bcolors.ENDC}{getattr(command_result, 'stdout', '')}"
+                f"{getattr(command_result, 'stderr', '')}"
                 f"{style.Bcolors.ENDC}{style.Bcolors.FAIL}Exit{style.Bcolors.ENDC}"
             )
 
@@ -884,7 +954,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
             image_shape=(nx, ny),
         )
     finally:
-        if is_temporary:
+        if is_temporary and astap_path is not None:
             astap_path.unlink(missing_ok=True)
 
     image.wcs = derived_wcs

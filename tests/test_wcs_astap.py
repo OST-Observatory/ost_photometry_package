@@ -155,13 +155,14 @@ def test_scale_image_for_astap_ignores_a_masked_hot_pixel():
     data[10, 10] = 1e9  # dead flat pixel, masked
     mask = np.zeros(data.shape, dtype=bool)
     mask[10, 10] = True
-    scaled = _scale_image_for_astap(data, mask)
+    scaled = _scale_image_for_astap(data, mask, "asinh")
     sky = float(np.median(scaled))
     assert abs(float(scaled[10, 10]) - sky) < 0.05 * _ASTAP_COPY_TOP  # masked: set to the sky
     assert scaled[100, 100] > 0.9 * _ASTAP_COPY_TOP  # the star keeps its dynamic range
     # unmasked hot pixel: capped at the star, which keeps its full range
-    scaled = _scale_image_for_astap(data)
-    assert scaled[100, 100] > 0.9 * _ASTAP_COPY_TOP
+    for stretch in ("linear", "asinh"):
+        scaled = _scale_image_for_astap(data, stretch=stretch)
+        assert scaled[100, 100] > 0.9 * _ASTAP_COPY_TOP
 
 
 def test_scale_image_for_astap_keeps_bright_star_cores_apart():
@@ -184,7 +185,7 @@ def test_scale_image_for_astap_resolves_the_noise_of_deep_stacks():
     yy, xx = np.mgrid[:300, :300]
     data += 1e4 * np.exp(-((xx - 150) ** 2 + (yy - 150) ** 2) / (2 * 2.0**2))  # 10⁶ σ star
     data += 0.2 * np.exp(-((xx - 60) ** 2 + (yy - 60) ** 2) / (2 * 2.0**2))   # 20 σ star
-    scaled = _scale_image_for_astap(data).astype(float)
+    scaled = _scale_image_for_astap(data, stretch="asinh").astype(float)
     sky = scaled[200:290, 200:290]
     assert np.std(sky) > 100
     assert scaled[60, 60] - np.median(sky) > 5 * np.std(sky)
@@ -224,3 +225,29 @@ def test_skewed_astap_solution_is_rejected(tmp_path):
         "CDELT1": 1.2548e-4, "CDELT2": 1.2614e-4, "CROTA1": 43.300, "CROTA2": 43.016})).writeto(bad)
     assert _astap_solution_plausible(str(good))
     assert not _astap_solution_plausible(str(bad))
+
+
+
+def test_astap_tries_the_linear_copy_first_then_asinh(tmp_path, monkeypatch):
+    import subprocess
+
+    from astropy.io import fits
+
+    from ost_photometry import wcs as wcs_module
+
+    src = tmp_path / "stack.fit"
+    fits.PrimaryHDU(np.random.default_rng(0).normal(10.0, 1.0, (64, 64)).astype(np.float32)).writeto(src)
+    seen = []
+
+    def fake_solve(cmd, timeout):
+        seen.append(fits.getheader(cmd[2]).get("HISTORY"))
+        solved = len(seen) == 2  # the second copy (asinh) solves
+        return subprocess.CompletedProcess(cmd, 0, stdout="Solution found: 23 57" if solved else "No solution", stderr="")
+
+    monkeypatch.setattr(wcs_module, "_run_astap_solve", fake_solve)
+    result, path, is_temporary, _cmd = wcs_module._solve_with_astap(
+        src, tmp_path, lambda p: ["astap_cli", "-f", str(p)], 10
+    )
+    assert wcs_module._astap_solved(result) and is_temporary and path.exists()
+    assert len(seen) == 2
+    assert len(list(tmp_path.glob("stack_astap_*.fit"))) == 1  # the failed copy was removed
