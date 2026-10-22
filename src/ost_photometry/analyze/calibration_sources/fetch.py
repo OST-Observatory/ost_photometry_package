@@ -13,6 +13,12 @@ Design
   * optional ``id``, ``apass_id``, etc.
 
 * **APASS** is implemented entirely here (Vizier ``II/336/apass9``), not a separate module.
+* **Stetson**: Stetson's and Landolt's standards of the Pancino et al. (2022)
+  collection (Vizier ``J/A+A/664/A109/table5``), variables and binaries
+  removed.
+* **auto**: the first source of ``auto_sources`` that covers every requested
+  filter with at least ``auto_min_stars`` stars; the choice is in
+  ``table.meta["calibration_source"]`` (also set for the other sources).
 * **Lupton** R/I from Sloan r′, i′: :func:`transforms.add_johnson_ri_to_standard_table`
   for APASS; optional heuristic for other Vizier tables via
   :func:`_maybe_add_johnson_ri_standard`.
@@ -39,6 +45,28 @@ from .vizier_query import get_vizier_catalog
 
 # Vizier catalog id for APASS DR9 — also matched when ``calibration_source`` maps here
 APASS_VIZIER_ID = "II/336/apass9"
+
+#: Stetson's secondary standards and Landolt's standards (UBVRI, Johnson-
+#: Kron-Cousins), Pancino et al. 2022, A&A 664, A109.
+STETSON_VIZIER_ID = "J/A+A/664/A109/table5"
+STETSON_COLLECTIONS = ("Stetson", "Landolt")
+_STETSON_BANDS = ("U", "B", "V", "R", "I")
+
+#: Order of ``calibration_source="auto"``: Stetson where the field is a
+#: standard field, else APASS; SDSS for u and z (neither of the others has
+#: them).
+DEFAULT_AUTO_SOURCES = ("Stetson", "APASS", "SDSS_Release_16")
+DEFAULT_AUTO_MIN_STARS = 20
+
+#: Bands a source can deliver (R, I of APASS from Sloan r, i): ``auto`` skips
+#: a source without downloading when a filter is missing here.
+SOURCE_BANDS = {
+    "Stetson": frozenset("UBVRI"),
+    "APASS": frozenset({"B", "V", "g", "r", "i", "R", "I"}),
+}
+
+#: Table meta key with the source the table came from (``auto`` resolved).
+META_CALIBRATION_SOURCE = "calibration_source"
 
 
 def _print(msg: str, indent: int, **kwargs) -> None:
@@ -517,6 +545,145 @@ def _apass_quality(out: Table, nobs: np.ndarray | None, indent: int) -> Table:
     return out
 
 
+def _masked_to_nan(column) -> np.ndarray:
+    return np.array(np.ma.filled(np.ma.asarray(column, dtype=float), np.nan), dtype=float)
+
+
+def _fetch_stetson_standard(
+    center: SkyCoord,
+    field_of_view_arcmin: float,
+    calibration_catalog_mag_range: tuple[float, float],
+    indent: int,
+) -> Table:
+    """Stetson / Landolt standards (Pancino et al. 2022) → standard table.
+
+    * Only the collections in :data:`STETSON_COLLECTIONS`; stars flagged
+      variable (``VarFlag``) or binary (``BinFlag``) are dropped.
+    * Magnitude range on V (stars without V: on their first band), as for
+      APASS.
+    * Bands without a value are NaN; errors as given (a few mmag).
+    """
+    _print(f"Downloading Stetson / Landolt standards (Vizier {STETSON_VIZIER_ID})", indent=indent)
+    columns = ["RAJ2000", "DEJ2000", "Collect", "VarFlag", "BinFlag"]
+    for band in _STETSON_BANDS:
+        columns += [f"{band}mag", f"e_{band}mag"]
+    result = Vizier(columns=columns, row_limit=-1).query_region(
+        center,
+        radius=field_of_view_arcmin * u.arcmin,
+        catalog=STETSON_VIZIER_ID,
+    )
+    if not result:
+        _print("No Stetson / Landolt standards in this field", indent=indent + 1, style_name="WARNING")
+        return Table(names=["ra", "dec"], dtype=[float, float])
+    raw = result[0]
+    keep = np.isin(np.char.strip(np.asarray(raw["Collect"]).astype(str)), STETSON_COLLECTIONS)
+    n_flagged = 0
+    for flag in ("VarFlag", "BinFlag"):
+        if flag in raw.colnames:
+            bad = np.asarray(np.ma.filled(np.ma.asarray(raw[flag]), 0)).astype(int) == 1
+            n_flagged += int(np.count_nonzero(keep & bad))
+            keep &= ~bad
+    raw = raw[keep]
+
+    out = Table()
+    out["ra"] = np.asarray(raw["RAJ2000"], dtype=float)
+    out["dec"] = np.asarray(raw["DEJ2000"], dtype=float)
+    out["stetson_id"] = [f"STETSON_{i:06d}" for i in range(len(raw))]
+    for band in _STETSON_BANDS:
+        if f"{band}mag" not in raw.colnames:
+            continue
+        out[f"mag_std_{band}"] = _masked_to_nan(raw[f"{band}mag"])
+        out[f"err_std_{band}"] = (
+            _masked_to_nan(raw[f"e_{band}mag"]) if f"e_{band}mag" in raw.colnames
+            else np.full(len(raw), np.nan)
+        )
+    reference = np.full(len(out), np.nan)
+    for band in ("V", "B", "R", "I", "U"):
+        col = f"mag_std_{band}"
+        if col in out.colnames:
+            reference = np.where(np.isfinite(reference), reference, np.asarray(out[col], dtype=float))
+    lo, hi = calibration_catalog_mag_range
+    out = out[np.isfinite(reference) & (reference >= lo) & (reference <= hi)]
+    _print(
+        f"{len(out)} Stetson / Landolt standards in the magnitude range "
+        f"({n_flagged} variable or binary dropped)",
+        indent=indent,
+    )
+    return out
+
+
+def _catalog_filters(filter_list: list[str]) -> list[str]:
+    """Filters that need catalog magnitudes (UBVRI, ugriz)."""
+    from ..post_processing.magnitude_systems import filter_expects_catalog_standards
+
+    return [f for f in filter_list if filter_expects_catalog_standards(f)]
+
+
+def _stars_per_filter(table: Table, filters: list[str]) -> dict[str, int]:
+    counts = {}
+    for f in filters:
+        col = f"mag_std_{f}"
+        counts[f] = int(np.count_nonzero(np.isfinite(_masked_to_nan(table[col])))) if (
+            table is not None and col in table.colnames
+        ) else 0
+    return counts
+
+
+def _fetch_auto_standard(
+    filter_list: list[str],
+    center: SkyCoord,
+    *,
+    auto_sources: tuple[str, ...],
+    auto_min_stars: int,
+    indent: int,
+    **fetch_kwargs,
+) -> Table:
+    """First source of ``auto_sources`` with ``auto_min_stars`` stars in
+    every catalog filter; otherwise the one with the most (warning)."""
+    filters = _catalog_filters(filter_list) or list(filter_list)
+    best: tuple[int, str, Table] | None = None
+    for source in auto_sources:
+        bands = SOURCE_BANDS.get(source)
+        if bands is not None and not set(filters) <= bands:
+            _print(f"auto: {source} has no {sorted(set(filters) - bands)}", indent=indent + 1)
+            continue
+        try:
+            std = fetch_standard_calibration_catalog(
+                filter_list, center, calibration_source=source, indent=indent,
+                exclude_known_variables=False, **fetch_kwargs,
+            )
+        except Exception as err:  # network, missing catalog: try the next
+            _print(f"auto: {source} not available ({err})", indent=indent + 1, style_name="WARNING")
+            continue
+        counts = _stars_per_filter(std, filters)
+        n_min = min(counts.values()) if counts else 0
+        summary = ", ".join(f"{f} {n}" for f, n in counts.items())
+        if n_min >= int(auto_min_stars):
+            _print(f"Calibration catalog (auto): {source} ({summary} stars)", indent=indent)
+            std.meta[META_CALIBRATION_SOURCE] = source
+            return std
+        _print(
+            f"auto: {source} has too few stars ({summary}; need {int(auto_min_stars)} per filter)",
+            indent=indent + 1,
+        )
+        if best is None or n_min > best[0]:
+            best = (n_min, source, std)
+    if best is None or best[0] == 0:
+        raise RuntimeError(
+            f"{style.Bcolors.FAIL}\nNo calibration catalog of {list(auto_sources)} covers "
+            f"the filters {filters} in this field. Set calibration_source to a "
+            f"catalog that has them (vizier_dict). -> EXIT{style.Bcolors.ENDC}"
+        )
+    n_min, source, std = best
+    _print(
+        f"Calibration catalog (auto): {source}, only {n_min} stars in the poorest filter",
+        indent=indent,
+        style_name="WARNING",
+    )
+    std.meta[META_CALIBRATION_SOURCE] = source
+    return std
+
+
 def fetch_standard_calibration_catalog(
     filter_list: list[str],
     center: SkyCoord,
@@ -530,12 +697,17 @@ def fetch_standard_calibration_catalog(
     indent: int = 1,
     exclude_known_variables: bool = True,
     exclude_known_variables_radius: u.Quantity | float = DEFAULT_EXCLUDE_RADIUS,
+    auto_sources: tuple[str, ...] = DEFAULT_AUTO_SOURCES,
+    auto_min_stars: int = DEFAULT_AUTO_MIN_STARS,
 ) -> Table:
     """
     Fetch a calibration catalog and return the standard-schema ``Table``.
 
     ``calibration_source`` may be:
 
+    * ``"auto"`` — the first of ``auto_sources`` with ``auto_min_stars``
+      stars in every catalog filter (:func:`_fetch_auto_standard`).
+    * ``"Stetson"`` — :func:`_fetch_stetson_standard`.
     * ``"vsp"``, ``"simbad"``, ``"simbad_vot"`` — special branches above.
     * ``"APASS"`` or any key whose ``vizier_dict`` value is ``II/336/apass9`` —
       :func:`_fetch_apass9_standard`.
@@ -568,7 +740,28 @@ def fetch_standard_calibration_catalog(
     if calibration_source in vizier_dict:
         catalog_id = vizier_dict[calibration_source]
 
-    if calibration_source == "vsp":
+    if calibration_source == "auto":
+        std = _fetch_auto_standard(
+            filter_list,
+            center,
+            auto_sources=tuple(auto_sources),
+            auto_min_stars=auto_min_stars,
+            indent=indent,
+            field_of_view_arcmin=field_of_view_arcmin,
+            calibration_catalog_mag_range=calibration_catalog_mag_range,
+            vizier_dict=vizier_dict,
+            path_calibration_file=path_calibration_file,
+            apply_sloan_to_johnson_ri=apply_sloan_to_johnson_ri,
+        )
+        catalog_id = vizier_dict.get(std.meta.get(META_CALIBRATION_SOURCE, ""))
+    elif calibration_source == "Stetson":
+        std = _fetch_stetson_standard(
+            center,
+            field_of_view_arcmin,
+            calibration_catalog_mag_range,
+            indent=indent + 1,
+        )
+    elif calibration_source == "vsp":
         std = _fetch_vsp_standard(
             center,
             field_of_view_arcmin,
@@ -631,6 +824,8 @@ def fetch_standard_calibration_catalog(
             f"-> EXIT {style.Bcolors.ENDC}"
         )
 
+    if std is not None and META_CALIBRATION_SOURCE not in std.meta:
+        std.meta[META_CALIBRATION_SOURCE] = calibration_source
     if (
         exclude_known_variables
         and catalog_id != VSX_VIZIER_ID

@@ -142,6 +142,7 @@ When lacosmic runs, `read_noise` and `saturation_level` (`None` by default) come
 |--------|---------|------|
 | `saturation_fraction` | 0.9 | `saturated` when a pixel within the measurement radius reaches this fraction of `SATLEVEL` (frame before 2D background subtraction) |
 | `calibrator_max_masked_fraction` | 0.05 | Calibrators with a larger masked aperture fraction are excluded in every case |
+| `calibrator_max_confusion_bias` | 0.005 | Calibrators whose `confusion_bias` (APER, mag) exceeds this in any filter are left out (crowded fields, poor seeing; matters with deep catalogs such as Stetson). `None` disables; skipped when too few remain |
 
 Saturated, non-positive or too-masked measurements are excluded from the
 calibrators however few remain. See [UNCERTAINTIES.md](UNCERTAINTIES.md).
@@ -226,6 +227,33 @@ PipelineConfig(
 Intra correlation uses `correlate_preserve_objects`; inter correlation resolves IDs on the reference filter before matching across bands.
 
 **Rename (July 2026):** `protect_reference_obj` was renamed to `protect_ooi`. The old name still works as a `PipelineConfig` alias.
+
+### `calibration_source`: the calibration catalog
+
+| Value | Catalog | Bands | Coverage |
+|-------|---------|-------|----------|
+| `auto` (default) | first of `calibration_auto_sources` (default Stetson → APASS → SDSS DR12) with at least `calibration_auto_min_stars` (20) stars in every filter | — | — |
+| `Stetson` | Stetson's and Landolt's standards, Pancino et al. 2022 (Vizier `J/A+A/664/A109/table5`); variables and binaries removed | U B V I (R sparse), errors of a few mmag, to V ≈ 18 | standard fields and many clusters (NGC 7789, 188, 2420, 6791, 6939, 6940, 7142, 7790, M 67, M 11, …) |
+| `APASS` | APASS DR9 (`II/336/apass9`) | B V g′ r′ i′ (R, I from r′, i′, Lupton) | all sky, about 10–17 mag; blends in crowded fields |
+| any key of `vizier_dict` | free Vizier catalog (`calibration_parameters.vizier_dict` / `catalog_properties_dict`), e.g. `SDSS_Release_16` (u g r i z), `Pancino_2022` (all collections, no flag cut), `UCAC4`, `GSPC2.4` | per catalog | per catalog |
+| `vsp`, `simbad`, `simbad_vot` | AAVSO VSP chart, Simbad, Simbad VO table (`path_calibration_file`) | | |
+
+`auto` logs its choice ("Calibration catalog (auto): Stetson (B 237, V 261
+stars)"); sources without one of the filters are skipped without download
+(Stetson and APASS have no u, z: SDSS takes those). The magnitude system
+(Vega / AB) follows the catalog actually used. One catalog serves all
+filters of a run, so colour indices stay in one system. Stetson reaches
+fainter than APASS: widen `calibration_catalog_mag_range` (e.g. 12–17.5)
+to use it; `calibrator_max_confusion_bias` keeps confusion-biased faint
+stars of a poor-seeing image out of the fit.
+
+NGC 7789 (two nights, APER, independent check against Gaia DR3 synthetic
+Johnson photometry): with APASS the zero point is +16 … +33 mmag off Gaia
+(APASS itself is +11 / +32 mmag off in B / V); with Stetson (chosen by
+`auto`, range 12–17.5) −13 … +2 mmag, from about 600 instead of about 200
+calibrators, and smaller zero-point errors (V, 2025-06-19: 9.3 → 6.6 mmag).
+The magnitude trends do not change (the calibration fits zero point and
+colour term only).
 
 ### `calibration_strategy` and `calibration_grouping`
 
@@ -413,7 +441,7 @@ Calibrated `mag_cal_*` inherit the **calibration catalog** zero-point system and
 
 **Conversions when `convert_magnitudes=True`:** same-set Vega↔AB (literature Δ); Bessell→SDSS (Jordi); SDSS→Bessell (Lupton). Deprecated alias: `target_filter_system` in `{SDSS, AB, BESSELL}`.
 
-Catalog systems (examples): APASS/Stetson → Vega; SDSS DR → AB. See `CATALOG_MAGNITUDE_SYSTEMS` in `post_processing.magnitude_systems`.
+Catalog systems (examples): APASS/Stetson → Vega; SDSS DR → AB (with `auto`: the catalog it chose). See `CATALOG_MAGNITUDE_SYSTEMS` in `post_processing.magnitude_systems`.
 
 ## Decision tables
 

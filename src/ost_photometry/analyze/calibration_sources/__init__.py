@@ -15,7 +15,8 @@ catalogs used by:
 * ``ra``, ``dec`` — ICRS, decimal degrees.
 * ``mag_std_{f}``, ``err_std_{f}`` — standard magnitudes per filter letter ``f``
   (Johnson-Cousins letters and/or Sloan ``g``, ``r``, ``i`` as lowercase).
-* Optional metadata, e.g. ``id``, ``apass_id``.
+* Optional metadata, e.g. ``id``, ``apass_id``, ``stetson_id``.
+* ``table.meta["calibration_source"]``: the source used (``auto`` resolved).
 
 **Lupton (2005)** Sloan → Johnson R/I lives in :mod:`transforms` and is invoked
 from :mod:`fetch` where appropriate (APASS and optional heuristic for other Vizier tables).
@@ -24,7 +25,13 @@ Public re-exports below; see each submodule for details.
 """
 
 from .crossmatch import crossmatch_standard_catalog
-from .fetch import fetch_standard_calibration_catalog, vizier_result_to_standard_table
+from .fetch import (
+    DEFAULT_AUTO_SOURCES,
+    META_CALIBRATION_SOURCE,
+    STETSON_VIZIER_ID,
+    fetch_standard_calibration_catalog,
+    vizier_result_to_standard_table,
+)
 from .flags import flag_comparison_stars, mark_used_calibrators
 from .known_variables import drop_catalog_rows_near_known_variables
 from .transforms import (
@@ -38,6 +45,9 @@ from .transforms import (
 from .vizier_query import get_vizier_catalog
 
 __all__ = [
+    "DEFAULT_AUTO_SOURCES",
+    "META_CALIBRATION_SOURCE",
+    "STETSON_VIZIER_ID",
     "add_johnson_ri_from_sloan",
     "add_johnson_ri_to_standard_table",
     "crossmatch_standard_catalog",

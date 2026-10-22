@@ -10,6 +10,7 @@ from astropy.table import Table
 from ... import calibration_parameters, terminal_output
 from ..calibration_sources.transforms import johnson_ubvri_from_sloan_arrays
 from .magnitude_systems import (
+    META_CATALOG_SOURCE,
     SDSS_CATALOGS,
     SDSS_TO_AB_OFFSET,
     annotate_table_magnitude_meta,
@@ -263,6 +264,9 @@ def convert_magnitudes_to_other_system(
         if a_ms is not None:
             oms = a_ms
 
+    #   ``auto`` (or nothing): the catalog the calibration actually used
+    if calibration_source in (None, "auto"):
+        calibration_source = tbl.meta.get(META_CATALOG_SOURCE, calibration_source)
     filters = _list_cal_filters(tbl)
     if not filters:
         terminal_output.print_to_terminal(

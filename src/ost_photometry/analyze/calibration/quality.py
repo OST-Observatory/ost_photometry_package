@@ -256,7 +256,22 @@ def calibrator_quality_kwargs(config: Any) -> dict[str, Any]:
         "isolation_arcsec": getattr(config, "calibrator_isolation_arcsec", 10.0),
         "isolation_dmag": float(getattr(config, "calibrator_isolation_dmag", 5.0)),
         "max_neighbour_fraction": getattr(config, "calibrator_max_neighbour_fraction", 0.01),
+        "max_confusion_bias": getattr(config, "calibrator_max_confusion_bias", 0.005),
     }
+
+
+def _low_confusion(table: Table, filters: list[str], max_bias: float | None) -> np.ndarray:
+    """True where ``confusion_bias_<filter>`` is at most ``max_bias`` (or
+    missing / NaN) in every filter."""
+    ok = np.ones(len(table), dtype=bool)
+    if max_bias is None:
+        return ok
+    for f in filters:
+        col = f"confusion_bias_{f}"
+        if col in table.colnames:
+            bias = np.asarray(table[col], dtype=float)
+            ok &= ~(np.isfinite(bias) & (bias > float(max_bias)))
+    return ok
 
 
 def _isolated(
@@ -328,6 +343,7 @@ def calibrator_candidate_mask(
     isolation_arcsec: float | None = 10.0,
     isolation_dmag: float = 5.0,
     max_neighbour_fraction: float | None = 0.01,
+    max_confusion_bias: float | None = 0.005,
 ) -> np.ndarray:
     """Catalog matches that also pass photometric-error and PSF/finder quality cuts.
 
@@ -338,7 +354,11 @@ def calibrator_candidate_mask(
     ridge); each is skipped if it would leave fewer than ``min_keep``
     candidates. Isolation: no own detection within ``isolation_arcsec``
     less than ``isolation_dmag`` fainter, and ``neighbour_flux_fraction``
-    at most ``max_neighbour_fraction`` in every filter.
+    at most ``max_neighbour_fraction`` in every filter. Confusion:
+    ``confusion_bias`` (the typical offset of a star of that flux from
+    unresolved faint stars, APER) at most ``max_confusion_bias`` mag in every
+    filter; deep catalogs (Stetson) otherwise feed faint, confusion-biased
+    calibrators into the zero point in poor seeing.
     """
     if config is not None:
         kw = calibrator_quality_kwargs(config)
@@ -358,6 +378,7 @@ def calibrator_candidate_mask(
             mask = next_mask
 
     _try(mask & _isolated(table, filters, isolation_arcsec, isolation_dmag, max_neighbour_fraction))
+    _try(mask & _low_confusion(table, filters, max_confusion_bias))
     if apply_finder_shape_cuts:
         _try(
             mask

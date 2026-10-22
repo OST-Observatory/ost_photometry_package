@@ -9,6 +9,7 @@ from ...post_processing.magnitude_systems import validate_magnitude_output_reque
 from .. import base
 from ..config import PipelineConfig
 from ..context import AnalysisContext
+from .calibration import effective_calibration_source
 
 
 class PostProcessMagnitudeConvertStep(base.PipelineStep):
@@ -45,7 +46,7 @@ class PostProcessMagnitudeConvertStep(base.PipelineStep):
             output_magnitude_system=config.output_magnitude_system,
             convert_magnitudes=config.convert_magnitudes,
             distribution_samples=config.distribution_samples,
-            calibration_source=config.calibration_source,
+            calibration_source=effective_calibration_source(context, config),
         )
         context.table_magnitudes = obs.table_magnitudes
         return context

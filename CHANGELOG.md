@@ -13,6 +13,16 @@ section of this file.
 
 ### Added
 
+- **Stetson standards as calibration source; `calibration_source="auto"` is
+  the new default.** `"Stetson"`: Stetson's and Landolt's standards of the
+  Pancino et al. (2022) collection (UBVI, a few mmag, to V ≈ 18, resolved in
+  clusters; variables and binaries removed). `"auto"`: the first of
+  `calibration_auto_sources` (Stetson → APASS → SDSS DR12) with at least
+  `calibration_auto_min_stars` stars in every filter; SDSS filters u, z go
+  to SDSS, g r i to APASS. The magnitude system follows the catalog used.
+  Free Vizier catalogs (`vizier_dict`) stay available. Before: `"APASS"`.
+- **`calibrator_max_confusion_bias`** (0.005 mag): calibrators with a larger
+  `confusion_bias` are left out of the zero-point fit.
 - **Confusion of unresolved faint stars (APER):** new column
   `confusion_bias` (mag): how much the typical star of that flux appears too
   faint in crowded fields with poor seeing. The light of unresolved faint

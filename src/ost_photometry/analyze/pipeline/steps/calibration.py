@@ -118,6 +118,8 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
             path_calibration_file=config.path_calibration_file,
             exclude_known_variables=config.exclude_known_variables,
             exclude_known_variables_radius=config.exclude_known_variables_radius,
+            auto_sources=tuple(config.calibration_auto_sources),
+            auto_min_stars=config.calibration_auto_min_stars,
         )
     elif catalog is None:
         terminal_output.print_to_terminal(
@@ -158,6 +160,16 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
         else:
             out[epoch_id] = tbl.copy()
     return out
+
+
+def effective_calibration_source(context, config) -> str:
+    """The catalog actually used (``calibration_source="auto"`` resolved from
+    the fetched catalog's meta), else ``config.calibration_source``."""
+    from ...calibration_sources import META_CALIBRATION_SOURCE
+
+    catalog = getattr(context, "calibration_catalog", None)
+    used = catalog.meta.get(META_CALIBRATION_SOURCE) if catalog is not None else None
+    return str(used or config.calibration_source)
 
 
 def _write_calibration_epochs(results, output_dir) -> None:
@@ -364,7 +376,8 @@ class CalibrationStep(base.PipelineStep):
             )
 
             cal_fs = infer_filter_set(filter_list)
-            cat_ms = resolve_catalog_magnitude_system(config.calibration_source)
+            source_used = effective_calibration_source(context, config)
+            cat_ms = resolve_catalog_magnitude_system(source_used)
             if cat_ms == "unknown":
                 cat_ms = (
                     "ab"
@@ -385,10 +398,10 @@ class CalibrationStep(base.PipelineStep):
                 filter_set=cal_fs,
                 magnitude_system=cat_ms,
                 catalog_magnitude_system=cat_ms,
-                calibration_source=config.calibration_source,
+                calibration_source=source_used,
                 conversion_note="calibrated",
             )
-            log_magnitude_output(effective, config.calibration_source)
+            log_magnitude_output(effective, source_used)
             obs.table_magnitudes = table_native
             context.table_magnitudes = table_native
             if filter_list:

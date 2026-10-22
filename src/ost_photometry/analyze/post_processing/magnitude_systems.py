@@ -83,6 +83,7 @@ SDSS_CATALOGS = frozenset({"SDSS_Release_16", "V/147/sdss12"})
 
 # Friendly catalog name and Vizier id → primary magnitude system of standards.
 CATALOG_MAGNITUDE_SYSTEMS: dict[str, MagnitudeSystem] = {
+    "Stetson": "vega",
     "APASS": "vega",
     "II/336/apass9": "vega",
     "SDSS_Release_16": "ab",

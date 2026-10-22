@@ -412,6 +412,11 @@ class CalibrationConfig:
     calibrator_isolation_arcsec: float | None = 10.0
     calibrator_isolation_dmag: float = 5.0
     calibrator_max_neighbour_fraction: float | None = 0.01
+    #: Calibrators whose ``confusion_bias`` (APER: typical offset from
+    #: unresolved faint stars) exceeds this (mag) in any filter are left out
+    #: (crowded fields, poor seeing; deep catalogs such as Stetson).
+    #: ``None`` disables; skipped when too few remain.
+    calibrator_max_confusion_bias: float | None = 0.005
     debug_verify_ooi_global_ids: bool = False
     observatory_location: EarthLocation = field(
         default_factory=lambda: EarthLocation(
@@ -420,7 +425,18 @@ class CalibrationConfig:
             height=39 * u.m,
         )
     )
-    calibration_source: str = "APASS"
+    #: Calibration catalog: ``"auto"`` (default: the first source of
+    #: ``calibration_auto_sources`` that covers every filter with at least
+    #: ``calibration_auto_min_stars`` stars), ``"Stetson"`` (Stetson's and
+    #: Landolt's standards, Pancino et al. 2022; UBVRI in standard fields and
+    #: clusters), ``"APASS"`` (all sky, B V g r i, R I derived), any key of
+    #: ``vizier_dict`` (free Vizier catalogs, e.g. ``"SDSS_Release_16"`` for
+    #: u g r i z), ``"vsp"``, ``"simbad"``, ``"simbad_vot"``.
+    calibration_source: str = "auto"
+    #: Order tried by ``calibration_source="auto"``. SDSS last: it covers u
+    #: and z, which neither Stetson nor APASS have.
+    calibration_auto_sources: tuple[str, ...] = ("Stetson", "APASS", "SDSS_Release_16")
+    calibration_auto_min_stars: int = 20
     path_calibration_file: str | None = None
     vizier_dict: dict[str, str] | None = None
     region_to_select_calibration_stars: object = None
