@@ -3,11 +3,12 @@
 The pixel uncertainty map (``UNCERT``) holds photon, read and dark noise.
 What it cannot know is measured here on the image itself:
 
-* :func:`background_noise_factor` places apertures on empty sky and compares
-  the scatter of their sky-subtracted sums with the map prediction. Faint
-  undetected stars, flat-field structure, scattered light and correlated
-  noise all raise it; the background part of every flux error is scaled by
-  ``max(1, factor)``.
+* :func:`background_noise` places apertures at star-like blank positions
+  and compares the scatter of their sky-subtracted sums with the map
+  prediction. Unresolved faint stars (confusion), flat-field structure,
+  scattered light and correlated noise all raise it; the background part of
+  every flux error is scaled by ``max(1, factor)``. The median of the sums
+  is the confusion offset of the typical star (:func:`confusion_bias`).
 * :func:`saturated_sources` flags stars with a pixel near ``SATLEVEL`` in
   the frame *before* the 2D background subtraction.
 * :func:`aperture_correction` measures, per image, how much flux bright
@@ -152,7 +153,24 @@ def _empty_positions(
     return cand[:n_wanted]
 
 
-def background_noise_factor(
+#: Blank apertures for the background noise keep this many FWHM from every
+#: detected star: as close as a resolved neighbour comes to a star. Apertures
+#: in the voids between stars (the former ``r_out + r`` distance) missed the
+#: light of unresolved faint stars that every real star has around it.
+STAR_LIKE_SEPARATION_FWHM = 2.5
+
+
+def _sigma68(values: np.ndarray) -> float:
+    """Half the 16–84 % range (σ for Gaussian data, keeps moderate skew)."""
+    v = np.asarray(values, dtype=float)
+    v = v[np.isfinite(v)]
+    if v.size < 3:
+        return float("nan")
+    p16, p84 = np.percentile(v, [15.865, 84.135])
+    return float(0.5 * (p84 - p16))
+
+
+def background_noise(
     data: np.ndarray,
     sigma_map: np.ndarray,
     sources_xy: np.ndarray,
@@ -160,32 +178,49 @@ def background_noise_factor(
     r_in: float,
     r_out: float,
     *,
+    min_separation: float,
     mask: np.ndarray | None = None,
     source_mask: np.ndarray | None = None,
     n_apertures: int = 400,
     seed: int = 0,
-) -> tuple[float, int]:
-    """Measured / predicted scatter of sky-subtracted sums on empty sky.
+) -> dict[str, float]:
+    """Background noise and confusion offset at star-like blank positions.
 
     Apertures of the measurement size are placed at random positions at
-    least ``r_out + radius`` from every detected source and measured exactly
-    like a star (clipped-median sky in the annulus). The robust scatter of
-    their net sums is compared with the map prediction of
-    :func:`aperture_flux_errors` for zero source flux. Returns
-    ``(factor, n_used)``; ``(nan, n)`` with fewer than 30 empty apertures.
+    least ``min_separation`` from every detected source (where a star could
+    sit, see :data:`STAR_LIKE_SEPARATION_FWHM`) and measured exactly like a
+    star (clipped-median sky in the annulus). ``data`` should be the image
+    the stars are measured on (with the neighbour model removed when the
+    photometry subtracts neighbours).
+
+    Keys:
+
+    * ``factor``: ``sigma`` / the map prediction of
+      :func:`aperture_flux_errors` for zero source flux;
+    * ``sigma``: half the 16–84 % range of the net sums;
+    * ``offset``: their median. The light of unresolved faint stars in an
+      aperture is skewed: most apertures hold less than the mean the annulus
+      measures, a few much more. ``offset`` < 0 is what the typical star
+      loses (crowded fields, poor seeing); the mean stays near zero;
+    * ``p90``: 90th percentile of the net sums (the bright tail);
+    * ``n``: apertures used.
+
+    With fewer than 30 apertures all values are NaN.
     """
     rng = np.random.default_rng(seed)
     pos = _empty_positions(
         np.shape(data),
         sources_xy,
-        exclusion_radius=r_out + radius,
+        exclusion_radius=float(min_separation),
         edge=r_out + 2.0,
         mask=mask,
         n_wanted=n_apertures,
         rng=rng,
     )
+    nan = {"factor": float("nan"), "sigma": float("nan"), "offset": float("nan"),
+           "p90": float("nan"), "n": int(len(pos))}
     if len(pos) < 30:
-        return float("nan"), int(len(pos))
+        return nan
     ap = CircularAperture(pos, radius)
     ann = CircularAnnulus(pos, r_in, r_out)
     phot = aperture_photometry(data, ap, error=sigma_map, mask=mask)
@@ -199,11 +234,24 @@ def background_noise_factor(
         sky["n_sky"],
         noise_factor=1.0,
     )
-    measured = _robust_std(net)
+    measured = _sigma68(net)
     expected = float(np.nanmedian(predicted))
     if not (np.isfinite(measured) and np.isfinite(expected) and expected > 0):
-        return float("nan"), int(len(pos))
-    return measured / expected, int(len(pos))
+        return nan
+    return {"factor": measured / expected, "sigma": measured, "offset": float(np.nanmedian(net)),
+            "p90": float(np.nanpercentile(net, 90)), "n": int(len(pos))}
+
+
+def confusion_bias(flux: np.ndarray, offset: float) -> np.ndarray:
+    """Magnitude by which the typical star of measured ``flux`` appears too
+    faint when the median blank-aperture sum is ``offset`` (< 0 in crowded
+    fields): ``2.5·log10((F − offset) / F)``; NaN where undefined. Not
+    applied to the magnitudes (the mean flux is unbiased)."""
+    f = np.asarray(flux, dtype=float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        true = f - float(offset)
+        out = 2.5 * np.log10(true / f)
+    return np.where(np.isfinite(out) & (f > 0) & (true > 0), out, np.nan)
 
 
 def saturated_sources(
@@ -504,7 +552,9 @@ __all__ = [
     "neighbour_flux_fraction",
     "aperture_correction",
     "aperture_flux_errors",
-    "background_noise_factor",
+    "background_noise",
+    "confusion_bias",
+    "STAR_LIKE_SEPARATION_FWHM",
     "saturated_sources",
     "source_disk_mask",
     "total_flux_correction",

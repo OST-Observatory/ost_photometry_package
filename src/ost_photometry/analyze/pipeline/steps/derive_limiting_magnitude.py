@@ -166,14 +166,18 @@ class DeriveLimitingMagnitudeStep(base.PipelineStep):
 def _depth_aperture_pixels(config, image) -> float:
     """Blank-sky aperture radius (pixel): ``aperture_radius`` in ``radii_unit``
     or, when unset, the APER measurement aperture."""
-    from ...extraction import radius_to_pixels, resolve_aperture_radii
+    from ...extraction import aperture_radius_for_seeing, radius_to_pixels, resolve_aperture_radii
 
     fwhm = getattr(image, "fwhm", None)
     scale = getattr(image, "pixel_scale", None)
     if config.aperture_radius is not None:
         return radius_to_pixels(config.aperture_radius, config.radii_unit, fwhm, scale)
+    radius, _note = aperture_radius_for_seeing(
+        config.radius_aperture, config.poor_seeing_radius_aperture, config.poor_seeing_fwhm_arcsec,
+        fwhm, scale,
+    )
     r_ap, _r_in, _r_out = resolve_aperture_radii(
-        radius_aperture=config.radius_aperture,
+        radius_aperture=radius,
         inner_annulus_radius=config.inner_annulus_radius,
         outer_annulus_radius=config.outer_annulus_radius,
         radii_unit=config.radii_unit,

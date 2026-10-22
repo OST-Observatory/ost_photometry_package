@@ -67,10 +67,12 @@ from .image import AnalysisImage
 from .models import ImageSeries
 from .photometry_quality import (
     BLEND_FRACTION,
+    STAR_LIKE_SEPARATION_FWHM,
     annulus_sky,
     aperture_correction,
     aperture_flux_errors,
-    background_noise_factor,
+    background_noise,
+    confusion_bias,
     moffat_star_model,
     neighbour_flux_fraction,
     saturated_sources,
@@ -1762,6 +1764,36 @@ def radius_to_pixels(
     raise ValueError(f"radii_unit must be one of {APER_RADII_UNITS}, got {radii_unit!r}")
 
 
+def aperture_radius_for_seeing(
+    radius_aperture: float | None,
+    poor_seeing_radius_aperture: float | None,
+    poor_seeing_fwhm_arcsec: float,
+    fwhm_pix: float | None,
+    pixel_scale: float | None,
+) -> tuple[float | None, str | None]:
+    """APER radius (in ``radii_unit``) for one image and a note for the log.
+
+    With ``poor_seeing_radius_aperture`` set, images whose FWHM exceeds
+    ``poor_seeing_fwhm_arcsec`` use it instead of ``radius_aperture``: a
+    smaller aperture holds less light of unresolved faint stars (NGC 7789
+    in 5.5″ seeing: the faint-end offset of the typical star about a third
+    smaller with 0.7 FWHM than with 1 FWHM). The aperture correction brings
+    either to the total flux. Without FWHM or pixel scale the normal radius is kept.
+    """
+    if poor_seeing_radius_aperture is None:
+        return radius_aperture, None
+    if (fwhm_pix is None or pixel_scale is None or not np.isfinite(fwhm_pix)
+            or not np.isfinite(pixel_scale) or fwhm_pix <= 0 or pixel_scale <= 0):
+        return radius_aperture, "seeing unknown (no FWHM or pixel scale): normal aperture radius"
+    seeing = float(fwhm_pix) * float(pixel_scale)
+    if seeing > float(poor_seeing_fwhm_arcsec):
+        return float(poor_seeing_radius_aperture), (
+            f"seeing {seeing:.1f}″ > {float(poor_seeing_fwhm_arcsec):.1f}″: "
+            f"poor-seeing aperture radius {float(poor_seeing_radius_aperture):g}"
+        )
+    return radius_aperture, None
+
+
 def define_apertures(
     image: AnalysisImage,
     aperture_radius: float,
@@ -1828,7 +1860,7 @@ def apertures_from_xy(
 def _subtract_neighbours(
     image, data, uncertainty, tbl, aperture, annulus, area, mask, stars_mask, r_ap, terminal_logger, indent,
     n_iter: int = 2,
-) -> dict | None:
+) -> tuple[dict, np.ndarray] | None:
     """Neighbour-subtracted aperture photometry (DAOPHOT style), in place.
 
     The stars' total fluxes (first pass / Moffat encircled energy of the
@@ -1838,8 +1870,8 @@ def _subtract_neighbours(
     (only the neighbours removed; the star's own pixels stay data). Two
     passes. In crowded fields with poor seeing, neighbour light in the
     annulus made faint stars too faint by up to 50 mmag (NGC 7789 against
-    Stetson's standards). Returns the new sky statistics, ``None`` when the
-    FWHM is unknown.
+    Stetson's standards). Returns the new sky statistics and the model of
+    all stars, ``None`` when the FWHM is unknown.
     """
     fwhm = float(getattr(image, "fwhm", float("nan")) or float("nan"))
     if not np.isfinite(fwhm) or fwhm <= 0 or len(tbl) == 0:
@@ -1861,7 +1893,7 @@ def _subtract_neighbours(
         sky = annulus_sky(residual, uncertainty, annulus, mask=mask, source_mask=stars_mask)
         flux = ap_sum - sky["sky"] * area
         total = np.clip(np.nan_to_num(flux), 0.0, None) / ee_ap
-        del model, residual
+        del residual
     tbl["aperture_sum"] = ap_sum
     tbl["annulus_median"] = sky["sky"]
     tbl["aper_bkg"] = sky["sky"] * area
@@ -1871,7 +1903,7 @@ def _subtract_neighbours(
         terminal_logger.add_to_cache(msg, indent=indent)
     else:
         terminal_output.print_to_terminal(msg, indent=indent)
-    return sky
+    return sky, model
 
 
 def extraction_aperture(
@@ -1946,8 +1978,9 @@ def extraction_aperture(
 
     #   Sky: clipped median per annulus (neighbour stars and cosmics in the
     #   annulus do not pull it up). Errors: the map's source part plus the
-    #   background part scaled by the scatter measured on empty sky
-    #   (correlated noise, faint stars, flat-field structure).
+    #   background part scaled by the scatter measured at star-like blank
+    #   positions (unresolved faint stars, correlated noise, flat-field
+    #   structure).
     stars_mask = source_disk_mask(
         np.shape(data),
         np.asarray(photometry_tbl["x_center"]),
@@ -1966,25 +1999,37 @@ def extraction_aperture(
     r_ap_pix = float(np.atleast_1d(aperture.r)[0])
     r_in_pix = float(np.atleast_1d(annulus_aperture.r_in)[0])
     r_out_pix = float(np.atleast_1d(annulus_aperture.r_out)[0])
+    star_model = None
     if neighbour_subtraction:
-        sky = _subtract_neighbours(
+        result = _subtract_neighbours(
             image, data, uncertainty, photometry_tbl, aperture, annulus_aperture,
             aperture_area, phot_mask, stars_mask, r_ap_pix, terminal_logger, indent,
-        ) or sky
+        )
+        if result is not None:
+            sky, star_model = result
     detected = np.column_stack(
         [np.asarray(photometry_tbl["x_center"]), np.asarray(photometry_tbl["y_center"])]
     )
-    noise_factor, n_empty = background_noise_factor(
-        data,
+    #   Background noise and confusion at star-like blank positions, on the
+    #   image the stars are measured on (neighbours removed).
+    fwhm = float(getattr(image, "fwhm", float("nan")) or float("nan"))
+    min_separation = (
+        STAR_LIKE_SEPARATION_FWHM * fwhm if np.isfinite(fwhm) and fwhm > 0 else r_out_pix + r_ap_pix
+    )
+    noise = background_noise(
+        data if star_model is None else np.asarray(data, dtype=float) - star_model,
         uncertainty,
         detected,
         r_ap_pix,
         r_in_pix,
         r_out_pix,
+        min_separation=min_separation,
         mask=phot_mask,
         source_mask=stars_mask,
         seed=int(getattr(image, "image_id", 0) or 0),
     )
+    del star_model
+    noise_factor = noise["factor"]
     factor_used = max(1.0, noise_factor) if np.isfinite(noise_factor) else 1.0
     photometry_tbl["sky_sigma_map"] = sky["sigma_map"]
     photometry_tbl["bkg_noise_factor"] = np.full(len(photometry_tbl), noise_factor)
@@ -1995,13 +2040,23 @@ def extraction_aperture(
         sky["n_sky"],
         noise_factor=factor_used,
     )
-    msg = (
-        f"Empty-sky check ({n_empty} apertures): background noise "
-        f"{noise_factor:.2f}x the uncertainty map"
-        if np.isfinite(noise_factor)
-        else f"Empty-sky check: only {n_empty} empty apertures; background "
-        "noise taken from the uncertainty map"
+    offset = noise["offset"] if np.isfinite(noise["offset"]) else 0.0
+    photometry_tbl["confusion_bias"] = confusion_bias(
+        np.asarray(photometry_tbl["flux_fit"], dtype=float), offset
     )
+    if np.isfinite(noise_factor):
+        snr20 = float(confusion_bias(np.array([20.0 * noise["sigma"]]), offset)[0])
+        msg = (
+            f"Background at star-like positions ({noise['n']} apertures): noise "
+            f"{noise_factor:.2f}x the uncertainty map; median offset "
+            f"{offset:+.3g} (typical star at S/N 20 {1000 * snr20:+.0f} mmag, "
+            "not corrected: unresolved faint stars, mean unbiased)"
+        )
+    else:
+        msg = (
+            f"Background check: only {noise['n']} blank apertures; background "
+            "noise taken from the uncertainty map"
+        )
     if terminal_logger is not None:
         terminal_logger.add_to_cache(msg, indent=indent)
     else:
@@ -2121,6 +2176,8 @@ def extract_multiprocessing(
     inner_annulus_radius: float | None = None,
     outer_annulus_radius: float | None = None,
     radii_unit: str = "fwhm",
+    poor_seeing_radius_aperture: float | None = None,
+    poor_seeing_fwhm_arcsec: float = 4.0,
     aperture_neighbour_subtraction: bool = True,
     strict_epsf_checks: bool = True,
     plots_for_all_images: bool = False,
@@ -2178,6 +2235,8 @@ def extract_multiprocessing(
                 "inner_annulus_radius": inner_annulus_radius,
                 "outer_annulus_radius": outer_annulus_radius,
                 "radii_unit": radii_unit,
+                "poor_seeing_radius_aperture": poor_seeing_radius_aperture,
+                "poor_seeing_fwhm_arcsec": poor_seeing_fwhm_arcsec,
                 "aperture_neighbour_subtraction": aperture_neighbour_subtraction,
                 "plots_for_all_images": plots_for_all_images,
                 "file_type_plots": file_type_plots,
@@ -2236,6 +2295,8 @@ def main_extract(
     inner_annulus_radius: float | None = None,
     outer_annulus_radius: float | None = None,
     radii_unit: str = "fwhm",
+    poor_seeing_radius_aperture: float | None = None,
+    poor_seeing_fwhm_arcsec: float = 4.0,
     aperture_neighbour_subtraction: bool = True,
     strict_epsf_checks: bool = True,
     cosmic_ray_removal: bool | str = "auto",
@@ -2417,8 +2478,20 @@ def main_extract(
             else:
                 plot_aperture_positions = False
 
+            radius_aperture_image, seeing_note = aperture_radius_for_seeing(
+                radius_aperture,
+                poor_seeing_radius_aperture,
+                poor_seeing_fwhm_arcsec,
+                getattr(image, "fwhm", None),
+                getattr(image, "pixel_scale", None),
+            )
+            if seeing_note is not None:
+                if terminal_logger is not None:
+                    terminal_logger.add_to_cache(seeing_note, indent=3)
+                else:
+                    terminal_output.print_to_terminal(seeing_note, indent=3)
             radius_aperture_use, inner_annulus_use, outer_annulus_use = resolve_aperture_radii(
-                radius_aperture=radius_aperture,
+                radius_aperture=radius_aperture_image,
                 inner_annulus_radius=inner_annulus_radius,
                 outer_annulus_radius=outer_annulus_radius,
                 radii_unit=radii_unit,

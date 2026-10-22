@@ -51,6 +51,7 @@ PER_FILTER_QC_COLUMNS = (
     "local_bkg",
     "sky_sigma_map",
     "bkg_noise_factor",
+    "confusion_bias",
     "aperture_correction",
     "aperture_correction_err",
     "neighbour_flux_fraction",

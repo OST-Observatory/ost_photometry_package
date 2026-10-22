@@ -227,6 +227,15 @@ class ExtractionConfig:
     #: ``fwhm`` (multiples of each image's FWHM: the same fraction of the
     #: star in every frame and stack), ``arcsec`` or ``pixel``.
     radii_unit: Literal["fwhm", "arcsec", "pixel"] = "fwhm"
+    #: APER: aperture radius (``radii_unit``) for images whose FWHM exceeds
+    #: ``poor_seeing_fwhm_arcsec``; ``None`` keeps ``radius_aperture`` for
+    #: every image. In crowded fields with poor seeing the light of
+    #: unresolved faint stars makes the typical faint star too faint (the
+    #: mean is unbiased, see ``confusion_bias``); 0.7 FWHM instead of 1
+    #: reduces that by about a third, at the cost of a larger aperture
+    #: correction.
+    poor_seeing_radius_aperture: float | None = None
+    poor_seeing_fwhm_arcsec: float = 4.0
     #: APER: model the detected stars (Moffat) and measure sky and aperture
     #: with the neighbours removed (crowded fields, poor seeing).
     aperture_neighbour_subtraction: bool = True
@@ -283,6 +292,8 @@ class ExtractionConfig:
             "inner_annulus_radius": self.inner_annulus_radius,
             "outer_annulus_radius": self.outer_annulus_radius,
             "radii_unit": self.radii_unit,
+            "poor_seeing_radius_aperture": self.poor_seeing_radius_aperture,
+            "poor_seeing_fwhm_arcsec": self.poor_seeing_fwhm_arcsec,
             "aperture_neighbour_subtraction": self.aperture_neighbour_subtraction,
             "cosmic_ray_removal": normalize_cosmic_ray_removal(self.cosmic_ray_removal),
             "limiting_contrast_rm_cosmics": self.limiting_contrast_rm_cosmics,
@@ -725,6 +736,10 @@ class PipelineConfig:
                 "calibration_grouping='fixed' needs transformation_coefficients_dict "
                 "(colour terms per filter)"
             )
+        if self.poor_seeing_radius_aperture is not None and not self.poor_seeing_radius_aperture > 0:
+            problems.append(f"poor_seeing_radius_aperture={self.poor_seeing_radius_aperture!r} must be > 0")
+        if not self.poor_seeing_fwhm_arcsec > 0:
+            problems.append(f"poor_seeing_fwhm_arcsec={self.poor_seeing_fwhm_arcsec!r} must be > 0")
         if problems:
             raise ValueError("PipelineConfig: invalid option value(s): " + "; ".join(problems))
         if self.calibration_grouping in ("per_night", "ensemble") and self.extinction_mode == "none":

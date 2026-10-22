@@ -1,4 +1,4 @@
-"""APER sky, flux errors, empty-sky noise factor, saturation, aperture correction.
+"""APER sky, flux errors, background noise and confusion, saturation, aperture correction.
 
 The pull tests simulate frames with known star fluxes (Poisson + read
 noise) and require ``(measured - true) / error`` to scatter by ~1.
@@ -15,7 +15,8 @@ from ost_photometry.analyze.photometry_quality import (
     annulus_sky,
     aperture_correction,
     aperture_flux_errors,
-    background_noise_factor,
+    background_noise,
+    confusion_bias,
     saturated_sources,
     source_disk_mask,
 )
@@ -106,21 +107,76 @@ def test_aperture_pulls_are_unit_with_neighbours_in_annulus():
     assert abs(shift) < 0.2
 
 
-def test_background_noise_factor_white_noise_and_structure():
+def test_background_noise_white_noise_and_structure():
     rng = np.random.default_rng(2)
     stars = [(40.0 + 30 * i, 40.0 + 25 * (i % 4), 1.0e4) for i in range(5)]
     data, sigma = _frame(stars, rng)
     src = np.array([[x, y] for x, y, _ in stars])
-    f_white, n = background_noise_factor(data, sigma, src, R_AP, R_IN, R_OUT, n_apertures=300)
-    assert n >= 30
-    assert f_white == pytest.approx(1.0, abs=0.15)
+    white = background_noise(data, sigma, src, R_AP, R_IN, R_OUT, min_separation=2.5 * FWHM,
+                             n_apertures=300)
+    assert white["n"] >= 30
+    assert white["factor"] == pytest.approx(1.0, abs=0.15)
+    assert abs(white["offset"]) < 0.2 * white["sigma"]
     # Unmodelled structure (correlated on a few pixels) raises the factor.
     from scipy.ndimage import gaussian_filter
 
     blobs = gaussian_filter(rng.normal(0.0, 60.0, (SIZE, SIZE)), 2.0)
     data2, sigma2 = _frame(stars, rng, extra=blobs)
-    f_struct, _ = background_noise_factor(data2, sigma2, src, R_AP, R_IN, R_OUT, n_apertures=300)
-    assert f_struct > 1.3
+    struct = background_noise(data2, sigma2, src, R_AP, R_IN, R_OUT, min_separation=2.5 * FWHM,
+                              n_apertures=300)
+    assert struct["factor"] > 1.3
+
+
+def _confusion_field(rng, size, n_faint, targets=()):
+    """Sky + a power law of faint stars (N(>F) ∝ F^-0.8, 30–3000 e-) at the
+    image FWHM, plus ``targets`` (x, y, flux); σ map without the faint stars
+    (they are what the map cannot know)."""
+    from scipy.ndimage import gaussian_filter
+
+    u = rng.uniform(size=n_faint)
+    flux = 30.0 * (1 - u * (1 - 0.01**0.8)) ** (-1 / 0.8)
+    xs, ys = rng.uniform(0, size, n_faint), rng.uniform(0, size, n_faint)
+    points = np.zeros((size, size))
+    np.add.at(points, (ys.astype(int), xs.astype(int)), flux)
+    model = SKY + gaussian_filter(points, FWHM / 2.3548)
+    for x0, y0, f in targets:
+        model += _gaussian(x0, y0, f, size=size)
+    data = rng.poisson(model).astype(float) + rng.normal(0.0, READ_NOISE, model.shape) - SKY
+    return data, np.sqrt(np.full(model.shape, SKY) + READ_NOISE**2)
+
+
+def test_confusion_offset_is_the_bias_of_the_typical_star():
+    """Unresolved faint stars: the median blank-aperture sum is what the
+    median star loses (the annulus holds their mean light, a typical aperture
+    less), the noise factor rises above 1."""
+    rng = np.random.default_rng(7)
+    size, r_ap, r_in, r_out = 400, FWHM, 2.5 * FWHM, 4.0 * FWHM
+    grid = np.arange(30.0, size - 30.0, 8 * FWHM)
+    targets = [(x + rng.uniform(-2, 2), y + rng.uniform(-2, 2), 3000.0) for x in grid for y in grid]
+    data, sigma = _confusion_field(rng, size, 8000, targets)
+    xy = np.array([[x, y] for x, y, _ in targets])
+    noise = background_noise(data, sigma, xy, r_ap, r_in, r_out, min_separation=2.5 * FWHM,
+                             n_apertures=1500)
+    assert noise["factor"] > 1.3
+    assert noise["offset"] < -0.1 * noise["sigma"]
+    # the targets, measured like stars, are short by the offset in the median
+    src = source_disk_mask(data.shape, xy[:, 0], xy[:, 1], 2 * FWHM)
+    ap = CircularAperture(xy, r_ap)
+    sky = annulus_sky(data, sigma, CircularAnnulus(xy, r_in, r_out), source_mask=src)
+    net = np.asarray(aperture_photometry(data, ap)["aperture_sum"]) - sky["sky"] * ap.area
+    true_in_aperture = 3000.0 * (1 - np.exp(-(r_ap**2) / (2 * (FWHM / 2.3548) ** 2)))
+    short = np.median(net - true_in_aperture)
+    assert short == pytest.approx(noise["offset"], abs=0.35 * noise["sigma"])
+
+
+def test_confusion_bias_in_magnitudes():
+    flux = np.array([100.0, 1000.0, 0.0, -5.0, 3.0])
+    out = confusion_bias(flux, -5.0)
+    assert out[0] == pytest.approx(2.5 * np.log10(105 / 100))
+    assert out[1] == pytest.approx(2.5 * np.log10(1005 / 1000))
+    assert np.isnan(out[2]) and np.isnan(out[3])
+    assert out[4] == pytest.approx(2.5 * np.log10(8 / 3))
+    assert np.all(confusion_bias(np.array([50.0]), 0.0) == 0.0)
 
 
 def test_saturated_sources_on_frame_with_sky():

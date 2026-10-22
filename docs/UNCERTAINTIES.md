@@ -163,9 +163,18 @@ Stack headers:
   - `σ_sky` is the median map σ in the annulus.
   - `π/2` is the variance of a median relative to a mean.
   - `f` (`bkg_noise_factor`, applied as `max(1, f)`) is measured on every
-    image with about 400 apertures on empty sky, measured exactly like
-    stars. Faint undetected stars, flat-field structure, scattered light and
-    noise correlated by resampling all raise it.
+    image with about 400 blank apertures at **star-like positions** (at
+    least 2.5 FWHM from every detected star, on the image with the
+    neighbour model removed), measured exactly like stars; `f` is half
+    their 16–84 % range over the map prediction. Unresolved faint stars
+    (confusion), flat-field structure, scattered light and noise correlated
+    by resampling all raise it.
+  - *Why star-like positions:* the former apertures in the voids between
+    stars (≥ annulus outer radius + aperture radius from every star) missed
+    the light of the unresolved faint stars that every real star has around
+    it. On the NGC 7789 stack in 5.5″ seeing the scatter of injected stars
+    was 0.9–1.5 × `flux_err` (robust) and 1.5–3 × (standard deviation); now
+    0.8–1.3 × (σ from the 16–84 % range), with `f` = 2.4 (B) / 3.2 (V).
 - **Radii:** in FWHM by default, see PIPELINE_CONFIG.
 - **Neighbour subtraction** (`aperture_neighbour_subtraction`, default on):
   all detected stars are modelled as Moffat profiles (image FWHM, β of the
@@ -249,6 +258,14 @@ Stack headers:
   FWHM and the β of the growth curve) as a fraction of the star's flux;
   `blended` is set above 1 %. For PSF photometry (neighbours fitted) it is
   an indicator only.
+- **Confusion (APER):** `confusion_bias` (mag, per star) is how much the
+  *typical* star of that flux appears too faint because of unresolved faint
+  stars: `2.5·log10((F − o)/F)` with `o` the median of the blank-aperture
+  sums above. That light is skewed: most apertures hold less of it than the
+  mean the annulus measures, a few much more. The mean flux is unbiased, so
+  magnitudes are **not** corrected; comparisons by median see the offset.
+  The log reports it for a star at S/N 20. `poor_seeing_radius_aperture`
+  reduces it (PIPELINE_CONFIG).
 - **Scintillation:** added to every source after extraction (Osborn et al.
   2015, eq. 7, `C_Y = 1.5`); see `scintillation_noise`. The error without it
   is kept as `flux_err_phot`.
@@ -544,37 +561,56 @@ gives the same trends. Other checks:
 
 - **Injection–recovery** (`scripts/validation/injection_recovery.py`,
   Moffat stars injected into the reduced image): isolated stars are
-  recovered linearly to ≲ 10 mmag over 2.5 decades of flux, also on the
-  2023-05-30 stack. The trend of the poor nights is therefore not made by
-  the extraction of the final image.
+  recovered linearly to ≲ 10 mmag over 2.5 decades of flux.
 - **Simulations** (tests): stack clipping changes no star flux
   (< 0.02 %); PSF targets next to a 10× brighter star within 2 mmag; APER
   with neighbour subtraction within 10 mmag; aperture correction to the
   total flux within 0.4 % for Moffat β = 2–4.
 
-**Known limitation:** in a rich cluster with poor seeing (≳ 4″) at high
-airmass (> 2), faint stars come out too faint relative to bright ones by
-30–60 mmag over five magnitudes, with both methods, also for stars without
-a detected neighbour within 25″ and at fixed colour. Under ordinary
-conditions (≲ 3″, airmass ≲ 1.3) the trend stays within ±10 mmag, also in
-MaxIm's `Fast` mode with the same camera settings (2022-11-11): the camera
-mode is not the cause. Ruled out as well: the sky annulus (4–6 FWHM gives
-the same trend), stacking (stack vs a single frame of the same night),
-the extraction of the final image (injected stars), and the raw data
-(same levels and digitisation in `Fast` and `Normal`). The cause is being
-investigated (`docs/TODO.md`).
+**Poor seeing in a rich cluster: confusion.** In seeing ≳ 4″ the faint
+stars of NGC 7789 come out too faint relative to bright ones in the median
+(30–60 mmag over five magnitudes against Stetson, +76 mmag in the faintest
+sixth against the 2.3″ night 2025-06-19, B, 1087 stars). The cause is the
+light of unresolved faint stars in the aperture (about 390 px at FWHM
+11 px):
+
+- A constant flux offset per star explains the whole trend (against
+  Stetson: −9 … +42 mmag without it, −3 … +5 with it).
+- 400 stars with the image's own radial profile (to 10 FWHM), injected at
+  random positions ≥ 2.5 FWHM from detected stars, show the same offset
+  (B −2.9, V −7.6 e/s). Each star's error correlates with r = 0.98 with
+  the same measurement at the same position *without* the star: it is the
+  field, not the star.
+- That error is skewed: median −1.5 e/s (B), but mean ≈ 0, 90th
+  percentile +7 e/s. In the faintest bin the median magnitude is
+  +18 mmag (B) / +24 mmag (V) off, the mean flux +8 / −4 mmag.
+- `confusion_bias` predicts it (faintest injected bin +24 / +15 mmag for
+  +18 / +24 observed, ≤ 4 mmag apart in the other bins).
+- Ruled out along the way: the 2D background, neighbour subtraction
+  (also with the empirical profile instead of the Moffat), larger source
+  masks, median vs mode sky, annulus radii (1.25–2.5 to 4–6 FWHM),
+  centring, stacking, MaxIm's `Fast` mode, the raw data.
+
+The mean flux being unbiased, the magnitudes are left as measured; the
+offset of the typical star is in `confusion_bias` and the scatter in
+`flux_err` (`bkg_noise_factor` at star-like positions).
+`poor_seeing_radius_aperture=0.7` reduces the offset by about a third
+(+76 → +50 mmag against 2025-06-19). Under ordinary conditions (≲ 3″) the
+trend stays within ±10 mmag.
 
 ## Validation
 
 | Check | Data | Result |
 |---|---|---|
 | APER pulls, simulated frames (Poisson + read noise, neighbour in annulus) | `tests/test_aperture_uncertainty.py` | pull σ 1.00 ± 0.1; neighbour bias < 0.2σ |
-| Empty-sky factor, white noise / added structure | same | 1.0 ± 0.15 / > 1.3 |
+| Background noise factor, white noise / added structure | same | 1.0 ± 0.15 / > 1.3 |
+| Confusion: median offset of blank apertures vs simulated targets in a field of faint stars | same | equal within 0.35 σ; factor > 1.3 |
+| Injected stars (image profile, random positions), NGC 7789 2023-05-30 stack | `phot` of the injected stack | pull 0.8–1.3 (σ from 16–84 %), before 0.9–1.5 (robust) / 1.5–3 (std) |
 | Computed vs header `AIRMASS` | HAT-P-20, 10 V frames | ≤ 0.0011 |
 | Stack pulls, simulated frames (mean, weighted, median, 1 frame, no `UNCERT`) | `tests/test_weighted_combine.py` | σ 1.00 ± 0.06 (median ± 0.1) |
 | Aperture variance after reprojection bin 2 → bin 1 | `tests/test_wcs_align.py` | 1.00 ± 0.15 (old scaling: 0.5) |
 | Pixel pulls between two independent 10-frame stacks (sky pixels) | NGC 7789 B/V (N2) | 0.87–0.89 (interpolation smooths pixels); 4×4 sums 1.14–1.20 |
-| Empty-sky noise factor on the stacks | NGC 7789 | 1.7–2.1: structured background at airmass 2.1, captured by `bkg_noise_factor` |
+| Empty-sky noise factor on the stacks (former void positions) | NGC 7789 | 1.7–2.1: structured background at airmass 2.1, captured by `bkg_noise_factor` |
 | Faint-star pulls between the two stacks (APER, with the factor) | NGC 7789 B / V | 0.87–1.17 / 1.09 (bright stars probe PSF differences, not noise) |
 | ZP / T 1σ coverage, simulated calibrators (σ_int, catalog errors) | `tests/test_calibration_statistics.py` | 0.68–0.70 |
 | `err_cal_rand` / `err_cal_sys` vs Monte Carlo (joint B/V solution) | `tests/test_calibration_color_source.py` | within 5–6 % |

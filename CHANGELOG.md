@@ -11,12 +11,35 @@ section of this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Confusion of unresolved faint stars (APER):** new column
+  `confusion_bias` (mag): how much the typical star of that flux appears too
+  faint in crowded fields with poor seeing. The light of unresolved faint
+  stars in the aperture is skewed (most apertures hold less than the mean
+  the annulus measures); the mean flux is unbiased, so magnitudes are not
+  corrected. The log reports the offset for a star at S/N 20.
+- **`poor_seeing_radius_aperture` / `poor_seeing_fwhm_arcsec`:** a smaller
+  APER radius for images with FWHM above the threshold (default 4″; off by
+  default). 0.7 FWHM reduces the confusion offset by about a third
+  (NGC 7789, 5.5″). In the course scripts `c7/2_obtain_flux.py` and
+  `n2/2_extract_data_supervisors.py`.
+
 ### Changed
 
 - **Accuracy documented** (UNCERTAINTIES, "Accuracy"): magnitudes against
   Stetson's standards on five N2 nights with two cameras; flat within
-  ±10 mmag in seeing ≲ 3″, a 30–60 mmag magnitude trend in a rich cluster
-  at ≳ 4″ and airmass > 2 (open, see TODO).
+  ±10 mmag in seeing ≲ 3″. The 30–60 mmag magnitude trend in a rich cluster
+  at ≳ 4″ is confusion (median star too faint, mean unbiased): shown with
+  400 stars injected with the image's own profile at random positions.
+- **APER background noise factor at star-like positions:**
+  `bkg_noise_factor` is measured with blank apertures ≥ 2.5 FWHM from every
+  detected star (on the image with the neighbour model removed) and half
+  their 16–84 % range, instead of apertures in the voids between stars and
+  a MAD. The voids missed the confusion: on the NGC 7789 stack in 5.5″
+  seeing injected stars scattered 1.5–3 × `flux_err` (std), now 0.8–1.3 ×.
+  `background_noise_factor` is replaced by `background_noise` (dict with
+  `factor`, `sigma`, `offset`, `p90`, `n`).
 
 - **Observation times are mid-exposure** (`Image.jd`): `MJD_MID` / `DATE-MID`
   (stacks) or `JD` / `DATE-OBS` + EXPTIME/2; the start stays as

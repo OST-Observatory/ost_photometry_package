@@ -30,9 +30,10 @@ from photutils.background import Background2D, MedianBackground
 from photutils.detection import DAOStarFinder
 
 from ost_photometry.analyze.photometry_quality import (
+    STAR_LIKE_SEPARATION_FWHM,
     annulus_sky,
     aperture_flux_errors,
-    background_noise_factor,
+    background_noise,
     saturated_sources,
     source_disk_mask,
 )
@@ -51,14 +52,14 @@ def _load(path: str):
     return ccd, data - bkg.background, data, sigma, mask
 
 
-def _measure(data, sigma, mask, xy, detected, r, r_in, r_out):
-    src = source_disk_mask(data.shape, detected[:, 0], detected[:, 1], min(2.0 * 2.5, 0.9 * r_in))
+def _measure(data, sigma, mask, xy, detected, r, r_in, r_out, fwhm):
+    src = source_disk_mask(data.shape, detected[:, 0], detected[:, 1], min(2.0 * fwhm, 0.9 * r_in))
     ap = CircularAperture(xy, r)
     phot = aperture_photometry(data, ap, error=sigma, mask=mask)
     sky = annulus_sky(data, sigma, CircularAnnulus(xy, r_in, r_out), mask=mask, source_mask=src)
     area = np.asarray(ap.area_overlap(data, mask=mask), dtype=float)
-    factor, n = background_noise_factor(data, sigma, detected, r, r_in, r_out, mask=mask,
-                                        source_mask=src)
+    factor = background_noise(data, sigma, detected, r, r_in, r_out, mask=mask, source_mask=src,
+                              min_separation=STAR_LIKE_SEPARATION_FWHM * fwhm)["factor"]
     f_used = max(1.0, factor) if np.isfinite(factor) else 1.0
     flux = np.asarray(phot["aperture_sum"], dtype=float) - sky["sky"] * area
     err = aperture_flux_errors(np.asarray(phot["aperture_sum_err"], dtype=float),
@@ -80,6 +81,7 @@ def main() -> None:
     parser.add_argument("stack_full", nargs="?")
     parser.add_argument("--radius", type=float, default=6.0)
     parser.add_argument("--annulus", type=float, nargs=2, default=(10.0, 15.0))
+    parser.add_argument("--fwhm", type=float, default=2.5)
     args = parser.parse_args()
     r, (r_in, r_out) = args.radius, args.annulus
 
@@ -99,8 +101,8 @@ def main() -> None:
     inside = (xy_b[:, 0] > edge) & (xy_b[:, 0] < nx - edge) & (xy_b[:, 1] > edge) & (xy_b[:, 1] < ny - edge)
     xy_a, xy_b = xy_a[inside], xy_b[inside]
 
-    f_a, e_a, fac_a, m_a = _measure(data_a, sig_a, mask_a, xy_a, xy_a, r, r_in, r_out)
-    f_b, e_b, fac_b, m_b = _measure(data_b, sig_b, mask_b, xy_b, xy_b, r, r_in, r_out)
+    f_a, e_a, fac_a, m_a = _measure(data_a, sig_a, mask_a, xy_a, xy_a, r, r_in, r_out, args.fwhm)
+    f_b, e_b, fac_b, m_b = _measure(data_b, sig_b, mask_b, xy_b, xy_b, r, r_in, r_out, args.fwhm)
     good = ~m_a & ~m_b & np.isfinite(f_a) & np.isfinite(f_b) & (e_a > 0) & (e_b > 0)
     for ccd, raw, xy in ((ccd_a, raw_a, xy_a), (ccd_b, raw_b, xy_b)):
         sat = ccd.meta.get("SATLEVEL")
@@ -125,9 +127,10 @@ def main() -> None:
         found_f = finder(np.where(mask_f, 0.0, data_f))
         xy_f = np.column_stack([found_f["x_centroid"], found_f["y_centroid"]])
         src = source_disk_mask(data_f.shape, xy_f[:, 0], xy_f[:, 1], 5.0)
-        fac, n = background_noise_factor(data_f, sig_f, xy_f, r, r_in, r_out, mask=mask_f,
-                                         source_mask=src)
-        print(f"full stack: empty-sky noise factor {fac:.2f} ({n} apertures)")
+        noise = background_noise(data_f, sig_f, xy_f, r, r_in, r_out, mask=mask_f, source_mask=src,
+                                 min_separation=STAR_LIKE_SEPARATION_FWHM * args.fwhm)
+        print(f"full stack: background noise factor {noise['factor']:.2f} at star-like positions "
+              f"({noise['n']} apertures), median offset {noise['offset']:+.3g}")
 
 
 if __name__ == "__main__":

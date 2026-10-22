@@ -6,7 +6,11 @@ import numpy as np
 import pytest
 
 from helpers import load_module_from_path, pkg_src
-from ost_photometry.analyze.extraction import apertures_from_xy, resolve_aperture_radii
+from ost_photometry.analyze.extraction import (
+    aperture_radius_for_seeing,
+    apertures_from_xy,
+    resolve_aperture_radii,
+)
 
 
 def _resolve(**kw):
@@ -121,3 +125,28 @@ def test_neighbour_flux_fraction_matches_direct_integration():
     assert out[0] == pytest.approx(expected, rel=0.02)
     assert out[2] == 0.0
     assert out[1] < out[0] / 50
+
+
+def test_poor_seeing_radius_only_above_the_threshold():
+    # FWHM 10 px at 0.5"/px = 5" > 4": the poor-seeing radius
+    r, note = aperture_radius_for_seeing(None, 0.7, 4.0, 10.0, 0.5)
+    assert r == 0.7 and "poor-seeing" in note
+    # 3" seeing: the normal radius, no note
+    assert aperture_radius_for_seeing(1.2, 0.7, 4.0, 6.0, 0.5) == (1.2, None)
+    # option off
+    assert aperture_radius_for_seeing(None, None, 4.0, 10.0, 0.5) == (None, None)
+    # seeing unknown: normal radius with a note
+    r, note = aperture_radius_for_seeing(None, 0.7, 4.0, 10.0, None)
+    assert r is None and "unknown" in note
+
+
+def test_poor_seeing_options_are_validated():
+    from ost_photometry.analyze.pipeline import PipelineConfig
+
+    cfg = PipelineConfig(poor_seeing_radius_aperture=0.7)
+    assert cfg.main_extract_kwargs()["poor_seeing_radius_aperture"] == 0.7
+    assert cfg.main_extract_kwargs()["poor_seeing_fwhm_arcsec"] == 4.0
+    with pytest.raises(ValueError, match="poor_seeing_radius_aperture"):
+        PipelineConfig(poor_seeing_radius_aperture=0.0)
+    with pytest.raises(ValueError, match="poor_seeing_fwhm_arcsec"):
+        PipelineConfig(poor_seeing_fwhm_arcsec=-1.0)

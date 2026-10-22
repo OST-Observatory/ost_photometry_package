@@ -12,20 +12,16 @@ Closed migration notes live in [ARCHITECTURE_AND_MIGRATION.md](ARCHITECTURE_AND_
 
 ---
 
-## Magnitude trend in poor seeing (P1)
+## Confusion in PSF photometry (P2)
 
-On the N2 NGC 7789 stacks with seeing ≳ 4″ and airmass > 2 (2023-05-30,
-2024-05-14) faint stars are 30–60 mmag too faint relative to bright ones
-against Stetson's standards; nights with ≲ 3″ are flat within ±10 mmag
-(see UNCERTAINTIES, "Accuracy"). APER and PSF agree, stars without a
-neighbour within 25″ show it too, and stars injected into the final stack
-are recovered linearly. Ruled out: MaxIm `Fast` (2022-11-11, same camera
-settings, 2.5″, X 1.0: flat), sky annulus (4–6 FWHM: same trend), stacking
-(stack vs single frame of the same night), colour (trend at fixed B−V),
-raw data (same levels and digitisation). Open: seeing and airmass are not
-separated (both poor nights have both); injection of the image's own ePSF
-into the single frames before registration and stacking; unresolved
-cluster light.
+The magnitude trend of the poor NGC 7789 nights (seeing ≳ 4″) is confusion:
+unresolved faint stars, skewed light in the aperture, mean unbiased, median
+star too faint (UNCERTAINTIES, "Accuracy"). APER measures it
+(`bkg_noise_factor` at star-like positions, `confusion_bias`). PSF
+photometry shows the same trend but has neither: its errors come from the
+fit, and no blank-position check runs for it. Open: the same star-like
+blank check for PSF (fit an ePSF at blank positions) and a PSF
+`confusion_bias`.
 
 ## Calibration accuracy & photometry systems
 

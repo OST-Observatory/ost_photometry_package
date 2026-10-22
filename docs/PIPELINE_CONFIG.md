@@ -35,6 +35,7 @@ config = PipelineConfig(
 | `n_cores_multiprocessing`      | `int` or `None` (default `None` → half the CPUs)                   | Extraction (multi-image)        | Worker processes; `None` or `<= 0` uses `cpu_count() // 2`      |
 | `photometry_extraction_method` | `PSF`, `APER`                                                      | Extraction                      | PSF fitting vs aperture photometry                              |
 | `radii_unit`                   | `fwhm` (default), `arcsec`, `pixel`                                | Extraction (`APER`)             | Unit of `radius_aperture` / annulus radii (default 1.0 / 2.5 / 4.0 FWHM) |
+| `poor_seeing_radius_aperture` / `poor_seeing_fwhm_arcsec` | float or `None` (default `None`) / float (default `4.0`) | Extraction (`APER`) | Smaller aperture (in `radii_unit`) for images with FWHM above the threshold: less light of unresolved faint stars in crowded fields |
 | `cosmic_ray_removal`           | `auto`, `always`, `never` (bool `True`/`False` still accepted)     | Extraction                      | Skip lacosmic when reduction set `CRIDENT` / `cosmics_*`        |
 | `psf_find_in_residuals`        | `True`, `False` (default `False`)                                  | Extraction (PSF)                | If False, fit finder positions only (no residual re-find)       |
 | `finder_sharpness_range` / `finder_roundness_range` | tuples (defaults `(0.2, 1.0)` / `(-1.0, 1.0)`) | Extraction                      | Shared quality cuts. IRAF remaps a DAO-style signed roundness window to `(0, 0.5)` (IRAF ellipticity, not DAO ±1). |
@@ -103,6 +104,20 @@ when the seeing changes or a stack is much broader than its frames (a fixed
 The aperture correction (see `aperture_correction` in DIAGNOSTICS) brings
 all images to a common flux scale. The limiting magnitude uses the same
 aperture unless `aperture_radius` is set (then in `radii_unit`).
+
+**Poor seeing in crowded fields:** `poor_seeing_radius_aperture` (in
+`radii_unit`, default `None` = off) replaces `radius_aperture` for every
+image whose FWHM exceeds `poor_seeing_fwhm_arcsec` (default 4″; needs the
+pixel scale, otherwise the normal radius is kept with a note). The light of
+unresolved faint stars in the aperture is skewed: the typical faint star
+appears too faint, a few much too bright, the mean is unbiased (see
+`confusion_bias` in DIAGNOSTICS and "Accuracy" in UNCERTAINTIES). A smaller
+aperture holds less of it: on the NGC 7789 stack in 5.5″ seeing the
+faint-end offset against a good night drops from +76 to +50 mmag with
+0.7 FWHM instead of 1 FWHM. It does not remove it. The aperture
+correction brings both to the total flux; it is larger and slightly less
+precise for the small aperture.
+Example: `poor_seeing_radius_aperture=0.7`.
 
 Removed (error): `aperture_scale_with_fwhm`, `aperture_fwhm_factor`,
 `inner_annulus_fwhm_factor`, `outer_annulus_fwhm_factor` — use
