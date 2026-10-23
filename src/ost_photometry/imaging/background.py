@@ -46,11 +46,15 @@ def neutralize_background(
 
 
 def source_mask(data: np.ndarray, *, nsigma: float = 1.5, npixels: int = 5,
-                block: int = 4, dilate: int = 3) -> np.ndarray:
+                block: int = 4, dilate: int = 3,
+                border_background_fraction: float | None = None) -> np.ndarray:
     """Pixels of stars and extended objects (to keep them out of the sky model).
 
     Detection runs on a ``block`` x ``block`` binned image, so faint halos of
     galaxies and nebulae (below the noise of single pixels) are found too.
+    With ``border_background_fraction`` a detection that touches the frame
+    border and covers more than that fraction of the frame is taken for sky
+    structure (gradient, flat residual) and left unmasked.
     """
     from photutils.segmentation import detect_sources
     from scipy.ndimage import binary_dilation
@@ -63,6 +67,16 @@ def source_mask(data: np.ndarray, *, nsigma: float = 1.5, npixels: int = 5,
     binned = values[: hb * block, : wb * block].reshape(hb, block, wb, block).mean(axis=(1, 3))
     _level, std = sky_level(binned)
     segments = detect_sources(binned, nsigma * std, npixels=npixels)
+    if segments is not None and border_background_fraction is not None:
+        edge = np.unique(np.concatenate([segments.data[0], segments.data[-1],
+                                         segments.data[:, 0], segments.data[:, -1]]))
+        limit = float(border_background_fraction) * binned.size
+        sky_like = [label for label, area in zip(segments.labels, segments.areas, strict=True)
+                    if label in edge and area > limit]
+        if sky_like:
+            segments.remove_labels(sky_like)
+            if len(segments.labels) == 0:
+                segments = None
     small = np.zeros(binned.shape, dtype=bool) if segments is None else segments.data > 0
     if dilate > 0 and small.any():
         small = binary_dilation(small, iterations=int(dilate))
@@ -105,6 +119,10 @@ def cosmetic_correction(data: np.ndarray, *, nsigma: float = 5.0) -> tuple[np.nd
     return values, int(np.count_nonzero(cold))
 
 
+#: Detections touching the border and larger than this fraction of the frame
+#: are sky structure for :func:`remove_gradient`, not objects.
+_BORDER_SKY_FRACTION = 0.01
+
 #: Values of ``method`` in :func:`remove_gradient`.
 GRADIENT_METHODS = ("polynomial", "background2d")
 
@@ -136,6 +154,41 @@ def _poly_terms(y: np.ndarray, x: np.ndarray, degree: int) -> np.ndarray:
                     axis=-1)
 
 
+def _gradient_model(values: np.ndarray, mask: np.ndarray, method: str, degree: int,
+                    tiles: int, box: int | None) -> np.ndarray | None:
+    """Sky model minus its median (``None``: too few sky tiles for the fit)."""
+    if method == "background2d":
+        from photutils.background import Background2D, MedianBackground
+
+        box = int(box) if box else max(32, min(values.shape) // 8)
+        background = Background2D(
+            np.nan_to_num(values, nan=float(np.nanmedian(values))), box,
+            mask=mask, filter_size=3, sigma_clip=SigmaClip(sigma=3.0),
+            bkg_estimator=MedianBackground(), exclude_percentile=50.0,
+        )
+        return (background.background - float(np.median(background.background))).astype(np.float32)
+
+    h, w = values.shape
+    ys, xs, levels = _tile_samples(values, np.asarray(mask, dtype=bool), tiles)
+    n_terms = (degree + 1) * (degree + 2) // 2
+    if levels.size < 2 * n_terms:
+        return None
+    scale = float(max(h, w))
+    use = np.ones(levels.size, dtype=bool)
+    for _ in range(5):
+        terms = _poly_terms(ys[use] / scale, xs[use] / scale, degree)
+        coeffs, *_ = np.linalg.lstsq(terms, levels[use], rcond=None)
+        residual = levels - _poly_terms(ys / scale, xs / scale, degree) @ coeffs
+        spread = 1.4826 * np.median(np.abs(residual[use] - np.median(residual[use])))
+        new_use = np.abs(residual) <= 3.0 * max(spread, 1e-12)
+        if new_use.sum() < 2 * n_terms or np.array_equal(new_use, use):
+            break
+        use = new_use
+    yy, xx = np.mgrid[0:h, 0:w]
+    model = (_poly_terms(yy / scale, xx / scale, degree) @ coeffs).astype(np.float32)
+    return model - np.float32(np.median(model))
+
+
 def remove_gradient(
     data: np.ndarray,
     *,
@@ -154,45 +207,26 @@ def remove_gradient(
     ``background2d``: photutils ``Background2D`` with ``box`` (default an
     eighth of the shorter side); follows smaller structures, but extended
     objects partly end up in the model (dark halos).
-    Stars and objects are masked first (:func:`source_mask`). Returns the
-    corrected image and the subtracted model (minus its median).
+    Stars and objects are masked first (:func:`source_mask`); without a
+    given ``mask`` it is found again on the corrected image and the model
+    refitted, so that a strong gradient is not taken for an object. Returns
+    the corrected image and the subtracted model (minus its median).
     """
     if method not in GRADIENT_METHODS:
         raise ValueError(f"method must be one of {GRADIENT_METHODS}, got {method!r}")
     values = np.asarray(data, dtype=float)
-    if mask is None:
-        mask = source_mask(values)
-    if method == "background2d":
-        from photutils.background import Background2D, MedianBackground
-
-        box = int(box) if box else max(32, min(values.shape) // 8)
-        background = Background2D(
-            np.nan_to_num(values, nan=float(np.nanmedian(values))), box,
-            mask=mask, filter_size=3, sigma_clip=SigmaClip(sigma=3.0),
-            bkg_estimator=MedianBackground(), exclude_percentile=50.0,
-        )
-        model = background.background - float(np.median(background.background))
-        return (values - model).astype(np.float32), model.astype(np.float32)
-
-    h, w = values.shape
-    ys, xs, levels = _tile_samples(values, np.asarray(mask, dtype=bool), tiles)
-    n_terms = (degree + 1) * (degree + 2) // 2
-    if levels.size < 2 * n_terms:
+    own_mask = mask is None
+    if own_mask:
+        mask = source_mask(values, border_background_fraction=_BORDER_SKY_FRACTION)
+    model = _gradient_model(values, mask, method, degree, tiles, box)
+    if model is not None and own_mask:
+        # A strong gradient is itself "detected" as an extended object and
+        # masked away (half the frame for a 5 % flat residual); the second
+        # mask, found on the flattened image, keeps only stars and objects.
+        mask = source_mask(values - model, border_background_fraction=_BORDER_SKY_FRACTION)
+        model = _gradient_model(values, mask, method, degree, tiles, box)
+    if model is None:
         return values.astype(np.float32), np.zeros_like(values, dtype=np.float32)
-    scale = float(max(h, w))
-    use = np.ones(levels.size, dtype=bool)
-    for _ in range(5):
-        terms = _poly_terms(ys[use] / scale, xs[use] / scale, degree)
-        coeffs, *_ = np.linalg.lstsq(terms, levels[use], rcond=None)
-        residual = levels - _poly_terms(ys / scale, xs / scale, degree) @ coeffs
-        spread = 1.4826 * np.median(np.abs(residual[use] - np.median(residual[use])))
-        new_use = np.abs(residual) <= 3.0 * max(spread, 1e-12)
-        if new_use.sum() < 2 * n_terms or np.array_equal(new_use, use):
-            break
-        use = new_use
-    yy, xx = np.mgrid[0:h, 0:w]
-    model = (_poly_terms(yy / scale, xx / scale, degree) @ coeffs).astype(np.float32)
-    model -= np.float32(np.median(model))
     return (values - model).astype(np.float32), model
 
 

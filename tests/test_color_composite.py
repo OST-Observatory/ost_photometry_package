@@ -22,6 +22,7 @@ from ost_photometry.imaging.background import (
     neutralize_background,
     remove_gradient,
     sky_level,
+    source_mask,
 )
 from ost_photometry.imaging.color_calibration import star_white_balance
 from ost_photometry.imaging.composite import common_field
@@ -120,6 +121,40 @@ def test_neutralize_background_and_gradient():
     assert model.shape == SHAPE
     with pytest.raises(ValueError, match="method"):
         remove_gradient(red, method="spline")
+
+
+def _flat_residual_scene(rng):
+    """Sky with a bright band along the top border (flat residual), an
+    extended object in the middle, stars and noise."""
+    yy, xx = np.indices(SHAPE)
+    band = 4.0 * np.exp(-((yy - SHAPE[0]) ** 2) / (2 * 60.0**2))
+    nebula = 6.0 * np.exp(-((xx - 200) ** 2 + (yy - 150) ** 2) / (2 * 25.0**2))
+    data = _frame(_stars(rng), 1.0, 100.0, rng) + (band + nebula).astype(np.float32)
+    return data, band, nebula
+
+
+def test_gradient_touching_the_border_is_sky_not_an_object():
+    data, band, nebula = _flat_residual_scene(np.random.default_rng(5))
+    top = (slice(SHAPE[0] - 30, SHAPE[0] - 5), slice(20, -20))
+    centre = (slice(140, 160), slice(190, 210))
+    # without the option the bright band is masked like an object
+    assert source_mask(data)[top].mean() > 0.9
+    mask = source_mask(data, border_background_fraction=0.01)
+    assert mask[top].mean() < 0.2
+    assert mask[centre].all()
+    fixed, _model = remove_gradient(data, method="background2d", box=40)
+    # before: the band was masked as an object and stayed (about 3.4)
+    old, _ = remove_gradient(data, method="background2d", box=40, mask=source_mask(data))
+
+    def step(img):
+        return abs(sky_level(img[top])[0] - sky_level(img[100:200, 20:80])[0])
+
+    assert step(old) > 2.5
+    assert step(fixed) < 1.5
+    sky_mid = sky_level(fixed[100:200, 20:80])[0]
+    # the object keeps (most of) its light: it is masked, not modelled
+    contrast = float(np.median(fixed[centre]) - sky_mid)
+    assert contrast == pytest.approx(float(np.median(nebula[centre])), rel=0.25)
 
 
 def test_cosmetic_correction_replaces_cold_pixels_only():

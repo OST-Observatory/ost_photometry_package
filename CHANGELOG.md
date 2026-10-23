@@ -13,6 +13,12 @@ section of this file.
 
 ### Added
 
+- **Colour images, gradient removal:** a detection that touches the frame
+  border and covers more than 1 % of the frame is sky structure (gradient,
+  flat residual), not an object, and the source mask is found again on the
+  flattened image. Before, a bright flat residual along the border was masked
+  as an object and stayed in the image (PN ARO 121, Halpha: 47 % of the frame
+  masked; background structure ±3 % → ±0.5 % with `background2d`, box 1/12).
 - **Stetson standards as calibration source; `calibration_source="auto"` is
   the new default.** `"Stetson"`: Stetson's and Landolt's standards of the
   Pancino et al. (2022) collection (UBVI, a few mmag, to V ≈ 18, resolved in
