@@ -183,6 +183,37 @@ def test_score_flat_set_rules():
     assert far.category == REJECTED
 
 
+def test_each_night_of_a_long_session_gets_its_nearest_flats():
+    """One mount session over a week (camera never remounted): every night
+    takes the flat set nearest to its own lights, not the first certain one
+    for all nights (PN ARO 121: lights of 03-03 calibrated with flats of
+    02-25 although flats of 03-01 existed)."""
+    from astropy.table import Table
+
+    from ost_photometry.reduce.grouping.flats import assign_flats
+
+    nights = [JD_NIGHT1 + 0.45, JD_NIGHT1 + 4.45, JD_NIGHT1 + 6.45]
+    lights = Table({
+        "frame_id": [f"L{i}" for i in range(6)],
+        "jd": [n + d for n in nights for d in (0.0, 0.1)],
+        "session_id": ["S1"] * 6, "filter": ["H alpha"] * 6,
+        "instrume": ["QHY600M"] * 6, "xbinning": [3] * 6, "ybinning": [3] * 6,
+    })
+    session = Session("S1", "qhy600m", "CDK20", nights[0], nights[-1] + 0.1)
+    # flats inside the session (all certain): evening of night 1, dusk of nights 2 and 3
+    sets = [FlatSet(f"FS_{k}", "qhy600m", "3x3", "H alpha", "CDK20", "e", t, t)
+            for k, t in (("n1", nights[0] + 0.05), ("n2", nights[1] - 0.05), ("n3", nights[2] - 0.05))]
+    choice = {a.night: a for a in assign_flats(lights, [session], sets, use_images=False)}
+    assert len(choice) == 3
+    by_night = {night: a.flat_set_ids for night, a in choice.items()}
+    assert sorted(by_night.values()) == [["FS_n1"], ["FS_n2"], ["FS_n3"]]
+    assert all(a.category == CERTAIN for a in choice.values())
+    # only one flat set in the session: every night uses it, with the distance noted
+    far = {a.night: a for a in assign_flats(lights, [session], sets[:1], use_images=False)}
+    assert all(a.flat_set_ids == ["FS_n1"] for a in far.values())
+    assert sum("d from the lights" in a.note for a in far.values()) == 2
+
+
 def test_dust_similarity_and_vignetting_metrics():
     rng = np.random.default_rng(3)
     shape = (300, 400)

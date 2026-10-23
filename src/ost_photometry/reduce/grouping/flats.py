@@ -92,11 +92,13 @@ class FlatCandidate:
 
 @dataclass
 class FlatAssignment:
-    """Flat choice for the lights of one session, filter and binning."""
+    """Flat choice for the lights of one night of a session, filter and binning."""
 
     session_id: str
     filter: str
     binning: str
+    #: Night of the lights (``YYYYMMDD``); a session can span several nights
+    night: str = ""
     flat_set_ids: list[str] = field(default_factory=list)
     probability: float = 0.0
     category: str = REJECTED
@@ -358,7 +360,13 @@ def assign_flats(
     no_flat_policy: str = "best_available",
     use_images: bool = True,
 ) -> list[FlatAssignment]:
-    """Flat choice for every (session, filter, binning) of ``lights``."""
+    """Flat choice for every (session, night, filter, binning) of ``lights``.
+
+    A mount session can span weeks. Each night gets its own choice: among
+    the candidates of the best category the one nearest in time to that
+    night's lights (before: one choice per session, the first of several
+    equally certain sets, e.g. flats three weeks before the night).
+    """
     if no_flat_policy not in NO_FLAT_POLICIES:
         raise ValueError(f"no_flat_policy must be one of {NO_FLAT_POLICIES}")
     limits = dict(DEFAULT_FLAT_SETTINGS)
@@ -374,14 +382,18 @@ def assign_flats(
             ) if use_images else FlatImages(None, None, None)
         return images[fs.set_id]
 
-    consumers: dict[tuple[str, str, str], None] = {}
+    from .darks import night_of
+
+    consumers: dict[tuple[str, str, str, str], list[float]] = {}
     session_binnings: dict[str, set[str]] = {}
     for row in lights:
         row = dict(zip(lights.colnames, row, strict=True))
         sid = str(row.get("session_id"))
         if sid not in lookup:
             continue
-        consumers[(sid, filter_name(row), binning(row))] = None
+        jd = _float(row.get("jd"))
+        night = str(row.get("night") or "") or night_of(jd)
+        consumers.setdefault((sid, night, filter_name(row), binning(row)), []).append(jd)
         session_binnings.setdefault(sid, set()).add(binning(row))
 
     # Certain sets per session (any filter) are the dust references.
@@ -394,9 +406,12 @@ def assign_flats(
                 certain_refs.setdefault(sid, []).append(fs)
 
     assignments: list[FlatAssignment] = []
-    for sid, filt, binn in consumers:
+    rank = {CERTAIN: 0, LIKELY: 1, UNCERTAIN: 2, REJECTED: 3}
+    for (sid, night, filt, binn), light_jds in consumers.items():
         session = lookup[sid]
-        result = FlatAssignment(sid, filt, binn)
+        result = FlatAssignment(sid, filt, binn, night)
+        finite = [t for t in light_jds if math.isfinite(t)]
+        t_lights = float(np.median(finite)) if finite else 0.5 * (session.start_jd + session.end_jd)
         candidates = [fs for fs in sets if fs.filter == filt and fs.binning == binn
                       and fs.camera == session.camera]
         scored: list[FlatCandidate] = []
@@ -420,10 +435,17 @@ def assign_flats(
                 fs, session, sessions, session_binnings=session_binnings.get(sid, {binn}),
                 context=context, dust_evidence=dust, vignetting_rms=vignetting, settings=limits,
             ))
-        scored.sort(key=lambda c: -c.probability)
+        by_id = {fs.set_id: fs for fs in candidates}
+
+        def days_away(c: FlatCandidate, by_id=by_id, t_lights=t_lights) -> float:
+            t = by_id[c.set_id].mid_jd
+            return abs(t - t_lights) if math.isfinite(t) else math.inf
+
+        # best category first; inside it the more probable (certain: all 1),
+        # then the set nearest in time to this night's lights
+        scored.sort(key=lambda c: (rank.get(c.category, 3), -round(c.probability, 3), days_away(c)))
         result.candidates = scored
         usable = [c for c in scored if c.category in (CERTAIN, LIKELY)]
-        by_id = {fs.set_id: fs for fs in candidates}
         if usable:
             best = usable[0]
             chosen = [best]
@@ -438,7 +460,10 @@ def assign_flats(
             result.probability = min(c.probability for c in chosen)
             result.category = min((c.category for c in chosen),
                                   key=[CERTAIN, LIKELY, UNCERTAIN, REJECTED].index)
-            result.note = "; ".join(f"{by_id[c.set_id].describe()}: {c.reason}" for c in chosen)
+            result.note = "; ".join(
+                f"{by_id[c.set_id].describe()}: {c.reason}"
+                + (f", {days_away(c):.1f} d from the lights" if days_away(c) > 1.0 else "")
+                for c in chosen)
             if len(chosen) == 2:
                 result.note = "flats before and after the session combined; " + result.note
         elif scored and scored[0].category == UNCERTAIN:

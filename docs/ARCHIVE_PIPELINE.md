@@ -69,8 +69,11 @@ Orientation = position angle of the image +y axis, north through east
 | Flat group | camera, binning, filter, mount session | flats |
 | Target | cluster of field centres | reference, selection, stack |
 
-Calibration runs per reduction unit (mount session × electronic setup); all
-targets of a night share the masters. Stacking runs per target × camera ×
+Calibration runs per reduction unit (mount session × night × electronic
+setup); all targets of a night share the masters. A session can span weeks
+when the camera stays mounted; each night then gets its own darks and, among
+the flat sets of the best category (certain / likely), the one nearest in
+time to its lights. Stacking runs per target × camera ×
 filter over all sessions and nights.
 
 A session ends at a camera or pixel-scale change, at an orientation change

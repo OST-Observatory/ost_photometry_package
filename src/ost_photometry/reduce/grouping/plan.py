@@ -151,6 +151,9 @@ class ReductionUnit:
     electronic_id: str
     camera: str
     telescope: str
+    #: Night of the lights: a session can span weeks, each night gets its
+    #: own darks and nearest flats
+    night: str = ""
     bias_id: str = ""
     dark_id: str = ""
     flats: dict[str, str] = field(default_factory=dict)
@@ -422,28 +425,29 @@ def build_calibration_plan(
         return mid
 
     darks_by_key = {(a.electronic_id, a.night): a for a in light_darks}
-    flats_by_key = {(a.session_id, a.filter, a.binning): a for a in flat_choice}
-    units: dict[tuple[str, str], ReductionUnit] = {}
-    unit_darks: dict[tuple[str, str], DarkAssignment | None] = {}
-    unit_exptimes: dict[tuple[str, str], set[float]] = {}
+    flats_by_key = {(a.session_id, a.night, a.filter, a.binning): a for a in flat_choice}
+    units: dict[tuple[str, str, str], ReductionUnit] = {}
+    unit_darks: dict[tuple[str, str, str], DarkAssignment | None] = {}
+    unit_exptimes: dict[tuple[str, str, str], set[float]] = {}
     for row in lights:
         row = dict(zip(lights.colnames, row, strict=True))
         sid = str(row["session_id"])
         if sid == UNKNOWN_SESSION:
             continue
-        key = (sid, str(row["electronic_id"]))
+        night = str(row["night"])
+        key = (sid, str(row["electronic_id"]), night)
         unit = units.get(key)
         if unit is None:
-            unit = ReductionUnit("", sid, key[1], camera_id(row), telescope_id(row))
+            unit = ReductionUnit("", sid, key[1], camera_id(row), telescope_id(row), night)
             units[key] = unit
-            dark_choice = darks_by_key.get((key[1], str(row["night"])))
+            dark_choice = darks_by_key.get((key[1], night))
             unit_darks[key] = dark_choice
             if dark_choice is not None:
                 unit.bias_id, unit.dark_id = bias_and_darks(dark_choice)
                 unit.notes.extend(dark_choice.notes)
         filt = filter_name(row)
         if filt not in unit.flats and filt not in unit.excluded:
-            assignment = flats_by_key.get((sid, filt, binning(row)))
+            assignment = flats_by_key.get((sid, night, filt, binning(row)))
             mid = flat_master(assignment) if assignment is not None else ""
             if mid:
                 unit.flats[filt] = mid
@@ -462,10 +466,10 @@ def build_calibration_plan(
             unit.light_ids.append(str(row["frame_id"]))
             if math.isfinite(_float(row["exptime"])):
                 unit_exptimes.setdefault(key, set()).add(round(_float(row["exptime"]), 3))
-    ordered = sorted(units.values(), key=lambda u: (u.session_id, u.electronic_id))
+    ordered = sorted(units.values(), key=lambda u: (u.session_id, u.night, u.electronic_id))
     for k, unit in enumerate(ordered, start=1):
-        unit.unit_id = f"U{k:02d}_{unit.session_id}"
-        key = (unit.session_id, unit.electronic_id)
+        unit.unit_id = f"U{k:02d}_{unit.session_id}_N{unit.night}"
+        key = (unit.session_id, unit.electronic_id, unit.night)
         if settings.require_complete:
             _block_incomplete(unit, unit_darks.get(key), unit_exptimes.get(key, set()), masters,
                               set(settings.accepted_flat_categories),
@@ -684,8 +688,8 @@ def plan_to_dict(plan: CalibrationPlan) -> dict:
             "start_jd": s.start_jd, "end_jd": s.end_jd, "n_frames": len(s.frame_ids),
         } for s in plan.flat_sets},
         "flat_assignments": [{
-            "session_id": a.session_id, "filter": a.filter, "binning": a.binning,
-            "flat_sets": a.flat_set_ids, "probability": a.probability,
+            "session_id": a.session_id, "night": a.night, "filter": a.filter,
+            "binning": a.binning, "flat_sets": a.flat_set_ids, "probability": a.probability,
             "category": a.category, "note": a.note,
             "candidates": [{"set": c.set_id, "p": c.probability, "category": c.category,
                             "reason": c.reason} for c in a.candidates],
@@ -693,7 +697,8 @@ def plan_to_dict(plan: CalibrationPlan) -> dict:
         "masters": {mid: {k: v for k, v in asdict(m).items() if v not in ("", [], None)}
                     for mid, m in plan.masters.items()},
         "units": {u.unit_id: {
-            "session_id": u.session_id, "electronic_id": u.electronic_id, "camera": u.camera,
+            "session_id": u.session_id, "night": u.night, "electronic_id": u.electronic_id,
+            "camera": u.camera,
             "telescope": u.telescope, "bias": u.bias_id, "darks": u.dark_id,
             "flats": u.flats, "lights": u.light_ids, "excluded_filters": u.excluded,
             "flat_categories": u.flat_categories,
