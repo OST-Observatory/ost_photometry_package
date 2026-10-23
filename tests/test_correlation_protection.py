@@ -113,9 +113,11 @@ def test_resolve_calibration_object_ids_uses_standard_catalog():
         }
     )
     fetched: list[bool] = []
+    kwargs: list[dict] = []
 
-    def fake_fetch(*_a, **_kw):
+    def fake_fetch(*_a, **kw):
         fetched.append(True)
+        kwargs.append(kw)
         return std
 
     def fake_determine(_img, ra, _dec, _wcs, **_kw):
@@ -143,3 +145,10 @@ def test_resolve_calibration_object_ids_uses_standard_catalog():
     assert ids == [5]
     assert xs == [11.0]
     assert ys == [22.0]
+    assert "auto_sources" not in kwargs[0]  # fetch defaults
+    # the calibration step's order and minimum reach the protect path
+    prot.resolve_calibration_object_ids(
+        series, ["V"], calibration_auto_sources=["APASS", "Stetson"], calibration_auto_min_stars=50,
+    )
+    assert kwargs[1]["auto_sources"] == ("APASS", "Stetson")
+    assert kwargs[1]["auto_min_stars"] == 50

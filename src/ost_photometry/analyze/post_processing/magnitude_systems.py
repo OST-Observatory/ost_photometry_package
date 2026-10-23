@@ -79,7 +79,11 @@ VEGA_TO_AB_OFFSET: dict[str, float] = {
 SDSS_TO_AB_OFFSET: dict[str, float] = {"u": -0.04, "z": 0.02}
 
 #: Catalog names / Vizier ids whose u, z need :data:`SDSS_TO_AB_OFFSET`.
-SDSS_CATALOGS = frozenset({"SDSS_Release_16", "V/147/sdss12"})
+#: Catalogs whose u g r i z are on the SDSS system (u, z slightly off AB).
+#: Gaia XP synthetic photometry is standardised to it; its UBVRI are Vega,
+#: so it has no single entry in ``CATALOG_MAGNITUDE_SYSTEMS`` (the filter set
+#: decides: Bessell -> Vega, SDSS -> AB).
+SDSS_CATALOGS = frozenset({"SDSS_Release_16", "V/147/sdss12", "GaiaXP", "I/360/syntphot"})
 
 # Friendly catalog name and Vizier id → primary magnitude system of standards.
 CATALOG_MAGNITUDE_SYSTEMS: dict[str, MagnitudeSystem] = {

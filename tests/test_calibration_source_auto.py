@@ -155,3 +155,49 @@ def test_confusion_biased_calibrators_are_dropped():
     mask = calibrator_candidate_mask(tbl, ["V"], **kw)
     assert list(np.flatnonzero(~mask)) == [2, 7]
     assert np.all(calibrator_candidate_mask(tbl, ["V"], max_confusion_bias=None, **kw))
+
+
+def test_gaia_xp_flags_excess_and_flux_errors(monkeypatch):
+    from ost_photometry.analyze.calibration_sources import fetch
+
+    raw = Table()
+    raw["Source"] = [1, 2, 3, 4]
+    raw["RA_ICRS"] = [359.3, 359.31, 359.32, 359.33]
+    raw["DE_ICRS"] = [56.7] * 4
+    raw["E(BP/RP)corr"] = MaskedColumn([0.0, 0.5, 0.01, 0.0], mask=[False, False, False, True])
+    raw["Vmag"] = [14.0, 14.0, 15.0, 19.0]
+    raw["FV"] = [1.0e-17] * 4
+    raw["e_FV"] = [1.0e-19] * 4
+    raw["VFlag"] = [1, 1, 1, 1]
+    raw["umag"] = [16.0, 16.0, 17.0, 20.0]
+    raw["Fu"] = [2.0e-30] * 4
+    raw["e_Fu"] = [2.0e-31] * 4
+    raw["uFlag"] = [1, 1, 0, 1]
+
+    class FakeVizier:
+        def __init__(self, columns=None, row_limit=None):
+            pass
+
+        def query_region(self, center, radius=None, catalog=None):
+            assert catalog == fetch.GAIA_XP_VIZIER_ID
+            return [raw]
+
+    monkeypatch.setattr(fetch, "Vizier", FakeVizier)
+    out = fetch._fetch_gaia_xp_standard(CENTER, 15.0, (10.0, 17.5), 1)
+    # star 2: BP/RP excess 0.5 (blend) dropped; star 4: V = 19 outside the range
+    assert list(out["gaia_xp_id"]) == ["1", "3"]
+    assert out["err_std_V"][0] == pytest.approx(1.0857e-2)
+    assert out["err_std_u"][0] == pytest.approx(1.0857e-1)
+    # star 3: u outside the validated colour / magnitude range -> NaN
+    assert np.isnan(out["mag_std_u"][1]) and out["mag_std_V"][1] == 15.0
+
+
+def test_gaia_xp_sdss_bands_are_on_the_sdss_system():
+    from ost_photometry.analyze.post_processing.magnitude_systems import (
+        SDSS_CATALOGS,
+        resolve_catalog_magnitude_system,
+    )
+
+    assert "GaiaXP" in SDSS_CATALOGS
+    # UBVRI Vega, ugriz SDSS: the filter set decides, not the catalog
+    assert resolve_catalog_magnitude_system("GaiaXP") == "unknown"

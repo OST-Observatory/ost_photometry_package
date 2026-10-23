@@ -27,6 +27,7 @@ Public re-exports below; see each submodule for details.
 from .crossmatch import crossmatch_standard_catalog
 from .fetch import (
     DEFAULT_AUTO_SOURCES,
+    GAIA_XP_VIZIER_ID,
     META_CALIBRATION_SOURCE,
     STETSON_VIZIER_ID,
     fetch_standard_calibration_catalog,
@@ -46,6 +47,7 @@ from .vizier_query import get_vizier_catalog
 
 __all__ = [
     "DEFAULT_AUTO_SOURCES",
+    "GAIA_XP_VIZIER_ID",
     "META_CALIBRATION_SOURCE",
     "STETSON_VIZIER_ID",
     "add_johnson_ri_from_sloan",

@@ -77,9 +77,11 @@ def resolve_calibration_object_ids(
     image_series: analyze.ImageSeries,
     filter_list: list[str],
     *,
-    calibration_source: str = "APASS",
+    calibration_source: str = "auto",
     calibration_catalog_mag_range: tuple[float, float] = (0.0, 18.5),
     vizier_dict: dict[str, str] | None = None,
+    calibration_auto_sources: tuple[str, ...] | None = None,
+    calibration_auto_min_stars: int | None = None,
     path_calibration_file: str | None = None,
     reference_image_index: int | None = None,
     max_pixel_between_objects: int = 3,
@@ -109,6 +111,13 @@ def resolve_calibration_object_ids(
     else:
         field_of_view_arcmin = fov_x
 
+    #   the same order and minimum as the calibration step, so that
+    #   ``auto`` protects the stars of the catalog that calibrates
+    auto_kwargs = {}
+    if calibration_auto_sources is not None:
+        auto_kwargs["auto_sources"] = tuple(calibration_auto_sources)
+    if calibration_auto_min_stars is not None:
+        auto_kwargs["auto_min_stars"] = int(calibration_auto_min_stars)
     std_tbl = fetch_standard_calibration_catalog(
         filter_list,
         center,
@@ -118,6 +127,7 @@ def resolve_calibration_object_ids(
         vizier_dict=vizier_dict,
         path_calibration_file=path_calibration_file,
         indent=indent + 1,
+        **auto_kwargs,
     )
     std_tbl = _drop_rows_without_standard_mags(std_tbl, filter_list)
 
@@ -173,9 +183,11 @@ def resolve_protected_object_ids_for_intra(
     protected_object_ids: list[int] | None = None,
     protect_ooi: bool = True,
     protect_calibration_objects: bool = False,
-    calibration_source: str = "APASS",
+    calibration_source: str = "auto",
     calibration_catalog_mag_range: tuple[float, float] = (0.0, 18.5),
     vizier_dict: dict[str, str] | None = None,
+    calibration_auto_sources: tuple[str, ...] | None = None,
+    calibration_auto_min_stars: int | None = None,
     path_calibration_file: str | None = None,
     reference_image_index: int | None = None,
     max_pixel_between_objects: int = 3,
@@ -202,6 +214,8 @@ def resolve_protected_object_ids_for_intra(
             calibration_source=calibration_source,
             calibration_catalog_mag_range=calibration_catalog_mag_range,
             vizier_dict=vizier_dict,
+            calibration_auto_sources=calibration_auto_sources,
+            calibration_auto_min_stars=calibration_auto_min_stars,
             path_calibration_file=path_calibration_file,
             reference_image_index=reference_image_index,
             max_pixel_between_objects=max_pixel_between_objects,
@@ -241,6 +255,8 @@ def resolve_protected_object_ids_for_inter(
             calibration_source=config.calibration_source,
             calibration_catalog_mag_range=config.calibration_catalog_mag_range,
             vizier_dict=config.vizier_dict,
+            calibration_auto_sources=tuple(config.calibration_auto_sources),
+            calibration_auto_min_stars=config.calibration_auto_min_stars,
             path_calibration_file=config.path_calibration_file,
             reference_image_index=config.reference_image_index,
             max_pixel_between_objects=config.max_pixel_between_objects,

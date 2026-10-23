@@ -21,6 +21,13 @@ section of this file.
   `calibration_auto_min_stars` stars in every filter; SDSS filters u, z go
   to SDSS, g r i to APASS. The magnitude system follows the catalog used.
   Free Vizier catalogs (`vizier_dict`) stay available. Before: `"APASS"`.
+- **`calibration_source="GaiaXP"`**: Gaia DR3 synthetic photometry
+  (`I/360/syntphot`), all sky UBVRI and ugriz to G ≈ 17.65; bands only inside
+  their validated range, BP/RP-excess blends dropped. Not in the default
+  `auto` order (add it to `calibration_auto_sources`).
+- **Calibrator protection in the correlation** uses the same
+  `calibration_auto_sources` / `calibration_auto_min_stars` as the
+  calibration (before: the default order).
 - **`calibrator_max_confusion_bias`** (0.005 mag): calibrators with a larger
   `confusion_bias` are left out of the zero-point fit.
 - **Confusion of unresolved faint stars (APER):** new column

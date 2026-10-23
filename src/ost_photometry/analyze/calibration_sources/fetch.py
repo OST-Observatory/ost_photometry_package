@@ -16,6 +16,9 @@ Design
 * **Stetson**: Stetson's and Landolt's standards of the Pancino et al. (2022)
   collection (Vizier ``J/A+A/664/A109/table5``), variables and binaries
   removed.
+* **GaiaXP**: Gaia DR3 synthetic photometry (Vizier ``I/360/syntphot``),
+  Johnson-Kron-Cousins UBVRI and SDSS ugriz from the XP spectra, all sky to
+  G ≈ 17.65.
 * **auto**: the first source of ``auto_sources`` that covers every requested
   filter with at least ``auto_min_stars`` stars; the choice is in
   ``table.meta["calibration_source"]`` (also set for the other sources).
@@ -52,6 +55,11 @@ STETSON_VIZIER_ID = "J/A+A/664/A109/table5"
 STETSON_COLLECTIONS = ("Stetson", "Landolt")
 _STETSON_BANDS = ("U", "B", "V", "R", "I")
 
+#: Gaia DR3 synthetic photometry from the XP spectra (Gaia Collaboration,
+#: Montegriffo et al. 2023): JKC UBVRI and SDSS ugriz, standardised.
+GAIA_XP_VIZIER_ID = "I/360/syntphot"
+_GAIA_XP_BANDS = ("U", "B", "V", "R", "I", "u", "g", "r", "i", "z")
+
 #: Order of ``calibration_source="auto"``: Stetson where the field is a
 #: standard field, else APASS; SDSS for u and z (neither of the others has
 #: them).
@@ -63,6 +71,7 @@ DEFAULT_AUTO_MIN_STARS = 20
 SOURCE_BANDS = {
     "Stetson": frozenset("UBVRI"),
     "APASS": frozenset({"B", "V", "g", "r", "i", "R", "I"}),
+    "GaiaXP": frozenset(_GAIA_XP_BANDS),
 }
 
 #: Table meta key with the source the table came from (``auto`` resolved).
@@ -612,6 +621,85 @@ def _fetch_stetson_standard(
     return out
 
 
+def _gaia_excess_ok(excess: np.ndarray, g_proxy: np.ndarray) -> np.ndarray:
+    """|C*| (``E(BP/RP)corr``) within 3σ_C*(G) of Riello et al. (2021),
+    with V (else r) as proxy for G; blends and sources with background
+    problems fail. Missing values pass."""
+    sigma = 0.0059898 + 8.817481e-12 * np.clip(g_proxy, 4.0, 21.0) ** 7.618399
+    bad = np.isfinite(excess) & np.isfinite(g_proxy) & (np.abs(excess) > 3.0 * sigma)
+    return ~bad
+
+
+def _fetch_gaia_xp_standard(
+    center: SkyCoord,
+    field_of_view_arcmin: float,
+    calibration_catalog_mag_range: tuple[float, float],
+    indent: int,
+) -> Table:
+    """Gaia DR3 synthetic photometry → standard table.
+
+    * A band is NaN unless its ``<band>Flag`` is 1 (source inside the
+      G / BP−RP range where the standardisation was validated).
+    * Sources with a BP/RP flux excess beyond 3σ (:func:`_gaia_excess_ok`)
+      are dropped.
+    * Errors from the fluxes: ``1.0857·e_F/F``.
+    * Magnitude range on V (else r, else the first band), as for APASS.
+    """
+    _print(f"Downloading Gaia DR3 synthetic photometry (Vizier {GAIA_XP_VIZIER_ID})", indent=indent)
+    flux_name = {b: f"F{b}" for b in _GAIA_XP_BANDS}
+    columns = ["Source", "RA_ICRS", "DE_ICRS", "E(BP/RP)corr"]
+    for band in _GAIA_XP_BANDS:
+        columns += [f"{band}mag", flux_name[band], f"e_{flux_name[band]}", f"{band}Flag"]
+    result = Vizier(columns=columns, row_limit=-1).query_region(
+        center,
+        radius=field_of_view_arcmin * u.arcmin,
+        catalog=GAIA_XP_VIZIER_ID,
+    )
+    if not result:
+        _print("No Gaia synthetic photometry in this field", indent=indent + 1, style_name="WARNING")
+        return Table(names=["ra", "dec"], dtype=[float, float])
+    raw = result[0]
+    out = Table()
+    out["ra"] = np.asarray(raw["RA_ICRS"], dtype=float)
+    out["dec"] = np.asarray(raw["DE_ICRS"], dtype=float)
+    for band in _GAIA_XP_BANDS:
+        if f"{band}mag" not in raw.colnames:
+            continue
+        mag = _masked_to_nan(raw[f"{band}mag"])
+        flux = _masked_to_nan(raw[flux_name[band]]) if flux_name[band] in raw.colnames else np.full(len(raw), np.nan)
+        e_flux = (
+            _masked_to_nan(raw[f"e_{flux_name[band]}"]) if f"e_{flux_name[band]}" in raw.colnames
+            else np.full(len(raw), np.nan)
+        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            err = 1.0857 * e_flux / flux
+        if f"{band}Flag" in raw.colnames:
+            valid = np.asarray(np.ma.filled(np.ma.asarray(raw[f"{band}Flag"]), 0)).astype(int) == 1
+            mag = np.where(valid, mag, np.nan)
+            err = np.where(valid, err, np.nan)
+        out[f"mag_std_{band}"] = mag
+        out[f"err_std_{band}"] = err
+    g_proxy = np.full(len(out), np.nan)
+    for band in ("V", "r", "B", "g", "R", "i", "I"):
+        col = f"mag_std_{band}"
+        if col in out.colnames:
+            g_proxy = np.where(np.isfinite(g_proxy), g_proxy, np.asarray(out[col], dtype=float))
+    excess = _masked_to_nan(raw["E(BP/RP)corr"]) if "E(BP/RP)corr" in raw.colnames else np.full(len(raw), np.nan)
+    clean = _gaia_excess_ok(excess, g_proxy)
+    lo, hi = calibration_catalog_mag_range
+    in_range = np.isfinite(g_proxy) & (g_proxy >= lo) & (g_proxy <= hi)
+    out = out[clean & in_range]
+    out["gaia_xp_id"] = np.asarray(raw["Source"]).astype(str)[clean & in_range] if "Source" in raw.colnames else [
+        f"GAIAXP_{i:06d}" for i in range(len(out))
+    ]
+    _print(
+        f"{len(out)} Gaia synthetic-photometry stars in the magnitude range "
+        f"({int(np.count_nonzero(~clean))} with BP/RP excess dropped)",
+        indent=indent,
+    )
+    return out
+
+
 def _catalog_filters(filter_list: list[str]) -> list[str]:
     """Filters that need catalog magnitudes (UBVRI, ugriz)."""
     from ..post_processing.magnitude_systems import filter_expects_catalog_standards
@@ -708,6 +796,7 @@ def fetch_standard_calibration_catalog(
     * ``"auto"`` — the first of ``auto_sources`` with ``auto_min_stars``
       stars in every catalog filter (:func:`_fetch_auto_standard`).
     * ``"Stetson"`` — :func:`_fetch_stetson_standard`.
+    * ``"GaiaXP"`` — :func:`_fetch_gaia_xp_standard`.
     * ``"vsp"``, ``"simbad"``, ``"simbad_vot"`` — special branches above.
     * ``"APASS"`` or any key whose ``vizier_dict`` value is ``II/336/apass9`` —
       :func:`_fetch_apass9_standard`.
@@ -756,6 +845,13 @@ def fetch_standard_calibration_catalog(
         catalog_id = vizier_dict.get(std.meta.get(META_CALIBRATION_SOURCE, ""))
     elif calibration_source == "Stetson":
         std = _fetch_stetson_standard(
+            center,
+            field_of_view_arcmin,
+            calibration_catalog_mag_range,
+            indent=indent + 1,
+        )
+    elif calibration_source == "GaiaXP":
+        std = _fetch_gaia_xp_standard(
             center,
             field_of_view_arcmin,
             calibration_catalog_mag_range,

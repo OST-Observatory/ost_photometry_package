@@ -673,9 +673,11 @@ def determine_object_position(
 
 def correlate_preserve_calibration_objects(
         image_series: analyze.ImageSeries, filter_list: list[str],
-        calibration_source: str = 'APASS',
+        calibration_source: str = 'auto',
         calibration_catalog_mag_range: tuple[float, float] = (0., 18.5),
-        vizier_dict: dict[str, str] | None = None, calib_file=None,
+        vizier_dict: dict[str, str] | None = None,
+        calibration_auto_sources: tuple[str, ...] | None = None,
+        calibration_auto_min_stars: int | None = None, calib_file=None,
         max_pixel_between_objects: int = 3, ooi_correlation_strategy: int = 1,
         verbose: bool = False, cross_identification_limit: int = 1,
         reference_image_index: int = 0, n_allowed_non_detections_object: int = 1,
@@ -783,6 +785,8 @@ def correlate_preserve_calibration_objects(
             calibration_source=calibration_source,
             calibration_catalog_mag_range=calibration_catalog_mag_range,
             vizier_dict=vizier_dict,
+            calibration_auto_sources=calibration_auto_sources,
+            calibration_auto_min_stars=calibration_auto_min_stars,
             path_calibration_file=calib_file,
             reference_image_index=reference_image_index,
             max_pixel_between_objects=max_pixel_between_objects,

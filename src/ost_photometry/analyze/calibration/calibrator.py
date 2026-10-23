@@ -88,7 +88,7 @@ class PhotometryCalibrator:
         center: SkyCoord,
         filters: list[str],
         *,
-        calibration_source: str = "APASS",
+        calibration_source: str = "auto",
         radius_arcmin: float = 15.0,
         calibration_catalog_mag_range: tuple[float, float] = (0.0, 18.5),
         vizier_dict: dict[str, str] | None = None,

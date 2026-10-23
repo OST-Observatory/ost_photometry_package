@@ -429,7 +429,9 @@ class CalibrationConfig:
     #: ``calibration_auto_sources`` that covers every filter with at least
     #: ``calibration_auto_min_stars`` stars), ``"Stetson"`` (Stetson's and
     #: Landolt's standards, Pancino et al. 2022; UBVRI in standard fields and
-    #: clusters), ``"APASS"`` (all sky, B V g r i, R I derived), any key of
+    #: clusters), ``"APASS"`` (all sky, B V g r i, R I derived),
+    #: ``"GaiaXP"`` (Gaia DR3 synthetic photometry: all sky UBVRI + ugriz to
+    #: G ≈ 17.65; also the independent reference of the accuracy checks), any key of
     #: ``vizier_dict`` (free Vizier catalogs, e.g. ``"SDSS_Release_16"`` for
     #: u g r i z), ``"vsp"``, ``"simbad"``, ``"simbad_vot"``.
     calibration_source: str = "auto"
