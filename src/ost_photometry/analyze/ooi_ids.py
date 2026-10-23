@@ -68,6 +68,23 @@ def ooi_photometry_ids(
     return ids
 
 
+def ooi_coordinates(objects: list[Any]):
+    """``SkyCoord`` of the objects with finite positions, or ``None``."""
+    from astropy.coordinates import SkyCoord
+
+    ra, dec = [], []
+    for obj in objects:
+        c = getattr(obj, "coordinates_object", None)
+        try:
+            r, d = float(c.ra.deg), float(c.dec.deg)
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if np.isfinite(r) and np.isfinite(d):
+            ra.append(r)
+            dec.append(d)
+    return SkyCoord(ra, dec, unit="deg") if ra else None
+
+
 def set_ooi_correlated_ids_from_filter(objects: list[Any], filter_: str) -> None:
     """Copy ``id_in_image_series[filter_]`` onto ``correlated_id``.
 

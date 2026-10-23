@@ -86,16 +86,20 @@ def strip_catalog_standards_for_object_ids(
     """Clear catalog-match columns so these photometry ``id``s cannot enter the fit.
 
     Objects of interest must still be *calibrated*, but they must not define
-    T/ZP. Returns the number of rows whose catalog values were cleared.
+    T/ZP. Returns the number of rows that had a catalog value.
     """
     if not object_ids or "id" not in table.colnames or len(table) == 0:
         return 0
     wanted = np.fromiter((int(i) for i in object_ids), dtype=np.int64)
     ids = np.asarray(table["id"], dtype=np.int64)
     hit = np.isin(ids, wanted)
-    n_hit = int(np.count_nonzero(hit))
-    if n_hit == 0:
+    if not np.any(hit):
         return 0
+    had_value = np.zeros(len(table), dtype=bool)
+    for col in table.colnames:
+        if str(col).startswith("mag_std_"):
+            had_value |= np.isfinite(np.asarray(table[col], dtype=float))
+    n_hit = int(np.count_nonzero(hit & had_value))
     if "match_sep_arcsec" in table.colnames:
         sep = np.asarray(table["match_sep_arcsec"], dtype=float)
         sep[hit] = np.nan
@@ -109,8 +113,37 @@ def strip_catalog_standards_for_object_ids(
     return n_hit
 
 
+def ids_near_positions(table: Table, positions, radius_arcsec: float) -> set[int]:
+    """Photometry ``id``s of rows (``ra``/``dec``, degrees) within
+    ``radius_arcsec`` of any of ``positions`` (``SkyCoord`` or ``None``)."""
+    if (
+        positions is None
+        or (not positions.isscalar and len(positions) == 0)
+        or radius_arcsec is None
+        or float(radius_arcsec) <= 0
+        or len(table) == 0
+        or not {"id", "ra", "dec"} <= set(table.colnames)
+    ):
+        return set()
+    import astropy.units as u
+    from astropy.coordinates import SkyCoord
+
+    ra = np.asarray(table["ra"], dtype=float)
+    dec = np.asarray(table["dec"], dtype=float)
+    ok = np.isfinite(ra) & np.isfinite(dec)
+    if not np.any(ok):
+        return set()
+    rows = SkyCoord(ra[ok] * u.deg, dec[ok] * u.deg)
+    targets = positions.reshape((1,)) if positions.isscalar else positions
+    _, sep, _ = rows.match_to_catalog_sky(targets)
+    near = sep.arcsec <= float(radius_arcsec)
+    ids = np.asarray(table["id"])[ok][near]
+    return {int(i) for i in ids if np.isfinite(float(i))}
+
+
 __all__ = [
     "flag_comparison_stars",
+    "ids_near_positions",
     "mark_used_calibrators",
     "strip_catalog_standards_for_object_ids",
 ]

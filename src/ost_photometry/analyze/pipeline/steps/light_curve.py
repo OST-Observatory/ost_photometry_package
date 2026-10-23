@@ -9,7 +9,8 @@ from astropy.time import Time
 from .... import terminal_output
 from ....core.parallel import start_plot_process
 from ....output_layout import results_dir, tables_dir
-from ...ooi_ids import ooi_photometry_id
+from ...calibration_sources.flags import ids_near_positions
+from ...ooi_ids import ooi_coordinates, ooi_photometry_id
 from ...post_processing.differential_light_curve import relative_flux_light_curves
 from ...post_processing.light_curve import (
     CALIBRATOR_STATS_FILENAME,
@@ -261,13 +262,20 @@ class LightCurveStep(base.PipelineStep):
                 if oid is not None:
                     object_names[int(oid)] = str(getattr(obj, "name", oid))
         ooi_ids_all = set(object_names.keys())
+        #   never calibrators / comparison stars: the identified OOI and any
+        #   detection at an OOI position (an OOI the correlation missed)
+        ooi_exclude = set(ooi_ids_all)
+        if has_tbl:
+            ooi_exclude |= ids_near_positions(
+                tbl, ooi_coordinates(objects_of_interest), config.ooi_calibrator_exclusion_arcsec
+            )
 
         cal_ids_all: set[int] = set()
         if has_tbl:
             raw_cal = _calibration_object_ids_from_table(tbl)
             if raw_cal:
                 cal_ids_all.update(int(i) for i in raw_cal)
-        cal_ids_all = ids_excluding(cal_ids_all, ooi_ids_all)
+        cal_ids_all = ids_excluding(cal_ids_all, ooi_exclude)
 
         parts: list[Table] = []
         for filter_ in context.filter_list:
@@ -288,7 +296,7 @@ class LightCurveStep(base.PipelineStep):
             )
             cal_set = ids_excluding(
                 set(int(i) for i in ids_cal) if ids_cal else set(),
-                ooi_ids_all,
+                ooi_exclude,
             )
             cal_ids_all.update(cal_set)
 
@@ -350,7 +358,7 @@ class LightCurveStep(base.PipelineStep):
 
         lc = vstack(parts, metadata_conflicts="silent")
         if config.light_curve_differential:
-            lc = self._add_differential_product(lc, config, output_dir, ooi_ids_all)
+            lc = self._add_differential_product(lc, config, output_dir, ooi_exclude)
         if config.light_curve_color:
             from ...post_processing.light_curve import add_color_index_rows
 

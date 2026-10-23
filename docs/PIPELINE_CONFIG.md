@@ -142,6 +142,7 @@ When lacosmic runs, `read_noise` and `saturation_level` (`None` by default) come
 |--------|---------|------|
 | `saturation_fraction` | 0.9 | `saturated` when a pixel within the measurement radius reaches this fraction of `SATLEVEL` (frame before 2D background subtraction) |
 | `calibrator_max_masked_fraction` | 0.05 | Calibrators with a larger masked aperture fraction are excluded in every case |
+| `ooi_calibrator_exclusion_arcsec` | 5.0 | Objects of interest are never calibrators or comparison stars: by photometry id and, in case the correlation did not identify them, every detection within this radius of their coordinates |
 | `calibrator_max_confusion_bias` | 0.005 | Calibrators whose `confusion_bias` (APER, mag) exceeds this in any filter are left out (crowded fields, poor seeing; matters with deep catalogs such as Stetson). `None` disables; skipped when too few remain |
 
 Saturated, non-positive or too-masked measurements are excluded from the

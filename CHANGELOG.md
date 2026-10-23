@@ -28,6 +28,11 @@ section of this file.
 - **Calibrator protection in the correlation** uses the same
   `calibration_auto_sources` / `calibration_auto_min_stars` as the
   calibration (before: the default order).
+- **Objects of interest never calibrate, also when unidentified:** besides
+  their photometry id, detections within `ooi_calibrator_exclusion_arcsec`
+  (5″) of an object of interest are kept out of the zero-point fit, the
+  light-curve calibrator set and the differential ensemble. Before, an OOI the
+  correlation did not identify could enter as a calibrator.
 - **`calibrator_max_confusion_bias`** (0.005 mag): calibrators with a larger
   `confusion_bias` are left out of the zero-point fit.
 - **Confusion of unresolved faint stars (APER):** new column

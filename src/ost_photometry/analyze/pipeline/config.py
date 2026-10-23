@@ -342,6 +342,10 @@ class CorrelationConfig:
     separation_limit: u.Quantity = 2.0 * u.arcsec
     #: OOI sky match. ``None`` → at least 5 arcsec (WCS residuals).
     ooi_separation_limit: u.Quantity | None = None
+    #: Detections within this radius (arcsec) of an object of interest are
+    #: never calibrators or comparison stars, also when the OOI was not
+    #: identified in the photometry (the ID-based exclusion then misses it).
+    ooi_calibrator_exclusion_arcsec: float = 5.0
     duplicate_handling_object_identification: dict[str, str] | None = None
     verbose: bool = False
     skip_correlation_intra: bool = False

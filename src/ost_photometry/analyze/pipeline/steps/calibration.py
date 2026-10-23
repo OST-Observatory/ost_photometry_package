@@ -21,6 +21,7 @@ from ...calibration_sources import (
     fetch_standard_calibration_catalog,
 )
 from ...calibration_sources.flags import (
+    ids_near_positions,
     mark_used_calibrators,
     strip_catalog_standards_for_object_ids,
 )
@@ -29,7 +30,7 @@ from ...calibration_sources.known_variables import (
     drop_catalog_rows_near_known_variables,
 )
 from ...extinction_io import build_extinction_corrector
-from ...ooi_ids import ooi_photometry_ids
+from ...ooi_ids import ooi_coordinates, ooi_photometry_ids
 from ...post_processing.adapters import ensure_epoch_native_photometry_table
 from ...post_processing.io import write_epoch_native_magnitudes
 from ...post_processing.light_curve import attach_observation_jd_column, write_epoch_meta_json
@@ -225,10 +226,16 @@ class CalibrationStep(base.PipelineStep):
         color_indices = config.color_indices
         epochs = _crossmatch_epochs(epochs, context, config)
         ooi_ids = ooi_photometry_ids(context.objects_of_interest or [])
-        if ooi_ids:
+        #   also by position: an OOI the correlation did not identify has no
+        #   id, but must not calibrate either
+        ooi_positions = ooi_coordinates(context.objects_of_interest or [])
+        if ooi_ids or ooi_positions is not None:
             n_cleared = 0
             for tbl in epochs.values():
-                n_cleared += strip_catalog_standards_for_object_ids(tbl, ooi_ids)
+                exclude = set(ooi_ids) | ids_near_positions(
+                    tbl, ooi_positions, config.ooi_calibrator_exclusion_arcsec
+                )
+                n_cleared += strip_catalog_standards_for_object_ids(tbl, exclude)
             if n_cleared:
                 terminal_output.print_to_terminal(
                     "Excluded object(s) of interest from the calibrator pool "
