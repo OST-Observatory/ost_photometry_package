@@ -61,9 +61,10 @@ GAIA_XP_VIZIER_ID = "I/360/syntphot"
 _GAIA_XP_BANDS = ("U", "B", "V", "R", "I", "u", "g", "r", "i", "z")
 
 #: Order of ``calibration_source="auto"``: Stetson where the field is a
-#: standard field, else APASS; SDSS for u and z (neither of the others has
-#: them).
-DEFAULT_AUTO_SOURCES = ("Stetson", "APASS", "SDSS_Release_16")
+#: standard field, else APASS; Gaia XP for u and z (neither of them has
+#: them) and wherever APASS is too thin; SDSS DR12 last (saturates near
+#: 14 mag, partial sky).
+DEFAULT_AUTO_SOURCES = ("Stetson", "APASS", "GaiaXP", "SDSS_Release_16")
 DEFAULT_AUTO_MIN_STARS = 20
 
 #: Bands a source can deliver (R, I of APASS from Sloan r, i): ``auto`` skips

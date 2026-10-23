@@ -63,6 +63,7 @@ def fake_sources(monkeypatch):
     catalogs = {
         "Stetson": _std({"U": 30, "B": 40, "V": 50, "I": 45}),
         "APASS": _std({"B": 50, "V": 55, "g": 50, "r": 50, "i": 50, "R": 50, "I": 50}),
+        "GaiaXP": _std({"U": 10, "B": 50, "V": 50, "R": 50, "I": 50, "u": 25, "g": 50, "r": 50, "i": 50, "z": 15}),
         "SDSS_Release_16": _std({"u": 30, "g": 40, "r": 40, "i": 40, "z": 35}),
     }
     calls = []
@@ -83,7 +84,8 @@ def fake_sources(monkeypatch):
         (["B", "V"], "Stetson"),
         (["V", "R"], "APASS"),  # Stetson has no R here
         (["g", "r"], "APASS"),
-        (["u", "g"], "SDSS_Release_16"),
+        (["u", "g"], "GaiaXP"),
+        (["g", "z"], "SDSS_Release_16"),  # too few z in Gaia XP here
         (["B", "V", "Ha"], "Stetson"),  # narrow band needs no catalog
     ],
 )
@@ -135,7 +137,7 @@ def test_config_defaults_to_auto_with_stetson_first():
 
     cfg = PipelineConfig()
     assert cfg.calibration_source == "auto"
-    assert cfg.calibration_auto_sources[:2] == ("Stetson", "APASS")
+    assert cfg.calibration_auto_sources == ("Stetson", "APASS", "GaiaXP", "SDSS_Release_16")
     assert cfg.calibrator_max_confusion_bias == 0.005
 
 

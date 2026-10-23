@@ -435,9 +435,10 @@ class CalibrationConfig:
     #: ``vizier_dict`` (free Vizier catalogs, e.g. ``"SDSS_Release_16"`` for
     #: u g r i z), ``"vsp"``, ``"simbad"``, ``"simbad_vot"``.
     calibration_source: str = "auto"
-    #: Order tried by ``calibration_source="auto"``. SDSS last: it covers u
-    #: and z, which neither Stetson nor APASS have.
-    calibration_auto_sources: tuple[str, ...] = ("Stetson", "APASS", "SDSS_Release_16")
+    #: Order tried by ``calibration_source="auto"``. Gaia XP covers u and z
+    #: (neither Stetson nor APASS has them) all sky; SDSS DR12 last
+    #: (saturates near 14 mag, partial sky).
+    calibration_auto_sources: tuple[str, ...] = ("Stetson", "APASS", "GaiaXP", "SDSS_Release_16")
     calibration_auto_min_stars: int = 20
     path_calibration_file: str | None = None
     vizier_dict: dict[str, str] | None = None

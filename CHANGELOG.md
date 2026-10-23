@@ -17,14 +17,14 @@ section of this file.
   the new default.** `"Stetson"`: Stetson's and Landolt's standards of the
   Pancino et al. (2022) collection (UBVI, a few mmag, to V ≈ 18, resolved in
   clusters; variables and binaries removed). `"auto"`: the first of
-  `calibration_auto_sources` (Stetson → APASS → SDSS DR12) with at least
-  `calibration_auto_min_stars` stars in every filter; SDSS filters u, z go
-  to SDSS, g r i to APASS. The magnitude system follows the catalog used.
+  `calibration_auto_sources` (Stetson → APASS → GaiaXP → SDSS DR12) with at
+  least `calibration_auto_min_stars` stars in every filter; SDSS filters u, z
+  go to Gaia XP, g r i to APASS. The magnitude system follows the catalog used.
   Free Vizier catalogs (`vizier_dict`) stay available. Before: `"APASS"`.
 - **`calibration_source="GaiaXP"`**: Gaia DR3 synthetic photometry
   (`I/360/syntphot`), all sky UBVRI and ugriz to G ≈ 17.65; bands only inside
-  their validated range, BP/RP-excess blends dropped. Not in the default
-  `auto` order (add it to `calibration_auto_sources`).
+  their validated range, BP/RP-excess blends dropped. Third in the `auto`
+  order, before SDSS DR12.
 - **Calibrator protection in the correlation** uses the same
   `calibration_auto_sources` / `calibration_auto_min_stars` as the
   calibration (before: the default order).
