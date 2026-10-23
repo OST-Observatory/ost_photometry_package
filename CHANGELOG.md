@@ -11,6 +11,18 @@ section of this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Archive pipeline: flats per night.** A mount session spans several
+  nights when the camera stays mounted. All its nights got one flat master,
+  the first of the equally certain flat sets, and the darks of the first
+  night. Reduction units are now session × night × electronic setup; every
+  night gets its darks and the flat set nearest in time among the candidates
+  of the best category (notes give the distance when it exceeds a day).
+  PN ARO 121: lights of 2026-03-03 had been calibrated with flats of
+  2026-02-25 although flats of 2026-03-01 existed; rings and dust shadows in
+  the stacks. Unit ids carry the night (`U01_<session>_N<night>`).
+
 ### Added
 
 - **Colour images, gradient removal:** a detection that touches the frame
