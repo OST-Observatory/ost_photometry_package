@@ -97,6 +97,8 @@ def reduce_main(
     fail_on_missing_flat: bool = True,
     interactive: bool = True,
     storage_dtype: str = "float32",
+    illumination_correction: bool = False,
+    illumination_min_frames: int = 10,
 ) -> None:
     """
     Main reduction routine: Creates master images for bias, darks,
@@ -382,6 +384,14 @@ def reduce_main(
         below the pixel noise) or ``float64``. Calculations run in float64
         regardless. See :mod:`ost_photometry.reduce.storage`.
         Default is ``float32``.
+
+    illumination_correction, illumination_min_frames
+        Divide the reduced lights by an illumination (sky flat) map built
+        per filter, camera and binning from those lights (at least
+        ``illumination_min_frames``) before registration: removes rings and
+        blotches of unevenly lit flats. Maps in ``<output_dir>/illumination``.
+        See :mod:`ost_photometry.reduce.illumination`.
+        Default is ``False`` / ``10``.
     """
     if estimate_fwhm:
         warnings.warn(
@@ -448,6 +458,8 @@ def reduce_main(
         fail_on_missing_flat=fail_on_missing_flat,
         interactive=interactive,
         storage_dtype=storage_dtype,
+        illumination_correction=illumination_correction,
+        illumination_min_frames=illumination_min_frames,
     )
     return _run_reduction(cfg)
 
@@ -1041,6 +1053,26 @@ def _run_reduction(cfg: ReduceConfig) -> None:
         fail_on_missing_flat=cfg.fail_on_missing_flat,
         interactive=cfg.interactive,
     )
+
+    ###
+    #   Illumination (sky flat) correction, before registration
+    #
+    if cfg.illumination_correction:
+        from ..illumination import correct_groups
+
+        terminal_output.print_to_terminal("Illumination correction...", indent=1)
+        light_files = sorted(
+            p for p in (output_path / "light").iterdir()
+            if p.suffix.lower() in (".fit", ".fits", ".fts")
+        )
+        correct_groups(
+            light_files,
+            lambda h: (str(h.get("FILTER", "")).strip(), str(h.get("INSTRUME", "")).strip(),
+                       int(h.get("XBINNING", 1) or 1)),
+            output_path / "illumination",
+            min_frames=cfg.illumination_min_frames,
+            log=lambda text: terminal_output.print_to_terminal(text, indent=2),
+        )
 
     ###
     #   Frame quality: measure, select, weight, choose reference frames

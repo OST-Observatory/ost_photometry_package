@@ -25,6 +25,14 @@ section of this file.
 
 ### Added
 
+- **Illumination (sky flat) correction** (`reduce.illumination`, option
+  `illumination_correction` in the archive pipeline `ReductionSettings` and
+  in `reduce_main`; off by default): a smooth map per flat master / filter /
+  camera / binning from the reduced lights (stars and objects masked)
+  divides them before registration. Removes rings and blotches of unevenly
+  lit flats (OST daylight flats differ by ±1.5–2 % from day to day). Acts
+  like a flat, so it also corrects star fluxes when the pattern is a flat
+  error. Maps and PNG previews are written; frames get `ILLUMCOR`.
 - **Colour images, gradient removal:** a detection that touches the frame
   border and covers more than 1 % of the frame is sky structure (gradient,
   flat residual), not an object, and the source mask is found again on the

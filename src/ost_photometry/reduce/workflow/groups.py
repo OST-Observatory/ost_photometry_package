@@ -84,6 +84,12 @@ class ReductionSettings:
     reduce_incomplete: bool = False
     #: Relative part of the dark exposure tolerance (max(abs, fraction * t))
     exposure_time_tolerance_fraction: float = 0.05
+    #: Illumination (sky flat) correction: one map per flat master, filter,
+    #: camera and binning from the reduced lights, dividing them before
+    #: registration (see ``reduce.illumination``). Needs at least
+    #: ``illumination_min_frames`` lights per group.
+    illumination_correction: bool = False
+    illumination_min_frames: int = 10
 
 
 @dataclass
@@ -610,6 +616,19 @@ def reduce_planned(
             rows.append((fid, unit_id, "reduced", str(out_dir / "reduced" / unit_id / name)))
         for fid, reason in report.skipped:
             rows.append((fid, unit_id, f"skipped: {reason}", ""))
+    if settings.illumination_correction:
+        from ..illumination import correct_groups
+
+        reduced_paths = [r[3] for r in rows if r[2] == "reduced" and Path(r[3]).is_file()]
+        terminal_output.print_to_terminal("Illumination correction...", indent=1)
+        correct_groups(
+            reduced_paths,
+            lambda h: (str(h.get("FLATGRP", "none")), str(h.get("FILTER", "")).strip(),
+                       str(h.get("INSTRUME", "")).strip(), int(h.get("XBINNING", 1) or 1)),
+            Path(out_dir) / "masters" / "illumination",
+            min_frames=settings.illumination_min_frames,
+            log=lambda text: terminal_output.print_to_terminal(text, indent=2),
+        )
     table = Table(rows=rows, names=("frame_id", "unit_id", "status", "reduced_path"),
                   dtype=(str, str, str, str)) if rows else Table(
         names=("frame_id", "unit_id", "status", "reduced_path"), dtype=(str, str, str, str))

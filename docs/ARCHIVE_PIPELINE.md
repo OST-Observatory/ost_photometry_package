@@ -127,6 +127,45 @@ Flats taken during the session are certain; flats with another session or
 camera in between, or with a different binning, are rejected.
 Categories: certain ≥ 0.95, likely ≥ 0.7, uncertain ≥ 0.4.
 
+## Illumination correction (sky flat)
+
+`illumination_correction = True` in `3_reduce_and_stack.py` (also
+`1_reduce_and_stack.py` of astro_imaging, `reduce_main(...)`): after the
+reduction, one smooth multiplicative map per group of lights calibrated with
+the same flat master (and filter, camera, binning) divides those lights and
+their uncertainty before registration (`reduce.illumination`).
+
+- *Why:* the OST flats are taken in daylight (FlatWizard, telescope at the
+  zenith). Their illumination differs from day to day by ±1.5–2 % in a
+  pattern that is the same in all filters (ratio of the master flats of
+  2026-03-01 and 2026-03-22). Every flat leaves its pattern in the lights:
+  PN ARO 121 stacks kept ±4 % (Hα) rings and blotches with the nearest
+  flats. With the correction (36 lights per flat master) the stack
+  backgrounds went from ±4.35 / ±1.03 / ±2.32 % to about ±0.5 / ±0.3 /
+  ±0.6 % (Hα / O III / S II), the O III dust shadow included.
+- *How:* frames divided by their sky and median-binned (4 px); their median
+  is the deep image on which stars (high-pass detection) and extended
+  objects are masked: more than 0.5 % of the sky above their surroundings
+  at a sixteenth of the frame, where a flat error barely shows but a nebula
+  has edges; holes filled, grown by a fifth of their size; the masked per-frame
+  median in 16 px cells, filled under the masks, smoothed (24 px), median 1.
+  At least `illumination_min_frames` (10) lights per group, else no
+  correction. Maps: `output/masters/illumination/ILLUM_<group>.fits` and a
+  PNG preview; corrected frames carry `ILLUMCOR` / `ILLUMN`.
+- *Photometry:* the map acts like a flat (sky and stars change by the same
+  factor). When the pattern is a flat error, star fluxes improve by the same
+  amount (simulation: the dependence of the measured flux on a ±3 % flat
+  error drops at least threefold). Additive sky structure (moonlight,
+  scattered light) must not enter the map: the median over many frames,
+  best of several nights, suppresses it. Under masked objects the map is
+  interpolated, so the flux of a faint object depends on that
+  interpolation: PN ARO 121 kept 97 % (Hα) and 98 % (O III) of its flux,
+  but the faint S II shell (about 1 % of the sky) was partly taken into the
+  map (59 %). Faint extended emission at the same detector position in
+  every frame (no dithering, no other fields) is flattened as well. Off by
+  default; check the maps and, for photometry, the zero-point residuals
+  over the field.
+
 ## Plan file
 
 `calibration_plan.yaml` holds sessions, flat sets with all candidates and

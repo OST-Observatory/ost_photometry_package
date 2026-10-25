@@ -82,5 +82,9 @@ class ReduceConfig:
     interactive: bool = True
     # Floating type of written images (ost_photometry.reduce.storage)
     storage_dtype: str = "float32"
+    # Illumination (sky flat) correction per filter from the reduced lights
+    # (ost_photometry.reduce.illumination); groups need >= min_frames lights
+    illumination_correction: bool = False
+    illumination_min_frames: int = 10
 
 
