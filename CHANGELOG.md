@@ -25,6 +25,13 @@ section of this file.
 
 ### Added
 
+- **Green noise removal (SCNR)** for colour images, as Siril "Remove Green
+  Noise" (`imaging.remove_green_noise`; `ColorSettings.green_noise_removal`
+  = `average_neutral`, `maximum_neutral`, `maximum_mask`, `additive_mask`,
+  with `green_noise_amount` and `green_noise_preserve_lightness`; off by
+  default). With background neutralisation the sky is brought back to grey
+  afterwards (SCNR clips the positive green noise of the sky). In the colour
+  scripts of astro_imaging and the archive pipeline.
 - **Illumination (sky flat) correction** (`reduce.illumination`, option
   `illumination_correction` in the archive pipeline `ReductionSettings` and
   in `reduce_main`; off by default): a smooth map per flat master / filter /

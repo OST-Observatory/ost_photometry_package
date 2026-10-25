@@ -12,7 +12,10 @@ Order of the steps (each optional except mixing and stretching):
 5. stretch, linked (one for all channels, keeps broadband colours) or per
    channel (narrowband),
 6. LRGB: the stretched luminance replaces the lightness in CIELAB,
-7. saturation (CIELAB chroma) and clipping to 0 ... 1.
+7. saturation (CIELAB chroma) and clipping to 0 ... 1,
+8. green noise removal (SCNR, Siril "Remove Green Noise"), optional; with
+   background neutralisation red and blue of the sky are brought back to
+   its green level afterwards (SCNR clips the positive green noise).
 """
 
 from __future__ import annotations
@@ -59,6 +62,11 @@ class ColorSettings:
     shadows_sigma: float = 2.8
     highlight_percentile: float = 99.995
     saturation: float = 1.0
+    #: SCNR method (``average_neutral``, ``maximum_neutral``, ``maximum_mask``,
+    #: ``additive_mask``) or ``None`` (off); see :mod:`.scnr`
+    green_noise_removal: str | None = None
+    green_noise_amount: float = 1.0
+    green_noise_preserve_lightness: bool = True
 
 
 @dataclass
@@ -254,6 +262,26 @@ def compose(stacks: Mapping[str, str | Path], settings: ColorSettings | None = N
             warnings.simplefilter("ignore", UserWarning)
             image = lab2rgb(lab).astype(np.float32)
     image = np.clip(image, 0.0, 1.0)
+    if settings.green_noise_removal:
+        from .scnr import remove_green_noise
+
+        image = remove_green_noise(
+            image, method=settings.green_noise_removal, amount=settings.green_noise_amount,
+            preserve_lightness=settings.green_noise_preserve_lightness,
+        )
+        log["green_noise_removal"] = {
+            "method": settings.green_noise_removal, "amount": settings.green_noise_amount,
+            "preserve_lightness": settings.green_noise_preserve_lightness,
+        }
+        if settings.neutralize_background:
+            # SCNR clips the positive green noise of the sky (magenta cast):
+            # red and blue back to the green sky level
+            dark = image.mean(axis=-1) <= np.percentile(image.mean(axis=-1), 50)
+            sky = np.median(image[dark], axis=0)
+            shift = np.maximum(sky - sky[1], 0.0).astype(np.float32)
+            shift[1] = 0.0
+            image = np.clip(image - shift, 0.0, 1.0)
+            log["green_noise_removal"]["sky_shift"] = [round(float(v), 4) for v in shift]
     spread = sky_colour_spread(image)
     log["sky_colour_spread"] = round(spread, 3)
     if spread > 0.08 and not settings.remove_gradient:

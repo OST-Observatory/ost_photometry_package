@@ -11,15 +11,18 @@ from .discovery import stacks_from_directory, stacks_from_summary
 from .export import write_images
 from .filters import canonical_filter
 from .palettes import PALETTES, Palette, resolve_palette
+from .scnr import SCNR_METHODS, remove_green_noise
 
 __all__ = [
     "PALETTES",
+    "SCNR_METHODS",
     "ColorResult",
     "ColorSettings",
     "Palette",
     "canonical_filter",
     "compose",
     "load_channels",
+    "remove_green_noise",
     "resolve_palette",
     "stacks_from_directory",
     "stacks_from_summary",

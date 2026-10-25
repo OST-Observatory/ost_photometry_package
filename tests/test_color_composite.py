@@ -192,6 +192,7 @@ def test_common_field_trims_uncovered_edges():
         (["R", "V", "B"], "auto", {"star_color_calibration": True}),
         (["R", "V", "B", "Clear"], "lrgb", {"remove_gradient": True}),
         (["H alpha", "O III"], "hoo", {}),
+        (["S II", "H alpha", "O III"], "sho", {"green_noise_removal": "average_neutral"}),
         (["H alpha", "R", "V", "B"], "custom",
          {"custom_mix": {"R": {"Ha": 0.7, "R": 0.3}, "G": {"V": 1}, "B": {"B": 1}},
           "saturation": 1.3}),
@@ -203,7 +204,7 @@ def test_compose_end_to_end(tmp_path, filters, palette, extra):
     assert result.rgb.shape == (*SHAPE, 3) and result.rgb.dtype == np.float32
     assert 0.0 <= result.rgb.min() and result.rgb.max() <= 1.0
     sky = np.median(result.rgb.reshape(-1, 3), axis=0)
-    assert np.ptp(sky) < 0.03  # neutral sky
+    assert np.ptp(sky) < 0.03  # neutral sky (also after SCNR: re-neutralised)
     if extra.get("star_color_calibration"):
         assert result.log["calibration_stars"] >= 15
         stars = result.rgb[result.rgb.mean(axis=2) > 0.8]
@@ -259,3 +260,48 @@ def test_stack_discovery(tmp_path):
                     ("M104", "qhy268"): {"B": "f"}}
     only = stacks_from_summary(summary, camera="qhy600m")
     assert {s.target for s in only} == {"M57", "M104"}
+
+
+def test_scnr_formulas_and_neutral_colours():
+    from ost_photometry.imaging import SCNR_METHODS, remove_green_noise
+
+    image = np.array([[[0.2, 0.8, 0.4],   # green excess
+                       [0.5, 0.5, 0.5],   # grey
+                       [0.6, 0.3, 0.2]]], dtype=np.float32)  # no excess
+    out = remove_green_noise(image, preserve_lightness=False)
+    assert out[0, 0, 1] == pytest.approx(0.3)  # min(G, (R+B)/2)
+    np.testing.assert_allclose(out[0, 1:], image[0, 1:], atol=1e-6)
+    np.testing.assert_allclose(out[..., [0, 2]], image[..., [0, 2]])
+    out = remove_green_noise(image, method="maximum_neutral", preserve_lightness=False)
+    assert out[0, 0, 1] == pytest.approx(0.4)  # min(G, max(R, B))
+    out = remove_green_noise(image, method="maximum_mask", amount=0.5, preserve_lightness=False)
+    m = 0.4
+    assert out[0, 0, 1] == pytest.approx(0.8 * 0.5 * (1 - m) + 0.8 * m)
+    out = remove_green_noise(image, method="additive_mask", amount=1.0, preserve_lightness=False)
+    assert out[0, 0, 1] == pytest.approx(0.8 * 0.6)  # m = min(1, R + B) = 0.6
+    # amount 0 leaves the image unchanged for every method
+    for method in SCNR_METHODS:
+        np.testing.assert_allclose(
+            remove_green_noise(image, method=method, amount=0.0, preserve_lightness=False), image,
+            atol=1e-6)
+    with pytest.raises(ValueError, match="method"):
+        remove_green_noise(image, method="hue")
+    with pytest.raises(ValueError, match="amount"):
+        remove_green_noise(image, amount=1.5)
+
+
+def test_scnr_preserves_lightness():
+    from skimage.color import rgb2lab
+
+    from ost_photometry.imaging import remove_green_noise
+
+    rng = np.random.default_rng(1)
+    image = np.clip(rng.uniform(0.1, 0.6, (20, 20, 3)) + [0.0, 0.15, 0.0], 0, 1).astype(np.float32)
+    plain = remove_green_noise(image, preserve_lightness=False)
+    kept = remove_green_noise(image, preserve_lightness=True)
+    l_in = rgb2lab(image)[..., 0]
+    assert np.mean(rgb2lab(plain)[..., 0]) < np.mean(l_in) - 2  # darker without
+    np.testing.assert_allclose(rgb2lab(kept)[..., 0], l_in, atol=1.5)
+    # green still reduced relative to red and blue
+    assert np.mean(kept[..., 1] - 0.5 * (kept[..., 0] + kept[..., 2])) < np.mean(
+        image[..., 1] - 0.5 * (image[..., 0] + image[..., 2]))
