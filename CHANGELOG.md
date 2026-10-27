@@ -11,23 +11,18 @@ section of this file.
 
 ## [Unreleased]
 
-### Fixed
+## [0.8.0] - 2026-10-27
 
-- **Header keywords of reduced frames and stacks without JD:** `MJD_STA`,
-  `MJD_MID` and `DATE-MID` now come from `MJD-OBS` / `DATE-OBS` when `JD` is
-  missing (archive frames), and `FILTER-S` knows the usual spellings (Bessell
-  upper case, SDSS lower case / primed, "H alpha", "O III", "S II", Clear).
-  Before, every stack of such data warned "MJD could not be added" and
-  "Filter system could not be determined". New `calibration_parameters.filter_system`.
-- **Archive pipeline: flats per night.** A mount session spans several
-  nights when the camera stays mounted. All its nights got one flat master,
-  the first of the equally certain flat sets, and the darks of the first
-  night. Reduction units are now session × night × electronic setup; every
-  night gets its darks and the flat set nearest in time among the candidates
-  of the best category (notes give the distance when it exceeds a day).
-  PN ARO 121: lights of 2026-03-03 had been calibrated with flats of
-  2026-02-25 although flats of 2026-03-01 existed; rings and dust shadows in
-  the stacks. Unit ids carry the night (`U01_<session>_N<night>`).
+Magnitudes checked against Stetson's standards and Gaia synthetic
+photometry, with the fixes that check required: mid-exposure times,
+flux-conserving stacks and registration, PSF sky and grouping, APER radii in
+FWHM with an aperture correction to the total flux, neighbour subtraction,
+an errors-in-variables colour term, and the confusion of unresolved faint
+stars measured and reported. Calibration catalogs: Stetson standards and
+Gaia XP synthetic photometry, `calibration_source="auto"` by default.
+Archive pipeline: flats per night and an illumination (sky flat)
+correction. Colour images: green noise removal and weighted luminance.
+Structured terminal output.
 
 ### Added
 
@@ -244,6 +239,22 @@ section of this file.
   hint): use `radii_unit='fwhm'` with the radii as FWHM multiples.
 
 ### Fixed
+
+- **Header keywords of reduced frames and stacks without JD:** `MJD_STA`,
+  `MJD_MID` and `DATE-MID` now come from `MJD-OBS` / `DATE-OBS` when `JD` is
+  missing (archive frames), and `FILTER-S` knows the usual spellings (Bessell
+  upper case, SDSS lower case / primed, "H alpha", "O III", "S II", Clear).
+  Before, every stack of such data warned "MJD could not be added" and
+  "Filter system could not be determined". New `calibration_parameters.filter_system`.
+- **Archive pipeline: flats per night.** A mount session spans several
+  nights when the camera stays mounted. All its nights got one flat master,
+  the first of the equally certain flat sets, and the darks of the first
+  night. Reduction units are now session × night × electronic setup; every
+  night gets its darks and the flat set nearest in time among the candidates
+  of the best category (notes give the distance when it exceeds a day).
+  PN ARO 121: lights of 2026-03-03 had been calibrated with flats of
+  2026-02-25 although flats of 2026-03-01 existed; rings and dust shadows in
+  the stacks. Unit ids carry the night (`U01_<session>_N<night>`).
 
 - **ASTAP on deep stacks:** the 16-bit copy maps the image with an asinh
   stretch in units of the sky noise (the linear map put the noise at
@@ -883,7 +894,8 @@ paths removed.
 Last version on `main` before this changelog. It was not tagged; detailed notes
 start with later versions. Git history before that date remains the record.
 
-[Unreleased]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/2648b88...v0.5.0

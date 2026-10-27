@@ -1,7 +1,7 @@
 # Releasing
 
 Version is the `version` field in [`pyproject.toml`](../pyproject.toml)
-(`0.7.0` as of this writing). There is no separate `__version__` module.
+(`0.8.0` as of this writing). There is no separate `__version__` module.
 
 ## Branches and tags
 
