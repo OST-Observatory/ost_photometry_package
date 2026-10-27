@@ -24,21 +24,31 @@ def test_filter_system(name, system):
     assert filter_system(name) == system
 
 
-def test_start_and_mid_time_from_date_obs(capsys):
+@pytest.fixture
+def messages(monkeypatch):
+    """Terminal messages of update_header_information."""
+    from ost_photometry.reduce import utilities
+
+    seen: list[str] = []
+    monkeypatch.setattr(utilities.terminal_output, "print_to_terminal",
+                        lambda text, *a, **k: seen.append(str(text)))
+    return seen
+
+
+def test_start_and_mid_time_from_date_obs(messages):
     """Archive frames carry DATE-OBS but no JD: no warning, MJD_MID set."""
     header = fits.Header({"DATE-OBS": "2026-03-01T23:32:33", "EXPTIME": 300.0, "FILTER": "H alpha"})
     ccd = CCDData(np.zeros((4, 4), dtype=np.float32), unit="electron/s", meta=header)
     update_header_information(ccd)
-    out = capsys.readouterr().out
-    assert "could not" not in out
+    assert not any("could not" in m for m in messages)
     assert ccd.meta["MJD_STA"] == pytest.approx(61100.981, abs=1e-3)
     assert ccd.meta["MJD_MID"] - ccd.meta["MJD_STA"] == pytest.approx(150 / 86400)
     assert ccd.meta["FILTER-S"] == "narrow_band"
 
 
-def test_no_time_at_all_warns(capsys):
+def test_no_time_at_all_warns(messages):
     ccd = CCDData(np.zeros((4, 4), dtype=np.float32), unit="electron/s",
                   meta=fits.Header({"EXPTIME": 10.0, "FILTER": "Spectrum"}))
     update_header_information(ccd)
-    out = capsys.readouterr().out
-    assert "MJD could not be added" in out and "FILTER-S" not in ccd.meta
+    assert any("MJD could not be added" in m for m in messages)
+    assert "FILTER-S" not in ccd.meta
