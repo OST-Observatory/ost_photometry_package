@@ -31,6 +31,16 @@ section of this file.
 
 ### Added
 
+- **Structured terminal output:** `terminal_output.print_header`,
+  `print_section`, `print_auto` (colour by content: problems yellow,
+  results green, headings blue), `print_report` (indentation of report
+  lines kept as levels), `print_done`, `progress_bar` / `progress_callback`.
+  Progress bars (also of the `Executor`) start one level below the last
+  message instead of at the line start; messages are written through
+  `tqdm.write`, so they no longer land inside a running bar. New style
+  `DETAIL` and context `terminal_output.quiet()`: per-frame messages
+  (plate solving and WCS shift of every aligned frame) are shown only with
+  `OST_PHOTOMETRY_VERBOSE=1`. The archive pipeline scripts use all of it.
 - **Luminance mix and weight** for colour images: `luminance` is a filter or
   a weighted mix (`{"Clear": 0.7, "Ha": 0.3}`; `"RGB"` = the colour
   channels), for any palette; every component is scaled to the same sky

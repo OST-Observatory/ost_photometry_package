@@ -68,7 +68,11 @@ class Executor:
         self.add_progress_bar: bool = kwargs.get("add_progress_bar", False)
         n_tasks: int | None = kwargs.get("n_tasks", None)
         if self.add_progress_bar and n_tasks:
-            self.progress_bar = tqdm(total=n_tasks)
+            #   one level below the last message, not at the line start
+            self.progress_bar = tqdm(
+                total=n_tasks,
+                bar_format=terminal_output.progress_prefix() + "{l_bar}{bar}{r_bar}",
+            )
 
     def collect_results(self, result: Any) -> None:
         """

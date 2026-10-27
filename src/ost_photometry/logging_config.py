@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 from . import style
@@ -25,11 +26,30 @@ class _AnsiFormatter(logging.Formatter):
       return f"{prefix}{super().format(record)}{style.Bcolors.ENDC}"
 
 
-def configure_logging(level: int = logging.INFO) -> None:
+class _TqdmAwareHandler(logging.StreamHandler):
+  """Writes through ``tqdm.write`` so that messages appear above a running
+  progress bar instead of inside its line."""
+
+  def emit(self, record: logging.LogRecord) -> None:
+      try:
+          from tqdm import tqdm
+
+          tqdm.write(self.format(record), file=self.stream)
+          self.flush()
+      except Exception:  # noqa: BLE001 - logging must not raise
+          self.handleError(record)
+
+
+def configure_logging(level: int | None = None) -> None:
+    """Terminal logging; ``OST_PHOTOMETRY_VERBOSE=1`` also shows the
+    per-frame details (``DETAIL`` messages)."""
     global _CONFIGURED
     if _CONFIGURED:
         return
-    handler = logging.StreamHandler(sys.stdout)
+    if level is None:
+        verbose = os.environ.get("OST_PHOTOMETRY_VERBOSE", "").strip().lower()
+        level = logging.DEBUG if verbose in ("1", "true", "yes") else logging.INFO
+    handler = _TqdmAwareHandler(sys.stdout)
     handler.setFormatter(_AnsiFormatter("%(message)s"))
     _LOG.addHandler(handler)
     _LOG.setLevel(level)

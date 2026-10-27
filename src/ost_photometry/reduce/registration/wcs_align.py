@@ -108,12 +108,13 @@ def ensure_celestial_wcs_on_fits(
         return False
     image = base_utilities.Image(0, "filter", path, output_dir)
     try:
-        find_wcs_for_image(
-            image,
-            method=wcs_method,
-            force_wcs_determination=force,
-            indent=indent,
-        )
+        with terminal_output.quiet():  # one frame of many: details only
+            find_wcs_for_image(
+                image,
+                method=wcs_method,
+                force_wcs_determination=force,
+                indent=indent,
+            )
     except RuntimeError as exc:
         terminal_output.print_to_terminal(
             f"WCS solve failed for {path.name}: {exc}. Skip this frame.",
@@ -341,6 +342,7 @@ def apply_wcs_align(
     terminal_output.print_to_terminal(
         f"WCS align {current_path.name}: dx={dx:+.2f} pix, dy={dy:+.2f} pix",
         indent=2,
+        style_name="DETAIL",
     )
     return apply_ok(current_path)
 
