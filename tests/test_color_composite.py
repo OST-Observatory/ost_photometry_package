@@ -305,3 +305,51 @@ def test_scnr_preserves_lightness():
     # green still reduced relative to red and blue
     assert np.mean(kept[..., 1] - 0.5 * (kept[..., 0] + kept[..., 2])) < np.mean(
         image[..., 1] - 0.5 * (image[..., 0] + image[..., 2]))
+
+
+def test_luminance_mix_parsing_and_any_palette():
+    from ost_photometry.imaging.palettes import luminance_mix
+
+    assert luminance_mix("Clear") == {"L": 1.0}
+    assert luminance_mix({"Clear": 0.7, "H alpha": 0.3}) == {"L": 0.7, "Ha": 0.3}
+    assert luminance_mix({"rgb": 0.5, "Clear": 0.5}) == {"RGB": 0.5, "L": 0.5}
+    assert luminance_mix(None) is None
+    with pytest.raises(ValueError, match="weights"):
+        luminance_mix({"Clear": -1.0})
+    assert resolve_palette("lrgb", {"R", "V", "B", "L"}).luminance == {"L": 1.0}
+    sho = resolve_palette("sho", {"SII", "Ha", "OIII", "L"}, luminance={"Clear": 0.6, "Ha": 0.4})
+    assert sho.luminance == {"L": 0.6, "Ha": 0.4} and "L" in sho.filters()
+    with pytest.raises(ValueError, match="needs filter"):
+        resolve_palette("sho", {"SII", "Ha", "OIII"}, luminance="Clear")
+
+
+def test_luminance_components_are_noise_normalised():
+    from ost_photometry.imaging.composite import _luminance
+
+    rng = np.random.default_rng(4)
+    signal = np.zeros(SHAPE, dtype=np.float32)
+    signal[100:120, 100:120] = 1.0
+    bright = (1000.0 + 200.0 * signal + rng.normal(0, 10.0, SHAPE)).astype(np.float32)
+    faint = (5.0 + 2.0 * signal + rng.normal(0, 0.1, SHAPE)).astype(np.float32)
+    lum = _luminance({"L": 0.5, "Ha": 0.5}, {"L": bright, "Ha": faint}, {})
+    # both have S/N 20 in the square: equal weights, equal contributions
+    assert np.median(lum[100:120, 100:120]) == pytest.approx(20.0, rel=0.1)
+    only_l = _luminance({"L": 1.0}, {"L": bright}, {})
+    assert np.median(only_l[100:120, 100:120]) == pytest.approx(20.0, rel=0.1)
+
+
+def test_luminance_weight_blends_the_lightness(tmp_path):
+    from skimage.color import rgb2lab
+
+    stacks = _write_stacks(tmp_path, ["R", "V", "B", "Clear"], factors={"Clear": 3.0})
+    plain = compose(stacks, ColorSettings(palette="rgb"))
+    full = compose(stacks, ColorSettings(palette="rgb", luminance="Clear", luminance_weight=1.0))
+    none = compose(stacks, ColorSettings(palette="rgb", luminance="Clear", luminance_weight=0.0))
+    half = compose(stacks, ColorSettings(palette="rgb", luminance={"Clear": 0.5, "RGB": 0.5},
+                                         luminance_weight=0.5))
+    l_plain, l_none = rgb2lab(plain.rgb)[..., 0], rgb2lab(none.rgb)[..., 0]
+    np.testing.assert_allclose(l_none, l_plain, atol=0.5)  # weight 0: colour lightness kept
+    assert not np.allclose(rgb2lab(full.rgb)[..., 0], l_plain, atol=0.5)
+    assert full.log["luminance_weight"] == 1.0 and half.log["luminance"] == {"L": 0.5, "RGB": 0.5}
+    with pytest.raises(ValueError, match="luminance_weight"):
+        compose(stacks, ColorSettings(palette="rgb", luminance="Clear", luminance_weight=2.0))

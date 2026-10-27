@@ -25,6 +25,11 @@ section of this file.
 
 ### Added
 
+- **Luminance mix and weight** for colour images: `luminance` is a filter or
+  a weighted mix (`{"Clear": 0.7, "Ha": 0.3}`; `"RGB"` = the colour
+  channels), for any palette; every component is scaled to the same sky
+  noise before mixing. `luminance_weight` (0 ... 1) sets how strongly it
+  replaces the lightness (1 = classic LRGB). In both colour scripts.
 - **Green noise removal (SCNR)** for colour images, as Siril "Remove Green
   Noise" (`imaging.remove_green_noise`; `ColorSettings.green_noise_removal`
   = `average_neutral`, `maximum_neutral`, `maximum_mask`, `additive_mask`,

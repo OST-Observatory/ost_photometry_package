@@ -11,7 +11,10 @@ Order of the steps (each optional except mixing and stretching):
    or manual ``channel_factors``,
 5. stretch, linked (one for all channels, keeps broadband colours) or per
    channel (narrowband),
-6. LRGB: the stretched luminance replaces the lightness in CIELAB,
+6. luminance (LRGB or any palette with ``luminance``): a weighted mix of
+   filters (and ``"RGB"``, the colour channels), each scaled to the same sky
+   noise; stretched, it replaces the CIELAB lightness by
+   ``luminance_weight`` (1 = fully, 0 = not),
 7. saturation (CIELAB chroma) and clipping to 0 ... 1,
 8. green noise removal (SCNR, Siril "Remove Green Noise"), optional; with
    background neutralisation red and blue of the sky are brought back to
@@ -46,7 +49,11 @@ class ColorSettings:
 
     palette: str = "auto"
     custom_mix: dict[str, dict[str, float]] | None = None
-    luminance: str | None = None
+    #: Filter (``"Clear"``) or weighted mix (``{"Clear": 0.7, "Ha": 0.3}``,
+    #: ``"RGB"`` = the colour channels) for the luminance; any palette
+    luminance: str | dict[str, float] | None = None
+    #: Share of the luminance in the final lightness (0 ... 1)
+    luminance_weight: float = 1.0
     neutralize_background: bool = True
     crop_to_common_field: bool = True
     cosmetic_correction: bool = True
@@ -161,6 +168,24 @@ def _mix(weights: Mapping[str, float], filters: Mapping[str, np.ndarray]) -> np.
     return (mixed / np.float32(total if total else 1.0)).astype(np.float32)
 
 
+def _luminance(mix: Mapping[str, float], data: Mapping[str, np.ndarray],
+               rgb: Mapping[str, np.ndarray]) -> np.ndarray:
+    """Weighted sum of the luminance components, each sky-subtracted and
+    divided by its sky noise first (filters differ in flux by orders of
+    magnitude; the weights are shares of the signal-to-noise). ``"RGB"`` is
+    the mean of the mixed colour channels."""
+    from .palettes import RGB_LUMINANCE
+
+    total = None
+    for name, weight in mix.items():
+        values = (sum(rgb[ch] for ch in CHANNELS) / np.float32(3.0) if name == RGB_LUMINANCE
+                  else data[name])
+        level, noise = sky_level(values)
+        part = (values - np.float32(level)) / np.float32(max(noise, 1e-12))
+        total = part * np.float32(weight) if total is None else total + part * np.float32(weight)
+    return total / np.float32(sum(mix.values()))
+
+
 def _fwhm(channels: Mapping[str, _Channel]) -> float:
     values = [float(c.header.get("FWHMMED", np.nan)) for c in channels.values()]
     values = [v for v in values if np.isfinite(v) and v > 0]
@@ -192,7 +217,7 @@ def compose(stacks: Mapping[str, str | Path], settings: ColorSettings | None = N
                               luminance=settings.luminance)
     log: dict[str, object] = {"settings": asdict(settings), "palette": palette.name,
                               "mix": {k: dict(v) for k, v in palette.mix.items()},
-                              "luminance": palette.luminance,
+                              "luminance": dict(palette.luminance) if palette.luminance else None,
                               "files": {k: c.path for k, c in channels.items()
                                         if k in palette.filters()}}
     data = {k: channels[k].data for k in palette.filters()}
@@ -211,12 +236,12 @@ def compose(stacks: Mapping[str, str | Path], settings: ColorSettings | None = N
                                    degree=settings.gradient_degree,
                                    box=settings.gradient_box)[0] for k, v in data.items()}
     rgb = {ch: _mix(palette.mix[ch], data) for ch in CHANNELS}
-    lum = data[palette.luminance] if palette.luminance else None
     if settings.neutralize_background:
         rgb, levels = neutralize_background(rgb)
         log["sky_levels"] = levels
-        if lum is not None:
-            lum = lum - np.float32(sky_level(lum)[0])
+    lum = _luminance(palette.luminance, data, rgb) if palette.luminance else None
+    if lum is not None and not 0.0 <= float(settings.luminance_weight) <= 1.0:
+        raise ValueError(f"luminance_weight must be between 0 and 1, got {settings.luminance_weight!r}")
 
     factors = {ch: 1.0 for ch in CHANNELS}
     if settings.channel_factors:
@@ -251,8 +276,10 @@ def compose(stacks: Mapping[str, str | Path], settings: ColorSettings | None = N
         lab = rgb2lab(image)
         if lum is not None:
             lum_params = stretch_parameters(lum, **kwargs)
-            lab[..., 0] = 100.0 * apply_stretch(lum, lum_params)
+            w = np.float32(settings.luminance_weight)
+            lab[..., 0] = w * 100.0 * apply_stretch(lum, lum_params) + (1 - w) * lab[..., 0]
             log["luminance_stretch"] = lum_params
+            log["luminance_weight"] = float(w)
         if settings.saturation != 1.0:
             lab[..., 1:] *= float(settings.saturation)
         import warnings
