@@ -13,6 +13,12 @@ section of this file.
 
 ### Fixed
 
+- **Header keywords of reduced frames and stacks without JD:** `MJD_STA`,
+  `MJD_MID` and `DATE-MID` now come from `MJD-OBS` / `DATE-OBS` when `JD` is
+  missing (archive frames), and `FILTER-S` knows the usual spellings (Bessell
+  upper case, SDSS lower case / primed, "H alpha", "O III", "S II", Clear).
+  Before, every stack of such data warned "MJD could not be added" and
+  "Filter system could not be determined". New `calibration_parameters.filter_system`.
 - **Archive pipeline: flats per night.** A mount session spans several
   nights when the camera stays mounted. All its nights got one flat master,
   the first of the equally certain flat sets, and the darks of the first

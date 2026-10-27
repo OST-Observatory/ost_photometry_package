@@ -2,6 +2,8 @@
 #                               Libraries                                  #
 ############################################################################
 
+import re
+
 import astropy.units as u
 import numpy as np
 import scipy.interpolate as interpolate
@@ -451,6 +453,36 @@ filter_systems = {
     'SII': 'narrow_band',
     'OIII': 'narrow_band',
 }
+
+
+#: Compact narrowband filter names (lower case, no spaces / punctuation).
+_NARROW_BAND = {"ha", "halpha", "hydrogenalpha", "hb", "hbeta", "oiii", "o3", "sii", "s2",
+                "nii", "n2"}
+_CLEAR = {"l", "lum", "luminance", "clear", "c", "none"}
+
+
+def filter_system(name: object) -> str | None:
+    """Filter system of a header filter name, ``None`` when unknown.
+
+    ``bessell`` (U B V R I, upper case), ``sdss`` (u g r i z y, lower case,
+    also primed / with a backtick, ``z-s``), ``narrow_band`` (Halpha, OIII,
+    SII, Hbeta, NII in any spelling, e.g. "H alpha", "O III") and ``clear``
+    (Clear, L, Luminance).
+    """
+    text = str(name or "").strip()
+    if text in filter_systems:
+        return filter_systems[text]
+    core = text.rstrip("`'\u2032").strip()
+    compact = re.sub(r"[^a-z0-9]", "", core.lower())
+    if core in ("U", "B", "V", "R", "I"):
+        return "bessell"
+    if core in ("u", "g", "r", "i", "z", "y") or compact == "zs":
+        return "sdss"
+    if compact in _NARROW_BAND:
+        return "narrow_band"
+    if compact in _CLEAR:
+        return "clear"
+    return None
 
 
 ###

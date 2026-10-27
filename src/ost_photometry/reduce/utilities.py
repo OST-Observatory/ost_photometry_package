@@ -801,23 +801,28 @@ def update_header_information(
     #  GRANDMA
     image.meta["EXPOSURE"] = image.meta["EXPTIME"]
 
-    #   Add MJD of start and center of the observation
+    #   MJD of start and centre of the observation, from JD or else from
+    #   MJD-OBS / DATE-OBS (archive frames often have no JD). Stacks get the
+    #   weighted mid-time of their frames afterwards (stack._write_stack_epoch).
+    ensure_mjd_obs_in_header(image.meta)
+    mjd = None
     try:
-        jd = image.meta["JD"]
-        mjd = jd - 2400000.5
+        if "JD" in image.meta:
+            mjd = float(image.meta["JD"]) - 2400000.5
+        elif "MJD-OBS" in image.meta:
+            mjd = float(image.meta["MJD-OBS"])
+    except (TypeError, ValueError):
+        mjd = None
+    if mjd is not None and np.isfinite(mjd):
         image.meta["MJD_STA"] = mjd
-
-        mjd_mid = mjd + image.meta["EXPTIME"] / 172800
+        mjd_mid = mjd + float(image.meta["EXPTIME"]) / 172800
         image.meta["MJD_MID"] = mjd_mid
-
         image.meta["DATE-MID"] = Time(mjd_mid, format="mjd").fits
-
-    except Exception as e:
+    else:
         terminal_output.print_to_terminal(
-            f"MJD could not be added to the header:\n {e}",
+            "MJD could not be added to the header: no JD, MJD-OBS or DATE-OBS",
             style_name="WARNING",
         )
-    ensure_mjd_obs_in_header(image.meta)
 
     #   Add observation date using a second keyword (GRANDMA)
     try:
@@ -858,16 +863,10 @@ def update_header_information(
     image.meta["USERNAME"] = "OST"
     image.meta["INSTRU"] = str(image.meta.get("INSTRUME", "") or "CDK")
 
-    #   Add filter system to the Header
-    filter_ = image.meta.get("FILTER", "")
-    try:
-        filter_system = calibration_parameters.filter_systems[filter_]
-        image.meta["FILTER-S"] = filter_system
-    except Exception as e:
-        terminal_output.print_to_terminal(
-            f"Filter system could not be determined:\n {e}",
-            style_name="WARNING",
-        )
+    #   Filter system (GRANDMA); unknown filters get none, without a warning
+    system = calibration_parameters.filter_system(image.meta.get("FILTER", ""))
+    if system is not None:
+        image.meta["FILTER-S"] = system
 
 
 def detect_outlier(
