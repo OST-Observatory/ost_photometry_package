@@ -248,12 +248,19 @@ def format_string(
 
 
 class TerminalLog:
-    """
-        Logging system to the terminal
+    """Block of messages of one task (e.g. one image in a worker process),
+    printed together.
+
+    With ``quiet=True`` (many images in parallel) only warnings and errors
+    are shown, prefixed with ``label``; the rest are details, shown only with
+    ``OST_PHOTOMETRY_VERBOSE=1``.
     """
 
-    def __init__(self):
+    def __init__(self, quiet: bool = False, label: str = ""):
         self.cache = ""
+        self.quiet = bool(quiet)
+        self.label = str(label)
+        self.entries: list[tuple[str, int, str]] = []
 
     def add_to_cache(
             self, string: str, indent: int = 1, style_name: str = 'BOLD'
@@ -275,6 +282,7 @@ class TerminalLog:
             Default is ``BOLD``.
 
         """
+        self.entries.append((str(string), int(indent), str(style_name)))
         self.cache += format_string(string, indent=indent, style_name=style_name)
         self.cache += "\n"
 
@@ -282,7 +290,7 @@ class TerminalLog:
             self, string: str, indent: int = 1, style_name: str = 'BOLD'
         ) -> None:
         """
-        Print output to terminal after formatting
+        Print the block (plus ``string``) and reset it.
 
         Parameters
         ----------
@@ -297,10 +305,20 @@ class TerminalLog:
             Style type of the output.
             Default is ``BOLD``.
         """
-        #   Add string to cache
-        self.add_to_cache(string, indent=indent, style_name=style_name)
-
-        print(self.cache)
-
-        #   Reset cache after printing this block
+        if string:
+            self.add_to_cache(string, indent=indent, style_name=style_name)
+        if self.quiet:
+            logger = get_logger("terminal")
+            prefix = f"{self.label}: " if self.label else ""
+            for text, level_indent, name in self.entries:
+                if not text.strip():
+                    continue
+                if _LEVEL.get(name, 20) >= 30:
+                    logger.log(_LEVEL[name], format_string(prefix + text.strip(), indent=2,
+                                                           style_name=name))
+                else:
+                    logger.log(10, format_string(text, indent=level_indent, style_name=name))
+        else:
+            print(self.cache)
+        self.entries = []
         self.cache = ""

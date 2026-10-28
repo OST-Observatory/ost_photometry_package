@@ -2197,7 +2197,11 @@ def extract_multiprocessing(
     else:
         fwhm = None
 
-    executor = Executor(n_cores_multiprocessing)
+    n_images = len(image_series.image_list)
+    terminal_output.print_to_terminal(
+        f"Extracting {n_images} {filter_} image(s)", indent=2, style_name="BOLD"
+    )
+    executor = Executor(n_cores_multiprocessing, add_progress_bar=True, n_tasks=n_images)
 
     for image in image_series.image_list:
         executor.schedule(
@@ -2255,6 +2259,14 @@ def extract_multiprocessing(
         ) from executor.err
 
     skipped = _merge_extraction_results(image_series, executor.res)
+    counts = [len(img.photometry) for img in image_series.image_list
+              if getattr(img, "photometry", None) is not None]
+    if counts:
+        terminal_output.print_to_terminal(
+            f"{filter_}: {len(counts)} image(s) extracted, stars per image "
+            f"{int(np.median(counts))} (median, {min(counts)}–{max(counts)})",
+            indent=2, style_name="OKGREEN",
+        )
     if skipped:
         terminal_output.print_to_terminal(
             f"Skipped {len(skipped)} {filter_} image(s) "
@@ -2315,7 +2327,10 @@ def main_extract(
     Main function to extract the information from the individual images
     """
     if multiprocessing:
-        terminal_logger = terminal_output.TerminalLog()
+        #   one of many images in parallel: warnings only, the rest details
+        terminal_logger = terminal_output.TerminalLog(
+            quiet=True, label=f"Image {image.image_id} ({image.filter_})"
+        )
         terminal_logger.add_to_cache(
             f"Image: {image.image_id}",
             style_name="UNDERLINE",

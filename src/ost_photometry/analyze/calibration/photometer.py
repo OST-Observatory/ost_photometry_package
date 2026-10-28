@@ -869,16 +869,9 @@ class DifferentialPhotometer:
         epoch_results_sorted = sorted(
             epoch_results, key=lambda fr: str(fr.identifier)
         )
-        for fr in epoch_results_sorted:
-            parts = []
-            for filter_ in filters:
-                tc = fr.transformation.get(filter_)
-                n_used = int(tc.n_stars_used) if tc is not None else 0
-                parts.append(f"{filter_}={n_used}")
-            terminal_output.print_to_terminal(
-                f"Calibrators in epoch {fr.identifier}: {', '.join(parts)}",
-                indent=2,
-            )
+        report_calibrator_counts(
+            [(fr.identifier, fr.transformation) for fr in epoch_results_sorted], filters
+        )
         combined = self.combine_epoch_calibration_results(
             epoch_results_sorted,
             filters,
@@ -1080,5 +1073,35 @@ class DifferentialPhotometer:
         )
 
 
+
+
+def report_calibrator_counts(items, filters, indent: int = 2) -> None:
+    """Calibrators used per epoch and filter: one line per epoch for up to
+    three epochs, else a summary (median, range) with the per-epoch lines as
+    details (``OST_PHOTOMETRY_VERBOSE=1``)."""
+    import numpy as _np
+
+    items = list(items)
+    counts: dict[str, list[int]] = {f: [] for f in filters}
+    many = len(items) > 3
+    for epoch_id, transformation in items:
+        parts = []
+        for filter_ in filters:
+            tc = transformation.get(filter_)
+            n_used = int(tc.n_stars_used) if tc is not None else 0
+            counts[filter_].append(n_used)
+            parts.append(f"{filter_}={n_used}")
+        terminal_output.print_to_terminal(
+            f"Calibrators in epoch {epoch_id}: {', '.join(parts)}",
+            indent=indent, style_name="DETAIL" if many else "BOLD",
+        )
+    if many:
+        summary = ", ".join(
+            f"{f} {int(_np.median(v))} ({min(v)}–{max(v)})" for f, v in counts.items() if v
+        )
+        terminal_output.print_to_terminal(
+            f"Calibrators per epoch ({len(items)} epochs, median and range): {summary}",
+            indent=indent,
+        )
 
 __all__ = ["DifferentialPhotometer"]
