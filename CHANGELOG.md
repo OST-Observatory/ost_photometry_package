@@ -11,6 +11,15 @@ section of this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Terminal output of parallel extraction:** the per-image messages of the
+  worker processes are collected (`TerminalLog(quiet=True, label=...)`;
+  warnings and errors are still shown, with the image label); instead there
+  is a progress bar and one summary line per filter (images, stars per
+  image). The calibrators per epoch are summarised (median and range) when
+  there are more than three epochs (`report_calibrator_counts`).
+
 ## [0.8.0] - 2026-10-27
 
 Magnitudes checked against Stetson's standards and Gaia synthetic
@@ -36,12 +45,6 @@ Structured terminal output.
   `DETAIL` and context `terminal_output.quiet()`: per-frame messages
   (plate solving and WCS shift of every aligned frame) are shown only with
   `OST_PHOTOMETRY_VERBOSE=1`. The archive pipeline scripts use all of it.
-  Extraction of several images in parallel: the per-image messages of the
-  worker processes are collected (`TerminalLog(quiet=True, label=...)`,
-  warnings and errors still shown with the image label); instead there is
-  a progress bar and one summary line per filter (images, stars per image).
-  The calibrators per epoch are summarised (median and range) when there
-  are more than three epochs (`report_calibrator_counts`).
 - **Luminance mix and weight** for colour images: `luminance` is a filter or
   a weighted mix (`{"Clear": 0.7, "Ha": 0.3}`; `"RGB"` = the colour
   channels), for any palette; every component is scaled to the same sky
