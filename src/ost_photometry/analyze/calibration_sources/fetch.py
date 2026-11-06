@@ -18,7 +18,11 @@ Design
   removed.
 * **GaiaXP**: Gaia DR3 synthetic photometry (Vizier ``I/360/syntphot``),
   Johnson-Kron-Cousins UBVRI and SDSS ugriz from the XP spectra, all sky to
-  G ≈ 17.65.
+  G ≈ 17.65. When Vizier cannot deliver it (CDS down), the same table comes
+  from the ESA Gaia archive.
+* Vizier and Simbad queries go to a mirror when CDS does not answer
+  (:mod:`ost_photometry.core.services`); a catalog the mirror does not serve
+  raises :class:`~ost_photometry.core.services.CatalogUnavailable`.
 * **auto**: the first source of ``auto_sources`` that covers every requested
   filter with at least ``auto_min_stars`` stars; the choice is in
   ``table.meta["calibration_source"]`` (also set for the other sources).
@@ -38,6 +42,7 @@ from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
 
 from ... import calibration_parameters, style, terminal_output
+from ...core import services
 from .known_variables import (
     DEFAULT_EXCLUDE_RADIUS,
     VSX_VIZIER_ID,
@@ -59,6 +64,13 @@ _STETSON_BANDS = ("U", "B", "V", "R", "I")
 #: Montegriffo et al. 2023): JKC UBVRI and SDSS ugriz, standardised.
 GAIA_XP_VIZIER_ID = "I/360/syntphot"
 _GAIA_XP_BANDS = ("U", "B", "V", "R", "I", "u", "g", "r", "i", "z")
+#: The same table in the ESA Gaia archive (fallback when Vizier is down):
+#: column prefix per band.
+GAIA_XP_ESA_TABLE = "gaiadr3.synthetic_photometry_gspc"
+_GAIA_XP_ESA_PREFIX = {
+    "U": "u_jkc", "B": "b_jkc", "V": "v_jkc", "R": "r_jkc", "I": "i_jkc",
+    "u": "u_sdss", "g": "g_sdss", "r": "r_sdss", "i": "i_sdss", "z": "z_sdss",
+}
 
 #: Order of ``calibration_source="auto"``: Stetson where the field is a
 #: standard field, else APASS; Gaia XP for u and z (neither of them has
@@ -209,12 +221,12 @@ def _fetch_vsp_standard(
     * Positions come as sexagesimal strings (RA in hours) and are converted
       to degrees.
     """
-    _print("Downloading calibration data from www.aavso.org", indent=indent)
+    _print("Downloading calibration data from AAVSO VSP", indent=indent)
     filters = filter_list if filter_list else ["B", "V"]
     ra = center.ra.degree
     dec = center.dec.degree
     vsp_template = (
-        "https://www.aavso.org/apps/vsp/api/chart/"
+        "https://apps.aavso.org/vsp/api/chart/"
         "?format=json&fov={}&maglimit={}&ra={}&dec={}&special=std_field"
     )
     r = requests.get(
@@ -282,7 +294,7 @@ def _fetch_simbad_standard(
     """
     _print("Downloading calibration data from Simbad", indent=indent)
     filters = filter_list if filter_list else ["B", "V"]
-    my_simbad = Simbad()
+    my_simbad = services.use_simbad_server(Simbad())
     for filter_ in filters:
         my_simbad.add_votable_fields(f"flux({filter_})")
         my_simbad.add_votable_fields(f"flux_error({filter_})")
@@ -446,6 +458,7 @@ def _fetch_apass9_standard(
     ``filter_list`` is accepted for API symmetry; APASS columns are fixed.
     """
     _print("Downloading APASS (Vizier II/336/apass9)", indent=indent)
+    services.require_vizier_catalog(APASS_VIZIER_ID)
     v = Vizier(
         columns=[
             "RAJ2000",
@@ -464,7 +477,7 @@ def _fetch_apass9_standard(
         ],
         row_limit=-1,
     )
-    result = v.query_region(
+    result = services.use_vizier_server(v).query_region(
         center,
         radius=field_of_view_arcmin * u.arcmin,
         catalog=APASS_VIZIER_ID,
@@ -574,10 +587,11 @@ def _fetch_stetson_standard(
     * Bands without a value are NaN; errors as given (a few mmag).
     """
     _print(f"Downloading Stetson / Landolt standards (Vizier {STETSON_VIZIER_ID})", indent=indent)
+    services.require_vizier_catalog(STETSON_VIZIER_ID)
     columns = ["RAJ2000", "DEJ2000", "Collect", "VarFlag", "BinFlag"]
     for band in _STETSON_BANDS:
         columns += [f"{band}mag", f"e_{band}mag"]
-    result = Vizier(columns=columns, row_limit=-1).query_region(
+    result = services.use_vizier_server(Vizier(columns=columns, row_limit=-1)).query_region(
         center,
         radius=field_of_view_arcmin * u.arcmin,
         catalog=STETSON_VIZIER_ID,
@@ -631,6 +645,57 @@ def _gaia_excess_ok(excess: np.ndarray, g_proxy: np.ndarray) -> np.ndarray:
     return ~bad
 
 
+def _gaia_xp_from_vizier(center: SkyCoord, field_of_view_arcmin: float, indent: int) -> Table | None:
+    """Gaia XP rows from Vizier, else from the ESA archive (``None``: none in
+    the field)."""
+    columns = ["Source", "RA_ICRS", "DE_ICRS", "E(BP/RP)corr"]
+    for band in _GAIA_XP_BANDS:
+        columns += [f"{band}mag", f"F{band}", f"e_F{band}", f"{band}Flag"]
+    try:
+        services.require_vizier_catalog(GAIA_XP_VIZIER_ID)
+        _print(f"Downloading Gaia DR3 synthetic photometry (Vizier {GAIA_XP_VIZIER_ID})", indent=indent)
+        result = services.use_vizier_server(Vizier(columns=columns, row_limit=-1)).query_region(
+            center,
+            radius=field_of_view_arcmin * u.arcmin,
+            catalog=GAIA_XP_VIZIER_ID,
+        )
+        return result[0] if result else None
+    except (services.CatalogUnavailable, requests.RequestException, ConnectionError, TimeoutError) as err:
+        _print(f"Vizier not available ({err})", indent=indent + 1, style_name="WARNING")
+    _print(f"Downloading Gaia DR3 synthetic photometry (ESA Gaia archive, {GAIA_XP_ESA_TABLE})", indent=indent)
+    return _gaia_xp_from_esa(center, field_of_view_arcmin)
+
+
+def _gaia_xp_from_esa(center: SkyCoord, field_of_view_arcmin: float) -> Table:
+    """Gaia XP synthetic photometry from the ESA Gaia archive, renamed to
+    the Vizier columns of ``I/360/syntphot`` (``c_star`` is
+    ``E(BP/RP)corr``; positions of ``gaia_source``, epoch 2016.0 as in
+    Vizier)."""
+    selected = ["s.source_id", "s.ra", "s.dec", "g.c_star"]
+    for prefix in _GAIA_XP_ESA_PREFIX.values():
+        selected += [f"g.{prefix}_mag", f"g.{prefix}_flux", f"g.{prefix}_flux_error", f"g.{prefix}_flag"]
+    ra = center.icrs.ra.degree
+    dec = center.icrs.dec.degree
+    adql = (
+        f"SELECT {', '.join(selected)} FROM {GAIA_XP_ESA_TABLE} AS g "
+        "JOIN gaiadr3.gaia_source AS s ON s.source_id = g.source_id "
+        f"WHERE 1 = CONTAINS(POINT('ICRS', s.ra, s.dec), "
+        f"CIRCLE('ICRS', {ra:.8f}, {dec:.8f}, {field_of_view_arcmin / 60.0:.8f}))"
+    )
+    esa = services.gaia_archive_query(adql)
+    raw = Table()
+    raw["Source"] = esa["source_id"]
+    raw["RA_ICRS"] = esa["ra"]
+    raw["DE_ICRS"] = esa["dec"]
+    raw["E(BP/RP)corr"] = esa["c_star"]
+    for band, prefix in _GAIA_XP_ESA_PREFIX.items():
+        raw[f"{band}mag"] = esa[f"{prefix}_mag"]
+        raw[f"F{band}"] = esa[f"{prefix}_flux"]
+        raw[f"e_F{band}"] = esa[f"{prefix}_flux_error"]
+        raw[f"{band}Flag"] = esa[f"{prefix}_flag"]
+    return raw
+
+
 def _fetch_gaia_xp_standard(
     center: SkyCoord,
     field_of_view_arcmin: float,
@@ -645,21 +710,14 @@ def _fetch_gaia_xp_standard(
       are dropped.
     * Errors from the fluxes: ``1.0857·e_F/F``.
     * Magnitude range on V (else r, else the first band), as for APASS.
+    * From Vizier; when Vizier cannot deliver it, from the ESA Gaia archive
+      (:func:`_gaia_xp_from_esa`, same table and columns).
     """
-    _print(f"Downloading Gaia DR3 synthetic photometry (Vizier {GAIA_XP_VIZIER_ID})", indent=indent)
     flux_name = {b: f"F{b}" for b in _GAIA_XP_BANDS}
-    columns = ["Source", "RA_ICRS", "DE_ICRS", "E(BP/RP)corr"]
-    for band in _GAIA_XP_BANDS:
-        columns += [f"{band}mag", flux_name[band], f"e_{flux_name[band]}", f"{band}Flag"]
-    result = Vizier(columns=columns, row_limit=-1).query_region(
-        center,
-        radius=field_of_view_arcmin * u.arcmin,
-        catalog=GAIA_XP_VIZIER_ID,
-    )
-    if not result:
+    raw = _gaia_xp_from_vizier(center, field_of_view_arcmin, indent)
+    if raw is None or len(raw) == 0:
         _print("No Gaia synthetic photometry in this field", indent=indent + 1, style_name="WARNING")
         return Table(names=["ra", "dec"], dtype=[float, float])
-    raw = result[0]
     out = Table()
     out["ra"] = np.asarray(raw["RA_ICRS"], dtype=float)
     out["dec"] = np.asarray(raw["DE_ICRS"], dtype=float)

@@ -32,6 +32,7 @@ def test_vsp_chart_is_parsed(monkeypatch):
     monkeypatch.setattr(fetch.requests, "get", fake_get)
     out = fetch._fetch_vsp_standard(SkyCoord(296.0, 54.8, unit="deg"), 20.0, ["B", "V", "I"], (10.0, 15.0), 1)
     assert '"' not in calls[0]
+    assert calls[0].startswith("https://apps.aavso.org/vsp/api/chart/")  # www.aavso.org: 403
     assert list(out["id"]) == ["000-AAA-001", "000-AAA-002"]  # V = 8 is outside 10-15
     assert np.isclose(out["ra"][0], 296.17854, atol=1e-4) and np.isclose(out["dec"][0], 54.82858, atol=1e-4)
     assert np.isclose(out["dec"][1], -1.5)

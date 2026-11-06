@@ -8,6 +8,7 @@ from astropy.coordinates import SkyCoord, matching
 from astropy.table import Table
 
 from ... import terminal_output
+from ...core import services
 from .vizier_query import get_vizier_catalog
 
 VSX_VIZIER_ID = "B/vsx/vsx"
@@ -130,6 +131,9 @@ def drop_catalog_rows_near_known_variables(
     Vizier cone of the whole field: ``B/vsx/vsx`` cone queries are often very slow
     and used to stall anlyses steps right after the APASS download with no log line.
 
+    xMatch is a CDS service: when CDS does not answer, the VSX cone goes to
+    the Vizier mirror directly.
+
     A failed query leaves ``catalog`` unchanged (calibration must not abort).
     Sets ``catalog.meta[KNOWN_VARIABLES_EXCLUDED_META]`` when the query succeeds.
     """
@@ -141,22 +145,25 @@ def drop_catalog_rows_near_known_variables(
         return catalog
 
     match_radius = _as_angle(radius)
+    use_xmatch = services.cds_reachable()
     terminal_output.print_to_terminal(
-        f"Excluding known variables ({catalog_identifier}) via CDS xMatch "
+        f"Excluding known variables ({catalog_identifier}) via "
+        f"{'CDS xMatch' if use_xmatch else 'a cone query (CDS does not answer)'} "
         f"({len(catalog)} catalog positions, {match_radius.to_value(u.arcsec):.1f}\") ...",
         indent=indent,
         style_name="NORMAL",
     )
 
     drop_idx: np.ndarray | None = None
-    try:
-        drop_idx = _drop_via_xmatch(catalog, match_radius, catalog_identifier)
-    except Exception as exc:
-        terminal_output.print_to_terminal(
-            f"CDS xMatch failed ({exc}); falling back to a VSX cone query",
-            indent=indent,
-            style_name="WARNING",
-        )
+    if use_xmatch:
+        try:
+            drop_idx = _drop_via_xmatch(catalog, match_radius, catalog_identifier)
+        except Exception as exc:
+            terminal_output.print_to_terminal(
+                f"CDS xMatch failed ({exc}); falling back to a VSX cone query",
+                indent=indent,
+                style_name="WARNING",
+            )
 
     if drop_idx is None:
         try:

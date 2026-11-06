@@ -7,12 +7,14 @@ from typing import TYPE_CHECKING
 
 import astropy.units as u
 import numpy as np
+import requests
 from astropy.coordinates import SkyCoord
 from astropy.table import Table
 from astroquery.simbad import Simbad
 from astroquery.vizier import Vizier
 
 from ... import terminal_output
+from ...core import services
 from ...core.parallel import start_plot_process
 from ..plots.cluster_membership import plot_cluster_membership_diagnostics
 from ..post_processing.coords import (
@@ -49,6 +51,23 @@ GAIA_DR3_COLUMNS = (
     "PlxpmDEcor",
     "RUWE",
 )
+#: ``gaiadr3.gaia_source`` columns of the ESA archive for the Vizier columns
+#: above (fallback when Vizier does not deliver Gaia DR3).
+GAIA_DR3_ESA_COLUMNS = {
+    "RA_ICRS": "ra",
+    "DE_ICRS": "dec",
+    "Gmag": "phot_g_mean_mag",
+    "Plx": "parallax",
+    "e_Plx": "parallax_error",
+    "pmRA": "pmra",
+    "e_pmRA": "pmra_error",
+    "pmDE": "pmdec",
+    "e_pmDE": "pmdec_error",
+    "pmRApmDEcor": "pmra_pmdec_corr",
+    "PlxpmRAcor": "parallax_pmra_corr",
+    "PlxpmDEcor": "parallax_pmdec_corr",
+    "RUWE": "ruwe",
+}
 
 
 def _resolve_imaging_plot_context(
@@ -91,19 +110,47 @@ def query_gaia_dr3_cone(
     catalog: str = GAIA_DR3_CATALOG,
     g_mag_limit: float = 20.0,
 ) -> Table:
-    """Download Gaia DR3 rows in a cone (Vizier)."""
-    vizier = Vizier(
-        columns=list(GAIA_DR3_COLUMNS),
-        row_limit=1_000_000,
-        catalog=catalog,
-        column_filters={"Gmag": f"<{float(g_mag_limit)}"},
-    )
-    result = vizier.query_region(center, radius=radius)
+    """Download Gaia DR3 rows in a cone (Vizier; Gaia DR3 from the ESA
+    archive when Vizier cannot deliver it)."""
+    try:
+        services.require_vizier_catalog(catalog)
+        vizier = services.use_vizier_server(Vizier(
+            columns=list(GAIA_DR3_COLUMNS),
+            row_limit=1_000_000,
+            catalog=catalog,
+            column_filters={"Gmag": f"<{float(g_mag_limit)}"},
+        ))
+        result = vizier.query_region(center, radius=radius)
+    except (services.CatalogUnavailable, requests.RequestException, ConnectionError, TimeoutError) as err:
+        if catalog != GAIA_DR3_CATALOG:
+            raise
+        terminal_output.print_to_terminal(
+            f"Vizier not available ({err}); Gaia DR3 from the ESA Gaia archive",
+            style_name="WARNING",
+        )
+        result = [_gaia_dr3_cone_from_esa(center, radius, g_mag_limit)]
     if result is None or len(result) == 0:
         raise RuntimeError("Gaia Vizier cone query returned no tables.")
     tbl = result[0]
     if tbl is None or len(tbl) == 0:
         raise RuntimeError("Gaia Vizier cone query returned an empty table.")
+    return tbl
+
+
+def _gaia_dr3_cone_from_esa(center: SkyCoord, radius: u.Quantity, g_mag_limit: float) -> Table:
+    """Gaia DR3 cone from the ESA archive with the Vizier column names
+    (positions at epoch 2016.0 in both)."""
+    selected = ", ".join(GAIA_DR3_ESA_COLUMNS.values())
+    adql = (
+        f"SELECT {selected} FROM gaiadr3.gaia_source "
+        f"WHERE 1 = CONTAINS(POINT('ICRS', ra, dec), CIRCLE('ICRS', "
+        f"{center.icrs.ra.degree:.8f}, {center.icrs.dec.degree:.8f}, {radius.to_value(u.deg):.8f})) "
+        f"AND phot_g_mean_mag < {float(g_mag_limit)}"
+    )
+    esa = services.gaia_archive_query(adql)
+    tbl = Table()
+    for vizier_name, esa_name in GAIA_DR3_ESA_COLUMNS.items():
+        tbl[vizier_name] = esa[esa_name]
     return tbl
 
 
@@ -137,6 +184,7 @@ def query_simbad_astrometry(name: str) -> tuple[float | None, float | None, floa
         return None, None, None
     custom = Simbad()
     try:
+        services.use_simbad_server(custom)
         custom.add_votable_fields("pmra", "pmdec", "plx")
     except Exception:
         pass

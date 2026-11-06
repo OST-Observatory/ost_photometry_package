@@ -261,7 +261,9 @@ def query_simbad_objects(
         extra_criteria=extra_criteria,
     )
 
-    custom_simbad = Simbad()
+    from ...core.services import use_simbad_server
+
+    custom_simbad = use_simbad_server(Simbad())
     custom_simbad.TIMEOUT = 120
     fields = ["otype", "dimensions"]
     if mag_limit is not None:
@@ -293,7 +295,7 @@ def query_simbad_objects(
             f" The error message was {e}.\n Remove magnitude from request...",
             style_name='WARNING',
         )
-        custom_simbad = Simbad()
+        custom_simbad = use_simbad_server(Simbad())
         custom_simbad.TIMEOUT = 120
         custom_simbad.add_votable_fields('otype', 'dimensions')
         fallback = simbad_query_criteria(

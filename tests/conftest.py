@@ -25,6 +25,14 @@ if str(_PKG_SRC) not in sys.path:
     sys.path.insert(0, str(_PKG_SRC))
 
 
+@pytest.fixture(autouse=True)
+def _cds_servers_without_probe(monkeypatch):
+    """Vizier and Simbad on CDS without a network probe
+    (:mod:`ost_photometry.core.services`)."""
+    monkeypatch.setenv("OST_PHOTOMETRY_VIZIER_SERVER", "vizier.cds.unistra.fr")
+    monkeypatch.setenv("OST_PHOTOMETRY_SIMBAD_SERVER", "simbad.cds.unistra.fr")
+
+
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",

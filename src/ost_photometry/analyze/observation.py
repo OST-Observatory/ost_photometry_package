@@ -9,6 +9,7 @@ from astropy.table import Table
 from photutils.psf import ImagePSF
 
 from .. import terminal_output
+from ..core.services import resolve_name
 from .models import ImageSeries, ObjectOfInterest
 from .ooi_ids import ooi_photometry_ids
 
@@ -69,7 +70,7 @@ class Observation:
             for i, name in enumerate(object_names):
                 if resolve_names:
                     try:
-                        sky_coordinates = SkyCoord.from_name(name)
+                        sky_coordinates = resolve_name(name)
                         ooi = ObjectOfInterest(
                             sky_coordinates.ra.degree,
                             sky_coordinates.dec.degree,
@@ -83,7 +84,10 @@ class Observation:
 
                         pm_ra, pm_de, _plx = query_simbad_astrometry(name)
                         ooi.pm_ra_cosdec, ooi.pm_dec = pm_ra, pm_de
-                    except name_resolve.NameResolveError:
+                    except name_resolve.NameResolveError as err:
+                        terminal_output.print_to_terminal(
+                            f"No position for {name}: {err}", style_name="WARNING"
+                        )
                         ooi = ObjectOfInterest(None, None, None, None, name)
                 else:
                     ooi = ObjectOfInterest(None, None, None, None, name)

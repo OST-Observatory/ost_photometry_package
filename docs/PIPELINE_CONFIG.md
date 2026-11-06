@@ -249,6 +249,23 @@ NGC 7789, 2025-06-19, against Stetson: zero point +11 / +8 mmag (B / V) with
 GaiaXP (Gaia itself +10 / +4 off Stetson), +28 / +48 with APASS; magnitude
 trends flat with both.
 
+**When CDS does not answer** (Strasbourg: VizieR, Simbad, Sesame, xMatch),
+the queries go to the US mirrors (`ost_photometry.core.services`; one probe
+per run, a warning names the mirror):
+
+| Service | Without CDS |
+|---------|-------------|
+| Stetson, VSX (known variables) | VizieR mirror `vizier.cfa.harvard.edu` |
+| GaiaXP | ESA Gaia archive (`gaiadr3.synthetic_photometry_gspc`, the same table) |
+| Gaia DR3 (cluster selection) | ESA Gaia archive (`gaiadr3.gaia_source`) |
+| Simbad (`simbad`, overlays, proper motions) | `simbad.harvard.edu` |
+| Object names | Simbad mirror, then NED (Sesame is CDS only) |
+| APASS, SDSS and other large VizieR catalogs | not available: `auto` skips them, a direct choice stops with a clear message |
+
+So `auto` still calibrates: Stetson in standard fields, GaiaXP elsewhere.
+`OST_PHOTOMETRY_VIZIER_SERVER` / `OST_PHOTOMETRY_SIMBAD_SERVER` fix a
+server without the probe.
+
 `auto` logs its choice ("Calibration catalog (auto): Stetson (B 237, V 261
 stars)"); sources without one of the filters are skipped without download
 (Stetson and APASS have no u, z: GaiaXP takes those). The magnitude system

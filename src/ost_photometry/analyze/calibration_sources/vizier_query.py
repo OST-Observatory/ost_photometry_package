@@ -18,6 +18,7 @@ from astropy.table import Table
 from astroquery.vizier import Vizier
 
 from ... import calibration_parameters, terminal_output
+from ...core import services
 
 
 def get_vizier_catalog(
@@ -75,11 +76,12 @@ def get_vizier_catalog(
         + catalog_properties_dict["err_columns"]
     )
 
-    v = Vizier(
+    services.require_vizier_catalog(catalog_identifier)
+    v = services.use_vizier_server(Vizier(
         columns=columns,
         row_limit=int(1e6),
         catalog=catalog_identifier,
-    )
+    ))
 
     table_list = v.query_region(
         center,
