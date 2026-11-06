@@ -444,6 +444,10 @@ class CalibrationConfig:
     #: (saturates near 14 mag, partial sky).
     calibration_auto_sources: tuple[str, ...] = ("Stetson", "APASS", "GaiaXP", "SDSS_Release_16")
     calibration_auto_min_stars: int = 20
+    #: ``calibration_source="vsp"``: only AAVSO standard fields (VSP
+    #: ``special=std_field``; elsewhere VSP returns no stars). ``False``:
+    #: the comparison stars of any field.
+    vsp_standard_fields_only: bool = True
     path_calibration_file: str | None = None
     vizier_dict: dict[str, str] | None = None
     region_to_select_calibration_stars: object = None

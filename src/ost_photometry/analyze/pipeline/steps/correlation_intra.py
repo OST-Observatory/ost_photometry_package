@@ -53,6 +53,7 @@ class CorrelationIntraStep(base.PipelineStep):
                 vizier_dict=config.vizier_dict,
                 calibration_auto_sources=tuple(config.calibration_auto_sources),
                 calibration_auto_min_stars=config.calibration_auto_min_stars,
+                vsp_standard_fields_only=config.vsp_standard_fields_only,
                 path_calibration_file=config.path_calibration_file,
                 plot_only_reference_starmap=not config.plots_for_all_images,
                 correlation_method=config.correlation_method,

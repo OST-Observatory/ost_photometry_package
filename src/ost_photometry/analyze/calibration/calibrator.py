@@ -93,6 +93,7 @@ class PhotometryCalibrator:
         vizier_dict: dict[str, str] | None = None,
         path_calibration_file: str | None = None,
         apply_sloan_to_johnson_ri: bool = True,
+        vsp_standard_fields_only: bool = True,
         indent: int = 0,
     ) -> None:
         """
@@ -119,6 +120,7 @@ class PhotometryCalibrator:
             vizier_dict=vizier_dict,
             path_calibration_file=path_calibration_file,
             apply_sloan_to_johnson_ri=apply_sloan_to_johnson_ri,
+            vsp_standard_fields_only=vsp_standard_fields_only,
             indent=indent,
         )
 

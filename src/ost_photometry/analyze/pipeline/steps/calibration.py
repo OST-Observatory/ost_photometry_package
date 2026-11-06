@@ -121,6 +121,7 @@ def _crossmatch_epochs(epochs: dict, context: AnalysisContext, config: PipelineC
             exclude_known_variables_radius=config.exclude_known_variables_radius,
             auto_sources=tuple(config.calibration_auto_sources),
             auto_min_stars=config.calibration_auto_min_stars,
+            vsp_standard_fields_only=config.vsp_standard_fields_only,
         )
     elif catalog is None:
         terminal_output.print_to_terminal(

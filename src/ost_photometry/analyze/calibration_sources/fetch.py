@@ -210,9 +210,13 @@ def _fetch_vsp_standard(
     filter_list: list[str],
     calibration_catalog_mag_range: tuple[float, float],
     indent: int,
+    standard_fields_only: bool = True,
 ) -> Table:
     """
     AAVSO VSP JSON API → standard table.
+
+    * ``standard_fields_only``: only AAVSO standard fields
+      (``special=std_field``); otherwise the comparison stars of any field.
 
     * The upper magnitude cut is sent to the API as ``maglimit``; the
       range applies to every band (magnitudes outside it become NaN, stars
@@ -227,8 +231,10 @@ def _fetch_vsp_standard(
     dec = center.dec.degree
     vsp_template = (
         "https://apps.aavso.org/vsp/api/chart/"
-        "?format=json&fov={}&maglimit={}&ra={}&dec={}&special=std_field"
+        "?format=json&fov={}&maglimit={}&ra={}&dec={}"
     )
+    if standard_fields_only:
+        vsp_template += "&special=std_field"
     r = requests.get(
         vsp_template.format(
             field_of_view_arcmin, calibration_catalog_mag_range[1], ra, dec
@@ -846,6 +852,7 @@ def fetch_standard_calibration_catalog(
     exclude_known_variables_radius: u.Quantity | float = DEFAULT_EXCLUDE_RADIUS,
     auto_sources: tuple[str, ...] = DEFAULT_AUTO_SOURCES,
     auto_min_stars: int = DEFAULT_AUTO_MIN_STARS,
+    vsp_standard_fields_only: bool = True,
 ) -> Table:
     """
     Fetch a calibration catalog and return the standard-schema ``Table``.
@@ -923,6 +930,7 @@ def fetch_standard_calibration_catalog(
             filter_list,
             calibration_catalog_mag_range,
             indent=indent + 1,
+            standard_fields_only=vsp_standard_fields_only,
         )
     elif calibration_source == "simbad_vot":
         if path_calibration_file is None:

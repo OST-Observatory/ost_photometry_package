@@ -33,11 +33,30 @@ def test_vsp_chart_is_parsed(monkeypatch):
     out = fetch._fetch_vsp_standard(SkyCoord(296.0, 54.8, unit="deg"), 20.0, ["B", "V", "I"], (10.0, 15.0), 1)
     assert '"' not in calls[0]
     assert calls[0].startswith("https://apps.aavso.org/vsp/api/chart/")  # www.aavso.org: 403
+    assert calls[0].endswith("&special=std_field")
     assert list(out["id"]) == ["000-AAA-001", "000-AAA-002"]  # V = 8 is outside 10-15
     assert np.isclose(out["ra"][0], 296.17854, atol=1e-4) and np.isclose(out["dec"][0], 54.82858, atol=1e-4)
     assert np.isclose(out["dec"][1], -1.5)
     assert np.isnan(out["mag_std_B"][1]) and np.isnan(out["err_std_B"][0])
     assert out["mag_std_B"][0] == 12.80 and out["mag_std_I"][1] == 12.2
+
+
+def test_vsp_comparison_stars_of_any_field(monkeypatch):
+    from ost_photometry.analyze.calibration_sources import fetch
+
+    calls = []
+
+    def fake_get(url, timeout=None):
+        calls.append(url)
+        return SimpleNamespace(status_code=200, json=lambda: PAYLOAD)
+
+    monkeypatch.setattr(fetch.requests, "get", fake_get)
+    fetch.fetch_standard_calibration_catalog(
+        ["B", "V"], SkyCoord(296.0, 54.8, unit="deg"), calibration_source="vsp",
+        field_of_view_arcmin=20.0, calibration_catalog_mag_range=(10.0, 15.0),
+        exclude_known_variables=False, vsp_standard_fields_only=False,
+    )
+    assert "special" not in calls[0]
 
 
 def test_apass_primed_ri_and_single_night_stars():

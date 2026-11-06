@@ -23,6 +23,10 @@ section of this file.
   Gaia archive then (same tables). Known variables: VSX cone on the mirror
   instead of xMatch. `OST_PHOTOMETRY_VIZIER_SERVER` /
   `OST_PHOTOMETRY_SIMBAD_SERVER` fix a server without the probe.
+- **`vsp_standard_fields_only`** (default `True`, as before): `False` makes
+  `calibration_source="vsp"` take the AAVSO comparison stars of any field;
+  with `True` (VSP `special=std_field`) VSP returns stars only in AAVSO
+  standard fields.
 - **Object names** resolve via Sesame, else Simbad (mirror), else NED
   (`services.resolve_name`); a name none of them knows gives a warning
   (it was silent).

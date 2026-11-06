@@ -238,7 +238,7 @@ Intra correlation uses `correlate_preserve_objects`; inter correlation resolves 
 | `APASS` | APASS DR9 (`II/336/apass9`) | B V g′ r′ i′ (R, I from r′, i′, Lupton) | all sky, about 10–17 mag; blends in crowded fields |
 | `GaiaXP` | Gaia DR3 synthetic photometry from the XP spectra (`I/360/syntphot`); a band only where its flag marks the validated G / BP−RP range; sources with BP/RP flux excess beyond 3σ (blends) dropped; errors from the fluxes (photon part only) | U B V R I and u g r i z (u noisy: about 25 mmag) | all sky, G ≲ 17.65; BP/RP windows of 3.5″ × 2.1″ blend in dense cluster cores |
 | any key of `vizier_dict` | free Vizier catalog (`calibration_parameters.vizier_dict` / `catalog_properties_dict`), e.g. `SDSS_Release_16` (u g r i z), `Pancino_2022` (all collections, no flag cut), `UCAC4`, `GSPC2.4` | per catalog | per catalog |
-| `vsp`, `simbad`, `simbad_vot` | AAVSO VSP chart, Simbad, Simbad VO table (`path_calibration_file`) | | |
+| `vsp`, `simbad`, `simbad_vot` | AAVSO VSP chart, Simbad, Simbad VO table (`path_calibration_file`) | | VSP: only AAVSO standard fields by default; `vsp_standard_fields_only=False` takes the comparison stars of any field |
 
 `GaiaXP` comes before SDSS DR12 in the default `auto` order: all sky, and
 SDSS saturates near 14 mag. It takes u and z (and g r i where APASS is too
