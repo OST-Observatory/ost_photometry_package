@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 from astropy.coordinates import SkyCoord
@@ -32,9 +34,12 @@ def test_stetson_keeps_standards_and_drops_flagged_stars(monkeypatch):
         def __init__(self, columns=None, row_limit=None):
             self.columns = columns
 
-        def query_region(self, center, radius=None, catalog=None):
+        def query_region_async(self, center, radius=None, catalog=None):
             assert catalog == fetch.STETSON_VIZIER_ID
-            return [_stetson_raw()]
+            return SimpleNamespace(status_code=200, text="<VOTABLE/>", tables=[_stetson_raw()])
+
+        def _parse_result(self, response):
+            return response.tables
 
     monkeypatch.setattr(fetch, "Vizier", FakeVizier)
     out = fetch._fetch_stetson_standard(CENTER, 15.0, (10.0, 18.0), 1)
@@ -180,9 +185,12 @@ def test_gaia_xp_flags_excess_and_flux_errors(monkeypatch):
         def __init__(self, columns=None, row_limit=None):
             pass
 
-        def query_region(self, center, radius=None, catalog=None):
+        def query_region_async(self, center, radius=None, catalog=None):
             assert catalog == fetch.GAIA_XP_VIZIER_ID
-            return [raw]
+            return SimpleNamespace(status_code=200, text="<VOTABLE/>", tables=[raw])
+
+        def _parse_result(self, response):
+            return response.tables
 
     monkeypatch.setattr(fetch, "Vizier", FakeVizier)
     out = fetch._fetch_gaia_xp_standard(CENTER, 15.0, (10.0, 17.5), 1)

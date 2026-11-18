@@ -251,13 +251,14 @@ trends flat with both.
 
 **When CDS does not answer** (Strasbourg: VizieR, Simbad, Sesame, xMatch),
 the queries go to the US mirrors (`ost_photometry.core.services`; one probe
-per run, a warning names the mirror):
+per run with a one-row query, so a CDS that answers every request with an
+error counts as down; a warning names the mirror):
 
 | Service | Without CDS |
 |---------|-------------|
 | Stetson, VSX (known variables) | VizieR mirror `vizier.cfa.harvard.edu` |
-| GaiaXP | ESA Gaia archive (`gaiadr3.synthetic_photometry_gspc`, the same table) |
-| Gaia DR3 (cluster selection) | ESA Gaia archive (`gaiadr3.gaia_source`) |
+| GaiaXP | Gaia archive of ESA, else ARI Heidelberg (`gaiadr3.synthetic_photometry_gspc`, the same table) |
+| Gaia DR3 (cluster selection) | Gaia archive of ESA, else ARI Heidelberg (`gaiadr3.gaia_source`) |
 | Simbad (`simbad`, overlays, proper motions) | `simbad.harvard.edu` |
 | Object names | Simbad mirror, then NED (Sesame is CDS only) |
 | APASS, SDSS and other large VizieR catalogs | not available: `auto` skips them, a direct choice stops with a clear message |

@@ -7,12 +7,15 @@ When CDS does not answer, queries go to the US mirrors instead:
   catalogs itself (Stetson standards, VSX) but returns nothing for the large
   ones (APASS, Gaia, Gaia XP, SDSS). :func:`require_vizier_catalog` raises
   :class:`CatalogUnavailable` for those, so a caller can fall back (Gaia:
-  the ESA archive, :func:`gaia_archive_query`) instead of taking the field
+  the Gaia archives, :func:`gaia_archive_query`) instead of taking the field
   as empty.
 * Simbad: ``simbad.harvard.edu``, a full copy.
 * Object names: Sesame, then Simbad, then NED (:func:`resolve_name`).
+* Gaia DR3 tables: the ESA archive, else the copy at ARI Heidelberg.
 
-Every server is probed once per process (``PROBE_TIMEOUT`` seconds). The
+Every server is probed once per process with a one-row query
+(``PROBE_TIMEOUT`` seconds); only an answer with data counts (CDS has also
+answered 404 for every request, which is not "up"). The
 environment variables ``OST_PHOTOMETRY_VIZIER_SERVER`` and
 ``OST_PHOTOMETRY_SIMBAD_SERVER`` fix a server without probing; a server set
 in astroquery's own configuration is tried first.
@@ -20,7 +23,10 @@ in astroquery's own configuration is tried first.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
+import re
 import warnings
 
 import numpy as np
@@ -32,12 +38,28 @@ CDS_VIZIER = "vizier.cds.unistra.fr"
 VIZIER_MIRRORS = ("vizier.cfa.harvard.edu",)
 CDS_SIMBAD = "simbad.cds.unistra.fr"
 SIMBAD_MIRRORS = ("simbad.harvard.edu",)
-GAIA_TAP_URL = "https://gea.esac.esa.int/tap-server/tap"
+#: TAP services with the Gaia DR3 tables, in the order tried. Synchronous
+#: queries: the asynchronous jobs of the ESA archive stop after 60 s of
+#: execution, which a busy archive exceeds even for a small cone.
+GAIA_TAP_URLS = (
+    "https://gea.esac.esa.int/tap-server/tap",
+    "https://gaia.ari.uni-heidelberg.de/tap",
+)
+#: Connect and read timeout of a Gaia archive query (seconds).
+GAIA_TAP_TIMEOUT = (15.0, 300.0)
 PROBE_TIMEOUT = 8.0
 VIZIER_SERVER_ENV = "OST_PHOTOMETRY_VIZIER_SERVER"
 SIMBAD_SERVER_ENV = "OST_PHOTOMETRY_SIMBAD_SERVER"
 
-_PROBE_PATH = {"vizier": "/viz-bin/VizieR", "simbad": "/simbad/"}
+#: One-row queries, and the bytes the answer must contain.
+_PROBE = {
+    "vizier": ("/viz-bin/votable?-source=B/vsx/vsx&-out.max=1", b"<TR>"),
+    "simbad": (
+        "/simbad/sim-tap/sync?request=doQuery&lang=adql&format=csv"
+        "&query=SELECT%20TOP%201%20main_id%20FROM%20basic",
+        b"main_id",
+    ),
+}
 _MIRROR_NOTE = {
     "vizier": " (large catalogs such as APASS, Gaia and SDSS are not served there)",
     "simbad": "",
@@ -45,6 +67,15 @@ _MIRROR_NOTE = {
 _reachable: dict[str, bool] = {}
 _chosen: dict[str, str] = {}
 _served: dict[tuple[str, str], bool] = {}
+
+
+@contextlib.contextmanager
+def _quiet_numpy_formatting():
+    """numpy >= 2.5 warns inside astropy's vectorised formatting (angles of
+    the query, masked VOTable cells): harmless."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="invalid value encountered in do_format")
+        yield
 
 
 class CatalogUnavailable(RuntimeError):
@@ -60,9 +91,10 @@ def reset() -> None:
 
 def _host_reachable(kind: str, host: str) -> bool:
     if host not in _reachable:
+        path, expected = _PROBE[kind]
         try:
-            response = requests.get(f"https://{host}{_PROBE_PATH[kind]}", timeout=PROBE_TIMEOUT)
-            _reachable[host] = response.status_code < 500
+            response = requests.get(f"https://{host}{path}", timeout=PROBE_TIMEOUT)
+            _reachable[host] = response.status_code == 200 and expected in response.content
         except requests.RequestException:
             _reachable[host] = False
     return _reachable[host]
@@ -74,8 +106,14 @@ def _server(kind: str, env: str, cds: str, mirrors: tuple[str, ...], configured:
         return forced
     if kind not in _chosen:
         candidates = list(dict.fromkeys([configured, cds, *mirrors]))
-        server = next((h for h in candidates if _host_reachable(kind, h)), candidates[0])
-        if server != candidates[0]:
+        server = next((h for h in candidates if _host_reachable(kind, h)), None)
+        if server is None:
+            server = candidates[0]
+            terminal_output.print_to_terminal(
+                f"None of {', '.join(candidates)} answers a test query: trying {server}",
+                style_name="WARNING",
+            )
+        elif server != candidates[0]:
             terminal_output.print_to_terminal(
                 f"{candidates[0]} does not answer: using the mirror {server}{_MIRROR_NOTE[kind]}",
                 style_name="WARNING",
@@ -99,8 +137,12 @@ def simbad_server() -> str:
 
 
 def cds_reachable() -> bool:
-    """CDS answers (VizieR as the probe; xMatch and Sesame are CDS too)."""
-    return vizier_server() == CDS_VIZIER
+    """CDS answers (VizieR as the probe; xMatch and Sesame are CDS too).
+    Not when CDS is only the last resort because no server passed the probe."""
+    server = vizier_server()
+    if os.environ.get(VIZIER_SERVER_ENV, "").strip():
+        return server == CDS_VIZIER
+    return _reachable.get(CDS_VIZIER, server == CDS_VIZIER)
 
 
 def use_vizier_server(vizier):
@@ -125,7 +167,8 @@ def _catalog_served(server: str, catalog: str) -> bool:
     probe = Vizier(row_limit=1, columns=["*"])
     probe.VIZIER_SERVER = server
     try:
-        tables = probe.get_catalogs(catalog)
+        with _quiet_numpy_formatting():
+            tables = probe.get_catalogs(catalog)
     except Exception:
         return False
     return bool(tables) and len(tables[0]) > 0
@@ -147,19 +190,81 @@ def require_vizier_catalog(catalog: str) -> None:
         )
 
 
-def gaia_archive_query(adql: str, *, maxrec: int = 1_000_000):
-    """Table of an ADQL query on the ESA Gaia archive (asynchronous job; a
-    warning when the archive truncates the result)."""
-    import pyvo
+def _tap_sync(url: str, adql: str, maxrec: int):
+    """Table of a synchronous TAP query; raises on HTTP or query errors."""
+    from astropy.io.votable import parse
 
-    result = pyvo.dal.TAPService(GAIA_TAP_URL).run_async(adql, maxrec=maxrec)
-    table = result.to_table()
-    if str(getattr(result, "query_status", "")).upper() == "OVERFLOW":
+    response = requests.post(
+        f"{url}/sync",
+        data={"REQUEST": "doQuery", "LANG": "ADQL", "FORMAT": "votable",
+              "MAXREC": str(int(maxrec)), "QUERY": adql},
+        timeout=GAIA_TAP_TIMEOUT,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        votable = parse(io.BytesIO(response.content))
+    status = {
+        info.name: (info.value, info.content)
+        for resource in votable.resources
+        for info in resource.infos
+    }.get("QUERY_STATUS", ("OK", ""))
+    if str(status[0]).upper() == "ERROR" or response.status_code != 200:
+        raise RuntimeError(f"HTTP {response.status_code}: {(status[1] or '').strip()[:200]}")
+    with _quiet_numpy_formatting():
+        table = votable.get_first_table().to_table()
+    #   the ESA archive answers SOURCE_ID, ARI Heidelberg source_id (the Gaia
+    #   columns are lower case)
+    table.rename_columns(table.colnames, [name.lower() for name in table.colnames])
+    if str(status[0]).upper() == "OVERFLOW":
         terminal_output.print_to_terminal(
             f"Gaia archive: result truncated at {len(table)} rows",
             style_name="WARNING",
         )
     return table
+
+
+_VIZIER_ERROR = re.compile(r'<INFO name="Error" value="([^"]*)"')
+
+
+def query_vizier_region(vizier, coordinates, **kwargs):
+    """``vizier.query_region(coordinates, **kwargs)``, but an error answer of
+    VizieR raises :class:`CatalogUnavailable`: astroquery returns an empty
+    result for it, which reads as "no stars in the field" (CDS has answered
+    404 pages, the CfA mirror "No server is available for connection")."""
+    server = getattr(vizier, "VIZIER_SERVER", "?")
+    with _quiet_numpy_formatting():
+        response = vizier.query_region_async(coordinates, **kwargs)
+    if response.status_code != 200:
+        raise CatalogUnavailable(f"Vizier ({server}) answered HTTP {response.status_code}")
+    text = response.text
+    if 'name="QUERY_STATUS" value="ERROR"' in text:
+        detail = " ".join(m.strip() for m in _VIZIER_ERROR.findall(text) if m.strip())
+        raise CatalogUnavailable(
+            f"Vizier ({server}) answered with an error: {detail or 'no detail'}"
+        )
+    with _quiet_numpy_formatting():
+        return vizier._parse_result(response)
+
+
+def gaia_archive_query(adql: str, *, maxrec: int = 1_000_000):
+    """Table of an ADQL query on the Gaia DR3 tables: the ESA archive, else
+    the next service of :data:`GAIA_TAP_URLS` (synchronous queries, a
+    warning when the archive truncates the result).
+
+    Raises :class:`CatalogUnavailable` when no service answers.
+    """
+    errors = []
+    for url in GAIA_TAP_URLS:
+        try:
+            return _tap_sync(url, adql, maxrec)
+        except Exception as err:
+            errors.append(f"{url}: {_short(err)}")
+            if url != GAIA_TAP_URLS[-1]:
+                terminal_output.print_to_terminal(
+                    f"Gaia archive {url} failed ({_short(err)}); trying the next one",
+                    style_name="WARNING",
+                )
+    raise CatalogUnavailable(f"Gaia archives not available ({'; '.join(errors)})")
 
 
 def _first_position(table, ra: str, dec: str):
@@ -223,11 +328,12 @@ __all__ = [
     "CDS_SIMBAD",
     "CDS_VIZIER",
     "CatalogUnavailable",
-    "GAIA_TAP_URL",
+    "GAIA_TAP_URLS",
     "SIMBAD_MIRRORS",
     "VIZIER_MIRRORS",
     "cds_reachable",
     "gaia_archive_query",
+    "query_vizier_region",
     "require_vizier_catalog",
     "reset",
     "resolve_name",

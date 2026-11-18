@@ -19,7 +19,7 @@ Design
 * **GaiaXP**: Gaia DR3 synthetic photometry (Vizier ``I/360/syntphot``),
   Johnson-Kron-Cousins UBVRI and SDSS ugriz from the XP spectra, all sky to
   G ≈ 17.65. When Vizier cannot deliver it (CDS down), the same table comes
-  from the ESA Gaia archive.
+  from the Gaia archives (ESA, else ARI Heidelberg).
 * Vizier and Simbad queries go to a mirror when CDS does not answer
   (:mod:`ost_photometry.core.services`); a catalog the mirror does not serve
   raises :class:`~ost_photometry.core.services.CatalogUnavailable`.
@@ -64,7 +64,7 @@ _STETSON_BANDS = ("U", "B", "V", "R", "I")
 #: Montegriffo et al. 2023): JKC UBVRI and SDSS ugriz, standardised.
 GAIA_XP_VIZIER_ID = "I/360/syntphot"
 _GAIA_XP_BANDS = ("U", "B", "V", "R", "I", "u", "g", "r", "i", "z")
-#: The same table in the ESA Gaia archive (fallback when Vizier is down):
+#: The same table in the Gaia archives (fallback when Vizier is down):
 #: column prefix per band.
 GAIA_XP_ESA_TABLE = "gaiadr3.synthetic_photometry_gspc"
 _GAIA_XP_ESA_PREFIX = {
@@ -483,7 +483,8 @@ def _fetch_apass9_standard(
         ],
         row_limit=-1,
     )
-    result = services.use_vizier_server(v).query_region(
+    result = services.query_vizier_region(
+        services.use_vizier_server(v),
         center,
         radius=field_of_view_arcmin * u.arcmin,
         catalog=APASS_VIZIER_ID,
@@ -597,7 +598,8 @@ def _fetch_stetson_standard(
     columns = ["RAJ2000", "DEJ2000", "Collect", "VarFlag", "BinFlag"]
     for band in _STETSON_BANDS:
         columns += [f"{band}mag", f"e_{band}mag"]
-    result = services.use_vizier_server(Vizier(columns=columns, row_limit=-1)).query_region(
+    result = services.query_vizier_region(
+        services.use_vizier_server(Vizier(columns=columns, row_limit=-1)),
         center,
         radius=field_of_view_arcmin * u.arcmin,
         catalog=STETSON_VIZIER_ID,
@@ -660,7 +662,8 @@ def _gaia_xp_from_vizier(center: SkyCoord, field_of_view_arcmin: float, indent: 
     try:
         services.require_vizier_catalog(GAIA_XP_VIZIER_ID)
         _print(f"Downloading Gaia DR3 synthetic photometry (Vizier {GAIA_XP_VIZIER_ID})", indent=indent)
-        result = services.use_vizier_server(Vizier(columns=columns, row_limit=-1)).query_region(
+        result = services.query_vizier_region(
+            services.use_vizier_server(Vizier(columns=columns, row_limit=-1)),
             center,
             radius=field_of_view_arcmin * u.arcmin,
             catalog=GAIA_XP_VIZIER_ID,
@@ -668,12 +671,12 @@ def _gaia_xp_from_vizier(center: SkyCoord, field_of_view_arcmin: float, indent: 
         return result[0] if result else None
     except (services.CatalogUnavailable, requests.RequestException, ConnectionError, TimeoutError) as err:
         _print(f"Vizier not available ({err})", indent=indent + 1, style_name="WARNING")
-    _print(f"Downloading Gaia DR3 synthetic photometry (ESA Gaia archive, {GAIA_XP_ESA_TABLE})", indent=indent)
+    _print(f"Downloading Gaia DR3 synthetic photometry (Gaia archive, {GAIA_XP_ESA_TABLE})", indent=indent)
     return _gaia_xp_from_esa(center, field_of_view_arcmin)
 
 
 def _gaia_xp_from_esa(center: SkyCoord, field_of_view_arcmin: float) -> Table:
-    """Gaia XP synthetic photometry from the ESA Gaia archive, renamed to
+    """Gaia XP synthetic photometry from the Gaia archives, renamed to
     the Vizier columns of ``I/360/syntphot`` (``c_star`` is
     ``E(BP/RP)corr``; positions of ``gaia_source``, epoch 2016.0 as in
     Vizier)."""
@@ -716,7 +719,7 @@ def _fetch_gaia_xp_standard(
       are dropped.
     * Errors from the fluxes: ``1.0857·e_F/F``.
     * Magnitude range on V (else r, else the first band), as for APASS.
-    * From Vizier; when Vizier cannot deliver it, from the ESA Gaia archive
+    * From Vizier; when Vizier cannot deliver it, from the Gaia archives
       (:func:`_gaia_xp_from_esa`, same table and columns).
     """
     flux_name = {b: f"F{b}" for b in _GAIA_XP_BANDS}

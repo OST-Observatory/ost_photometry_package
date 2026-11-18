@@ -79,11 +79,12 @@ def get_vizier_catalog(
     services.require_vizier_catalog(catalog_identifier)
     v = services.use_vizier_server(Vizier(
         columns=columns,
-        row_limit=int(1e6),
+        row_limit=-1,
         catalog=catalog_identifier,
     ))
 
-    table_list = v.query_region(
+    table_list = services.query_vizier_region(
+        v,
         center,
         radius=field_of_view_arcmin * u.arcmin,
     )

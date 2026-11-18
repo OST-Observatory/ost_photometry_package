@@ -116,16 +116,16 @@ def query_gaia_dr3_cone(
         services.require_vizier_catalog(catalog)
         vizier = services.use_vizier_server(Vizier(
             columns=list(GAIA_DR3_COLUMNS),
-            row_limit=1_000_000,
+            row_limit=-1,
             catalog=catalog,
             column_filters={"Gmag": f"<{float(g_mag_limit)}"},
         ))
-        result = vizier.query_region(center, radius=radius)
+        result = services.query_vizier_region(vizier, center, radius=radius)
     except (services.CatalogUnavailable, requests.RequestException, ConnectionError, TimeoutError) as err:
         if catalog != GAIA_DR3_CATALOG:
             raise
         terminal_output.print_to_terminal(
-            f"Vizier not available ({err}); Gaia DR3 from the ESA Gaia archive",
+            f"Vizier not available ({err}); Gaia DR3 from the Gaia archives",
             style_name="WARNING",
         )
         result = [_gaia_dr3_cone_from_esa(center, radius, g_mag_limit)]

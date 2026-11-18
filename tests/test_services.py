@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 from types import SimpleNamespace
 
 import astropy.units as u
@@ -23,9 +24,11 @@ def _fresh_probe_state():
     services.reset()
 
 
-@pytest.fixture
-def cds_down(monkeypatch):
-    """CDS does not answer, the US mirrors do; returns the probed URLs."""
+_PROBE_ANSWER = b'<TABLEDATA><TR><TD>1</TD></TR></TABLEDATA>\nmain_id\n"HD 1"'
+
+
+def _fake_cds(monkeypatch, cds_answer):
+    """Probe answers: ``cds_answer(url)`` for CDS, data for the mirrors."""
     monkeypatch.delenv(services.VIZIER_SERVER_ENV, raising=False)
     monkeypatch.delenv(services.SIMBAD_SERVER_ENV, raising=False)
     probed = []
@@ -33,11 +36,20 @@ def cds_down(monkeypatch):
     def fake_get(url, timeout=None):
         probed.append(url)
         if "unistra.fr" in url:
-            raise requests.ConnectionError("no route to host")
-        return SimpleNamespace(status_code=200)
+            return cds_answer(url)
+        return SimpleNamespace(status_code=200, content=_PROBE_ANSWER)
 
     monkeypatch.setattr(services.requests, "get", fake_get)
     return probed
+
+
+@pytest.fixture
+def cds_down(monkeypatch):
+    """CDS does not answer, the US mirrors do; returns the probed URLs."""
+    def no_route(url):
+        raise requests.ConnectionError("no route to host")
+
+    return _fake_cds(monkeypatch, no_route)
 
 
 def test_mirror_is_used_when_cds_does_not_answer(cds_down, monkeypatch):
@@ -57,6 +69,21 @@ def test_mirror_is_used_when_cds_does_not_answer(cds_down, monkeypatch):
     assert vizier.VIZIER_SERVER == "vizier.cfa.harvard.edu"
     simbad = services.use_simbad_server(SimpleNamespace(server=services.CDS_SIMBAD))
     assert simbad.server == "simbad.harvard.edu"
+
+
+def test_cds_answering_404_counts_as_down(monkeypatch):
+    """CDS has answered every request with 404 (and a page that would pass
+    a status check): only a probe answer with data counts."""
+    _fake_cds(monkeypatch, lambda url: SimpleNamespace(status_code=404, content=b"<html>Not Found</html>"))
+    monkeypatch.setattr(services.terminal_output, "print_to_terminal", lambda *a, **k: None)
+    assert services.vizier_server() == "vizier.cfa.harvard.edu"
+    assert services.simbad_server() == "simbad.harvard.edu"
+    services.reset()
+    _fake_cds(monkeypatch, lambda url: SimpleNamespace(status_code=200, content=b"<html>Maintenance</html>"))
+    assert services.vizier_server() == "vizier.cfa.harvard.edu"
+    services.reset()
+    _fake_cds(monkeypatch, lambda url: SimpleNamespace(status_code=200, content=_PROBE_ANSWER))
+    assert services.vizier_server() == services.CDS_VIZIER
 
 
 def test_forced_server_is_not_probed(monkeypatch):
@@ -236,3 +263,105 @@ def test_known_variables_skip_xmatch_when_cds_does_not_answer(monkeypatch):
     catalog = Table({"ra": [359.30, 359.31, 359.32], "dec": [56.7] * 3})
     out = known_variables.drop_catalog_rows_near_known_variables(catalog, CENTER, 15.0)
     assert list(out["ra"]) == [359.30, 359.32]
+
+
+def _votable_bytes(table: Table, status: str | None = None) -> bytes:
+    from astropy.io.votable import from_table
+    from astropy.io.votable.tree import Info
+
+    votable = from_table(table)
+    if status is not None:
+        votable.resources[0].infos.append(Info(name="QUERY_STATUS", value=status))
+    buffer = io.BytesIO()
+    votable.to_xml(buffer)
+    return buffer.getvalue()
+
+
+def test_gaia_archive_falls_back_to_the_next_service(monkeypatch):
+    """ESA fails (timeout, or an error answer): ARI Heidelberg serves the
+    same tables; synchronous queries with a timeout."""
+    messages = []
+    monkeypatch.setattr(services.terminal_output, "print_to_terminal",
+                        lambda text, **kw: messages.append(text))
+    posted = []
+
+    def fake_post(url, data=None, timeout=None):
+        posted.append((url, data["QUERY"], timeout))
+        if "esac" in url:
+            raise requests.ReadTimeout("read timed out")
+        #   the ESA archive answers SOURCE_ID: lower case like ARI's columns
+        return SimpleNamespace(status_code=200, content=_votable_bytes(Table({"SOURCE_ID": [1, 2]})))
+
+    monkeypatch.setattr(services.requests, "post", fake_post)
+    table = services.gaia_archive_query("SELECT source_id FROM gaiadr3.gaia_source")
+    assert list(table["source_id"]) == [1, 2]
+    assert [url for url, _, _ in posted] == [f"{u}/sync" for u in services.GAIA_TAP_URLS]
+    assert all(timeout == services.GAIA_TAP_TIMEOUT for _, _, timeout in posted)
+    assert len(messages) == 1 and "read timed out" in messages[0]
+
+    def error_then_overflow(url, data=None, timeout=None):
+        if "esac" in url:
+            return SimpleNamespace(status_code=400, content=_votable_bytes(Table({"x": [0]}), "ERROR"))
+        return SimpleNamespace(status_code=200, content=_votable_bytes(Table({"source_id": [5]}), "OVERFLOW"))
+
+    messages.clear()
+    monkeypatch.setattr(services.requests, "post", error_then_overflow)
+    assert list(services.gaia_archive_query("SELECT ...")["source_id"]) == [5]
+    assert "HTTP 400" in messages[0] and "truncated at 1 rows" in messages[1]
+
+
+def test_gaia_archive_unavailable_when_no_service_answers(monkeypatch):
+    def down(url, data=None, timeout=None):
+        raise requests.ConnectionError(f"{url} unreachable")
+
+    monkeypatch.setattr(services.requests, "post", down)
+    monkeypatch.setattr(services.terminal_output, "print_to_terminal", lambda *a, **k: None)
+    with pytest.raises(services.CatalogUnavailable, match="ari.uni-heidelberg"):
+        services.gaia_archive_query("SELECT ...")
+
+
+class _FakeVizierAnswer:
+    """Vizier double: the answer text of ``query_region_async``."""
+
+    VIZIER_SERVER = "vizier.cfa.harvard.edu"
+
+    def __init__(self, text, status_code=200):
+        self.text = text
+        self.status_code = status_code
+
+    def query_region_async(self, coordinates, **kwargs):
+        return SimpleNamespace(status_code=self.status_code, text=self.text)
+
+    def _parse_result(self, response):
+        return ["parsed"]
+
+
+def test_vizier_error_answer_is_not_an_empty_field():
+    """The CfA mirror answered B/vsx/vsx with QUERY_STATUS ERROR; astroquery
+    turns that into an empty result ("no variables in the field")."""
+    error = (
+        '<INFO name="Error" value="Couldn\'t connect with server"/>'
+        '<INFO name="Error" value=" "/>'
+        '<INFO name="Error" value="No server is available for connection"/>'
+        '<INFO name="QUERY_STATUS" value="ERROR"></INFO>'
+    )
+    with pytest.raises(services.CatalogUnavailable,
+                       match="cfa.harvard.edu.*Couldn't connect with server No server is available"):
+        services.query_vizier_region(_FakeVizierAnswer(error), CENTER, radius=15 * u.arcmin)
+    ok = '<INFO name="QUERY_STATUS" value="OK"/><TABLE></TABLE>'
+    assert services.query_vizier_region(_FakeVizierAnswer(ok), CENTER, radius=15 * u.arcmin) == ["parsed"]
+    #   CDS has answered with 404 pages, which astroquery reads as "no tables"
+    with pytest.raises(services.CatalogUnavailable, match="HTTP 404"):
+        services.query_vizier_region(_FakeVizierAnswer("<html>Not Found</html>", 404), CENTER)
+
+
+def test_warning_when_no_server_passes_the_probe(monkeypatch):
+    messages = []
+    monkeypatch.setattr(services.terminal_output, "print_to_terminal",
+                        lambda text, **kw: messages.append(text))
+    _fake_cds(monkeypatch, lambda url: SimpleNamespace(status_code=404, content=b""))
+    monkeypatch.setattr(services.requests, "get",
+                        lambda url, timeout=None: SimpleNamespace(status_code=503, content=b""))
+    assert services.vizier_server() == services.CDS_VIZIER
+    assert len(messages) == 1 and "None of vizier.cds.unistra.fr, vizier.cfa.harvard.edu" in messages[0]
+    assert not services.cds_reachable()  # CDS only as the last resort: no xMatch, no Sesame
