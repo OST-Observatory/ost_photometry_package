@@ -11,6 +11,15 @@ section of this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-19
+
+Calibration keeps working when CDS in Strasbourg is down: VizieR and Simbad
+queries go to the US mirrors, Gaia XP and Gaia DR3 come from the Gaia
+archives (ESA, else ARI Heidelberg), object names resolve via Simbad or
+NED, and error answers no longer pass for empty fields. AAVSO VSP works
+again (new address) and can take the comparison stars of any field.
+Quieter terminal output for parallel extraction.
+
 ### Added
 
 - **Calibration without CDS** (`ost_photometry.core.services`): when CDS
@@ -932,7 +941,8 @@ paths removed.
 Last version on `main` before this changelog. It was not tagged; detailed notes
 start with later versions. Git history before that date remains the record.
 
-[Unreleased]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/OST-Observatory/ost_photometry_package/compare/v0.5.0...v0.6.0
