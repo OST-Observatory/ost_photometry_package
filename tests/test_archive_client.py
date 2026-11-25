@@ -507,3 +507,35 @@ def test_paging_halves_the_page_size_after_a_timeout():
     assert seen[:3] == [(1, 200), (1, 100), (1, 50)] and (2, 50) in seen
     assert any("retrying with 100 entries per page" in line for line in lines)
 
+
+
+def test_dark_finder_without_temperature_sends_valid_json():
+    """Lights without CCD-TEMP (SBIG STF-8300): NaN is no JSON; the finder
+    searches every temperature (the archive keeps unknown ones as -999)."""
+    import json
+    import math
+
+    bodies = []
+
+    def finder(method, params, body, headers):
+        json.dumps(body, allow_nan=False)  # what requests does before sending
+        bodies.append(body)
+        return FakeResponse(200, {"count": 0, "results": []})
+
+    routes = {
+        "/data_archive/api/users/auth/csrf/": lambda m, p, b, h: FakeResponse(
+            200, {"csrfToken": "tok"}),
+        "/data_archive/api/runs/dark-finder/": finder,
+    }
+    client = ArchiveClient(BASE, session=FakeSession(routes), rate_per_minute=0)
+    client.authenticated = True
+    for temperature in (float("nan"), None):
+        assert client.find_calibration_frames(
+            "dark", exptime=60.0, ccd_temp=temperature, instrument="STF-8300",
+            naxis1=3352, naxis2=2532, temp_tolerance=2.0) == []
+    for body in bodies:
+        assert body["ccd_temp"] - body["temp_tolerance"] <= -999 <= body["ccd_temp"] + body["temp_tolerance"]
+    client.find_calibration_frames("bias", ccd_temp=-30.0, instrument="QHY600M",
+                                   naxis1=4788, naxis2=3194, temp_tolerance=2.0)
+    assert bodies[-1]["ccd_temp"] == -30.0 and bodies[-1]["temp_tolerance"] == 2.0
+    assert not any(math.isnan(v) for b in bodies for v in b.values() if isinstance(v, float))

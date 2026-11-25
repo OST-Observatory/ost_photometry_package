@@ -374,8 +374,10 @@ class DarkNeed:
     def describe(self) -> str:
         camera, nx, ny, xbin, ybin, gain, offset, mode = self.setup
         what = f"{self.exptime:g} s darks" if self.kind == "dark" else "bias"
+        temperature = (f"{self.temperature:.0f} C" if math.isfinite(self.temperature)
+                       else "unknown temperature")
         return (f"{what}: {camera} {nx}x{ny} bin {xbin}x{ybin} gain {gain:g} "
-                f"offset {offset:g} {mode or '?'} at {self.temperature:.0f} C "
+                f"offset {offset:g} {mode or '?'} at {temperature} "
                 f"({self.n_frames} lights)")
 
 

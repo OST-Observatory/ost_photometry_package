@@ -11,6 +11,16 @@ section of this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Archive dark / bias finder for lights without a sensor temperature**
+  (no `CCD-TEMP`, e.g. SBIG STF-8300): the request sent `NaN`, which is no
+  JSON, and `1_fetch.py` stopped. Now it searches frames of any temperature
+  (also those the archive keeps as unknown, -999), as an unknown
+  temperature matches any dark in the reduction; the run closest in time
+  is taken as before. The log says "at unknown temperature" instead of
+  "at nan C".
+
 ## [0.9.0] - 2026-11-19
 
 Calibration keeps working when CDS in Strasbourg is down: VizieR and Simbad

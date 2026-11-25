@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import getpass
 import hashlib
+import math
 import os
 import time
 from collections.abc import Callable, Iterable, Mapping
@@ -29,6 +30,10 @@ ENV_PASSWORD = "OST_ARCHIVE_PASSWORD"
 #: Requests per minute the client allows itself (server: 60 anon / 600 user).
 RATE_ANONYMOUS = 50
 RATE_AUTHENTICATED = 500
+
+#: Dark finder temperature tolerance for lights without a temperature: any
+#: frame, also the archive's "unknown" (-999).
+ANY_TEMPERATURE = 10_000.0
 
 _RETRY_STATUS = frozenset({429, 502, 503, 504})
 
@@ -350,7 +355,7 @@ class ArchiveClient:
         self,
         kind: str,
         *,
-        ccd_temp: float,
+        ccd_temp: float | None,
         instrument: str,
         naxis1: int,
         naxis2: int,
@@ -370,6 +375,10 @@ class ArchiveClient:
         gain / offset only when they are positive and knows no readout
         mode; callers check those on the results / headers. At most
         ``limit`` (<= 100) results, newest first.
+
+        ``ccd_temp`` unknown (``None`` / NaN, lights without CCD-TEMP): frames
+        of any temperature, also those the archive keeps without one (-999),
+        as an unknown temperature matches any dark in the reduction.
         """
         if kind not in ("dark", "bias"):
             raise ValueError(f"kind must be 'dark' or 'bias', got {kind!r}")
@@ -377,12 +386,13 @@ class ArchiveClient:
             raise ArchiveError("The archive dark finder needs a login.")
         if kind == "dark" and not (exptime and exptime > 0):
             raise ValueError("darks need an exposure time")
+        known_temperature = ccd_temp is not None and math.isfinite(float(ccd_temp))
         payload: dict[str, Any] = {
             "frame_type": kind,
             "exptime": float(exptime) if kind == "dark" else 0.0,
             "exptime_tolerance": float(exptime_tolerance),
-            "ccd_temp": float(ccd_temp),
-            "temp_tolerance": float(temp_tolerance),
+            "ccd_temp": float(ccd_temp) if known_temperature else 0.0,
+            "temp_tolerance": float(temp_tolerance) if known_temperature else ANY_TEMPERATURE,
             "instrument": str(instrument),
             "naxis1": int(naxis1),
             "naxis2": int(naxis2),
