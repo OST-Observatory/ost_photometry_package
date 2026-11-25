@@ -539,3 +539,29 @@ def test_dark_finder_without_temperature_sends_valid_json():
                                    naxis1=4788, naxis2=3194, temp_tolerance=2.0)
     assert bodies[-1]["ccd_temp"] == -30.0 and bodies[-1]["temp_tolerance"] == 2.0
     assert not any(math.isnan(v) for b in bodies for v in b.values() if isinstance(v, float))
+
+
+def test_dark_finder_warns_about_lights_without_temperature(tmp_path):
+    from ost_photometry.archive.cache import FileCache
+    from ost_photometry.archive.fetch import FetchReport, fetch_missing_calibrations
+
+    def finder(method, params, body, headers):
+        return FakeResponse(200, {"count": 0, "results": []})
+
+    routes = {
+        "/data_archive/api/users/auth/csrf/": lambda m, p, b, h: FakeResponse(
+            200, {"csrfToken": "tok"}),
+        "/data_archive/api/runs/dark-finder/": finder,
+    }
+    client = ArchiveClient(BASE, session=FakeSession(routes), rate_per_minute=0)
+    client.authenticated = True
+    light = {"frame_id": "1", "pk": 1, "frame_type": "light", "imagetyp": "Light Frame",
+             "exptime": 60.0, "instrume": "SBIG STF-8300", "naxis1": 3352, "naxis2": 2532,
+             "xbinning": 1, "ybinning": 1, "jd": 2459647.5, "role": "target",
+             "local_path": str(tmp_path / "l1.fit"),
+             "set_temp": float("nan"), "ccd_temp": float("nan")}
+    report = FetchReport()
+    fetch_missing_calibrations(client, [light], FileCache(tmp_path), report=report)
+    lines = [line for line in report.dark_finder if "sensor temperature unknown" in line]
+    assert lines and "unknown_temperature_policy='exclude_lights'" in lines[0]
+    assert "at unknown temperature" in lines[0]

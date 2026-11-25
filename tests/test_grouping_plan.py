@@ -456,3 +456,74 @@ def test_dark_exposure_tolerance_is_relative():
     assert dark_exptime_tolerance(123.0, 0.5, 0.05) == pytest.approx(6.15)
     assert dark_exptime_tolerance(2.0, 0.5, 0.05) == 0.5
 
+
+
+# ---------------------------------------------------------------------------
+# Frames without a sensor temperature
+# ---------------------------------------------------------------------------
+
+
+def test_unknown_temperature_matches_any_temperature_with_a_note():
+    nan = float("nan")
+    frames = _with_types([_calib_row(1, "bias", JD_NIGHT1, 0.0),
+                          _calib_row(2, "dark", JD_NIGHT1, 60.0)])  # -20 C
+    lights = _with_types([_calib_row(10, "light", JD_NIGHT1 + 0.2, 60.0, temp=nan)])
+    (strict,) = assign_bias_dark(lights, frames)
+    assert strict.darks is None and strict.bias is None
+    (result,) = assign_bias_dark(lights, frames, match_any_temperature=True)
+    assert result.darks is not None and result.bias is not None
+    assert result.missing_exptimes == []
+    assert "frames at unknown temperature, bias at -20 C, dark at -20 C" in result.notes[0]
+
+    # lights with a temperature, darks without one
+    frames = _with_types([_calib_row(1, "bias", JD_NIGHT1, 0.0, temp=nan),
+                          _calib_row(2, "dark", JD_NIGHT1, 60.0, temp=nan)])
+    lights = _with_types([_calib_row(10, "light", JD_NIGHT1 + 0.2, 60.0)])
+    (result,) = assign_bias_dark(lights, frames, match_any_temperature=True)
+    assert result.darks is not None and "frames at -20 C, bias at unknown temperature" in result.notes[0]
+
+
+def test_same_temperature_calibration_is_preferred():
+    nan = float("nan")
+    frames = _with_types([_calib_row(1, "bias", JD_NIGHT1, 0.0, temp=nan),
+                          _calib_row(2, "dark", JD_NIGHT1, 60.0, temp=nan),
+                          _calib_row(3, "bias", JD_NIGHT1 + 0.01, 0.0),
+                          _calib_row(4, "dark", JD_NIGHT1 + 0.01, 60.0)])
+    lights = _with_types([_calib_row(10, "light", JD_NIGHT1 + 0.2, 60.0, temp=nan)])
+    (result,) = assign_bias_dark(lights, frames, match_any_temperature=True)
+    assert result.darks.frame_ids == ["2"] and result.bias.frame_ids == ["1"]
+    assert not any("unknown" in n for n in result.notes)
+
+
+def _without_temperature(manifest, prefix):
+    rows = np.array([str(n).startswith(prefix) for n in manifest["file_name"]])
+    manifest["set_temp"][rows] = np.nan
+    manifest["ccd_temp"][rows] = np.nan
+    return int(np.count_nonzero(rows))
+
+
+def test_unknown_temperature_policy_in_the_plan(dataset, tmp_path):
+    manifest = manifest_from_directory(dataset)
+    n = _without_temperature(manifest, "b")  # the M57 lights
+    plan = build_calibration_plan(manifest, work_dir=tmp_path / "w", solver=PlanSolver(),
+                                  log=lambda *_: None)
+    assert any(f"{n} lights with unknown sensor temperature: bias / darks of any" in line
+               for line in plan.report)
+    m57 = [u for u in plan.units if any(str(f) in u.light_ids for f in manifest["frame_id"]
+                                        [np.char.startswith(manifest["file_name"].astype(str), "b")])]
+    assert m57 and m57[0].dark_id and any("sensor temperature unknown" in n for n in m57[0].notes)
+
+    excluded = build_calibration_plan(
+        manifest, work_dir=tmp_path / "w", solver=PlanSolver(),
+        settings=PlanSettings(unknown_temperature_policy="exclude_lights"), log=lambda *_: None)
+    assert any(f"{n} lights with unknown sensor temperature excluded" in line
+               for line in excluded.report)
+    kept = {f for u in excluded.units for f in u.light_ids}
+    b_ids = {str(f) for f, name in zip(manifest["frame_id"], manifest["file_name"], strict=True)
+             if str(name).startswith("b")}
+    assert kept and not kept & b_ids
+
+    with pytest.raises(ValueError, match="unknown_temperature_policy"):
+        build_calibration_plan(manifest, work_dir=tmp_path / "w", solver=PlanSolver(),
+                               settings=PlanSettings(unknown_temperature_policy="ignore"),
+                               log=lambda *_: None)

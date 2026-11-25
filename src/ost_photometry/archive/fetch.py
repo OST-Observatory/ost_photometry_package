@@ -537,6 +537,12 @@ def fetch_missing_calibrations(
         camera, nx, ny, xbin, ybin, gain, offset, mode = need.setup
         temperature = need.temperature if math.isfinite(need.temperature) else _number(
             need.example, "ccd_temp")
+        if not math.isfinite(temperature):
+            report.dark_finder.append(
+                f"{need.describe()}: sensor temperature unknown, frames of any temperature "
+                "searched (2_classify_and_group.py: unknown_temperature_policy="
+                "'exclude_lights' leaves these lights out)"
+            )
         try:
             found = client.find_calibration_frames(
                 need.kind, exptime=need.exptime if need.kind == "dark" else None,

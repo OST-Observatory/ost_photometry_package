@@ -11,15 +11,25 @@ section of this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`unknown_temperature_policy`** (`PlanSettings`, archive pipeline
+  `2_classify_and_group.py`) for frames without a sensor temperature (no
+  `CCD-TEMP` / `SET-TEMP`, e.g. SBIG STF-8300). `"match_any"` (default):
+  bias / darks of the same camera setup at any temperature when none of the
+  same temperature cover the exposure times; same-temperature sets still
+  win, every such choice is a warning in the unit notes and the report.
+  `"exclude_lights"`: such lights are not reduced. Before, they only got
+  calibration frames that also lacked a temperature.
+
 ### Fixed
 
-- **Archive dark / bias finder for lights without a sensor temperature**
-  (no `CCD-TEMP`, e.g. SBIG STF-8300): the request sent `NaN`, which is no
-  JSON, and `1_fetch.py` stopped. Now it searches frames of any temperature
-  (also those the archive keeps as unknown, -999), as an unknown
-  temperature matches any dark in the reduction; the run closest in time
-  is taken as before. The log says "at unknown temperature" instead of
-  "at nan C".
+- **Archive dark / bias finder for lights without a sensor temperature**:
+  the request sent `NaN`, which is no JSON, and `1_fetch.py` stopped. Now it
+  searches frames of any temperature (also those the archive keeps as
+  unknown, -999), matching `unknown_temperature_policy="match_any"`, with a
+  warning in the fetch report; the run closest in time is taken as before.
+  The log says "at unknown temperature" instead of "at nan C".
 
 ## [0.9.0] - 2026-11-19
 

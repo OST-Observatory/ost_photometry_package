@@ -187,6 +187,96 @@ def _covers(darks: CalibrationSet, exptime: float, tolerance: float, bias_ok: bo
     return bias_ok and any(d >= exptime for d in darks.exptimes)
 
 
+UNKNOWN_TEMPERATURE = "t?"
+
+
+def _setup_and_temperature(electronic_id: str) -> tuple[str, str]:
+    """Electronic key and temperature suffix (``t-30``, ``t?``) of an id."""
+    key, _sep, suffix = electronic_id.rpartition("|")
+    return key, suffix
+
+
+def _temperature_text(electronic_id: str) -> str:
+    suffix = _setup_and_temperature(electronic_id)[1]
+    return "unknown temperature" if suffix == UNKNOWN_TEMPERATURE else f"{suffix[1:]} C"
+
+
+def _relaxed(entry: CalibrationSet, eid: str) -> bool:
+    """Same setup, temperature unknown on one side (``match_any_temperature``)."""
+    key, suffix = _setup_and_temperature(eid)
+    entry_key, entry_suffix = _setup_and_temperature(entry.electronic_id)
+    return (entry.electronic_id != eid and entry_key == key
+            and UNKNOWN_TEMPERATURE in (suffix, entry_suffix))
+
+
+def _choose_bias_dark(
+    eid: str, night: str, exptimes: list[float], centre: float,
+    bias_sets: list[CalibrationSet], dark_sets: list[CalibrationSet], *,
+    exptime_tolerance: float, exptime_tolerance_fraction: float, window_days: float,
+) -> DarkAssignment:
+    """Nearest bias and covering darks among the given sets (see
+    :func:`assign_bias_dark`)."""
+    result = DarkAssignment(eid, night, exptimes)
+
+    def distance(entry: CalibrationSet) -> float:
+        if not (math.isfinite(entry.jd) and math.isfinite(centre)):
+            return float("inf")
+        return abs(entry.jd - centre)
+
+    biases = [b for b in sorted(bias_sets, key=distance) if distance(b) <= window_days]
+    result.bias = biases[0] if biases else None
+    all_darks = sorted(dark_sets, key=distance)
+    darks = [d for d in all_darks if distance(d) <= window_days]
+    bias_ok = result.bias is not None
+
+    def covering(candidates: list[CalibrationSet]) -> list[CalibrationSet]:
+        return [d for d in candidates
+                if all(_covers(d, e, exptime_tolerance, bias_ok, exptime_tolerance_fraction)
+                       for e in exptimes)]
+
+    full = covering(darks)
+    outside = [] if full else covering([d for d in all_darks if d not in darks])
+    if full:
+        result.darks = full[0]
+    elif outside:
+        result.darks = outside[0]
+        result.notes.append(
+            f"darks {outside[0].describe()} are {distance(outside[0]):.0f} days away "
+            f"(outside the {window_days:g}-day window, but the only ones with matching "
+            "exposure times)"
+        )
+    elif darks:
+        result.darks = darks[0]
+    if result.darks is None:
+        result.missing_exptimes = list(exptimes)
+        result.notes.append("no dark frames for this electronic setup in the window")
+    else:
+        result.missing_exptimes = [
+            e for e in exptimes
+            if not _covers(result.darks, e, exptime_tolerance, bias_ok,
+                           exptime_tolerance_fraction)
+        ]
+        if result.darks.night != night and not outside:
+            result.notes.append(f"darks from {result.darks.describe()}")
+    if result.bias is None:
+        result.notes.append("no bias frames (dark scaling impossible)")
+    elif result.bias.night != night:
+        result.notes.append(f"bias from {result.bias.describe()}")
+    if result.missing_exptimes:
+        result.notes.append(
+            "no usable dark for exposure(s) "
+            + ", ".join(f"{e:g} s" for e in result.missing_exptimes)
+            + " (1_fetch.py with an archive login searches them with the dark finder)"
+        )
+    return result
+
+
+def _calibration_score(result: DarkAssignment) -> tuple[int, int]:
+    """Fewer missing exposure times first, then with a bias."""
+    return (len(result.missing_exptimes) + (100 if result.darks is None else 0),
+            0 if result.bias is not None else 1)
+
+
 def assign_bias_dark(
     consumers: Table,
     frames: Table,
@@ -194,6 +284,7 @@ def assign_bias_dark(
     exptime_tolerance: float = 0.5,
     exptime_tolerance_fraction: float = 0.0,
     window_days: float = 30.0,
+    match_any_temperature: bool = False,
 ) -> list[DarkAssignment]:
     """Choose bias / dark sets for every (electronic id, night) of ``consumers``.
 
@@ -203,6 +294,11 @@ def assign_bias_dark(
     wins; then the nearest covering night outside the window (darks found
     with the archive's dark finder can be older); otherwise the nearest dark
     night is used and the uncovered exposure times are reported.
+
+    ``match_any_temperature``: when the sets of the same temperature leave
+    exposure times or the bias uncovered, a set of the same setup is also
+    taken if the temperature is unknown on one side (frames without
+    CCD-TEMP / SET-TEMP), with a note naming both temperatures.
     """
     bias_sets = calibration_sets(frames, BIAS)
     dark_sets = calibration_sets(frames, DARK)
@@ -212,64 +308,32 @@ def assign_bias_dark(
     assignments: list[DarkAssignment] = []
     jd_all = np.asarray(consumers["jd"], dtype=float)
     exp_all = np.asarray(consumers["exptime"], dtype=float)
+    options = {"exptime_tolerance": exptime_tolerance,
+               "exptime_tolerance_fraction": exptime_tolerance_fraction,
+               "window_days": window_days}
     for (eid, night), idx in groups.items():
         times = jd_all[idx]
         centre = float(np.nanmedian(times)) if np.isfinite(times).any() else float("nan")
         exptimes = sorted(set(round(float(e), 3) for e in exp_all[idx] if math.isfinite(e)))
-        result = DarkAssignment(eid, night, exptimes)
-
-        def distance(entry: CalibrationSet, centre: float = centre) -> float:
-            if not (math.isfinite(entry.jd) and math.isfinite(centre)):
-                return float("inf")
-            return abs(entry.jd - centre)
-
-        biases = sorted((b for b in bias_sets if b.electronic_id == eid), key=distance)
-        biases = [b for b in biases if distance(b) <= window_days]
-        result.bias = biases[0] if biases else None
-        all_darks = sorted((d for d in dark_sets if d.electronic_id == eid), key=distance)
-        darks = [d for d in all_darks if distance(d) <= window_days]
-        bias_ok = result.bias is not None
-
-        def covering(candidates: list[CalibrationSet], exptimes: list[float] = exptimes,
-                     bias_ok: bool = bias_ok) -> list[CalibrationSet]:
-            return [d for d in candidates
-                    if all(_covers(d, e, exptime_tolerance, bias_ok, exptime_tolerance_fraction)
-                           for e in exptimes)]
-
-        full = covering(darks)
-        outside = [] if full else covering([d for d in all_darks if d not in darks])
-        if full:
-            result.darks = full[0]
-        elif outside:
-            result.darks = outside[0]
-            result.notes.append(
-                f"darks {outside[0].describe()} are {distance(outside[0]):.0f} days away "
-                f"(outside the {window_days:g}-day window, but the only ones with matching "
-                "exposure times)"
-            )
-        elif darks:
-            result.darks = darks[0]
-        if result.darks is None:
-            result.missing_exptimes = list(exptimes)
-            result.notes.append("no dark frames for this electronic setup in the window")
-        else:
-            result.missing_exptimes = [
-                e for e in exptimes
-                if not _covers(result.darks, e, exptime_tolerance, bias_ok,
-                               exptime_tolerance_fraction)
-            ]
-            if result.darks.night != night and not outside:
-                result.notes.append(f"darks from {result.darks.describe()}")
-        if result.bias is None:
-            result.notes.append("no bias frames (dark scaling impossible)")
-        elif result.bias.night != night:
-            result.notes.append(f"bias from {result.bias.describe()}")
-        if result.missing_exptimes:
-            result.notes.append(
-                "no usable dark for exposure(s) "
-                + ", ".join(f"{e:g} s" for e in result.missing_exptimes)
-                + " (1_fetch.py with an archive login searches them with the dark finder)"
-            )
+        result = _choose_bias_dark(
+            eid, night, exptimes, centre,
+            [b for b in bias_sets if b.electronic_id == eid],
+            [d for d in dark_sets if d.electronic_id == eid], **options)
+        if match_any_temperature and _calibration_score(result) != (0, 0):
+            relaxed = _choose_bias_dark(
+                eid, night, exptimes, centre,
+                [b for b in bias_sets if b.electronic_id == eid or _relaxed(b, eid)],
+                [d for d in dark_sets if d.electronic_id == eid or _relaxed(d, eid)],
+                **options)
+            if _calibration_score(relaxed) < _calibration_score(result):
+                used = [s for s in (relaxed.bias, relaxed.darks)
+                        if s is not None and s.electronic_id != eid]
+                relaxed.notes.insert(0, (
+                    f"sensor temperature unknown: frames at {_temperature_text(eid)}, "
+                    + ", ".join(f"{s.kind} at {_temperature_text(s.electronic_id)}" for s in used)
+                    + " (unknown_temperature_policy='match_any')"
+                ))
+                result = relaxed
         assignments.append(result)
     return assignments
 

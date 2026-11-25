@@ -57,10 +57,14 @@ from .orientation import (
     solve_orientations,
 )
 from .sessions import UNKNOWN_SESSION, Session, segment_sessions, sessions_table
-from .setup_keys import binning, camera_id, filter_name, telescope_id
+from .setup_keys import binning, camera_id, filter_name, sensor_temperature, telescope_id
 from .targets import UNKNOWN_TARGET, assign_targets, target_summary
 
 PLAN_VERSION = 1
+
+
+#: Values of ``PlanSettings.unknown_temperature_policy``.
+UNKNOWN_TEMPERATURE_POLICIES = ("match_any", "exclude_lights")
 
 
 @dataclass
@@ -79,6 +83,11 @@ class PlanSettings:
     dark_exptime_tolerance_fraction: float = 0.05
     calibration_window_days: float = 30.0
     no_flat_policy: str = "best_available"
+    #: Frames without a sensor temperature (no CCD-TEMP / SET-TEMP):
+    #: ``"match_any"`` takes bias / darks of the same setup at any
+    #: temperature when none of the same temperature cover them (noted in
+    #: the plan); ``"exclude_lights"`` leaves such lights out.
+    unknown_temperature_policy: str = "match_any"
     #: Lights are reduced only with complete calibration: darks for their
     #: exposure time and a flat of one of these categories (else blocked;
     #: release with the override ``force_units``)
@@ -238,6 +247,12 @@ def build_calibration_plan(
     """Run the complete grouping on ``manifest`` (see module docstring)."""
     settings = settings or PlanSettings()
     overrides = overrides or Overrides()
+    if settings.unknown_temperature_policy not in UNKNOWN_TEMPERATURE_POLICIES:
+        raise ValueError(
+            f"unknown_temperature_policy must be one of {UNKNOWN_TEMPERATURE_POLICIES}, "
+            f"got {settings.unknown_temperature_policy!r}"
+        )
+    match_any_temperature = settings.unknown_temperature_policy == "match_any"
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
     report: list[str] = []
@@ -267,6 +282,19 @@ def build_calibration_plan(
     downloaded = np.asarray(frames["downloaded"], dtype=bool)
     kinds = np.asarray(frames["frame_type"]).astype(str)
     is_light = (kinds == LIGHT) & (roles != "context") & downloaded & ~np.asarray(frames["excluded"])
+    no_temperature = np.array([not math.isfinite(sensor_temperature(dict(zip(frames.colnames, r,
+                                                                             strict=True))))
+                               for r in frames], dtype=bool)
+    n_unknown = int(np.count_nonzero(is_light & no_temperature))
+    if n_unknown and not match_any_temperature:
+        frames["excluded"] = np.asarray(frames["excluded"]) | (is_light & no_temperature)
+        is_light &= ~no_temperature
+        report.append(f"{n_unknown} lights with unknown sensor temperature excluded "
+                      "(unknown_temperature_policy='exclude_lights')")
+    elif n_unknown:
+        report.append(f"{n_unknown} lights with unknown sensor temperature: bias / darks of any "
+                      "temperature allowed (unknown_temperature_policy='match_any', see the "
+                      "unit notes)")
     lights = frames[is_light]
     context_mask = ~is_light & np.isin(kinds, [LIGHT, FLAT, SPECTROSCOPY])
     context = frames[context_mask]
@@ -324,6 +352,7 @@ def build_calibration_plan(
         lights, calibration, exptime_tolerance=settings.dark_exptime_tolerance,
         exptime_tolerance_fraction=settings.dark_exptime_tolerance_fraction,
         window_days=settings.calibration_window_days,
+        match_any_temperature=match_any_temperature,
     )
 
     # 8. Flats
@@ -380,6 +409,7 @@ def build_calibration_plan(
         flat_frames_rows, calibration, exptime_tolerance=settings.dark_exptime_tolerance,
         exptime_tolerance_fraction=settings.dark_exptime_tolerance_fraction,
         window_days=settings.calibration_window_days,
+        match_any_temperature=match_any_temperature,
     )} if len(flat_frames_rows) else {}
     flat_exptime = {str(r["frame_id"]): _float(r["exptime"]) for r in flat_frames_rows}
 
