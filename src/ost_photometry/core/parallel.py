@@ -12,6 +12,15 @@ from tqdm import tqdm
 
 from .. import terminal_output
 
+#: Worker pools start their processes with "spawn", whatever the global start
+#: method is (the first ``Process`` started, e.g. a plot process, fixes it to
+#: "fork" on Linux). A fork from a process with threads (tqdm's monitor, the
+#: pool's own handler threads) can leave the new worker waiting forever on a
+#: lock another thread held at the fork: seen as a replacement worker
+#: (``maxtasksperchild``) stuck flushing stdout and ``Pool.join`` waiting for
+#: it with 0 % CPU.
+POOL_CONTEXT = mp.get_context("spawn")
+
 
 def start_plot_process(
     target,
@@ -43,9 +52,6 @@ class Executor:
     """
 
     def __init__(self, process_num: int | None, **kwargs: Any) -> None:
-        if not mp.get_start_method(allow_none=True):
-            mp.set_start_method("spawn")
-
         if process_num is None or process_num <= 0:
             process_num = int(mp.cpu_count() / 2)
 
@@ -55,7 +61,7 @@ class Executor:
             max_tasks_per_child = 6
 
         #   Init multiprocessing pool
-        self.pool: mp.Pool = mp.Pool(
+        self.pool: mp.Pool = POOL_CONTEXT.Pool(
             process_num,
             maxtasksperchild=max_tasks_per_child,
         )
