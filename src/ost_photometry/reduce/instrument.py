@@ -15,6 +15,9 @@ from ..camera_specs import (
 
 _QHY_CAMERAS = frozenset({"QHY600M", "QHY268M"})
 
+#: Summary columns with the sensor temperature, in order of preference.
+TEMPERATURE_COLUMNS = ("ccd-temp", "ccdtemp", "temperat")
+
 
 def _get_summary_column(
     image_file_collection: ccdp.ImageFileCollection, column_name: str
@@ -370,18 +373,35 @@ def get_instrument_info(
         )
     pixel_bit_value = list(pixel_bit_set)[0]
 
-    mask = image_file_collection.summary["ccd-temp"].mask
+    #   Sensor temperature (the same keywords as the archive manifest); none
+    #   in the headers (e.g. SBIG STF-8300): unknown, the dark current then
+    #   comes from the camera defaults
+    temperature_column = next(
+        (column for column in TEMPERATURE_COLUMNS
+         if _get_summary_column(image_file_collection, column) is not None),
+        None,
+    )
+    mask = (np.ma.getmaskarray(image_file_collection.summary[temperature_column])
+            if temperature_column is not None else None)
+    if mask is None or mask.all():
+        terminal_output.print_to_terminal(
+            "No sensor temperature (CCD-TEMP) in the FITS headers: temperature "
+            "unknown, dark current from the camera defaults.",
+            style_name="WARNING",
+            indent=2,
+        )
+        return instrument, readout_mode, gain_setting, pixel_bit_value, float("nan")
     files_without_ccd_temperature = np.array(image_file_collection.files)[mask]
     for file_name in files_without_ccd_temperature:
         terminal_output.print_to_terminal(
             f"Found file without temperature information: "
-            f"{file_name} -> Skip file.",
+            f"{file_name} (not used for the median temperature)",
             style_name="WARNING",
             indent=2,
         )
 
     files_with_ccd_temperature = np.array(image_file_collection.files)[np.invert(mask)]
-    temperatures = image_file_collection.summary["ccd-temp"][np.invert(mask)]
+    temperatures = image_file_collection.summary[temperature_column][np.invert(mask)]
 
     if temperatures.fill_value == "?":
         temperatures.fill_value = 999.0

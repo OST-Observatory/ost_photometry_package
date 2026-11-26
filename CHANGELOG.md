@@ -30,6 +30,10 @@ section of this file.
   unknown, -999), matching `unknown_temperature_policy="match_any"`, with a
   warning in the fetch report; the run closest in time is taken as before.
   The log says "at unknown temperature" instead of "at nan C".
+- **Reduction of frames without a sensor temperature** stopped with
+  `KeyError: 'ccd-temp'` (`get_instrument_info`). The temperature is now
+  read from `CCD-TEMP`, else `CCDTEMP` / `TEMPERAT`; without any it is
+  unknown (warning) and the dark current comes from the camera defaults.
 
 ## [0.9.0] - 2026-11-19
 
