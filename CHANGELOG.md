@@ -37,6 +37,11 @@ section of this file.
   threads (tqdm's monitor, the pool's handler threads) can wait forever on a
   lock held at the fork; a replacement worker (`maxtasksperchild`) hung
   flushing stdout. The pools now always use a "spawn" context.
+- **Stacking frames with and without a JD header** (e.g. QHY600M and SBIG
+  STF-8300 frames of one target) stopped with `TypeError: '<' not supported`
+  when the alignment sorted by the mixed `jd` column. It now sorts by JD,
+  else `DATE-OBS`, else `MJD-OBS` (frames without any time last), and the
+  reduction writes `JD` (start of exposure) into frames that had none.
 - **Reduction of frames without a sensor temperature** stopped with
   `KeyError: 'ccd-temp'` (`get_instrument_info`). The temperature is now
   read from `CCD-TEMP`, else `CCDTEMP` / `TEMPERAT`; without any it is

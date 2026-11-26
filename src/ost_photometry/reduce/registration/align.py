@@ -26,6 +26,49 @@ from .shifts import (
 )
 from .wcs_align import apply_wcs_align, ensure_celestial_wcs_on_fits
 
+_OBSERVATION_JD = "observation_jd_sort"
+
+
+def _jd_of(value, convert) -> float:
+    if value is None or np.ma.is_masked(value):
+        return float("nan")
+    try:
+        jd = float(convert(value))
+    except (TypeError, ValueError):
+        return float("nan")
+    return jd if np.isfinite(jd) else float("nan")
+
+
+def observation_jds(summary) -> np.ndarray:
+    """JD per row of an ``ImageFileCollection`` summary: ``JD``, else
+    ``DATE-OBS``, else ``MJD-OBS``; ``inf`` without any (sorted last).
+    Values may be text or masked (a JD only in some of the files)."""
+    from astropy.time import Time
+
+    sources = (
+        ("jd", lambda v: v),
+        ("date-obs", lambda v: Time(str(v).strip(), format="fits").jd),
+        ("mjd-obs", lambda v: float(v) + 2400000.5),
+    )
+    out = np.full(len(summary), np.inf)
+    for i in range(len(summary)):
+        for column, convert in sources:
+            if column in summary.colnames:
+                jd = _jd_of(summary[column][i], convert)
+                if np.isfinite(jd):
+                    out[i] = jd
+                    break
+    return out
+
+
+def sort_by_observation_time(collection: ccdp.ImageFileCollection) -> None:
+    """Sort ``collection`` in place by :func:`observation_jds` (frames of
+    different cameras or programs need not all have a JD)."""
+    summary = collection.summary
+    if summary is not None and len(summary):
+        summary[_OBSERVATION_JD] = observation_jds(summary)
+        collection.sort(_OBSERVATION_JD)
+
 
 def align_images(
         image_path: str | Path, output_dir: str | Path,
@@ -188,10 +231,7 @@ def align_images(
     )
 
     #   Sort by time
-    if 'jd' in ifc_image_type_filtered.summary.colnames:
-        ifc_image_type_filtered.sort('jd')
-    elif 'date-obs' in ifc_image_type_filtered.summary.colnames:
-        ifc_image_type_filtered.sort('date-obs')
+    sort_by_observation_time(ifc_image_type_filtered)
 
     if align_filter_wise:
         #   Determine filter

@@ -814,6 +814,9 @@ def update_header_information(
     except (TypeError, ValueError):
         mjd = None
     if mjd is not None and np.isfinite(mjd):
+        if "JD" not in image.meta:
+            #   one time keyword in every frame (the alignment sorts by it)
+            image.meta["JD"] = (mjd + 2400000.5, "Julian date, start of exposure")
         image.meta["MJD_STA"] = mjd
         mjd_mid = mjd + float(image.meta["EXPTIME"]) / 172800
         image.meta["MJD_MID"] = mjd_mid

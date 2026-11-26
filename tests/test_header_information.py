@@ -43,6 +43,8 @@ def test_start_and_mid_time_from_date_obs(messages):
     assert not any("could not" in m for m in messages)
     assert ccd.meta["MJD_STA"] == pytest.approx(61100.981, abs=1e-3)
     assert ccd.meta["MJD_MID"] - ccd.meta["MJD_STA"] == pytest.approx(150 / 86400)
+    #   and a JD, so every reduced frame can be sorted by it
+    assert ccd.meta["JD"] == pytest.approx(ccd.meta["MJD_STA"] + 2400000.5)
     assert ccd.meta["FILTER-S"] == "narrow_band"
 
 
