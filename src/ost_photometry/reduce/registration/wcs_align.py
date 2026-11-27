@@ -128,6 +128,131 @@ def ensure_celestial_wcs_on_fits(
 #: Pixel-area ratios closer to 1 than this are plate-solution noise.
 AREA_RATIO_TOLERANCE = 1e-3
 
+#: Solved frames tried as WCS donor of an unsolved frame (closest in time
+#: first), and the largest scale difference of a star-pattern match between
+#: two frames of the same camera setup (more is a wrong match).
+WCS_DONOR_ATTEMPTS = 3
+WCS_DONOR_MAX_SCALE_DIFFERENCE = 0.01
+
+
+def _camera_setup(header: fits.Header) -> tuple:
+    """Frames of one camera setup share their pixel grid on the sky."""
+    return (
+        str(header.get("INSTRUME", "")).strip(),
+        int(header.get("NAXIS1", 0) or 0),
+        int(header.get("NAXIS2", 0) or 0),
+        str(header.get("XBINNING", 1)),
+        str(header.get("YBINNING", 1)),
+    )
+
+
+def _header_jd(header: fits.Header) -> float:
+    try:
+        return float(header["JD"])
+    except (KeyError, TypeError, ValueError):
+        pass
+    try:
+        from astropy.time import Time
+
+        return float(Time(str(header["DATE-OBS"]).strip(), format="fits").jd)
+    except (KeyError, TypeError, ValueError):
+        return float("inf")
+
+
+def _finite_image(path: Path) -> np.ndarray:
+    data = np.asarray(fits.getdata(path, ext=0), dtype=float)
+    finite = np.isfinite(data)
+    if not finite.all():
+        data = np.where(finite, data, np.nanmedian(data) if finite.any() else 0.0)
+    return data
+
+
+def transfer_wcs(path: str | Path, donor_path: str | Path) -> bool:
+    """Give ``path`` the celestial WCS of ``donor_path`` (a solved frame of the
+    same camera setup), mapped through the star-pattern similarity transform
+    between the two frames (astroalign).
+
+    The transform has no shear, so the axes keep the donor's scale and
+    orthogonality; distortion terms (SIP) of the donor are dropped (small
+    fields). Returns ``True`` when ``path`` then has a celestial WCS.
+    """
+    import astroalign as aa
+
+    path, donor_path = Path(path), Path(donor_path)
+    donor_header = fits.getheader(donor_path)
+    donor = wcs_from_header(donor_header).celestial
+    if not donor.has_celestial:
+        return False
+    try:
+        transform, _ = aa.find_transform(_finite_image(path), _finite_image(donor_path),
+                                         detection_sigma=3)
+    except (aa.MaxIterError, TypeError, ValueError):
+        return False
+    if abs(float(transform.scale) - 1.0) > WCS_DONOR_MAX_SCALE_DIFFERENCE:
+        return False
+
+    #   donor pixel (0-based) q = M p + t of this frame's pixel p
+    matrix = np.asarray(transform.params[:2, :2], dtype=float)
+    shift = np.asarray(transform.params[:2, 2], dtype=float)
+    solved = WCS(naxis=2)
+    solved.wcs.ctype = [str(c).replace("-SIP", "") for c in donor.wcs.ctype]
+    solved.wcs.cunit = donor.wcs.cunit
+    solved.wcs.crval = donor.wcs.crval
+    solved.wcs.cd = donor.pixel_scale_matrix @ matrix
+    solved.wcs.crpix = 1.0 + np.linalg.solve(matrix, np.asarray(donor.wcs.crpix) - 1.0 - shift)
+    if donor.wcs.radesys:
+        solved.wcs.radesys = donor.wcs.radesys
+    if np.isfinite(donor.wcs.equinox):
+        solved.wcs.equinox = donor.wcs.equinox
+
+    with fits.open(path, mode="update") as hdul:
+        header = hdul[0].header
+        for key in [k for k in header if k.startswith(("CD1_", "CD2_", "PC1_", "PC2_", "CDELT",
+                                                        "CROTA", "CRPIX", "CRVAL", "CTYPE",
+                                                        "CUNIT", "A_", "B_", "AP_", "BP_"))]:
+            header.remove(key, ignore_missing=True, remove_all=True)
+        header.update(solved.to_header())
+        header["WCSSRC"] = (donor_path.name[:68], "WCS of this frame via star pattern")
+    return fits_has_celestial_wcs(path)
+
+
+def transfer_wcs_from_solved_frames(
+    unsolved: list[str],
+    candidates: list[str],
+    *,
+    indent: int = 2,
+) -> tuple[list[str], list[str]]:
+    """WCS for frames ASTAP could not solve, from solved frames of the same
+    camera setup (:func:`transfer_wcs`, the closest in time first). Returns
+    ``(rescued, failed)``.
+    """
+    solved = []
+    for name in candidates:
+        if fits_has_celestial_wcs(name):
+            header = fits.getheader(name)
+            solved.append((name, _camera_setup(header), _header_jd(header)))
+    rescued: list[str] = []
+    failed: list[str] = []
+    for name in unsolved:
+        header = fits.getheader(name)
+        setup, jd = _camera_setup(header), _header_jd(header)
+        donors = sorted((s for s in solved if s[1] == setup),
+                        key=lambda s: abs(s[2] - jd) if np.isfinite(s[2] - jd) else np.inf)
+        if any(transfer_wcs(name, donor) for donor, _setup, _jd in donors[:WCS_DONOR_ATTEMPTS]):
+            rescued.append(name)
+        else:
+            failed.append(name)
+    if unsolved:
+        terminal_output.print_to_terminal(
+            f"{len(unsolved)} frame(s) without a plate solution: {len(rescued)} got the WCS "
+            "of a solved frame of the same camera via the star pattern"
+            + (f", {len(failed)} skipped (no solved frame of the same camera setup, or no "
+               "star match)" if failed else ""),
+            indent=indent,
+            style_name="WARNING" if failed else "NORMAL",
+        )
+    return rescued, failed
+
 
 def reproject_ccd_onto_wcs(
     ccd: CCDData,
@@ -348,10 +473,13 @@ def apply_wcs_align(
 
 
 __all__ = [
+    "WCS_DONOR_ATTEMPTS",
     "apply_wcs_align",
     "celestial_wcs_from_ccd",
     "ensure_celestial_wcs_on_fits",
     "fits_has_celestial_wcs",
     "pixel_offset_on_reference",
     "reproject_ccd_onto_wcs",
+    "transfer_wcs",
+    "transfer_wcs_from_solved_frames",
 ]

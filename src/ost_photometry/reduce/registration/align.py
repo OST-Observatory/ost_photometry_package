@@ -24,7 +24,11 @@ from .shifts import (
     apply_xy_image_shift,
     calculate_xy_image_shifts,
 )
-from .wcs_align import apply_wcs_align, ensure_celestial_wcs_on_fits
+from .wcs_align import (
+    apply_wcs_align,
+    ensure_celestial_wcs_on_fits,
+    transfer_wcs_from_solved_frames,
+)
 
 _OBSERVATION_JD = "observation_jd_sort"
 
@@ -638,22 +642,31 @@ def align_image_main(
                 f"({reference_path_name}); cannot use shift_method='wcs'. "
                 f"Check ASTAP / wcs_method.{style.Bcolors.ENDC}"
             )
+        unsolved = []
         for path in files:
             if path == reference_path_name:
                 continue
-            ensure_celestial_wcs_on_fits(
+            if not ensure_celestial_wcs_on_fits(
                 path,
                 output_path,
                 wcs_method=wcs_method,
                 force=force_wcs_determination,
-            )
+            ):
+                unsolved.append(path)
+        #   Frames ASTAP could not solve: WCS of a solved frame of the same
+        #   camera via the star pattern; the rest is skipped (not solved again)
+        _rescued, failed = transfer_wcs_from_solved_frames(
+            unsolved, [f for f in files if f not in set(unsolved)]
+        )
+        pre_skipped = [(path, "no plate solution (ASTAP, star pattern)") for path in failed]
 
+        to_align = [f for f in files if f not in set(failed)]
         executor = Executor(
             n_cores_multiprocessing,
-            n_tasks=len(files),
+            n_tasks=len(to_align),
             add_progress_bar=True,
         )
-        for current_image_name in files:
+        for current_image_name in to_align:
             executor.schedule(
                 apply_wcs_align,
                 args=(
@@ -679,7 +692,7 @@ def align_image_main(
             )
         executor.wait()
         outcome = FilterAlignment.from_results(
-            group_label, reference_path_name, files, executor.res
+            group_label, reference_path_name, files, executor.res, pre_skipped=pre_skipped
         )
 
     else:

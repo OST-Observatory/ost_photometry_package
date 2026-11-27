@@ -22,6 +22,17 @@ section of this file.
   `"exclude_lights"`: such lights are not reduced. Before, they only got
   calibration frames that also lacked a temperature.
 
+- **Fallback for frames ASTAP cannot solve** (`shift_method="wcs"`): such a
+  frame gets the WCS of a solved frame of the same camera setup (camera,
+  frame size, binning; closest in time first), mapped through the
+  star-pattern similarity transform between the two (astroalign;
+  `wcs_align.transfer_wcs`, header `WCSSRC` names the donor). It is then
+  reprojected like the others. NGC 7789, SBIG ST-8 (0.13 degree field, about
+  half of the frames unsolved): against the frame's own ASTAP solution 1 px
+  or less with a donor of the same night. Frames still without a WCS are
+  skipped as before but no longer solved a second time in the workers (up
+  to three ASTAP runs each).
+
 ### Fixed
 
 - **Archive dark / bias finder for lights without a sensor temperature**:
