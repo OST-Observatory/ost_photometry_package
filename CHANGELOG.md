@@ -37,6 +37,12 @@ section of this file.
   threads (tqdm's monitor, the pool's handler threads) can wait forever on a
   lock held at the fork; a replacement worker (`maxtasksperchild`) hung
   flushing stdout. The pools now always use a "spawn" context.
+- **Frames with `FOCALLEN = 0`** (old SBIG ST-8 frames) stopped the
+  alignment with `ZeroDivisionError` (`Image.calculate_field_of_view_etc`).
+  A focal length counts only if positive; without one the field of view
+  comes from the header WCS, else from the focal length of the telescope
+  (`TELESCOP` in the telescope catalog), else 3454 mm as before, now with a
+  warning.
 - **Blind plate solves while stacking** (frames without OBJCTRA/OBJCTDEC,
   e.g. SBIG STF-8300: ASTAP searched the whole sky, up to 300 s per frame).
   The ASTAP search centre now also comes from `RA`/`DEC` or an existing WCS

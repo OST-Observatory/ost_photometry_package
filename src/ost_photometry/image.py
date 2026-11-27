@@ -84,6 +84,27 @@ def header_pointing(header) -> SkyCoord | None:
     return SkyCoord(ra_deg * u.deg, dec_deg * u.deg, frame="icrs")
 
 
+#: Focal length assumed without FOCALLEN, WCS or known telescope (OST CDK20).
+DEFAULT_FOCAL_LENGTH_MM = 3454.0
+
+
+def _positive_number(value: object) -> float | None:
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if np.isfinite(number) and number > 0 else None
+
+
+def _catalog_focal_length(telescope: object) -> float | None:
+    """Focal length (mm) of a ``TELESCOP`` name in the telescope catalog."""
+    from .telescope_specs import normalize_telescope_id, telescope_record
+
+    telescope_id = normalize_telescope_id(str(telescope or ""))
+    record = telescope_record(telescope_id) if telescope_id else None
+    return _positive_number((record or {}).get("focal_length_mm"))
+
+
 class Image:
     """
     Image class: metadata + on-demand FITS access (no persistent pixel cache).
@@ -179,8 +200,9 @@ class Image:
         #   Get header
         header = self.get_header()
 
-        #   Read focal length - set default to 3454. mm
-        focal_length = header.get("FOCALLEN", 3454.0)
+        #   Focal length: FOCALLEN if it is a positive number (old frames
+        #   carry FOCALLEN = 0), else see below
+        focal_length = _positive_number(header.get("FOCALLEN"))
 
         #   Read ra and dec of image center (pointing); 0/0 only as the last
         #   resort for the plate-solving hint
@@ -235,19 +257,33 @@ class Image:
                 instrument
             )
 
-        #   Calculate field of view
-        field_of_view_x = 2 * np.arctan(chip_length / 2 / focal_length)
-        field_of_view_y = 2 * np.arctan(chip_height / 2 / focal_length)
+        #   Without a usable FOCALLEN: the field from the header WCS, else the
+        #   focal length of the telescope (TELESCOP), else the OST default
+        wcs_scale = celestial_pixel_scale(header)
+        if focal_length is None and wcs_scale is None:
+            focal_length = _catalog_focal_length(header.get("TELESCOP"))
+            if focal_length is None:
+                focal_length = DEFAULT_FOCAL_LENGTH_MM
+                terminal_output.print_to_terminal(
+                    f"No focal length (FOCALLEN missing or 0), no WCS and no known telescope "
+                    f"in the header: {DEFAULT_FOCAL_LENGTH_MM:g} mm assumed, the field of view "
+                    "may be wrong.",
+                    indent=1,
+                    style_name="WARNING",
+                )
 
-        #   Convert to arc min
-        field_of_view_x = field_of_view_x * 360.0 / 2.0 / np.pi * 60.0
-        field_of_view_y = field_of_view_y * 360.0 / 2.0 / np.pi * 60.0
+        #   Field of view in arc min
+        if focal_length is None:
+            field_of_view_x = n_pixel_x * wcs_scale / 60.0
+            field_of_view_y = n_pixel_y * wcs_scale / 60.0
+        else:
+            field_of_view_x = np.degrees(2 * np.arctan(chip_length / 2 / focal_length)) * 60.0
+            field_of_view_y = np.degrees(2 * np.arctan(chip_height / 2 / focal_length)) * 60.0
 
         #   Calculate pixel scale [arcsec/pixel]: from the header WCS when the
         #   frame has one (a frame resampled onto another binning keeps its
         #   old XPIXSZ), else from the geometry
         pixel_scale = field_of_view_x * 60 / n_pixel_x
-        wcs_scale = celestial_pixel_scale(header)
         if wcs_scale is not None:
             pixel_scale = wcs_scale
 
