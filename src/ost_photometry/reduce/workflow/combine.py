@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import shutil
+import warnings
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,7 @@ from astropy.table import Table
 
 from ...archive.cache import safe_name
 from ...fits_headers import clear_cosmics_identified, cosmics_identified
+from ...wcs import pointing_from_header
 from .. import registration
 from ..detector_noise import (
     READ_NOISE_KEY,
@@ -262,6 +264,41 @@ def stack_aligned_frames(
     return summary
 
 
+def add_pointing_hints(directory: str | Path, ra_deg: object, dec_deg: object) -> int:
+    """Frames in ``directory`` without a pointing (OBJCTRA/OBJCTDEC, RA/DEC
+    or WCS) get ``ra_deg`` / ``dec_deg`` (the target position) as
+    OBJCTRA/OBJCTDEC: ASTAP then searches 3 degrees around it instead of
+    solving blind (minutes per frame, often in vain for a small field).
+    Returns the number of frames changed."""
+    from astropy.coordinates import SkyCoord
+
+    try:
+        ra, dec = float(ra_deg), float(dec_deg)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0
+    if not (math.isfinite(ra) and math.isfinite(dec)):
+        return 0
+    position = SkyCoord(ra, dec, unit="deg")
+    with warnings.catch_warnings():
+        #   numpy >= 2.5 inside astropy's vectorised angle formatting: harmless
+        warnings.filterwarnings("ignore", message="invalid value encountered in do_format")
+        ra_text = position.ra.to_string(unit=u.hourangle, sep=" ", precision=2, pad=True)
+        dec_text = position.dec.to_string(unit=u.deg, sep=" ", precision=1, alwayssign=True,
+                                          pad=True)
+    changed = 0
+    for path in sorted(Path(directory).iterdir()):
+        if path.suffix.lower() not in (".fit", ".fits", ".fts"):
+            continue
+        with fits.open(path, mode="update") as hdul:
+            header = hdul[0].header
+            if pointing_from_header(header) is not None:
+                continue
+            header["OBJCTRA"] = (ra_text, "Target position (pipeline): ASTAP search centre")
+            header["OBJCTDEC"] = (dec_text, "Target position (pipeline): ASTAP search centre")
+            changed += 1
+    return changed
+
+
 def stack_target(
     target_id: str,
     info: Mapping[str, object],
@@ -296,6 +333,10 @@ def stack_target(
     if not file_rows:
         log(f"Target {name}: no reduced frames.")
         return []
+    hinted = add_pointing_hints(light_dir, info.get("ra"), info.get("dec"))
+    if hinted:
+        log(f"Target {name}: {hinted} frame(s) without a pointing in the header get the target "
+            "position as the ASTAP search centre")
 
     quality_table = measure_directory_quality(
         light_dir, image_type_list=LIGHT_TYPES,

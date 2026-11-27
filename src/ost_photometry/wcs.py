@@ -393,19 +393,57 @@ def _header_has_pointing(header: fits.Header) -> bool:
     )
 
 
+def _degrees(value: object, unit) -> float | None:
+    """A header angle in degrees: a number (already degrees) or sexagesimal
+    text in ``unit`` (hours for RA)."""
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        number = float(text)
+    except ValueError:
+        try:
+            from astropy.coordinates import Angle
+
+            number = float(Angle(text, unit=unit).deg)
+        except (ValueError, TypeError):
+            return None
+    return number if math.isfinite(number) else None
+
+
+def pointing_from_header(header: fits.Header) -> tuple[float, float] | None:
+    """Pointing (RA, Dec in degrees) from ``OBJCTRA``/``OBJCTDEC``, else
+    ``RA``/``DEC`` (degrees or sexagesimal), else the centre of a celestial
+    WCS (``CRVAL1``/``CRVAL2``). ``None`` without any."""
+    for ra_key, dec_key in (("OBJCTRA", "OBJCTDEC"), ("RA", "DEC")):
+        if ra_key in header and dec_key in header:
+            if ra_key == "OBJCTRA" and not _header_has_pointing(header):
+                continue
+            ra = _degrees(header[ra_key], u.hourangle)
+            dec = _degrees(header[dec_key], u.deg)
+            if ra is not None and dec is not None and -90.0 <= dec <= 90.0:
+                return ra % 360.0, dec
+    if str(header.get("CTYPE1", "")).upper().startswith("RA") and "CRVAL1" in header:
+        ra = _degrees(header["CRVAL1"], u.deg)
+        dec = _degrees(header.get("CRVAL2", ""), u.deg)
+        if ra is not None and dec is not None and -90.0 <= dec <= 90.0:
+            return ra % 360.0, dec
+    return None
+
+
 def _astap_search_hint_arguments(image: Image) -> list[str]:
-    """Return optional ASTAP search-center arguments from the image metadata.
+    """Return optional ASTAP search-center arguments from the image header
+    (:func:`pointing_from_header`).
 
     ``Image`` falls back to RA = Dec = 0 when ``OBJCTRA``/``OBJCTDEC`` are
     missing; passing that placeholder to ASTAP with a 3 degree radius makes
     the solve fail. Without a real pointing no hint is returned and the
     caller widens the search radius instead.
     """
-    coordinates = image.coordinates_image_center
-    if coordinates is None or not _header_has_pointing(image.get_header()):
+    pointing = pointing_from_header(image.get_header())
+    if pointing is None:
         return []
-
-    return astap_pointing_arguments(coordinates.ra.deg, coordinates.dec.deg)
+    return astap_pointing_arguments(*pointing)
 
 
 def astap_pointing_arguments(ra_deg: float | None, dec_deg: float | None) -> list[str]:
@@ -904,7 +942,7 @@ def find_wcs_astap(image: Image, indent: int = 2) -> wcs.WCS:
     hint = _astap_search_hint_arguments(image)
     if not hint:
         terminal_output.print_to_terminal(
-            "No pointing (OBJCTRA/OBJCTDEC) in the header; ASTAP solves blind.",
+            "No pointing (OBJCTRA/OBJCTDEC, RA/DEC or WCS) in the header; ASTAP solves blind.",
             indent=indent,
             style_name="WARNING",
         )

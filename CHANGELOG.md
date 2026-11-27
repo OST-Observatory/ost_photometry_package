@@ -37,6 +37,13 @@ section of this file.
   threads (tqdm's monitor, the pool's handler threads) can wait forever on a
   lock held at the fork; a replacement worker (`maxtasksperchild`) hung
   flushing stdout. The pools now always use a "spawn" context.
+- **Blind plate solves while stacking** (frames without OBJCTRA/OBJCTDEC,
+  e.g. SBIG STF-8300: ASTAP searched the whole sky, up to 300 s per frame).
+  The ASTAP search centre now also comes from `RA`/`DEC` or an existing WCS
+  (`wcs.pointing_from_header`), and the archive pipeline gives frames without
+  any pointing the target position of the plan before the alignment
+  (`add_pointing_hints`, OBJCTRA/OBJCTDEC with a comment): ASTAP then
+  searches 3 degrees around it.
 - **Stacking frames with and without a JD header** (e.g. QHY600M and SBIG
   STF-8300 frames of one target) stopped with `TypeError: '<' not supported`
   when the alignment sorted by the mixed `jd` column. It now sorts by JD,
